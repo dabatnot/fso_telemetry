@@ -38,6 +38,38 @@ reassembler, and extracts payload/record seeds when framing permits. Generated
 corpora and crash artifacts are never source artifacts.
 
 `run_fuzz_smoke.py` accepts either a bounded `--runs` count or
-`--max-total-time`. CI uses the bounded smoke configuration for pull requests;
-longer campaigns must archive their duration, toolchain, corpus manifest and
-artifact directory as review evidence.
+`--max-total-time`. With no additional arguments it preserves the CI smoke
+behavior: all eight targets run sequentially for 2,000 mutations each. A
+freeze campaign can select one target per parallel job and emit a self-contained
+evidence directory:
+
+```sh
+python test/telemetry/protocol/fuzz/run_fuzz_smoke.py \
+  --binary-dir build-fuzz/bin \
+  --corpus build-fuzz/telemetry-fuzz-corpus \
+  --artifacts build-fuzz/telemetry-fuzz-artifacts \
+  --dictionary test/telemetry/protocol/fuzz/fstl.dict \
+  --target fuzz_packet_reader \
+  --max-total-time 1800 \
+  --seed 4242 \
+  --expected-sha "$CANDIDATE_SHA" \
+  --evidence-dir build-fuzz/telemetry-fuzz-evidence
+```
+
+Repeat the command in parallel for each target. Each target directory records
+the checked-out and expected SHA, requested and observed duration, command,
+seed, platform, tool versions, ASan/UBSan options, binary and dictionary hashes,
+the raw log and parsed `stat::*` values, snapshots plus stable SHA-256 manifests
+of the initial/final corpus, and any crash artifacts. A non-zero fuzzer exit or
+any crash artifact fails the runner, while still writing the final report.
+
+The Python evidence helpers have standalone unit coverage:
+
+```sh
+python test/telemetry/protocol/fuzz/test_run_fuzz_smoke.py
+```
+
+CI uses the bounded smoke configuration for pull requests. Longer campaigns
+must retain all eight evidence directories and the sanitizer-instrumented build
+log as review evidence; temporary CI artifacts must be copied to the final
+freeze archive before their retention period expires.
