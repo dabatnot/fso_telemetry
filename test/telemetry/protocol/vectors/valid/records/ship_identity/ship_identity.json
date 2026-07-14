@@ -1,0 +1,19 @@
+{
+  "context": {
+    "recordContainer": "full-snapshot"
+  },
+  "expectedCanonicalJson": "records/ship_identity.json",
+  "expectedValidationError": 0,
+  "expectedValidationErrorName": "NONE",
+  "inputFiles": [
+    "ship_identity.bin"
+  ],
+  "kind": "record",
+  "name": "ship_identity",
+  "notes": "Deterministic Phase 0 canonical fixture; bytes are authoritative.",
+  "recordFlags": 0,
+  "recordType": 6,
+  "recordVersion": 1,
+  "schema": "FSTL-1.0",
+  "valid": true
+}

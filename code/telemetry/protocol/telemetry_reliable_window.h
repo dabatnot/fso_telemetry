@@ -109,6 +109,23 @@ enum class ReliableResponseResult : std::uint8_t {
 	IgnoredIncoherent,
 };
 
+// Stable ValidationError projection used by ingress metrics and the external
+// conformance-vector replay. The send window keeps its richer disposition so
+// callers can distinguish benign duplicates from rejected responses.
+constexpr ValidationError reliable_response_validation_error(ReliableResponseResult result) noexcept
+{
+	switch (result) {
+	case ReliableResponseResult::ValidatedRetained:
+	case ReliableResponseResult::Released:
+	case ReliableResponseResult::Duplicate:
+		return ValidationError::None;
+	case ReliableResponseResult::IgnoredUnknownOrLate:
+	case ReliableResponseResult::IgnoredIncoherent:
+	default:
+		return ValidationError::InvalidStateTransition;
+	}
+}
+
 struct ReliableMessageKey {
 	std::uint64_t session_id = 0;
 	EndpointKey endpoint;

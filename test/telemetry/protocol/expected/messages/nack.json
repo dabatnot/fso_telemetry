@@ -1,0 +1,18 @@
+{
+  "fields": {
+    "bitmap_bytes": 2,
+    "missing_bitmap": "0101",
+    "needed_before_producer_time_us": "0",
+    "reason": 1,
+    "reserved": 0,
+    "target_fragment_count": 9,
+    "target_message_crc32": "0x12345678",
+    "target_message_id": 100,
+    "target_message_type": 6
+  },
+  "kind": "message-payload",
+  "messageFlags": 0,
+  "messageName": "NACK",
+  "messageType": 11,
+  "schema": "FSTL-1.0"
+}

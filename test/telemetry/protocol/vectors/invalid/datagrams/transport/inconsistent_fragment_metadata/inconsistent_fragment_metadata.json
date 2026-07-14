@@ -1,13 +1,19 @@
 {
   "expectedValidationError": 21,
+  "expectedValidationErrorName": "INCONSISTENT_FRAGMENT",
   "inputFiles": [
     "000.bin",
     "001.bin"
   ],
+  "invalidCategory": "inconsistent_fragment_metadata",
   "kind": "datagram-sequence",
   "messageType": 7,
   "name": "inconsistent_fragment_metadata",
   "notes": "frame_id changes between fragments.",
+  "requirementIds": [
+    "P0-REQ-205",
+    "P0-AC-019"
+  ],
   "schema": "FSTL-1.0",
   "valid": false
 }

@@ -1,12 +1,18 @@
 {
   "expectedValidationError": 16,
+  "expectedValidationErrorName": "BAD_FRAGMENT_COUNT",
   "inputFiles": [
     "000.bin"
   ],
+  "invalidCategory": "zero_fragment_count",
   "kind": "datagram-sequence",
   "messageType": 7,
   "name": "zero_fragment_count",
   "notes": "Transport mutation: zero fragment count.",
+  "requirementIds": [
+    "P0-REQ-205",
+    "P0-AC-019"
+  ],
   "schema": "FSTL-1.0",
   "valid": false
 }

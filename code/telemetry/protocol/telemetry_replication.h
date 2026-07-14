@@ -375,6 +375,28 @@ enum class SnapshotCommitResult : std::uint8_t {
 	AllocationFailed = 8,
 };
 
+// Stable wire/error-taxonomy adapters for ingress metrics and conformance
+// replay. The richer lifecycle result remains available to the state machine.
+constexpr ValidationError snapshot_commit_validation_error(SnapshotCommitResult result) noexcept
+{
+	switch (result) {
+	case SnapshotCommitResult::Committed:
+	case SnapshotCommitResult::CommittedAndPendingDeltaApplied:
+	case SnapshotCommitResult::AlreadyCommitted:
+		return ValidationError::None;
+	case SnapshotCommitResult::MissingManifest:
+		return ValidationError::MissingManifest;
+	case SnapshotCommitResult::AllocationFailed:
+		return ValidationError::ResourceLimit;
+	case SnapshotCommitResult::CommittedPendingDeltaRejected:
+	case SnapshotCommitResult::UnknownCandidate:
+	case SnapshotCommitResult::Expired:
+	case SnapshotCommitResult::ValidationFailed:
+	default:
+		return ValidationError::InvalidStateTransition;
+	}
+}
+
 enum class ClientResyncResult : std::uint8_t {
 	NotRequested = 0,
 	Requested = 1,
@@ -412,6 +434,33 @@ enum class ClientDeltaResult : std::uint8_t {
 	ResyncRateLimited = 13,
 	ResyncUnavailable = 14,
 };
+
+constexpr ValidationError client_delta_validation_error(ClientDeltaResult result) noexcept
+{
+	switch (result) {
+	case ClientDeltaResult::Applied:
+	case ClientDeltaResult::IgnoredOldSequence:
+	case ClientDeltaResult::IgnoredOldBaseline:
+	case ClientDeltaResult::QueuedForCandidate:
+	case ClientDeltaResult::ReplacedQueuedDelta:
+	case ClientDeltaResult::IgnoredOlderQueuedDelta:
+		return ValidationError::None;
+	case ClientDeltaResult::UnknownBaselineResyncRequested:
+	case ClientDeltaResult::UnknownBaselineRateLimited:
+	case ClientDeltaResult::UnknownBaselineResyncUnavailable:
+		return ValidationError::StaleBaseline;
+	case ClientDeltaResult::AllocationFailed:
+	case ClientDeltaResult::ResyncUnavailable:
+		return ValidationError::ResourceLimit;
+	case ClientDeltaResult::ResyncRateLimited:
+		return ValidationError::RateLimited;
+	case ClientDeltaResult::InvalidDelta:
+	case ClientDeltaResult::ValidationFailed:
+	case ClientDeltaResult::ResyncRequested:
+	default:
+		return ValidationError::InvalidStateTransition;
+	}
+}
 
 class ClientReplicationModel final {
   public:

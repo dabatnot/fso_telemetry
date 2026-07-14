@@ -1,0 +1,28 @@
+{
+  "cxxReplay": {
+    "api": [
+      "RecordEnvelopeIterator::next",
+      "validate_business_record"
+    ],
+    "mode": "record-envelope",
+    "status": "exact"
+  },
+  "expectedValidationError": 30,
+  "expectedValidationErrorName": "DUPLICATE_ITEM_KEY",
+  "inputFiles": [
+    "duplicate_comm_asset_id.bin"
+  ],
+  "invalidCategory": "record_duplicate_item_key",
+  "kind": "record",
+  "name": "duplicate_comm_asset_id",
+  "notes": "Two manifest entries expose the same canonical asset_id item key.",
+  "recordFlags": 0,
+  "recordType": 25,
+  "recordVersion": 1,
+  "requirementIds": [
+    "P0-REQ-205",
+    "P0-AC-019"
+  ],
+  "schema": "FSTL-1.0",
+  "valid": false
+}

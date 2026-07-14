@@ -1,0 +1,18 @@
+{
+  "context": {
+    "clockFilterValid": false
+  },
+  "expectedCanonicalJson": "messages/target_video_keyframe_request.json",
+  "expectedValidationError": 0,
+  "expectedValidationErrorName": "NONE",
+  "inputFiles": [
+    "target_video_keyframe_request.bin"
+  ],
+  "kind": "message-payload",
+  "messageFlags": 2,
+  "messageType": 17,
+  "name": "target_video_keyframe_request",
+  "notes": "Deterministic Phase 0 canonical fixture; bytes are authoritative.",
+  "schema": "FSTL-1.0",
+  "valid": true
+}

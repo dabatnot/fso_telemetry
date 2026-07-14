@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <title>Bomber ship</title>
+  <path d="M16 3 29 24l-13-4-13 4z"/>
+  <path d="M16 3v17M7 19h18"/>
+  <circle cx="11" cy="24" r="1.5"/><circle cx="21" cy="24" r="1.5"/>
+</svg>

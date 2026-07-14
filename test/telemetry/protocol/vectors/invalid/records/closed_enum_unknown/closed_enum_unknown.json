@@ -1,0 +1,28 @@
+{
+  "cxxReplay": {
+    "api": [
+      "RecordEnvelopeIterator::next",
+      "validate_business_record"
+    ],
+    "mode": "record-envelope",
+    "status": "exact"
+  },
+  "expectedValidationError": 35,
+  "expectedValidationErrorName": "UNKNOWN_ENUM",
+  "inputFiles": [
+    "closed_enum_unknown.bin"
+  ],
+  "invalidCategory": "closed_enum_unknown",
+  "kind": "record",
+  "name": "closed_enum_unknown",
+  "notes": "Cargo scan phase is an unknown value of a closed enum.",
+  "recordFlags": 0,
+  "recordType": 20,
+  "recordVersion": 1,
+  "requirementIds": [
+    "P0-REQ-205",
+    "P0-AC-019"
+  ],
+  "schema": "FSTL-1.0",
+  "valid": false
+}

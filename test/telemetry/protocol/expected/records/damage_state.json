@@ -1,0 +1,17 @@
+{
+  "fields": {
+    "dynamic_max_hull": 100.0,
+    "entity_id": "1",
+    "hull_strength": 50.0,
+    "presence": "0",
+    "producer_sample_time_us": "1000000",
+    "protection_flags": 0
+  },
+  "kind": "record",
+  "recordFlags": 0,
+  "recordLength": 34,
+  "recordName": "DAMAGE_STATE",
+  "recordType": 9,
+  "recordVersion": 1,
+  "schema": "FSTL-1.0"
+}

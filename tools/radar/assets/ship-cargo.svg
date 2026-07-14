@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <title>Cargo ship</title>
+  <path d="m16 3 11 6v14l-11 6-11-6V9z"/>
+  <path d="m5 9 11 6 11-6M16 15v14M10 12l11-6"/>
+</svg>

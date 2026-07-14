@@ -1,0 +1,16 @@
+{
+  "fields": {
+    "config_generation": 1,
+    "last_decodable_frame_id": 0,
+    "needed_before_producer_time_us": "0",
+    "reason": 3,
+    "request_id": 1,
+    "reserved": "00000000000000",
+    "stream_id": 1
+  },
+  "kind": "message-payload",
+  "messageFlags": 2,
+  "messageName": "TARGET_VIDEO_KEYFRAME_REQUEST",
+  "messageType": 17,
+  "schema": "FSTL-1.0"
+}

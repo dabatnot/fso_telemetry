@@ -1,0 +1,19 @@
+{
+  "context": {
+    "recordContainer": "full-snapshot"
+  },
+  "expectedCanonicalJson": "records/docking_state.json",
+  "expectedValidationError": 0,
+  "expectedValidationErrorName": "NONE",
+  "inputFiles": [
+    "docking_state.bin"
+  ],
+  "kind": "record",
+  "name": "docking_state",
+  "notes": "Deterministic Phase 0 canonical fixture; bytes are authoritative.",
+  "recordFlags": 0,
+  "recordType": 21,
+  "recordVersion": 1,
+  "schema": "FSTL-1.0",
+  "valid": true
+}

@@ -1,0 +1,23 @@
+{
+  "fields": {
+    "authority_mode": 0,
+    "event_coverage_exact": "0",
+    "event_coverage_state_derived": "0",
+    "negotiated_capabilities": "0",
+    "negotiated_capability_generation": 1,
+    "presence": "0",
+    "producer_id": "72623859790382856",
+    "producer_sample_time_us": "1000000",
+    "reserved": 0,
+    "session_phase": 2,
+    "state_domain_coverage": "1",
+    "visibility_mode": 0
+  },
+  "kind": "record",
+  "recordFlags": 0,
+  "recordLength": 64,
+  "recordName": "SESSION_STATE",
+  "recordType": 1,
+  "recordVersion": 1,
+  "schema": "FSTL-1.0"
+}

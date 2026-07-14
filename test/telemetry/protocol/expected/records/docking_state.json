@@ -1,0 +1,17 @@
+{
+  "fields": {
+    "entity_id": "1",
+    "group_leader_entity_id": "0",
+    "phase": 0,
+    "presence": "0",
+    "producer_sample_time_us": "1000000",
+    "relations": []
+  },
+  "kind": "record",
+  "recordFlags": 0,
+  "recordLength": 35,
+  "recordName": "DOCKING_STATE",
+  "recordType": 21,
+  "recordVersion": 1,
+  "schema": "FSTL-1.0"
+}

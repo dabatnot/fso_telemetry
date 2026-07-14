@@ -1,12 +1,18 @@
 {
   "expectedValidationError": 2,
+  "expectedValidationErrorName": "DATAGRAM_TOO_SHORT",
   "inputFiles": [
     "000.bin"
   ],
+  "invalidCategory": "truncated_header_62",
   "kind": "datagram-sequence",
   "messageType": 9,
   "name": "truncated_header_62",
   "notes": "Datagram truncated to 62 bytes.",
+  "requirementIds": [
+    "P0-REQ-205",
+    "P0-AC-019"
+  ],
   "schema": "FSTL-1.0",
   "valid": false
 }

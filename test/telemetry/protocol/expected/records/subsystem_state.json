@@ -1,0 +1,20 @@
+{
+  "fields": {
+    "canonical_index": 0,
+    "current_hits": 0.0,
+    "entity_id": "1",
+    "max_hits": 0.0,
+    "presence": "0",
+    "producer_sample_time_us": "1000000",
+    "subsystem_flags": 0,
+    "subsystem_id": 2,
+    "type": 1
+  },
+  "kind": "record",
+  "recordFlags": 0,
+  "recordLength": 43,
+  "recordName": "SUBSYSTEM_STATE",
+  "recordType": 11,
+  "recordVersion": 1,
+  "schema": "FSTL-1.0"
+}

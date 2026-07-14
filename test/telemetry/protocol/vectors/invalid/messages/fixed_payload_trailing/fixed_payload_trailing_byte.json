@@ -1,0 +1,26 @@
+{
+  "cxxReplay": {
+    "api": [
+      "decode_heartbeat_payload"
+    ],
+    "mode": "payload",
+    "status": "exact"
+  },
+  "expectedValidationError": 25,
+  "expectedValidationErrorName": "TRAILING_BYTES",
+  "inputFiles": [
+    "fixed_payload_trailing_byte.bin"
+  ],
+  "invalidCategory": "fixed_payload_trailing",
+  "kind": "message-payload",
+  "messageFlags": 0,
+  "messageType": 9,
+  "name": "fixed_payload_trailing_byte",
+  "notes": "A fixed-layout HEARTBEAT contains one trailing byte.",
+  "requirementIds": [
+    "P0-REQ-205",
+    "P0-AC-019"
+  ],
+  "schema": "FSTL-1.0",
+  "valid": false
+}

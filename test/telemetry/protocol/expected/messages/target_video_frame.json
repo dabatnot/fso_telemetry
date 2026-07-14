@@ -1,0 +1,18 @@
+{
+  "fields": {
+    "annex_b_access_unit": "0000000167640029ace80f01e69a80808081000000016822000000016533",
+    "config_generation": 1,
+    "encoded_frame_size": 30,
+    "presentation_time_us": "1000000",
+    "reserved": 0,
+    "stream_id": 1,
+    "target_entity_id": "2",
+    "video_flags": 1,
+    "video_frame_id": 1
+  },
+  "kind": "message-payload",
+  "messageFlags": 8,
+  "messageName": "TARGET_VIDEO_FRAME",
+  "messageType": 16,
+  "schema": "FSTL-1.0"
+}

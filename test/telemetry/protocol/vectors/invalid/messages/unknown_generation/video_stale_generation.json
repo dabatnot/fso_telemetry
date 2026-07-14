@@ -1,0 +1,39 @@
+{
+  "context": {
+    "activeVideoStreams": [
+      1
+    ],
+    "currentVideoGeneration": {
+      "1": 1
+    },
+    "knownEntityIds": [
+      2
+    ]
+  },
+  "cxxReplay": {
+    "api": [
+      "decode_target_video_frame_payload",
+      "TargetVideoClientLifecycle::accept_frame",
+      "video_lifecycle_validation_error"
+    ],
+    "mode": "semantic-context",
+    "status": "exact"
+  },
+  "expectedValidationError": 40,
+  "expectedValidationErrorName": "STALE_GENERATION",
+  "inputFiles": [
+    "video_stale_generation.bin"
+  ],
+  "invalidCategory": "unknown_generation",
+  "kind": "message-payload",
+  "messageFlags": 8,
+  "messageType": 16,
+  "name": "video_stale_generation",
+  "notes": "The frame config_generation does not match the active stream generation.",
+  "requirementIds": [
+    "P0-REQ-205",
+    "P0-AC-019"
+  ],
+  "schema": "FSTL-1.0",
+  "valid": false
+}

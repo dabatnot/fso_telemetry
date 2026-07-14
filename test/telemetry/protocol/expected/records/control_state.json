@@ -1,0 +1,22 @@
+{
+  "fields": {
+    "bank": 0.0,
+    "control_flags": 0,
+    "control_mode": 1,
+    "entity_id": "1",
+    "forward": 0.0,
+    "heading": 0.0,
+    "pitch": 0.0,
+    "presence": "0",
+    "producer_sample_time_us": "1000000",
+    "sideways": 0.0,
+    "vertical": 0.0
+  },
+  "kind": "record",
+  "recordFlags": 0,
+  "recordLength": 53,
+  "recordName": "CONTROL_STATE",
+  "recordType": 8,
+  "recordVersion": 1,
+  "schema": "FSTL-1.0"
+}

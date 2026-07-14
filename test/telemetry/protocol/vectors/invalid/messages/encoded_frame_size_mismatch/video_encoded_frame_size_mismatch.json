@@ -1,0 +1,26 @@
+{
+  "cxxReplay": {
+    "api": [
+      "decode_target_video_frame_payload"
+    ],
+    "mode": "payload",
+    "status": "exact"
+  },
+  "expectedValidationError": 24,
+  "expectedValidationErrorName": "TRUNCATED_PAYLOAD",
+  "inputFiles": [
+    "video_encoded_frame_size_mismatch.bin"
+  ],
+  "invalidCategory": "encoded_frame_size_mismatch",
+  "kind": "message-payload",
+  "messageFlags": 8,
+  "messageType": 16,
+  "name": "video_encoded_frame_size_mismatch",
+  "notes": "encoded_frame_size declares one byte more than the remaining access unit.",
+  "requirementIds": [
+    "P0-REQ-205",
+    "P0-AC-019"
+  ],
+  "schema": "FSTL-1.0",
+  "valid": false
+}

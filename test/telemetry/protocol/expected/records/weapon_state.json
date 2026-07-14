@@ -1,0 +1,24 @@
+{
+  "fields": {
+    "current_primary_bank_id": 0,
+    "current_secondary_bank_id": 0,
+    "current_tertiary_bank_id": 0,
+    "entity_id": "1",
+    "presence": "0",
+    "primary_bank_count": 0,
+    "primary_banks": [],
+    "producer_sample_time_us": "1000000",
+    "reserved": 0,
+    "secondary_bank_count": 0,
+    "secondary_banks": [],
+    "tertiary_bank_count": 0,
+    "weapon_flags": 0
+  },
+  "kind": "record",
+  "recordFlags": 0,
+  "recordLength": 52,
+  "recordName": "WEAPON_STATE",
+  "recordType": 14,
+  "recordVersion": 1,
+  "schema": "FSTL-1.0"
+}

@@ -1,0 +1,32 @@
+{
+  "context": {
+    "allowedSenderRoles": [
+      "producer"
+    ],
+    "senderRole": "client"
+  },
+  "cxxReplay": {
+    "api": [
+      "validate_received_datagram_context"
+    ],
+    "mode": "stateful-context",
+    "status": "exact"
+  },
+  "expectedValidationError": 12,
+  "expectedValidationErrorName": "WRONG_DIRECTION",
+  "inputFiles": [
+    "client_simulated_producer_command.bin"
+  ],
+  "invalidCategory": "client_simulated_command",
+  "kind": "message-payload",
+  "messageFlags": 2,
+  "messageType": 4,
+  "name": "client_simulated_producer_command",
+  "notes": "A client sends the producer-only SESSION_BEGIN shape as a command.",
+  "requirementIds": [
+    "P0-REQ-205",
+    "P0-AC-019"
+  ],
+  "schema": "FSTL-1.0",
+  "valid": false
+}

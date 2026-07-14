@@ -1,12 +1,18 @@
 {
   "expectedValidationError": 10,
+  "expectedValidationErrorName": "BAD_DATAGRAM_CRC",
   "inputFiles": [
     "000.bin"
   ],
+  "invalidCategory": "bad_datagram_crc",
   "kind": "datagram-sequence",
   "messageType": 7,
   "name": "bad_datagram_crc",
   "notes": "Payload changed without resealing datagram CRC.",
+  "requirementIds": [
+    "P0-REQ-205",
+    "P0-AC-019"
+  ],
   "schema": "FSTL-1.0",
   "valid": false
 }

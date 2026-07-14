@@ -1,0 +1,43 @@
+{
+  "context": {
+    "activeVideoStreams": [
+      1
+    ],
+    "currentVideoGeneration": {
+      "1": 2
+    },
+    "currentVideoTarget": {
+      "1": "3"
+    },
+    "knownEntityIds": [
+      2,
+      3
+    ]
+  },
+  "cxxReplay": {
+    "api": [
+      "decode_target_video_frame_payload",
+      "TargetVideoClientLifecycle::accept_frame",
+      "video_lifecycle_validation_error"
+    ],
+    "mode": "semantic-context",
+    "status": "exact"
+  },
+  "expectedValidationError": 40,
+  "expectedValidationErrorName": "STALE_GENERATION",
+  "inputFiles": [
+    "video_old_target_after_change.bin"
+  ],
+  "invalidCategory": "stale_video_target",
+  "kind": "message-payload",
+  "messageFlags": 8,
+  "messageType": 16,
+  "name": "video_old_target_after_change",
+  "notes": "A late frame retains the generation and entity selected before the stream target change.",
+  "requirementIds": [
+    "P0-REQ-205",
+    "P0-AC-019"
+  ],
+  "schema": "FSTL-1.0",
+  "valid": false
+}

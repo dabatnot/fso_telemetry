@@ -1,0 +1,1252 @@
+{
+  "generatedBy": "tools/generate_protocol_vectors.py",
+  "invalidCatalogue": [
+    {
+      "clause": "every possible truncation length of the fixed datagram header",
+      "evidence": [
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/datagrams/transport/truncated_header_00/truncated_header_00.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/datagrams/transport/truncated_header_01/truncated_header_01.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/datagrams/transport/truncated_header_02/truncated_header_02.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/datagrams/transport/truncated_header_03/truncated_header_03.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/datagrams/transport/truncated_header_04/truncated_header_04.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/datagrams/transport/truncated_header_05/truncated_header_05.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/datagrams/transport/truncated_header_06/truncated_header_06.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/datagrams/transport/truncated_header_07/truncated_header_07.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/datagrams/transport/truncated_header_08/truncated_header_08.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/datagrams/transport/truncated_header_09/truncated_header_09.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/datagrams/transport/truncated_header_10/truncated_header_10.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/datagrams/transport/truncated_header_11/truncated_header_11.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/datagrams/transport/truncated_header_12/truncated_header_12.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/datagrams/transport/truncated_header_13/truncated_header_13.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/datagrams/transport/truncated_header_14/truncated_header_14.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/datagrams/transport/truncated_header_15/truncated_header_15.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/datagrams/transport/truncated_header_16/truncated_header_16.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/datagrams/transport/truncated_header_17/truncated_header_17.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/datagrams/transport/truncated_header_18/truncated_header_18.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/datagrams/transport/truncated_header_19/truncated_header_19.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/datagrams/transport/truncated_header_20/truncated_header_20.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/datagrams/transport/truncated_header_21/truncated_header_21.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/datagrams/transport/truncated_header_22/truncated_header_22.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/datagrams/transport/truncated_header_23/truncated_header_23.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/datagrams/transport/truncated_header_24/truncated_header_24.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/datagrams/transport/truncated_header_25/truncated_header_25.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/datagrams/transport/truncated_header_26/truncated_header_26.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/datagrams/transport/truncated_header_27/truncated_header_27.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/datagrams/transport/truncated_header_28/truncated_header_28.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/datagrams/transport/truncated_header_29/truncated_header_29.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/datagrams/transport/truncated_header_30/truncated_header_30.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/datagrams/transport/truncated_header_31/truncated_header_31.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/datagrams/transport/truncated_header_32/truncated_header_32.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/datagrams/transport/truncated_header_33/truncated_header_33.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/datagrams/transport/truncated_header_34/truncated_header_34.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/datagrams/transport/truncated_header_35/truncated_header_35.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/datagrams/transport/truncated_header_36/truncated_header_36.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/datagrams/transport/truncated_header_37/truncated_header_37.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/datagrams/transport/truncated_header_38/truncated_header_38.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/datagrams/transport/truncated_header_39/truncated_header_39.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/datagrams/transport/truncated_header_40/truncated_header_40.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/datagrams/transport/truncated_header_41/truncated_header_41.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/datagrams/transport/truncated_header_42/truncated_header_42.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/datagrams/transport/truncated_header_43/truncated_header_43.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/datagrams/transport/truncated_header_44/truncated_header_44.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/datagrams/transport/truncated_header_45/truncated_header_45.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/datagrams/transport/truncated_header_46/truncated_header_46.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/datagrams/transport/truncated_header_47/truncated_header_47.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/datagrams/transport/truncated_header_48/truncated_header_48.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/datagrams/transport/truncated_header_49/truncated_header_49.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/datagrams/transport/truncated_header_50/truncated_header_50.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/datagrams/transport/truncated_header_51/truncated_header_51.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/datagrams/transport/truncated_header_52/truncated_header_52.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/datagrams/transport/truncated_header_53/truncated_header_53.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/datagrams/transport/truncated_header_54/truncated_header_54.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/datagrams/transport/truncated_header_55/truncated_header_55.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/datagrams/transport/truncated_header_56/truncated_header_56.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/datagrams/transport/truncated_header_57/truncated_header_57.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/datagrams/transport/truncated_header_58/truncated_header_58.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/datagrams/transport/truncated_header_59/truncated_header_59.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/datagrams/transport/truncated_header_60/truncated_header_60.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/datagrams/transport/truncated_header_61/truncated_header_61.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/datagrams/transport/truncated_header_62/truncated_header_62.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/datagrams/transport/truncated_header_63/truncated_header_63.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/datagrams/transport/truncated_header_64/truncated_header_64.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/datagrams/transport/truncated_header_65/truncated_header_65.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/datagrams/transport/truncated_header_66/truncated_header_66.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/datagrams/transport/truncated_header_67/truncated_header_67.json"
+        }
+      ],
+      "id": "P0-CAT-INVALID-01"
+    },
+    {
+      "clause": "bad magic, major/minor version, header size and reserved header flags",
+      "evidence": [
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/datagrams/transport/bad_magic/bad_magic.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/datagrams/transport/unsupported_major/unsupported_major.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/datagrams/transport/unsupported_minor/unsupported_minor.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/datagrams/transport/bad_header_size/bad_header_size.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/datagrams/transport/reserved_header_flag/reserved_header_flag.json"
+        }
+      ],
+      "id": "P0-CAT-INVALID-02"
+    },
+    {
+      "clause": "actual datagram length differs from declared length",
+      "evidence": [
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/datagrams/transport/trailing_datagram_byte/trailing_datagram_byte.json"
+        }
+      ],
+      "id": "P0-CAT-INVALID-03"
+    },
+    {
+      "clause": "bad datagram CRC and bad logical message CRC",
+      "evidence": [
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/datagrams/transport/bad_datagram_crc/bad_datagram_crc.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/datagrams/transport/bad_message_crc/bad_message_crc.json"
+        }
+      ],
+      "id": "P0-CAT-INVALID-04"
+    },
+    {
+      "clause": "zero fragment count, out-of-range index, non-canonical offset and overflowing slice",
+      "evidence": [
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/datagrams/transport/zero_fragment_count/zero_fragment_count.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/datagrams/transport/fragment_index_out_of_range/fragment_index_out_of_range.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/datagrams/transport/fragment_offset_noncanonical/fragment_offset_noncanonical.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/datagrams/transport/fragment_slice_noncanonical/fragment_slice_noncanonical.json"
+        }
+      ],
+      "id": "P0-CAT-INVALID-05"
+    },
+    {
+      "clause": "inconsistent, overlapping and contradictory duplicate fragments",
+      "evidence": [
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/datagrams/transport/inconsistent_fragment_metadata/inconsistent_fragment_metadata.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/datagrams/transport/overlapping_fragment/overlapping_fragment.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/datagrams/transport/contradictory_duplicate_fragment/contradictory_duplicate_fragment.json"
+        }
+      ],
+      "id": "P0-CAT-INVALID-06"
+    },
+    {
+      "clause": "message and list beyond normative maxima",
+      "evidence": [
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/datagrams/transport/message_too_large/message_too_large.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/records/quota_before_allocation/comm_asset_count_over_quota.json"
+        }
+      ],
+      "id": "P0-CAT-INVALID-07"
+    },
+    {
+      "clause": "resource quotas rejected before allocation",
+      "evidence": [
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/datagrams/transport/reassembly_quota_before_allocation/reassembly_quota_before_allocation.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/records/quota_before_allocation/comm_asset_count_over_quota.json"
+        }
+      ],
+      "id": "P0-CAT-INVALID-08"
+    },
+    {
+      "clause": "fixed payload truncation and trailing bytes",
+      "evidence": [
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/messages/fixed_payload_truncated/fixed_payload_truncated.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/messages/fixed_payload_trailing/fixed_payload_trailing_byte.json"
+        }
+      ],
+      "id": "P0-CAT-INVALID-09"
+    },
+    {
+      "clause": "record truncation, excessive length, duplicate singleton and item key",
+      "evidence": [
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/records/record_truncated/record_truncated_header.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/records/record_length_excessive/record_declared_length_exceeds_input.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/records/record_duplicate_item_key/duplicate_comm_asset_id.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/messages/record_duplicate_singleton/duplicate_singleton_record.json"
+        }
+      ],
+      "id": "P0-CAT-INVALID-10"
+    },
+    {
+      "clause": "invalid UTF-8 and oversized string",
+      "evidence": [
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/records/invalid_utf8/invalid_utf8_string.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/records/string_too_long/string_over_field_limit.json"
+        }
+      ],
+      "id": "P0-CAT-INVALID-11"
+    },
+    {
+      "clause": "NaN, infinities, bool8 and closed enum",
+      "evidence": [
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/records/non_finite_float/nan_float.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/records/non_finite_float/positive_infinity_float.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/records/non_finite_float/negative_infinity_float.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/records/bool_outside_0_1/bool_outside_closed_domain.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/records/closed_enum_unknown/closed_enum_unknown.json"
+        }
+      ],
+      "id": "P0-CAT-INVALID-12"
+    },
+    {
+      "clause": "non-finite, zero/non-normalizable and non-canonical quaternion",
+      "evidence": [
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/records/quaternion_non_finite/quaternion_non_finite.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/records/quaternion_non_normalizable/quaternion_zero_non_normalizable.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/records/quaternion_non_canonical/quaternion_non_canonical_sign.json"
+        }
+      ],
+      "id": "P0-CAT-INVALID-13"
+    },
+    {
+      "clause": "unknown baseline, generation, stream, target and manifest",
+      "evidence": [
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/messages/unknown_baseline/delta_unknown_baseline.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/messages/unknown_manifest/snapshot_missing_manifest.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/messages/unknown_generation/video_stale_generation.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/messages/unknown_stream/video_unknown_stream.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/messages/unknown_target/video_unknown_target.json"
+        }
+      ],
+      "id": "P0-CAT-INVALID-14"
+    },
+    {
+      "clause": "forged, late, wrong-endpoint, wrong-CRC or bitmap-incoherent ACK/NACK",
+      "evidence": [
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/messages/ack_forged/ack_forged_target.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/messages/ack_late/ack_late_after_retention.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/messages/ack_wrong_endpoint/ack_wrong_endpoint.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/messages/ack_wrong_crc/ack_wrong_target_crc.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/messages/nack_bitmap_incoherent/nack_bitmap_tail_bits_set.json"
+        }
+      ],
+      "id": "P0-CAT-INVALID-15"
+    },
+    {
+      "clause": "inconsistent communication bundle, hash and duration",
+      "evidence": [
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/records/comm_bundle_inconsistent/comm_bundle_version_inconsistent.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/records/comm_bundle_hash_inconsistent/comm_bundle_hash_mismatch.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/records/comm_duration_inconsistent/comm_duration_mismatch.json"
+        }
+      ],
+      "id": "P0-CAT-INVALID-16"
+    },
+    {
+      "clause": "video codec/profile/resolution/bitrate not negotiated",
+      "evidence": [
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/messages/video_codec_not_negotiated/video_codec_not_negotiated.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/messages/video_profile_not_negotiated/video_profile_not_negotiated.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/messages/video_resolution_not_negotiated/video_resolution_not_negotiated.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/messages/video_bitrate_not_negotiated/video_bitrate_not_negotiated.json"
+        }
+      ],
+      "id": "P0-CAT-INVALID-17"
+    },
+    {
+      "clause": "encoded_frame_size mismatch",
+      "evidence": [
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/messages/encoded_frame_size_mismatch/video_encoded_frame_size_mismatch.json"
+        }
+      ],
+      "id": "P0-CAT-INVALID-18"
+    },
+    {
+      "clause": "old frame after target change",
+      "evidence": [
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/messages/stale_video_target/video_old_target_after_change.json"
+        }
+      ],
+      "id": "P0-CAT-INVALID-19"
+    },
+    {
+      "clause": "client simulated or undefined command",
+      "evidence": [
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/messages/client_undefined_command/unknown_message_type.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/invalid/messages/client_simulated_command/client_simulated_producer_command.json"
+        }
+      ],
+      "id": "P0-CAT-INVALID-20"
+    }
+  ],
+  "invalidCategoryFixtureMap": {
+    "ack_forged": [
+      "vectors/invalid/messages/ack_forged/ack_forged_target.json"
+    ],
+    "ack_late": [
+      "vectors/invalid/messages/ack_late/ack_late_after_retention.json"
+    ],
+    "ack_wrong_crc": [
+      "vectors/invalid/messages/ack_wrong_crc/ack_wrong_target_crc.json"
+    ],
+    "ack_wrong_endpoint": [
+      "vectors/invalid/messages/ack_wrong_endpoint/ack_wrong_endpoint.json"
+    ],
+    "bool_outside_0_1": [
+      "vectors/invalid/records/bool_outside_0_1/bool_outside_closed_domain.json"
+    ],
+    "client_simulated_command": [
+      "vectors/invalid/messages/client_simulated_command/client_simulated_producer_command.json"
+    ],
+    "client_undefined_command": [
+      "vectors/invalid/messages/client_undefined_command/unknown_message_type.json"
+    ],
+    "closed_enum_unknown": [
+      "vectors/invalid/records/closed_enum_unknown/closed_enum_unknown.json"
+    ],
+    "comm_bundle_hash_inconsistent": [
+      "vectors/invalid/records/comm_bundle_hash_inconsistent/comm_bundle_hash_mismatch.json"
+    ],
+    "comm_bundle_inconsistent": [
+      "vectors/invalid/records/comm_bundle_inconsistent/comm_bundle_version_inconsistent.json"
+    ],
+    "comm_duration_inconsistent": [
+      "vectors/invalid/records/comm_duration_inconsistent/comm_duration_mismatch.json"
+    ],
+    "encoded_frame_size_mismatch": [
+      "vectors/invalid/messages/encoded_frame_size_mismatch/video_encoded_frame_size_mismatch.json"
+    ],
+    "fixed_payload_trailing": [
+      "vectors/invalid/messages/fixed_payload_trailing/fixed_payload_trailing_byte.json"
+    ],
+    "fixed_payload_truncated": [
+      "vectors/invalid/messages/fixed_payload_truncated/fixed_payload_truncated.json"
+    ],
+    "invalid_utf8": [
+      "vectors/invalid/records/invalid_utf8/invalid_utf8_string.json"
+    ],
+    "nack_bitmap_incoherent": [
+      "vectors/invalid/messages/nack_bitmap_incoherent/nack_bitmap_tail_bits_set.json"
+    ],
+    "non_finite_float": [
+      "vectors/invalid/records/non_finite_float/nan_float.json",
+      "vectors/invalid/records/non_finite_float/positive_infinity_float.json",
+      "vectors/invalid/records/non_finite_float/negative_infinity_float.json"
+    ],
+    "quaternion_non_canonical": [
+      "vectors/invalid/records/quaternion_non_canonical/quaternion_non_canonical_sign.json"
+    ],
+    "quaternion_non_finite": [
+      "vectors/invalid/records/quaternion_non_finite/quaternion_non_finite.json"
+    ],
+    "quaternion_non_normalizable": [
+      "vectors/invalid/records/quaternion_non_normalizable/quaternion_zero_non_normalizable.json"
+    ],
+    "quota_before_allocation": [
+      "vectors/invalid/records/quota_before_allocation/comm_asset_count_over_quota.json"
+    ],
+    "record_count_truncated_region": [
+      "vectors/invalid/messages/record_count_truncated_region/event_batch_record_count_exceeds_region.json"
+    ],
+    "record_duplicate_item_key": [
+      "vectors/invalid/records/record_duplicate_item_key/duplicate_comm_asset_id.json"
+    ],
+    "record_duplicate_singleton": [
+      "vectors/invalid/messages/record_duplicate_singleton/duplicate_singleton_record.json"
+    ],
+    "record_invalid_type": [
+      "vectors/invalid/records/record_invalid_type/invalid_record_type_zero.json"
+    ],
+    "record_length_excessive": [
+      "vectors/invalid/records/record_length_excessive/record_declared_length_exceeds_input.json"
+    ],
+    "record_reserved_flag": [
+      "vectors/invalid/records/record_reserved_flag/reserved_record_flag.json"
+    ],
+    "record_truncated": [
+      "vectors/invalid/records/record_truncated/record_truncated_header.json"
+    ],
+    "record_unsupported_version": [
+      "vectors/invalid/records/record_unsupported_version/unsupported_record_version.json"
+    ],
+    "stale_video_target": [
+      "vectors/invalid/messages/stale_video_target/video_old_target_after_change.json"
+    ],
+    "string_too_long": [
+      "vectors/invalid/records/string_too_long/string_over_field_limit.json"
+    ],
+    "unknown_baseline": [
+      "vectors/invalid/messages/unknown_baseline/delta_unknown_baseline.json"
+    ],
+    "unknown_generation": [
+      "vectors/invalid/messages/unknown_generation/video_stale_generation.json"
+    ],
+    "unknown_manifest": [
+      "vectors/invalid/messages/unknown_manifest/snapshot_missing_manifest.json"
+    ],
+    "unknown_stream": [
+      "vectors/invalid/messages/unknown_stream/video_unknown_stream.json"
+    ],
+    "unknown_target": [
+      "vectors/invalid/messages/unknown_target/video_unknown_target.json"
+    ],
+    "video_bitrate_not_negotiated": [
+      "vectors/invalid/messages/video_bitrate_not_negotiated/video_bitrate_not_negotiated.json"
+    ],
+    "video_codec_not_negotiated": [
+      "vectors/invalid/messages/video_codec_not_negotiated/video_codec_not_negotiated.json"
+    ],
+    "video_profile_not_negotiated": [
+      "vectors/invalid/messages/video_profile_not_negotiated/video_profile_not_negotiated.json"
+    ],
+    "video_resolution_not_negotiated": [
+      "vectors/invalid/messages/video_resolution_not_negotiated/video_resolution_not_negotiated.json"
+    ]
+  },
+  "schema": "FSTL-1.0-catalogue-coverage",
+  "sourceSections": [
+    "documentation/analysis/specs/0-Contrat-de-protocole/06-validation-securite-et-conformite.md#104-catalogue-minimal-valide",
+    "documentation/analysis/specs/0-Contrat-de-protocole/06-validation-securite-et-conformite.md#105-catalogue-minimal-invalide"
+  ],
+  "validCatalogue": [
+    {
+      "clause": "each scalar, string, bytes and list",
+      "evidence": [
+        {
+          "kind": "cpp-test",
+          "name": "IntegerExtremaUseExactWidthsAndRejectShortBuffers",
+          "path": "test/src/telemetry/protocol/test_packet_io.cpp",
+          "suite": "TelemetryProtocolPacketIo"
+        },
+        {
+          "kind": "cpp-test",
+          "name": "ByteStringsRoundTripAndHonorExactCapacity",
+          "path": "test/src/telemetry/protocol/test_packet_io.cpp",
+          "suite": "TelemetryProtocolPacketIo"
+        },
+        {
+          "kind": "cpp-test",
+          "name": "Utf8RoundTripUsesByteLength",
+          "path": "test/src/telemetry/protocol/test_packet_io.cpp",
+          "suite": "TelemetryProtocolPacketIo"
+        },
+        {
+          "kind": "cpp-test",
+          "name": "ManifestGoldenBytesRoundTripAndAliasedEncoding",
+          "path": "test/src/telemetry/protocol/test_telemetry_state_messages.cpp",
+          "suite": "TelemetryProtocolStateMessages"
+        }
+      ],
+      "id": "P0-CAT-VALID-01"
+    },
+    {
+      "clause": "empty logical payload, valid unfragmented and valid multi-fragment messages",
+      "evidence": [
+        {
+          "kind": "fixture",
+          "path": "vectors/valid/datagrams/transport/transport_0_bytes/transport_0_bytes.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/valid/datagrams/transport/transport_1_bytes/transport_1_bytes.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/valid/datagrams/transport/transport_1133_bytes/transport_1133_bytes.json"
+        },
+        {
+          "kind": "cpp-test",
+          "name": "CanonicalSlicesCoverEmptyExactAndFinalRemainderBoundaries",
+          "path": "test/src/telemetry/protocol/test_telemetry_fragmentation.cpp",
+          "suite": "TelemetryProtocolFragmenter"
+        }
+      ],
+      "id": "P0-CAT-VALID-02"
+    },
+    {
+      "clause": "all 20 v1 MessageType payloads",
+      "evidence": [
+        {
+          "kind": "fixture",
+          "path": "vectors/valid/messages/discovery/discovery.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/valid/messages/hello/hello.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/valid/messages/welcome/welcome.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/valid/messages/session_begin/session_begin.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/valid/messages/manifest/manifest.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/valid/messages/full_snapshot/full_snapshot.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/valid/messages/delta/delta.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/valid/messages/event_batch/event_batch.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/valid/messages/heartbeat/heartbeat.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/valid/messages/ack/ack.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/valid/messages/nack/nack.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/valid/messages/resync_request/resync_request.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/valid/messages/session_end/session_end.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/valid/messages/target_video_subscribe/target_video_subscribe.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/valid/messages/target_video_config/target_video_config.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/valid/messages/target_video_frame/target_video_frame.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/valid/messages/target_video_keyframe_request/target_video_keyframe_request.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/valid/messages/target_video_stop/target_video_stop.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/valid/messages/target_video_stats/target_video_stats.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/valid/messages/capability_update/capability_update.json"
+        }
+      ],
+      "id": "P0-CAT-VALID-03"
+    },
+    {
+      "clause": "all 28 v1 RecordType envelopes",
+      "evidence": [
+        {
+          "kind": "fixture",
+          "path": "vectors/valid/records/session_state/session_state.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/valid/records/mission_state/mission_state.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/valid/records/class_manifest/class_manifest.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/valid/records/weapon_manifest/weapon_manifest.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/valid/records/entity_lifecycle/entity_lifecycle.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/valid/records/ship_identity/ship_identity.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/valid/records/flight_state/flight_state.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/valid/records/control_state/control_state.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/valid/records/damage_state/damage_state.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/valid/records/shield_state/shield_state.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/valid/records/subsystem_state/subsystem_state.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/valid/records/energy_state/energy_state.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/valid/records/propulsion_state/propulsion_state.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/valid/records/weapon_state/weapon_state.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/valid/records/lock_state/lock_state.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/valid/records/target_state/target_state.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/valid/records/radar_state/radar_state.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/valid/records/radar_contacts/radar_contacts.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/valid/records/threat_state/threat_state.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/valid/records/cargo_scan_state/cargo_scan_state.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/valid/records/docking_state/docking_state.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/valid/records/support_state/support_state.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/valid/records/navigation_state/navigation_state.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/valid/records/effect_state/effect_state.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/valid/records/comm_asset_manifest/comm_asset_manifest.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/valid/records/comm_view_state/comm_view_state.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/valid/records/comm_view_event/comm_view_event.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/valid/records/events/events.json"
+        }
+      ],
+      "id": "P0-CAT-VALID-04"
+    },
+    {
+      "clause": "every enum and every flag/capability bit",
+      "evidence": [
+        {
+          "kind": "cpp-test",
+          "name": "FreezesMessageFlagsAndPerClassLimits",
+          "path": "test/src/telemetry/protocol/test_protocol_constants.cpp",
+          "suite": "TelemetryProtocolConstants"
+        },
+        {
+          "kind": "cpp-test",
+          "name": "FreezesCapabilitiesAndControlRegistries",
+          "path": "test/src/telemetry/protocol/test_protocol_constants.cpp",
+          "suite": "TelemetryProtocolConstants"
+        },
+        {
+          "kind": "cpp-test",
+          "name": "FreezesValidationErrorRegistry",
+          "path": "test/src/telemetry/protocol/test_protocol_constants.cpp",
+          "suite": "TelemetryProtocolConstants"
+        }
+      ],
+      "id": "P0-CAT-VALID-05"
+    },
+    {
+      "clause": "HELLO accepted/refused, WELCOME and complete heartbeat exchange",
+      "evidence": [
+        {
+          "kind": "fixture",
+          "path": "vectors/valid/messages/hello/hello.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/valid/messages/welcome/welcome.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/valid/messages/heartbeat/heartbeat.json"
+        },
+        {
+          "kind": "cpp-test",
+          "name": "WelcomeAcceptedAndRejectedFormsRoundTripAndRejectContradictions",
+          "path": "test/src/telemetry/protocol/test_telemetry_control_messages.cpp",
+          "suite": "TelemetryProtocolControlMessages"
+        },
+        {
+          "kind": "cpp-test",
+          "name": "HeartbeatEnforcesKindReservedBytesTimestampsAndExactSize",
+          "path": "test/src/telemetry/protocol/test_telemetry_control_messages.cpp",
+          "suite": "TelemetryProtocolControlMessages"
+        }
+      ],
+      "id": "P0-CAT-VALID-06"
+    },
+    {
+      "clause": "ACK VALIDATED, ACK APPLIED and NACK bitmap",
+      "evidence": [
+        {
+          "kind": "fixture",
+          "path": "vectors/valid/messages/ack/ack.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/valid/messages/nack/nack.json"
+        },
+        {
+          "kind": "cpp-test",
+          "name": "AckGoldenBytesRoundTripAndExactLength",
+          "path": "test/src/telemetry/protocol/test_telemetry_reliability_messages.cpp",
+          "suite": "TelemetryProtocolReliabilityMessages"
+        },
+        {
+          "kind": "cpp-test",
+          "name": "MissingBitmapBoundariesTailBitsAndMaxAreExact",
+          "path": "test/src/telemetry/protocol/test_telemetry_reliability_messages.cpp",
+          "suite": "TelemetryProtocolReliabilityMessages"
+        }
+      ],
+      "id": "P0-CAT-VALID-07"
+    },
+    {
+      "clause": "manifest, initial snapshot, candidate keyframe and cumulative delta",
+      "evidence": [
+        {
+          "kind": "fixture",
+          "path": "vectors/valid/messages/manifest/manifest.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/valid/messages/full_snapshot/full_snapshot.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/valid/messages/delta/delta.json"
+        },
+        {
+          "kind": "cpp-test",
+          "name": "ProducerPromotesOnlyAfterEveryExactAppliedAck",
+          "path": "test/src/telemetry/protocol/test_telemetry_replication.cpp",
+          "suite": "TelemetryProtocolReplication"
+        }
+      ],
+      "id": "P0-CAT-VALID-08"
+    },
+    {
+      "clause": "lost intermediate delta followed by a newer cumulative delta",
+      "evidence": [
+        {
+          "kind": "cpp-test",
+          "name": "LatestCumulativeDeltaConvergesAfterEveryIntermediateLoss",
+          "path": "test/src/telemetry/protocol/test_telemetry_replication.cpp",
+          "suite": "TelemetryProtocolReplication"
+        },
+        {
+          "kind": "cpp-test",
+          "name": "ReorderedSnapshotLostAckAndLostDeltaStillConverge",
+          "path": "test/src/telemetry/protocol/test_telemetry_replication_harness.cpp",
+          "suite": "TelemetryProtocolReplicationHarness"
+        }
+      ],
+      "id": "P0-CAT-VALID-09"
+    },
+    {
+      "clause": "baseline change with mutation during ACK round trip",
+      "evidence": [
+        {
+          "kind": "cpp-test",
+          "name": "ProducerKeepsBothDirtySetsAndPreservesPostCaptureMutations",
+          "path": "test/src/telemetry/protocol/test_telemetry_replication.cpp",
+          "suite": "TelemetryProtocolReplication"
+        }
+      ],
+      "id": "P0-CAT-VALID-10"
+    },
+    {
+      "clause": "communication manifest, state and START/STOP events",
+      "evidence": [
+        {
+          "kind": "fixture",
+          "path": "vectors/valid/records/comm_asset_manifest/comm_asset_manifest.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/valid/records/comm_view_state/comm_view_state.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/valid/records/comm_view_event/comm_view_event.json"
+        },
+        {
+          "kind": "cpp-test",
+          "name": "CommStateAndEventsEnforceCanonicalActiveAndStopForms",
+          "path": "test/src/telemetry/protocol/test_telemetry_specialized_views.cpp",
+          "suite": "TelemetryProtocolSpecializedViews"
+        }
+      ],
+      "id": "P0-CAT-VALID-11"
+    },
+    {
+      "clause": "all TARGET_VIDEO messages including fragmented IDR",
+      "evidence": [
+        {
+          "kind": "fixture",
+          "path": "vectors/valid/messages/target_video_subscribe/target_video_subscribe.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/valid/messages/target_video_config/target_video_config.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/valid/messages/target_video_frame/target_video_frame.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/valid/messages/target_video_keyframe_request/target_video_keyframe_request.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/valid/messages/target_video_stop/target_video_stop.json"
+        },
+        {
+          "kind": "fixture",
+          "path": "vectors/valid/messages/target_video_stats/target_video_stats.json"
+        },
+        {
+          "kind": "cpp-test",
+          "name": "KeyframeAndVideoIdrFlagsAreTypeSpecificAndMutuallyExclusive",
+          "path": "test/src/telemetry/protocol/test_telemetry_datagram.cpp",
+          "suite": "TelemetryProtocolDatagram"
+        },
+        {
+          "kind": "cpp-test",
+          "name": "ProducerRequiresWelcomeConfigAckAndFirstIdr",
+          "path": "test/src/telemetry/protocol/test_telemetry_specialized_lifecycle.cpp",
+          "suite": "TelemetryProtocolSpecializedLifecycle"
+        }
+      ],
+      "id": "P0-CAT-VALID-12"
+    },
+    {
+      "clause": "serial arithmetic near counter wrap",
+      "evidence": [
+        {
+          "kind": "cpp-test",
+          "name": "SerialU32OrderingHandlesWrapAndExactHalfRange",
+          "path": "test/src/telemetry/protocol/test_telemetry_counters.cpp",
+          "suite": "TelemetryProtocolCounters"
+        },
+        {
+          "kind": "cpp-test",
+          "name": "ProbeIdsSkipZeroAtWrapAndSessionResetPurgesOldSlots",
+          "path": "test/src/telemetry/protocol/test_telemetry_counters.cpp",
+          "suite": "TelemetryProtocolCounters"
+        }
+      ],
+      "id": "P0-CAT-VALID-13"
+    },
+    {
+      "clause": "UTF-8, quaternion and business min/max boundaries",
+      "evidence": [
+        {
+          "kind": "cpp-test",
+          "name": "Utf8RoundTripUsesByteLength",
+          "path": "test/src/telemetry/protocol/test_packet_io.cpp",
+          "suite": "TelemetryProtocolPacketIo"
+        },
+        {
+          "kind": "cpp-test",
+          "name": "FlightStateEnforcesCanonicalQuaternionFiniteRangesAndFlags",
+          "path": "test/src/telemetry/protocol/test_telemetry_business_records_1_10.cpp",
+          "suite": "TelemetryProtocolBusinessRecords1To10"
+        },
+        {
+          "kind": "cpp-test",
+          "name": "AvcLimitsCoverMaxFsMaxMbpsAndMaxBrBoundaries",
+          "path": "test/src/telemetry/protocol/test_telemetry_specialized_views.cpp",
+          "suite": "TelemetryProtocolSpecializedViews"
+        }
+      ],
+      "id": "P0-CAT-VALID-14"
+    }
+  ]
+}

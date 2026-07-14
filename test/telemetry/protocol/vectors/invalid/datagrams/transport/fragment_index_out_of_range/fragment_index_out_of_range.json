@@ -1,12 +1,18 @@
 {
   "expectedValidationError": 17,
+  "expectedValidationErrorName": "BAD_FRAGMENT_INDEX",
   "inputFiles": [
     "000.bin"
   ],
+  "invalidCategory": "fragment_index_out_of_range",
   "kind": "datagram-sequence",
   "messageType": 7,
   "name": "fragment_index_out_of_range",
   "notes": "Transport mutation: fragment index out of range.",
+  "requirementIds": [
+    "P0-REQ-205",
+    "P0-AC-019"
+  ],
   "schema": "FSTL-1.0",
   "valid": false
 }

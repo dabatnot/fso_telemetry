@@ -1,0 +1,28 @@
+{
+  "cxxReplay": {
+    "api": [
+      "RecordEnvelopeIterator::next",
+      "validate_business_record"
+    ],
+    "mode": "record-envelope",
+    "status": "exact"
+  },
+  "expectedValidationError": 34,
+  "expectedValidationErrorName": "OUT_OF_RANGE",
+  "inputFiles": [
+    "bool_outside_closed_domain.bin"
+  ],
+  "invalidCategory": "bool_outside_0_1",
+  "kind": "record",
+  "name": "bool_outside_closed_domain",
+  "notes": "The paused bool8 value is outside {0,1}.",
+  "recordFlags": 0,
+  "recordType": 2,
+  "recordVersion": 1,
+  "requirementIds": [
+    "P0-REQ-205",
+    "P0-AC-019"
+  ],
+  "schema": "FSTL-1.0",
+  "valid": false
+}

@@ -1,0 +1,28 @@
+{
+  "cxxReplay": {
+    "api": [
+      "RecordEnvelopeIterator::next",
+      "validate_business_record"
+    ],
+    "mode": "record-envelope",
+    "status": "exact"
+  },
+  "expectedValidationError": 33,
+  "expectedValidationErrorName": "NON_FINITE_FLOAT",
+  "inputFiles": [
+    "nan_float.bin"
+  ],
+  "invalidCategory": "non_finite_float",
+  "kind": "record",
+  "name": "nan_float",
+  "notes": "A binary32 field contains a non-finite IEEE-754 value.",
+  "recordFlags": 0,
+  "recordType": 2,
+  "recordVersion": 1,
+  "requirementIds": [
+    "P0-REQ-205",
+    "P0-AC-019"
+  ],
+  "schema": "FSTL-1.0",
+  "valid": false
+}

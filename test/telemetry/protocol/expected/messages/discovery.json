@@ -1,0 +1,18 @@
+{
+  "fields": {
+    "advert_sequence": 1,
+    "listen_port": 7808,
+    "max_major": 1,
+    "max_minor": 0,
+    "min_major": 1,
+    "min_minor": 0,
+    "producer_capabilities": "0",
+    "producer_id": "72623859790382856",
+    "producer_name": "FSTL"
+  },
+  "kind": "message-payload",
+  "messageFlags": 0,
+  "messageName": "DISCOVERY",
+  "messageType": 1,
+  "schema": "FSTL-1.0"
+}

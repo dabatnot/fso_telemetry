@@ -1,0 +1,42 @@
+{
+  "fields": {
+    "manifest_id": 1,
+    "manifest_kind": 1,
+    "part_count": 1,
+    "part_index": 0,
+    "producer_sample_time_us": "1000000",
+    "record_count": 1,
+    "records": [
+      {
+        "fields": {
+          "center_of_mass": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "class_id": 1,
+          "internal_name": "ship",
+          "manifest_generation": 1,
+          "mass": 1.0,
+          "presence": "0",
+          "ship_type_id": 0,
+          "species_id": 0
+        },
+        "kind": "record",
+        "recordFlags": 0,
+        "recordLength": 46,
+        "recordName": "CLASS_MANIFEST",
+        "recordType": 3,
+        "recordVersion": 1,
+        "schema": "FSTL-1.0"
+      }
+    ],
+    "transaction_sha256": "55bcfe15642a1b41eca3feceaa91518533e08447e95db007fdbf10e824545bd0",
+    "transaction_size": 52
+  },
+  "kind": "message-payload",
+  "messageFlags": 2,
+  "messageName": "MANIFEST",
+  "messageType": 5,
+  "schema": "FSTL-1.0"
+}

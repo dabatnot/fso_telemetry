@@ -1,0 +1,28 @@
+{
+  "cxxReplay": {
+    "api": [
+      "RecordEnvelopeIterator::next",
+      "validate_business_record"
+    ],
+    "mode": "record-envelope",
+    "status": "exact"
+  },
+  "expectedValidationError": 31,
+  "expectedValidationErrorName": "INVALID_UTF8",
+  "inputFiles": [
+    "invalid_utf8_string.bin"
+  ],
+  "invalidCategory": "invalid_utf8",
+  "kind": "record",
+  "name": "invalid_utf8_string",
+  "notes": "The internal name begins with an invalid UTF-8 octet.",
+  "recordFlags": 0,
+  "recordType": 3,
+  "recordVersion": 1,
+  "requirementIds": [
+    "P0-REQ-205",
+    "P0-AC-019"
+  ],
+  "schema": "FSTL-1.0",
+  "valid": false
+}

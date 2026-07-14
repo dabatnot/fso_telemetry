@@ -1,0 +1,19 @@
+{
+  "context": {
+    "recordContainer": "event-batch-reliable"
+  },
+  "expectedCanonicalJson": "records/comm_view_event.json",
+  "expectedValidationError": 0,
+  "expectedValidationErrorName": "NONE",
+  "inputFiles": [
+    "comm_view_event.bin"
+  ],
+  "kind": "record",
+  "name": "comm_view_event",
+  "notes": "Deterministic Phase 0 canonical fixture; bytes are authoritative.",
+  "recordFlags": 1,
+  "recordType": 27,
+  "recordVersion": 1,
+  "schema": "FSTL-1.0",
+  "valid": true
+}

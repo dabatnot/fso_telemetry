@@ -1,12 +1,18 @@
 {
   "expectedValidationError": 18,
+  "expectedValidationErrorName": "BAD_FRAGMENT_OFFSET",
   "inputFiles": [
     "000.bin"
   ],
+  "invalidCategory": "fragment_offset_noncanonical",
   "kind": "datagram-sequence",
   "messageType": 7,
   "name": "fragment_offset_noncanonical",
   "notes": "Transport mutation: fragment offset noncanonical.",
+  "requirementIds": [
+    "P0-REQ-205",
+    "P0-AC-019"
+  ],
   "schema": "FSTL-1.0",
   "valid": false
 }

@@ -1,0 +1,15 @@
+{
+  "expectedCanonicalJson": "messages/resync_request.json",
+  "expectedValidationError": 0,
+  "expectedValidationErrorName": "NONE",
+  "inputFiles": [
+    "resync_request.bin"
+  ],
+  "kind": "message-payload",
+  "messageFlags": 2,
+  "messageType": 12,
+  "name": "resync_request",
+  "notes": "Deterministic Phase 0 canonical fixture; bytes are authoritative.",
+  "schema": "FSTL-1.0",
+  "valid": true
+}

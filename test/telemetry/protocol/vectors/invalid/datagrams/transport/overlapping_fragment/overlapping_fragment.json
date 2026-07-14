@@ -1,0 +1,19 @@
+{
+  "expectedValidationError": 18,
+  "expectedValidationErrorName": "BAD_FRAGMENT_OFFSET",
+  "inputFiles": [
+    "000.bin",
+    "001.bin"
+  ],
+  "invalidCategory": "overlapping_fragment",
+  "kind": "datagram-sequence",
+  "messageType": 7,
+  "name": "overlapping_fragment",
+  "notes": "The second fragment overlaps the final byte of the first canonical slice.",
+  "requirementIds": [
+    "P0-REQ-205",
+    "P0-AC-019"
+  ],
+  "schema": "FSTL-1.0",
+  "valid": false
+}

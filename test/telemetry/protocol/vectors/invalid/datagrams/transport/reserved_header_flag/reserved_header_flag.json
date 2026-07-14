@@ -1,12 +1,18 @@
 {
   "expectedValidationError": 8,
+  "expectedValidationErrorName": "RESERVED_HEADER_FLAG",
   "inputFiles": [
     "000.bin"
   ],
+  "invalidCategory": "reserved_header_flag",
   "kind": "datagram-sequence",
   "messageType": 7,
   "name": "reserved_header_flag",
   "notes": "Transport mutation: reserved header flag.",
+  "requirementIds": [
+    "P0-REQ-205",
+    "P0-AC-019"
+  ],
   "schema": "FSTL-1.0",
   "valid": false
 }

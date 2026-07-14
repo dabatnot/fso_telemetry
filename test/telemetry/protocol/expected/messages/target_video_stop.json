@@ -1,0 +1,16 @@
+{
+  "fields": {
+    "config_generation": 1,
+    "producer_time_us": "0",
+    "reason": 1,
+    "request_id": 1,
+    "reserved": 0,
+    "stop_flags": 0,
+    "stream_id": 1
+  },
+  "kind": "message-payload",
+  "messageFlags": 2,
+  "messageName": "TARGET_VIDEO_STOP",
+  "messageType": 18,
+  "schema": "FSTL-1.0"
+}

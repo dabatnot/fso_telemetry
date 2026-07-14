@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <title>Gas miner ship</title>
+  <path d="M16 3 21 9v14l-5 6-5-6V9z"/>
+  <circle cx="6" cy="15" r="4"/><circle cx="26" cy="15" r="4"/>
+  <path d="M10 15h2M20 15h2M5 24l3-3M27 24l-3-3"/>
+</svg>

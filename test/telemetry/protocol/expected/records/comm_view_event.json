@@ -1,0 +1,24 @@
+{
+  "fields": {
+    "animation_time_us": "0",
+    "color_mode": 0,
+    "duration_us": "100000",
+    "engine_message_id": 1,
+    "event_id": "1",
+    "event_kind": 1,
+    "head_asset_id": "72623859790382856",
+    "playback_id": "1",
+    "playback_mode": 0,
+    "playback_rate": 1.0,
+    "producer_sample_time_us": "1000000",
+    "sender_entity_id": "1",
+    "stop_reason": 0
+  },
+  "kind": "record",
+  "recordFlags": 1,
+  "recordLength": 68,
+  "recordName": "COMM_VIEW_EVENT",
+  "recordType": 27,
+  "recordVersion": 1,
+  "schema": "FSTL-1.0"
+}

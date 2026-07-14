@@ -1,0 +1,19 @@
+{
+  "context": {
+    "recordContainer": "manifest"
+  },
+  "expectedCanonicalJson": "records/weapon_manifest.json",
+  "expectedValidationError": 0,
+  "expectedValidationErrorName": "NONE",
+  "inputFiles": [
+    "weapon_manifest.bin"
+  ],
+  "kind": "record",
+  "name": "weapon_manifest",
+  "notes": "Deterministic Phase 0 canonical fixture; bytes are authoritative.",
+  "recordFlags": 0,
+  "recordType": 4,
+  "recordVersion": 1,
+  "schema": "FSTL-1.0",
+  "valid": true
+}

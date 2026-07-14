@@ -1,0 +1,28 @@
+{
+  "cxxReplay": {
+    "api": [
+      "RecordEnvelopeIterator::next",
+      "validate_business_record"
+    ],
+    "mode": "record-envelope",
+    "status": "exact"
+  },
+  "expectedValidationError": 36,
+  "expectedValidationErrorName": "RESERVED_FLAG",
+  "inputFiles": [
+    "reserved_record_flag.bin"
+  ],
+  "invalidCategory": "record_reserved_flag",
+  "kind": "record",
+  "name": "reserved_record_flag",
+  "notes": "A v1 state record sets a reserved record flag.",
+  "recordFlags": 128,
+  "recordType": 2,
+  "recordVersion": 1,
+  "requirementIds": [
+    "P0-REQ-205",
+    "P0-AC-019"
+  ],
+  "schema": "FSTL-1.0",
+  "valid": false
+}

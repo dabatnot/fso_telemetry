@@ -1,0 +1,26 @@
+{
+  "cxxReplay": {
+    "api": [
+      "decode_nack_payload"
+    ],
+    "mode": "payload",
+    "status": "exact"
+  },
+  "expectedValidationError": 36,
+  "expectedValidationErrorName": "RESERVED_FLAG",
+  "inputFiles": [
+    "nack_bitmap_tail_bits_set.bin"
+  ],
+  "invalidCategory": "nack_bitmap_incoherent",
+  "kind": "message-payload",
+  "messageFlags": 0,
+  "messageType": 11,
+  "name": "nack_bitmap_tail_bits_set",
+  "notes": "A nine-fragment NACK sets reserved tail bits in its second bitmap byte.",
+  "requirementIds": [
+    "P0-REQ-205",
+    "P0-AC-019"
+  ],
+  "schema": "FSTL-1.0",
+  "valid": false
+}

@@ -85,10 +85,17 @@ add_file_folder("Telemetry\\\\Protocol"
 	telemetry/protocol/test_packet_io.cpp
 	telemetry/protocol/test_protocol_constants.cpp
 	telemetry/protocol/test_telemetry_capabilities.cpp
+	telemetry/protocol/test_telemetry_business_records_1_10.cpp
+	telemetry/protocol/test_telemetry_business_records_11_18.cpp
+	telemetry/protocol/test_telemetry_business_records_19_24.cpp
+	telemetry/protocol/test_telemetry_business_records_28.cpp
+	telemetry/protocol/test_telemetry_business_state_validation.cpp
 	telemetry/protocol/test_telemetry_clock.cpp
+	telemetry/protocol/test_telemetry_comm_manifest_transaction.cpp
 	telemetry/protocol/test_telemetry_control_messages.cpp
 	telemetry/protocol/test_telemetry_counters.cpp
 	telemetry/protocol/test_telemetry_datagram.cpp
+	telemetry/protocol/test_telemetry_event_messages.cpp
 	telemetry/protocol/test_telemetry_fragmentation.cpp
 	telemetry/protocol/test_telemetry_rate_limiter.cpp
 	telemetry/protocol/test_telemetry_records.cpp
@@ -100,7 +107,10 @@ add_file_folder("Telemetry\\\\Protocol"
 	telemetry/protocol/test_telemetry_reliable_window.cpp
 	telemetry/protocol/test_telemetry_session.cpp
 	telemetry/protocol/test_telemetry_session_context.cpp
+	telemetry/protocol/test_telemetry_security.cpp
 	telemetry/protocol/test_telemetry_sha256.cpp
+	telemetry/protocol/test_telemetry_specialized_lifecycle.cpp
+	telemetry/protocol/test_telemetry_specialized_views.cpp
 	telemetry/protocol/test_telemetry_state_messages.cpp
 	telemetry/protocol/test_telemetry_transaction.cpp
 	telemetry/protocol/test_telemetry_vectors.cpp

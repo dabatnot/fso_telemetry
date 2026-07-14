@@ -1,0 +1,15 @@
+{
+  "fields": {
+    "kind": 1,
+    "origin_t0_us": "100000",
+    "probe_id": 1,
+    "receive_t1_us": "0",
+    "reserved": "000000",
+    "transmit_t2_us": "0"
+  },
+  "kind": "message-payload",
+  "messageFlags": 0,
+  "messageName": "HEARTBEAT",
+  "messageType": 9,
+  "schema": "FSTL-1.0"
+}

@@ -1,0 +1,35 @@
+{
+  "context": {
+    "assetDurationsUs": {
+      "72623859790382856": "200000"
+    }
+  },
+  "cxxReplay": {
+    "api": [
+      "RecordEnvelopeIterator::next",
+      "decode_comm_view_event_payload",
+      "CommViewClientLifecycle::apply_event",
+      "comm_view_lifecycle_validation_error"
+    ],
+    "mode": "semantic-context",
+    "status": "exact"
+  },
+  "expectedValidationError": 44,
+  "expectedValidationErrorName": "INVALID_STATE_TRANSITION",
+  "inputFiles": [
+    "comm_duration_mismatch.bin"
+  ],
+  "invalidCategory": "comm_duration_inconsistent",
+  "kind": "record",
+  "name": "comm_duration_mismatch",
+  "notes": "The START duration differs from the installed asset manifest.",
+  "recordFlags": 1,
+  "recordType": 27,
+  "recordVersion": 1,
+  "requirementIds": [
+    "P0-REQ-205",
+    "P0-AC-019"
+  ],
+  "schema": "FSTL-1.0",
+  "valid": false
+}

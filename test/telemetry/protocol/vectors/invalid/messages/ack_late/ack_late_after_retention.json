@@ -1,0 +1,39 @@
+{
+  "context": {
+    "endpoint": "client-a",
+    "reliableTarget": {
+      "crc32": "0x12345678",
+      "endpoint": "client-a",
+      "fragmentCount": 1,
+      "messageId": 100,
+      "messageType": 6,
+      "pending": false
+    }
+  },
+  "cxxReplay": {
+    "api": [
+      "decode_ack_payload",
+      "ReliableSendWindow::acknowledge",
+      "reliable_response_validation_error"
+    ],
+    "mode": "semantic-context",
+    "status": "exact"
+  },
+  "expectedValidationError": 44,
+  "expectedValidationErrorName": "INVALID_STATE_TRANSITION",
+  "inputFiles": [
+    "ack_late_after_retention.bin"
+  ],
+  "invalidCategory": "ack_late",
+  "kind": "message-payload",
+  "messageFlags": 0,
+  "messageType": 10,
+  "name": "ack_late_after_retention",
+  "notes": "The ACK arrives after the target left the reliable retention window.",
+  "requirementIds": [
+    "P0-REQ-205",
+    "P0-AC-019"
+  ],
+  "schema": "FSTL-1.0",
+  "valid": false
+}

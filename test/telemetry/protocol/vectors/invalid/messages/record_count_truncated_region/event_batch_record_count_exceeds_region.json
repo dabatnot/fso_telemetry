@@ -1,0 +1,26 @@
+{
+  "cxxReplay": {
+    "api": [
+      "decode_event_batch_payload"
+    ],
+    "mode": "payload",
+    "status": "exact"
+  },
+  "expectedValidationError": 24,
+  "expectedValidationErrorName": "TRUNCATED_PAYLOAD",
+  "inputFiles": [
+    "event_batch_record_count_exceeds_region.bin"
+  ],
+  "invalidCategory": "record_count_truncated_region",
+  "kind": "message-payload",
+  "messageFlags": 2,
+  "messageType": 8,
+  "name": "event_batch_record_count_exceeds_region",
+  "notes": "record_count is legal u16 but exceeds the records present in the payload.",
+  "requirementIds": [
+    "P0-REQ-205",
+    "P0-AC-019"
+  ],
+  "schema": "FSTL-1.0",
+  "valid": false
+}

@@ -1,0 +1,25 @@
+{
+  "fields": {
+    "active_capabilities": "0",
+    "client_nonce": "9833440827789222417",
+    "client_send_t0_us": "100000",
+    "extension_count": 0,
+    "extensions": [],
+    "extensions_length": 0,
+    "heartbeat_interval_ms": 1000,
+    "producer_capabilities": "0",
+    "producer_id": "72623859790382856",
+    "producer_receive_t1_us": "100100",
+    "producer_send_t2_us": "100200",
+    "reliable_reassembly_timeout_ms": 2000,
+    "selected_major": 1,
+    "selected_minor": 0,
+    "selected_visibility_mode": 0,
+    "status": 0
+  },
+  "kind": "message-payload",
+  "messageFlags": 0,
+  "messageName": "WELCOME",
+  "messageType": 3,
+  "schema": "FSTL-1.0"
+}

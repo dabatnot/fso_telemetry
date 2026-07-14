@@ -1,0 +1,14 @@
+{
+  "fields": {
+    "end_flags": 1,
+    "last_snapshot_id": 1,
+    "producer_sample_time_us": "1000000",
+    "reason": 1,
+    "reserved": 0
+  },
+  "kind": "message-payload",
+  "messageFlags": 2,
+  "messageName": "SESSION_END",
+  "messageType": 13,
+  "schema": "FSTL-1.0"
+}

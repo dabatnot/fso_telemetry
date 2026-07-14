@@ -29,15 +29,43 @@ FLAG_FRAGMENTED = 0x01
 
 ERROR_NONE = 0
 ERROR_DATAGRAM_TOO_SHORT = 2
+ERROR_DATAGRAM_TOO_LARGE = 3
+ERROR_BAD_MAGIC = 4
+ERROR_UNSUPPORTED_MAJOR = 5
+ERROR_UNSUPPORTED_MINOR = 6
+ERROR_BAD_HEADER_SIZE = 7
 ERROR_RESERVED_HEADER_FLAG = 8
 ERROR_BAD_DATAGRAM_LENGTH = 9
 ERROR_BAD_DATAGRAM_CRC = 10
+ERROR_MESSAGE_TOO_LARGE = 15
 ERROR_BAD_FRAGMENT_COUNT = 16
 ERROR_BAD_FRAGMENT_INDEX = 17
 ERROR_BAD_FRAGMENT_OFFSET = 18
 ERROR_BAD_FRAGMENT_SLICE = 19
+ERROR_REASSEMBLY_QUOTA = 20
 ERROR_INCONSISTENT_FRAGMENT = 21
 ERROR_BAD_MESSAGE_CRC = 23
+
+VALIDATION_ERROR_NAMES = {
+    0: "NONE",
+    2: "DATAGRAM_TOO_SHORT",
+    3: "DATAGRAM_TOO_LARGE",
+    4: "BAD_MAGIC",
+    5: "UNSUPPORTED_MAJOR",
+    6: "UNSUPPORTED_MINOR",
+    7: "BAD_HEADER_SIZE",
+    8: "RESERVED_HEADER_FLAG",
+    9: "BAD_DATAGRAM_LENGTH",
+    10: "BAD_DATAGRAM_CRC",
+    15: "MESSAGE_TOO_LARGE",
+    16: "BAD_FRAGMENT_COUNT",
+    17: "BAD_FRAGMENT_INDEX",
+    18: "BAD_FRAGMENT_OFFSET",
+    19: "BAD_FRAGMENT_SLICE",
+    20: "REASSEMBLY_QUOTA",
+    21: "INCONSISTENT_FRAGMENT",
+    23: "BAD_MESSAGE_CRC",
+}
 
 HEADER_FORMAT = struct.Struct("<IBBBBHHQIIqQIHHIIII")
 assert HEADER_FORMAT.size == HEADER_SIZE
@@ -138,6 +166,7 @@ def metadata(
     inputs: Dict[str, bytes],
     expected_error: int,
     notes: str,
+    context: dict[str, int] | None = None,
 ) -> bytes:
     value = {
         "schema": "FSTL-1.0",
@@ -147,10 +176,16 @@ def metadata(
         "messageType": message_type,
         "inputFiles": sorted(inputs),
         "expectedValidationError": expected_error,
+        "expectedValidationErrorName": VALIDATION_ERROR_NAMES[expected_error],
         "notes": notes,
     }
     if valid:
         value["expectedCanonicalJson"] = f"transport/{name}.json"
+    else:
+        value["invalidCategory"] = name
+        value["requirementIds"] = ["P0-REQ-205", "P0-AC-019"]
+    if context:
+        value["context"] = context
     return (json.dumps(value, indent=2, sort_keys=True) + "\n").encode("ascii")
 
 
@@ -174,12 +209,13 @@ def add_fixture(
     message_type: int,
     expected_error: int,
     notes: str,
+    context: dict[str, int] | None = None,
 ) -> None:
     base = f"vectors/{category}/datagrams/transport/{name}"
     for filename, contents in inputs.items():
         files[f"{base}/{filename}"] = contents
     files[f"{base}/{name}.json"] = metadata(
-        name, valid, message_type, inputs, expected_error, notes
+        name, valid, message_type, inputs, expected_error, notes, context
     )
     if valid:
         logical_size = sum(len(value) - HEADER_SIZE for value in inputs.values())
@@ -215,6 +251,16 @@ def mutated_datagram(source: bytes, **changes: int) -> bytes:
     header = replace(decode_header(source), **changes)
     payload = source[HEADER_SIZE:]
     return datagram(header, payload)
+
+
+def mutated_wire_datagram(source: bytes, offset: int, replacement: bytes) -> bytes:
+    if offset < 0 or offset + len(replacement) > HEADER_SIZE:
+        raise ValueError("wire mutation escapes the fixed header")
+    mutated = bytearray(source)
+    mutated[offset : offset + len(replacement)] = replacement
+    mutated[64:68] = bytes(4)
+    mutated[64:68] = struct.pack("<I", crc32(bytes(mutated)))
+    return bytes(mutated)
 
 
 def build_files() -> Dict[str, bytes]:
@@ -253,6 +299,36 @@ def build_files() -> Dict[str, bytes]:
         )
 
     one = valid_vectors[1]["000.bin"]
+    header_cases = (
+        ("bad_magic", 0, struct.pack("<I", MAGIC ^ 0x01000000), ERROR_BAD_MAGIC),
+        ("unsupported_major", 4, bytes((VERSION_MAJOR + 1,)), ERROR_UNSUPPORTED_MAJOR),
+        ("unsupported_minor", 5, bytes((VERSION_MINOR + 1,)), ERROR_UNSUPPORTED_MINOR),
+        ("bad_header_size", 8, struct.pack("<H", HEADER_SIZE - 1), ERROR_BAD_HEADER_SIZE),
+    )
+    for name, offset, replacement, expected in header_cases:
+        add_fixture(
+            files,
+            "invalid",
+            name,
+            {"000.bin": mutated_wire_datagram(one, offset, replacement)},
+            False,
+            MESSAGE_DELTA,
+            expected,
+            f"Wire header mutation: {name.replace('_', ' ')}.",
+        )
+
+    oversized_datagram = valid_vectors[1132]["000.bin"] + b"\x00"
+    add_fixture(
+        files,
+        "invalid",
+        "datagram_too_large",
+        {"000.bin": oversized_datagram},
+        False,
+        MESSAGE_DELTA,
+        ERROR_DATAGRAM_TOO_LARGE,
+        "The datagram exceeds the fixed 1200-octet transport ceiling.",
+    )
+
     bad_crc = bytearray(one)
     bad_crc[-1] ^= 0x80
     add_fixture(
@@ -264,6 +340,28 @@ def build_files() -> Dict[str, bytes]:
     add_fixture(
         files, "invalid", "bad_message_crc", {"000.bin": wrong_message_crc}, False,
         MESSAGE_DELTA, ERROR_BAD_MESSAGE_CRC, "Datagram CRC is valid but logical message CRC is not."
+    )
+
+    add_fixture(
+        files,
+        "invalid",
+        "message_too_large",
+        {"000.bin": mutated_datagram(one, message_size=1_048_577)},
+        False,
+        MESSAGE_DELTA,
+        ERROR_MESSAGE_TOO_LARGE,
+        "A state message declares one byte beyond the one-MiB class limit.",
+    )
+    add_fixture(
+        files,
+        "invalid",
+        "reassembly_quota_before_allocation",
+        {"000.bin": one},
+        False,
+        MESSAGE_DELTA,
+        ERROR_REASSEMBLY_QUOTA,
+        "The per-client reassembly budget is exhausted before candidate allocation.",
+        context={"remainingReassemblyBytes": 0},
     )
 
     cases = (
@@ -291,6 +389,19 @@ def build_files() -> Dict[str, bytes]:
     add_fixture(
         files, "invalid", "inconsistent_fragment_metadata", first_two, False,
         MESSAGE_DELTA, ERROR_INCONSISTENT_FRAGMENT, "frame_id changes between fragments."
+    )
+
+    overlapping = dict(valid_vectors[1133])
+    overlapping["001.bin"] = mutated_datagram(overlapping["001.bin"], fragment_offset=1131)
+    add_fixture(
+        files,
+        "invalid",
+        "overlapping_fragment",
+        overlapping,
+        False,
+        MESSAGE_DELTA,
+        ERROR_BAD_FRAGMENT_OFFSET,
+        "The second fragment overlaps the final byte of the first canonical slice.",
     )
 
     duplicate_source = valid_vectors[1133]["000.bin"]

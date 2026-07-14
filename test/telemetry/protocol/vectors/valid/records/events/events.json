@@ -1,0 +1,19 @@
+{
+  "context": {
+    "recordContainer": "event-batch-reliable"
+  },
+  "expectedCanonicalJson": "records/events.json",
+  "expectedValidationError": 0,
+  "expectedValidationErrorName": "NONE",
+  "inputFiles": [
+    "events.bin"
+  ],
+  "kind": "record",
+  "name": "events",
+  "notes": "Deterministic Phase 0 canonical fixture; bytes are authoritative.",
+  "recordFlags": 1,
+  "recordType": 28,
+  "recordVersion": 1,
+  "schema": "FSTL-1.0",
+  "valid": true
+}

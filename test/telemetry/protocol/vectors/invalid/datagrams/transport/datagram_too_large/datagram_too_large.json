@@ -1,0 +1,18 @@
+{
+  "expectedValidationError": 3,
+  "expectedValidationErrorName": "DATAGRAM_TOO_LARGE",
+  "inputFiles": [
+    "000.bin"
+  ],
+  "invalidCategory": "datagram_too_large",
+  "kind": "datagram-sequence",
+  "messageType": 7,
+  "name": "datagram_too_large",
+  "notes": "The datagram exceeds the fixed 1200-octet transport ceiling.",
+  "requirementIds": [
+    "P0-REQ-205",
+    "P0-AC-019"
+  ],
+  "schema": "FSTL-1.0",
+  "valid": false
+}

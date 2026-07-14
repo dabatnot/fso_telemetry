@@ -1,0 +1,33 @@
+{
+  "context": {
+    "activeVideoStreams": [
+      1
+    ]
+  },
+  "cxxReplay": {
+    "api": [
+      "decode_target_video_frame_payload",
+      "TargetVideoClientLifecycle::accept_frame",
+      "video_lifecycle_validation_error"
+    ],
+    "mode": "semantic-context",
+    "status": "exact"
+  },
+  "expectedValidationError": 44,
+  "expectedValidationErrorName": "INVALID_STATE_TRANSITION",
+  "inputFiles": [
+    "video_unknown_stream.bin"
+  ],
+  "invalidCategory": "unknown_stream",
+  "kind": "message-payload",
+  "messageFlags": 8,
+  "messageType": 16,
+  "name": "video_unknown_stream",
+  "notes": "The frame references a stream that is not active.",
+  "requirementIds": [
+    "P0-REQ-205",
+    "P0-AC-019"
+  ],
+  "schema": "FSTL-1.0",
+  "valid": false
+}

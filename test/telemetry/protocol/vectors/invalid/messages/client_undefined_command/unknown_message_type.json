@@ -1,0 +1,29 @@
+{
+  "context": {
+    "senderRole": "client"
+  },
+  "cxxReplay": {
+    "api": [
+      "validate_received_datagram_context"
+    ],
+    "mode": "stateful-context",
+    "status": "exact"
+  },
+  "expectedValidationError": 11,
+  "expectedValidationErrorName": "UNKNOWN_MESSAGE_TYPE",
+  "inputFiles": [
+    "unknown_message_type.bin"
+  ],
+  "invalidCategory": "client_undefined_command",
+  "kind": "message-payload",
+  "messageFlags": 0,
+  "messageType": 255,
+  "name": "unknown_message_type",
+  "notes": "A client cannot invent an undefined command MessageType.",
+  "requirementIds": [
+    "P0-REQ-205",
+    "P0-AC-019"
+  ],
+  "schema": "FSTL-1.0",
+  "valid": false
+}

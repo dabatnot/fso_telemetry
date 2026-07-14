@@ -551,7 +551,7 @@ Payload fixe de 24 octets :
 
 | Offset | Champ | Type |
 |---:|---|---:|
-| 0 | `request_id` | `u32` | non nul |
+| 0 | `request_id` | `u32`, non nul |
 | 4 | `reason` | `u8` |
 | 5 | `request_flags` | `u8` |
 | 6 | `reserved` | `u16`, zéro |

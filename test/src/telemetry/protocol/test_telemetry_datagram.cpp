@@ -271,6 +271,18 @@ TEST(TelemetryProtocolDatagram, RejectsSizeMagicVersionHeaderFlagsTypeAndMessage
 	auto truncated = valid;
 	truncated.pop_back();
 	EXPECT_EQ(ValidationError::BadDatagramLength, decode_and_validate_datagram(byte_view(truncated), decoded));
+
+	// Fixed-header validation order is normative: a reserved bit and an
+	// oversized declared payload win before length mismatch or CRC work.
+	auto reserved_and_corrupt = valid;
+	reserved_and_corrupt[7U] = 0x80U;
+	reserved_and_corrupt.back() ^= 0x80U;
+	EXPECT_EQ(ValidationError::ReservedHeaderFlag,
+		decode_and_validate_datagram(byte_view(reserved_and_corrupt), decoded));
+	auto oversized_declared_payload = valid;
+	put_u16(oversized_declared_payload, 10U, static_cast<std::uint16_t>(MaxFragmentPayload + 1U));
+	EXPECT_EQ(ValidationError::DatagramTooLarge,
+		decode_and_validate_datagram(byte_view(oversized_declared_payload), decoded));
 }
 
 TEST(TelemetryProtocolDatagram, DetectsDatagramCrcBeforeFragmentLayoutValidation) {

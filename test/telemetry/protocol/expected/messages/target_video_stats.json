@@ -1,0 +1,28 @@
+{
+  "fields": {
+    "buffered_duration_us": 0,
+    "config_generation": 1,
+    "decode_latency_us": 0,
+    "decoded_frames": 1,
+    "decoder_errors": 0,
+    "dropped_frames": 0,
+    "estimated_loss_ppm": 0,
+    "highest_decoded_frame_id": 1,
+    "highest_presented_frame_id": 1,
+    "highest_received_frame_id": 1,
+    "jitter_us": 0,
+    "missing_fragments": 0,
+    "presentation_latency_us": 0,
+    "presented_frames": 1,
+    "received_frames": 1,
+    "report_id": 1,
+    "report_interval_ms": 1000,
+    "stats_flags": 0,
+    "stream_id": 1
+  },
+  "kind": "message-payload",
+  "messageFlags": 0,
+  "messageName": "TARGET_VIDEO_STATS",
+  "messageType": 19,
+  "schema": "FSTL-1.0"
+}

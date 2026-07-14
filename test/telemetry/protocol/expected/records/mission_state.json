@@ -1,0 +1,18 @@
+{
+  "fields": {
+    "mission_generation": 1,
+    "paused": 0,
+    "phase": 0,
+    "presence": "0",
+    "producer_sample_time_us": "1000000",
+    "reserved": 0,
+    "time_compression": 1.0
+  },
+  "kind": "record",
+  "recordFlags": 0,
+  "recordLength": 28,
+  "recordName": "MISSION_STATE",
+  "recordType": 2,
+  "recordVersion": 1,
+  "schema": "FSTL-1.0"
+}

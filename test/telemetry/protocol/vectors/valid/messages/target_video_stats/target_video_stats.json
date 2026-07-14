@@ -1,0 +1,15 @@
+{
+  "expectedCanonicalJson": "messages/target_video_stats.json",
+  "expectedValidationError": 0,
+  "expectedValidationErrorName": "NONE",
+  "inputFiles": [
+    "target_video_stats.bin"
+  ],
+  "kind": "message-payload",
+  "messageFlags": 0,
+  "messageType": 19,
+  "name": "target_video_stats",
+  "notes": "Deterministic Phase 0 canonical fixture; bytes are authoritative.",
+  "schema": "FSTL-1.0",
+  "valid": true
+}

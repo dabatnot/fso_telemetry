@@ -1,0 +1,36 @@
+{
+  "context": {
+    "knownCandidateBaselines": [
+      2
+    ],
+    "knownCommittedBaselines": [
+      1
+    ]
+  },
+  "cxxReplay": {
+    "api": [
+      "decode_delta_payload",
+      "ClientReplicationModel::receive_delta",
+      "client_delta_validation_error"
+    ],
+    "mode": "semantic-context",
+    "status": "exact"
+  },
+  "expectedValidationError": 39,
+  "expectedValidationErrorName": "STALE_BASELINE",
+  "inputFiles": [
+    "delta_unknown_baseline.bin"
+  ],
+  "invalidCategory": "unknown_baseline",
+  "kind": "message-payload",
+  "messageFlags": 0,
+  "messageType": 7,
+  "name": "delta_unknown_baseline",
+  "notes": "A totally unknown baseline is discarded and requests resynchronization; only a known candidate may wait.",
+  "requirementIds": [
+    "P0-REQ-205",
+    "P0-AC-019"
+  ],
+  "schema": "FSTL-1.0",
+  "valid": false
+}

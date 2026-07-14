@@ -1,12 +1,18 @@
 {
   "expectedValidationError": 23,
+  "expectedValidationErrorName": "BAD_MESSAGE_CRC",
   "inputFiles": [
     "000.bin"
   ],
+  "invalidCategory": "bad_message_crc",
   "kind": "datagram-sequence",
   "messageType": 7,
   "name": "bad_message_crc",
   "notes": "Datagram CRC is valid but logical message CRC is not.",
+  "requirementIds": [
+    "P0-REQ-205",
+    "P0-AC-019"
+  ],
   "schema": "FSTL-1.0",
   "valid": false
 }

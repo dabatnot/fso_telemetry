@@ -13,6 +13,10 @@ constexpr std::size_t CapabilityExtensionHeaderSize = 6;
 constexpr std::size_t MaxControlExtensionsSize = 768;
 constexpr std::uint16_t MaxControlExtensionCount = 128;
 
+constexpr std::size_t DiscoveryPayloadPrefixSize = 28;
+constexpr std::size_t MaximumDiscoveryProducerNameSize = 64;
+constexpr std::size_t MaximumDiscoveryPayloadSize =
+	DiscoveryPayloadPrefixSize + MaximumDiscoveryProducerNameSize;
 constexpr std::size_t HelloPayloadPrefixSize = 38;
 constexpr std::size_t WelcomePayloadPrefixSize = 68;
 constexpr std::size_t SessionBeginPayloadSize = 28;
@@ -82,6 +86,18 @@ constexpr std::uint64_t known_capabilities(std::uint64_t capabilities) noexcept
 	return capabilities & KnownCapabilities;
 }
 
+struct DiscoveryPayload {
+	std::uint64_t producer_id = 0;
+	std::uint16_t listen_port = 0;
+	std::uint8_t min_major = VersionMajor;
+	std::uint8_t max_major = VersionMajor;
+	std::uint8_t min_minor = VersionMinor;
+	std::uint8_t max_minor = VersionMinor;
+	std::uint64_t producer_capabilities = 0;
+	std::uint32_t advert_sequence = 0;
+	ByteView producer_name;
+};
+
 struct HelloPayload {
 	std::uint64_t client_nonce = 0;
 	std::uint64_t client_send_t0_us = 0;
@@ -138,11 +154,16 @@ struct CapabilityUpdatePayload {
 	CapabilityUpdateReason reason = CapabilityUpdateReason::Invalid;
 };
 
+ValidationError validate_discovery_payload(const DiscoveryPayload& payload) noexcept;
 ValidationError validate_hello_payload(const HelloPayload& payload) noexcept;
 ValidationError validate_welcome_payload(const WelcomePayload& payload) noexcept;
 ValidationError validate_session_begin_payload(const SessionBeginPayload& payload) noexcept;
 ValidationError validate_heartbeat_payload(const HeartbeatPayload& payload) noexcept;
 ValidationError validate_capability_update_payload(const CapabilityUpdatePayload& payload) noexcept;
+
+ValidationError
+encode_discovery_payload(const DiscoveryPayload& payload, MutableByteView output, std::size_t& written) noexcept;
+ValidationError decode_discovery_payload(ByteView input, DiscoveryPayload& payload) noexcept;
 
 ValidationError
 encode_hello_payload(const HelloPayload& payload, MutableByteView output, std::size_t& written) noexcept;

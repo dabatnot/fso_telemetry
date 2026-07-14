@@ -322,6 +322,7 @@ struct ReliableReceivePipelineResult {
 class ReliableReceivePipeline final {
   public:
 	ReliableReceivePipeline() noexcept = default;
+	explicit ReliableReceivePipeline(GlobalReassemblyBudget& global_budget) noexcept : m_reassembler(global_budget) {}
 
 	// estimated_producer_time_us is zero while the clock filter is invalid. A
 	// nonzero IDR recovery deadline is checked before any allocation or payload

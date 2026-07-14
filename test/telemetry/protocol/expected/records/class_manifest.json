@@ -1,0 +1,23 @@
+{
+  "fields": {
+    "center_of_mass": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "class_id": 1,
+    "internal_name": "ship",
+    "manifest_generation": 1,
+    "mass": 1.0,
+    "presence": "0",
+    "ship_type_id": 0,
+    "species_id": 0
+  },
+  "kind": "record",
+  "recordFlags": 0,
+  "recordLength": 46,
+  "recordName": "CLASS_MANIFEST",
+  "recordType": 3,
+  "recordVersion": 1,
+  "schema": "FSTL-1.0"
+}

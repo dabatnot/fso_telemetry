@@ -99,6 +99,14 @@ OPTION(FSO_BUILD_TOOLS "Build tools related to FSO" OFF)
 
 OPTION(FSO_BUILD_TESTS "Build unit tests" OFF)
 
+OPTION(FSO_BUILD_TELEMETRY_FUZZERS "Build the engine-independent FSTL protocol fuzz targets" OFF)
+OPTION(FSO_TELEMETRY_FUZZ_STANDALONE
+	"Build telemetry fuzz targets as deterministic corpus replayers instead of using libFuzzer"
+	OFF)
+OPTION(FSO_TELEMETRY_FUZZ_SANITIZERS
+	"Instrument telemetry fuzz targets with the sanitizers supported by the selected compiler"
+	ON)
+
 OPTION(FSO_DEVELOPMENT_MODE "Generate binaries in development mode, only use if you know what you're doing!" OFF)
 
 IF(WIN32 OR APPLE)
@@ -167,6 +175,9 @@ OPTION(FSO_USE_LTO "Build using LTO (only for release builds)" ON)
 
 MARK_AS_ADVANCED(FORCE FSO_CMAKE_DEBUG)
 MARK_AS_ADVANCED(FORCE FSO_BUILD_INCLUDED_LIBS)
+MARK_AS_ADVANCED(FORCE FSO_BUILD_TELEMETRY_FUZZERS)
+MARK_AS_ADVANCED(FORCE FSO_TELEMETRY_FUZZ_STANDALONE)
+MARK_AS_ADVANCED(FORCE FSO_TELEMETRY_FUZZ_SANITIZERS)
 MARK_AS_ADVANCED(FORCE FSO_USE_OPENALSOFT)
 MARK_AS_ADVANCED(FORCE FSO_USE_LUAJIT)
 MARK_AS_ADVANCED(FORCE FSO_DEVELOPMENT_MODE)
@@ -215,6 +226,10 @@ ADD_SUBDIRECTORY(lib)
 ADD_SUBDIRECTORY(parsers)
 
 ADD_SUBDIRECTORY(code)
+
+if(FSO_BUILD_TELEMETRY_FUZZERS)
+	ADD_SUBDIRECTORY(test/telemetry/protocol/fuzz)
+endif()
 
 ADD_SUBDIRECTORY(freespace2)
 

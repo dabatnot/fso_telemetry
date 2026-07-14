@@ -1,0 +1,32 @@
+{
+  "context": {
+    "knownEntityIds": [
+      2
+    ]
+  },
+  "cxxReplay": {
+    "api": [
+      "decode_target_video_frame_payload",
+      "validate_target_video_frame_entity_context"
+    ],
+    "mode": "semantic-context",
+    "status": "exact"
+  },
+  "expectedValidationError": 38,
+  "expectedValidationErrorName": "UNKNOWN_ENTITY",
+  "inputFiles": [
+    "video_unknown_target.bin"
+  ],
+  "invalidCategory": "unknown_target",
+  "kind": "message-payload",
+  "messageFlags": 8,
+  "messageType": 16,
+  "name": "video_unknown_target",
+  "notes": "The frame references an entity unknown to the client state image.",
+  "requirementIds": [
+    "P0-REQ-205",
+    "P0-AC-019"
+  ],
+  "schema": "FSTL-1.0",
+  "valid": false
+}

@@ -1,6 +1,7 @@
 {
   "expectedCanonicalJson": "transport/transport_1_bytes.json",
   "expectedValidationError": 0,
+  "expectedValidationErrorName": "NONE",
   "inputFiles": [
     "000.bin"
   ],

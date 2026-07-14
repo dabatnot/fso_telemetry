@@ -1,0 +1,33 @@
+{
+  "context": {
+    "expectedBundleHash": "0101010101010101010101010101010101010101010101010101010101010101"
+  },
+  "cxxReplay": {
+    "api": [
+      "RecordEnvelopeIterator::next",
+      "decode_comm_asset_manifest_payload",
+      "CommViewClientLifecycle::install_bundle",
+      "comm_view_lifecycle_validation_error"
+    ],
+    "mode": "semantic-context",
+    "status": "exact"
+  },
+  "expectedValidationError": 44,
+  "expectedValidationErrorName": "INVALID_STATE_TRANSITION",
+  "inputFiles": [
+    "comm_bundle_hash_mismatch.bin"
+  ],
+  "invalidCategory": "comm_bundle_hash_inconsistent",
+  "kind": "record",
+  "name": "comm_bundle_hash_mismatch",
+  "notes": "The selected bundle hash differs from the manifest bundle hash.",
+  "recordFlags": 0,
+  "recordType": 25,
+  "recordVersion": 1,
+  "requirementIds": [
+    "P0-REQ-205",
+    "P0-AC-019"
+  ],
+  "schema": "FSTL-1.0",
+  "valid": false
+}

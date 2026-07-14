@@ -1,0 +1,22 @@
+{
+  "fields": {
+    "gravity_multiplier": 0.0,
+    "internal_name": "weapon",
+    "lifetime_us": "0",
+    "manifest_generation": 1,
+    "mass": 0.0,
+    "max_speed": 0.0,
+    "presence": "0",
+    "subtype": 0,
+    "velocity_inheritance": 0.0,
+    "weapon_class_id": 1,
+    "weapon_flags": "0"
+  },
+  "kind": "record",
+  "recordFlags": 0,
+  "recordLength": 57,
+  "recordName": "WEAPON_MANIFEST",
+  "recordType": 4,
+  "recordVersion": 1,
+  "schema": "FSTL-1.0"
+}

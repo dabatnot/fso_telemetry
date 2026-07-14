@@ -1,0 +1,26 @@
+{
+  "cxxReplay": {
+    "api": [
+      "decode_heartbeat_payload"
+    ],
+    "mode": "payload",
+    "status": "exact"
+  },
+  "expectedValidationError": 24,
+  "expectedValidationErrorName": "TRUNCATED_PAYLOAD",
+  "inputFiles": [
+    "fixed_payload_truncated.bin"
+  ],
+  "invalidCategory": "fixed_payload_truncated",
+  "kind": "message-payload",
+  "messageFlags": 0,
+  "messageType": 9,
+  "name": "fixed_payload_truncated",
+  "notes": "A fixed-layout HEARTBEAT is one byte short.",
+  "requirementIds": [
+    "P0-REQ-205",
+    "P0-AC-019"
+  ],
+  "schema": "FSTL-1.0",
+  "valid": false
+}

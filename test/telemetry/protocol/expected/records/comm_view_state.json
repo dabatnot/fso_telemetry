@@ -1,0 +1,23 @@
+{
+  "fields": {
+    "active": 0,
+    "animation_time_us": "0",
+    "color_mode": 0,
+    "duration_us": "0",
+    "engine_message_id": 0,
+    "head_asset_id": "0",
+    "playback_id": "0",
+    "playback_mode": 0,
+    "playback_rate": 0.0,
+    "producer_sample_time_us": "0",
+    "sender_entity_id": "0",
+    "stop_reason": 0
+  },
+  "kind": "record",
+  "recordFlags": 0,
+  "recordLength": 60,
+  "recordName": "COMM_VIEW_STATE",
+  "recordType": 26,
+  "recordVersion": 1,
+  "schema": "FSTL-1.0"
+}

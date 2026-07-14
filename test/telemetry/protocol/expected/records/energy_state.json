@@ -1,0 +1,19 @@
+{
+  "fields": {
+    "entity_id": "1",
+    "ets_engines_index": 0,
+    "ets_mode": 0,
+    "ets_shields_index": 0,
+    "ets_weapons_index": 0,
+    "presence": "0",
+    "producer_sample_time_us": "1000000",
+    "reserved": 0
+  },
+  "kind": "record",
+  "recordFlags": 0,
+  "recordLength": 29,
+  "recordName": "ENERGY_STATE",
+  "recordType": 12,
+  "recordVersion": 1,
+  "schema": "FSTL-1.0"
+}

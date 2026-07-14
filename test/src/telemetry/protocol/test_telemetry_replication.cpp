@@ -996,4 +996,25 @@ TEST(TelemetryProtocolReplication, CandidateAndPendingStateAreBoundedAndClearedW
 	EXPECT_TRUE(client.published().empty());
 }
 
+TEST(TelemetryProtocolReplication, RichReplicationResultsMapToStableValidationTaxonomy)
+{
+	EXPECT_EQ(ValidationError::None, snapshot_commit_validation_error(SnapshotCommitResult::Committed));
+	EXPECT_EQ(ValidationError::MissingManifest,
+		snapshot_commit_validation_error(SnapshotCommitResult::MissingManifest));
+	EXPECT_EQ(ValidationError::ResourceLimit,
+		snapshot_commit_validation_error(SnapshotCommitResult::AllocationFailed));
+	EXPECT_EQ(ValidationError::InvalidStateTransition,
+		snapshot_commit_validation_error(SnapshotCommitResult::UnknownCandidate));
+
+	EXPECT_EQ(ValidationError::None, client_delta_validation_error(ClientDeltaResult::QueuedForCandidate));
+	EXPECT_EQ(ValidationError::StaleBaseline,
+		client_delta_validation_error(ClientDeltaResult::UnknownBaselineResyncRequested));
+	EXPECT_EQ(ValidationError::StaleBaseline,
+		client_delta_validation_error(ClientDeltaResult::UnknownBaselineRateLimited));
+	EXPECT_EQ(ValidationError::RateLimited,
+		client_delta_validation_error(ClientDeltaResult::ResyncRateLimited));
+	EXPECT_EQ(ValidationError::ResourceLimit,
+		client_delta_validation_error(ClientDeltaResult::AllocationFailed));
+}
+
 } // namespace

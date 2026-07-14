@@ -1,0 +1,33 @@
+{
+  "context": {
+    "installedManifestIds": [
+      1
+    ]
+  },
+  "cxxReplay": {
+    "api": [
+      "decode_full_snapshot_part_payload",
+      "ClientReplicationModel::commit_snapshot",
+      "snapshot_commit_validation_error"
+    ],
+    "mode": "semantic-context",
+    "status": "exact"
+  },
+  "expectedValidationError": 41,
+  "expectedValidationErrorName": "MISSING_MANIFEST",
+  "inputFiles": [
+    "snapshot_missing_manifest.bin"
+  ],
+  "invalidCategory": "unknown_manifest",
+  "kind": "message-payload",
+  "messageFlags": 6,
+  "messageType": 6,
+  "name": "snapshot_missing_manifest",
+  "notes": "The snapshot references a manifest that is not installed.",
+  "requirementIds": [
+    "P0-REQ-205",
+    "P0-AC-019"
+  ],
+  "schema": "FSTL-1.0",
+  "valid": false
+}

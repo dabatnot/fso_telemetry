@@ -1,0 +1,78 @@
+{
+  "fields": {
+    "part_count": 1,
+    "part_index": 0,
+    "producer_sample_time_us": "1000000",
+    "record_count": 3,
+    "records": [
+      {
+        "fields": {
+          "authority_mode": 0,
+          "event_coverage_exact": "0",
+          "event_coverage_state_derived": "0",
+          "negotiated_capabilities": "0",
+          "negotiated_capability_generation": 1,
+          "presence": "0",
+          "producer_id": "72623859790382856",
+          "producer_sample_time_us": "1000000",
+          "reserved": 0,
+          "session_phase": 2,
+          "state_domain_coverage": "1",
+          "visibility_mode": 0
+        },
+        "kind": "record",
+        "recordFlags": 0,
+        "recordLength": 64,
+        "recordName": "SESSION_STATE",
+        "recordType": 1,
+        "recordVersion": 1,
+        "schema": "FSTL-1.0"
+      },
+      {
+        "fields": {
+          "mission_generation": 1,
+          "paused": 0,
+          "phase": 0,
+          "presence": "0",
+          "producer_sample_time_us": "1000000",
+          "reserved": 0,
+          "time_compression": 1.0
+        },
+        "kind": "record",
+        "recordFlags": 0,
+        "recordLength": 28,
+        "recordName": "MISSION_STATE",
+        "recordType": 2,
+        "recordVersion": 1,
+        "schema": "FSTL-1.0"
+      },
+      {
+        "fields": {
+          "entity_id": "1",
+          "lifecycle_flags": 0,
+          "lifecycle_phase": 1,
+          "object_type": 8,
+          "presence": "0",
+          "producer_sample_time_us": "1000000"
+        },
+        "kind": "record",
+        "recordFlags": 0,
+        "recordLength": 30,
+        "recordName": "ENTITY_LIFECYCLE",
+        "recordType": 5,
+        "recordVersion": 1,
+        "schema": "FSTL-1.0"
+      }
+    ],
+    "required_manifest_id": 1,
+    "snapshot_flags": 1,
+    "snapshot_id": 1,
+    "transaction_sha256": "bddc16d8825436d2a2b58f53e37fa9205ecc8c34487c2851825351ef87f5f439",
+    "transaction_size": 140
+  },
+  "kind": "message-payload",
+  "messageFlags": 6,
+  "messageName": "FULL_SNAPSHOT",
+  "messageType": 6,
+  "schema": "FSTL-1.0"
+}

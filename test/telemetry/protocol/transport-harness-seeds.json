@@ -1,0 +1,25 @@
+{
+  "schema": "FSTL-1.0-transport-seeds",
+  "seeds": [
+    {
+      "name": "reliable-retry-oracle",
+      "literal": "0x4653544c5f52544f",
+      "source": "test/src/telemetry/protocol/test_telemetry_reliable_window.cpp"
+    },
+    {
+      "name": "reliability-harness",
+      "literal": "0x0123456789abcdef",
+      "source": "test/src/telemetry/protocol/test_telemetry_reliability_harness.cpp"
+    },
+    {
+      "name": "replication-snapshot-harness",
+      "literal": "0xabcdef1234567890",
+      "source": "test/src/telemetry/protocol/test_telemetry_replication_harness.cpp"
+    },
+    {
+      "name": "replication-resync-harness",
+      "literal": "0x12345678",
+      "source": "test/src/telemetry/protocol/test_telemetry_replication_harness.cpp"
+    }
+  ]
+}

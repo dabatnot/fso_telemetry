@@ -1,0 +1,40 @@
+{
+  "fields": {
+    "batch_id": 1,
+    "delivery_class": 2,
+    "first_event_id": "1",
+    "producer_sample_time_us": "1000000",
+    "record_count": 1,
+    "records": [
+      {
+        "fields": {
+          "events": [
+            {
+              "event_flags": 4,
+              "event_id": "1",
+              "item_presence": 0,
+              "item_size": 32,
+              "item_version": 1,
+              "kind": 1,
+              "producer_sample_time_us": "1000000",
+              "subject_entity_id": "1"
+            }
+          ]
+        },
+        "kind": "record",
+        "recordFlags": 1,
+        "recordLength": 37,
+        "recordName": "EVENTS",
+        "recordType": 28,
+        "recordVersion": 1,
+        "schema": "FSTL-1.0"
+      }
+    ],
+    "reserved": 0
+  },
+  "kind": "message-payload",
+  "messageFlags": 2,
+  "messageName": "EVENT_BATCH",
+  "messageType": 8,
+  "schema": "FSTL-1.0"
+}

@@ -1,0 +1,28 @@
+{
+  "cxxReplay": {
+    "api": [
+      "RecordEnvelopeIterator::next",
+      "validate_business_record"
+    ],
+    "mode": "record-envelope",
+    "status": "exact"
+  },
+  "expectedValidationError": 33,
+  "expectedValidationErrorName": "NON_FINITE_FLOAT",
+  "inputFiles": [
+    "quaternion_non_finite.bin"
+  ],
+  "invalidCategory": "quaternion_non_finite",
+  "kind": "record",
+  "name": "quaternion_non_finite",
+  "notes": "The quaternion scalar component is NaN.",
+  "recordFlags": 0,
+  "recordType": 7,
+  "recordVersion": 1,
+  "requirementIds": [
+    "P0-REQ-205",
+    "P0-AC-019"
+  ],
+  "schema": "FSTL-1.0",
+  "valid": false
+}

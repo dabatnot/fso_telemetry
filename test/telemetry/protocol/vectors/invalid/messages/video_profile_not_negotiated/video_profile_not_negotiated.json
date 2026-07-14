@@ -1,0 +1,39 @@
+{
+  "context": {
+    "videoNegotiation": {
+      "codecProfiles": [
+        100
+      ],
+      "codecs": [
+        1
+      ],
+      "maxBitrateKbps": 4000,
+      "maxHeight": 1024,
+      "maxWidth": 1024
+    }
+  },
+  "cxxReplay": {
+    "api": [
+      "validate_target_video_config_for_subscribe"
+    ],
+    "mode": "semantic-context",
+    "status": "exact"
+  },
+  "expectedValidationError": 42,
+  "expectedValidationErrorName": "CAPABILITY_NOT_NEGOTIATED",
+  "inputFiles": [
+    "video_profile_not_negotiated.bin"
+  ],
+  "invalidCategory": "video_profile_not_negotiated",
+  "kind": "message-payload",
+  "messageFlags": 2,
+  "messageType": 15,
+  "name": "video_profile_not_negotiated",
+  "notes": "The selected codec profile was not offered by the subscriber.",
+  "requirementIds": [
+    "P0-REQ-205",
+    "P0-AC-019"
+  ],
+  "schema": "FSTL-1.0",
+  "valid": false
+}

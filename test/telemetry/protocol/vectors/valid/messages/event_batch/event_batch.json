@@ -1,0 +1,15 @@
+{
+  "expectedCanonicalJson": "messages/event_batch.json",
+  "expectedValidationError": 0,
+  "expectedValidationErrorName": "NONE",
+  "inputFiles": [
+    "event_batch.bin"
+  ],
+  "kind": "message-payload",
+  "messageFlags": 2,
+  "messageType": 8,
+  "name": "event_batch",
+  "notes": "Deterministic Phase 0 canonical fixture; bytes are authoritative.",
+  "schema": "FSTL-1.0",
+  "valid": true
+}

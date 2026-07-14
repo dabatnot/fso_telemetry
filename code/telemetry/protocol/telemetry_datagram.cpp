@@ -351,13 +351,24 @@ ValidationError decode_and_validate_datagram_envelope(ByteView datagram, Datagra
 	if (const auto error = validate_header_identity(header); error != ValidationError::None) {
 		return error;
 	}
-
-	const auto expected_datagram_size = static_cast<std::size_t>(header.header_size) + header.payload_size;
-	if (datagram.size != expected_datagram_size) {
-		return ValidationError::BadDatagramLength;
+	// Reserved header bits are a fixed-envelope property and normatively
+	// precede all length and CRC work. Type-dependent flag relations remain in
+	// validate_fragment_layout(), after session/direction/endpoint validation.
+	if ((header.flags & ReservedMessageFlags) != 0) {
+		return ValidationError::ReservedHeaderFlag;
 	}
 	if (header.payload_size > MaxFragmentPayload) {
 		return ValidationError::DatagramTooLarge;
+	}
+
+	const auto header_bytes = static_cast<std::size_t>(header.header_size);
+	const auto payload_bytes = static_cast<std::size_t>(header.payload_size);
+	if (payload_bytes > std::numeric_limits<std::size_t>::max() - header_bytes) {
+		return ValidationError::BadDatagramLength;
+	}
+	const auto expected_datagram_size = header_bytes + payload_bytes;
+	if (datagram.size != expected_datagram_size) {
+		return ValidationError::BadDatagramLength;
 	}
 
 	const ByteView payload{datagram.data + HeaderSizeV1, header.payload_size};

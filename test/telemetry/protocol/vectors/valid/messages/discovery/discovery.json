@@ -1,0 +1,15 @@
+{
+  "expectedCanonicalJson": "messages/discovery.json",
+  "expectedValidationError": 0,
+  "expectedValidationErrorName": "NONE",
+  "inputFiles": [
+    "discovery.bin"
+  ],
+  "kind": "message-payload",
+  "messageFlags": 0,
+  "messageType": 1,
+  "name": "discovery",
+  "notes": "Deterministic Phase 0 canonical fixture; bytes are authoritative.",
+  "schema": "FSTL-1.0",
+  "valid": true
+}

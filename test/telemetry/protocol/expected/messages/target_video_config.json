@@ -1,0 +1,27 @@
+{
+  "fields": {
+    "bitrate_kbps": 4000,
+    "codec": 1,
+    "codec_level": 41,
+    "codec_profile": 100,
+    "config_generation": 1,
+    "fps_den": 1,
+    "fps_num": 15,
+    "gop_duration_ms": 1000,
+    "height": 960,
+    "idr_recovery_window_ms": 500,
+    "overlay_mode": 1,
+    "pixel_format": 1,
+    "recovery_mode": 1,
+    "render_profile": 1,
+    "request_id": 1,
+    "result": 0,
+    "stream_id": 1,
+    "width": 960
+  },
+  "kind": "message-payload",
+  "messageFlags": 2,
+  "messageName": "TARGET_VIDEO_CONFIG",
+  "messageType": 15,
+  "schema": "FSTL-1.0"
+}

@@ -5,6 +5,7 @@
 
 #include <array>
 #include <cstring>
+#include <string_view>
 
 namespace telemetry::protocol {
 
@@ -100,6 +101,102 @@ ValidationError finish_prefix(PacketWriter& writer) noexcept
 }
 
 } // namespace
+
+ValidationError validate_discovery_payload(const DiscoveryPayload& payload) noexcept
+{
+	if (payload.producer_id == 0 || payload.listen_port == 0) {
+		return ValidationError::OutOfRange;
+	}
+	if (payload.min_major != VersionMajor || payload.max_major != VersionMajor) {
+		return ValidationError::UnsupportedMajor;
+	}
+	if (payload.min_minor != VersionMinor || payload.max_minor != VersionMinor) {
+		return ValidationError::UnsupportedMinor;
+	}
+	if (payload.producer_name.size > MaximumDiscoveryProducerNameSize) {
+		return ValidationError::StringTooLong;
+	}
+	if (payload.producer_name.size != 0 && payload.producer_name.data == nullptr) {
+		return ValidationError::TruncatedPayload;
+	}
+	const auto producer_name = payload.producer_name.empty()
+							   ? std::string_view{}
+							   : std::string_view(static_cast<const char*>(static_cast<const void*>(payload.producer_name.data)),
+									 payload.producer_name.size);
+	return is_valid_utf8(producer_name) ? ValidationError::None : ValidationError::InvalidUtf8;
+}
+
+ValidationError
+encode_discovery_payload(const DiscoveryPayload& payload, MutableByteView output, std::size_t& written) noexcept
+{
+	written = 0;
+	if (const auto error = validate_discovery_payload(payload); error != ValidationError::None) {
+		return error;
+	}
+	if (const auto error = validate_emitted_capabilities(payload.producer_capabilities);
+		error != ValidationError::None) {
+		return error;
+	}
+	if ((payload.producer_capabilities & ~ProducerOwnedCapabilityMask) != 0) {
+		return ValidationError::CapabilityNotNegotiated;
+	}
+
+	std::array<std::uint8_t, DiscoveryPayloadPrefixSize> prefix{};
+	PacketWriter writer(MutableByteView{prefix.data(), prefix.size()});
+	const bool ok = writer.write_u64(payload.producer_id) && writer.write_u16(payload.listen_port) &&
+					writer.write_u8(payload.min_major) && writer.write_u8(payload.max_major) &&
+					writer.write_u8(payload.min_minor) && writer.write_u8(payload.max_minor) &&
+					writer.write_u64(payload.producer_capabilities) && writer.write_u32(payload.advert_sequence) &&
+					writer.write_u16(static_cast<std::uint16_t>(payload.producer_name.size));
+	if (!ok || finish_prefix<DiscoveryPayloadPrefixSize>(writer) != ValidationError::None) {
+		return ValidationError::InternalSerializationError;
+	}
+	return publish_encoded_payload(prefix, payload.producer_name, output, written);
+}
+
+ValidationError decode_discovery_payload(ByteView input, DiscoveryPayload& payload) noexcept
+{
+	payload = DiscoveryPayload{};
+	if (input.size != 0 && input.data == nullptr) {
+		return ValidationError::TruncatedPayload;
+	}
+	if (input.size < DiscoveryPayloadPrefixSize) {
+		return ValidationError::TruncatedPayload;
+	}
+	if (input.size > MaximumDiscoveryPayloadSize) {
+		return ValidationError::StringTooLong;
+	}
+
+	DiscoveryPayload candidate;
+	std::uint16_t producer_name_length = 0;
+	PacketReader reader(ByteView{input.data, DiscoveryPayloadPrefixSize});
+	const bool ok = reader.read_u64(candidate.producer_id) && reader.read_u16(candidate.listen_port) &&
+					reader.read_u8(candidate.min_major) && reader.read_u8(candidate.max_major) &&
+					reader.read_u8(candidate.min_minor) && reader.read_u8(candidate.max_minor) &&
+					reader.read_u64(candidate.producer_capabilities) && reader.read_u32(candidate.advert_sequence) &&
+					reader.read_u16(producer_name_length);
+	if (!ok || !reader.at_end()) {
+		return ValidationError::TruncatedPayload;
+	}
+	if (producer_name_length > MaximumDiscoveryProducerNameSize) {
+		return ValidationError::StringTooLong;
+	}
+	const auto expected_size = DiscoveryPayloadPrefixSize + static_cast<std::size_t>(producer_name_length);
+	if (input.size < expected_size) {
+		return ValidationError::TruncatedPayload;
+	}
+	if (input.size > expected_size) {
+		return ValidationError::TrailingBytes;
+	}
+	candidate.producer_name = producer_name_length == 0
+								  ? ByteView{}
+								  : ByteView{input.data + DiscoveryPayloadPrefixSize, producer_name_length};
+	if (const auto error = validate_discovery_payload(candidate); error != ValidationError::None) {
+		return error;
+	}
+	payload = candidate;
+	return ValidationError::None;
+}
 
 CapabilityExtensionIterator::CapabilityExtensionIterator(ByteView extensions, std::uint16_t extension_count) noexcept
 	: m_extensions(extensions), m_extension_count(extension_count)

@@ -1,0 +1,18 @@
+{
+  "fields": {
+    "active_capabilities": "0",
+    "advertised_capabilities": "0",
+    "capability_generation": 2,
+    "effective_time_us": "1000000",
+    "extension_count": 0,
+    "extensions": [],
+    "extensions_length": 0,
+    "reason": 1,
+    "reserved": "000000"
+  },
+  "kind": "message-payload",
+  "messageFlags": 2,
+  "messageName": "CAPABILITY_UPDATE",
+  "messageType": 20,
+  "schema": "FSTL-1.0"
+}

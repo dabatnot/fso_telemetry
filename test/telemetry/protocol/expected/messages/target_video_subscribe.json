@@ -1,0 +1,24 @@
+{
+  "fields": {
+    "acceptable_render_profiles": 3,
+    "max_bitrate_kbps": 8000,
+    "max_fps": 20,
+    "max_height": 1024,
+    "max_width": 1024,
+    "overlay_capabilities": 15,
+    "preferred_bitrate_kbps": 4000,
+    "preferred_fps": 15,
+    "preferred_height": 960,
+    "preferred_render_profile": 1,
+    "preferred_width": 960,
+    "request_id": 1,
+    "reserved": "000000",
+    "supported_h264_levels": 9,
+    "supported_h264_profiles": 5
+  },
+  "kind": "message-payload",
+  "messageFlags": 2,
+  "messageName": "TARGET_VIDEO_SUBSCRIBE",
+  "messageType": 14,
+  "schema": "FSTL-1.0"
+}

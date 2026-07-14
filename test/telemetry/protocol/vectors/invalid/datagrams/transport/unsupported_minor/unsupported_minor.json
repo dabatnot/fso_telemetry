@@ -1,0 +1,18 @@
+{
+  "expectedValidationError": 6,
+  "expectedValidationErrorName": "UNSUPPORTED_MINOR",
+  "inputFiles": [
+    "000.bin"
+  ],
+  "invalidCategory": "unsupported_minor",
+  "kind": "datagram-sequence",
+  "messageType": 7,
+  "name": "unsupported_minor",
+  "notes": "Wire header mutation: unsupported minor.",
+  "requirementIds": [
+    "P0-REQ-205",
+    "P0-AC-019"
+  ],
+  "schema": "FSTL-1.0",
+  "valid": false
+}

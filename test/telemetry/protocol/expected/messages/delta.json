@@ -1,0 +1,34 @@
+{
+  "fields": {
+    "baseline_snapshot_id": 1,
+    "delta_sequence": 1,
+    "producer_sample_time_us": "1000001",
+    "record_count": 1,
+    "records": [
+      {
+        "fields": {
+          "mission_generation": 1,
+          "paused": 0,
+          "phase": 0,
+          "presence": "0",
+          "producer_sample_time_us": "1000000",
+          "reserved": 0,
+          "time_compression": 1.0
+        },
+        "kind": "record",
+        "recordFlags": 0,
+        "recordLength": 28,
+        "recordName": "MISSION_STATE",
+        "recordType": 2,
+        "recordVersion": 1,
+        "schema": "FSTL-1.0"
+      }
+    ],
+    "reserved": 0
+  },
+  "kind": "message-payload",
+  "messageFlags": 0,
+  "messageName": "DELTA",
+  "messageType": 7,
+  "schema": "FSTL-1.0"
+}

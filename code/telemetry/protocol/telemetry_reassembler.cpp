@@ -1,6 +1,7 @@
 #include "telemetry/protocol/telemetry_reassembler.h"
 
 #include "telemetry/protocol/telemetry_protocol_constants.h"
+#include "telemetry/protocol/telemetry_security.h"
 
 #include <algorithm>
 #include <limits>
@@ -46,6 +47,37 @@ class QuotaReservation {
 	bool m_committed = false;
 };
 
+class GlobalQuotaReservation {
+  public:
+	GlobalQuotaReservation(GlobalReassemblyBudget* budget,
+		MessageSizeClass message_class,
+		std::size_t message_size) noexcept
+		: m_budget(budget), m_message_class(message_class), m_message_size(message_size)
+	{
+	}
+
+	~GlobalQuotaReservation()
+	{
+		if (!m_committed && m_budget != nullptr) {
+			m_budget->release(m_message_class, m_message_size);
+		}
+	}
+
+	GlobalQuotaReservation(const GlobalQuotaReservation&) = delete;
+	GlobalQuotaReservation& operator=(const GlobalQuotaReservation&) = delete;
+
+	void commit() noexcept
+	{
+		m_committed = true;
+	}
+
+  private:
+	GlobalReassemblyBudget* m_budget = nullptr;
+	MessageSizeClass m_message_class = MessageSizeClass::Invalid;
+	std::size_t m_message_size = 0;
+	bool m_committed = false;
+};
+
 bool limits_for(MessageSizeClass message_class, ReassemblyLimits& limits) noexcept {
 	switch (message_class) {
 	case MessageSizeClass::State:
@@ -84,6 +116,20 @@ bool same_bytes(ByteView left, const std::vector<std::uint8_t>& right, std::size
 }
 
 } // namespace
+
+TelemetryReassembler::TelemetryReassembler(GlobalReassemblyBudget& global_budget) noexcept
+	: m_global_budget(&global_budget), m_global_client_admitted(global_budget.try_register_client())
+{
+}
+
+TelemetryReassembler::~TelemetryReassembler()
+{
+	clear();
+	if (m_global_budget != nullptr && m_global_client_admitted) {
+		m_global_budget->release_client();
+		m_global_client_admitted = false;
+	}
+}
 
 ReassemblyResult TelemetryReassembler::ingest(const DatagramView& fragment, ReassembledMessage& completed) {
 	const auto& header = fragment.header;
@@ -130,12 +176,21 @@ ReassemblyResult TelemetryReassembler::ingest(const DatagramView& fragment, Reas
 		    message_class == MessageSizeClass::Video ? m_video_reassemblies : m_state_reassemblies;
 		auto& reserved_byte_count =
 		    message_class == MessageSizeClass::Video ? m_video_reserved_bytes : m_state_reserved_bytes;
+		if (m_global_budget != nullptr && !m_global_client_admitted) {
+			return ReassemblyResult::QuotaExceeded;
+		}
+		if (m_global_budget != nullptr &&
+			m_global_budget->try_reserve(message_class, header.message_size) != GlobalBudgetResult::Reserved) {
+			return ReassemblyResult::QuotaExceeded;
+		}
+		GlobalQuotaReservation global_reservation(m_global_budget, message_class, header.message_size);
 		QuotaReservation reservation(reassembly_count, reserved_byte_count, header.message_size);
 
 		try {
 			Entry candidate;
 			candidate.header = header;
 			candidate.message_class = message_class;
+			candidate.global_budget_reserved = m_global_budget != nullptr;
 			candidate.payload.resize(header.message_size);
 			candidate.received.resize(header.fragment_count, 0);
 			m_entries.emplace_back(std::move(candidate));
@@ -143,6 +198,7 @@ ReassemblyResult TelemetryReassembler::ingest(const DatagramView& fragment, Reas
 			return ReassemblyResult::AllocationFailed;
 		}
 		reservation.commit();
+		global_reservation.commit();
 
 		entry_index = m_entries.size() - 1;
 	}
@@ -194,6 +250,13 @@ bool TelemetryReassembler::discard(std::uint64_t session_id, std::uint32_t messa
 }
 
 void TelemetryReassembler::clear() noexcept {
+	if (m_global_budget != nullptr) {
+		for (const auto& entry : m_entries) {
+			if (entry.global_budget_reserved) {
+				m_global_budget->release(entry.message_class, entry.header.message_size);
+			}
+		}
+	}
 	m_entries.clear();
 	m_state_reassemblies = 0;
 	m_video_reassemblies = 0;
@@ -234,6 +297,9 @@ std::size_t TelemetryReassembler::find_entry(std::uint64_t session_id, std::uint
 
 void TelemetryReassembler::erase_entry(std::size_t index) noexcept {
 	const auto& entry = m_entries[index];
+	if (entry.global_budget_reserved && m_global_budget != nullptr) {
+		m_global_budget->release(entry.message_class, entry.header.message_size);
+	}
 	if (entry.message_class == MessageSizeClass::Video) {
 		--m_video_reassemblies;
 		m_video_reserved_bytes -= entry.header.message_size;

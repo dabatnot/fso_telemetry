@@ -1,0 +1,28 @@
+{
+  "cxxReplay": {
+    "api": [
+      "RecordEnvelopeIterator::next",
+      "validate_business_record"
+    ],
+    "mode": "record-envelope",
+    "status": "exact"
+  },
+  "expectedValidationError": 46,
+  "expectedValidationErrorName": "RESOURCE_LIMIT",
+  "inputFiles": [
+    "comm_asset_count_over_quota.bin"
+  ],
+  "invalidCategory": "quota_before_allocation",
+  "kind": "record",
+  "name": "comm_asset_count_over_quota",
+  "notes": "The 4096-entry manifest quota is rejected before entry iteration.",
+  "recordFlags": 0,
+  "recordType": 25,
+  "recordVersion": 1,
+  "requirementIds": [
+    "P0-REQ-205",
+    "P0-AC-019"
+  ],
+  "schema": "FSTL-1.0",
+  "valid": false
+}

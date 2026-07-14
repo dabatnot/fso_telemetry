@@ -8,6 +8,8 @@
 
 namespace telemetry::protocol {
 
+class GlobalReassemblyBudget;
+
 enum class ReassemblyResult : std::uint8_t {
 	Accepted,
 	Duplicate,
@@ -38,7 +40,14 @@ struct ReassembledMessage {
 // originate from the validated receive pipeline.
 class TelemetryReassembler {
   public:
-	TelemetryReassembler() = default;
+	TelemetryReassembler() noexcept = default;
+	explicit TelemetryReassembler(GlobalReassemblyBudget& global_budget) noexcept;
+	~TelemetryReassembler();
+
+	TelemetryReassembler(const TelemetryReassembler&) = delete;
+	TelemetryReassembler& operator=(const TelemetryReassembler&) = delete;
+	TelemetryReassembler(TelemetryReassembler&&) = delete;
+	TelemetryReassembler& operator=(TelemetryReassembler&&) = delete;
 
 	// completed is left unchanged unless Completed is returned.
 	ReassemblyResult ingest(const DatagramView& fragment, ReassembledMessage& completed);
@@ -48,6 +57,10 @@ class TelemetryReassembler {
 
 	std::size_t active_reassemblies(MessageSizeClass message_class) const noexcept;
 	std::size_t reserved_bytes(MessageSizeClass message_class) const noexcept;
+	bool global_client_admitted() const noexcept
+	{
+		return m_global_budget == nullptr || m_global_client_admitted;
+	}
 
   private:
 	struct Entry {
@@ -56,6 +69,7 @@ class TelemetryReassembler {
 		std::vector<std::uint8_t> payload;
 		std::vector<std::uint8_t> received;
 		std::size_t received_count = 0;
+		bool global_budget_reserved = false;
 	};
 
 	std::size_t find_entry(std::uint64_t session_id, std::uint32_t message_id) const noexcept;
@@ -66,6 +80,8 @@ class TelemetryReassembler {
 	std::size_t m_video_reassemblies = 0;
 	std::size_t m_state_reserved_bytes = 0;
 	std::size_t m_video_reserved_bytes = 0;
+	GlobalReassemblyBudget* m_global_budget = nullptr;
+	bool m_global_client_admitted = false;
 };
 
 } // namespace telemetry::protocol

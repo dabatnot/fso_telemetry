@@ -1,0 +1,28 @@
+{
+  "cxxReplay": {
+    "api": [
+      "RecordEnvelopeIterator::next",
+      "validate_business_record"
+    ],
+    "mode": "record-envelope",
+    "status": "exact"
+  },
+  "expectedValidationError": 28,
+  "expectedValidationErrorName": "BAD_RECORD_LENGTH",
+  "inputFiles": [
+    "record_declared_length_exceeds_input.bin"
+  ],
+  "invalidCategory": "record_length_excessive",
+  "kind": "record",
+  "name": "record_declared_length_exceeds_input",
+  "notes": "record_length declares one byte more than the authoritative input.",
+  "recordFlags": 0,
+  "recordType": 2,
+  "recordVersion": 1,
+  "requirementIds": [
+    "P0-REQ-205",
+    "P0-AC-019"
+  ],
+  "schema": "FSTL-1.0",
+  "valid": false
+}

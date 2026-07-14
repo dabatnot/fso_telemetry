@@ -1,0 +1,28 @@
+{
+  "cxxReplay": {
+    "api": [
+      "RecordEnvelopeIterator::next",
+      "validate_business_record"
+    ],
+    "mode": "record-envelope",
+    "status": "exact"
+  },
+  "expectedValidationError": 24,
+  "expectedValidationErrorName": "TRUNCATED_PAYLOAD",
+  "inputFiles": [
+    "record_truncated_header.bin"
+  ],
+  "invalidCategory": "record_truncated",
+  "kind": "record",
+  "name": "record_truncated_header",
+  "notes": "A record envelope shorter than six octets is truncated.",
+  "recordFlags": 0,
+  "recordType": 2,
+  "recordVersion": 1,
+  "requirementIds": [
+    "P0-REQ-205",
+    "P0-AC-019"
+  ],
+  "schema": "FSTL-1.0",
+  "valid": false
+}

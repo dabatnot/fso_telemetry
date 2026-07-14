@@ -1,0 +1,28 @@
+{
+  "cxxReplay": {
+    "api": [
+      "RecordEnvelopeIterator::next",
+      "validate_business_record"
+    ],
+    "mode": "record-envelope",
+    "status": "exact"
+  },
+  "expectedValidationError": 27,
+  "expectedValidationErrorName": "UNSUPPORTED_RECORD_VERSION",
+  "inputFiles": [
+    "unsupported_record_version.bin"
+  ],
+  "invalidCategory": "record_unsupported_version",
+  "kind": "record",
+  "name": "unsupported_record_version",
+  "notes": "The required record uses an unsupported record_version.",
+  "recordFlags": 0,
+  "recordType": 2,
+  "recordVersion": 2,
+  "requirementIds": [
+    "P0-REQ-205",
+    "P0-AC-019"
+  ],
+  "schema": "FSTL-1.0",
+  "valid": false
+}

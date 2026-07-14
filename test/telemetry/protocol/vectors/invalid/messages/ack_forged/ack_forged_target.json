@@ -1,0 +1,38 @@
+{
+  "context": {
+    "endpoint": "client-a",
+    "reliableTarget": {
+      "crc32": "0x12345678",
+      "endpoint": "client-a",
+      "fragmentCount": 1,
+      "messageId": 100,
+      "messageType": 6,
+      "pending": true
+    }
+  },
+  "cxxReplay": {
+    "api": [
+      "decode_ack_payload",
+      "validate_ack_target"
+    ],
+    "mode": "stateful-context",
+    "status": "exact"
+  },
+  "expectedValidationError": 44,
+  "expectedValidationErrorName": "INVALID_STATE_TRANSITION",
+  "inputFiles": [
+    "ack_forged_target.bin"
+  ],
+  "invalidCategory": "ack_forged",
+  "kind": "message-payload",
+  "messageFlags": 0,
+  "messageType": 10,
+  "name": "ack_forged_target",
+  "notes": "The ACK target tuple was never emitted by the producer.",
+  "requirementIds": [
+    "P0-REQ-205",
+    "P0-AC-019"
+  ],
+  "schema": "FSTL-1.0",
+  "valid": false
+}

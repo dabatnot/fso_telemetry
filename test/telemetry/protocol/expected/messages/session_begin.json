@@ -1,0 +1,14 @@
+{
+  "fields": {
+    "initial_snapshot_id": 1,
+    "mission_instance_id": "1",
+    "producer_session_start_us": "100000",
+    "required_manifest_id": 1,
+    "session_flags": 7
+  },
+  "kind": "message-payload",
+  "messageFlags": 2,
+  "messageName": "SESSION_BEGIN",
+  "messageType": 4,
+  "schema": "FSTL-1.0"
+}

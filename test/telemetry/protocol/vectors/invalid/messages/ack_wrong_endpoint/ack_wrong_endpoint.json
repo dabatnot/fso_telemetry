@@ -1,0 +1,38 @@
+{
+  "context": {
+    "endpoint": "client-b",
+    "reliableTarget": {
+      "crc32": "0x12345678",
+      "endpoint": "client-a",
+      "fragmentCount": 1,
+      "messageId": 100,
+      "messageType": 6,
+      "pending": true
+    }
+  },
+  "cxxReplay": {
+    "api": [
+      "decode_ack_payload",
+      "validate_received_datagram_context"
+    ],
+    "mode": "stateful-context",
+    "status": "exact"
+  },
+  "expectedValidationError": 14,
+  "expectedValidationErrorName": "ENDPOINT_MISMATCH",
+  "inputFiles": [
+    "ack_wrong_endpoint.bin"
+  ],
+  "invalidCategory": "ack_wrong_endpoint",
+  "kind": "message-payload",
+  "messageFlags": 0,
+  "messageType": 10,
+  "name": "ack_wrong_endpoint",
+  "notes": "The ACK arrives from an endpoint different from the retained target owner.",
+  "requirementIds": [
+    "P0-REQ-205",
+    "P0-AC-019"
+  ],
+  "schema": "FSTL-1.0",
+  "valid": false
+}

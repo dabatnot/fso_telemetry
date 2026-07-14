@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <title>Fireball contact</title>
+  <path d="M16 2v6M16 24v6M2 16h6M24 16h6M6 6l4 4M22 22l4 4M26 6l-4 4M10 22l-4 4"/>
+  <path d="m16 9 2.2 4.8L23 16l-4.8 2.2L16 23l-2.2-4.8L9 16l4.8-2.2z"/>
+</svg>

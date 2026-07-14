@@ -1,0 +1,15 @@
+{
+  "fields": {
+    "entity_id": "1",
+    "locks": [],
+    "presence": "0",
+    "producer_sample_time_us": "1000000"
+  },
+  "kind": "record",
+  "recordFlags": 0,
+  "recordLength": 26,
+  "recordName": "LOCK_STATE",
+  "recordType": 15,
+  "recordVersion": 1,
+  "schema": "FSTL-1.0"
+}

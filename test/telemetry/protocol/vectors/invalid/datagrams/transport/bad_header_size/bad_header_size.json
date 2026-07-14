@@ -1,0 +1,18 @@
+{
+  "expectedValidationError": 7,
+  "expectedValidationErrorName": "BAD_HEADER_SIZE",
+  "inputFiles": [
+    "000.bin"
+  ],
+  "invalidCategory": "bad_header_size",
+  "kind": "datagram-sequence",
+  "messageType": 7,
+  "name": "bad_header_size",
+  "notes": "Wire header mutation: bad header size.",
+  "requirementIds": [
+    "P0-REQ-205",
+    "P0-AC-019"
+  ],
+  "schema": "FSTL-1.0",
+  "valid": false
+}

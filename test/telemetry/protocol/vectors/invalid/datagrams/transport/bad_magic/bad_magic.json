@@ -1,0 +1,18 @@
+{
+  "expectedValidationError": 4,
+  "expectedValidationErrorName": "BAD_MAGIC",
+  "inputFiles": [
+    "000.bin"
+  ],
+  "invalidCategory": "bad_magic",
+  "kind": "datagram-sequence",
+  "messageType": 7,
+  "name": "bad_magic",
+  "notes": "Wire header mutation: bad magic.",
+  "requirementIds": [
+    "P0-REQ-205",
+    "P0-AC-019"
+  ],
+  "schema": "FSTL-1.0",
+  "valid": false
+}

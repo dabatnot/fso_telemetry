@@ -1,0 +1,28 @@
+{
+  "cxxReplay": {
+    "api": [
+      "RecordEnvelopeIterator::next",
+      "validate_business_record"
+    ],
+    "mode": "record-envelope",
+    "status": "exact"
+  },
+  "expectedValidationError": 34,
+  "expectedValidationErrorName": "OUT_OF_RANGE",
+  "inputFiles": [
+    "quaternion_non_canonical_sign.bin"
+  ],
+  "invalidCategory": "quaternion_non_canonical",
+  "kind": "record",
+  "name": "quaternion_non_canonical_sign",
+  "notes": "A normalized quaternion uses the forbidden negative canonical sign.",
+  "recordFlags": 0,
+  "recordType": 7,
+  "recordVersion": 1,
+  "requirementIds": [
+    "P0-REQ-205",
+    "P0-AC-019"
+  ],
+  "schema": "FSTL-1.0",
+  "valid": false
+}

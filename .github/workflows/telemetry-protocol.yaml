@@ -1,0 +1,190 @@
+name: Telemetry protocol conformance
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/telemetry-protocol.yaml'
+      - 'CMakeLists.txt'
+      - 'code/CMakeLists.txt'
+      - 'code/telemetry/protocol/**'
+      - 'documentation/analysis/specs/0-Contrat-de-protocole/**'
+      - 'test/src/source_groups.cmake'
+      - 'test/src/telemetry/protocol/**'
+      - 'test/telemetry/protocol/**'
+  push:
+    branches: [master, 'codex/**']
+    paths:
+      - '.github/workflows/telemetry-protocol.yaml'
+      - 'CMakeLists.txt'
+      - 'code/CMakeLists.txt'
+      - 'code/telemetry/protocol/**'
+      - 'documentation/analysis/specs/0-Contrat-de-protocole/**'
+      - 'test/src/source_groups.cmake'
+      - 'test/src/telemetry/protocol/**'
+      - 'test/telemetry/protocol/**'
+  workflow_dispatch:
+
+jobs:
+  schema_vectors:
+    name: Schema, vectors and coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: true
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - name: Verify schema and numeric registries
+        run: python -B test/telemetry/protocol/tools/fstl_schema.py --self-test
+      - name: Verify schema layouts against golden bytes
+        run: python -B test/telemetry/protocol/tools/verify_schema_vectors.py --check
+      - name: Verify transport vectors
+        run: python -B test/telemetry/protocol/tools/generate_transport_vectors.py --check
+      - name: Verify message and record vectors
+        run: python -B test/telemetry/protocol/tools/generate_protocol_vectors.py --check
+      - name: Verify independent decoder
+        run: python -B test/telemetry/protocol/tools/fstl_reference_decoder.py --check
+      - name: Publish automatic protocol coverage
+        run: >-
+          python -B test/telemetry/protocol/tools/verify_telemetry_assets.py
+          --require-complete --report telemetry-coverage.json
+      - name: Verify vector-seeded fuzz corpus
+        run: >-
+          python -B test/telemetry/protocol/fuzz/prepare_fuzz_corpus.py
+          --vectors test/telemetry/protocol/vectors
+          --output telemetry-fuzz-corpus
+      - uses: actions/upload-artifact@v7
+        with:
+          name: telemetry-protocol-reports
+          path: |
+            telemetry-coverage.json
+            telemetry-fuzz-corpus/manifest.json
+            test/telemetry/protocol/protocol-coverage.json
+
+  cpp_unittests_linux:
+    name: C++ protocol unit tests (Linux)
+    runs-on: ubuntu-latest
+    container: ghcr.io/scp-fs2open/linux_build:sha-ab87451
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: true
+      - name: Set workspace as safe
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - name: Configure protocol unit tests
+        run: >-
+          cmake -S . -B build-telemetry-tests -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DFSO_BUILD_TESTS=ON
+          -DFSO_BUILD_QTFRED=OFF
+          -DFSO_BUILD_FRED2=OFF
+          -DFSO_USE_SPEECH=OFF
+          -DFSO_USE_VOICEREC=OFF
+          -DFSO_BUILD_WITH_FFMPEG=OFF
+          -DFSO_BUILD_WITH_DISCORD=OFF
+          -DFSO_BUILD_WITH_OPENGL=OFF
+          -DFSO_BUILD_WITH_OPENXR=OFF
+          -DFSO_BUILD_INCLUDED_LIBS=ON
+          -DFSO_USE_LTO=OFF
+          -DENABLE_COTIRE=OFF
+      - name: Build protocol unit tests
+        run: cmake --build build-telemetry-tests --target unittests
+      - name: Run protocol unit tests
+        run: >-
+          ./build-telemetry-tests/bin/unittests
+          --gtest_filter='TelemetryProtocol*'
+          --gtest_color=no
+
+  fuzz_unix:
+    name: Fuzz smoke (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: true
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - name: Install Ninja on macOS
+        if: runner.os == 'macOS'
+        run: brew install ninja
+      - name: Select Clang
+        shell: bash
+        run: |
+          echo "CC=clang" >> "$GITHUB_ENV"
+          echo "CXX=clang++" >> "$GITHUB_ENV"
+      - name: Configure optional fuzz targets
+        shell: bash
+        run: >-
+          cmake -S . -B build-telemetry-fuzz -G Ninja
+          -DCMAKE_BUILD_TYPE=Debug
+          -DFSO_BUILD_TELEMETRY_FUZZERS=ON
+          -DFSO_BUILD_TESTS=OFF
+          -DFSO_BUILD_QTFRED=OFF
+          -DFSO_BUILD_FRED2=OFF
+          -DFSO_USE_SPEECH=OFF
+          -DFSO_USE_VOICEREC=OFF
+          -DFSO_BUILD_WITH_FFMPEG=OFF
+          -DFSO_BUILD_WITH_DISCORD=OFF
+          -DFSO_BUILD_WITH_OPENGL=OFF
+          -DFSO_BUILD_WITH_OPENXR=OFF
+          -DFSO_BUILD_INCLUDED_LIBS=ON
+          -DFSO_USE_LTO=OFF
+          -DENABLE_COTIRE=OFF
+      - name: Build and run ASan/UBSan fuzz smoke
+        run: cmake --build build-telemetry-fuzz --target telemetry_fuzz_smoke
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: telemetry-fuzz-${{ matrix.os }}
+          path: |
+            build-telemetry-fuzz/telemetry-fuzz-corpus/manifest.json
+            build-telemetry-fuzz/telemetry-fuzz-artifacts/**
+          if-no-files-found: ignore
+
+  fuzz_windows:
+    name: Fuzz corpus replay (Windows ASan)
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: true
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - name: Configure optional replay targets
+        shell: pwsh
+        run: >-
+          cmake -S . -B build-telemetry-fuzz -A x64
+          -DFSO_BUILD_TELEMETRY_FUZZERS=ON
+          -DFSO_TELEMETRY_FUZZ_STANDALONE=ON
+          -DFSO_BUILD_TESTS=OFF
+          -DFSO_BUILD_QTFRED=OFF
+          -DFSO_BUILD_FRED2=OFF
+          -DFSO_USE_SPEECH=OFF
+          -DFSO_USE_VOICEREC=OFF
+          -DFSO_BUILD_WITH_FFMPEG=OFF
+          -DFSO_BUILD_WITH_DISCORD=OFF
+          -DFSO_BUILD_WITH_OPENGL=OFF
+          -DFSO_BUILD_WITH_OPENXR=OFF
+          -DFSO_BUILD_INCLUDED_LIBS=ON
+          -DFSO_USE_LTO=OFF
+          -DENABLE_COTIRE=OFF
+      - name: Build and replay corpus under ASan
+        shell: pwsh
+        run: >-
+          cmake --build build-telemetry-fuzz --config Release
+          --target telemetry_fuzz_smoke -- /verbosity:minimal
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: telemetry-fuzz-windows
+          path: |
+            build-telemetry-fuzz/telemetry-fuzz-corpus/manifest.json
+            build-telemetry-fuzz/telemetry-fuzz-artifacts/**
+          if-no-files-found: ignore

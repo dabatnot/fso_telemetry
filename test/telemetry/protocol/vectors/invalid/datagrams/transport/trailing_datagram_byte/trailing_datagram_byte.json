@@ -1,12 +1,18 @@
 {
   "expectedValidationError": 9,
+  "expectedValidationErrorName": "BAD_DATAGRAM_LENGTH",
   "inputFiles": [
     "000.bin"
   ],
+  "invalidCategory": "trailing_datagram_byte",
   "kind": "datagram-sequence",
   "messageType": 7,
   "name": "trailing_datagram_byte",
   "notes": "Actual datagram length exceeds the declared length.",
+  "requirementIds": [
+    "P0-REQ-205",
+    "P0-AC-019"
+  ],
   "schema": "FSTL-1.0",
   "valid": false
 }

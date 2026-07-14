@@ -1,0 +1,27 @@
+{
+  "cxxReplay": {
+    "api": [
+      "decode_full_snapshot_part_payload",
+      "decode_business_snapshot_region"
+    ],
+    "mode": "payload",
+    "status": "exact"
+  },
+  "expectedValidationError": 29,
+  "expectedValidationErrorName": "DUPLICATE_RECORD",
+  "inputFiles": [
+    "duplicate_singleton_record.bin"
+  ],
+  "invalidCategory": "record_duplicate_singleton",
+  "kind": "message-payload",
+  "messageFlags": 6,
+  "messageType": 6,
+  "name": "duplicate_singleton_record",
+  "notes": "A FULL_SNAPSHOT contains SESSION_STATE twice.",
+  "requirementIds": [
+    "P0-REQ-205",
+    "P0-AC-019"
+  ],
+  "schema": "FSTL-1.0",
+  "valid": false
+}

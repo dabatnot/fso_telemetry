@@ -1,0 +1,14 @@
+{
+  "fields": {
+    "ack_flags": 3,
+    "target_fragment_count": 1,
+    "target_message_crc32": "0x12345678",
+    "target_message_id": 100,
+    "target_message_type": 6
+  },
+  "kind": "message-payload",
+  "messageFlags": 0,
+  "messageName": "ACK",
+  "messageType": 10,
+  "schema": "FSTL-1.0"
+}

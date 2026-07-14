@@ -1,12 +1,18 @@
 {
   "expectedValidationError": 19,
+  "expectedValidationErrorName": "BAD_FRAGMENT_SLICE",
   "inputFiles": [
     "000.bin"
   ],
+  "invalidCategory": "fragment_slice_noncanonical",
   "kind": "datagram-sequence",
   "messageType": 7,
   "name": "fragment_slice_noncanonical",
   "notes": "Transport mutation: fragment slice noncanonical.",
+  "requirementIds": [
+    "P0-REQ-205",
+    "P0-AC-019"
+  ],
   "schema": "FSTL-1.0",
   "valid": false
 }

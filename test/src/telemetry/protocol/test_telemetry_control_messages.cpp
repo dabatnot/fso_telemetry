@@ -2,6 +2,7 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -96,6 +97,104 @@ std::vector<std::uint8_t> encode_payload(const Payload& payload, std::size_t siz
 	EXPECT_EQ(ValidationError::None, encode(payload, mutable_byte_view(bytes), written));
 	EXPECT_EQ(size, written);
 	return bytes;
+}
+
+DiscoveryPayload valid_discovery(ByteView producer_name = ByteView{})
+{
+	DiscoveryPayload payload;
+	payload.producer_id = 0x0102030405060708ULL;
+	payload.listen_port = 7808U;
+	payload.producer_capabilities =
+		CapabilityCommViewAuthoritativeSource | CapabilityTargetVideoRemoteRender | CapabilityUpdate;
+	payload.advert_sequence = 0x11223344U;
+	payload.producer_name = producer_name;
+	return payload;
+}
+
+TEST(TelemetryProtocolControlMessages, DiscoveryGoldenRoundTripIsBoundedUtf8AndAtomic)
+{
+	const std::array<std::uint8_t, 4> name{{'F', 'S', 'T', 'L'}};
+	const auto original = valid_discovery(byte_view(name));
+	std::array<std::uint8_t, DiscoveryPayloadPrefixSize + name.size()> encoded{};
+	std::size_t written = 99U;
+	ASSERT_EQ(ValidationError::None,
+		encode_discovery_payload(original, mutable_byte_view(encoded), written));
+	EXPECT_EQ(encoded.size(), written);
+	const std::array<std::uint8_t, DiscoveryPayloadPrefixSize + name.size()> golden{{
+		0x08U, 0x07U, 0x06U, 0x05U, 0x04U, 0x03U, 0x02U, 0x01U,
+		0x80U, 0x1eU, 0x01U, 0x01U, 0x00U, 0x00U,
+		0x1aU, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U,
+		0x44U, 0x33U, 0x22U, 0x11U, 0x04U, 0x00U,
+		'F', 'S', 'T', 'L',
+	}};
+	EXPECT_EQ(golden, encoded);
+
+	DiscoveryPayload decoded;
+	ASSERT_EQ(ValidationError::None, decode_discovery_payload(byte_view(golden), decoded));
+	EXPECT_EQ(original.producer_id, decoded.producer_id);
+	EXPECT_EQ(original.listen_port, decoded.listen_port);
+	EXPECT_EQ(original.producer_capabilities, decoded.producer_capabilities);
+	EXPECT_EQ(original.advert_sequence, decoded.advert_sequence);
+	ASSERT_EQ(name.size(), decoded.producer_name.size);
+	EXPECT_TRUE(std::equal(name.begin(), name.end(), decoded.producer_name.begin()));
+
+	std::array<std::uint8_t, encoded.size() - 1U> short_output{};
+	short_output.fill(0xa5U);
+	const auto canary = short_output;
+	written = 99U;
+	EXPECT_EQ(ValidationError::InternalSerializationError,
+		encode_discovery_payload(original, mutable_byte_view(short_output), written));
+	EXPECT_EQ(0U, written);
+	EXPECT_EQ(canary, short_output);
+
+	auto truncated = std::vector<std::uint8_t>(golden.begin(), golden.end() - 1U);
+	decoded.producer_id = 99U;
+	EXPECT_EQ(ValidationError::TruncatedPayload, decode_discovery_payload(byte_view(truncated), decoded));
+	EXPECT_EQ(0U, decoded.producer_id);
+	auto trailing = std::vector<std::uint8_t>(golden.begin(), golden.end());
+	trailing.push_back(0U);
+	EXPECT_EQ(ValidationError::TrailingBytes, decode_discovery_payload(byte_view(trailing), decoded));
+}
+
+TEST(TelemetryProtocolControlMessages, DiscoveryDecodingIsExtensibleButV1EmissionIsStrict)
+{
+	const std::array<std::uint8_t, 2> invalid_utf8{{0xc0U, 0xafU}};
+	auto malformed = valid_discovery(byte_view(invalid_utf8));
+	EXPECT_EQ(ValidationError::InvalidUtf8, validate_discovery_payload(malformed));
+	const std::array<std::uint8_t, 3> embedded_nul{{'A', 0U, 'B'}};
+	malformed.producer_name = byte_view(embedded_nul);
+	EXPECT_EQ(ValidationError::InvalidUtf8, validate_discovery_payload(malformed));
+	malformed = valid_discovery();
+	malformed.producer_id = 0U;
+	EXPECT_EQ(ValidationError::OutOfRange, validate_discovery_payload(malformed));
+	malformed = valid_discovery();
+	malformed.listen_port = 0U;
+	EXPECT_EQ(ValidationError::OutOfRange, validate_discovery_payload(malformed));
+	malformed = valid_discovery();
+	malformed.min_major = 0U;
+	EXPECT_EQ(ValidationError::UnsupportedMajor, validate_discovery_payload(malformed));
+
+	auto bytes = encode_payload(valid_discovery(), DiscoveryPayloadPrefixSize, encode_discovery_payload);
+	const auto unknown_bit = std::uint64_t{1} << 63U;
+	put_u64(bytes, 14U, valid_discovery().producer_capabilities | unknown_bit);
+	DiscoveryPayload decoded;
+	ASSERT_EQ(ValidationError::None, decode_discovery_payload(byte_view(bytes), decoded));
+	EXPECT_NE(0U, decoded.producer_capabilities & unknown_bit);
+	std::array<std::uint8_t, DiscoveryPayloadPrefixSize> output{};
+	output.fill(0xa5U);
+	const auto canary = output;
+	std::size_t written = 99U;
+	EXPECT_EQ(ValidationError::ReservedFlag,
+		encode_discovery_payload(decoded, mutable_byte_view(output), written));
+	EXPECT_EQ(0U, written);
+	EXPECT_EQ(canary, output);
+
+	malformed = valid_discovery();
+	malformed.producer_capabilities |= CapabilityCommViewLocalAssets;
+	written = 99U;
+	EXPECT_EQ(ValidationError::CapabilityNotNegotiated,
+		encode_discovery_payload(malformed, mutable_byte_view(output), written));
+	EXPECT_EQ(0U, written);
 }
 
 TEST(TelemetryProtocolControlMessages, CapabilityExtensionsDecodeUnknownButRejectInvalidOrDuplicateEnvelopes)

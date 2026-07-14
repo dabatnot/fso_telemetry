@@ -1,0 +1,21 @@
+{
+  "context": {
+    "remainingReassemblyBytes": 0
+  },
+  "expectedValidationError": 20,
+  "expectedValidationErrorName": "REASSEMBLY_QUOTA",
+  "inputFiles": [
+    "000.bin"
+  ],
+  "invalidCategory": "reassembly_quota_before_allocation",
+  "kind": "datagram-sequence",
+  "messageType": 7,
+  "name": "reassembly_quota_before_allocation",
+  "notes": "The per-client reassembly budget is exhausted before candidate allocation.",
+  "requirementIds": [
+    "P0-REQ-205",
+    "P0-AC-019"
+  ],
+  "schema": "FSTL-1.0",
+  "valid": false
+}

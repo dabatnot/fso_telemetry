@@ -1,0 +1,17 @@
+{
+  "fields": {
+    "entity_id": "1",
+    "phase": 0,
+    "presence": "0",
+    "producer_sample_time_us": "1000000",
+    "reserved": "000000",
+    "support_flags": 0
+  },
+  "kind": "record",
+  "recordFlags": 0,
+  "recordLength": 29,
+  "recordName": "SUPPORT_STATE",
+  "recordType": 22,
+  "recordVersion": 1,
+  "schema": "FSTL-1.0"
+}

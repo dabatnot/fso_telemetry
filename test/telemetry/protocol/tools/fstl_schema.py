@@ -21,6 +21,7 @@ import hashlib
 import json
 import math
 import re
+import subprocess
 import sys
 import tempfile
 import unicodedata
@@ -43,6 +44,7 @@ REPO_ROOT = Path(__file__).resolve().parents[4]
 PHASE_DIR = REPO_ROOT / "documentation" / "analysis" / "specs" / "0-Contrat-de-protocole"
 SCHEMA_PATH = REPO_ROOT / "test" / "telemetry" / "protocol" / "schema" / "fstl-v1.yaml"
 CPP_CONSTANTS_PATH = REPO_ROOT / "code" / "telemetry" / "protocol" / "telemetry_protocol_constants.h"
+SCHEMA_VECTOR_CHECKER_PATH = Path(__file__).resolve().with_name("verify_schema_vectors.py")
 
 SOURCE_NAMES = (
     "01-cadre-normatif-et-perimetre.md",
@@ -183,6 +185,13 @@ def cell(row: dict[str, str], *names: str) -> str:
             if name in key:
                 return value
     raise SchemaError(f"missing expected column {names!r} in row with columns {tuple(row)}")
+
+
+def optional_cell(row: dict[str, str], *names: str) -> str:
+    try:
+        return cell(row, *names)
+    except SchemaError:
+        return ""
 
 
 def parse_exact_int(value: str) -> int:
@@ -570,6 +579,207 @@ def parse_message_types(doc02: str, doc03: str, doc05: str) -> tuple[dict[str, o
     return invalid, valid
 
 
+MESSAGE_LAYOUT_SPECS: dict[int, tuple[str, str, str, str]] = {
+    1: ("02", r"### 9\.2 DiscoveryPayload", "DiscoveryPayload", "9.2"),
+    2: ("02", r"### 9\.3 HelloPayload", "HelloPayload", "9.3"),
+    3: ("02", r"### 9\.4 WelcomePayload", "WelcomePayload", "9.4"),
+    4: ("02", r"### 9\.5 SessionBeginPayload", "SessionBeginPayload", "9.5"),
+    5: ("02", r"### 10\.2 ManifestPartPayload", "ManifestPartPayload", "10.2"),
+    6: ("02", r"### 10\.3 FullSnapshotPartPayload", "FullSnapshotPartPayload", "10.3"),
+    7: ("02", r"### 10\.4 DeltaPayload", "DeltaPayload", "10.4"),
+    8: ("02", r"### 10\.5 EventBatchPayload", "EventBatchPayload", "10.5"),
+    9: ("02", r"### 9\.6 HeartbeatPayload", "HeartbeatPayload", "9.6"),
+    10: ("02", r"### 9\.7 AckPayload", "AckPayload", "9.7"),
+    11: ("02", r"### 9\.8 NackPayload", "NackPayload", "9.8"),
+    12: ("02", r"### 9\.9 ResyncRequestPayload", "ResyncRequestPayload", "9.9"),
+    13: ("02", r"### 9\.10 SessionEndPayload", "SessionEndPayload", "9.10"),
+    14: ("05", r"### 7\.1 TARGET_VIDEO_SUBSCRIBE .*", "TARGET_VIDEO_SUBSCRIBE", "7.1"),
+    15: ("05", r"### 7\.2 TARGET_VIDEO_CONFIG .*", "TARGET_VIDEO_CONFIG", "7.2"),
+    16: ("05", r"### 7\.3 TARGET_VIDEO_FRAME .*", "TARGET_VIDEO_FRAME", "7.3"),
+    17: ("05", r"### 7\.4 TARGET_VIDEO_KEYFRAME_REQUEST .*", "TARGET_VIDEO_KEYFRAME_REQUEST", "7.4"),
+    18: ("05", r"### 7\.5 TARGET_VIDEO_STOP .*", "TARGET_VIDEO_STOP", "7.5"),
+    19: ("05", r"### 7\.6 TARGET_VIDEO_STATS .*", "TARGET_VIDEO_STATS", "7.6"),
+    20: ("02", r"### 9\.11 CapabilityUpdatePayload", "CapabilityUpdatePayload", "9.11"),
+}
+
+
+def fixed_wire_size(wire: str) -> int | None:
+    scalar_sizes = {
+        "u8": 1,
+        "i8": 1,
+        "bool8": 1,
+        "bytes": 1,
+        "u16": 2,
+        "i16": 2,
+        "u32": 4,
+        "i32": 4,
+        "float32": 4,
+        "rgba8": 4,
+        "u64": 8,
+        "i64": 8,
+        "entity_id": 8,
+        "asset_id": 8,
+        "duration_us": 8,
+        "sample_time_us": 8,
+        "vec3f": 12,
+        "quatf": 16,
+        "mat3f": 36,
+    }
+    if wire in scalar_sizes:
+        return scalar_sizes[wire]
+    match = re.fullmatch(r"(bytes|u8|i8|u16|i16|u32|i32|u64|i64|float32)\[([0-9]+)\]", wire)
+    if not match:
+        return None
+    item_size = scalar_sizes.get(match.group(1))
+    if item_size is None:
+        return None
+    return item_size * int(match.group(2))
+
+
+def parse_wire_cell(value: str) -> str:
+    code_tokens = re.findall(r"`([^`]+)`", value)
+    if code_tokens:
+        return code_tokens[0].strip()
+    return strip_inline_markdown(value)
+
+
+def parse_message_qos(doc03: str, messages: Sequence[dict[str, object]]) -> dict[int, list[dict[str, object]]]:
+    section = extract_section(doc03, r"### 7\.1 .*Matrice")
+    table = find_table(section, ("Message", "Livraison", "ACK requis"))
+    rows = [row_dict(table, raw_row) for raw_row in table.rows]
+    result: dict[int, list[dict[str, object]]] = {}
+    for message in messages:
+        message_name = normalize_symbol(str(message["name"]))
+        matches: list[dict[str, object]] = []
+        for row in rows:
+            raw_variant = cell(row, "Message")
+            code_tokens = re.findall(r"`([^`]+)`", raw_variant)
+            if not code_tokens:
+                code_tokens = [strip_inline_markdown(raw_variant)]
+            if not any(
+                message_name == normalize_symbol(token)
+                or normalize_symbol(token).startswith(message_name)
+                for token in code_tokens
+            ):
+                continue
+            delivery = strip_inline_markdown(cell(row, "Livraison"))
+            ack = strip_inline_markdown(cell(row, "ACK requis"))
+            matches.append(
+                {
+                    "variant": strip_inline_markdown(raw_variant),
+                    "delivery": delivery,
+                    "ack_required": ack,
+                    "delivery_tags": sorted(canonical_delivery_tags(f"{raw_variant} {delivery}")),
+                    "source": registry_source("03-session-horloges-fiabilite.md", "7.1"),
+                }
+            )
+        if not matches:
+            raise SchemaError(f"MessageType {message['id']} has no machine-readable QoS row")
+        result[int(message["id"])] = matches
+    return result
+
+
+def parse_local_payload_limit(section: str) -> int | None:
+    patterns = (
+        r"payload complet mesure au plus\s+([0-9\s\u00a0\u202f]+)\s+octets",
+        r"payload total est limit[^.]*?\s+([0-9\s\u00a0\u202f]+)\s+octets",
+        r"taille logique maximale est\s+([0-9\s\u00a0\u202f]+)\s+octets",
+        r"encoded_frame_size est donc au plus\s+([0-9\s\u00a0\u202f]+)",
+    )
+    for pattern in patterns:
+        match = re.search(pattern, section, re.IGNORECASE)
+        if match:
+            return int(re.sub(r"[\s\u00a0\u202f]", "", match.group(1)))
+    return None
+
+
+def parse_message_layouts(
+    doc02: str,
+    doc03: str,
+    doc05: str,
+    messages: Sequence[dict[str, object]],
+) -> dict[int, dict[str, object]]:
+    qos = parse_message_qos(doc03, messages)
+    layouts: dict[int, dict[str, object]] = {}
+    for message in messages:
+        message_id = int(message["id"])
+        document_key, heading_pattern, layout_name, section_number = MESSAGE_LAYOUT_SPECS[message_id]
+        document = doc02 if document_key == "02" else doc05
+        section = extract_section(document, heading_pattern)
+        table = find_table(section, ("Offset", "Champ", "Type"))
+        fields: list[dict[str, object]] = []
+        for raw_row in table.rows:
+            row = row_dict(table, raw_row)
+            fields.append(
+                {
+                    "offset": parse_exact_int(cell(row, "Offset")),
+                    "name": strip_inline_markdown(cell(row, "Champ")),
+                    "wire": parse_wire_cell(cell(row, "Type")),
+                    "rule": strip_inline_markdown(optional_cell(row, "Règle")),
+                }
+            )
+        if not fields:
+            raise SchemaError(f"MessageType {message_id} has an empty payload layout")
+        require_unique(fields, "name", f"MessageType {message_id} fields")
+        require_unique_normalized_names(fields, "name", f"MessageType {message_id} fields")
+        offsets = [int(field["offset"]) for field in fields]
+        if offsets != sorted(offsets) or len(offsets) != len(set(offsets)):
+            raise SchemaError(f"MessageType {message_id} offsets collide or regress: {offsets}")
+
+        variable_fields = [
+            field
+            for field in fields
+            if fixed_wire_size(str(field["wire"])) is None
+            and int(field["offset"]) == offsets[-1]
+        ]
+        exact_size: int | None = None
+        if not variable_fields:
+            final_size = fixed_wire_size(str(fields[-1]["wire"]))
+            if final_size is None:
+                raise SchemaError(
+                    f"MessageType {message_id} final field {fields[-1]['name']} has unknown fixed width"
+                )
+            exact_size = int(fields[-1]["offset"]) + final_size
+        fixed_prefix = int(variable_fields[0]["offset"]) if variable_fields else exact_size
+        if fixed_prefix is None:
+            raise SchemaError(f"MessageType {message_id} fixed prefix could not be derived")
+
+        local_limit = parse_local_payload_limit(section)
+        limits: dict[str, object] = {
+            "size_kind": "variable" if variable_fields else "fixed",
+            "fixed_prefix_bytes": fixed_prefix,
+            "reassembly_limit_bytes": 2_097_152 if message_id == 16 else 1_048_576,
+            "reassembly_class": "target-video-frame" if message_id == 16 else "control-state",
+        }
+        if exact_size is not None:
+            limits["exact_size_bytes"] = exact_size
+            limits["application_limit_bytes"] = exact_size
+        elif local_limit is not None:
+            # For TARGET_VIDEO_FRAME, the prose gives both the total limit and the
+            # encoded-frame bound. The total reassembly limit is the payload bound.
+            limits["application_limit_bytes"] = (
+                2_097_152 if message_id == 16 else local_limit
+            )
+        if message_id == 20:
+            limits["v1_exact_size_bytes"] = fixed_prefix
+
+        source_name = (
+            "02-format-filaire-et-registres.md"
+            if document_key == "02"
+            else "05-capabilities-et-vues-specialisees.md"
+        )
+        layouts[message_id] = {
+            "layout_name": layout_name,
+            "position_kind": "offset",
+            "fields": fields,
+            "qos": qos[message_id],
+            "limits": limits,
+            "source": registry_source(source_name, section_number),
+        }
+    require_contiguous([{"id": value} for value in layouts], "id", 1, 20, "MessageType layouts")
+    return layouts
+
+
 def parse_record_registry(doc02: str, doc04: str, doc05: str) -> tuple[dict[str, object], list[dict[str, object]]]:
     section02 = extract_section(doc02, r"### 7\.1 RecordType")
     table02 = find_table(section02, ("Valeur", "Nom"))
@@ -748,6 +958,248 @@ def parse_record_layouts(doc04: str, registry: Sequence[dict[str, object]]) -> d
         if normalize_symbol(str(layout["layout_name"])) != normalize_symbol(str(by_id[record_id]["name"])):
             raise SchemaError(f"RecordType {record_id} layout heading does not match registry")
     return layouts
+
+
+def extract_marked_region(text: str, start_marker: str, end_marker: str | None) -> tuple[str, int]:
+    start = text.find(start_marker)
+    if start < 0:
+        raise SchemaError(f"nested-layout marker not found: {start_marker!r}")
+    if end_marker is None:
+        end = text.find("\n\n", start)
+    else:
+        end = text.find(end_marker, start + len(start_marker))
+    if end < 0:
+        raise SchemaError(f"nested-layout end marker not found after {start_marker!r}: {end_marker!r}")
+    return text[start:end], start
+
+
+def section_number_at(text: str, offset: int) -> str:
+    result = "2.1"
+    for match in re.finditer(r"^###\s+([0-9]+\.[0-9]+)\s+", text[:offset], re.MULTILINE):
+        result = match.group(1)
+    return result
+
+
+def parse_inline_structure_fields(
+    region: str,
+    untyped_fields: dict[str, str] | None = None,
+    layout_start_marker: str | None = None,
+) -> list[dict[str, object]]:
+    layout = region
+    if layout_start_marker is not None:
+        start = region.find(layout_start_marker)
+        if start < 0:
+            raise SchemaError(f"nested layout marker missing from region: {layout_start_marker!r}")
+        layout = region[start + len(layout_start_marker):]
+    overrides = untyped_fields or {}
+    fields: list[dict[str, object]] = []
+    declaration_re = re.compile(
+        r"^(?P<name>[a-z][a-z0-9_]*):(?P<wire>[A-Za-z][A-Za-z0-9_]*(?:<[^`\s]+>|\[[^`\s]+\])?)"
+    )
+    for match in re.finditer(r"`([^`\n]+)`", layout):
+        declaration = match.group(1).strip()
+        typed = declaration_re.match(declaration)
+        if typed:
+            field_name = typed.group("name")
+            wire = typed.group("wire")
+        elif declaration in overrides:
+            field_name = declaration
+            wire = overrides[declaration]
+        else:
+            continue
+        line_start = layout.rfind("\n", 0, match.start()) + 1
+        line_end = layout.find("\n", match.end())
+        if line_end < 0:
+            line_end = len(layout)
+        fields.append(
+            {
+                "position": len(fields) + 1,
+                "name": field_name,
+                "wire": wire,
+                "declaration": declaration,
+                "rule": strip_inline_markdown(layout[line_start:line_end].strip()),
+            }
+        )
+    if not fields:
+        raise SchemaError("nested layout has no typed field declarations")
+    occurrences: dict[str, int] = {}
+    for field in fields:
+        name = str(field["name"])
+        occurrences[name] = occurrences.get(name, 0) + 1
+        field["occurrence"] = occurrences[name]
+    return fields
+
+
+def parse_presence_bits(region: str) -> list[dict[str, object]]:
+    result: list[dict[str, object]] = []
+    for name, bit in re.findall(r"`?([A-Z][A-Z0-9_]+)=bit\s*([0-9]+)`?", region):
+        result.append({"name": name, "bit": int(bit), "mask": 1 << int(bit)})
+    deduplicated: dict[tuple[str, int], dict[str, object]] = {}
+    for item in result:
+        deduplicated[(str(item["name"]), int(item["bit"]))] = item
+    return list(deduplicated.values())
+
+
+def structured_type_references(wire: str) -> list[str]:
+    return re.findall(r"\b([A-Z][A-Za-z0-9]+V1)\b", wire)
+
+
+def parse_wire_aliases(doc04: str) -> list[dict[str, object]]:
+    section = extract_section(doc04, r"### 2\.1 Types .*g.*s")
+    table = find_table(section, ("Notation", "Encodage"))
+    aliases: list[dict[str, object]] = []
+    for raw_row in table.rows:
+        row = row_dict(table, raw_row)
+        notation_cell = cell(row, "Notation")
+        notation = strip_inline_markdown(notation_cell)
+        rule = strip_inline_markdown(cell(row, "Encodage"))
+        code_tokens = re.findall(r"`([^`]+)`", cell(row, "Encodage"))
+        if not code_tokens:
+            raise SchemaError(f"wire alias {notation!r} has no encoded representation")
+        representation = code_tokens[0].split(",", 1)[0].strip()
+        notation_tokens = re.findall(r"`([^`]+)`", notation_cell)
+        if not notation_tokens:
+            notation_tokens = [notation]
+        for name in notation_tokens:
+            aliases.append(
+                {
+                    "name": name,
+                    "wire": representation,
+                    "rule": rule,
+                    "source": registry_source("04-modele-de-donnees-v1.md", "2.1"),
+                }
+            )
+    require_unique(aliases, "name", "wire aliases")
+    return aliases
+
+
+def parse_asset_entry_structure(doc04: str) -> dict[str, object]:
+    region, offset = extract_marked_region(doc04, "Chaque `AssetEntryV1`", "`FORMAT_INTRINSIC`")
+    table = find_table(region, ("Offset relatif", "Champ", "Wire"))
+    fields: list[dict[str, object]] = []
+    for raw_row in table.rows:
+        row = row_dict(table, raw_row)
+        fields.append(
+            {
+                "position": strip_inline_markdown(cell(row, "Offset relatif")),
+                "name": strip_inline_markdown(cell(row, "Champ")),
+                "wire": strip_inline_markdown(cell(row, "Wire")),
+                "constraint": strip_inline_markdown(cell(row, "Cardinalité/borne")),
+                "nature": strip_inline_markdown(cell(row, "Nature")),
+                "rule": strip_inline_markdown(cell(row, "Sémantique")),
+                "occurrence": 1,
+            }
+        )
+    require_unique(fields, "name", "AssetEntryV1 fields")
+    return {
+        "name": "AssetEntryV1",
+        "version": 1,
+        "position_kind": "offset",
+        "fixed_prefix_bytes": 72,
+        "fields": fields,
+        "source": registry_source("04-modele-de-donnees-v1.md", section_number_at(doc04, offset)),
+    }
+
+
+def parse_record_structured_types(doc04: str) -> list[dict[str, object]]:
+    # The document deliberately describes most nested records inline. Each
+    # region below is bounded by its adjacent normative declaration; fields
+    # are extracted from the inline ``name:wire`` tokens in source order.
+    specs: dict[str, tuple[str, str | None, str | None]] = {
+        "ClassMotionV1": ("- `ClassMotionV1`", "- `ClassEnergyV1`", None),
+        "ClassEnergyV1": ("- `ClassEnergyV1`", "- `ClassAfterburnerV1`", None),
+        "ClassAfterburnerV1": ("- `ClassAfterburnerV1`", "- `ClassCountermeasureV1`", None),
+        "ClassCountermeasureV1": ("- `ClassCountermeasureV1`", "- `ClassBankV1`", None),
+        "ClassBankV1": ("- `ClassBankV1`", "- `ClassSubsystemV1`", None),
+        "ClassSubsystemV1": ("- `ClassSubsystemV1`", "- `ClassScanV1`", None),
+        "ClassScanV1": ("- `ClassScanV1`", "\n\nLes champs de table", None),
+        "FlightTimeConstantsV1": ("`FlightTimeConstantsV1` contient", None, None),
+        "DamageContributorV1": ("`DamageContributorV1` :", None, None),
+        "SubsystemAnimationV1": ("`SubsystemAnimationV1` contient", "`TurretStateV1` utilise", None),
+        "TurretStateV1": ("`TurretStateV1` utilise", "`TurretBankV1` :", "Les champs suivent cet ordre :"),
+        "TurretBankV1": ("`TurretBankV1` :", None, None),
+        "PrimaryBankV1": ("`PrimaryBankV1` utilise", "`SecondaryBankV1` utilise", "Ordre exact :"),
+        "SecondaryBankV1": ("`SecondaryBankV1` utilise", "`TertiaryBankV1` contient", "Ordre exact :"),
+        "TertiaryBankV1": ("`TertiaryBankV1` contient", "`CountermeasureStateV1` :", None),
+        "CountermeasureStateV1": ("`CountermeasureStateV1` :", None, None),
+        "LockItemV1": ("`LockItemV1` :", None, None),
+        "IncomingMissileV1": ("`IncomingMissileV1` utilise", None, None),
+        "DockingRelationV1": ("`DockingRelationV1` :", None, None),
+        "NavPointV1": ("`NavPointV1` :", "`WaypointV1` :", None),
+        "WaypointV1": ("`WaypointV1` :", None, None),
+        "TagEffectV1": ("`TagEffectV1` :", "`ScalarVisualV1` :", None),
+        "ScalarVisualV1": ("`ScalarVisualV1` :", None, None),
+        "EventItemV1": ("Le payload est `events:vlist<EventItemV1,256>`", "Règles de présence par kind", "Ordre de `EventItemV1` :"),
+    }
+    untyped_fields: dict[str, dict[str, str]] = {
+        "ClassMotionV1": {
+            "forward_accel_time_const": "float32",
+            "afterburner_forward_accel_time_const": "float32",
+            "booster_forward_accel_time_const": "float32",
+            "forward_decel_time_const": "float32",
+            "slide_accel_time_const": "float32",
+            "slide_decel_time_const": "float32",
+        },
+        "ClassEnergyV1": {
+            "power_output": "float32",
+            "reserve_energy_max": "float32",
+            "weapon_energy_max": "float32",
+            "weapon_regen_per_s": "float32",
+            "shield_regen_per_s": "float32",
+        },
+        "ClassAfterburnerV1": {
+            "fuel_max": "float32",
+            "burn_per_s": "float32",
+            "recover_per_s": "float32",
+            "minimum_to_engage": "float32",
+        },
+        "FlightTimeConstantsV1": {
+            "forward_accel": "float32",
+            "afterburner_forward_accel": "float32",
+            "booster_forward_accel": "float32",
+            "forward_decel": "float32",
+            "slide_accel": "float32",
+            "slide_decel": "float32",
+        },
+    }
+    structures: list[dict[str, object]] = []
+    for name, (start_marker, end_marker, field_start_marker) in specs.items():
+        region, offset = extract_marked_region(doc04, start_marker, end_marker)
+        fields = parse_inline_structure_fields(
+            region,
+            untyped_fields=untyped_fields.get(name),
+            layout_start_marker=field_start_marker,
+        )
+        item: dict[str, object] = {
+            "name": name,
+            "version": 1,
+            "position_kind": "order",
+            "fields": fields,
+            "source": registry_source("04-modele-de-donnees-v1.md", section_number_at(doc04, offset)),
+        }
+        presence_bits = parse_presence_bits(region)
+        if presence_bits:
+            item["presence_bits"] = presence_bits
+        structures.append(item)
+    structures.append(parse_asset_entry_structure(doc04))
+
+    require_unique(structures, "name", "nested record structures")
+    documented = set(re.findall(r"\b([A-Z][A-Za-z0-9]+V1)\b", doc04))
+    parsed = {str(item["name"]) for item in structures}
+    if parsed != documented:
+        raise SchemaError(
+            f"nested record structure coverage drift; missing={sorted(documented - parsed)}, "
+            f"unexpected={sorted(parsed - documented)}"
+        )
+    for structure in structures:
+        structure["nested_types"] = sorted(
+            {
+                reference
+                for field in structure["fields"]
+                for reference in structured_type_references(str(field["wire"]))
+            }
+        )
+    return sorted(structures, key=lambda item: str(item["name"]))
 
 
 def parse_capabilities(doc02: str, doc05: str) -> list[dict[str, object]]:
@@ -2500,14 +2952,61 @@ def build_schema() -> dict[str, object]:
     doc06 = sources["06-validation-securite-et-conformite.md"]
 
     invalid_message, messages = parse_message_types(doc02, doc03, doc05)
+    message_layouts = parse_message_layouts(doc02, doc03, doc05, messages)
+    messages_with_layouts = [
+        {**message, **message_layouts[int(message["id"])]} for message in messages
+    ]
     invalid_record, records = parse_record_registry(doc02, doc04, doc05)
     layouts = parse_record_layouts(doc04, records)
+    structured_types = parse_record_structured_types(doc04)
+    structured_type_names = {str(item["name"]) for item in structured_types}
+    structured_by_name = {str(item["name"]): item for item in structured_types}
     constants = parse_constants(doc02, doc03, doc05, doc06)
     core_constants = constants["core"]
     records_with_layouts: list[dict[str, object]] = []
     for record in records:
         record_id = int(record["id"])
-        records_with_layouts.append({**record, **layouts[record_id]})
+        layout = layouts[record_id]
+        direct_nested_types = sorted(
+            {
+                reference
+                for field in layout["fields"]
+                for reference in structured_type_references(str(field["wire"]))
+            }
+        )
+        unknown_nested = sorted(set(direct_nested_types) - structured_type_names)
+        if unknown_nested:
+            raise SchemaError(f"RecordType {record_id} references unknown nested layouts: {unknown_nested}")
+        nested_closure = set(direct_nested_types)
+        pending_nested = list(direct_nested_types)
+        while pending_nested:
+            nested_name = pending_nested.pop()
+            for reference in structured_by_name[nested_name]["nested_types"]:
+                if reference not in nested_closure:
+                    nested_closure.add(reference)
+                    pending_nested.append(reference)
+        enriched_fields: list[dict[str, object]] = []
+        for original_field in layout["fields"]:
+            field = dict(original_field)
+            if str(field["name"]) != "presence":
+                bits = sorted(
+                    {
+                        int(value)
+                        for value in re.findall(r"\bbit\s*([0-9]+)\b", str(field.get("semantics", "")))
+                    }
+                )
+                if bits:
+                    field["presence_condition"] = {"selector": "presence", "bits": bits}
+            enriched_fields.append(field)
+        records_with_layouts.append(
+            {
+                **record,
+                **layout,
+                "fields": enriched_fields,
+                "direct_nested_types": direct_nested_types,
+                "nested_types": sorted(nested_closure),
+            }
+        )
 
     capabilities = parse_capabilities(doc02, doc05)
     validation_errors = parse_validation_errors(doc06)
@@ -2586,9 +3085,11 @@ def build_schema() -> dict[str, object]:
             "fields": parse_datagram_header(doc02),
         },
         "message_type_invalid": invalid_message,
-        "message_types": messages,
+        "message_types": messages_with_layouts,
         "record_type_invalid": invalid_record,
         "record_types": records_with_layouts,
+        "record_structured_types": structured_types,
+        "wire_aliases": parse_wire_aliases(doc04),
         "capabilities": capabilities,
         "validation_errors": validation_errors,
         "numeric_registries": numeric_registries,
@@ -2603,12 +3104,18 @@ def build_schema() -> dict[str, object]:
 def validate_schema_shape(schema: dict[str, object]) -> None:
     messages = schema.get("message_types")
     records = schema.get("record_types")
+    structured_types = schema.get("record_structured_types")
+    wire_aliases = schema.get("wire_aliases")
     capabilities = schema.get("capabilities")
     errors = schema.get("validation_errors")
     numeric_registries = schema.get("numeric_registries")
     wire_conventions = schema.get("wire_conventions")
     if not isinstance(messages, list) or not isinstance(records, list):
         raise SchemaError("schema registries must be arrays")
+    if not isinstance(structured_types, list) or not structured_types:
+        raise SchemaError("schema record_structured_types must be a non-empty array")
+    if not isinstance(wire_aliases, list) or not wire_aliases:
+        raise SchemaError("schema wire_aliases must be a non-empty array")
     if not isinstance(capabilities, list) or not isinstance(errors, list):
         raise SchemaError("schema capability/error registries must be arrays")
     if not isinstance(numeric_registries, dict) or not numeric_registries:
@@ -2627,12 +3134,61 @@ def validate_schema_shape(schema: dict[str, object]) -> None:
     ):
         require_unique(entries, "name", f"schema {registry_name}")
         require_unique_normalized_names(entries, "name", f"schema {registry_name}")
+    for message in messages:
+        fields = message.get("fields")
+        qos = message.get("qos")
+        limits = message.get("limits")
+        if not isinstance(fields, list) or not fields:
+            raise SchemaError(f"schema MessageType {message.get('id')} has no payload fields")
+        if not isinstance(qos, list) or not qos:
+            raise SchemaError(f"schema MessageType {message.get('id')} has no QoS variants")
+        if not isinstance(limits, dict) or "fixed_prefix_bytes" not in limits:
+            raise SchemaError(f"schema MessageType {message.get('id')} has no payload limits")
+        require_unique(fields, "name", f"schema MessageType {message.get('id')} fields")
+        require_unique_normalized_names(fields, "name", f"schema MessageType {message.get('id')} fields")
+        offsets = [field.get("offset") for field in fields]
+        if not all(isinstance(value, int) for value in offsets):
+            raise SchemaError(f"schema MessageType {message.get('id')} has non-numeric offsets")
+        if offsets != sorted(offsets) or len(offsets) != len(set(offsets)):
+            raise SchemaError(f"schema MessageType {message.get('id')} offsets collide or regress")
     for record in records:
         fields = record.get("fields")
         if not isinstance(fields, list) or not fields:
             raise SchemaError(f"schema RecordType {record.get('id')} has no top-level fields")
         require_unique(fields, "name", f"schema RecordType {record.get('id')} fields")
         require_unique_normalized_names(fields, "name", f"schema RecordType {record.get('id')} fields")
+
+    require_unique(structured_types, "name", "schema nested record structures")
+    structured_by_name = {str(item["name"]): item for item in structured_types}
+    if "EventItemV1" not in structured_by_name:
+        raise SchemaError("schema must expose the EventItemV1 nested layout")
+    for structured in structured_types:
+        fields = structured.get("fields")
+        if not isinstance(fields, list) or not fields:
+            raise SchemaError(f"schema nested layout {structured.get('name')} has no fields")
+        for field in fields:
+            if not isinstance(field.get("name"), str) or not isinstance(field.get("wire"), str):
+                raise SchemaError(f"schema nested layout {structured.get('name')} has an invalid field")
+    referenced_nested: set[str] = set()
+    for record in records:
+        for field in record["fields"]:
+            referenced_nested.update(structured_type_references(str(field["wire"])))
+    pending = list(referenced_nested)
+    while pending:
+        name = pending.pop()
+        if name not in structured_by_name:
+            raise SchemaError(f"schema references unresolved nested layout {name}")
+        for field in structured_by_name[name]["fields"]:
+            for reference in structured_type_references(str(field["wire"])):
+                if reference not in referenced_nested:
+                    referenced_nested.add(reference)
+                    pending.append(reference)
+    if referenced_nested != set(structured_by_name):
+        raise SchemaError(
+            "schema nested layout reachability drift; "
+            f"unreferenced={sorted(set(structured_by_name) - referenced_nested)}"
+        )
+    require_unique(wire_aliases, "name", "schema wire aliases")
 
     required_wire_conventions = {
         "bool8",
@@ -2780,6 +3336,21 @@ def run_negative_self_tests(schema: dict[str, object]) -> tuple[str, ...]:
     return tuple(passed)
 
 
+def run_schema_vector_self_test(schema_path: Path) -> str:
+    process = subprocess.run(
+        [sys.executable, "-B", str(SCHEMA_VECTOR_CHECKER_PATH), "--check", "--schema", str(schema_path)],
+        cwd=REPO_ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
+    if process.returncode != 0:
+        detail = (process.stderr or process.stdout).strip()
+        raise SchemaError(f"schema/golden byte self-test failed: {detail}")
+    return process.stdout.strip()
+
+
 def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     action = parser.add_mutually_exclusive_group()
@@ -2800,8 +3371,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             write_schema(rendered, schema_path)
         check_schema(rendered, schema_path)
         negative_tests: tuple[str, ...] = ()
+        vector_self_test = ""
         if args.self_test:
             negative_tests = run_negative_self_tests(schema)
+            vector_self_test = run_schema_vector_self_test(schema_path)
     except SchemaError as exc:
         print(f"FSTL schema verification failed: {exc}", file=sys.stderr)
         return 1
@@ -2817,6 +3390,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     if negative_tests:
         print(f"FSTL negative self-tests passed: {', '.join(negative_tests)}.")
+    if vector_self_test:
+        print(vector_self_test)
     return 0
 
 
