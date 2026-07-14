@@ -42,7 +42,10 @@ def main() -> int:
         return 2
 
     environment = os.environ.copy()
-    environment.setdefault("ASAN_OPTIONS", "abort_on_error=1:detect_leaks=1:strict_string_checks=1")
+    detect_leaks = "0" if os.name == "nt" else "1"
+    environment.setdefault(
+        "ASAN_OPTIONS", f"abort_on_error=1:detect_leaks={detect_leaks}:strict_string_checks=1"
+    )
     environment.setdefault("UBSAN_OPTIONS", "halt_on_error=1:print_stacktrace=1")
     suffix = ".exe" if os.name == "nt" else ""
 
