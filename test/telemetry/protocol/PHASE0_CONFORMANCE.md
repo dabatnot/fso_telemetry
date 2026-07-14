@@ -2,36 +2,49 @@
 
 ## Verdict de gel
 
-**Statut global : `BLOCKED`. La Phase 1 n'est pas autorisée par ce document.**
+**Statut global FSTL 1.0 : `PASS`. Le contrat est gelé par
+[`fstl-v1.0.0`](https://github.com/dabatnot/fstelemetry/releases/tag/fstl-v1.0.0)
+sur la révision `900487429bd20e13fcfea1c6e2d163631f1bafe1`.**
 
-Le contrat, le socle C++ pur, les tests, le catalogue de vectors et les deux
-chemins de décodage sont implémentés et verts localement. La gate finale décrite
-par le document 07 reste néanmoins ouverte pour des preuves qui ne peuvent pas
-être remplacées par un succès local :
+La CI Linux/macOS/Windows, la campagne libFuzzer ASan/UBSan, les quatre
+approbations humaines et les artefacts de gel sont archivés et liés ci-dessous.
+L'[autorisation explicite](https://github.com/dabatnot/fstelemetry/issues/1#issuecomment-4974820634)
+permet de démarrer la Phase 1 et `P1-WP-01`.
 
-- la campagne libFuzzer avec ASan/UBSan et les jobs CI n'ont pas encore tourné
-  sur la révision candidate au gel ; le replay déterministe local a été exécuté sans sanitizer
-  parce que Visual Studio 2019 16.4 rejette `/fsanitize=address` (`MSB8058`) ;
-- les quatre approbations humaines, la version/tag de gel et l'autorisation
-  explicite de démarrer la Phase 1 sont absents.
+Ce gel ne prétend pas satisfaire par avance l'amendement FSTL 1.1 :
+`P1-WP-02` reste conditionné aux preuves internes FSTL 1.1 et à sa gate
+contractuelle. Aucune dérogation supplémentaire n'est enregistrée.
 
-Ce fichier est une preuve d'audit et non une approbation. Il ne coche pas les
-cases normatives du document 07 et n'usurpe aucun signataire.
+Ce fichier reste une preuve d'audit. Les décisions humaines ne sont pas
+recréées ici : il référence leurs commentaires GitHub datés et attribués.
+
+Le 2026-07-15, les métadonnées Git d'auteur, de committer et de tagger ont été
+migrées vers l'identité publique `@dabatnot` et l'adresse GitHub no-reply. Le
+contenu du candidat est inchangé : son arbre Git reste
+`86e1a1289c8419f9ddc26a3d9362ee0495bae468`. Les liens de révision et les
+preuves CI ont été régénérés sur les nouveaux identifiants.
 
 ## Périmètre et instantané audité
 
 | Élément | Valeur observée |
 |---|---|
-| Date | 2026-07-14, Europe/Paris |
+| Audit initial | 2026-07-14, Europe/Paris |
+| Clôture du gel | 2026-07-15, Europe/Paris |
 | Branche | `codex/telemetry-phase-0` |
-| Commit d'implémentation | `3f9603c72a140ed24b1f0ba7343fa17b41fc50d9` |
-| Commit d'intégration upstream | `a50b5b7b36298d721cc2dc5907db45f5dbd9c9d2` |
+| Commit d'implémentation | `c3a94053e99d758a25dbb61d8b8094b5fadfac3c` |
+| Révision candidate et gelée | [`900487429bd20e13fcfea1c6e2d163631f1bafe1`](https://github.com/dabatnot/fstelemetry/commit/900487429bd20e13fcfea1c6e2d163631f1bafe1) |
+| Tag annoté | [`fstl-v1.0.0`](https://github.com/dabatnot/fstelemetry/releases/tag/fstl-v1.0.0), objet tag `4d7e439715f33e546e6d6ec82faf43773da0d6ce` |
+| Commit d'intégration upstream | `732811396b47f9c383ade059dad07cc1f98433d8` |
 | `upstream/master` local | `57be2eb3333917e1519b9a9c6520e4551748c070` |
 | Relation à `upstream/master` | `57be2eb3333917e1519b9a9c6520e4551748c070` est ancêtre du commit d'intégration ; les changements upstream disponibles lors de l'audit sont intégrés |
 | Contenu du commit d'implémentation | 448 fichiers, incluant code, tests, vectors, workflow, documentation et 45 fichiers `tools/radar/assets/` |
 | SHA-256 du schéma | `1d89c4a95a121c178bf85570cd616568fd939942b8d053835069b2d7d6a1f0d4` |
 | SHA-256 du manifeste messages/records | `21cb0020029b6a6ffa68ea176c781eada4b7848f00ca7cae8031f912dd995931` |
 | SHA-256 du manifeste transport | `9f7bd56abb543f82aeee0aa143de40e6f620fb48a99e6df854c8b1375f0ce6e6` |
+| CI exacte | [run `29393557458`](https://github.com/dabatnot/fstelemetry/actions/runs/29393557458), conclusion `success` |
+| Bundle durable | [release `fstl-v1.0.0`](https://github.com/dabatnot/fstelemetry/releases/tag/fstl-v1.0.0) |
+| SHA-256 du bundle fuzz | `392ce26da661e689affdc1e6be1c15f5290c39bf9864c297a3606a621123bea8` |
+| Digest de l'artefact Actions source | `b32249706743acd0526a40f1d664ce2407a2f59352198da5cc466129e1d750f4` |
 
 Tous les fichiers trackés et non trackés visibles lors de l'audit ont été inclus
 dans le commit d'implémentation. Le répertoire `tools/radar/assets/` reste hors
@@ -39,7 +52,7 @@ du périmètre Phase 0 et ne constitue aucune preuve FSTL ; ses 45 fichiers sont
 néanmoins versionnés conformément à l'instruction explicite de l'utilisateur.
 
 Le sous-audit P0.12 n'a pas lancé MSBuild. L'agent principal a ensuite effectué
-une reconstruction Release sérialisée du contenu figé dans `3f9603c72` et exécuté ses 383
+une reconstruction Release sérialisée du contenu figé dans `c3a94053e` et exécuté ses 383
 cas `TEST`/`TEST_F`. Seuls les résultats reproductibles explicitement listés
 ci-dessous sont retenus comme preuves.
 
@@ -75,21 +88,23 @@ Toutes les commandes partent de la racine du dépôt.
 | configuration locale identique avec sanitizers par défaut | Visual Studio 2019 16.4 ne supporte pas l'option, erreur `MSB8058` | `BLOCKED` localement ; CI Clang requise |
 | `git diff --check` | aucune erreur whitespace ; avertissements de conversion LF/CRLF seulement | `PASS` |
 | `rg -n '^#include' code/telemetry/protocol` et scan des symboles moteur/réseau | uniquement headers protocole et bibliothèque standard ; aucun collecteur, socket, renderer ou type moteur observé | `PASS` statique pour la frontière Phase 0 |
+| [CI `29393557458`](https://github.com/dabatnot/fstelemetry/actions/runs/29393557458) | révision exacte `900487429bd20e13fcfea1c6e2d163631f1bafe1`, Linux/macOS/Windows verts | `PASS` |
+| [campagne de gel](https://github.com/dabatnot/fstelemetry/releases/tag/fstl-v1.0.0) | huit cibles ASan/UBSan, 637 998 322 exécutions, corpus 490 → 2 663, 0 crash | `PASS` |
 
-## Écarts bloquants avant gel
+## Écarts bloquants fermés au gel
 
-1. **Fuzzing/sanitizers incomplets.** Les huit cibles et le replay déterministe
-   sont verts, mais le compilateur local ne fournit pas ASan. Aucun résultat de
-   mutation libFuzzer sous ASan/UBSan, aucune campagne longue approuvée et aucun
-   rapport sanitizer ne sont encore archivés.
-2. **CI non prouvée.** `.github/workflows/telemetry-protocol.yaml` est versionné
-   dans `3f9603c72` et définit les contrôles de schéma, tests C++ et fuzz
-   Linux/macOS/Windows, mais aucun run vert de la révision candidate au gel
-   n'est encore archivé.
-3. **Revues externes absentes.** Aucun signataire, décision, date ou lien de
-   preuve n'est enregistré pour métier, transport/interop, sécurité ou client.
-4. **Version de gel absente.** Aucun tag FSTL/telemetry ne désigne la révision
-   candidate au gel et aucun identifiant d'artefact gelé n'est enregistré.
+1. **Fuzzing/sanitizers : fermé.** Huit campagnes libFuzzer Clang sous
+   ASan/UBSan ont exécuté 637 998 322 entrées cumulées pendant environ
+   30 minutes par cible, sans crash ni artefact de crash. Le rapport, le corpus
+   final et les checksums sont joints à la release.
+2. **CI exacte : fermée.** Le
+   [run `29393557458`](https://github.com/dabatnot/fstelemetry/actions/runs/29393557458)
+   est vert sur la révision gelée et couvre Linux, macOS et Windows.
+3. **Revues externes : fermées.** Les quatre décisions datées et attribuées sont
+   approuvées sans réserve dans
+   [l'issue de gel](https://github.com/dabatnot/fstelemetry/issues/1).
+4. **Version de gel : fermée.** Le tag annoté et la release `fstl-v1.0.0`
+   désignent exactement `900487429bd20e13fcfea1c6e2d163631f1bafe1`.
 
 ## Matrice des critères d'acceptation P0-AC-001 à P0-AC-024
 
@@ -100,24 +115,24 @@ Toutes les commandes partent de la racine du dépôt.
 | `P0-AC-003` | `PASS` | 134 registres extraits des docs, tous liés aux constantes C++ ; politiques enum/bitmap/flags vérifiées par self-test | conserver le rapport CI |
 | `P0-AC-004` | `PASS` | constantes 68/1200/1132 ; vectors aux frontières 0, 1, 1132, 1133, 2264 et 2265 octets ; suite Release verte | conserver le résultat CI final |
 | `P0-AC-005` | `PASS` | check `123456789 == 0xcbf43926`, implémentation Python bitwise indépendante, manifests, décodeur transport et tests C++ | conserver le résultat CI final |
-| `P0-AC-006` | `PARTIAL` | reassembler/transaction/security et tests de quotas verts ; recherches d'état et index de chemins validés en O(N log N) sur 1 024 entités et 200 assets ; replayers fuzz verts | joindre fuzz/sanitizers et le rapport final de budgets/allocation |
+| `P0-AC-006` | `PASS` | reassembler/transaction/security et tests de quotas verts ; recherches d'état et index de chemins validés en O(N log N) sur 1 024 entités et 200 assets ; campagne sanitizer archivée ; budget maximal 64 clients approuvé | conserver le rapport de campagne et la revue sécurité |
 | `P0-AC-007` | `PASS` | six codecs de contrôle, session, clock et reliability harness exécutés dans les 383 tests | conserver rapport/graines en CI |
-| `P0-AC-008` | `PASS` | `AntiAmplificationBudget` et scénarios de session exécutés | revue sécurité finale distincte |
+| `P0-AC-008` | `PASS` | `AntiAmplificationBudget`, scénarios de session et revue sécurité approuvée | conserver le lien d'approbation |
 | `P0-AC-009` | `PASS` | transaction manager, limites 1/2/64 parts et tests d'installation atomique exécutés | conserver en CI |
 | `P0-AC-010` | `PASS` | promotion conditionnée aux ACK exacts, tests transaction/réplication verts | conserver en CI |
 | `P0-AC-011` | `PASS` | delta cumulatif et harness de pertes intermédiaires verts | conserver graines en CI |
 | `P0-AC-012` | `PASS` | double dirty-set et mutation post-capture exécutés | conserver en CI |
 | `P0-AC-013` | `PASS` | matrice d'inconnus, catalogue invalide complet, deux décodeurs et tests C++ concordants | conserver en CI |
-| `P0-AC-014` | `PASS` | NaN/Inf, UTF-8, tailles, offsets et bitmaps incohérents rejetés par vectors/tests ; replay fuzz vert | sanitizer reste suivi sous AC-020 |
-| `P0-AC-015` | `PASS` technique | validation de visibilité/références métier et tests Cockpit/Trusted verts | approbation humaine modèle/Cockpit toujours requise pour le gel |
-| `P0-AC-016` | `PASS` | négociation bundle, manifeste, lifecycle et fallbacks communication exécutés | approbation client toujours requise pour le gel |
+| `P0-AC-014` | `PASS` | NaN/Inf, UTF-8, tailles, offsets et bitmaps incohérents rejetés par vectors/tests ; replay et campagne sanitizer verts | conserver le bundle de gel |
+| `P0-AC-015` | `PASS` | validation de visibilité/références métier et tests Cockpit/Trusted verts ; revue modèle approuvée | conserver le lien d'approbation |
+| `P0-AC-016` | `PASS` | négociation bundle, manifeste, lifecycle et fallbacks communication exécutés ; revue client approuvée | conserver le lien d'approbation |
 | `P0-AC-017` | `PASS` | lifecycle et fixture `video_old_target_after_change` rejettent l'ancienne génération/cible | conserver en CI |
 | `P0-AC-018` | `PASS` | classification QoS, token buckets et test de saturation vidéo exécutés | conserver en CI/fuzz |
 | `P0-AC-019` | `PASS` | 54 fixtures valides et 42 invalides messages/records concordent entre Python et C++ ; 86 transports invalides également rejoués | conserver le double replay en CI |
-| `P0-AC-020` | `BLOCKED` | 8 replayers déterministes passent le corpus ; workflow libFuzzer ASan/UBSan présent | exécuter la CI sanitizer et une campagne de gel avec durée/corpus archivés |
-| `P0-AC-021` | `PASS` technique | defaults loopback, discovery, allowlist et `TrustedFullState` opt-in exécutés | approbation humaine configuration sûre toujours requise |
+| `P0-AC-020` | `PASS` | huit campagnes libFuzzer ASan/UBSan, 637 998 322 exécutions, 0 crash ; rapports et corpus archivés dans la release | conserver les assets et checksums de release |
+| `P0-AC-021` | `PASS` | defaults loopback, discovery, allowlist et `TrustedFullState` opt-in exécutés ; configuration sûre approuvée | conserver le lien d'approbation |
 | `P0-AC-022` | `PASS` | 20 messages read-only, authority mapper et tests d'absence de commande verts | conserver en CI |
-| `P0-AC-023` | `PASS` | bibliothèque C++17 pure ; scan sans type moteur/socket/renderer ; suite dédiée verte | faire confirmer en revue externe sur le diff committé |
+| `P0-AC-023` | `PASS` | bibliothèque C++17 pure ; scan sans type moteur/socket/renderer ; suite dédiée verte ; frontière acceptée par les revues modèle/client | conserver le scan en CI |
 | `P0-AC-024` | `PASS` | docs → schéma → 134 constantes ; golden minimaux reconstruits ; probes figés 192/192, 422/422, 25/25, 241/241 et 4 mutations wire rejetées | conserver les deux empreintes figées et le self-test en CI |
 
 ## Matrice des exigences P0-F et P0-NF
@@ -128,7 +143,7 @@ Toutes les commandes partent de la racine du dépôt.
 | `P0-F-002` | `PASS` | docs 02/04/05 ; 20 layouts messages ; 28 records ; 25 structures `*V1` ; `verify_schema_vectors.py` | aucun écart machine-readable observé |
 | `P0-F-003` | `PASS` | datagram/constants, 198 fichiers transport et tests C++ verts | conserver en CI |
 | `P0-F-004` | `PASS` | `packet_writer.*`, `packet_reader.*` et tests Release verts | conserver en CI |
-| `P0-F-005` | `PARTIAL` | datagram/reassembler/transaction/security, quotas et tests verts | sanitizer/allocation instrumentée finale absente |
+| `P0-F-005` | `PASS` | datagram/reassembler/transaction/security, quotas et tests verts ; campagne ASan/UBSan archivée | conserver campagne et checksums |
 | `P0-F-006` | `PASS` | control/reliability messages et harness exécutés | conserver en CI |
 | `P0-F-007` | `PASS` | session, capabilities et clock exécutés | conserver en CI |
 | `P0-F-008` | `PASS` | reliable receive/window/rate limiter et replay stateful verts | sanitizer suivi sous P0.11 |
@@ -139,32 +154,32 @@ Toutes les commandes partent de la racine du dépôt.
 | `P0-F-013` | `PASS` | docs 02 §3/7.4, 06 §8, `unknown_value_policy` | conserver en CI |
 | `P0-F-014` | `PASS` | 48 `ValidationError` extraites et liées au C++ | métriques d'intégration appartiennent aux phases ultérieures |
 | `P0-F-015` | `PASS` | registre, authority mapper, scan d'API et tests Release | conserver en CI |
-| `P0-NF-001` | `PARTIAL` | quotas/budgets/containers bornés et tests exécutés | fuzz/sanitizers et rapport de budgets final absents |
+| `P0-NF-001` | `PASS` | quotas/budgets/containers bornés, tests exécutés, campagne sanitizer et budget maximal 64 clients approuvé | mesure end-to-end 64 clients différée à l'intégration selon la revue sécurité |
 | `P0-NF-002` | `PASS` | aucune opération socket dans Phase 0 | non applicable au socle pur au-delà de l'absence |
 | `P0-NF-003` | `PASS` | max datagram 1200 et fragmentation applicative | vectors transport passés |
-| `P0-NF-004` | `PARTIAL` | generators déterministes, manifests/empreintes hashés, MSVC Release vert | exécution CI Clang/macOS non archivée |
+| `P0-NF-004` | `PASS` | generators déterministes, manifests/empreintes hashés et CI Linux/macOS/Windows archivée | conserver le run de gel |
 | `P0-NF-005` | `PASS` | simulation little/big-endian Python et comparaison C++/Python passées | conserver en CI multi-plateforme |
-| `P0-NF-006` | `PARTIAL` | catalogue négatif complet et replay déterministe vert | mutation libFuzzer/sanitizers manquants |
-| `P0-NF-007` | `PARTIAL` | quotas client/globaux et tests source | sanitizer/fuzz et rapport de pic absents |
+| `P0-NF-006` | `PASS` | catalogue négatif complet, replay déterministe et huit campagnes libFuzzer ASan/UBSan | conserver le bundle de gel |
+| `P0-NF-007` | `PASS` | quotas client/globaux, tests source, calcul 64 clients et campagne sanitizer | limite de mesure end-to-end explicitement acceptée par la revue sécurité |
 | `P0-NF-008` | `PASS` | scheduler QoS et scénario de saturation exécutés | conserver en CI |
 | `P0-NF-009` | `PASS` | règles major/minor/record dans docs et schéma | aucun drift détecté |
 | `P0-NF-010` | `PASS` | docs, Python stdlib, `.bin`, JSON canonique et catalogue complet | conserver en CI |
-| `P0-NF-011` | `PASS` technique | config sécurité et tests opt-in exécutés | revue sécurité humaine absente |
-| `P0-NF-012` | `PASS` | bibliothèque pure sans collecteur ni hook moteur | faire confirmer en revue externe sur le diff committé |
+| `P0-NF-011` | `PASS` | config sécurité et tests opt-in exécutés ; revue sécurité approuvée | conserver le lien d'approbation |
+| `P0-NF-012` | `PASS` | bibliothèque pure sans collecteur ni hook moteur ; frontière approuvée | conserver le scan en CI |
 
 ## Décisions D0-001 à D0-018
 
 | Décision | Statut | Artefact principal | Observation de gel |
 |---|---|---|---|
 | `D0-001` | `PASS` | transaction + manifest/snapshot validation | tests Release verts |
-| `D0-002` | `PASS` technique | business state/visibility validation | revue métier Cockpit absente |
+| `D0-002` | `PASS` | business state/visibility validation | revue modèle/Cockpit approuvée |
 | `D0-003` | `PASS` | session/producer IDs séparés ; aucune fusion | conforme à la frontière pure |
 | `D0-004` | `PASS` | `SESSION_STATE` et registries EventFamily | validation C++ verte |
 | `D0-005` | `PASS` | COMM manifest ne transporte que métadonnées | aucun transfert de fichier dans le module |
 | `D0-006` | `PASS` | deux bits communication distincts | self-test registry passé |
 | `D0-007` | `PASS` | deux bits vidéo distincts + messages spécialisés | self-test registry passé |
 | `D0-008` | `PASS` | `TARGET_VIDEO_STATS` client → producteur | tests codec/lifecycle verts |
-| `D0-009` | `PASS` technique | `RADAR_CONTACTS.visibility` et validator | revue métier/visibilité absente |
+| `D0-009` | `PASS` | `RADAR_CONTACTS.visibility` et validator | revue métier/visibilité approuvée |
 | `D0-010` | `PASS` | transactions 64 parts/16 MiB | tests de bornes verts |
 | `D0-011` | `PASS` | classification des constantes dans schéma/docs | self-test passé |
 | `D0-012` | `PASS` | matrices version/inconnu docs + schéma + catalogue invalide | double replay vert |
@@ -173,7 +188,7 @@ Toutes les commandes partent de la racine du dépôt.
 | `D0-015` | `PASS` | CapabilityUpdate monotone + lifecycle | tests finaux verts |
 | `D0-016` | `PASS` | constantes 200 ms / 500 ms | registries/constants vérifiés |
 | `D0-017` | `PASS` | presence/ID/enum validators | catalogue et tests verts ; sanitizer séparé |
-| `D0-018` | `PASS` technique | config loopback, allowlist, rate limits | tests verts ; revue sécurité absente |
+| `D0-018` | `PASS` | config loopback, allowlist, rate limits | tests verts ; revue sécurité approuvée |
 
 La clarification validée pendant l'implémentation est reflétée dans les docs et
 le code : un delta d'une baseline candidate connue peut être retenu de façon
@@ -181,7 +196,7 @@ bornée ; un delta d'une baseline totalement inconnue est abandonné et déclenc
 un `ResyncRequest UnknownBaseline` rate-limité. Les tests source
 `KnownCandidateKeepsOnlyHighestDeltaWithinAbsoluteTwoSecondWindow` et
 `TotallyUnknownBaselineDropsAndUsesExistingPerSessionResyncBucket` matérialisent
-les deux branches et passent dans la suite Release du contenu figé dans `3f9603c72`.
+les deux branches et passent dans la suite Release du contenu figé dans `c3a94053e`.
 
 ## Lots P0.1 à P0.12 et gates
 
@@ -193,15 +208,16 @@ les deux branches et passent dans la suite Release du contenu figé dans `3f9603
 | `P0.4` session/horloges | `G0-B` | `PASS` | suite session/clock/harness verte |
 | `P0.5` fiabilité | `G0-D` | `PASS` | reliability window/receive/harness verts |
 | `P0.6` réplication | `G0-D` | `PASS` | convergence et clarification baseline exécutées |
-| `P0.7` schéma métier | `G0-C` | `PASS` technique | 28 validators/vectors, probes complets et tests verts ; revue métier séparée |
-| `P0.8` vues | `G0-E` | `PASS` technique | codecs/lifecycle/QoS/SPS-VUI verts ; revue client séparée |
-| `P0.9` sécurité | `G0-F` | `PARTIAL` | modèle, catalogue et tests verts ; sanitizer/revue absents |
+| `P0.7` schéma métier | `G0-C` | `PASS` | 28 validators/vectors, probes complets, tests verts et revue modèle approuvée |
+| `P0.8` vues | `G0-E` | `PASS` | codecs/lifecycle/QoS/SPS-VUI verts et revue client approuvée |
+| `P0.9` sécurité | `G0-F` | `PASS` | modèle, catalogue, budgets, sanitizer et revue sécurité approuvés |
 | `P0.10` vectors/decoder | `G0-F` | `PASS` | catalogue complet et double décodage exact |
-| `P0.11` fuzz/CI | `G0-F` | `BLOCKED` | 8 replayers verts ; ASan/UBSan mutation et CI absents |
-| `P0.12` gel | gel | `BLOCKED` | approbations, campagne sanitizer/CI, tag/version de gel et autorisation Phase 1 absents |
+| `P0.11` fuzz/CI | `G0-F` | `PASS` | huit campagnes ASan/UBSan et CI multi-plateforme archivées |
+| `P0.12` gel | gel | `PASS` | approbations, campagne, release, tag et autorisation Phase 1 archivés |
 
-Synthèse des gates techniques : `G0-A`, `G0-B`, `G0-C`, `G0-D` et `G0-E PASS`;
-`G0-F BLOCKED` faute de sanitizer/CI et d'approbations de gel.
+Synthèse des gates FSTL 1.0 : `G0-A`, `G0-B`, `G0-C`, `G0-D`, `G0-E` et
+`G0-F PASS`. La gate distincte de l'amendement FSTL 1.1 n'est pas déclarée
+satisfaite par ce gel.
 
 ## Preuves exigées par la revue finale
 
@@ -212,28 +228,27 @@ Synthèse des gates techniques : `G0-A`, `G0-B`, `G0-C`, `G0-D` et `G0-E PASS`;
 | couverture messages/records/enums/flags | `PASS` | 20/20, 28/28, 134 registres ; probes 422/422 et 25/25 |
 | inventaire et hash des vectors | `PASS` | manifests hashés ; 182 fixtures inventoriées |
 | résultats des deux décodeurs | `PASS` | Python et C++ concordent sur valides et 42 invalides message/record |
-| résultats unitaires/propriétés | `PASS` local | 383/383 tests Release, 36 suites |
-| graines/résultats harness | `PASS` local | 4 graines transport et harness Release verts |
-| durée/corpus/configuration fuzz | `PARTIAL` | corpus 189 entrées et replay déterministe archivables ; campagne mutation absente |
-| rapport sanitizers | `BLOCKED` | MSVC local incompatible ; jobs Clang non exécutés |
-| budgets au nombre max de clients | `PARTIAL` | calculs/code/tests exécutés ; rapport de pic final absent |
-| revue filtrage Cockpit | `BLOCKED` | aucun signataire/artefact humain |
-| revue configuration sûre | `BLOCKED` | aucun signataire/artefact humain |
-| divergences résolues | `PASS` technique | D0-001..018, clarification baseline et replays contextuels cohérents ; revue finale absente |
-| absence collecteur/hook moteur | `PASS` | scan statique du module ; à conserver en CI et à confirmer en revue externe |
+| résultats unitaires/propriétés | `PASS` | suite Release locale et CI multi-plateforme vertes |
+| graines/résultats harness | `PASS` | 4 graines transport, harness Release et CI verts |
+| durée/corpus/configuration fuzz | `PASS` | huit campagnes d'environ 30 minutes ; 490 entrées initiales, 2 663 finales ; bundle en release |
+| rapport sanitizers | `PASS` | ASan/UBSan Clang, replay macOS et ASan Windows verts ; 0 crash |
+| budgets au nombre max de clients | `PASS` | 64 clients, 256 Mio état + 384 Mio vidéo = 640 Mio ; calculs et limites approuvés par la revue sécurité |
+| revue filtrage Cockpit | `PASS` | [approbation modèle FS2Open](https://github.com/dabatnot/fstelemetry/issues/1#issuecomment-4974721001) |
+| revue configuration sûre | `PASS` | [approbation sécurité/robustesse](https://github.com/dabatnot/fstelemetry/issues/1#issuecomment-4974757975) |
+| divergences résolues | `PASS` | D0-001..018, clarification baseline et replays contextuels cohérents ; revue finale approuvée |
+| absence collecteur/hook moteur | `PASS` | scan statique du module et frontière approuvée par les revues modèle/client |
 
-## Approbations requises — volontairement non remplies
+## Approbations de gel
 
 | Revue | Approbateur nommé | Preuve liée | Décision | Date |
 |---|---|---|---|---|
-| modèle FS2Open | — | — | **NON APPROUVÉE / preuve absente** | — |
-| protocole / interop | — | — | **NON APPROUVÉE / preuve absente** | — |
-| sécurité / robustesse | — | — | **NON APPROUVÉE / preuve absente** | — |
-| client / fallbacks | — | — | **NON APPROUVÉE / preuve absente** | — |
+| modèle FS2Open | `@dabatnot` / relecteur modèle | [décision](https://github.com/dabatnot/fstelemetry/issues/1#issuecomment-4974721001) | **APPROUVÉ, sans réserve** | 2026-07-15 |
+| protocole / interop | `@dabatnot` / relecteur protocole | [décision](https://github.com/dabatnot/fstelemetry/issues/1#issuecomment-4974734139) | **APPROUVÉ, sans réserve** | 2026-07-15 |
+| sécurité / robustesse | `@dabatnot` / relecteur sécurité | [décision](https://github.com/dabatnot/fstelemetry/issues/1#issuecomment-4974757975) | **APPROUVÉ, sans réserve** | 2026-07-15 |
+| client / fallbacks | `@dabatnot` / relecteur client | [décision](https://github.com/dabatnot/fstelemetry/issues/1#issuecomment-4974775553) | **APPROUVÉ, sans réserve** | 2026-07-15 |
 
-Une même personne peut cumuler des rôles, mais chaque cellule doit alors porter
-son nom, la décision, la date et un lien vers les preuves reproductibles. Un
-nom ajouté par l'implémenteur sans décision explicite n'est pas une approbation.
+Les quatre décisions ont été publiées séparément par le compte GitHub de
+l'approbateur, après un dossier de preuves propre à chaque rôle.
 
 ## Checklist de passage à la Phase 1
 
@@ -242,24 +257,24 @@ nom ajouté par l'implémenteur sans décision explicite n'est pas une approbati
 | docs 01–07 cohérentes et liens valides | `PASS` |
 | schéma couvre 20 messages et 28 records | `PASS` — probes 192/192, 422/422, 25/25 et 241/241 |
 | valeurs numériques gelées et vérifiées | `PASS` |
-| writer/reader/CRC/fragmenter/réassembleur bornés | `PASS` local — suite Release verte |
-| six messages de contrôle implémentés hors moteur | `PASS` local — codecs et harness verts |
-| handshake/anti-amplification/horloges passent le harness | `PASS` local |
-| ACK/NACK/backoff/expiration/resync déterministes | `PASS` local |
-| snapshot/manifeste/delta convergent sous perte | `PASS` local |
-| champs d'inventaire tracés | `PARTIAL` — doc complète, revue métier absente |
-| capabilities visuelles se dégradent indépendamment | `PASS` local |
+| writer/reader/CRC/fragmenter/réassembleur bornés | `PASS` — suite Release et CI vertes |
+| six messages de contrôle implémentés hors moteur | `PASS` — codecs, harness et CI verts |
+| handshake/anti-amplification/horloges passent le harness | `PASS` |
+| ACK/NACK/backoff/expiration/resync déterministes | `PASS` |
+| snapshot/manifeste/delta convergent sous perte | `PASS` |
+| champs d'inventaire tracés | `PASS` — documentation complète et revue modèle approuvée |
+| capabilities visuelles se dégradent indépendamment | `PASS` |
 | fixtures valides et invalides complètes | `PASS` |
 | deux décodeurs indépendants concordent | `PASS` |
-| fuzzing/sanitizers/overflow verts | `BLOCKED` |
-| valeurs sûres par défaut testées | `PASS` local |
-| quatre revues approuvées | `BLOCKED` |
-| Phase 0 versionnée | `BLOCKED` — aucune version ni aucun tag de gel enregistré |
+| fuzzing/sanitizers/overflow verts | `PASS` — campagne et rapports archivés |
+| valeurs sûres par défaut testées | `PASS` |
+| quatre revues approuvées | `PASS` — décisions liées ci-dessus |
+| Phase 0 versionnée | `PASS` — tag et release `fstl-v1.0.0` |
 
-## Commandes requises pour fermer les preuves techniques
+## Commandes de maintien des preuves techniques
 
 Les commandes Python suivantes doivent rester vertes sur la révision publiée
-candidate au gel :
+et sur toute évolution postérieure au tag de gel :
 
 ```powershell
 & '.agents/skills/prepare-telemetry-phase-spec/scripts/validate_phase_specs.ps1' `
@@ -283,32 +298,34 @@ build/bin/Release/unittests.exe --gtest_filter=TelemetryProtocol*
 ```
 
 Elle a produit 383/383 succès sur le contenu du commit d'implémentation. Les
-commits d'implémentation et d'intégration upstream sont présents ; la CI doit
-encore reconstruire la révision publiée candidate au gel. Un binaire plus ancien
-que les sources n'est pas accepté.
+commits d'implémentation et d'intégration upstream sont présents. La CI a ensuite
+reconstruit et validé la révision gelée exacte. Un binaire plus ancien que les
+sources n'est pas accepté comme nouvelle preuve.
 
 Pour les fuzzers, utiliser les commandes documentées dans
 `test/telemetry/protocol/fuzz/README.md`, puis archiver toolchain, options
 ASan/UBSan, durée ou nombre de runs, hash du corpus et dossier d'artefacts. Le
-smoke CI de 2 000 runs est une gate de PR ; une campagne de gel doit fournir la
-durée explicitement approuvée par la revue sécurité.
+smoke CI de 2 000 runs reste une gate de PR. La campagne du gel FSTL 1.0 et sa
+durée ont été approuvées par la revue sécurité et archivées dans la release.
 
-Enfin :
+Actions de clôture exécutées :
 
-1. faire tourner les jobs Clang/macOS/Windows, en particulier libFuzzer avec
-   ASan/UBSan, et archiver durée, corpus et rapports ;
-2. rejouer les checks et tests sur la révision poussée ;
-3. faire approuver les quatre revues avec preuves ;
-4. enregistrer l'identifiant/version de l'artefact et créer le tag convenu ;
-5. seulement ensuite remplacer le verdict global par `PASS` et consigner
-   l'autorisation explicite de démarrer la Phase 1.
+1. jobs Clang/macOS/Windows et libFuzzer ASan/UBSan exécutés ;
+2. checks et tests rejoués sur la révision poussée ;
+3. quatre revues approuvées avec preuves ;
+4. tag, release, artefacts et hashes publiés ;
+5. verdict FSTL 1.0 passé à `PASS` et autorisation Phase 1 consignée.
 
 ## Version et autorisation de gel
 
 | Champ | Valeur |
 |---|---|
-| Version d'artefact FSTL 1.0 | — |
-| Commit gelé | — |
-| Tag | — |
-| Hash du bundle de preuves | — |
-| Autorisation explicite de démarrer la Phase 1 | **NON** |
+| Version d'artefact FSTL 1.0 | [`FSTL 1.0.0`](https://github.com/dabatnot/fstelemetry/releases/tag/fstl-v1.0.0) |
+| Commit gelé | [`900487429bd20e13fcfea1c6e2d163631f1bafe1`](https://github.com/dabatnot/fstelemetry/commit/900487429bd20e13fcfea1c6e2d163631f1bafe1) |
+| Tag | `fstl-v1.0.0`, objet annoté `4d7e439715f33e546e6d6ec82faf43773da0d6ce` |
+| Hash du bundle de preuves | `sha256:392ce26da661e689affdc1e6be1c15f5290c39bf9864c297a3606a621123bea8` |
+| Autorisation explicite de démarrer la Phase 1 | **OUI** — [décision du 2026-07-15](https://github.com/dabatnot/fstelemetry/issues/1#issuecomment-4974820634) |
+
+L'autorisation couvre le démarrage de la Phase 1 et `P1-WP-01`. Elle ne
+court-circuite ni `P0-AC-025`, ni `P0-AC-026`, ni la gate FSTL 1.1 requise avant
+`P1-WP-02`.
