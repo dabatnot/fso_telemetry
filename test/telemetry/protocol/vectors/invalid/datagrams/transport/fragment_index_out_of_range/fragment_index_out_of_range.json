@@ -1,0 +1,12 @@
+{
+  "expectedValidationError": 17,
+  "inputFiles": [
+    "000.bin"
+  ],
+  "kind": "datagram-sequence",
+  "messageType": 7,
+  "name": "fragment_index_out_of_range",
+  "notes": "Transport mutation: fragment index out of range.",
+  "schema": "FSTL-1.0",
+  "valid": false
+}

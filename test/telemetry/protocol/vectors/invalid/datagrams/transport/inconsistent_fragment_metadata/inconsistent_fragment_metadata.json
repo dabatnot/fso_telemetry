@@ -1,0 +1,13 @@
+{
+  "expectedValidationError": 21,
+  "inputFiles": [
+    "000.bin",
+    "001.bin"
+  ],
+  "kind": "datagram-sequence",
+  "messageType": 7,
+  "name": "inconsistent_fragment_metadata",
+  "notes": "frame_id changes between fragments.",
+  "schema": "FSTL-1.0",
+  "valid": false
+}

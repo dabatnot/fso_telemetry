@@ -1,0 +1,15 @@
+{
+  "expectedCanonicalJson": "transport/transport_2265_bytes.json",
+  "expectedValidationError": 0,
+  "inputFiles": [
+    "000.bin",
+    "001.bin",
+    "002.bin"
+  ],
+  "kind": "datagram-sequence",
+  "messageType": 7,
+  "name": "transport_2265_bytes",
+  "notes": "Canonical transport fragmentation boundary for 2265 logical bytes.",
+  "schema": "FSTL-1.0",
+  "valid": true
+}

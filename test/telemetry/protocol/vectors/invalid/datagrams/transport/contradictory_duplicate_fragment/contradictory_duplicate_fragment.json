@@ -1,0 +1,13 @@
+{
+  "expectedValidationError": 21,
+  "inputFiles": [
+    "000.bin",
+    "001.bin"
+  ],
+  "kind": "datagram-sequence",
+  "messageType": 7,
+  "name": "contradictory_duplicate_fragment",
+  "notes": "Same fragment identity and metadata with different bytes.",
+  "schema": "FSTL-1.0",
+  "valid": false
+}

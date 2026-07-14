@@ -1,0 +1,12 @@
+{
+  "expectedValidationError": 9,
+  "inputFiles": [
+    "000.bin"
+  ],
+  "kind": "datagram-sequence",
+  "messageType": 7,
+  "name": "trailing_datagram_byte",
+  "notes": "Actual datagram length exceeds the declared length.",
+  "schema": "FSTL-1.0",
+  "valid": false
+}

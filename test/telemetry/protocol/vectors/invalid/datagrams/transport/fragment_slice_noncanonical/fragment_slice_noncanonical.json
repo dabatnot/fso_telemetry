@@ -1,0 +1,12 @@
+{
+  "expectedValidationError": 19,
+  "inputFiles": [
+    "000.bin"
+  ],
+  "kind": "datagram-sequence",
+  "messageType": 7,
+  "name": "fragment_slice_noncanonical",
+  "notes": "Transport mutation: fragment slice noncanonical.",
+  "schema": "FSTL-1.0",
+  "valid": false
+}

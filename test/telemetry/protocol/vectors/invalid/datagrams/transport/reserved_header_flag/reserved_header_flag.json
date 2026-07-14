@@ -1,0 +1,12 @@
+{
+  "expectedValidationError": 8,
+  "inputFiles": [
+    "000.bin"
+  ],
+  "kind": "datagram-sequence",
+  "messageType": 7,
+  "name": "reserved_header_flag",
+  "notes": "Transport mutation: reserved header flag.",
+  "schema": "FSTL-1.0",
+  "valid": false
+}

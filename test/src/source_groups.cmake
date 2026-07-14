@@ -84,6 +84,11 @@ add_file_folder("Scripting\\\\Lua"
 add_file_folder("Telemetry\\\\Protocol"
 	telemetry/protocol/test_packet_io.cpp
 	telemetry/protocol/test_protocol_constants.cpp
+	telemetry/protocol/test_telemetry_datagram.cpp
+	telemetry/protocol/test_telemetry_fragmentation.cpp
+	telemetry/protocol/test_telemetry_sha256.cpp
+	telemetry/protocol/test_telemetry_transaction.cpp
+	telemetry/protocol/test_telemetry_vectors.cpp
 )
 
 add_file_folder("Test Util"

@@ -1,0 +1,13 @@
+{
+  "expectedCanonicalJson": "transport/transport_0_bytes.json",
+  "expectedValidationError": 0,
+  "inputFiles": [
+    "000.bin"
+  ],
+  "kind": "datagram-sequence",
+  "messageType": 9,
+  "name": "transport_0_bytes",
+  "notes": "Canonical transport fragmentation boundary for 0 logical bytes.",
+  "schema": "FSTL-1.0",
+  "valid": true
+}

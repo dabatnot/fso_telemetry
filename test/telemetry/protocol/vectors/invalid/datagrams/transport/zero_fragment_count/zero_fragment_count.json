@@ -1,0 +1,12 @@
+{
+  "expectedValidationError": 16,
+  "inputFiles": [
+    "000.bin"
+  ],
+  "kind": "datagram-sequence",
+  "messageType": 7,
+  "name": "zero_fragment_count",
+  "notes": "Transport mutation: zero fragment count.",
+  "schema": "FSTL-1.0",
+  "valid": false
+}

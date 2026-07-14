@@ -1,0 +1,12 @@
+{
+  "expectedValidationError": 18,
+  "inputFiles": [
+    "000.bin"
+  ],
+  "kind": "datagram-sequence",
+  "messageType": 7,
+  "name": "fragment_offset_noncanonical",
+  "notes": "Transport mutation: fragment offset noncanonical.",
+  "schema": "FSTL-1.0",
+  "valid": false
+}

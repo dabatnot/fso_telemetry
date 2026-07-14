@@ -1,0 +1,12 @@
+{
+  "expectedValidationError": 23,
+  "inputFiles": [
+    "000.bin"
+  ],
+  "kind": "datagram-sequence",
+  "messageType": 7,
+  "name": "bad_message_crc",
+  "notes": "Datagram CRC is valid but logical message CRC is not.",
+  "schema": "FSTL-1.0",
+  "valid": false
+}

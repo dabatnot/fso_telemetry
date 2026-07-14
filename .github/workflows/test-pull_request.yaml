@@ -15,6 +15,8 @@ jobs:
           python-version: '3.11'
       - name: Verify FSTL 1.0 schema
         run: python -B test/telemetry/protocol/tools/fstl_schema.py --check
+      - name: Verify FSTL 1.0 transport vectors
+        run: python -B test/telemetry/protocol/tools/generate_transport_vectors.py --check
 
   build_linux:
     strategy:

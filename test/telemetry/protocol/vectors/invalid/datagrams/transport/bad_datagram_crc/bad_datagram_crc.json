@@ -1,0 +1,12 @@
+{
+  "expectedValidationError": 10,
+  "inputFiles": [
+    "000.bin"
+  ],
+  "kind": "datagram-sequence",
+  "messageType": 7,
+  "name": "bad_datagram_crc",
+  "notes": "Payload changed without resealing datagram CRC.",
+  "schema": "FSTL-1.0",
+  "valid": false
+}

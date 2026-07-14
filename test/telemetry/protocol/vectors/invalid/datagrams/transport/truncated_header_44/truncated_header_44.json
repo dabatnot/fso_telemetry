@@ -1,0 +1,12 @@
+{
+  "expectedValidationError": 2,
+  "inputFiles": [
+    "000.bin"
+  ],
+  "kind": "datagram-sequence",
+  "messageType": 9,
+  "name": "truncated_header_44",
+  "notes": "Datagram truncated to 44 bytes.",
+  "schema": "FSTL-1.0",
+  "valid": false
+}
