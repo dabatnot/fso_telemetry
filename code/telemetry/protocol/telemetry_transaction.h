@@ -41,7 +41,8 @@ struct CompletedTransactionPart {
 	std::uint16_t record_count = 0;
 	std::vector<std::uint8_t> records;
 
-	ByteView records_view() const noexcept {
+	ByteView records_view() const noexcept
+	{
 		return ByteView{records.empty() ? nullptr : records.data(), records.size()};
 	}
 };
@@ -68,6 +69,7 @@ enum class TransactionAssemblyResult : std::uint8_t {
 	Accepted,
 	Duplicate,
 	Completed,
+	StaleTransaction,
 	InvalidPart,
 	CandidateBusy,
 	QuotaExceeded,
@@ -75,6 +77,27 @@ enum class TransactionAssemblyResult : std::uint8_t {
 	TransactionSizeMismatch,
 	TransactionHashMismatch,
 	AllocationFailed,
+};
+
+struct TransactionExpirationSummary {
+	std::size_t count = 0;
+	bool manifest_expired = false;
+	bool full_snapshot_expired = false;
+	std::uint32_t manifest_id = 0;
+	std::uint32_t snapshot_id = 0;
+};
+
+struct TransactionIngestOutcome {
+	TransactionAssemblyResult result = TransactionAssemblyResult::InvalidPart;
+	TransactionExpirationSummary expiration;
+
+	// Keep the status convenient for callers that do not need to branch on an
+	// expiration, while still returning the expiration details from every
+	// ingest operation.
+	constexpr operator TransactionAssemblyResult() const noexcept
+	{
+		return result;
+	}
 };
 
 // One instance owns the bounded paged-transaction state for one client. It
@@ -86,20 +109,29 @@ class TelemetryTransactionAssembler {
 	TelemetryTransactionAssembler() = default;
 
 	// now_ms is an injected monotonic timestamp. completed is left unchanged
-	// unless Completed is returned.
-	TransactionAssemblyResult ingest(const TransactionPart& part,
-	                                 std::uint64_t now_ms,
-	                                 CompletedTransaction& completed);
+	// unless Completed is returned. Any candidate expired by this call is
+	// reported in the outcome before the incoming part is considered.
+	TransactionIngestOutcome
+	ingest(const TransactionPart& part, std::uint64_t now_ms, CompletedTransaction& completed);
 
 	// Candidates expire exactly TransactionAssemblyTimeoutMs after their first
 	// accepted part. A backwards-moving injected clock does not expire them.
+	// State/session callers use the detailed form so a Manifest expiry can
+	// trigger a resync that explicitly requests both Manifest and Snapshot.
 	std::size_t expire(std::uint64_t now_ms) noexcept;
+	TransactionExpirationSummary expire_with_details(std::uint64_t now_ms) noexcept;
 
 	bool discard(MessageType message_type) noexcept;
 	void clear() noexcept;
 
-	std::size_t active_candidates() const noexcept { return m_reserved_candidates; }
-	std::size_t reserved_bytes() const noexcept { return m_reserved_bytes; }
+	std::size_t active_candidates() const noexcept
+	{
+		return m_reserved_candidates;
+	}
+	std::size_t reserved_bytes() const noexcept
+	{
+		return m_reserved_bytes;
+	}
 
   private:
 	struct PartSlot {
@@ -134,6 +166,8 @@ class TelemetryTransactionAssembler {
 	std::vector<Candidate> m_candidates;
 	std::size_t m_reserved_candidates = 0;
 	std::size_t m_reserved_bytes = 0;
+	std::uint32_t m_expired_manifest_id = 0;
+	std::uint32_t m_expired_snapshot_id = 0;
 };
 
 } // namespace telemetry::protocol

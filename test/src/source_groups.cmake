@@ -91,6 +91,9 @@ add_file_folder("Telemetry\\\\Protocol"
 	telemetry/protocol/test_telemetry_datagram.cpp
 	telemetry/protocol/test_telemetry_fragmentation.cpp
 	telemetry/protocol/test_telemetry_rate_limiter.cpp
+	telemetry/protocol/test_telemetry_records.cpp
+	telemetry/protocol/test_telemetry_replication.cpp
+	telemetry/protocol/test_telemetry_replication_harness.cpp
 	telemetry/protocol/test_telemetry_reliability_harness.cpp
 	telemetry/protocol/test_telemetry_reliability_messages.cpp
 	telemetry/protocol/test_telemetry_reliable_receive.cpp
@@ -98,6 +101,7 @@ add_file_folder("Telemetry\\\\Protocol"
 	telemetry/protocol/test_telemetry_session.cpp
 	telemetry/protocol/test_telemetry_session_context.cpp
 	telemetry/protocol/test_telemetry_sha256.cpp
+	telemetry/protocol/test_telemetry_state_messages.cpp
 	telemetry/protocol/test_telemetry_transaction.cpp
 	telemetry/protocol/test_telemetry_vectors.cpp
 )

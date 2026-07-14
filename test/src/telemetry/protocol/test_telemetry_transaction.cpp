@@ -498,6 +498,22 @@ TEST(TelemetryProtocolTransaction, ExpiresAtExactlyTenSecondsWithoutClockRegress
 	EXPECT_EQ(TransactionAssemblyResult::Accepted, assembler.ingest(replacement, 15000U, completed));
 	EXPECT_EQ(1U, assembler.active_candidates());
 	assembler.clear();
+
+	TelemetryTransactionAssembler expired_by_ingest;
+	ASSERT_EQ(TransactionAssemblyResult::Accepted, expired_by_ingest.ingest(first, 5000U, completed));
+	const auto late_same_transaction = expired_by_ingest.ingest(first, 15000U, completed);
+	EXPECT_EQ(TransactionAssemblyResult::StaleTransaction, late_same_transaction.result);
+	EXPECT_EQ(1U, late_same_transaction.expiration.count);
+	EXPECT_TRUE(late_same_transaction.expiration.manifest_expired);
+	EXPECT_EQ(1U, late_same_transaction.expiration.manifest_id);
+	EXPECT_EQ(0U, expired_by_ingest.active_candidates());
+	EXPECT_EQ(0U, expired_by_ingest.reserved_bytes());
+
+	const auto repeated_late_part = expired_by_ingest.ingest(first, 15001U, completed);
+	EXPECT_EQ(TransactionAssemblyResult::StaleTransaction, repeated_late_part.result);
+	EXPECT_EQ(0U, repeated_late_part.expiration.count);
+	EXPECT_EQ(TransactionAssemblyResult::Accepted, expired_by_ingest.ingest(replacement, 15002U, completed));
+	EXPECT_EQ(1U, expired_by_ingest.active_candidates());
 }
 
 } // namespace
