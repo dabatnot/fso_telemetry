@@ -42,7 +42,7 @@ def main() -> int:
         return 2
 
     environment = os.environ.copy()
-    detect_leaks = "0" if os.name == "nt" else "1"
+    detect_leaks = "0" if sys.platform in ("win32", "darwin") else "1"
     environment.setdefault(
         "ASAN_OPTIONS", f"abort_on_error=1:detect_leaks={detect_leaks}:strict_string_checks=1"
     )
