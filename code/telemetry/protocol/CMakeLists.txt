@@ -1,10 +1,20 @@
 set(FSTL_PROTOCOL_SOURCES
 	packet_reader.cpp
 	packet_writer.cpp
+	telemetry_rate_limiter.cpp
+	telemetry_capabilities.cpp
+	telemetry_clock.cpp
+	telemetry_control_messages.cpp
+	telemetry_counters.cpp
 	telemetry_datagram.cpp
 	telemetry_crc32.cpp
 	telemetry_fragmenter.cpp
 	telemetry_reassembler.cpp
+	telemetry_reliability_messages.cpp
+	telemetry_reliable_receive.cpp
+	telemetry_reliable_window.cpp
+	telemetry_session.cpp
+	telemetry_session_context.cpp
 	telemetry_sha256.cpp
 	telemetry_transaction.cpp
 )
@@ -12,12 +22,22 @@ set(FSTL_PROTOCOL_SOURCES
 set(FSTL_PROTOCOL_HEADERS
 	packet_reader.h
 	packet_writer.h
+	telemetry_rate_limiter.h
+	telemetry_capabilities.h
+	telemetry_clock.h
+	telemetry_control_messages.h
+	telemetry_counters.h
 	telemetry_datagram.h
 	telemetry_crc32.h
 	telemetry_fragmenter.h
 	telemetry_protocol_constants.h
 	telemetry_protocol_types.h
 	telemetry_reassembler.h
+	telemetry_reliability_messages.h
+	telemetry_reliable_receive.h
+	telemetry_reliable_window.h
+	telemetry_session.h
+	telemetry_session_context.h
 	telemetry_sha256.h
 	telemetry_transaction.h
 )

@@ -84,8 +84,19 @@ add_file_folder("Scripting\\\\Lua"
 add_file_folder("Telemetry\\\\Protocol"
 	telemetry/protocol/test_packet_io.cpp
 	telemetry/protocol/test_protocol_constants.cpp
+	telemetry/protocol/test_telemetry_capabilities.cpp
+	telemetry/protocol/test_telemetry_clock.cpp
+	telemetry/protocol/test_telemetry_control_messages.cpp
+	telemetry/protocol/test_telemetry_counters.cpp
 	telemetry/protocol/test_telemetry_datagram.cpp
 	telemetry/protocol/test_telemetry_fragmentation.cpp
+	telemetry/protocol/test_telemetry_rate_limiter.cpp
+	telemetry/protocol/test_telemetry_reliability_harness.cpp
+	telemetry/protocol/test_telemetry_reliability_messages.cpp
+	telemetry/protocol/test_telemetry_reliable_receive.cpp
+	telemetry/protocol/test_telemetry_reliable_window.cpp
+	telemetry/protocol/test_telemetry_session.cpp
+	telemetry/protocol/test_telemetry_session_context.cpp
 	telemetry/protocol/test_telemetry_sha256.cpp
 	telemetry/protocol/test_telemetry_transaction.cpp
 	telemetry/protocol/test_telemetry_vectors.cpp

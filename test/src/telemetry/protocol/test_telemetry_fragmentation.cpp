@@ -16,11 +16,13 @@ namespace {
 using namespace telemetry::protocol;
 
 template <typename Container>
-ByteView byte_view(const Container& bytes) {
+ByteView byte_view(const Container& bytes)
+{
 	return ByteView{static_cast<const std::uint8_t*>(static_cast<const void*>(bytes.data())), bytes.size()};
 }
 
-std::vector<std::uint8_t> message_bytes(std::size_t size, std::uint8_t seed = 0x31U) {
+std::vector<std::uint8_t> message_bytes(std::size_t size, std::uint8_t seed = 0x31U)
+{
 	std::vector<std::uint8_t> result(size);
 	for (std::size_t index = 0; index < size; ++index) {
 		result[index] = static_cast<std::uint8_t>(seed + index * 37U);
@@ -32,13 +34,17 @@ struct OwnedFragment {
 	TelemetryDatagramHeader header;
 	std::vector<std::uint8_t> payload;
 
-	DatagramView view() const { return DatagramView{header, byte_view(payload)}; }
+	DatagramView view() const
+	{
+		return DatagramView{header, byte_view(payload)};
+	}
 };
 
 std::vector<OwnedFragment> make_fragments(const std::vector<std::uint8_t>& message,
-	                                       MessageType type = MessageType::Delta,
-	                                       std::uint32_t message_id = 100U,
-	                                       std::uint64_t session_id = 42U) {
+	MessageType type = MessageType::Delta,
+	std::uint32_t message_id = 100U,
+	std::uint64_t session_id = 42U)
+{
 	TelemetryFragmenter fragmenter;
 	EXPECT_TRUE(TelemetryFragmenter::create(byte_view(message), message_size_class(type), fragmenter));
 	std::vector<OwnedFragment> result;
@@ -73,9 +79,10 @@ std::vector<OwnedFragment> make_fragments(const std::vector<std::uint8_t>& messa
 }
 
 OwnedFragment make_first_fragment(MessageType type,
-	                               std::uint32_t message_size,
-	                               std::uint32_t message_id,
-	                               std::uint64_t session_id = 42U) {
+	std::uint32_t message_size,
+	std::uint32_t message_id,
+	std::uint64_t session_id = 42U)
+{
 	OwnedFragment result;
 	result.header.message_type = type;
 	result.header.session_id = session_id;
@@ -89,7 +96,8 @@ OwnedFragment make_first_fragment(MessageType type,
 	return result;
 }
 
-ReassembledMessage sentinel_message() {
+ReassembledMessage sentinel_message()
+{
 	ReassembledMessage result;
 	result.header.message_id = 0xfeedbeefU;
 	result.message_class = MessageSizeClass::Video;
@@ -97,13 +105,15 @@ ReassembledMessage sentinel_message() {
 	return result;
 }
 
-void expect_sentinel(const ReassembledMessage& message) {
+void expect_sentinel(const ReassembledMessage& message)
+{
 	EXPECT_EQ(0xfeedbeefU, message.header.message_id);
 	EXPECT_EQ(MessageSizeClass::Video, message.message_class);
 	EXPECT_EQ((std::vector<std::uint8_t>{0x5aU}), message.payload);
 }
 
-TEST(TelemetryProtocolFragmenter, CanonicalSlicesCoverEmptyExactAndFinalRemainderBoundaries) {
+TEST(TelemetryProtocolFragmenter, CanonicalSlicesCoverEmptyExactAndFinalRemainderBoundaries)
+{
 	struct Case {
 		std::size_t size;
 		std::uint16_t count;
@@ -129,9 +139,8 @@ TEST(TelemetryProtocolFragmenter, CanonicalSlicesCoverEmptyExactAndFinalRemainde
 			EXPECT_EQ(index, slice.fragment_index);
 			EXPECT_EQ(value.count, slice.fragment_count);
 			EXPECT_EQ(index * MaxFragmentPayload, slice.fragment_offset);
-			const auto expected_size = value.size == 0U
-			                               ? 0U
-			                               : std::min(MaxFragmentPayload, value.size - index * MaxFragmentPayload);
+			const auto expected_size =
+				value.size == 0U ? 0U : std::min(MaxFragmentPayload, value.size - index * MaxFragmentPayload);
 			EXPECT_EQ(expected_size, slice.payload.size);
 			if (index + 1U < value.count) {
 				EXPECT_EQ(MaxFragmentPayload, slice.payload.size);
@@ -144,7 +153,8 @@ TEST(TelemetryProtocolFragmenter, CanonicalSlicesCoverEmptyExactAndFinalRemainde
 	}
 }
 
-TEST(TelemetryProtocolFragmenter, UsesLogicalCrcAndRejectsInvalidClassBoundsOverflowAndIndex) {
+TEST(TelemetryProtocolFragmenter, UsesLogicalCrcAndRejectsInvalidClassBoundsOverflowAndIndex)
+{
 	const std::array<std::uint8_t, 9> check{'1', '2', '3', '4', '5', '6', '7', '8', '9'};
 	TelemetryFragmenter fragmenter;
 	ASSERT_TRUE(TelemetryFragmenter::create(byte_view(check), MessageSizeClass::State, fragmenter));
@@ -160,21 +170,23 @@ TEST(TelemetryProtocolFragmenter, UsesLogicalCrcAndRejectsInvalidClassBoundsOver
 	const std::uint8_t byte = 0U;
 	EXPECT_FALSE(TelemetryFragmenter::create(ByteView{nullptr, 1U}, MessageSizeClass::State, fragmenter));
 	EXPECT_FALSE(fragmenter.ok());
-	EXPECT_FALSE(TelemetryFragmenter::create(ByteView{&byte, MaxStateMessageSize + 1U},
-	                                        MessageSizeClass::State,
-	                                        fragmenter));
-	EXPECT_FALSE(TelemetryFragmenter::create(ByteView{&byte, MaxVideoMessageSize + 1U},
-	                                        MessageSizeClass::Video,
-	                                        fragmenter));
-	EXPECT_FALSE(TelemetryFragmenter::create(ByteView{&byte,
-	                                                  static_cast<std::size_t>(std::numeric_limits<std::uint32_t>::max()) +
-	                                                      1U},
-	                                        MessageSizeClass::Video,
-	                                        fragmenter));
+	EXPECT_FALSE(
+		TelemetryFragmenter::create(ByteView{&byte, MaxStateMessageSize + 1U}, MessageSizeClass::State, fragmenter));
+	EXPECT_FALSE(
+		TelemetryFragmenter::create(ByteView{&byte, MaxVideoMessageSize + 1U}, MessageSizeClass::Video, fragmenter));
+	// A 32-bit size_t cannot represent a value above u32; constructing that
+	// case would wrap the test input to zero before create() sees it.
+	if (std::numeric_limits<std::size_t>::max() > std::numeric_limits<std::uint32_t>::max()) {
+		EXPECT_FALSE(TelemetryFragmenter::create(
+			ByteView{&byte, static_cast<std::size_t>(std::numeric_limits<std::uint32_t>::max()) + 1U},
+			MessageSizeClass::Video,
+			fragmenter));
+	}
 	EXPECT_FALSE(TelemetryFragmenter::create(ByteView{}, MessageSizeClass::Invalid, fragmenter));
 }
 
-TEST(TelemetryProtocolReassembler, PublishesOnlyAfterAllOutOfOrderFragmentsValidateAtomically) {
+TEST(TelemetryProtocolReassembler, PublishesOnlyAfterAllOutOfOrderFragmentsValidateAtomically)
+{
 	const auto message = message_bytes(2265U);
 	auto fragments = make_fragments(message);
 	ASSERT_EQ(3U, fragments.size());
@@ -194,7 +206,8 @@ TEST(TelemetryProtocolReassembler, PublishesOnlyAfterAllOutOfOrderFragmentsValid
 	EXPECT_EQ(0U, reassembler.reserved_bytes(MessageSizeClass::State));
 }
 
-TEST(TelemetryProtocolReassembler, EveryThreeFragmentPermutationPublishesTheSameMessage) {
+TEST(TelemetryProtocolReassembler, EveryThreeFragmentPermutationPublishesTheSameMessage)
+{
 	const auto message = message_bytes(2265U);
 	const auto fragments = make_fragments(message);
 	ASSERT_EQ(3U, fragments.size());
@@ -206,8 +219,8 @@ TEST(TelemetryProtocolReassembler, EveryThreeFragmentPermutationPublishesTheSame
 		TelemetryReassembler reassembler;
 		auto completed = sentinel_message();
 		for (std::size_t position = 0; position < order.size(); ++position) {
-			const auto expected = position + 1U == order.size() ? ReassemblyResult::Completed
-			                                                    : ReassemblyResult::Accepted;
+			const auto expected =
+				position + 1U == order.size() ? ReassemblyResult::Completed : ReassemblyResult::Accepted;
 			ASSERT_EQ(expected, reassembler.ingest(fragments[order[position]].view(), completed));
 			if (expected != ReassemblyResult::Completed) {
 				expect_sentinel(completed);
@@ -221,7 +234,8 @@ TEST(TelemetryProtocolReassembler, EveryThreeFragmentPermutationPublishesTheSame
 	EXPECT_EQ(6U, permutation_count);
 }
 
-TEST(TelemetryProtocolReassembler, IdenticalDuplicatesAreIdempotentAndContradictionsPurgeTheWholeMessage) {
+TEST(TelemetryProtocolReassembler, IdenticalDuplicatesAreIdempotentAndContradictionsPurgeTheWholeMessage)
+{
 	const auto message = message_bytes(1133U);
 	auto fragments = make_fragments(message, MessageType::Manifest);
 	TelemetryReassembler reassembler;
@@ -250,7 +264,8 @@ TEST(TelemetryProtocolReassembler, IdenticalDuplicatesAreIdempotentAndContradict
 	EXPECT_EQ(message, completed.payload);
 }
 
-TEST(TelemetryProtocolReassembler, EnforcesEveryCommonFieldButAllowsDatagramLocalRetransmissionFields) {
+TEST(TelemetryProtocolReassembler, EnforcesEveryCommonFieldButAllowsDatagramLocalRetransmissionFields)
+{
 	const auto message = message_bytes(2264U);
 	auto original = make_fragments(message, MessageType::EventBatch);
 	for (auto& fragment : original) {
@@ -263,18 +278,21 @@ TEST(TelemetryProtocolReassembler, EnforcesEveryCommonFieldButAllowsDatagramLoca
 		{"major version", [](OwnedFragment& value) { value.header.version_major++; }},
 		{"minor version", [](OwnedFragment& value) { value.header.version_minor++; }},
 		{"type", [](OwnedFragment& value) { value.header.message_type = MessageType::Manifest; }},
-		{"flags", [](OwnedFragment& value) { value.header.flags &= static_cast<std::uint8_t>(~MessageFlagAckRequired); }},
+		{"flags",
+			[](OwnedFragment& value) { value.header.flags &= static_cast<std::uint8_t>(~MessageFlagAckRequired); }},
 		{"frame", [](OwnedFragment& value) { value.header.frame_id++; }},
 		{"mission time", [](OwnedFragment& value) { value.header.mission_time_us++; }},
-		{"message size", [](OwnedFragment& value) {
-			value.header.message_size--;
-			value.payload.pop_back();
-			value.header.payload_size--;
-		}},
-		{"fragment count", [](OwnedFragment& value) {
-			value.header.message_size++;
-			value.header.fragment_count++;
-		}},
+		{"message size",
+			[](OwnedFragment& value) {
+				value.header.message_size--;
+				value.payload.pop_back();
+				value.header.payload_size--;
+			}},
+		{"fragment count",
+			[](OwnedFragment& value) {
+				value.header.message_size++;
+				value.header.fragment_count++;
+			}},
 		{"message CRC", [](OwnedFragment& value) { value.header.message_crc32 ^= 1U; }},
 	}};
 	for (const auto& item : mutations) {
@@ -300,7 +318,8 @@ TEST(TelemetryProtocolReassembler, EnforcesEveryCommonFieldButAllowsDatagramLoca
 	EXPECT_EQ(message, completed.payload);
 }
 
-TEST(TelemetryProtocolReassembler, InvalidLayoutAndMessageCrcFailurePurgeWithoutPublishing) {
+TEST(TelemetryProtocolReassembler, InvalidLayoutAndMessageCrcFailurePurgeWithoutPublishing)
+{
 	const auto message = message_bytes(1133U);
 	auto fragments = make_fragments(message);
 	auto completed = sentinel_message();
@@ -323,7 +342,8 @@ TEST(TelemetryProtocolReassembler, InvalidLayoutAndMessageCrcFailurePurgeWithout
 	EXPECT_EQ(0U, reassembler.reserved_bytes(MessageSizeClass::State));
 }
 
-TEST(TelemetryProtocolReassembler, ValidatesLayoutAndQuotasBeforeAnyObservableReservation) {
+TEST(TelemetryProtocolReassembler, ValidatesLayoutAndQuotasBeforeAnyObservableReservation)
+{
 	TelemetryReassembler reassembler;
 	auto completed = sentinel_message();
 	auto invalid = make_first_fragment(MessageType::Delta, 1133U, 1U);
@@ -334,31 +354,27 @@ TEST(TelemetryProtocolReassembler, ValidatesLayoutAndQuotasBeforeAnyObservableRe
 	EXPECT_EQ(0U, reassembler.reserved_bytes(MessageSizeClass::State));
 
 	for (std::uint32_t index = 0; index < MaxStateReassembliesPerClient; ++index) {
-		auto fragment = make_first_fragment(MessageType::Delta,
-		                                  static_cast<std::uint32_t>(MaxStateMessageSize),
-		                                  100U + index);
+		auto fragment =
+			make_first_fragment(MessageType::Delta, static_cast<std::uint32_t>(MaxStateMessageSize), 100U + index);
 		EXPECT_EQ(ReassemblyResult::Accepted, reassembler.ingest(fragment.view(), completed));
 	}
 	EXPECT_EQ(MaxStateReassembliesPerClient, reassembler.active_reassemblies(MessageSizeClass::State));
 	EXPECT_EQ(MaxStateReassemblyBytesPerClient, reassembler.reserved_bytes(MessageSizeClass::State));
-	auto excess_state = make_first_fragment(MessageType::Delta,
-	                                      static_cast<std::uint32_t>(MaxStateMessageSize),
-	                                      999U);
+	auto excess_state = make_first_fragment(MessageType::Delta, static_cast<std::uint32_t>(MaxStateMessageSize), 999U);
 	EXPECT_EQ(ReassemblyResult::QuotaExceeded, reassembler.ingest(excess_state.view(), completed));
 	EXPECT_EQ(MaxStateReassembliesPerClient, reassembler.active_reassemblies(MessageSizeClass::State));
 	EXPECT_EQ(MaxStateReassemblyBytesPerClient, reassembler.reserved_bytes(MessageSizeClass::State));
 
 	for (std::uint32_t index = 0; index < MaxVideoReassembliesPerClient; ++index) {
 		auto fragment = make_first_fragment(MessageType::TargetVideoFrame,
-		                                  static_cast<std::uint32_t>(MaxVideoMessageSize),
-		                                  2000U + index);
+			static_cast<std::uint32_t>(MaxVideoMessageSize),
+			2000U + index);
 		EXPECT_EQ(ReassemblyResult::Accepted, reassembler.ingest(fragment.view(), completed));
 	}
 	EXPECT_EQ(MaxVideoReassembliesPerClient, reassembler.active_reassemblies(MessageSizeClass::Video));
 	EXPECT_EQ(MaxVideoReassemblyBytesPerClient, reassembler.reserved_bytes(MessageSizeClass::Video));
-	auto excess_video = make_first_fragment(MessageType::TargetVideoFrame,
-	                                      static_cast<std::uint32_t>(MaxVideoMessageSize),
-	                                      2999U);
+	auto excess_video =
+		make_first_fragment(MessageType::TargetVideoFrame, static_cast<std::uint32_t>(MaxVideoMessageSize), 2999U);
 	EXPECT_EQ(ReassemblyResult::QuotaExceeded, reassembler.ingest(excess_video.view(), completed));
 	EXPECT_EQ(MaxVideoReassembliesPerClient, reassembler.active_reassemblies(MessageSizeClass::Video));
 	EXPECT_EQ(MaxStateReassembliesPerClient, reassembler.active_reassemblies(MessageSizeClass::State));
@@ -374,7 +390,8 @@ TEST(TelemetryProtocolReassembler, ValidatesLayoutAndQuotasBeforeAnyObservableRe
 	EXPECT_EQ(0U, reassembler.reserved_bytes(MessageSizeClass::Video));
 }
 
-TEST(TelemetryProtocolReassembler, SessionAndMessageIdFormIndependentCandidateKeys) {
+TEST(TelemetryProtocolReassembler, SessionAndMessageIdFormIndependentCandidateKeys)
+{
 	const auto message = message_bytes(1133U);
 	auto first = make_fragments(message, MessageType::Delta, 7U, 11U);
 	auto other_session = make_fragments(message, MessageType::Delta, 7U, 12U);
