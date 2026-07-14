@@ -10,12 +10,10 @@ par le document 07 reste néanmoins ouverte pour des preuves qui ne peuvent pas
 être remplacées par un succès local :
 
 - la campagne libFuzzer avec ASan/UBSan et les jobs CI n'ont pas encore tourné
-  sur ce worktree ; le replay déterministe local a été exécuté sans sanitizer
+  sur la révision candidate au gel ; le replay déterministe local a été exécuté sans sanitizer
   parce que Visual Studio 2019 16.4 rejette `/fsanitize=address` (`MSB8058`) ;
 - les quatre approbations humaines, la version/tag de gel et l'autorisation
-  explicite de démarrer la Phase 1 sont absents ;
-- le worktree n'est pas encore rattaché à un commit final et les deux commits
-  nouvellement récupérés d'`upstream/master` ne sont pas encore intégrés.
+  explicite de démarrer la Phase 1 sont absents.
 
 Ce fichier est une preuve d'audit et non une approbation. Il ne coche pas les
 cases normatives du document 07 et n'usurpe aucun signataire.
@@ -26,23 +24,22 @@ cases normatives du document 07 et n'usurpe aucun signataire.
 |---|---|
 | Date | 2026-07-14, Europe/Paris |
 | Branche | `codex/telemetry-phase-0` |
-| `HEAD` | `58a02935cfab682e345cd0dfb1d367005505ac5f` |
+| Commit d'implémentation | `3f9603c72a140ed24b1f0ba7343fa17b41fc50d9` |
+| Commit d'intégration upstream | `a50b5b7b36298d721cc2dc5907db45f5dbd9c9d2` |
 | `upstream/master` local | `57be2eb3333917e1519b9a9c6520e4551748c070` |
-| Révision poussée sur `origin/codex/telemetry-phase-0` | `58a02935cfab682e345cd0dfb1d367005505ac5f` |
-| Relation à `upstream/master` | `HEAD` est 5 commits devant et 2 derrière ; merge-base `583192b9f8b22649a921229f567379460343cd99` |
-| État du worktree | sale ; code, tests, workflow, vectors et ce rapport ne sont pas tous dans `HEAD` |
+| Relation à `upstream/master` | `57be2eb3333917e1519b9a9c6520e4551748c070` est ancêtre du commit d'intégration ; les changements upstream disponibles lors de l'audit sont intégrés |
+| Contenu du commit d'implémentation | 448 fichiers, incluant code, tests, vectors, workflow, documentation et 45 fichiers `tools/radar/assets/` |
 | SHA-256 du schéma | `1d89c4a95a121c178bf85570cd616568fd939942b8d053835069b2d7d6a1f0d4` |
 | SHA-256 du manifeste messages/records | `21cb0020029b6a6ffa68ea176c781eada4b7848f00ca7cae8031f912dd995931` |
 | SHA-256 du manifeste transport | `9f7bd56abb543f82aeee0aa143de40e6f620fb48a99e6df854c8b1375f0ce6e6` |
 
-L'audit inclut les fichiers trackés et non trackés visibles dans le worktree.
-Le répertoire non tracké `tools/radar/assets/` est hors du périmètre Phase 0 :
-il ne constitue aucune preuve FSTL, mais sera inclus dans le commit final
-conformément à l'instruction explicite de l'utilisateur d'ajouter tous les
-fichiers modifiés et non trackés.
+Tous les fichiers trackés et non trackés visibles lors de l'audit ont été inclus
+dans le commit d'implémentation. Le répertoire `tools/radar/assets/` reste hors
+du périmètre Phase 0 et ne constitue aucune preuve FSTL ; ses 45 fichiers sont
+néanmoins versionnés conformément à l'instruction explicite de l'utilisateur.
 
 Le sous-audit P0.12 n'a pas lancé MSBuild. L'agent principal a ensuite effectué
-une reconstruction Release sérialisée du worktree courant et exécuté ses 383
+une reconstruction Release sérialisée du contenu figé dans `3f9603c72` et exécuté ses 383
 cas `TEST`/`TEST_F`. Seuls les résultats reproductibles explicitement listés
 ci-dessous sont retenus comme preuves.
 
@@ -51,7 +48,7 @@ ci-dessous sont retenus comme preuves.
 | Statut | Sens dans ce rapport |
 |---|---|
 | `PASS` | le critère précis possède une preuve reproductible exécutée ou une preuve statique suffisante pour ce critère |
-| `PARTIAL` | l'artefact ou le test existe, mais une preuve obligatoire est absente, ancienne ou non exécutée sur le worktree courant |
+| `PARTIAL` | l'artefact ou le test existe, mais une preuve obligatoire est absente, ancienne ou non exécutée sur la révision candidate au gel |
 | `BLOCKED` | une condition de gel indispensable est absente ou dépend d'une exécution/revue externe non disponible pendant l'audit |
 
 Un `PASS` local n'autorise jamais le gel si un autre critère ou une revue reste
@@ -85,23 +82,20 @@ Toutes les commandes partent de la racine du dépôt.
    sont verts, mais le compilateur local ne fournit pas ASan. Aucun résultat de
    mutation libFuzzer sous ASan/UBSan, aucune campagne longue approuvée et aucun
    rapport sanitizer ne sont encore archivés.
-2. **CI non prouvée.** `.github/workflows/telemetry-protocol.yaml` est non
-   tracké et aucun run vert de cette révision n'existe dans les artefacts
-   locaux.
+2. **CI non prouvée.** `.github/workflows/telemetry-protocol.yaml` est versionné
+   dans `3f9603c72` et définit les contrôles de schéma, tests C++ et fuzz
+   Linux/macOS/Windows, mais aucun run vert de la révision candidate au gel
+   n'est encore archivé.
 3. **Revues externes absentes.** Aucun signataire, décision, date ou lien de
    preuve n'est enregistré pour métier, transport/interop, sécurité ou client.
-4. **Version de gel absente.** Aucun tag FSTL/telemetry ne pointe sur `HEAD` et
-   aucun identifiant d'artefact gelé n'est enregistré.
-5. **Worktree non final.** Les preuves hashées ne correspondent pas encore à
-   un commit unique. `upstream/master` a avancé de deux commits déjà récupérés
-   mais non intégrés. Le contenu hors périmètre `tools/radar/assets/` sera
-   inclus sur instruction utilisateur, sans être compté comme preuve FSTL.
+4. **Version de gel absente.** Aucun tag FSTL/telemetry ne désigne la révision
+   candidate au gel et aucun identifiant d'artefact gelé n'est enregistré.
 
 ## Matrice des critères d'acceptation P0-AC-001 à P0-AC-024
 
 | ID | Statut | Preuves présentes | Reste à fermer |
 |---|---|---|---|
-| `P0-AC-001` | `PASS` | docs 02/03/05 ; schéma 20/20 ; 20 payloads binaires et décodage Python | conserver ce résultat après commit final |
+| `P0-AC-001` | `PASS` | docs 02/03/05 ; schéma 20/20 ; 20 payloads binaires et décodage Python | conserver ce résultat dans la CI de la révision publiée |
 | `P0-AC-002` | `PASS` | doc 04 ; schéma 28/28 avec scope/atome/champs de premier niveau ; 28 envelopes binaires décodées | enrichissement machine-readable imbriqué suivi sous AC-024 |
 | `P0-AC-003` | `PASS` | 134 registres extraits des docs, tous liés aux constantes C++ ; politiques enum/bitmap/flags vérifiées par self-test | conserver le rapport CI |
 | `P0-AC-004` | `PASS` | constantes 68/1200/1132 ; vectors aux frontières 0, 1, 1132, 1133, 2264 et 2265 octets ; suite Release verte | conserver le résultat CI final |
@@ -123,7 +117,7 @@ Toutes les commandes partent de la racine du dépôt.
 | `P0-AC-020` | `BLOCKED` | 8 replayers déterministes passent le corpus ; workflow libFuzzer ASan/UBSan présent | exécuter la CI sanitizer et une campagne de gel avec durée/corpus archivés |
 | `P0-AC-021` | `PASS` technique | defaults loopback, discovery, allowlist et `TrustedFullState` opt-in exécutés | approbation humaine configuration sûre toujours requise |
 | `P0-AC-022` | `PASS` | 20 messages read-only, authority mapper et tests d'absence de commande verts | conserver en CI |
-| `P0-AC-023` | `PASS` | bibliothèque C++17 pure ; scan sans type moteur/socket/renderer ; suite dédiée verte | revue finale du diff committé |
+| `P0-AC-023` | `PASS` | bibliothèque C++17 pure ; scan sans type moteur/socket/renderer ; suite dédiée verte | faire confirmer en revue externe sur le diff committé |
 | `P0-AC-024` | `PASS` | docs → schéma → 134 constantes ; golden minimaux reconstruits ; probes figés 192/192, 422/422, 25/25, 241/241 et 4 mutations wire rejetées | conserver les deux empreintes figées et le self-test en CI |
 
 ## Matrice des exigences P0-F et P0-NF
@@ -156,7 +150,7 @@ Toutes les commandes partent de la racine du dépôt.
 | `P0-NF-009` | `PASS` | règles major/minor/record dans docs et schéma | aucun drift détecté |
 | `P0-NF-010` | `PASS` | docs, Python stdlib, `.bin`, JSON canonique et catalogue complet | conserver en CI |
 | `P0-NF-011` | `PASS` technique | config sécurité et tests opt-in exécutés | revue sécurité humaine absente |
-| `P0-NF-012` | `PASS` | bibliothèque pure sans collecteur ni hook moteur | confirmer sur le diff final committé |
+| `P0-NF-012` | `PASS` | bibliothèque pure sans collecteur ni hook moteur | faire confirmer en revue externe sur le diff committé |
 
 ## Décisions D0-001 à D0-018
 
@@ -187,7 +181,7 @@ bornée ; un delta d'une baseline totalement inconnue est abandonné et déclenc
 un `ResyncRequest UnknownBaseline` rate-limité. Les tests source
 `KnownCandidateKeepsOnlyHighestDeltaWithinAbsoluteTwoSecondWindow` et
 `TotallyUnknownBaselineDropsAndUsesExistingPerSessionResyncBucket` matérialisent
-les deux branches et passent dans la suite Release du worktree courant.
+les deux branches et passent dans la suite Release du contenu figé dans `3f9603c72`.
 
 ## Lots P0.1 à P0.12 et gates
 
@@ -204,7 +198,7 @@ les deux branches et passent dans la suite Release du worktree courant.
 | `P0.9` sécurité | `G0-F` | `PARTIAL` | modèle, catalogue et tests verts ; sanitizer/revue absents |
 | `P0.10` vectors/decoder | `G0-F` | `PASS` | catalogue complet et double décodage exact |
 | `P0.11` fuzz/CI | `G0-F` | `BLOCKED` | 8 replayers verts ; ASan/UBSan mutation et CI absents |
-| `P0.12` gel | gel | `BLOCKED` | upstream non intégré, approbations, tag, commit final et autorisation Phase 1 absents |
+| `P0.12` gel | gel | `BLOCKED` | approbations, campagne sanitizer/CI, tag/version de gel et autorisation Phase 1 absents |
 
 Synthèse des gates techniques : `G0-A`, `G0-B`, `G0-C`, `G0-D` et `G0-E PASS`;
 `G0-F BLOCKED` faute de sanitizer/CI et d'approbations de gel.
@@ -226,7 +220,7 @@ Synthèse des gates techniques : `G0-A`, `G0-B`, `G0-C`, `G0-D` et `G0-E PASS`;
 | revue filtrage Cockpit | `BLOCKED` | aucun signataire/artefact humain |
 | revue configuration sûre | `BLOCKED` | aucun signataire/artefact humain |
 | divergences résolues | `PASS` technique | D0-001..018, clarification baseline et replays contextuels cohérents ; revue finale absente |
-| absence collecteur/hook moteur | `PASS` | scan statique du module ; à répéter sur diff committé final |
+| absence collecteur/hook moteur | `PASS` | scan statique du module ; à conserver en CI et à confirmer en revue externe |
 
 ## Approbations requises — volontairement non remplies
 
@@ -260,11 +254,12 @@ nom ajouté par l'implémenteur sans décision explicite n'est pas une approbati
 | fuzzing/sanitizers/overflow verts | `BLOCKED` |
 | valeurs sûres par défaut testées | `PASS` local |
 | quatre revues approuvées | `BLOCKED` |
-| Phase 0 versionnée | `BLOCKED` |
+| Phase 0 versionnée | `BLOCKED` — aucune version ni aucun tag de gel enregistré |
 
 ## Commandes requises pour fermer les preuves techniques
 
-Les commandes Python suivantes doivent rester vertes sur le commit final :
+Les commandes Python suivantes doivent rester vertes sur la révision publiée
+candidate au gel :
 
 ```powershell
 & '.agents/skills/prepare-telemetry-phase-spec/scripts/validate_phase_specs.ps1' `
@@ -287,9 +282,10 @@ cmake --build build --config Release --target unittests -- /m:1 /nr:false /verbo
 build/bin/Release/unittests.exe --gtest_filter=TelemetryProtocol*
 ```
 
-Elle a produit 383/383 succès. Après commit et intégration d'upstream, la CI
-doit reconstruire la révision finale ; un binaire plus ancien que les sources
-n'est pas accepté.
+Elle a produit 383/383 succès sur le contenu du commit d'implémentation. Les
+commits d'implémentation et d'intégration upstream sont présents ; la CI doit
+encore reconstruire la révision publiée candidate au gel. Un binaire plus ancien
+que les sources n'est pas accepté.
 
 Pour les fuzzers, utiliser les commandes documentées dans
 `test/telemetry/protocol/fuzz/README.md`, puis archiver toolchain, options
@@ -299,14 +295,12 @@ durée explicitement approuvée par la revue sécurité.
 
 Enfin :
 
-1. intégrer les deux commits récupérés d'`upstream/master`, créer le commit
-   final incluant code, tests, vectors, workflow et documentation, puis pousser ;
-2. faire tourner les jobs Clang/macOS/Windows, en particulier libFuzzer avec
+1. faire tourner les jobs Clang/macOS/Windows, en particulier libFuzzer avec
    ASan/UBSan, et archiver durée, corpus et rapports ;
-3. rejouer les checks et tests sur le commit final ;
-4. faire approuver les quatre revues avec preuves ;
-5. enregistrer l'identifiant/version de l'artefact et créer le tag convenu ;
-6. seulement ensuite remplacer le verdict global par `PASS` et consigner
+2. rejouer les checks et tests sur la révision poussée ;
+3. faire approuver les quatre revues avec preuves ;
+4. enregistrer l'identifiant/version de l'artefact et créer le tag convenu ;
+5. seulement ensuite remplacer le verdict global par `PASS` et consigner
    l'autorisation explicite de démarrer la Phase 1.
 
 ## Version et autorisation de gel
