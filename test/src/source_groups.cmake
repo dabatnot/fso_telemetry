@@ -81,6 +81,11 @@ add_file_folder("Scripting\\\\Lua"
     scripting/lua/Value.cpp
 )
 
+add_file_folder("Telemetry\\\\Protocol"
+	telemetry/protocol/test_packet_io.cpp
+	telemetry/protocol/test_protocol_constants.cpp
+)
+
 add_file_folder("Test Util"
     util/FSTestFixture.cpp
     util/FSTestFixture.h

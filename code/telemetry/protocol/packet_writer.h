@@ -21,6 +21,7 @@ class PacketWriter {
 	bool write_u64(std::uint64_t value) noexcept;
 	bool write_i64(std::int64_t value) noexcept;
 	bool write_f32(float value) noexcept;
+	bool write_bool8(bool value) noexcept;
 	bool write_bytes(ByteView value) noexcept;
 	bool write_utf8(std::string_view value, std::size_t field_limit, bool allow_nul = false) noexcept;
 	bool write_zeroes(std::size_t count) noexcept;

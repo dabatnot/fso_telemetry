@@ -42,7 +42,7 @@ bool PacketReader::read_i8(std::int8_t& value) noexcept {
 	if (!read_u8(raw)) {
 		return false;
 	}
-	value = static_cast<std::int8_t>(raw);
+	std::memcpy(&value, &raw, sizeof(value));
 	return true;
 }
 
@@ -61,7 +61,7 @@ bool PacketReader::read_i16(std::int16_t& value) noexcept {
 	if (!read_u16(raw)) {
 		return false;
 	}
-	value = static_cast<std::int16_t>(raw);
+	std::memcpy(&value, &raw, sizeof(value));
 	return true;
 }
 
@@ -81,7 +81,7 @@ bool PacketReader::read_i32(std::int32_t& value) noexcept {
 	if (!read_u32(raw)) {
 		return false;
 	}
-	value = static_cast<std::int32_t>(raw);
+	std::memcpy(&value, &raw, sizeof(value));
 	return true;
 }
 
@@ -101,7 +101,7 @@ bool PacketReader::read_i64(std::int64_t& value) noexcept {
 	if (!read_u64(raw)) {
 		return false;
 	}
-	value = static_cast<std::int64_t>(raw);
+	std::memcpy(&value, &raw, sizeof(value));
 	return true;
 }
 
@@ -120,9 +120,25 @@ bool PacketReader::read_f32(float& value) noexcept {
 	return true;
 }
 
+bool PacketReader::read_bool8(bool& value) noexcept {
+	std::uint8_t raw = 0;
+	if (!read_u8(raw)) {
+		return false;
+	}
+	if (raw > 1U) {
+		return fail();
+	}
+	value = raw != 0;
+	return true;
+}
+
 bool PacketReader::read_bytes(std::size_t count, ByteView& value) noexcept {
 	if (!reserve(count)) {
 		return false;
+	}
+	if (count == 0) {
+		value = ByteView{};
+		return true;
 	}
 	value = ByteView{m_input.data + m_position, count};
 	m_position += count;
@@ -134,7 +150,12 @@ bool PacketReader::read_utf8(std::size_t field_limit, std::string_view& value, b
 	if (!read_u16(length) || length > field_limit || length > remaining()) {
 		return fail();
 	}
-	const std::string_view candidate(reinterpret_cast<const char*>(m_input.data + m_position), length);
+	if (length == 0) {
+		value = std::string_view{};
+		return true;
+	}
+	const std::string_view candidate(
+	    static_cast<const char*>(static_cast<const void*>(m_input.data + m_position)), length);
 	if (!is_valid_utf8(candidate, allow_nul)) {
 		return fail();
 	}

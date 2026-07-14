@@ -22,6 +22,7 @@ class PacketReader {
 	bool read_u64(std::uint64_t& value) noexcept;
 	bool read_i64(std::int64_t& value) noexcept;
 	bool read_f32(float& value) noexcept;
+	bool read_bool8(bool& value) noexcept;
 	bool read_bytes(std::size_t count, ByteView& value) noexcept;
 	bool read_utf8(std::size_t field_limit, std::string_view& value, bool allow_nul = false) noexcept;
 	bool subreader(std::size_t count, PacketReader& value) noexcept;
@@ -31,7 +32,9 @@ class PacketReader {
 	std::size_t remaining() const noexcept;
 	bool at_end() const noexcept { return m_ok && remaining() == 0; }
 	bool ok() const noexcept { return m_ok; }
-	ByteView unread() const noexcept { return ByteView{m_input.data + m_position, remaining()}; }
+	ByteView unread() const noexcept {
+		return ByteView{m_input.data == nullptr ? nullptr : m_input.data + m_position, remaining()};
+	}
 
   private:
 	bool reserve(std::size_t count) noexcept;

@@ -527,7 +527,7 @@ Scénarios obligatoires :
 3. anti-amplification avant ACK du `WELCOME` ;
 4. retransmission idempotente du même snapshot après ACK perdu ;
 5. delta intermédiaire perdu, delta cumulatif récent appliqué ;
-6. delta d'une baseline inconnue mis en attente selon la limite puis resync ;
+6. delta de la baseline candidate connue mis en attente selon la limite puis appliqué après commit ; delta d'une baseline totalement inconnue abandonné immédiatement puis `ResyncRequest UnknownBaseline` rate-limité ;
 7. keyframe candidate reçue en désordre avec les deltas de l'ancienne baseline ;
 8. mutation, création et suppression entre capture de keyframe et `ACK APPLIED` ;
 9. timeout de réassemblage fiable et renouvellement par nouvelle keyframe ;

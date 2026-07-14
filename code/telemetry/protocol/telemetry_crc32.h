@@ -10,13 +10,16 @@ class Crc32IsoHdlc {
   public:
 	Crc32IsoHdlc() noexcept = default;
 
-	void update(ByteView bytes) noexcept;
-	std::uint32_t value() const noexcept { return m_crc ^ 0xffffffffU; }
+	bool update(ByteView bytes) noexcept;
+	bool ok() const noexcept { return m_ok; }
+	std::uint32_t value() const noexcept { return m_ok ? m_crc ^ 0xffffffffU : 0U; }
 
   private:
 	std::uint32_t m_crc = 0xffffffffU;
+	bool m_ok = true;
 };
 
+bool crc32_iso_hdlc(ByteView bytes, std::uint32_t& value) noexcept;
 std::uint32_t crc32_iso_hdlc(ByteView bytes) noexcept;
 
 } // namespace telemetry::protocol

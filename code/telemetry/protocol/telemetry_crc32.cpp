@@ -22,16 +22,30 @@ constexpr auto CrcTable = make_crc_table();
 
 } // namespace
 
-void Crc32IsoHdlc::update(ByteView bytes) noexcept {
+bool Crc32IsoHdlc::update(ByteView bytes) noexcept {
+	if (!m_ok || (bytes.size != 0 && bytes.data == nullptr)) {
+		m_ok = false;
+		return false;
+	}
 	for (std::size_t i = 0; i < bytes.size; ++i) {
 		m_crc = (m_crc >> 8U) ^ CrcTable[(m_crc ^ bytes.data[i]) & 0xffU];
 	}
+	return true;
+}
+
+bool crc32_iso_hdlc(ByteView bytes, std::uint32_t& value) noexcept {
+	Crc32IsoHdlc crc;
+	if (!crc.update(bytes)) {
+		return false;
+	}
+	value = crc.value();
+	return true;
 }
 
 std::uint32_t crc32_iso_hdlc(ByteView bytes) noexcept {
-	Crc32IsoHdlc crc;
-	crc.update(bytes);
-	return crc.value();
+	std::uint32_t value = 0;
+	crc32_iso_hdlc(bytes, value);
+	return value;
 }
 
 } // namespace telemetry::protocol

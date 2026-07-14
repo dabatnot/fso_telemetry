@@ -52,7 +52,10 @@ bool validate_utf8_code_point(const unsigned char*& current, const unsigned char
 } // namespace
 
 bool is_valid_utf8(std::string_view value, bool allow_nul) noexcept {
-	const auto* current = reinterpret_cast<const unsigned char*>(value.data());
+	if (value.empty()) {
+		return true;
+	}
+	const auto* current = static_cast<const unsigned char*>(static_cast<const void*>(value.data()));
 	const auto* end = current + value.size();
 	while (current != end) {
 		if (!validate_utf8_code_point(current, end, allow_nul)) {
@@ -158,8 +161,15 @@ bool PacketWriter::write_f32(float value) noexcept {
 	return write_u32(bits);
 }
 
+bool PacketWriter::write_bool8(bool value) noexcept {
+	return write_u8(value ? 1U : 0U);
+}
+
 bool PacketWriter::write_bytes(ByteView value) noexcept {
-	if ((value.size != 0 && value.data == nullptr) || !reserve(value.size)) {
+	if (value.size != 0 && value.data == nullptr) {
+		return fail();
+	}
+	if (!reserve(value.size)) {
 		return false;
 	}
 	if (value.size != 0) {
@@ -178,14 +188,16 @@ bool PacketWriter::write_utf8(std::string_view value, std::size_t field_limit, b
 		return fail();
 	}
 	return write_u16(static_cast<std::uint16_t>(value.size())) &&
-	       write_bytes(ByteView{reinterpret_cast<const std::uint8_t*>(value.data()), value.size()});
+	       write_bytes(ByteView{static_cast<const std::uint8_t*>(static_cast<const void*>(value.data())), value.size()});
 }
 
 bool PacketWriter::write_zeroes(std::size_t count) noexcept {
 	if (!reserve(count)) {
 		return false;
 	}
-	std::fill_n(m_output.data + m_position, count, std::uint8_t{0});
+	if (count != 0) {
+		std::fill_n(m_output.data + m_position, count, std::uint8_t{0});
+	}
 	m_position += count;
 	return true;
 }
