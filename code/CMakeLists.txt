@@ -4,6 +4,8 @@ include(util)
 INCLUDE(source_groups.cmake)
 INCLUDE(voice_rec.cmake)
 
+ADD_SUBDIRECTORY(telemetry/protocol)
+
 ADD_LIBRARY(code STATIC ${source_files} ${VOICE_REC_FILES})
 
 target_compile_features(code PUBLIC cxx_std_17)
@@ -51,6 +53,7 @@ TARGET_LINK_LIBRARIES(code PUBLIC platform)
 TARGET_LINK_LIBRARIES(code PUBLIC compiler)
 
 target_link_libraries(code PUBLIC md5)
+target_link_libraries(code PUBLIC fstl_protocol)
 
 if (FSO_BUILD_WITH_DISCORD)
 	target_link_libraries(code PUBLIC discord-rpc)

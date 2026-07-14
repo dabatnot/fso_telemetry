@@ -1,0 +1,4 @@
+interface:
+  display_name: "Implémenter une phase télémétrie"
+  short_description: "Implémente une phase à partir de ses specs"
+  default_prompt: "Utilise $implement-telemetry-phase pour implémenter la phase 1 conformément à ses specs."
