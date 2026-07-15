@@ -72,7 +72,7 @@ Read all roles; implementation details are deliberately distributed. Never imple
 
 ## 4. Work-package execution
 
-For every `P<N>.x` work package:
+For every `P<N>-WP-nn` work package (or legacy Phase 0 `P0.x` lot):
 
 1. List input requirements and decisions.
 2. Verify dependency gates are closed by actual evidence.
