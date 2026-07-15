@@ -206,6 +206,10 @@ Les pixels ne sont jamais ajoutés à `TelemetrySnapshot`. Seuls la configuratio
 - contacts selon le mode de visibilité ;
 - références vers les catalogues.
 
+Cette liste décrit la cible complète atteinte par phases. Le premier flux n'usurpe pas cette complétude : il négocie FSTL 1.1 et annonce seulement `StateDomainCoverage.PLAYER_KINEMATICS`. Son snapshot contient `SESSION_STATE` et `MISSION_STATE`, puis, si `observed_player_entity_id` est présent, un `ENTITY_LIFECYCLE` de type `SHIP` et le `FLIGHT_STATE` correspondant. `required_manifest_id`, capabilities et couvertures événementielles valent zéro ; aucun `SHIP_IDENTITY`, catalogue, dommage, bouclier, sous-système, énergie ou propulsion n'est collecté en Phase 1.
+
+Le layout de `FLIGHT_STATE` reste celui de FSTL 1.0 : son masque de présence vaut zéro dans ce profil, tandis que les champs de base portent position, quaternion, vitesse, rotation, rayon et flags physiques. Un changement de mission ou de joueur observé déclenche une nouvelle keyframe. La Phase 2 installe les manifestes et promeut la couverture en `PLAYER_KINEMATICS | CORE_SHIP` seulement lorsque tous les records exigés par `CORE_SHIP` sont disponibles.
+
 ### Delta
 
 État cumulatif par rapport à un `baseline_snapshot_id` connu :
@@ -418,6 +422,8 @@ Protobuf ou FlatBuffers imposeraient une nouvelle dépendance et des changements
 - aucun `reinterpret_cast` d'une structure C++ vers le réseau.
 
 Le format pourra être remplacé ultérieurement sans modifier le collecteur, grâce à la séparation entre `TelemetrySnapshot` et `telemetry_protocol`.
+
+FSTL 1.1 ne remplace pas ce format : il garde l'en-tête de 68 octets, les 20 messages, les 28 records, les CRC et la fragmentation FSTL 1.0. Il attribue uniquement le bit de couverture 10. Le producteur Phase 1 annonce `min_minor = max_minor = 1` et rejette `UnsupportedVersion` face à un client limité à 1.0, plutôt que de prétendre fournir le profil `CORE_SHIP` requis par 1.0.
 
 ## 12. Stratégie Git
 

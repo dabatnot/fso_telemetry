@@ -33,8 +33,11 @@ Livrables :
 - messages `HELLO`, `WELCOME`, `ACK`, `NACK`, `HEARTBEAT` et `RESYNC_REQUEST` ;
 - vecteurs binaires de référence décodables indépendamment du moteur ;
 - tests de valeurs invalides, tronquées, incohérentes entre fragments et surdimensionnées.
+- amendement additif FSTL 1.1 pour le premier flux Phase 1 : `StateDomainCoverage.PLAYER_KINEMATICS` au bit 10, négociation `1..1`, snapshot minimal sans manifeste, rejets croisés et non-régression byte-identical de tous les artefacts FSTL 1.0.
 
 Cette phase peut être réalisée sans toucher à la boucle FS2Open. Aucun collecteur ni client applicatif ne commence avant que ce contrat v1 et ses golden vectors soient revus ensemble.
+
+La préparation documentaire et contractuelle `WP01` de la Phase 1 est explicitement autorisée pour produire l'amendement FSTL 1.1 et fermer la gate `G0-G Amendement 1.1`. Cette autorisation ne couvre aucun hook, collecteur, socket producteur ni client applicatif. `WP02` et tous les lots suivants restent bloqués tant que `G0-G` n'est pas satisfaite ; la gate ne dépend donc d'aucun code qu'elle est censée autoriser.
 
 ## 3. Phase 1 — Squelette et premier flux
 
@@ -50,12 +53,14 @@ Livrables producteur, dans cet ordre :
 - abonnement aux événements moteur ;
 - session et heartbeat ;
 - premier snapshot : temps, identité joueur, position, quaternion, vitesse et rotation ;
+- profil filaire FSTL 1.1 strict : `state_domain_coverage = PLAYER_KINEMATICS`, `required_manifest_id = 0`, capabilities et couvertures événementielles nulles ; `SESSION_STATE` et `MISSION_STATE`, puis, si le joueur existe, son `ENTITY_LIFECYCLE` et son `FLIGHT_STATE` à `presence = 0` ;
+- négociation `min_minor = max_minor = 1` et rejet `UnsupportedVersion` d'un client limité à FSTL 1.0, sans rétrogradation mensongère vers `CORE_SHIP` ;
 - deltas cumulatifs contre la dernière baseline appliquée et acquittée par `ACK APPLIED`, et renouvellement périodique de cette baseline ;
 - métriques et tests d'intégration du producteur.
 
 Une fois ce premier flux producteur stabilisé, un décodeur puis un client console minimal l'affichent et le valident. Ce client de preuve ne préjuge pas de l'architecture du client distant de la phase 5.
 
-Critère de sortie : une mission solo peut être observée à distance pendant trente minutes, puis arrêtée et relancée sans fuite ni blocage.
+Critère de sortie : une mission solo peut être observée à distance pendant trente minutes, puis arrêtée et relancée sans fuite ni blocage ; le client valide la complétude `PLAYER_KINEMATICS`, une nouvelle keyframe accompagne tout changement de mission ou de joueur observé, et le corpus FSTL 1.0 reste byte-identical.
 
 ## 4. Phase 2 — Vaisseau complet
 
@@ -69,6 +74,7 @@ Ajouter :
 - sous-systèmes et tourelles ;
 - `SUPPORT_STATE`, incluant le support assigné, l'état brut de réparation/réarmement et les transitions terminales ; les progressions restent dérivées côté client à partir des délais et quantités publiés ;
 - catalogues de classes de vaisseaux et d'armes ;
+- promotion de la couverture FSTL 1.1 vers `PLAYER_KINEMATICS | CORE_SHIP` seulement après installation du manifeste de classes et disponibilité de tous les records imposés par `CORE_SHIP` ;
 - snapshots complets et deltas cumulatifs par bloc contre une baseline explicite ;
 - apparition, mort et respawn du vaisseau joueur.
 
@@ -231,6 +237,8 @@ Les tests de perte, reproductibles et d'au moins dix minutes par profil, appliqu
 - round-trip de chaque record ;
 - golden vector du schéma wire v1 exhaustif, y compris `CONTROL_STATE` et `SUPPORT_STATE` ;
 - delta cumulatif contenant tous les changements depuis sa `baseline_snapshot_id`, avec perte du delta intermédiaire ;
+- négociation FSTL 1.1 `1..1`, rejet d'un pair limité à 1.0 et vérification que tous les vectors FSTL 1.0 restent byte-identical ;
+- snapshots `PLAYER_KINEMATICS` minimal sans joueur et avec joueur, plus rejets pour record obligatoire absent, bit 10 sous FSTL 1.0 et `CORE_SHIP` incomplet ;
 - limites min/max et valeurs non finies ;
 - buffers tronqués ;
 - type/version inconnus ;

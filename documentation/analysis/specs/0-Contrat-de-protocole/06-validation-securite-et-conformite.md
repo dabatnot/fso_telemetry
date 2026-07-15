@@ -2,7 +2,7 @@
 
 ## 1. Objet
 
-Ce document définit les preuves nécessaires pour déclarer FSTL 1.0 implémentable et interopérable. Il spécifie :
+Ce document définit les preuves nécessaires pour déclarer FSTL 1.0 et son amendement additif FSTL 1.1 implémentables et interopérables. La preuve 1.1 doit notamment démontrer que tous les artefacts 1.0 restent inchangés. Il spécifie :
 
 - le contrat de `PacketWriter` et `PacketReader` ;
 - l'ordre de validation des datagrammes, messages, records et données métier ;
@@ -151,7 +151,7 @@ Le récepteur DOIT suivre cet ordre, sans sauter d'étape :
 2. vérifier que l'adresse source satisfait la politique de bind/allowlist ;
 3. refuser une taille inférieure à 68 ou supérieure à 1200 ;
 4. lire uniquement les champs fixes nécessaires sans cast de structure ;
-5. vérifier le magic, `version_major == 1`, `version_minor == 0` et `header_size == 68` ;
+5. vérifier le magic, `version_major == 1` et `header_size == 68`, puis `version_minor == 0` pour `DISCOVERY`, `HELLO` et un `WELCOME` de rejet, la mineure sélectionnée pour `WELCOME Accepted`, et exactement la mineure négociée (`0` ou `1`) pour les autres datagrammes de session ;
 6. vérifier les bits réservés de `flags` ;
 7. vérifier `payload_size <= 1132` ;
 8. vérifier `header_size + payload_size == taille_reelle` avec arithmétique sans overflow ;
@@ -380,6 +380,8 @@ protocol-v1/
 
 Les fichiers `.bin` contiennent uniquement les octets à décoder. Les métadonnées `.json` de même basename contiennent l'attendu, jamais un remplacement des octets.
 
+Les fixtures FSTL 1.0 existantes sont immuables et conservent `schema: FSTL-1.0`. L'amendement ajoute des fixtures identifiées `FSTL-1.1` dans un ensemble distinct ; une mise à jour 1.1 NE DOIT PAS réencoder, renommer ou remplacer un `.bin` 1.0. Le manifeste de corpus enregistre séparément les hashes des deux versions.
+
 ### 10.2 Métadonnées minimales
 
 Chaque fixture déclare :
@@ -432,6 +434,8 @@ Au moins un vector valide est requis pour :
 - tous les messages `TARGET_VIDEO_*`, dont IDR fragmentée ;
 - wrap proche des compteurs soumis à arithmétique sérielle ;
 - chaînes UTF-8, quaternion et limites min/max métier.
+- négociation FSTL 1.1 `1..1`, snapshot `PLAYER_KINEMATICS` sans joueur et snapshot avec joueur comprenant les quatre records requis ;
+- promotion Phase 2 `PLAYER_KINEMATICS | CORE_SHIP` avec manifeste et matrice `CORE_SHIP` complète.
 
 ### 10.5 Catalogue minimal invalide
 
@@ -534,6 +538,11 @@ Scénarios obligatoires :
 10. fin de session perdue puis détectée par timeout ;
 11. retrait dynamique d'une capability sans perte de la télémétrie d'état ;
 12. flux vidéo saturé sans retard des ACK, snapshots ou deltas.
+13. client et producteur `1..1` acceptés, client limité à 1.0 rejeté par le producteur Phase 1 avec `UnsupportedVersion` et aucune session créée ;
+14. snapshot Phase 1 avec `required_manifest_id = 0`, capabilities nulles, couvertures événementielles nulles et `PLAYER_KINEMATICS` seul ;
+15. rejet atomique d'un snapshot Phase 1 auquel manque `MISSION_STATE`, `ENTITY_LIFECYCLE` ou `FLIGHT_STATE` selon le cas ;
+16. rejet de `PLAYER_KINEMATICS` dans une session 1.0, de `CORE_SHIP` incomplet et d'un changement de joueur livré uniquement par delta ;
+17. exécution des fixtures et scénarios 1.0 avant et après activation du support 1.1 avec hashes et résultats identiques.
 
 Les profils UDP de 1 %, 5 % et 20 % pendant dix minutes appartiennent à l'intégration des phases ultérieures ; la Phase 0 DOIT néanmoins fournir le harness, les graines déterministes et les assertions de priorité nécessaires.
 
@@ -655,3 +664,5 @@ La Phase 0 satisfait ce document lorsque :
 - les valeurs sûres par défaut et rate limits sont testés ;
 - aucun payload client ne commande la simulation ;
 - les résultats et versions d'outils sont reproductibles en CI.
+- les golden vectors FSTL 1.0 sont byte-identical et le corpus FSTL 1.1 couvre négociation, complétude, downgrade interdit et promotion Phase 2 ;
+- la gate Phase 1 échoue si le schéma, les constantes, les fixtures ou l'un des deux décodeurs ne reconnaissent pas exactement `PLAYER_KINEMATICS = 0x0000000000000400` sous la seule mineure 1.

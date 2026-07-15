@@ -4,7 +4,7 @@
 
 Ce dossier spécifie la **Phase 0 — Contrat de protocole** de la feuille de route de télémétrie FS2Open. Il transforme les décisions et inventaires du dossier [`analysis`](../..) en un contrat de travail normatif, testable et indépendant du moteur.
 
-La version filaire ciblée est **FSTL 1.0**. Le contenu de ce dossier est prêt à guider l'implémentation de la Phase 0, mais la phase n'est considérée terminée qu'après production, revue croisée et validation de tous les artefacts exigés : schéma machine-readable, bibliothèque de lecture/écriture bornée, golden vectors binaires, tests négatifs et décodeur indépendant.
+La version filaire de référence est **FSTL 1.0**. Elle reste gelée octet pour octet. Ce dossier porte aussi l'amendement additif **FSTL 1.1** requis par la Phase 1 : même majeure, même en-tête de 68 octets, mêmes messages, records et layouts, avec pour unique extension normative le bit de couverture `PLAYER_KINEMATICS`. Le contenu est prêt à guider l'implémentation de la Phase 0, mais la phase n'est considérée terminée qu'après production, revue croisée et validation de tous les artefacts exigés : schéma machine-readable, bibliothèque de lecture/écriture bornée, golden vectors binaires, tests négatifs et décodeur indépendant.
 
 Les mots **DOIT**, **NE DOIT PAS**, **DEVRAIT**, **NE DEVRAIT PAS** et **PEUT** expriment respectivement une obligation, une interdiction, une recommandation forte, une recommandation négative et une faculté. Ils ont le sens de RFC 2119/RFC 8174 lorsqu'ils sont écrits en majuscules.
 
@@ -15,7 +15,7 @@ Les mots **DOIT**, **NE DOIT PAS**, **DEVRAIT**, **NE DEVRAIT PAS** et **PEUT** 
 1. produire exactement les mêmes octets pour une même valeur canonique ;
 2. décoder les mêmes golden vectors sur architectures little-endian et big-endian ;
 3. rejeter les mêmes entrées invalides avant toute allocation proportionnelle à une donnée non validée ;
-4. négocier une session FSTL 1.0 et synchroniser leurs horloges monotones ;
+4. négocier une session FSTL 1.0 ou FSTL 1.1 et synchroniser leurs horloges monotones ;
 5. réassembler, valider, acquitter et expirer les messages selon les mêmes règles ;
 6. appliquer atomiquement un snapshot et des deltas cumulatifs malgré perte, duplication et désordre ;
 7. ignorer sans panne les extensions explicitement compatibles ;
@@ -35,7 +35,7 @@ Les mots **DOIT**, **NE DOIT PAS**, **DEVRAIT**, **NE DEVRAIT PAS** et **PEUT** 
 | [06 — Validation, sécurité et conformité](06-validation-securite-et-conformite.md) | lecteur/écrivain bornés, modèle de menace, taxonomie d'erreurs, tests, fuzzing et golden vectors | normatif |
 | [07 — Livraison et traçabilité](07-livraison-et-tracabilite.md) | lots de travail, dépendances, critères d'acceptation et couverture des analyses | normatif pour le processus de Phase 0 |
 
-En cas d'écart entre un document d'analyse et ce dossier, ce dossier porte la décision FSTL 1.0. L'écart DOIT être enregistré dans la matrice de traçabilité et répercuté dans l'analyse lors de la prochaine passe documentaire ; il ne doit pas être résolu implicitement dans le code.
+En cas d'écart entre un document d'analyse et ce dossier, ce dossier porte la décision FSTL 1.0 et son amendement versionné FSTL 1.1. L'écart DOIT être enregistré dans la matrice de traçabilité et répercuté dans l'analyse lors de la prochaine passe documentaire ; il ne doit pas être résolu implicitement dans le code.
 
 ## Sources utilisées
 
@@ -72,6 +72,7 @@ Les décisions suivantes s'appliquent à toute la phase :
 - Les frames vidéo ont la priorité la plus faible ; aucune vidéo ne peut retarder session, ACK/NACK, événements, snapshots ou deltas.
 - FSTL 1.0 n'apporte ni chiffrement ni authentification cryptographique ; il cible un LAN explicitement autorisé et reste fermé par défaut hors loopback.
 - Aucun message client FSTL 1.0 ne peut modifier l'état de simulation.
+- FSTL 1.1 attribue `StateDomainCoverage.PLAYER_KINEMATICS` au bit 10 (`0x0000000000000400`) sans modifier aucune valeur FSTL 1.0. Une session Phase 1 annonce ce bit seul et NE DOIT PAS annoncer `CORE_SHIP`.
 
 ## Périmètre de la Phase 0
 
@@ -102,7 +103,7 @@ Les formats de messages et records des phases ultérieures sont néanmoins enti�
 
 ## Gate de sortie
 
-La Phase 1 NE DOIT PAS commencer tant que les conditions suivantes ne sont pas toutes satisfaites :
+Le lot documentaire et contractuel Phase 1 `WP01` PEUT produire l'amendement FSTL 1.1 nécessaire à la fermeture de cette gate. En revanche, `WP02`, tout hook moteur, collecteur, socket producteur ou client applicatif de Phase 1 NE DOIT PAS commencer tant que les conditions suivantes ne sont pas toutes satisfaites :
 
 - aucun champ, enum, bit, unité, sentinelle, limite ou règle d'absence FSTL 1.0 n'est implicite ;
 - le schéma machine-readable et les tableaux normatifs concordent ;
