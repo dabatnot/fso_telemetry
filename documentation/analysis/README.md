@@ -41,6 +41,9 @@ Cette réplique vise les tableaux de bord, radars, jauges, clients de visualisat
 15. Les frames vidéo inter prédites sont remplaçables et non retransmises. La dernière IDR est conservée pendant une fenêtre courte et ses fragments manquants peuvent être retransmis sélectivement avant échéance ; configuration, arrêt et demandes d'IDR utilisent également la fiabilité applicative.
 16. La vidéo contient uniquement la couche 3D ; les textes, brackets et jauges sont redessinés localement en haute résolution.
 17. Le format filaire définit explicitement ordre des octets, représentation des chaînes, repère, unités, quaternions, horloges, limites, CRC et règles de fragmentation ; aucune convention C++ implicite ne traverse le réseau.
+18. FSTL 1.0 reste gelé. Le premier flux de la Phase 1 négocie l'amendement additif FSTL 1.1 et annonce uniquement `StateDomainCoverage.PLAYER_KINEMATICS` au bit 10 (`0x0000000000000400`) : temps/session/mission et, si un joueur observé existe, identité stable, position, quaternion, vitesses linéaire et angulaire via les records v1 existants. Il n'annonce ni `CORE_SHIP`, ni manifeste, ni domaine système de Phase 2.
+
+Le contrat normatif correspondant se trouve dans [`specs/0-Contrat-de-protocole`](specs/0-Contrat-de-protocole/README.md). En cas d'ambiguïté, ses règles versionnées FSTL 1.0/1.1 prévalent sur ce résumé.
 
 ## Documents
 

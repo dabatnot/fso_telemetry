@@ -2,7 +2,7 @@
 
 ## 1. Objet
 
-Ce document fixe le cadre de conception et d'acceptation de FSTL 1.0. Il répond aux livrables de la [Phase 0](../../04-implementation-roadmap.md#2-phase-0--contrat-de-protocole) sans dépendre de la boucle, des structures ou de l'ABI de FS2Open.
+Ce document fixe le cadre de conception et d'acceptation de FSTL 1.0 ainsi que de son amendement additif FSTL 1.1. FSTL 1.0 reste strictement inchangé ; FSTL 1.1 ajoute uniquement un profil de couverture pour le premier flux de la Phase 1. Il répond aux livrables de la [Phase 0](../../04-implementation-roadmap.md#2-phase-0--contrat-de-protocole) sans dépendre de la boucle, des structures ou de l'ABI de FS2Open.
 
 Le contrat distingue trois niveaux :
 
@@ -141,6 +141,8 @@ Il est autonome vis-à-vis des anciens snapshots et deltas, mais il peut référ
 
 L'indisponibilité d'une capability visuelle n'empêche pas l'état canonique de devenir `Live`.
 
+La complétude est toujours relative à `SESSION_STATE.state_domain_coverage`. En FSTL 1.0, une session d'état conserve l'obligation `CORE_SHIP`. En FSTL 1.1, le profil minimal Phase 1 annonce uniquement `PLAYER_KINEMATICS` et couvre `SESSION_STATE`, `MISSION_STATE`, puis, si un joueur observé existe, son `ENTITY_LIFECYCLE` et son `FLIGHT_STATE`. Il NE DOIT PAS annoncer `CORE_SHIP`, référencer un manifeste de classe ou laisser croire que les domaines système de la Phase 2 sont présents.
+
 ## 6. Taxonomie contractuelle des données
 
 Chaque champ du [modèle v1](04-modele-de-donnees-v1.md) porte exactement une nature principale :
@@ -228,6 +230,7 @@ Une implémentation NE DOIT PAS accumuler des patches différentiels successifs 
 | `P0-F-013` | fournir une matrice de compatibilité et d'évolution major/minor/record |
 | `P0-F-014` | fournir une taxonomie stable de rejets, drops et métriques |
 | `P0-F-015` | démontrer par tests qu'aucun message client ne peut atteindre une commande de simulation |
+| `P0-F-016` | définir et tester l'amendement FSTL 1.1, le bit `PLAYER_KINEMATICS`, son snapshot minimal et le rejet d'une version mineure sans intersection |
 
 ## 9. Exigences non fonctionnelles
 
@@ -301,6 +304,7 @@ Ce cadre est approuvé lorsque les revues suivantes concluent sans réserve bloq
 - **interopérabilité** : les golden vectors sont décodés par deux implémentations indépendantes ;
 - **sécurité** : les allocations, débits, sources et capacités coûteuses sont bornés ;
 - **compatibilité** : les règles major/minor/record/capability sont testées ;
+- **préservation 1.0** : les golden vectors FSTL 1.0 restent byte-identical et les nouveaux cas 1.1 sont distincts ;
 - **architecture** : aucun type moteur ou comportement de phase ultérieure n'a fuité dans le contrat public.
 
 Les preuves et signataires attendus sont détaillés dans [07 — Livraison et traçabilité](07-livraison-et-tracabilite.md).
