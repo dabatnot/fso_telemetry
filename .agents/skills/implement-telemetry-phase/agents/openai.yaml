@@ -1,4 +1,4 @@
 interface:
   display_name: "Implémenter une phase télémétrie"
-  short_description: "Implémente une phase à partir de ses specs"
-  default_prompt: "Utilise $implement-telemetry-phase pour implémenter la phase 1 conformément à ses specs."
+  short_description: "Implémentation multi-agent conforme aux specs"
+  default_prompt: "Utilise $implement-telemetry-phase pour implémenter la phase 1 avec des sous-agents indépendants pour le suivi, le code, les tests et la revue."

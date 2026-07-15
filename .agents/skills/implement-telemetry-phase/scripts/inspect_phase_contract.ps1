@@ -94,7 +94,7 @@ $documentInventory = @()
 $requirementPattern = "(?<![A-Z0-9])P$PhaseNumber-[A-Z][A-Z0-9-]*-[0-9]{3}(?![0-9])"
 $acceptancePattern = "(?<![A-Z0-9])P$PhaseNumber-AC-[0-9]{3}(?![0-9])"
 $decisionPattern = "(?<![A-Z0-9])D$PhaseNumber-[0-9]{3}(?![0-9])"
-$workPackagePattern = "(?<![A-Z0-9])P$PhaseNumber\.[0-9]+(?![0-9])"
+$workPackagePattern = "(?<![A-Z0-9])P$PhaseNumber(?:-WP-[0-9]{2}|\.[0-9]+)(?![0-9])"
 $gatePattern = "(?<![A-Z0-9])G$PhaseNumber-[A-Z][A-Z0-9-]*(?![A-Z0-9-])"
 
 foreach ($file in $markdownFiles) {
@@ -124,7 +124,13 @@ $acceptanceCriteria = @(Get-UniqueMatches $combinedText $acceptancePattern)
 $decisions = @(Get-UniqueMatches $combinedText $decisionPattern)
 $workPackages = @(
     Get-UniqueMatches $combinedText $workPackagePattern |
-        Sort-Object { [int](($_ -split '\.')[1]) }
+        Sort-Object {
+            if ($_ -match '-WP-([0-9]{2})$') {
+                return [int]$Matches[1]
+            }
+
+            return [int](($_ -split '\.')[1])
+        }
 )
 $gates = @(Get-UniqueMatches $combinedText $gatePattern)
 
