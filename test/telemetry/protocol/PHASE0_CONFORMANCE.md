@@ -3,12 +3,14 @@
 ## Verdict de gel
 
 **Statut global FSTL 1.0 : `PASS`. Le contrat est gelé par
-[`fstl-v1.0.0`](https://github.com/dabatnot/fstelemetry/releases/tag/fstl-v1.0.0)
+[`fstl-v1.0.0`](https://github.com/dabatnot/fso_telemetry/releases/tag/fstl-v1.0.0)
 sur la révision `900487429bd20e13fcfea1c6e2d163631f1bafe1`.**
 
 La CI Linux/macOS/Windows, la campagne libFuzzer ASan/UBSan, les quatre
-approbations humaines et les artefacts de gel sont archivés et liés ci-dessous.
-L'[autorisation explicite](https://github.com/dabatnot/fstelemetry/issues/1#issuecomment-4974820634)
+approbations humaines et l'autorisation de passage sont archivées et liées
+ci-dessous. Les assets de release ont été vérifiés avant publication ; leur URL
+publique déterministe est enregistrée sans anticiper l'état final de la release.
+L'[autorisation explicite](https://github.com/dabatnot/fso_telemetry/issues/1#issuecomment-4984644039)
 permet de démarrer la Phase 1 et `P1-WP-01`.
 
 Ce gel ne prétend pas satisfaire par avance l'amendement FSTL 1.1 :
@@ -22,7 +24,9 @@ Le 2026-07-15, les métadonnées Git d'auteur, de committer et de tagger ont ét
 migrées vers l'identité publique `@dabatnot` et l'adresse GitHub no-reply. Le
 contenu du candidat est inchangé : son arbre Git reste
 `86e1a1289c8419f9ddc26a3d9362ee0495bae468`. Les liens de révision et les
-preuves CI ont été régénérés sur les nouveaux identifiants.
+preuves CI ont été régénérés dans le dépôt public `dabatnot/fso_telemetry`. Les
+anciennes URL conservées dans le message de l'objet tag annoté constituent une
+provenance historique ; le tag n'est ni déplacé ni réécrit.
 
 ## Périmètre et instantané audité
 
@@ -32,8 +36,8 @@ preuves CI ont été régénérés sur les nouveaux identifiants.
 | Clôture du gel | 2026-07-15, Europe/Paris |
 | Branche | `codex/telemetry-phase-0` |
 | Commit d'implémentation | `c3a94053e99d758a25dbb61d8b8094b5fadfac3c` |
-| Révision candidate et gelée | [`900487429bd20e13fcfea1c6e2d163631f1bafe1`](https://github.com/dabatnot/fstelemetry/commit/900487429bd20e13fcfea1c6e2d163631f1bafe1) |
-| Tag annoté | [`fstl-v1.0.0`](https://github.com/dabatnot/fstelemetry/releases/tag/fstl-v1.0.0), objet tag `4d7e439715f33e546e6d6ec82faf43773da0d6ce` |
+| Révision candidate et gelée | [`900487429bd20e13fcfea1c6e2d163631f1bafe1`](https://github.com/dabatnot/fso_telemetry/commit/900487429bd20e13fcfea1c6e2d163631f1bafe1) |
+| Tag annoté | [`fstl-v1.0.0`](https://github.com/dabatnot/fso_telemetry/releases/tag/fstl-v1.0.0), objet tag `4d7e439715f33e546e6d6ec82faf43773da0d6ce` |
 | Commit d'intégration upstream | `732811396b47f9c383ade059dad07cc1f98433d8` |
 | `upstream/master` local | `57be2eb3333917e1519b9a9c6520e4551748c070` |
 | Relation à `upstream/master` | `57be2eb3333917e1519b9a9c6520e4551748c070` est ancêtre du commit d'intégration ; les changements upstream disponibles lors de l'audit sont intégrés |
@@ -41,10 +45,14 @@ preuves CI ont été régénérés sur les nouveaux identifiants.
 | SHA-256 du schéma | `1d89c4a95a121c178bf85570cd616568fd939942b8d053835069b2d7d6a1f0d4` |
 | SHA-256 du manifeste messages/records | `21cb0020029b6a6ffa68ea176c781eada4b7848f00ca7cae8031f912dd995931` |
 | SHA-256 du manifeste transport | `9f7bd56abb543f82aeee0aa143de40e6f620fb48a99e6df854c8b1375f0ce6e6` |
-| CI exacte | [run `29393557458`](https://github.com/dabatnot/fstelemetry/actions/runs/29393557458), conclusion `success` |
-| Bundle durable | [release `fstl-v1.0.0`](https://github.com/dabatnot/fstelemetry/releases/tag/fstl-v1.0.0) |
-| SHA-256 du bundle fuzz | `392ce26da661e689affdc1e6be1c15f5290c39bf9864c297a3606a621123bea8` |
-| Digest de l'artefact Actions source | `b32249706743acd0526a40f1d664ce2407a2f59352198da5cc466129e1d750f4` |
+| CI exacte | [run `29442243836`](https://github.com/dabatnot/fso_telemetry/actions/runs/29442243836), conclusion `success`, 14/14 jobs |
+| Artefact Actions source | [`8354733002`](https://github.com/dabatnot/fso_telemetry/actions/runs/29442243836/artifacts/8354733002), 2 246 927 octets |
+| URL publique de publication du bundle | [release `fstl-v1.0.0`](https://github.com/dabatnot/fso_telemetry/releases/tag/fstl-v1.0.0) |
+| SHA-256 du bundle fuzz | `de0f73e4bfba8225de94de30fbe46667dfe9e841a402ceaa316c745ef8bba585` |
+| SHA-256 de `campaign-report.json` | `aceed42189f7f404a3a91e14ece20b1e1ef5243fdb9bcc13dba7efaa95a675a4` |
+| SHA-256 de `CAMPAIGN_SHA256SUMS` | `21e8fe6bd6037d3e30dc4102af2468e140de7ad25b96b09d9064ff4660bc416a` |
+| SHA-256 du sidecar du bundle | `c57837065859edab37c3c910fb976dcf868d1ea9834ddd2bd0d07aea0db2f0cd` |
+| Digest de l'artefact Actions source | `sha256:cd8d3dd5ca16b43dfe5c936b9d83b8d112ac820b9595ac65761a534ce69b5f7b` |
 
 Tous les fichiers trackés et non trackés visibles lors de l'audit ont été inclus
 dans le commit d'implémentation. Le répertoire `tools/radar/assets/` reste hors
@@ -74,7 +82,7 @@ Toutes les commandes partent de la racine du dépôt.
 | Commande | Résultat observé | Statut |
 |---|---|---|
 | `& '.agents/skills/prepare-telemetry-phase-spec/scripts/validate_phase_specs.ps1' -PhaseNumber 0 -PhaseDirectory 'documentation/analysis/specs/0-Contrat-de-protocole'` | 8 documents, 5 299 lignes ; structure, UTF-8, liens, ancres et traçabilité valides | `PASS` |
-| `& '.agents/skills/implement-telemetry-phase/scripts/inspect_phase_contract.ps1' -PhaseNumber 0` | 27 exigences, 24 critères, 18 décisions, 12 lots et 6 gates inventoriés | `PASS` |
+| `& '.agents/skills/implement-telemetry-phase/scripts/inspect_phase_contract.ps1' -PhaseNumber 0` | 27 exigences, 24 critères, 18 décisions, 12 lots et 6 gates inventoriés dans le checkout public FSTL 1.0 | `PASS` |
 | `python -B test/telemetry/protocol/tools/fstl_schema.py --self-test` | 20 messages, 28 records, 5 capabilities, 48 erreurs, 134 registres liés au C++ ; 192/192 champs message, probes 422/422 champs record, 25/25 structures et 241/241 champs imbriqués ; 8 tests négatifs de drift passés | `PASS` |
 | `python -B test/telemetry/protocol/tools/generate_transport_vectors.py --check` | 198 fichiers de transport vérifiés | `PASS` |
 | `python -B test/telemetry/protocol/tools/generate_protocol_vectors.py --check` | 20 vectors MessageType et 28 vectors RecordType vérifiés | `PASS` |
@@ -88,23 +96,27 @@ Toutes les commandes partent de la racine du dépôt.
 | configuration locale identique avec sanitizers par défaut | Visual Studio 2019 16.4 ne supporte pas l'option, erreur `MSB8058` | `BLOCKED` localement ; CI Clang requise |
 | `git diff --check` | aucune erreur whitespace ; avertissements de conversion LF/CRLF seulement | `PASS` |
 | `rg -n '^#include' code/telemetry/protocol` et scan des symboles moteur/réseau | uniquement headers protocole et bibliothèque standard ; aucun collecteur, socket, renderer ou type moteur observé | `PASS` statique pour la frontière Phase 0 |
-| [CI `29393557458`](https://github.com/dabatnot/fstelemetry/actions/runs/29393557458) | révision exacte `900487429bd20e13fcfea1c6e2d163631f1bafe1`, Linux/macOS/Windows verts | `PASS` |
-| [campagne de gel](https://github.com/dabatnot/fstelemetry/releases/tag/fstl-v1.0.0) | huit cibles ASan/UBSan, 637 998 322 exécutions, corpus 490 → 2 663, 0 crash | `PASS` |
+| [CI `29442243836`](https://github.com/dabatnot/fso_telemetry/actions/runs/29442243836) | révision exacte `900487429bd20e13fcfea1c6e2d163631f1bafe1`, 14/14 jobs, Linux/macOS/Windows verts | `PASS` |
+| [campagne de gel](https://github.com/dabatnot/fso_telemetry/actions/runs/29442243836) | huit cibles ASan/UBSan, 539 775 229 exécutions, 8 046 unités nouvelles, corpus 490 fichiers/81 337 octets → 2 610 fichiers/27 344 769 octets, pic 817 Mio, 0 crash et 0 artefact de crash | `PASS` |
 
 ## Écarts bloquants fermés au gel
 
 1. **Fuzzing/sanitizers : fermé.** Huit campagnes libFuzzer Clang sous
-   ASan/UBSan ont exécuté 637 998 322 entrées cumulées pendant environ
-   30 minutes par cible, sans crash ni artefact de crash. Le rapport, le corpus
-   final et les checksums sont joints à la release.
+   ASan/UBSan ont exécuté 539 775 229 entrées cumulées et découvert 8 046 unités
+   pendant environ 30 minutes par cible, sans crash ni artefact de crash. Le
+   corpus est passé de 490 fichiers/81 337 octets à 2 610 fichiers/27 344 769
+   octets, avec un pic RSS maximal de 817 Mio. Le rapport, le corpus final et
+   les checksums sont présents dans l'artefact Actions et préparés comme assets
+   de la release.
 2. **CI exacte : fermée.** Le
-   [run `29393557458`](https://github.com/dabatnot/fstelemetry/actions/runs/29393557458)
+   [run `29442243836`](https://github.com/dabatnot/fso_telemetry/actions/runs/29442243836)
    est vert sur la révision gelée et couvre Linux, macOS et Windows.
 3. **Revues externes : fermées.** Les quatre décisions datées et attribuées sont
    approuvées sans réserve dans
-   [l'issue de gel](https://github.com/dabatnot/fstelemetry/issues/1).
-4. **Version de gel : fermée.** Le tag annoté et la release `fstl-v1.0.0`
-   désignent exactement `900487429bd20e13fcfea1c6e2d163631f1bafe1`.
+   [l'issue de gel](https://github.com/dabatnot/fso_telemetry/issues/1).
+4. **Version de gel : fermée.** Le tag annoté `fstl-v1.0.0` désigne exactement
+   `900487429bd20e13fcfea1c6e2d163631f1bafe1`. La release reprend ce même tag à
+   son URL publique déterministe après validation du présent commit documentaire.
 
 ## Matrice des critères d'acceptation P0-AC-001 à P0-AC-024
 
@@ -129,7 +141,7 @@ Toutes les commandes partent de la racine du dépôt.
 | `P0-AC-017` | `PASS` | lifecycle et fixture `video_old_target_after_change` rejettent l'ancienne génération/cible | conserver en CI |
 | `P0-AC-018` | `PASS` | classification QoS, token buckets et test de saturation vidéo exécutés | conserver en CI/fuzz |
 | `P0-AC-019` | `PASS` | 54 fixtures valides et 42 invalides messages/records concordent entre Python et C++ ; 86 transports invalides également rejoués | conserver le double replay en CI |
-| `P0-AC-020` | `PASS` | huit campagnes libFuzzer ASan/UBSan, 637 998 322 exécutions, 0 crash ; rapports et corpus archivés dans la release | conserver les assets et checksums de release |
+| `P0-AC-020` | `PASS` | huit campagnes libFuzzer ASan/UBSan, 539 775 229 exécutions, 8 046 unités nouvelles et 0 crash ; rapports, corpus et checksums vérifiés | publier puis conserver les assets et checksums de release |
 | `P0-AC-021` | `PASS` | defaults loopback, discovery, allowlist et `TrustedFullState` opt-in exécutés ; configuration sûre approuvée | conserver le lien d'approbation |
 | `P0-AC-022` | `PASS` | 20 messages read-only, authority mapper et tests d'absence de commande verts | conserver en CI |
 | `P0-AC-023` | `PASS` | bibliothèque C++17 pure ; scan sans type moteur/socket/renderer ; suite dédiée verte ; frontière acceptée par les revues modèle/client | conserver le scan en CI |
@@ -213,11 +225,31 @@ les deux branches et passent dans la suite Release du contenu figé dans `c3a940
 | `P0.9` sécurité | `G0-F` | `PASS` | modèle, catalogue, budgets, sanitizer et revue sécurité approuvés |
 | `P0.10` vectors/decoder | `G0-F` | `PASS` | catalogue complet et double décodage exact |
 | `P0.11` fuzz/CI | `G0-F` | `PASS` | huit campagnes ASan/UBSan et CI multi-plateforme archivées |
-| `P0.12` gel | gel | `PASS` | approbations, campagne, release, tag et autorisation Phase 1 archivés |
+| `P0.12` gel FSTL 1.0 | `G0-F` | `PASS` | tag, CI exacte, campagne, quatre approbations et autorisation Phase 1 archivés ; archivage public durable conditionné à la publication de la release |
 
 Synthèse des gates FSTL 1.0 : `G0-A`, `G0-B`, `G0-C`, `G0-D`, `G0-E` et
-`G0-F PASS`. La gate distincte de l'amendement FSTL 1.1 n'est pas déclarée
-satisfaite par ce gel.
+`G0-F PASS`.
+
+## Frontière FSTL 1.1 hors du gel 1.0
+
+Le checkout public audité par les commandes ci-dessus n'inventorie pas encore
+les identifiants de l'amendement. Le contrat amendé de travail porte un
+inventaire cible de 28 exigences, 26 critères, 19 décisions, 13 lots et 7 gates.
+Cette information de frontière n'est pas une preuve d'implémentation FSTL 1.1
+et ne modifie aucun verdict FSTL 1.0.
+
+| Élément du contrat amendé de travail | Statut | Condition de fermeture |
+|---|---|---|
+| `P0-F-016` | `PENDING` | implémenter et tester le bit 10 `PLAYER_KINEMATICS`, le snapshot minimal et le rejet sans intersection |
+| `D0-019` | `PENDING` | démontrer que l'amendement est additif, sans manifeste ni faux `CORE_SHIP`, et que FSTL 1.0 reste byte-identical |
+| `P0-AC-025` | `PENDING` | produire schéma, constantes, vectors, deux décodeurs, hashes avant/après et non-régression FSTL 1.0 |
+| `P0-AC-026` | `PENDING` | produire les vectors et le harness de négociation `1..1`, couverture `PLAYER_KINEMATICS` seule et rejets croisés |
+| `P0.13` | `PENDING` | exécuter l'amendement FSTL 1.1 sans réécrire le tag ni les artefacts FSTL 1.0 |
+| `G0-G` | `BLOCKED` | passer les quatre éléments précédents et la non-régression 1.0 |
+
+L'[autorisation du 2026-07-15](https://github.com/dabatnot/fso_telemetry/issues/1#issuecomment-4984644039)
+ouvre `P1-WP-01` pour produire ces preuves. `P1-WP-02` reste `BLOCKED` jusqu'à
+`G0-G PASS` ; aucune dérogation supplémentaire n'est enregistrée.
 
 ## Preuves exigées par la revue finale
 
@@ -230,22 +262,22 @@ satisfaite par ce gel.
 | résultats des deux décodeurs | `PASS` | Python et C++ concordent sur valides et 42 invalides message/record |
 | résultats unitaires/propriétés | `PASS` | suite Release locale et CI multi-plateforme vertes |
 | graines/résultats harness | `PASS` | 4 graines transport, harness Release et CI verts |
-| durée/corpus/configuration fuzz | `PASS` | huit campagnes d'environ 30 minutes ; 490 entrées initiales, 2 663 finales ; bundle en release |
+| durée/corpus/configuration fuzz | `PASS` | huit campagnes d'environ 30 minutes ; 490 fichiers/81 337 octets initiaux, 2 610 fichiers/27 344 769 octets finaux ; 539 775 229 exécutions et 8 046 unités nouvelles |
 | rapport sanitizers | `PASS` | ASan/UBSan Clang, replay macOS et ASan Windows verts ; 0 crash |
 | budgets au nombre max de clients | `PASS` | 64 clients, 256 Mio état + 384 Mio vidéo = 640 Mio ; calculs et limites approuvés par la revue sécurité |
-| revue filtrage Cockpit | `PASS` | [approbation modèle FS2Open](https://github.com/dabatnot/fstelemetry/issues/1#issuecomment-4974721001) |
-| revue configuration sûre | `PASS` | [approbation sécurité/robustesse](https://github.com/dabatnot/fstelemetry/issues/1#issuecomment-4974757975) |
-| divergences résolues | `PASS` | D0-001..018, clarification baseline et replays contextuels cohérents ; revue finale approuvée |
+| revue filtrage Cockpit | `PASS` | [approbation modèle FS2Open](https://github.com/dabatnot/fso_telemetry/issues/1#issuecomment-4984560722) |
+| revue configuration sûre | `PASS` | [approbation sécurité/robustesse](https://github.com/dabatnot/fso_telemetry/issues/1#issuecomment-4984610285) |
+| divergences FSTL 1.0 résolues | `PASS` | D0-001..018, clarification baseline et replays contextuels cohérents ; revue finale approuvée |
 | absence collecteur/hook moteur | `PASS` | scan statique du module et frontière approuvée par les revues modèle/client |
 
 ## Approbations de gel
 
 | Revue | Approbateur nommé | Preuve liée | Décision | Date |
 |---|---|---|---|---|
-| modèle FS2Open | `@dabatnot` / relecteur modèle | [décision](https://github.com/dabatnot/fstelemetry/issues/1#issuecomment-4974721001) | **APPROUVÉ, sans réserve** | 2026-07-15 |
-| protocole / interop | `@dabatnot` / relecteur protocole | [décision](https://github.com/dabatnot/fstelemetry/issues/1#issuecomment-4974734139) | **APPROUVÉ, sans réserve** | 2026-07-15 |
-| sécurité / robustesse | `@dabatnot` / relecteur sécurité | [décision](https://github.com/dabatnot/fstelemetry/issues/1#issuecomment-4974757975) | **APPROUVÉ, sans réserve** | 2026-07-15 |
-| client / fallbacks | `@dabatnot` / relecteur client | [décision](https://github.com/dabatnot/fstelemetry/issues/1#issuecomment-4974775553) | **APPROUVÉ, sans réserve** | 2026-07-15 |
+| modèle FS2Open | `@dabatnot` / relecteur modèle | [décision](https://github.com/dabatnot/fso_telemetry/issues/1#issuecomment-4984560722) | **APPROUVÉ, sans réserve** | 2026-07-15 |
+| protocole / interop | `@dabatnot` / relecteur protocole | [décision](https://github.com/dabatnot/fso_telemetry/issues/1#issuecomment-4984592548) | **APPROUVÉ, sans réserve** | 2026-07-15 |
+| sécurité / robustesse | `@dabatnot` / relecteur sécurité | [décision](https://github.com/dabatnot/fso_telemetry/issues/1#issuecomment-4984610285) | **APPROUVÉ, sans réserve** | 2026-07-15 |
+| client / fallbacks | `@dabatnot` / relecteur client | [décision](https://github.com/dabatnot/fso_telemetry/issues/1#issuecomment-4984625519) | **APPROUVÉ, sans réserve** | 2026-07-15 |
 
 Les quatre décisions ont été publiées séparément par le compte GitHub de
 l'approbateur, après un dossier de preuves propre à chaque rôle.
@@ -269,7 +301,7 @@ l'approbateur, après un dossier de preuves propre à chaque rôle.
 | fuzzing/sanitizers/overflow verts | `PASS` — campagne et rapports archivés |
 | valeurs sûres par défaut testées | `PASS` |
 | quatre revues approuvées | `PASS` — décisions liées ci-dessus |
-| Phase 0 versionnée | `PASS` — tag et release `fstl-v1.0.0` |
+| Phase 0/FSTL 1.0 versionnée | `PASS` — tag `fstl-v1.0.0`, révision et arbre identifiés ; URL de release enregistrée |
 
 ## Commandes de maintien des preuves techniques
 
@@ -306,25 +338,26 @@ Pour les fuzzers, utiliser les commandes documentées dans
 `test/telemetry/protocol/fuzz/README.md`, puis archiver toolchain, options
 ASan/UBSan, durée ou nombre de runs, hash du corpus et dossier d'artefacts. Le
 smoke CI de 2 000 runs reste une gate de PR. La campagne du gel FSTL 1.0 et sa
-durée ont été approuvées par la revue sécurité et archivées dans la release.
+durée ont été approuvées par la revue sécurité et archivées dans l'artefact
+Actions source ; les mêmes fichiers et checksums sont préparés pour la release.
 
-Actions de clôture exécutées :
+Actions de clôture établies ou préparées :
 
 1. jobs Clang/macOS/Windows et libFuzzer ASan/UBSan exécutés ;
 2. checks et tests rejoués sur la révision poussée ;
 3. quatre revues approuvées avec preuves ;
-4. tag, release, artefacts et hashes publiés ;
+4. tag publié ; assets et hashes de release vérifiés avant publication ;
 5. verdict FSTL 1.0 passé à `PASS` et autorisation Phase 1 consignée.
 
 ## Version et autorisation de gel
 
 | Champ | Valeur |
 |---|---|
-| Version d'artefact FSTL 1.0 | [`FSTL 1.0.0`](https://github.com/dabatnot/fstelemetry/releases/tag/fstl-v1.0.0) |
-| Commit gelé | [`900487429bd20e13fcfea1c6e2d163631f1bafe1`](https://github.com/dabatnot/fstelemetry/commit/900487429bd20e13fcfea1c6e2d163631f1bafe1) |
+| Version et URL publique réservée FSTL 1.0 | [`FSTL 1.0.0`](https://github.com/dabatnot/fso_telemetry/releases/tag/fstl-v1.0.0) |
+| Commit gelé | [`900487429bd20e13fcfea1c6e2d163631f1bafe1`](https://github.com/dabatnot/fso_telemetry/commit/900487429bd20e13fcfea1c6e2d163631f1bafe1) |
 | Tag | `fstl-v1.0.0`, objet annoté `4d7e439715f33e546e6d6ec82faf43773da0d6ce` |
-| Hash du bundle de preuves | `sha256:392ce26da661e689affdc1e6be1c15f5290c39bf9864c297a3606a621123bea8` |
-| Autorisation explicite de démarrer la Phase 1 | **OUI** — [décision du 2026-07-15](https://github.com/dabatnot/fstelemetry/issues/1#issuecomment-4974820634) |
+| Hash du bundle de preuves | `sha256:de0f73e4bfba8225de94de30fbe46667dfe9e841a402ceaa316c745ef8bba585` |
+| Autorisation explicite de démarrer la Phase 1 | **OUI** — [décision du 2026-07-15](https://github.com/dabatnot/fso_telemetry/issues/1#issuecomment-4984644039) |
 
 L'autorisation couvre le démarrage de la Phase 1 et `P1-WP-01`. Elle ne
 court-circuite ni `P0-AC-025`, ni `P0-AC-026`, ni la gate FSTL 1.1 requise avant
