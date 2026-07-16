@@ -157,6 +157,54 @@ Wp03KnownBudgetSubtotal calculate_wp03_known_budget_subtotal(const Wp03KnownBudg
 	return result;
 }
 
+Wp03KnownBudgetSubtotal apply_wp04_transport_budget(const Wp03KnownBudgetSubtotal& wp03_subtotal,
+	std::size_t application_buffer_count,
+	std::size_t application_buffer_bytes) noexcept
+{
+	if (wp03_subtotal.error != StartupBudgetError::None) {
+		return failed_result(wp03_subtotal.error);
+	}
+
+	std::size_t transport_buffer_bytes = 0U;
+	std::size_t known_bytes = 0U;
+	std::uint64_t metric_buffer_count = 0U;
+	std::uint64_t metric_buffer_bytes = 0U;
+	std::uint64_t metric_transport_buffer_bytes = 0U;
+	std::uint64_t metric_known_bytes = 0U;
+	if (!checked_multiply_size(
+			application_buffer_count, application_buffer_bytes, transport_buffer_bytes) ||
+		!checked_add_size(wp03_subtotal.known_bytes, transport_buffer_bytes, known_bytes) ||
+		!size_value_to_metric(application_buffer_count, metric_buffer_count) ||
+		!size_value_to_metric(application_buffer_bytes, metric_buffer_bytes) ||
+		!checked_multiply_metric_u64(
+			metric_buffer_count, metric_buffer_bytes, metric_transport_buffer_bytes) ||
+		!checked_add_metric_u64(
+			wp03_subtotal.metric_known_bytes, metric_transport_buffer_bytes, metric_known_bytes)) {
+		return failed_result(StartupBudgetError::ArithmeticOverflow);
+	}
+	if (known_bytes > WP03ProvisionalKnownBudgetCapBytes) {
+		return failed_result(StartupBudgetError::StaticCapExceeded);
+	}
+
+	auto result = wp03_subtotal;
+	result.known_bytes = known_bytes;
+	result.metric_known_bytes = metric_known_bytes;
+	result.transport_buffer_bytes = transport_buffer_bytes;
+	const auto transport_bit = static_cast<std::uint16_t>(
+		static_cast<std::uint16_t>(1U)
+		<< static_cast<std::uint8_t>(DeferredStartupBudgetCategory::TransportBuffers));
+	result.deferred_categories = static_cast<std::uint16_t>(result.deferred_categories & ~transport_bit);
+	result.is_complete = wp03_subtotal.is_complete && result.deferred_categories == 0U;
+	return result;
+}
+
+Wp03KnownBudgetSubtotal calculate_wp04_startup_budget(const Wp03KnownBudgetRequest& request) noexcept
+{
+	return apply_wp04_transport_budget(calculate_wp03_known_budget_subtotal(request),
+		WP04TransportApplicationBufferCount,
+		WP04TransportApplicationBufferBytes);
+}
+
 bool startup_budget_category_is_deferred(const Wp03KnownBudgetSubtotal& subtotal,
 	DeferredStartupBudgetCategory category) noexcept
 {

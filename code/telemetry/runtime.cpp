@@ -81,7 +81,7 @@ void Runtime::on_engine_update() noexcept
 	}
 
 	const auto budget = m_services.calculate_known_budget(config.max_clients);
-	if (budget.error != StartupBudgetError::None) {
+	if (budget.error != StartupBudgetError::None || !budget.is_complete || budget.deferred_categories != 0U) {
 		enter_faulted(RuntimeTerminalReason::BudgetFailure);
 		return;
 	}

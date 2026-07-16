@@ -1715,6 +1715,8 @@ add_file_folder("TgaUtils"
 add_file_folder("Telemetry"
 	telemetry/config.cpp
 	telemetry/config.h
+	telemetry/datagram_scheduler.cpp
+	telemetry/datagram_scheduler.h
 	telemetry/identity.cpp
 	telemetry/identity.h
 	telemetry/json_preflight.h
@@ -1726,6 +1728,8 @@ add_file_folder("Telemetry"
 	telemetry/startup_budget.h
 	telemetry/telemetry.cpp
 	telemetry/telemetry.h
+	telemetry/transport.cpp
+	telemetry/transport.h
 )
 
 # Tracing files

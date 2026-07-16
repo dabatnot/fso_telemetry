@@ -52,7 +52,7 @@ class NativeRuntimeStartupServices final : public RuntimeStartupServices {
 
 	Wp03KnownBudgetSubtotal calculate_known_budget(std::size_t max_clients) noexcept override
 	{
-		return calculate_wp03_known_budget_subtotal(make_wp03_known_budget_request(max_clients));
+		return calculate_wp04_startup_budget(make_wp03_known_budget_request(max_clients));
 	}
 
 	bool allocate_session_registry() noexcept override

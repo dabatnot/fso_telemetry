@@ -47,6 +47,14 @@ detail::Wp03KnownBudgetSubtotal successful_incomplete_budget() noexcept
 	return result;
 }
 
+detail::Wp03KnownBudgetSubtotal successful_complete_budget() noexcept
+{
+	auto result = successful_incomplete_budget();
+	result.is_complete = true;
+	result.deferred_categories = 0U;
+	return result;
+}
+
 class ScriptedRuntimeStartupServices final : public detail::RuntimeStartupServices {
   public:
 	void observe_runtime(const detail::Runtime& runtime) noexcept
@@ -150,7 +158,7 @@ class ScriptedRuntimeStartupServices final : public detail::RuntimeStartupServic
 	detail::RuntimeConfigResult config_result{detail::RuntimeConfigStatus::Enabled, 1U};
 	detail::IdentityResult identity_result{7U, detail::IdentityError::None};
 	detail::SessionIdCandidateResult candidate_result{detail::SessionIdCandidateStatus::Ready, 42U};
-	detail::Wp03KnownBudgetSubtotal budget_result = successful_incomplete_budget();
+	detail::Wp03KnownBudgetSubtotal budget_result = successful_complete_budget();
 	bool allocation_succeeds = true;
 	bool allocation_makes_storage_ready = true;
 	detail::SessionIdRegistrationStatus registration_status = detail::SessionIdRegistrationStatus::Registered;
@@ -584,45 +592,55 @@ TEST(TelemetryRuntimeStartupContract, EveryRegistrationFailureRollsBackAndNeverS
 	}
 }
 
-TEST(TelemetryRuntimeStartupContract, IncompleteKnownBudgetIsAcceptedThenUnavailableTransportRollsBack)
+TEST(TelemetryRuntimeStartupContract, IncompleteOrDeferredBudgetFailsBeforeAllocationRegistrationAndTransport)
 {
-	ScriptedRuntimeStartupServices services;
-	services.config_result.max_clients = 4U;
-	ASSERT_EQ(detail::StartupBudgetError::None, services.budget_result.error);
-	ASSERT_FALSE(services.budget_result.is_complete)
-		<< "WP03 may start only through the known subtotal while later storage owners remain deferred.";
-	detail::Runtime runtime(services);
-	services.observe_runtime(runtime);
-	runtime.capture_main_thread();
+	struct IncompleteCase {
+		bool is_complete;
+		std::uint16_t deferred_categories;
+	};
 
-	runtime.on_engine_update();
+	const auto transport_deferred = static_cast<std::uint16_t>(
+		1U << static_cast<unsigned int>(detail::DeferredStartupBudgetCategory::TransportBuffers));
+	const std::array<IncompleteCase, 2> cases{{
+		{false, 0U},
+		{true, transport_deferred},
+	}};
 
-	EXPECT_EQ((std::vector<StartupCall>{StartupCall::CaptureMainThread,
-			  StartupCall::MainThreadCheck,
-			  StartupCall::LoadConfig,
-			  StartupCall::LoadProducerIdentity,
-			  StartupCall::DrawSessionCandidate,
-			  StartupCall::CalculateKnownBudget,
-			  StartupCall::AllocateRegistry,
-			  StartupCall::RegisterCandidate,
-			  StartupCall::StartTransport,
-			  StartupCall::ReleaseRegistry,
-			  StartupCall::EmitDiagnostic}),
-		services.calls);
-	EXPECT_EQ(1U, services.session_candidate_draws);
-	EXPECT_EQ(1U, services.budget_calculations);
-	EXPECT_EQ(4U, services.budget_max_clients);
-	EXPECT_EQ(1U, services.registry_allocation_calls);
-	EXPECT_EQ(1U, services.registration_calls);
-	EXPECT_EQ(42U, services.registered_candidate)
-		<< "The candidate drawn before budgeting must register without a second entropy draw.";
-	EXPECT_EQ(1U, services.transport_calls);
-	EXPECT_EQ(1U, services.registry_release_calls);
-	EXPECT_FALSE(services.registry_ready);
-	expect_standard_startup_entry_states(services);
-	expect_observed_state(services, StartupCall::StartTransport, detail::RuntimeState::Starting);
-	expect_single_fault_diagnostic(runtime, services, detail::RuntimeTerminalReason::TransportUnavailable);
-	expect_terminal_no_retry(runtime, services);
+	for (const auto& item : cases) {
+		SCOPED_TRACE(item.is_complete ? "deferred category remains" : "budget is explicitly incomplete");
+		ScriptedRuntimeStartupServices services;
+		services.config_result.max_clients = 4U;
+		services.budget_result = successful_complete_budget();
+		services.budget_result.is_complete = item.is_complete;
+		services.budget_result.deferred_categories = item.deferred_categories;
+		ASSERT_EQ(detail::StartupBudgetError::None, services.budget_result.error);
+		detail::Runtime runtime(services);
+		services.observe_runtime(runtime);
+		runtime.capture_main_thread();
+
+		runtime.on_engine_update();
+
+		EXPECT_EQ((std::vector<StartupCall>{StartupCall::CaptureMainThread,
+				  StartupCall::MainThreadCheck,
+				  StartupCall::LoadConfig,
+				  StartupCall::LoadProducerIdentity,
+				  StartupCall::DrawSessionCandidate,
+				  StartupCall::CalculateKnownBudget,
+				  StartupCall::EmitDiagnostic}),
+			services.calls);
+		EXPECT_EQ(1U, services.session_candidate_draws);
+		EXPECT_EQ(1U, services.budget_calculations);
+		EXPECT_EQ(4U, services.budget_max_clients);
+		EXPECT_EQ(0U, services.registry_allocation_calls);
+		EXPECT_EQ(0U, services.registration_calls);
+		EXPECT_EQ(0U, services.transport_calls)
+			<< "No socket bind may be attempted until the global startup budget is complete.";
+		EXPECT_EQ(0U, services.registry_release_calls);
+		EXPECT_FALSE(services.registry_ready);
+		expect_standard_startup_entry_states(services);
+		expect_single_fault_diagnostic(runtime, services, detail::RuntimeTerminalReason::BudgetFailure);
+		expect_terminal_no_retry(runtime, services);
+	}
 }
 
 } // namespace
