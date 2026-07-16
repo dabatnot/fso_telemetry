@@ -1,15 +1,18 @@
 # Phase 1 WP02 build-matrix evidence
 
-Status: **PARTIAL / BLOCKED**. The local Windows producer subset is verified,
-but this document does not close `P1-REQ-036`, `P1-AC-003`, or `G1-B`.
+Status: **UPDATED EVIDENCE / REVIEW REQUIRED**. The supported CI build-test
+matrix and the real engine-frame median sub-gate now pass. Optional local
+all-tools and dynamic ETW evidence remain blocked; independent review owns the
+final closure decision for `P1-REQ-036`, `P1-AC-003`, and `G1-B`.
 
 ## Scope and conclusion
 
 This evidence was recorded for the WP02 producer skeleton. It covers the
 existing Win32 Release build, clean x64 Debug/FastDebug/Release builds, a
-separate x64 tools-enabled build, and a separate x64 runtime-only build. It
-also records the available WSL environment and the unavailable platform and
-runtime evidence instead of treating them as successes.
+separate x64 tools-enabled build, a separate x64 runtime-only build, the
+follow-up Linux/macOS/Windows CI matrix, and a real retail-assets mission
+benchmark. It keeps local environment limitations separate from CI and runtime
+successes.
 
 Verified locally:
 
@@ -22,7 +25,12 @@ Verified locally:
   prefix in Win32 Release and x64 Release;
 - x64 Release links `Freespace2` when tools are ON and tests are OFF;
 - x64 Release links `Freespace2` in a separate runtime-only configuration with
-  tests OFF and tools OFF.
+  tests OFF and tools OFF;
+- all 14 Linux, macOS, and Windows build-test CI jobs pass across FastDebug,
+  Release, x86_64/Win32, and ARM64;
+- the protocol-conformance CI workflow passes at the same follow-up SHA;
+- a balanced 12-process real mission benchmark passes the strict frame-median
+  limit with an absolute delta of `0.257409%`.
 
 Still blocked or external:
 
@@ -30,16 +38,13 @@ Still blocked or external:
   toolchain because the downloaded Qt6 package requires VS2022;
 - `strings_tool`, the repository's optional C++ tool target, is not generated
   because Clang is not installed;
-- WSL has no CMake, Ninja, pkg-config, or Clang, so no Linux configure/build or
-  dependency proof was possible without installing packages;
-- macOS and ARM environments are unavailable;
-- no usable game data or mission is present, so no real engine-frame or
-  mission runtime claim is made;
 - the WPR/ETW dynamic network trace remains unavailable.
 
-The minimum matrix in Phase 1 section 05.3.3 requires Windows and non-Windows
-CI platforms plus tools-enabled/tools-disabled coverage. Consequently, the
-successful Windows rows below are evidence, not a gate-level PASS.
+The original local machine has no native macOS/ARM runner and its WSL image has
+no CMake, Ninja, pkg-config, or Clang. Those are local limitations rather than
+platform blockers now that the standard CI build-test jobs are green. The CI
+workflow's distribution-package jobs are reported separately: their fork
+upload failures are not represented as compile or test failures.
 
 ## Reproducibility identity
 
@@ -48,8 +53,10 @@ Recorded on `2026-07-16` in the `Europe/Paris` time zone.
 | Item | Recorded value |
 |---|---|
 | Branch | `codex/telemetry-phase-1-wp01` |
-| HEAD | `e433d19220bd7c136f2440b2702d05249d4c7302` |
-| Tracked working diff as Git blob from `git diff --binary` | `9e883ed78ae36d68e79ce673ad9d1b7cf3c120a9` |
+| Original local matrix HEAD | `e433d19220bd7c136f2440b2702d05249d4c7302` |
+| Original tracked working diff as Git blob from `git diff --binary` | `9e883ed78ae36d68e79ce673ad9d1b7cf3c120a9` |
+| Follow-up CI HEAD | `e1ecd51f36e2e4565ea1fd2f255840c0a26e7cc8` |
+| Frame benchmark production revision | `ac325072357e5ad7df661a7658628b1beb2f5312`; the later CI commit changes only two test sources |
 | `code/telemetry/telemetry.cpp` | 3,366 bytes; SHA-256 `1731369A1D26DD42CD647173E88BB56A01960188EC3972A7BAD9A10885652E32` |
 | `code/telemetry/telemetry.h` | 91 bytes; SHA-256 `1B80B739B7B6B0849D71757AEBB4E62A1205D3605B0847854513C287B01F8DDA` |
 | OS | Microsoft Windows 11 Professionnel `10.0.26200`, build `26200`, 64-bit |
@@ -62,9 +69,10 @@ Recorded on `2026-07-16` in the `Europe/Paris` time zone.
 | Multi-config variants | `Debug;Release;FastDebug` |
 | SIMD selection | host AVX2, host optimizations ON |
 
-The tree was intentionally dirty with the Phase 1 implementation. The tracked
+The tree was intentionally dirty during the original local matrix. Its tracked
 diff identity excludes untracked files, so the two production source hashes
-above are recorded independently.
+above are recorded independently. The follow-up CI and frame report identify
+their clean revisions and artifacts separately.
 
 Fresh Windows build directories automatically downloaded and extracted the
 repository's official prebuilt package
@@ -73,10 +81,11 @@ configure. No package manager or manually added dependency was used.
 
 ## Windows matrix
 
-`unittests` was fully built in every test-enabled row, but only the narrow WP02
-filter was executed per configuration. The complete test suite was not rerun
-for every configuration. `Freespace2` was linked but not launched because the
-repository has no usable game data.
+`unittests` was fully built in every test-enabled local row, but only the
+narrow WP02 filter was executed per configuration. The complete test suite was
+not rerun for every local configuration. `Freespace2` was linked but not
+launched during this original matrix; the later retail-assets benchmark is
+reported separately below.
 
 | Build directory | Platform/config | Relevant options | Built targets | Build result | Narrow WP02 result |
 |---|---|---|---|---|---|
@@ -305,27 +314,91 @@ FreeType/cURL dependency availability could not be established. Because CMake
 and Ninja are absent, no `build-wp02-linux` configure or build was attempted.
 No `sudo`, package installation, or WSL network operation was performed.
 
-Linux is BLOCKED on the local environment, not failed by telemetry source.
-macOS and ARM are EXTERNAL/UNAVAILABLE: no host, runner, cross-toolchain, or
-emulator for either was present. Neither platform may be claimed from this
-matrix.
+Linux is unavailable in the local WSL environment, not failed by telemetry
+source. No native macOS or ARM host, runner, cross-toolchain, or emulator was
+present locally. The follow-up CI evidence below, rather than this local
+audit, supplies those platform claims.
+
+## Cross-platform CI follow-up
+
+The follow-up workflows ran on clean commit
+`e1ecd51f36e2e4565ea1fd2f255840c0a26e7cc8`.
+
+The [Telemetry protocol conformance run](https://github.com/dabatnot/fso_telemetry/actions/runs/29489291234)
+completed with overall `success`. Its schema/vector coverage, Linux C++ unit
+tests, Windows ASan corpus replay, and Linux/macOS fuzz-smoke jobs all passed.
+
+The [Build Test package run](https://github.com/dabatnot/fso_telemetry/actions/runs/29489303112)
+has overall conclusion `failure`, but all 14 compile-and-test jobs completed
+with `success`, including each job's `Compile` and `Run Tests` steps:
+
+| Build-test job | Result |
+|---|---|
+| `Linux (FastDebug, ubuntu-latest)` | success |
+| `Linux (Release, ubuntu-latest)` | success |
+| `Linux (FastDebug, ubuntu-24.04-arm)` | success |
+| `Linux (Release, ubuntu-24.04-arm)` | success |
+| `Mac (FastDebug, clang, x86_64)` | success |
+| `Mac (Release, clang, x86_64)` | success |
+| `Mac (FastDebug, clang, arm64)` | success |
+| `Mac (Release, clang, arm64)` | success |
+| `Windows (FastDebug, windows-2022, Win32, SSE2)` | success |
+| `Windows (Release, windows-2022, Win32, SSE2)` | success |
+| `Windows (FastDebug, windows-2022, x64, SSE2)` | success |
+| `Windows (Release, windows-2022, x64, SSE2)` | success |
+| `Windows (FastDebug, windows-11-arm, ARM64)` | success |
+| `Windows (Release, windows-11-arm, ARM64)` | success |
+
+Distribution packaging and external upload are separate downstream jobs:
+
+| Distribution-package job | Result | Relevant state |
+|---|---|---|
+| `Build Mac distribution zip (arm64)` | failure | package created; external upload failed |
+| `Build Mac distribution zip (x86_64)` | cancelled | downstream package job cancelled |
+| `Build Linux distribution zip (x86_64)` | failure | package created; external upload failed |
+| `Build Linux distribution zip (arm64)` | cancelled | downstream package job cancelled |
+| `Build Windows distribution zip (Win32, SSE2)` | failure | package created; external upload failed |
+| `Build Windows distribution zip (x64, SSE2)` | cancelled | downstream package job cancelled |
+| `Build Windows distribution zip (ARM64)` | cancelled | downstream package job cancelled |
+
+For each failed package job, the build artifacts downloaded and the
+distribution package was created successfully. Only `Upload result package`
+failed: the fork has empty INDIEGAMES/DATACORDER credential variables and SSH
+returned exit `255`. The sibling cancellations followed those downstream
+failures. These fork-secret packaging outcomes are non-normative for the
+compile-and-test matrix and are not counted among its 14 jobs.
 
 ## Game assets, frame metric, and runtime launch
 
-The repository asset inventory found exactly one VP/mission-like file:
+The repository itself still contains no playable retail mission assets. The
+only repository VP/mission-like file is a 290-byte CFile unit-test fixture:
 
 ```text
 test/test_data/cfile/list_files_in_vps_and_dirs/test.vp   290 bytes
 ```
 
-No `.fs2` or `.fc2` mission and no retail/mod game data were found outside
-generated build directories. The 290-byte VP is a CFile unit-test fixture, not
-a playable data set. Consequently:
+An explicitly supplied local GOG FreeSpace 2 installation subsequently enabled
+a real runtime measurement without adding copyrighted assets to the
+repository. A deterministic 15-second workload derived from the retail
+`shipyard-completed.fs2` mission ran in 12 fresh processes, balanced as six
+control and six Phase 1-disabled runs. Both binaries came from production
+revision `ac325072357e5ad7df661a7658628b1beb2f5312`; the control removed only the
+WP02 CMake group and `game_init()` seam.
 
-- no runtime executable was launched into a mission;
-- no deterministic real engine-frame benchmark was possible;
-- the required `< 1%` engine-frame median delta remains BLOCKED;
-- no substitute callback-only number is represented as a frame result.
+After discarding the first 200 samples and final terminal sample of every run,
+the native `MainFrameTimer` evidence is:
+
+| Condition | Runs | Analyzed frames | Pooled median | Median of run medians |
+|---|---:|---:|---:|---:|
+| control without WP02 | 6 | 9,046 | 8.857500 ms | 8.862600 ms |
+| Phase 1 module compiled, config absent/disabled | 6 | 9,060 | 8.834700 ms | 8.829000 ms |
+
+The signed pooled delta is `-0.257409%`; its absolute value is `0.257409%`.
+This is a **PASS** for the strict `< 1%` `P1-REQ-033` engine-frame median
+sub-requirement. The 12 raw CSVs, hashes, command line, workload identity,
+balanced order, environment, exclusions, analysis rule, and recomputation
+script are in
+[WP02_FRAME_MEDIAN_BENCHMARK.md](WP02_FRAME_MEDIAN_BENCHMARK.md).
 
 ## Disabled fast path and ETW status
 
@@ -357,16 +430,20 @@ was recording. Static proof is retained, but dynamic ETW proof remains BLOCKED.
 | Release allocation-failure `noexcept` behavior | Win32 and x64 probe + fail indices 0..4 | VERIFIED |
 | Runtime with tests OFF/tools OFF | separate x64 Release build | VERIFIED |
 | Runtime with tools ON | separate x64 Release `Freespace2` target | VERIFIED |
+| Supported CI build-test matrix | 14/14 Linux, macOS, and Windows jobs, including Win32, x86_64, and ARM64 | VERIFIED |
+| Protocol conformance follow-up | run `29489291234` at CI HEAD completed successfully | VERIFIED |
+| Distribution-package upload | three fork-secret SSH failures and four downstream cancellations, separate from build-test jobs | NON-NORMATIVE INFRA |
 | All generated tools-enabled targets | `ALL_BUILD` exit 1; Qt6 requires VS2022 | BLOCKED |
 | Optional `strings_tool` | target not generated; Clang absent | BLOCKED |
-| Linux build and WP02 smoke | build tools/dependency probe unavailable in WSL | BLOCKED |
-| macOS and ARM builds | no environment | EXTERNAL |
-| Real mission/runtime frame metric | no playable assets | BLOCKED |
+| Local Linux build probe | build tools/dependencies unavailable in WSL; CI Linux jobs pass | LOCAL LIMITATION |
+| macOS and ARM builds | no local host; all corresponding CI build-test jobs pass | VERIFIED BY CI |
+| Real mission/runtime frame metric | 12 runs, 18,106 analyzed frames, absolute pooled delta `0.257409%` | PASS |
 | Dynamic ETW no-network trace | WPR start failure `0xc5585011` | BLOCKED |
 
-Therefore the Windows subset supplies concrete evidence for WP02, but
-`P1-REQ-036`, `P1-AC-003`, and `G1-B` remain open. Closing them requires at
-least a supported non-Windows CI build, a viable tools toolchain or an approved
-matrix decision for `strings_tool`/QtFRED, and the remaining runtime/performance
-evidence. No documentation checkbox or phase gate should be marked complete
-from this report alone.
+The cross-platform build-test portion of `P1-REQ-036` and the real-frame
+portion of `P1-REQ-033` now have passing evidence. This test report does not
+unilaterally close `P1-REQ-036`, `P1-AC-003`, or `G1-B`: independent review
+must reconcile the seam scope and decide whether the optional local
+`strings_tool`/QtFRED limitation requires more evidence on a compatible tools
+host. The dynamic ETW limitation also remains explicit. The fork-secret
+package-upload failures are not source, compile, or test failures.

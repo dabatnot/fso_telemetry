@@ -13,10 +13,11 @@ recurring C++ allocation check:
 Contract limits for the disabled callback are mean `<= 0.01 ms` and p99
 `<= 0.05 ms`. The baseline and disabled runs were separate fresh processes.
 
-The engine-frame median-delta sub-proof is **BLOCKED**. This isolated harness
-does not run a deterministic engine mission/frame workload, so the identical
-100 ns callback medians are not represented as proof of the required `< 1%`
-engine-frame delta.
+This isolated harness does not run a deterministic engine mission/frame
+workload, so the identical 100 ns callback medians are not represented as
+proof of the required `< 1%` engine-frame delta. That formerly blocked
+sub-proof was later measured independently and passes in
+[WP02_FRAME_MEDIAN_BENCHMARK.md](WP02_FRAME_MEDIAN_BENCHMARK.md).
 
 ## Reproducibility identity
 
@@ -207,5 +208,7 @@ above.
 This report proves the WP02 isolated disabled-callback mean, p99, and recurring
 C++ allocation checks for the identified Release/x86 binary. It also provides
 static binary evidence for the absence of callback socket/syscall/log work.
-It does not close the engine-frame median-delta requirement, build-variant
-matrix, mission scenario, or later Phase 1 performance gates.
+It does not itself close the engine-frame median-delta requirement,
+build-variant matrix, mission scenario, or later Phase 1 performance gates.
+The independent real-engine measurement is linked above; the two reports keep
+their distinct workloads and claims separate.
