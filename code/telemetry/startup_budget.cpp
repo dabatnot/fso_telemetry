@@ -205,6 +205,93 @@ Wp03KnownBudgetSubtotal calculate_wp04_startup_budget(const Wp03KnownBudgetReque
 		WP04TransportApplicationBufferBytes);
 }
 
+Wp03KnownBudgetSubtotal calculate_wp06_startup_budget(const Wp03KnownBudgetSubtotal& wp04_subtotal,
+	std::size_t max_clients) noexcept
+{
+	if (wp04_subtotal.error != StartupBudgetError::None) {
+		return failed_result(wp04_subtotal.error);
+	}
+	if (max_clients < MinimumClientCount || max_clients > MaximumClientCount) {
+		return failed_result(StartupBudgetError::InvalidClientCount);
+	}
+
+	std::size_t client_slot_bytes = 0U;
+	std::size_t reassembly_bytes = 0U;
+	std::size_t reliable_bytes = 0U;
+	std::size_t prior_projection = 0U;
+	std::size_t retained_known = 0U;
+	std::size_t subtotal = 0U;
+	std::size_t subtotal2 = 0U;
+	std::size_t subtotal3 = 0U;
+	std::size_t subtotal4 = 0U;
+	std::size_t subtotal5 = 0U;
+	std::size_t subtotal6 = 0U;
+	std::size_t known_bytes = 0U;
+	if (!checked_add_size(wp04_subtotal.reassembly_bytes,
+			wp04_subtotal.reliable_retention_projection_bytes,
+			prior_projection) ||
+		wp04_subtotal.known_bytes < prior_projection) {
+		return failed_result(StartupBudgetError::ArithmeticOverflow);
+	}
+	retained_known = wp04_subtotal.known_bytes - prior_projection;
+	if (!checked_multiply_size(max_clients, Wp06ClientSlotStorageBytes, client_slot_bytes) ||
+		!checked_multiply_size(max_clients, protocol::MaxStateReassemblyBytesPerClient, reassembly_bytes) ||
+		!checked_multiply_size(max_clients, Wp06ReliableRetentionBytesPerClient, reliable_bytes) ||
+		!checked_add_size(retained_known, client_slot_bytes, subtotal) ||
+		!checked_add_size(subtotal, reassembly_bytes, subtotal2) ||
+		!checked_add_size(subtotal2, reliable_bytes, subtotal3) ||
+		!checked_add_size(subtotal3, Wp06RateLimiterStorageBytes, subtotal4) ||
+		!checked_add_size(subtotal4, Wp06HandshakeCacheStorageBytes, subtotal5) ||
+		!checked_add_size(subtotal5, Wp06PreproofLedgerStorageBytes, subtotal6) ||
+		!checked_add_size(subtotal6, Wp06OutputQueueStorageBytes, known_bytes)) {
+		return failed_result(StartupBudgetError::ArithmeticOverflow);
+	}
+	if (known_bytes > WP03ProvisionalKnownBudgetCapBytes) {
+		return failed_result(StartupBudgetError::StaticCapExceeded);
+	}
+
+	auto result = wp04_subtotal;
+	result.known_bytes = known_bytes;
+	result.metric_known_bytes = static_cast<std::uint64_t>(known_bytes);
+	result.client_slot_bytes = client_slot_bytes;
+	result.rate_limiter_bytes = Wp06RateLimiterStorageBytes;
+	result.handshake_cache_bytes = Wp06HandshakeCacheStorageBytes;
+	result.preproof_ledger_bytes = Wp06PreproofLedgerStorageBytes;
+	result.output_queue_bytes = Wp06OutputQueueStorageBytes;
+	result.reassembly_bytes = reassembly_bytes;
+	result.reliable_retention_projection_bytes = reliable_bytes;
+	result.client_slot_count = max_clients;
+	result.reassembly_slot_count = max_clients * protocol::MaxStateReassembliesPerClient;
+	for (const auto category : {DeferredStartupBudgetCategory::ClientSlotStorage,
+			 DeferredStartupBudgetCategory::StateReassemblyStorage,
+			 DeferredStartupBudgetCategory::ReliableWindowStorage}) {
+		const auto bit = static_cast<std::uint16_t>(1U << static_cast<std::uint8_t>(category));
+		result.deferred_categories = static_cast<std::uint16_t>(result.deferred_categories & ~bit);
+	}
+	result.is_complete = result.deferred_categories == 0U;
+	return result;
+}
+
+bool wp06_budget_matches_owned_storage(const Wp03KnownBudgetSubtotal& budget,
+	const Wp06OwnedCapacity& owned) noexcept
+{
+	std::size_t expected_client_slot_bytes = 0U;
+	if (!checked_multiply_size(owned.client_slots, Wp06ClientSlotStorageBytes, expected_client_slot_bytes)) {
+		return false;
+	}
+	return budget.error == StartupBudgetError::None &&
+		budget.client_slot_count == owned.client_slots &&
+		budget.client_slot_bytes == expected_client_slot_bytes &&
+		budget.reassembly_slot_count == owned.state_reassembly_slots &&
+		budget.reassembly_bytes == owned.state_reassembly_bytes &&
+		budget.reliable_retention_projection_bytes == owned.reliable_retention_bytes &&
+		budget.rate_limiter_bytes == owned.rate_limiter_bytes &&
+		budget.handshake_cache_bytes == owned.handshake_cache_bytes &&
+		budget.preproof_ledger_bytes == owned.preproof_ledger_bytes &&
+		budget.output_queue_bytes == owned.output_queue_bytes &&
+		owned.dynamic_allocations_after_ready == 0U;
+}
+
 bool startup_budget_category_is_deferred(const Wp03KnownBudgetSubtotal& subtotal,
 	DeferredStartupBudgetCategory category) noexcept
 {

@@ -1724,6 +1724,8 @@ add_file_folder("Telemetry"
 	telemetry/runtime.h
 	telemetry/runtime_adapter.cpp
 	telemetry/runtime_adapter.h
+	telemetry/session_controller.cpp
+	telemetry/session_controller.h
 	telemetry/startup_budget.cpp
 	telemetry/startup_budget.h
 	telemetry/telemetry.cpp

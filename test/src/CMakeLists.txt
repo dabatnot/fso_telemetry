@@ -103,3 +103,19 @@ target_include_directories(telemetry_initialize_failure_contract_tests PRIVATE
 target_link_libraries(telemetry_initialize_failure_contract_tests PRIVATE sdl2)
 
 set_target_properties(telemetry_initialize_failure_contract_tests PROPERTIES FOLDER "tests")
+
+add_executable(telemetry_session_controller_allocation_contract_tests
+	telemetry/producer/test_telemetry_session_controller_allocations.cpp
+	test_stubs.cpp
+)
+
+target_compile_features(telemetry_session_controller_allocation_contract_tests PRIVATE cxx_std_17)
+target_include_directories(telemetry_session_controller_allocation_contract_tests PRIVATE
+	${CODE_HEADERS}
+	${FREESPACE_HEADERS}
+	${GENERATED_SOURCE_DIR}
+	${GENERATED_SOURCE_DIR}/code
+)
+target_link_libraries(telemetry_session_controller_allocation_contract_tests PRIVATE gtest_main code)
+
+set_target_properties(telemetry_session_controller_allocation_contract_tests PROPERTIES FOLDER "tests")

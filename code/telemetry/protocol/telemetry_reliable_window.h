@@ -203,6 +203,60 @@ struct ReliableWindowCounters {
 	std::uint64_t nack_ignored_incoherent = 0;
 };
 
+// Allocation-free control-only composition for runtimes that must preallocate
+// every byte before becoming Ready. It deliberately accepts only the two
+// ordinary reliable control datagrams a Phase 1 client slot can retain at
+// once; transaction, event and video retention remain with ReliableSendWindow.
+class PreallocatedReliableControlWindow final {
+  public:
+	static constexpr std::size_t MaximumEntries = 2U;
+	static constexpr std::size_t PayloadBytesPerEntry = MaxDatagramSize;
+
+	void configure() noexcept;
+	ReliableRetainResult retain(const ReliableMessageToRetain& message,
+		std::uint64_t first_send_time_us) noexcept;
+	ReliableResponseResult acknowledge(std::uint64_t session_id,
+		const EndpointKey& endpoint,
+		const AckPayload& ack,
+		std::uint64_t now_us) noexcept;
+	ReliableResponseResult reject(std::uint64_t session_id,
+		const EndpointKey& endpoint,
+		const NackPayload& nack,
+		std::uint64_t now_us,
+		ReliableNackDecision& decision) noexcept;
+	ReliablePullResult pull_next_action(std::uint64_t now_us, ReliableWindowAction& action) noexcept;
+	bool discard(std::uint64_t session_id, const EndpointKey& endpoint, std::uint32_t message_id) noexcept;
+	void clear() noexcept;
+	std::size_t entry_count() const noexcept { return m_size; }
+	std::size_t retained_bytes() const noexcept { return m_retained_bytes; }
+
+  private:
+	struct Entry {
+		bool used = false;
+		ReliableMessageKey key;
+		std::uint8_t base_flags = MessageFlagNone;
+		std::uint32_t frame_id = 0U;
+		std::int64_t mission_time_us = 0;
+		RequiredAckLevel required_ack = RequiredAckLevel::None;
+		ReliableMessageClass message_class = ReliableMessageClass::ControlDrop;
+		std::array<std::uint8_t, PayloadBytesPerEntry> payload{};
+		std::size_t payload_size = 0U;
+		std::uint64_t absolute_deadline_us = 0U;
+		std::uint64_t next_retry_at_us = 0U;
+		std::uint32_t retry_number = 0U;
+		bool validated = false;
+		bool immediate_retry = false;
+		ReliableFragmentSelection fragments;
+	};
+
+	std::size_t find(std::uint64_t session_id, const EndpointKey& endpoint, std::uint32_t message_id) const noexcept;
+	std::size_t free_slot() const noexcept;
+	void erase(std::size_t index) noexcept;
+	std::array<Entry, MaximumEntries> m_entries{};
+	std::size_t m_size = 0U;
+	std::size_t m_retained_bytes = 0U;
+};
+
 // Computes clamp(2 * minimum_rtt, 100 ms, 1000 ms) without overflow. When no
 // valid RTT window exists, the v1.0 default of 250 ms is returned.
 std::uint64_t reliable_base_rto_us(bool has_valid_minimum_rtt, std::uint64_t minimum_rtt_us) noexcept;

@@ -2,6 +2,7 @@
 
 #include "telemetry/identity.h"
 #include "telemetry/protocol/telemetry_protocol_constants.h"
+#include "telemetry/protocol/telemetry_reliable_window.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -16,6 +17,13 @@ constexpr std::size_t WP04TransportApplicationBufferCount = 2U;
 constexpr std::size_t WP04TransportApplicationBufferBytes = protocol::MaxDatagramSize;
 constexpr std::size_t WP04TransportStorageBytes =
 	WP04TransportApplicationBufferCount * WP04TransportApplicationBufferBytes;
+extern const std::size_t Wp06ClientSlotStorageBytes;
+extern const std::size_t Wp06RateLimiterStorageBytes;
+extern const std::size_t Wp06HandshakeCacheStorageBytes;
+extern const std::size_t Wp06PreproofLedgerStorageBytes;
+extern const std::size_t Wp06OutputQueueStorageBytes;
+constexpr std::size_t Wp06ReliableRetentionBytesPerClient =
+	sizeof(protocol::PreallocatedReliableControlWindow);
 
 enum class StartupBudgetError : std::uint8_t {
 	None = 0,
@@ -55,11 +63,29 @@ struct Wp03KnownBudgetSubtotal {
 	std::size_t reassembly_bytes = 0U;
 	std::size_t reliable_retention_projection_bytes = 0U;
 	std::size_t transport_buffer_bytes = 0U;
+	std::size_t client_slot_bytes = 0U;
+	std::size_t rate_limiter_bytes = 0U;
+	std::size_t handshake_cache_bytes = 0U;
+	std::size_t preproof_ledger_bytes = 0U;
+	std::size_t output_queue_bytes = 0U;
 	std::size_t client_slot_count = 0U;
 	std::size_t reassembly_slot_count = 0U;
 	std::size_t baseline_slot_count = 0U;
 	std::size_t delta_slot_count = 0U;
 	std::uint16_t deferred_categories = 0U;
+};
+
+struct Wp06OwnedCapacity {
+	std::size_t client_slots = 0U;
+	std::size_t state_reassembly_slots = 0U;
+	std::size_t state_reassembly_bytes = 0U;
+	std::size_t reliable_retention_bytes = 0U;
+	std::size_t dynamic_allocations_after_ready = 0U;
+	std::size_t client_slot_bytes = 0U;
+	std::size_t rate_limiter_bytes = 0U;
+	std::size_t handshake_cache_bytes = 0U;
+	std::size_t preproof_ledger_bytes = 0U;
+	std::size_t output_queue_bytes = 0U;
 };
 
 bool checked_add_size(std::size_t left, std::size_t right, std::size_t& output) noexcept;
@@ -73,6 +99,10 @@ Wp03KnownBudgetSubtotal apply_wp04_transport_budget(const Wp03KnownBudgetSubtota
 	std::size_t application_buffer_count,
 	std::size_t application_buffer_bytes) noexcept;
 Wp03KnownBudgetSubtotal calculate_wp04_startup_budget(const Wp03KnownBudgetRequest& request) noexcept;
+Wp03KnownBudgetSubtotal calculate_wp06_startup_budget(const Wp03KnownBudgetSubtotal& wp04_subtotal,
+	std::size_t max_clients) noexcept;
+bool wp06_budget_matches_owned_storage(const Wp03KnownBudgetSubtotal& budget,
+	const Wp06OwnedCapacity& owned) noexcept;
 bool startup_budget_category_is_deferred(const Wp03KnownBudgetSubtotal& subtotal,
 	DeferredStartupBudgetCategory category) noexcept;
 

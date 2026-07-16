@@ -105,6 +105,7 @@ add_file_folder("Telemetry\\\\Protocol"
 	telemetry/protocol/test_telemetry_reliability_messages.cpp
 	telemetry/protocol/test_telemetry_reliable_receive.cpp
 	telemetry/protocol/test_telemetry_reliable_window.cpp
+	telemetry/protocol/test_telemetry_preallocated_reliable_parity.cpp
 	telemetry/protocol/test_telemetry_session.cpp
 	telemetry/protocol/test_telemetry_session_context.cpp
 	telemetry/protocol/test_telemetry_security.cpp
@@ -124,6 +125,7 @@ add_file_folder("Telemetry\\\\Producer"
 	telemetry/producer/test_telemetry_initialize.cpp
 	telemetry/producer/test_telemetry_runtime_lifecycle_contract.cpp
 	telemetry/producer/test_telemetry_runtime_startup_contract.cpp
+	telemetry/producer/test_telemetry_session_controller_contract.cpp
 	telemetry/producer/test_telemetry_startup_budget_contract.cpp
 	telemetry/producer/test_telemetry_transport_contract.cpp
 	telemetry/producer/test_telemetry_wp04_startup_budget_contract.cpp
