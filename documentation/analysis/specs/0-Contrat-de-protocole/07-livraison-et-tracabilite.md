@@ -224,20 +224,7 @@ La présente demande produit le premier bloc documentaire. Les blocs code/tests 
 - apposer les approbations métier, transport, sécurité et client ;
 - créer le tag/version d'artefact du contrat.
 
-**Acceptation** : FSTL 1.0 est gelé et l'amendement P0.13 peut être validé sans réouvrir ses octets.
-
-### P0.13 — Amendement FSTL 1.1 pour la Phase 1
-
-**Travail** :
-
-- préserver tous les artefacts et golden vectors FSTL 1.0 byte-identical ;
-- attribuer `StateDomainCoverage.PLAYER_KINEMATICS` au bit 10, masque `0x0000000000000400`, uniquement sous la mineure 1 ;
-- définir le profil Phase 1, sa négociation `1..1`, son snapshot minimal sans manifeste et l'interdiction de rétrogradation mensongère vers 1.0 ;
-- définir la promotion Phase 2 vers `PLAYER_KINEMATICS | CORE_SHIP` ;
-- ajouter au schéma, aux constantes, aux deux décodeurs, aux vectors et au harness les cas 1.1 valides et invalides ;
-- exécuter intégralement la non-régression 1.0.
-
-**Acceptation** : `D0-019`, `P0-AC-025` et `P0-AC-026` sont satisfaits ; les hashes des artefacts 1.0 sont inchangés et le profil 1.1 converge sous perte, duplication et désordre.
+**Acceptation** : checklist finale complète et autorisation explicite de démarrer la Phase 1.
 
 ## 4. Ordre et dépendances
 
@@ -259,7 +246,6 @@ flowchart TD
     G --> Z["P0.11 Fuzzing et CI"]
     Q --> Z
     Z --> X["P0.12 Gel FSTL 1.0"]
-    X --> Y["P0.13 Amendement FSTL 1.1"]
 ```
 
 Le schéma et les tests peuvent progresser en parallèle après gel des conventions et registres. Aucun collecteur moteur ne dépend de ces branches de travail.
@@ -273,8 +259,7 @@ Le schéma et les tests peuvent progresser en parallèle après gel des conventi
 | `G0-C Modèle` | 28 records et enums couverts sans champ ni décision implicite | collecteurs des phases 1–4 |
 | `G0-D Fiabilité` | baseline/delta/ACK/resync convergent dans le harness | premier flux Phase 1 |
 | `G0-E Vues` | capabilities et payloads spécialisés gelés | hooks et encodeur des phases 5/7 |
-| `G0-F Interop` | vectors croisés, fuzzing et sécurité acceptés | gel FSTL 1.0 et amendement 1.1 |
-| `G0-G Amendement 1.1` | non-régression 1.0, négociation 1.1, profil `PLAYER_KINEMATICS` et rejets croisés acceptés ; `WP01` contractuel est autorisé pour produire ces preuves | `WP02` et tous les lots d'implémentation du premier flux Phase 1 |
+| `G0-F Interop` | vectors croisés, fuzzing et sécurité acceptés | gel FSTL 1.0 et Phase 1 |
 
 Une gate échouée ne peut être contournée par une valeur hardcodée dans un prototype.
 
@@ -306,8 +291,6 @@ Une gate échouée ne peut être contournée par une valeur hardcodée dans un p
 | `P0-AC-022` | aucune API/message de commande de simulation n'existe en v1 |
 | `P0-AC-023` | le code Phase 0 ne lit aucune structure moteur et ne modifie pas la boucle FS2Open |
 | `P0-AC-024` | schéma, docs, constantes et vectors ont une vérification de cohérence automatique |
-| `P0-AC-025` | FSTL 1.1 attribue seulement le bit 10 à `PLAYER_KINEMATICS`, sans changer aucun octet d'artefact FSTL 1.0 ni aucun ID, layout, CRC, règle de fragmentation ou golden vector FSTL 1.0 |
-| `P0-AC-026` | le profil Phase 1 négocie `1..1`, annonce `PLAYER_KINEMATICS` seul, n'exige aucun manifeste et rejette toute rétrogradation 1.0 ou fausse couverture `CORE_SHIP` |
 
 ## 7. Relectures requises
 
@@ -324,7 +307,7 @@ Une approbation verbale sans artefact reproductible ne ferme pas la gate.
 
 ## 8. Décisions de clarification intégrées
 
-Les analyses contenaient des points à fermer avant gel. FSTL 1.0 et son amendement 1.1 retiennent :
+Les analyses contenaient des points à fermer avant gel. FSTL 1.0 retient :
 
 | ID | Point | Décision |
 |---|---|---|
@@ -346,7 +329,6 @@ Les analyses contenaient des points à fermer avant gel. FSTL 1.0 et son amendem
 | `D0-016` | délai vidéo 100–200 ms | timeout interframe v1 fixé à 200 ms ; IDR au plus 500 ms |
 | `D0-017` | optionalité et sentinelles | presence bits, cardinalité, ID nul ou enum `NONE` seulement ; jamais NaN/magic implicite |
 | `D0-018` | sécurité LAN | loopback/disabled par défaut, allowlist et rate limits ; pas de sécurité Internet native |
-| `D0-019` | `CORE_SHIP` FSTL 1.0 dépasse le périmètre du premier flux Phase 1 | amendement additif FSTL 1.1 : `PLAYER_KINEMATICS=0x0000000000000400`; profil Phase 1 sans manifeste ni domaines système, FSTL 1.0 inchangé, rejet plutôt que downgrade mensonger, promotion Phase 2 vers `PLAYER_KINEMATICS | CORE_SHIP` |
 
 Toute modification d'une décision `D0-*` après gel exige au minimum une revue de compatibilité et la mise à jour des vectors.
 
@@ -360,7 +342,7 @@ Toute modification d'une décision `D0-*` après gel exige au minimum une revue 
 | [`01-telemetry-data-inventory.md`](../../01-telemetry-data-inventory.md) | taxonomie et tous les domaines métier | 01, 04, 05 |
 | [`02-telemetry-architecture.md`](../../02-telemetry-architecture.md) | indépendance ABI, pipelines, autorité, threading, socket, sérialisation | 01, 02, 03, 06 |
 | [`03-udp-protocol.md`](../../03-udp-protocol.md) | wire, messages, ACK/NACK, fragmentation, delta, machine d'état, sécurité | 02, 03, 05, 06 |
-| [`04-implementation-roadmap.md`](../../04-implementation-roadmap.md) | livrables Phase 0, amendement 1.1 du premier flux Phase 1, tests, observabilité, risques et ordre | 02, 03, 04, 06, 07 |
+| [`04-implementation-roadmap.md`](../../04-implementation-roadmap.md) | livrables Phase 0, tests, observabilité, risques et ordre | 06, 07 |
 | [`05-existing-network-and-api.md`](../../05-existing-network-and-api.md) | MTU, réseau séparé, float32, limites du multijoueur | 01, 02, 06 |
 | [`06-communication-view.md`](../../06-communication-view.md) | bundle, manifeste, lecture signée, lifecycle et fallback | 04, 05, 06 |
 | [`07-high-resolution-target-view.md`](../../07-high-resolution-target-view.md) | H.264, négociation, fragmentation, IDR, priorité et tests | 02, 03, 05, 06 |
@@ -436,8 +418,6 @@ Toute modification d'une décision `D0-*` après gel exige au minimum une revue 
 - revue de filtrage `Cockpit` ;
 - revue de configuration sûre ;
 - liste des divergences résolues avec les analyses ;
-- hashes avant/après de chaque golden vector FSTL 1.0 et rapport des nouveaux vectors FSTL 1.1 ;
-- preuve de négociation `1..1`, de rejet d'un client 1.0 et de validation du snapshot `PLAYER_KINEMATICS` minimal ;
 - confirmation que le diff ne contient aucun collecteur ou hook moteur.
 
 ## 12. Checklist de passage à la Phase 1
@@ -458,8 +438,5 @@ Toute modification d'une décision `D0-*` après gel exige au minimum une revue 
 - [ ] Les valeurs sûres par défaut sont testées.
 - [ ] Les quatre revues requises sont approuvées.
 - [ ] La Phase 0 est versionnée ; toute évolution ultérieure suit les règles de compatibilité.
-- [ ] `D0-019` et le bit 10 `PLAYER_KINEMATICS` concordent dans docs, schéma, constantes, vectors et deux décodeurs.
-- [ ] La non-régression confirme que tous les golden vectors FSTL 1.0 sont byte-identical.
-- [ ] Négociation 1.1, absence d'intersection, snapshot Phase 1 minimal, `CORE_SHIP` incomplet et promotion Phase 2 sont couverts par le harness.
 
-Tant qu'une case reste ouverte, la Phase 0 est **en cours**. Seul `WP01` contractuel peut préciser l'amendement nécessaire à cette checklist ; `WP02` et les lots suivants ne doivent implémenter aucun comportement filaire concurrent.
+Tant qu'une case reste ouverte, la Phase 0 est **en cours** et la Phase 1 ne doit pas figer de comportement filaire concurrent.

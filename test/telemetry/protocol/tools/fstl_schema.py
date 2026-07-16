@@ -1,15 +1,14 @@
 #!/usr/bin/env python3
-"""Generate and verify the FSTL 1.0 machine-readable registry.
+"""Verify frozen FSTL 1.0 and generate the additive FSTL 1.1 registry.
 
 The checked-in ``fstl-v1.yaml`` deliberately uses JSON syntax. JSON is a
 subset of YAML 1.2, so the artifact remains consumable without adding a YAML
 dependency to the repository. This tool itself uses only the Python standard
 library.
 
-The normative Markdown remains authoritative. ``--write`` derives the schema
-from its tables; ``--check`` regenerates it in memory and fails on any drift,
-duplicate/colliding registry entry, missing ID, or inconsistent duplicate
-definition in the protocol documents.
+The FSTL 1.0 schema is a byte-frozen input and ordinary ``--write`` mode can
+never refresh it.  FSTL 1.1 is deterministically derived from that frozen base
+plus the seven versioned Phase 1 normative documents.
 """
 
 from __future__ import annotations
@@ -42,9 +41,21 @@ class MarkdownTable:
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 PHASE_DIR = REPO_ROOT / "documentation" / "analysis" / "specs" / "0-Contrat-de-protocole"
-SCHEMA_PATH = REPO_ROOT / "test" / "telemetry" / "protocol" / "schema" / "fstl-v1.yaml"
+PHASE1_DIR = REPO_ROOT / "documentation" / "analysis" / "specs" / "1-Squelette-et-premier-flux"
+SCHEMA_V1_0_PATH = REPO_ROOT / "test" / "telemetry" / "protocol" / "schema" / "fstl-v1.yaml"
+SCHEMA_V1_1_PATH = REPO_ROOT / "test" / "telemetry" / "protocol" / "schema" / "fstl-v1.1.yaml"
+SCHEMA_PATH = SCHEMA_V1_0_PATH
+FROZEN_LEDGER_PATH = REPO_ROOT / "test" / "telemetry" / "protocol" / "fstl-1.0-artifacts.manifest.json"
 CPP_CONSTANTS_PATH = REPO_ROOT / "code" / "telemetry" / "protocol" / "telemetry_protocol_constants.h"
 SCHEMA_VECTOR_CHECKER_PATH = Path(__file__).resolve().with_name("verify_schema_vectors.py")
+
+FROZEN_SCHEMA_V1_0_BYTES = 499_786
+FROZEN_SCHEMA_V1_0_SHA256 = "1d89c4a95a121c178bf85570cd616568fd939942b8d053835069b2d7d6a1f0d4"
+FROZEN_ARTIFACT_COUNT_V1_0 = 438
+FROZEN_ARTIFACT_TREE_SHA256_V1_0 = "9baac6a20db33bcf350066ed533c5581b7117410899d7bc4a6dc24406e47856d"
+FSTL_1_1_DOCUMENT_SET_ID = "FSTL-1.1-AMENDMENT-NORMATIVE-DOCUMENTS"
+FSTL_1_1_DOCUMENT_SET_VERSION = "1.1.0"
+FSTL_1_1_DOCUMENT_TREE_SHA256 = "55855dea16285c185eed64bafed2a6a7f1b4cc54522128a36b39b0b1911fb631"
 
 SOURCE_NAMES = (
     "01-cadre-normatif-et-perimetre.md",
@@ -52,6 +63,16 @@ SOURCE_NAMES = (
     "03-session-horloges-fiabilite.md",
     "04-modele-de-donnees-v1.md",
     "05-capabilities-et-vues-specialisees.md",
+    "06-validation-securite-et-conformite.md",
+    "07-livraison-et-tracabilite.md",
+)
+
+PHASE1_SOURCE_NAMES = (
+    "01-cadre-normatif-et-perimetre.md",
+    "02-architecture-contrats-et-interfaces.md",
+    "03-flux-cycle-de-vie-et-concurrence.md",
+    "04-modele-de-donnees-et-regles-metier.md",
+    "05-integration-configuration-et-observabilite.md",
     "06-validation-securite-et-conformite.md",
     "07-livraison-et-tracabilite.md",
 )
@@ -3445,36 +3466,282 @@ def run_schema_vector_self_test(schema_path: Path) -> str:
     return process.stdout.strip()
 
 
+def file_sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def phase1_source_metadata() -> list[dict[str, str]]:
+    metadata: list[dict[str, str]] = []
+    tree_lines: list[str] = []
+    for name in PHASE1_SOURCE_NAMES:
+        path = PHASE1_DIR / name
+        try:
+            data = path.read_bytes()
+        except OSError as exc:
+            raise SchemaError(f"cannot read FSTL 1.1 normative source {path}: {exc}") from exc
+        relative = path.relative_to(REPO_ROOT).as_posix()
+        digest = hashlib.sha256(data).hexdigest()
+        metadata.append({"path": relative, "sha256": digest})
+        tree_lines.append(f"{relative}\0{digest}\n")
+    tree = hashlib.sha256("".join(sorted(tree_lines)).encode("utf-8")).hexdigest()
+    if tree != FSTL_1_1_DOCUMENT_TREE_SHA256:
+        raise SchemaError(
+            f"FSTL 1.1 normative document set drift: {tree} != {FSTL_1_1_DOCUMENT_TREE_SHA256}"
+        )
+    return metadata
+
+
+def load_frozen_v1_0_schema() -> dict[str, object]:
+    try:
+        data = SCHEMA_V1_0_PATH.read_bytes()
+    except OSError as exc:
+        raise SchemaError(f"cannot read frozen FSTL 1.0 schema {SCHEMA_V1_0_PATH}: {exc}") from exc
+    digest = hashlib.sha256(data).hexdigest()
+    if len(data) != FROZEN_SCHEMA_V1_0_BYTES or digest != FROZEN_SCHEMA_V1_0_SHA256:
+        raise SchemaError(
+            f"frozen FSTL 1.0 schema drift: bytes={len(data)}, sha256={digest}"
+        )
+    try:
+        schema = json.loads(data)
+    except json.JSONDecodeError as exc:
+        raise SchemaError(f"frozen FSTL 1.0 schema is invalid JSON: {exc}") from exc
+    if schema.get("wire_version") != "1.0":
+        raise SchemaError("frozen FSTL 1.0 schema identity drift")
+    return schema
+
+
+def load_frozen_v1_0_ledger() -> tuple[dict[str, object], str, int]:
+    try:
+        data = FROZEN_LEDGER_PATH.read_bytes()
+        ledger = json.loads(data)
+    except (OSError, json.JSONDecodeError) as exc:
+        raise SchemaError(f"cannot read FSTL 1.0 frozen-artifact ledger: {exc}") from exc
+    if (ledger.get("schema") != "FSTL-1.0-FROZEN-ARTIFACTS" or
+            ledger.get("wireVersion") != "1.0" or
+            ledger.get("fileCount") != FROZEN_ARTIFACT_COUNT_V1_0 or
+            ledger.get("treeSha256") != FROZEN_ARTIFACT_TREE_SHA256_V1_0):
+        raise SchemaError("FSTL 1.0 frozen-artifact ledger identity drift")
+    return ledger, hashlib.sha256(data).hexdigest(), len(data)
+
+
+def field_by_name(fields: object, name: str) -> dict[str, object]:
+    if not isinstance(fields, list):
+        raise SchemaError(f"schema field collection is not a list while looking for {name}")
+    matches = [field for field in fields if isinstance(field, dict) and field.get("name") == name]
+    if len(matches) != 1:
+        raise SchemaError(f"schema field {name} has {len(matches)} matches")
+    return matches[0]
+
+
+def registry_value_by_name(registry: dict[str, object], name: str) -> dict[str, object]:
+    values = registry.get("values")
+    if not isinstance(values, list):
+        raise SchemaError(f"registry values are missing while looking for {name}")
+    matches = [value for value in values if isinstance(value, dict) and value.get("name") == name]
+    if len(matches) != 1:
+        raise SchemaError(f"registry value {name} has {len(matches)} matches")
+    return matches[0]
+
+
+def build_fstl_v1_1_schema() -> dict[str, object]:
+    """Derive the additive 1.1 view from the immutable 1.0 schema."""
+
+    schema = json.loads(json.dumps(load_frozen_v1_0_schema()))
+    assert isinstance(schema, dict)
+    normative_sources = phase1_source_metadata()
+    _, ledger_sha256, ledger_bytes = load_frozen_v1_0_ledger()
+
+    phase1_doc01 = (PHASE1_DIR / PHASE1_SOURCE_NAMES[0]).read_text(encoding="utf-8")
+    phase1_doc04 = (PHASE1_DIR / PHASE1_SOURCE_NAMES[3]).read_text(encoding="utf-8")
+    if "PLAYER_KINEMATICS = 0x0000000000000400" not in phase1_doc01:
+        raise SchemaError("Phase 1 section 4.2 no longer defines PLAYER_KINEMATICS=0x0400")
+    if "`PLAYER_KINEMATICS` | 10 | `0x0000000000000400`" not in phase1_doc04:
+        raise SchemaError("Phase 1 data-model section 2.1 no longer defines bit 10")
+
+    schema["wire_version"] = "1.1"
+    schema["wire_version_scope"] = "additive FSTL 1.1 amendment view"
+    schema["normative_sources"] = normative_sources
+    schema["base_schema"] = {
+        "path": SCHEMA_V1_0_PATH.relative_to(REPO_ROOT).as_posix(),
+        "wire_version": "1.0",
+        "bytes": FROZEN_SCHEMA_V1_0_BYTES,
+        "sha256": FROZEN_SCHEMA_V1_0_SHA256,
+    }
+    schema["base_artifact_manifest"] = {
+        "path": FROZEN_LEDGER_PATH.relative_to(REPO_ROOT).as_posix(),
+        "schema": "FSTL-1.0-FROZEN-ARTIFACTS",
+        "wire_version": "1.0",
+        "bytes": ledger_bytes,
+        "sha256": ledger_sha256,
+        "file_count": FROZEN_ARTIFACT_COUNT_V1_0,
+        "tree_sha256": FROZEN_ARTIFACT_TREE_SHA256_V1_0,
+    }
+    schema["normative_document_set"] = {
+        "identity": FSTL_1_1_DOCUMENT_SET_ID,
+        "version": FSTL_1_1_DOCUMENT_SET_VERSION,
+        "file_count": len(normative_sources),
+        "tree_sha256": FSTL_1_1_DOCUMENT_TREE_SHA256,
+        "documents": normative_sources,
+    }
+
+    p1_doc01_path = normative_sources[0]["path"]
+    p1_doc04_path = normative_sources[3]["path"]
+    p1_doc07_path = normative_sources[6]["path"]
+    schema["amendment_provenance"] = {
+        "player_kinematics": [
+            {"document": p1_doc01_path, "section": "4.2"},
+            {"document": p1_doc04_path, "section": "2.1"},
+            {"document": p1_doc07_path, "section": "6 / D1-002"},
+        ],
+        "phase1_minimal_profile": [
+            {"document": p1_doc01_path, "section": "4.2-4.3"},
+            {"document": p1_doc04_path, "section": "2.2"},
+            {"document": p1_doc07_path, "section": "6 / D1-003-D1-006"},
+        ],
+    }
+
+    schema["supported_wire_versions"] = {
+        "1.0": {"minor": 0, "state_domain_known_mask": 0x3FF,
+                "player_kinematics": "reserved_and_rejected"},
+        "1.1": {"minor": 1, "state_domain_known_mask": 0x7FF,
+                "player_kinematics": 0x400},
+    }
+    schema["producer_profiles"] = {
+        "phase1_minimal": {"minimum_minor": 1, "maximum_minor": 1,
+                           "required_state_domain_coverage": 0x400}
+    }
+    schema["phase1_player_kinematics_record_set"] = {
+        "required_always": ["SESSION_STATE", "MISSION_STATE"],
+        "required_when_observed_player_present": ["ENTITY_LIFECYCLE", "FLIGHT_STATE"],
+        "exact_record_set": True,
+        "same_observed_player_entity_id": True,
+        "authority_mode": "SOLO",
+        "visibility_mode": "COCKPIT",
+        "entity_lifecycle_object_type": "SHIP",
+        "entity_lifecycle_presence": 0,
+        "flight_state_presence": 0,
+        "required_manifest_id": 0,
+        "negotiated_capabilities": 0,
+        "event_coverage_state_derived": 0,
+        "event_coverage_exact": 0,
+        "forbidden_records": ["SHIP_IDENTITY"],
+        "promotion": {"requires_core_ship_coverage": True,
+                      "requires_nonzero_manifest_id": True,
+                      "requires_complete_core_ship_record_set": True},
+    }
+
+    header = schema.get("datagram_header")
+    if not isinstance(header, dict):
+        raise SchemaError("base schema datagram header is missing")
+    field_by_name(header.get("fields"), "version_minor")["rule"] = (
+        "0 en FSTL 1.0 ; 1 en FSTL 1.1 accepté"
+    )
+    messages = schema.get("message_types")
+    if not isinstance(messages, list):
+        raise SchemaError("base schema message registry is missing")
+    messages_by_id = {int(message["id"]): message for message in messages}
+    field_by_name(messages_by_id[1]["fields"], "min_minor")["rule"] = "mineure minimale supportée, 0 ou 1"
+    field_by_name(messages_by_id[1]["fields"], "max_minor")["rule"] = "mineure maximale supportée, min_minor..1"
+    field_by_name(messages_by_id[2]["fields"], "min_minor")["rule"] = "mineure minimale supportée, 0 ou 1"
+    field_by_name(messages_by_id[2]["fields"], "max_minor")["rule"] = "mineure maximale supportée, min_minor..1"
+    field_by_name(messages_by_id[3]["fields"], "selected_minor")["rule"] = (
+        "0 ou 1 si accepté, plus haute mineure commune"
+    )
+
+    registries = schema.get("numeric_registries")
+    if not isinstance(registries, dict):
+        raise SchemaError("base schema numeric registries are missing")
+    state_coverage = registries["StateDomainCoverage"]
+    state_coverage["cpp"] = {
+        "enum": "StateDomainCoverageBit",
+        "member_prefix": "StateDomainCoverageBit",
+        "known_mask_constant": "KnownStateDomainCoverageBitsV1_1",
+        "reserved_mask_constant": "ReservedStateDomainCoverageBitsV1_1",
+    }
+    state_coverage["reserved"]["known_mask"] = 0x7FF
+    state_coverage["reserved"]["reserved_mask"] = 0xFFFFFFFFFFFFF800
+    values = state_coverage["values"]
+    values.append({
+        "bit": 10,
+        "name": "PLAYER_KINEMATICS",
+        "value": 0x400,
+        "source": {"document": p1_doc04_path, "section": "2.1"},
+    })
+    values.sort(key=lambda item: int(item["value"]))
+
+    records = schema.get("record_types")
+    if not isinstance(records, list):
+        raise SchemaError("base schema record registry is missing")
+    session_state = next(record for record in records if int(record["id"]) == 1)
+    field_by_name(session_state["fields"], "state_domain_coverage")["semantics"] = (
+        "domaines garantis complets par rapport au mode ; CORE_SHIP obligatoire en FSTL 1.0 ; "
+        "PLAYER_KINEMATICS obligatoire en FSTL 1.1 et peut être le seul domaine du profil Phase 1"
+    )
+
+    correspondence = schema.get("cpp_correspondence")
+    if not isinstance(correspondence, dict):
+        raise SchemaError("base schema C++ correspondence is missing")
+    correspondence["verified_constant_count"] = 179
+    correspondence["verified_enum_count"] = 135
+
+    validate_schema_shape(schema)
+    return schema
+
+
 def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     action = parser.add_mutually_exclusive_group()
-    action.add_argument("--write", action="store_true", help="regenerate the checked-in schema")
-    action.add_argument("--check", action="store_true", help="verify the checked-in schema (default)")
+    action.add_argument("--write", action="store_true", help="regenerate only the additive FSTL 1.1 schema")
+    action.add_argument("--check", action="store_true", help="verify checked-in schemas (default)")
     action.add_argument("--self-test", action="store_true", help="run negative drift/collision checks after verification")
-    parser.add_argument("--schema", type=Path, default=SCHEMA_PATH, help="override schema path")
+    parser.add_argument("--wire-version", choices=("all", "1.0", "1.1"), default="all")
+    parser.add_argument("--schema", type=Path, help="override one selected schema path")
     return parser.parse_args(argv)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(sys.argv[1:] if argv is None else argv)
     try:
-        schema = build_schema()
-        rendered = render_schema(schema)
-        schema_path = args.schema.resolve()
-        if args.write:
-            write_schema(rendered, schema_path)
-        check_schema(rendered, schema_path)
+        if args.schema is not None and args.wire_version == "all":
+            raise SchemaError("--schema requires --wire-version 1.0 or 1.1")
+        if args.write and args.wire_version != "1.1":
+            raise SchemaError(
+                "ordinary write mode is forbidden for frozen FSTL 1.0; "
+                "select --wire-version 1.1"
+            )
+
+        frozen_schema = load_frozen_v1_0_schema()
+        schema = build_fstl_v1_1_schema()
+        rendered_v1_1 = render_schema(schema)
+        v1_0_path = (args.schema.resolve() if args.schema is not None and args.wire_version == "1.0"
+                     else SCHEMA_V1_0_PATH)
+        v1_1_path = (args.schema.resolve() if args.schema is not None and args.wire_version == "1.1"
+                     else SCHEMA_V1_1_PATH)
+
+        if args.wire_version in ("all", "1.0"):
+            data = v1_0_path.read_bytes()
+            if (len(data) != FROZEN_SCHEMA_V1_0_BYTES or
+                    hashlib.sha256(data).hexdigest() != FROZEN_SCHEMA_V1_0_SHA256):
+                raise SchemaError(f"frozen FSTL 1.0 schema drift: {v1_0_path}")
+        if args.wire_version in ("all", "1.1"):
+            if args.write:
+                write_schema(rendered_v1_1, v1_1_path)
+            check_schema(rendered_v1_1, v1_1_path)
+
         negative_tests: tuple[str, ...] = ()
-        vector_self_test = ""
+        vector_self_tests: list[str] = []
         if args.self_test:
             negative_tests = run_negative_self_tests(schema)
-            vector_self_test = run_schema_vector_self_test(schema_path)
-    except SchemaError as exc:
+            if args.wire_version in ("all", "1.0"):
+                vector_self_tests.append(run_schema_vector_self_test(v1_0_path))
+            if args.wire_version in ("all", "1.1"):
+                vector_self_tests.append(run_schema_vector_self_test(v1_1_path))
+    except (OSError, SchemaError, json.JSONDecodeError) as exc:
         print(f"FSTL schema verification failed: {exc}", file=sys.stderr)
         return 1
 
     print(
-        "FSTL schema verified: "
+        "FSTL schemas verified: frozen 1.0 plus additive 1.1; "
         f"{len(schema['message_types'])} messages, "
         f"{len(schema['record_types'])} records, "
         f"{len(schema['capabilities'])} capabilities, "
@@ -3484,7 +3751,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     if negative_tests:
         print(f"FSTL negative self-tests passed: {', '.join(negative_tests)}.")
-    if vector_self_test:
+    for vector_self_test in vector_self_tests:
         print(vector_self_test)
     return 0
 

@@ -11,11 +11,16 @@ import re
 import zlib
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
+DEFAULT_REPO = Path(__file__).resolve().parents[4]
+REPO = DEFAULT_REPO
+ROOT = REPO / "test" / "telemetry" / "protocol"
 V1_VECTORS = ROOT / "vectors"
 V11 = ROOT / "vectors-v1.1"
 MANIFEST = ROOT / "fstl-1.1-vectors.manifest.json"
-REPO = ROOT.parents[2]
+V11_SCHEMA = ROOT / "schema" / "fstl-v1.1.yaml"
+V10_LEDGER = ROOT / "fstl-1.0-artifacts.manifest.json"
+FROZEN_V10_ARTIFACT_COUNT = 438
+FROZEN_V10_ARTIFACT_TREE_SHA256 = "9baac6a20db33bcf350066ed533c5581b7117410899d7bc4a6dc24406e47856d"
 PLAYER_KINEMATICS = 0x400
 CORE_SHIP = 0x001
 SESSION_STATE = 1
@@ -33,12 +38,28 @@ def sha(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-def frozen_v10_hash() -> str:
-    entries = []
-    for path in sorted(V1_VECTORS.rglob("*")):
-        if path.is_file():
-            entries.append(f"{path.relative_to(ROOT).as_posix()}\0{sha(path.read_bytes())}\n")
-    return sha("".join(entries).encode())
+def configure_repo(repo: Path) -> None:
+    global REPO, ROOT, V1_VECTORS, V11, MANIFEST, V11_SCHEMA, V10_LEDGER
+    REPO = repo.resolve()
+    ROOT = REPO / "test" / "telemetry" / "protocol"
+    V1_VECTORS = ROOT / "vectors"
+    V11 = ROOT / "vectors-v1.1"
+    MANIFEST = ROOT / "fstl-1.1-vectors.manifest.json"
+    V11_SCHEMA = ROOT / "schema" / "fstl-v1.1.yaml"
+    V10_LEDGER = ROOT / "fstl-1.0-artifacts.manifest.json"
+
+
+def frozen_v10_contract() -> tuple[int, str]:
+    ledger = json.loads(V10_LEDGER.read_text(encoding="utf-8"))
+    count = ledger.get("fileCount")
+    tree = ledger.get("treeSha256")
+    if ledger.get("schema") != "FSTL-1.0-FROZEN-ARTIFACTS" or ledger.get("wireVersion") != "1.0":
+        raise ValueError("FSTL 1.0 frozen-artifact ledger identity drift")
+    if count != FROZEN_V10_ARTIFACT_COUNT or tree != FROZEN_V10_ARTIFACT_TREE_SHA256:
+        raise ValueError(
+            f"FSTL 1.0 frozen-artifact ledger drift: count={count!r}, tree={tree!r}"
+        )
+    return count, tree
 
 
 def record(record_type: int, payload: bytes) -> bytes:
@@ -296,8 +317,13 @@ def generated() -> dict[str, bytes]:
     for name, data in sorted(files.items()):
         path = name[3:] if name.startswith("../") else f"vectors-v1.1/{name}"
         entries.append({"path": path, "sha256": sha(data)})
+    frozen_count, frozen_tree = frozen_v10_contract()
     manifest = {"schema": "FSTL-1.1", "playerKinematics": PLAYER_KINEMATICS,
-                "producerProfileMinorRange": [1, 1], "frozenV10TreeSha256": frozen_v10_hash(), "files": entries}
+                "producerProfileMinorRange": [1, 1],
+                "frozenV10ArtifactsManifest": "fstl-1.0-artifacts.manifest.json",
+                "frozenV10ArtifactCount": frozen_count,
+                "frozenV10ArtifactsTreeSha256": frozen_tree,
+                "files": entries}
     files["../fstl-1.1-vectors.manifest.json"] = (json.dumps(manifest, indent=2, sort_keys=True) + "\n").encode()
     return files
 
@@ -305,7 +331,10 @@ def generated() -> dict[str, bytes]:
 def main() -> int:
     parser = argparse.ArgumentParser(); mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--write", action="store_true"); mode.add_argument("--check", action="store_true")
-    args = parser.parse_args(); files = generated()
+    parser.add_argument("--repo", type=Path, default=DEFAULT_REPO)
+    args = parser.parse_args()
+    configure_repo(args.repo)
+    files = generated()
     if args.write:
         for relative, data in files.items():
             path = V11 / relative; path.parent.mkdir(parents=True, exist_ok=True); path.write_bytes(data)
@@ -320,9 +349,27 @@ def main() -> int:
     for producer, client, expected in negotiations:
         if select_minor(producer, client) != expected:
             errors.append(f"negotiation: producer={producer}, client={client}, expected={expected}")
-    schema_text = (ROOT / "schema" / "fstl-v1.yaml").read_text(encoding="utf-8")
+    schema_text = V11_SCHEMA.read_text(encoding="utf-8")
     schema = json.loads(schema_text)
     constants_text = (REPO / "code" / "telemetry" / "protocol" / "telemetry_protocol_constants.h").read_text(encoding="utf-8")
+    if schema.get("wire_version") != "1.1":
+        errors.append("contract: schema/fstl-v1.1.yaml does not declare FSTL 1.1")
+    base_schema_path = ROOT / "schema" / "fstl-v1.yaml"
+    base_schema = schema.get("base_schema", {})
+    if (base_schema.get("path") != "test/telemetry/protocol/schema/fstl-v1.yaml" or
+            base_schema.get("sha256") != sha(base_schema_path.read_bytes())):
+        errors.append("contract: schema/fstl-v1.1.yaml base_schema identity drift")
+    base_manifest = schema.get("base_artifact_manifest", {})
+    frozen_count, frozen_tree = frozen_v10_contract()
+    if (base_manifest.get("path") != "test/telemetry/protocol/fstl-1.0-artifacts.manifest.json" or
+            base_manifest.get("sha256") != sha(V10_LEDGER.read_bytes()) or
+            base_manifest.get("file_count") != frozen_count or
+            base_manifest.get("tree_sha256") != frozen_tree):
+        errors.append("contract: schema/fstl-v1.1.yaml base_artifact_manifest identity drift")
+    for source in schema.get("normative_sources", []):
+        source_path = REPO / source["path"]
+        if not source_path.is_file() or sha(source_path.read_bytes()) != source["sha256"]:
+            errors.append(f"contract: schema/fstl-v1.1.yaml source drift: {source['path']}")
     coverage_values = schema["numeric_registries"]["StateDomainCoverage"]["values"]
     if not any(value.get("name") == "PLAYER_KINEMATICS" and value.get("value") == 1024 for value in coverage_values):
         errors.append("contract: schema does not define PLAYER_KINEMATICS=0x400")
@@ -333,7 +380,8 @@ def main() -> int:
     if errors:
         print("\n".join(errors)); return 1
     print(f"verified FSTL 1.1 amendment: snapshots={len(cases())}, messages={len(message_cases())}, "
-          f"negotiations={len(negotiations)}, internal-oracles=2, v1.0-tree={frozen_v10_hash()}")
+          f"negotiations={len(negotiations)}, internal-oracles=2, "
+          f"v1.0-artifacts={FROZEN_V10_ARTIFACT_COUNT}, v1.0-tree={FROZEN_V10_ARTIFACT_TREE_SHA256}")
     return 0
 
 

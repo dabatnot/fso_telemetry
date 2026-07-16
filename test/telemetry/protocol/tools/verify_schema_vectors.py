@@ -27,7 +27,9 @@ from typing import Any, Sequence
 
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
-DEFAULT_SCHEMA = REPO_ROOT / "test" / "telemetry" / "protocol" / "schema" / "fstl-v1.yaml"
+DEFAULT_SCHEMA_V1_0 = REPO_ROOT / "test" / "telemetry" / "protocol" / "schema" / "fstl-v1.yaml"
+DEFAULT_SCHEMA_V1_1 = REPO_ROOT / "test" / "telemetry" / "protocol" / "schema" / "fstl-v1.1.yaml"
+DEFAULT_SCHEMA = DEFAULT_SCHEMA_V1_0
 DEFAULT_VECTORS = REPO_ROOT / "test" / "telemetry" / "protocol" / "vectors" / "valid"
 DEFAULT_EXPECTED = REPO_ROOT / "test" / "telemetry" / "protocol" / "expected"
 
@@ -41,8 +43,28 @@ EXPECTED_RECORD_FIELD_COUNT = 422
 EXPECTED_STRUCTURED_TYPE_COUNT = 25
 EXPECTED_STRUCTURED_FIELD_COUNT = 241
 EXPECTED_EVENT_ITEM_FIELD_COUNT = 30
-EXPECTED_LAYOUT_SHA256 = "416ff38c4549d2d9fba89e114b94c4fa0ef1fb1f27be59e2126db7fd5ea61136"
-EXPECTED_ENCODED_PROBE_SHA256 = "ee45ad75728442145aa2689211f237868f095a39a2735b89ae5868c3dbe95438"
+EXPECTED_LAYOUT_SHA256_V1_0 = "d5e7ae20571bc0e08f1d123f7529fd6430466872ad0dd5cb22ea37b24128e0aa"
+EXPECTED_LAYOUT_SHA256_V1_1 = "416ff38c4549d2d9fba89e114b94c4fa0ef1fb1f27be59e2126db7fd5ea61136"
+EXPECTED_ENCODED_PROBE_SHA256_V1_0 = "ee45ad75728442145aa2689211f237868f095a39a2735b89ae5868c3dbe95438"
+EXPECTED_ENCODED_PROBE_SHA256_V1_1 = EXPECTED_ENCODED_PROBE_SHA256_V1_0
+
+
+def expected_layout_sha256(schema: dict[str, Any]) -> str:
+    version = schema.get("wire_version")
+    if version == "1.0":
+        return EXPECTED_LAYOUT_SHA256_V1_0
+    if version == "1.1":
+        return EXPECTED_LAYOUT_SHA256_V1_1
+    raise VectorSchemaError(f"unsupported schema wire_version {version!r}")
+
+
+def expected_encoded_probe_sha256(schema: dict[str, Any]) -> str:
+    version = schema.get("wire_version")
+    if version == "1.0":
+        return EXPECTED_ENCODED_PROBE_SHA256_V1_0
+    if version == "1.1":
+        return EXPECTED_ENCODED_PROBE_SHA256_V1_1
+    raise VectorSchemaError(f"unsupported schema wire_version {version!r}")
 
 
 @dataclass(frozen=True)
@@ -491,9 +513,10 @@ def _owner_probe_values(encoder: SchemaEncoder, fields: list[dict[str, Any]]) ->
 
 def verify_layout_probes(schema: dict[str, Any], encoder: SchemaEncoder) -> LayoutProbeSummary:
     layout_sha256 = schema_layout_sha256(schema)
-    if layout_sha256 != EXPECTED_LAYOUT_SHA256:
+    expected_layout = expected_layout_sha256(schema)
+    if layout_sha256 != expected_layout:
         raise VectorSchemaError(
-            f"frozen schema layout drift: {layout_sha256} != {EXPECTED_LAYOUT_SHA256}"
+            f"frozen schema layout drift: {layout_sha256} != {expected_layout}"
         )
 
     encoded_probe_digest = hashlib.sha256()
@@ -580,10 +603,11 @@ def verify_layout_probes(schema: dict[str, Any], encoder: SchemaEncoder) -> Layo
     if observed != expected:
         raise VectorSchemaError(f"schema layout probe coverage drift: {observed} != {expected}")
     encoded_probe_sha256 = encoded_probe_digest.hexdigest()
-    if encoded_probe_sha256 != EXPECTED_ENCODED_PROBE_SHA256:
+    expected_probe = expected_encoded_probe_sha256(schema)
+    if encoded_probe_sha256 != expected_probe:
         raise VectorSchemaError(
             "frozen encoded layout probe drift: "
-            f"{encoded_probe_sha256} != {EXPECTED_ENCODED_PROBE_SHA256}"
+            f"{encoded_probe_sha256} != {expected_probe}"
         )
 
     return LayoutProbeSummary(
@@ -599,11 +623,12 @@ def verify_layout_probes(schema: dict[str, Any], encoder: SchemaEncoder) -> Layo
 
 def run_wire_drift_self_tests(schema: dict[str, Any]) -> tuple[str, ...]:
     passed: list[str] = []
+    expected_layout = expected_layout_sha256(schema)
 
     def expect_fingerprint_drift(label: str, mutate: Any) -> None:
         candidate = json.loads(json.dumps(schema))
         mutate(candidate)
-        if schema_layout_sha256(candidate) == EXPECTED_LAYOUT_SHA256:
+        if schema_layout_sha256(candidate) == expected_layout:
             raise VectorSchemaError(f"wire-drift self-test unexpectedly passed: {label}")
         try:
             verify_layout_probes(candidate, SchemaEncoder(candidate))

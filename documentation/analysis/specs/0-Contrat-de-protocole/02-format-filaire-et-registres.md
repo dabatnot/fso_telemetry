@@ -96,7 +96,7 @@ Les tolérances métier et conversions depuis le repère moteur sont définies d
 
 ## 3. Version du protocole
 
-La présente spécification définit la version de référence **1.0** :
+La présente spécification définit exclusivement la version **1.0** :
 
 | Élément | Valeur |
 |---|---:|
@@ -116,14 +116,6 @@ Changer la taille ou la signification d'un type primitif, un offset existant de 
 La négociation choisit une version commune avant la session. Une fois la session acceptée, chaque datagramme **DOIT** porter exactement la version négociée. Un pair v1.0 **DOIT** rejeter un datagramme dont la majeure n'est pas `1`, dont la mineure n'est pas `0` ou dont `header_size != 68`. Il ne doit donc jamais recevoir « par surprise » un en-tête d'une mineure future.
 
 Une future mineure de la majeure 1 pourra agrandir l'en-tête en ajoutant des octets après l'offset 67. Le champ `crc32` restera aux offsets 64 à 67 et couvrira alors tout `header_size`. Cette possibilité ne modifie pas le comportement strict d'un pair ayant négocié v1.0.
-
-### 3.1 Amendement FSTL 1.1
-
-FSTL 1.1 porte `version_major = 1`, `version_minor = 1` et `header_size = 68`. Il conserve sans modification le magic, l'en-tête, les scalaires, les IDs, les layouts de messages et records, les CRC, la fragmentation, les limites et les règles de fiabilité de FSTL 1.0. Son unique ajout est la définition du bit 10 de `StateDomainCoverage` sous le nom `PLAYER_KINEMATICS`, dans le [modèle de données](04-modele-de-donnees-v1.md#42-bitsets-métier). Aucun autre bit réservé ne reçoit de sens en 1.1.
-
-Les datagrammes pré-session `DISCOVERY`, `HELLO` et un `WELCOME` de rejet utilisent l'en-tête FSTL 1.0 de 68 octets afin qu'un pair 1.0 puisse lire l'intervalle annoncé et répondre `UnsupportedVersion`. Les champs `min_minor` et `max_minor` portent les mineures réellement supportées. Un `WELCOME Accepted` et tous les datagrammes de session portent la mineure sélectionnée. Le producteur choisit la plus haute mineure commune ; en l'absence d'intersection il répond `UnsupportedVersion`.
-
-Le producteur minimal de Phase 1 supporte seulement l'intervalle `1..1`. Il NE DOIT PAS accepter une session 1.0, car il ne peut pas y satisfaire la couverture `CORE_SHIP`. Une implémentation ultérieure PEUT annoncer `0..1` uniquement si elle sait émettre soit le contrat 1.0 complet, soit le profil 1.1 demandé, selon la mineure négociée. Un pair 1.0 ignore donc totalement FSTL 1.1 et ses golden vectors restent byte-identical.
 
 ## 4. En-tête de datagramme v1.0
 
@@ -150,7 +142,7 @@ constexpr std::size_t TELEMETRY_MAX_FRAGMENT_PAYLOAD = 1132;
 |---:|---|---:|---|
 | 0 | `magic` | `u32` | `0x4c545346` |
 | 4 | `version_major` | `u8` | `1` |
-| 5 | `version_minor` | `u8` | `0` en FSTL 1.0 ; `1` en FSTL 1.1 accepté |
+| 5 | `version_minor` | `u8` | `0` |
 | 6 | `message_type` | `u8` | registre `MessageType` |
 | 7 | `flags` | `u8` | registre `MessageFlags` |
 | 8 | `header_size` | `u16` | `68` |
@@ -391,8 +383,8 @@ Dans un même payload, `extension_type` est unique ; un doublon, même avec une 
 | 8 | `listen_port` | `u16` | `1..65535`, port annoncé |
 | 10 | `min_major` | `u8` | `1` |
 | 11 | `max_major` | `u8` | `1` |
-| 12 | `min_minor` | `u8` | mineure minimale supportée, `0` ou `1` |
-| 13 | `max_minor` | `u8` | mineure maximale supportée, `min_minor..1` |
+| 12 | `min_minor` | `u8` | `0` |
+| 13 | `max_minor` | `u8` | `0` |
 | 14 | `producer_capabilities` | `u64` | offre producteur |
 | 22 | `advert_sequence` | `u32` | séquence d'annonce |
 | 26 | `producer_name_length` | `u16` | `0..64` |
@@ -410,8 +402,8 @@ Préfixe fixe de 38 octets :
 | 8 | `client_send_t0_us` | `u64` | heure monotone client |
 | 16 | `min_major` | `u8` | `1` |
 | 17 | `max_major` | `u8` | `1` |
-| 18 | `min_minor` | `u8` | mineure minimale supportée, `0` ou `1` |
-| 19 | `max_minor` | `u8` | mineure maximale supportée, `min_minor..1` |
+| 18 | `min_minor` | `u8` | `0` |
+| 19 | `max_minor` | `u8` | `0` |
 | 20 | `requested_visibility_mode` | `u8` | `VisibilityMode` demandé |
 | 21 | `reserved` | `bytes[3]` | zéro |
 | 24 | `advertised_capabilities` | `u64` | capabilities du client |
@@ -434,7 +426,7 @@ Préfixe fixe de 68 octets :
 | 24 | `producer_send_t2_us` | `u64` | émission producteur |
 | 32 | `status` | `u8` | `WelcomeStatus` |
 | 33 | `selected_major` | `u8` | `1` si accepté |
-| 34 | `selected_minor` | `u8` | `0` ou `1` si accepté, plus haute mineure commune |
+| 34 | `selected_minor` | `u8` | `0` si accepté |
 | 35 | `selected_visibility_mode` | `u8` | `VisibilityMode` effectivement accordé |
 | 36 | `producer_capabilities` | `u64` | capabilities annoncées |
 | 44 | `active_capabilities` | `u64` | sous-ensemble négocié |
@@ -456,8 +448,6 @@ Préfixe fixe de 68 octets :
 | 4 | `InvalidCapabilities` |
 
 Un `Welcome Accepted` porte un `session_id` aléatoire non nul. `selected_visibility_mode` est au plus aussi permissif que la configuration autorisée par le producteur. Un rejet porte `session_id = 0`, `selected_major = selected_minor = 0`, `selected_visibility_mode = COCKPIT`, `producer_capabilities = active_capabilities = 0`, `heartbeat_interval_ms = reliable_reassembly_timeout_ms = 0`, aucune extension et aucune obligation d'ACK. `producer_id` reste renseigné.
-
-Pour le profil Phase 1, `HelloPayload.min_minor = HelloPayload.max_minor = 1`, `selected_minor = 1`, `producer_capabilities = active_capabilities = 0` et aucune extension de négociation n'est présente. Un client limité à 1.0 reçoit `UnsupportedVersion`; le producteur NE DOIT PAS rétrograder en prétendant fournir `CORE_SHIP`.
 
 ### 9.5 SessionBeginPayload
 
@@ -804,7 +794,5 @@ Les fichiers golden v1.0 **DOIVENT** inclure au minimum :
 - un ACK `VALIDATED` et un ACK `VALIDATED | APPLIED` ;
 - un NACK avec bitmap dont le dernier octet contient des bits inutilisés à zéro ;
 - les records et messages spécialisés exigés par la [feuille de route](../../04-implementation-roadmap.md#101-sérialisation).
-
-Ces fichiers FSTL 1.0 restent byte-identical après l'amendement. Un jeu distinct FSTL 1.1 **DOIT** couvrir la négociation `1..1`, le rejet `UnsupportedVersion` face à un pair limité à 1.0 et un snapshot minimal `PLAYER_KINEMATICS`. Aucun vector 1.1 ne remplace ou ne régénère silencieusement un vector 1.0.
 
 Chaque fixture binaire est accompagnée d'une description textuelle des champs et de sa longueur totale. Les mêmes fichiers sont consommés par le producteur et au moins un décodeur indépendant du moteur.

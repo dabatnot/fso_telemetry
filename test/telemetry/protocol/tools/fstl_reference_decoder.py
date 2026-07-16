@@ -1711,6 +1711,35 @@ def fstl11_snapshot_result(decoded: dict[str, Any], minor: int) -> str:
 
 
 def verify_fstl11_corpus(root: Path) -> int:
+    schema_path = root / "schema" / "fstl-v1.1.yaml"
+    schema = json.loads(schema_path.read_text(encoding="utf-8"))
+    require(schema.get("wire_version") == "1.1", 44,
+            "schema/fstl-v1.1.yaml wire_version drift")
+    coverage = schema["numeric_registries"]["StateDomainCoverage"]
+    player_values = [item.get("value") for item in coverage["values"]
+                     if item.get("name") == "PLAYER_KINEMATICS"]
+    require(player_values == [0x400], 44,
+            "schema/fstl-v1.1.yaml PLAYER_KINEMATICS drift")
+    base_schema_path = root / "schema" / "fstl-v1.yaml"
+    base_schema = schema.get("base_schema", {})
+    require(base_schema.get("path") == "test/telemetry/protocol/schema/fstl-v1.yaml" and
+            base_schema.get("sha256") == hashlib.sha256(base_schema_path.read_bytes()).hexdigest(),
+            44, "schema/fstl-v1.1.yaml base_schema identity drift")
+    ledger_path = root / "fstl-1.0-artifacts.manifest.json"
+    ledger = json.loads(ledger_path.read_text(encoding="utf-8"))
+    base_manifest = schema.get("base_artifact_manifest", {})
+    require(base_manifest.get("path") == "test/telemetry/protocol/fstl-1.0-artifacts.manifest.json" and
+            base_manifest.get("sha256") == hashlib.sha256(ledger_path.read_bytes()).hexdigest() and
+            base_manifest.get("file_count") == ledger.get("fileCount") and
+            base_manifest.get("tree_sha256") == ledger.get("treeSha256"),
+            44, "schema/fstl-v1.1.yaml base_artifact_manifest identity drift")
+    for source in schema.get("normative_sources", []):
+        source_path = root.parents[2] / source["path"]
+        require(source_path.is_file(), 44,
+                f"schema/fstl-v1.1.yaml source missing: {source['path']}")
+        require(hashlib.sha256(source_path.read_bytes()).hexdigest() == source["sha256"], 44,
+                f"schema/fstl-v1.1.yaml source hash drift: {source['path']}")
+
     verified = 0
     error_ids = {"None": 0, "DuplicateRecord": 29, "ReservedFlag": 36,
                  "InvalidAbsence": 37, "MissingManifest": 41, "VisibilityViolation": 43,
@@ -1751,10 +1780,10 @@ def verify_fstl11_corpus(root: Path) -> int:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--check", action="store_true", required=True)
+    parser.add_argument("--repo", type=Path, default=Path(__file__).resolve().parents[4])
     args = parser.parse_args()
-    del args
 
-    root = Path(__file__).resolve().parents[1]
+    root = args.repo.resolve() / "test" / "telemetry" / "protocol"
     try:
         verify_cross_endian_and_crc()
         verify_protocol_manifest(root)

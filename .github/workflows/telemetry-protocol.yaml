@@ -8,6 +8,7 @@ on:
       - 'code/CMakeLists.txt'
       - 'code/telemetry/protocol/**'
       - 'documentation/analysis/specs/0-Contrat-de-protocole/**'
+      - 'documentation/analysis/specs/1-Squelette-et-premier-flux/**'
       - 'test/src/source_groups.cmake'
       - 'test/src/telemetry/protocol/**'
       - 'test/telemetry/protocol/**'
@@ -19,6 +20,7 @@ on:
       - 'code/CMakeLists.txt'
       - 'code/telemetry/protocol/**'
       - 'documentation/analysis/specs/0-Contrat-de-protocole/**'
+      - 'documentation/analysis/specs/1-Squelette-et-premier-flux/**'
       - 'test/src/source_groups.cmake'
       - 'test/src/telemetry/protocol/**'
       - 'test/telemetry/protocol/**'
@@ -57,16 +59,30 @@ jobs:
           python-version: '3.11'
       - name: Verify fuzz evidence runner
         run: python -B test/telemetry/protocol/fuzz/test_run_fuzz_smoke.py
-      - name: Verify schema and numeric registries
+      - name: Verify frozen FSTL 1.0 artifacts
+        run: >-
+          python -B test/telemetry/protocol/tools/verify_fstl_1_0_freeze.py
+          --check --repo .
+      - name: Exercise frozen FSTL 1.0 mutation guards
+        run: python -B test/telemetry/protocol/tools/test_fstl_1_0_freeze.py
+      - name: Verify versioned schemas and numeric registries
         run: python -B test/telemetry/protocol/tools/fstl_schema.py --self-test
-      - name: Verify schema layouts against golden bytes
+      - name: Verify FSTL 1.0 schema layouts against golden bytes
         run: python -B test/telemetry/protocol/tools/verify_schema_vectors.py --check
+      - name: Verify FSTL 1.1 schema layouts against frozen golden bytes
+        run: >-
+          python -B test/telemetry/protocol/tools/verify_schema_vectors.py --check
+          --schema test/telemetry/protocol/schema/fstl-v1.1.yaml
+      - name: Verify additive FSTL 1.1 amendment
+        run: >-
+          python -B test/telemetry/protocol/tools/verify_fstl_1_1_amendment.py
+          --check --repo .
       - name: Verify transport vectors
         run: python -B test/telemetry/protocol/tools/generate_transport_vectors.py --check
       - name: Verify message and record vectors
         run: python -B test/telemetry/protocol/tools/generate_protocol_vectors.py --check
       - name: Verify independent decoder
-        run: python -B test/telemetry/protocol/tools/fstl_reference_decoder.py --check
+        run: python -B test/telemetry/protocol/tools/fstl_reference_decoder.py --check --repo .
       - name: Publish automatic protocol coverage
         run: >-
           python -B test/telemetry/protocol/tools/verify_telemetry_assets.py

@@ -1,8 +1,8 @@
-# 04 — Modèle de données FSTL 1.0 et amendement 1.1
+# 04 — Modèle de données FSTL 1.0
 
 ## 1. Objet et statut
 
-Ce document est l'annexe normative du schéma métier FSTL 1.0 et de son amendement additif FSTL 1.1. Les 28 `RecordType`, leurs layouts et toutes les valeurs FSTL 1.0 restent inchangés. L'amendement attribue uniquement un bit jusque-là réservé de `StateDomainCoverage` afin de décrire honnêtement le sous-ensemble Phase 1. Pour une même valeur canonique, un encodeur conforme DOIT produire les champs ci-dessous dans l'ordre indiqué, sans padding.
+Ce document est l'annexe normative du schéma métier FSTL 1.0. Il transforme l'[inventaire des données réplicables](../../01-telemetry-data-inventory.md) et les invariants de l'[architecture](../../02-telemetry-architecture.md) en 28 `RecordType` entièrement bornés. Pour une même valeur canonique, un encodeur conforme DOIT produire les champs ci-dessous dans l'ordre indiqué, sans padding.
 
 Le [format filaire et les registres](02-format-filaire-et-registres.md) définissent l'enveloppe de record, les scalaires, l'endianness et les chaînes. La [session, les horloges et la fiabilité](03-session-horloges-fiabilite.md) définissent les transactions paginées de manifestes et snapshots, les baselines et la QoS. Les [capabilities et vues spécialisées](05-capabilities-et-vues-specialisees.md) définissent la négociation, le bundle Talking Head et le flux H.264. Le présent document ne redéfinit ni le transport, ni la fragmentation, ni les payloads vidéo.
 
@@ -165,9 +165,7 @@ Les bits non listés DOIVENT être nuls.
 | `ContactFlags:u32` | `BRIGHT=0x00000001`, `CURRENT_TARGET=0x00000002`, `STEALTH=0x00000004`, `TAGGED=0x00000008`, `WARP=0x00000010`, `BOMB=0x00000020`, `HOMING=0x00000040`, `THREAT=0x00000080` |
 | `EffectFlags:u32` | `CLOAKED=0x00000001`, `STEALTH=0x00000002`, `ELECTRIC_ARCS=0x00000004`, `SPARKS=0x00000008`, `WARP_VISUAL=0x00000010`, `DEATH_ROLL=0x00000020`, `AMMO_WARNING=0x00000040`, `TARGETING_LASER=0x00000080` |
 | `EventFamilyBits:u64` | `ENTITY=0x0001`, `WEAPON=0x0002`, `DAMAGE=0x0004`, `TARGET=0x0008`, `CARGO_SCAN=0x0010`, `DOCKING_SUPPORT=0x0020`, `WARP=0x0040`, `MISSION_SESSION=0x0080`, `CONTROL=0x0100`, `COMMUNICATION=0x0200` |
-| `StateDomainCoverage:u64` | FSTL 1.0 : `CORE_SHIP=0x0001`, `CONTROL_INPUTS=0x0002`, `PREDICTION=0x0004`, `RADAR_SENSORS=0x0008`, `ALL_ENTITIES=0x0010`, `LOW_FREQUENCY_EFFECTS=0x0020`, `TARGETING=0x0040`, `WEAPONS=0x0080`, `CARGO_DOCK_SUPPORT=0x0100`, `NAVIGATION=0x0200`; FSTL 1.1 : ajoute `PLAYER_KINEMATICS=0x0400` |
-
-`PLAYER_KINEMATICS` occupe exactement le bit 10, soit le masque `0x0000000000000400`. Ce bit DOIT être nul dans une session négociée FSTL 1.0 et n'a de sémantique que dans une session 1.1. Tous les bits 11–63 restent réservés et nuls.
+| `StateDomainCoverage:u64` | `CORE_SHIP=0x0001`, `CONTROL_INPUTS=0x0002`, `PREDICTION=0x0004`, `RADAR_SENSORS=0x0008`, `ALL_ENTITIES=0x0010`, `LOW_FREQUENCY_EFFECTS=0x0020`, `TARGETING=0x0040`, `WEAPONS=0x0080`, `CARGO_DOCK_SUPPORT=0x0100`, `NAVIGATION=0x0200` |
 
 ## 5. Records globaux et catalogues
 
@@ -186,7 +184,7 @@ Scope global. Nature `A`. Atome : singleton session. `presence` autorise `OBSERV
 | 7 | `reserved` | `u8` | `0` | A | obligatoire, validation d'alignement logique uniquement |
 | 8 | `negotiated_capability_generation` | `u32` | `>=1`, croissant | A | génération locale, côté producteur, de la vue `negotiated_capabilities` ; commence à 1 et augmente après toute mise à jour appliquée qui change l'intersection |
 | 9 | `negotiated_capabilities` | `u64` | bits définis en spec 05 | A | intersection producteur/client ; bits inconnus nuls |
-| 10 | `state_domain_coverage` | `u64` | `StateDomainCoverage` | A | domaines garantis complets par rapport au mode ; `CORE_SHIP` obligatoire en FSTL 1.0 ; `PLAYER_KINEMATICS` obligatoire en FSTL 1.1 et peut être le seul domaine du profil Phase 1 |
+| 10 | `state_domain_coverage` | `u64` | `StateDomainCoverage` | A | domaines garantis complets par rapport au mode ; `CORE_SHIP` obligatoire pour une session d'état |
 | 11 | `event_coverage_state_derived` | `u64` | `EventFamilyBits` | A | familles dont les transitions reconstructibles ou échantillonnées sont annoncées |
 | 12 | `event_coverage_exact` | `u64` | sous-ensemble du champ précédent ou famille couverte par hook | A | garantit les transitions brèves au point autoritaire ; `COMMUNICATION` exige le hook Talking Head |
 | 13 | `observed_player_entity_id` | `entity_id` | non nul | A | bit 0 ; obligatoire en `MULTIPLAYER_CLIENT`, présent en solo si et seulement si `Player_obj` valide existe, interdit pour master headless sans cockpit |
@@ -196,8 +194,6 @@ Le `session_id`, les versions, séquences, `frame_id`, temps de mission et snaps
 `negotiated_capability_generation` n'est pas le compteur filaire par émetteur porté par `CAPABILITY_UPDATE` en spec 05. Plusieurs mises à jour filaires peuvent ne produire aucun changement de l'intersection et laissent alors cette génération locale inchangée ; inversement, dès que l'application atomique d'une mise à jour modifie `negotiated_capabilities`, le producteur incrémente ce champ exactement une fois avant de publier le nouvel état.
 
 `producer_id`, `authority_mode`, `visibility_mode`, `state_domain_coverage`, `event_coverage_state_derived` et `event_coverage_exact` sont immuables dans une session. Toute modification exige `SESSION_END` puis un nouveau handshake et un nouveau `session_id`. `producer_sample_time_us`, `session_phase` et `observed_player_entity_id` sont des états courants. `negotiated_capabilities` ne peut évoluer que selon le retrait monotone de la spec 05 et seulement lorsque `CAPABILITY_UPDATE` est actif ; sinon son changement exige lui aussi une nouvelle session.
-
-Dans le profil FSTL 1.1 Phase 1, `state_domain_coverage` vaut exactement `PLAYER_KINEMATICS`, les deux bitmaps de couverture événementielle et `negotiated_capabilities` valent zéro. Le tuple `(producer_id, session_id, mission_generation, observed_player_entity_id)` identifie sans ambiguïté le joueur observé. Le remplacement de `observed_player_entity_id` ou une variation de `mission_generation` exige une nouvelle keyframe `FULL_SNAPSHOT`; un delta seul ne peut pas effectuer cette transition dans ce profil.
 
 ### 5.2 `MISSION_STATE` — type 2
 
@@ -336,11 +332,9 @@ Presence bits : `SIGNATURE=0`, `NET_SIGNATURE=1`, `CLASS_REFERENCE=2`, `PARENT=3
 
 `objnum`, `instance`, index de tableaux et pointeurs sont interdits. Les bits 6–8 sont interdits pour un vaisseau afin de ne pas créer deux sources de vérité. `BOMB` DOIT être cohérent avec le flag de la classe d'arme ; une incohérence rejette la transaction.
 
-Exception versionnée FSTL 1.1 : lorsque la couverture vaut exactement `PLAYER_KINEMATICS`, l'unique lifecycle du joueur observé DOIT avoir `object_type = SHIP` et `presence = 0`. Il ne porte donc aucun `CLASS_REFERENCE` et n'exige aucun `CLASS_MANIFEST`. Le validateur applique cette exception uniquement à `observed_player_entity_id`; toute autre entité reste interdite dans ce profil. Dès que `CORE_SHIP` est annoncé, la règle FSTL 1.0 redevient intégrale : chaque vaisseau requiert sa référence de classe, le manifeste et toute la matrice `CORE_SHIP`.
-
 ### 6.2 `SHIP_IDENTITY` — type 6
 
-Scope entité avec `ObjectType.SHIP`. Nature principale `A`, références de classe `C`. Atome `entity_id`. Le record est obligatoire pour tout vaisseau couvert par `CORE_SHIP`. Il est absent et non requis dans un snapshot FSTL 1.1 qui annonce uniquement `PLAYER_KINEMATICS`, car ce profil ne référence aucune classe ni manifeste.
+Scope entité avec `ObjectType.SHIP`. Nature principale `A`, références de classe `C`. Atome `entity_id`. Le record est obligatoire pour tout vaisseau visible dans un snapshot.
 
 Presence bits : `DISPLAY_NAME=0`, `CALLSIGN=1`, `WING=2`, `LOGICAL_SIZE=3`, `SENSOR_VISIBILITY=4`; 5–63 réservés.
 
@@ -401,8 +395,6 @@ Presence bits : `DESIRED_VEL=0`, `DESIRED_ROTVEL=1`, `PREV_RAMP_VEL=2`, `VELOCIT
 | 25 | `rotational_thrust` | `vec3f` | chaque composante `[-1;1]` | A | bit 11, cosmétique uniquement |
 
 `FlightTimeConstantsV1` contient, dans l'ordre, `forward_accel`, `afterburner_forward_accel`, `booster_forward_accel`, `forward_decel`, `slide_accel`, `slide_decel`, tous `float32` en secondes. `speed`, `fspeed`, accélération par différence, matrice, Euler, axes et flight-path marker sont `D` et absents.
-
-Lorsque `PLAYER_KINEMATICS` est annoncé sans `PREDICTION` ni `LOW_FREQUENCY_EFFECTS`, le `FLIGHT_STATE` du joueur observé est obligatoire et son masque `presence` vaut exactement zéro. Les champs de base 1 à 9, notamment position, quaternion, vitesses linéaire et angulaire, rayon et flags de physique, restent présents car leur layout FSTL 1.0 n'est pas modifié.
 
 ### 6.4 `CONTROL_STATE` — type 8
 
@@ -1077,7 +1069,6 @@ La présence d'un domaine n'est jamais implicite. Le bitmap `SESSION_STATE.state
 
 | Bit de domaine | Records requis dans chaque `FULL_SNAPSHOT` |
 |---|---|
-| `PLAYER_KINEMATICS` — FSTL 1.1 | `SESSION_STATE` et `MISSION_STATE`; si `SESSION_STATE.OBSERVED_PLAYER` est présent, un `ENTITY_LIFECYCLE` de type `SHIP` et un `FLIGHT_STATE` pour exactement `observed_player_entity_id`; aucun `SHIP_IDENTITY`, manifeste ou record système n'est impliqué par ce bit |
 | `CORE_SHIP` | `SESSION_STATE`, `MISSION_STATE`, `ENTITY_LIFECYCLE`; génération `CLASS_MANIFEST` référencée déjà installée ; pour chaque vaisseau : `SHIP_IDENTITY`, `FLIGHT_STATE`, `DAMAGE_STATE`, `SHIELD_STATE`, tous ses `SUBSYSTEM_STATE`, `ENERGY_STATE`, `PROPULSION_STATE` |
 | `CONTROL_INPUTS` | `CONTROL_STATE` pour le joueur observé ; son absence est autorisée seulement si aucun joueur observé n'existe |
 | `PREDICTION` | autorise les bits 0–10 de `FLIGHT_STATE`; chaque bit est présent si et seulement si les champs moteur correspondants existent pour ce type d'entité |
@@ -1090,8 +1081,6 @@ La présence d'un domaine n'est jamais implicite. Le bitmap `SESSION_STATE.state
 | `NAVIGATION` | `NAVIGATION_STATE` du joueur observé |
 
 Un bit déclaré signifie « complet dans le périmètre autorisé », pas « le moteur possède nécessairement chaque champ conditionnel ». L'absence d'un champ conditionnel suit exclusivement sa règle de présence. Les trois bitmaps `state_domain_coverage`, `event_coverage_state_derived` et `event_coverage_exact` sont immuables après `SESSION_BEGIN`. Un producteur qui ne peut respecter une cardinalité ou une taille retire le bit avant `WELCOME`; une perte ultérieure de couverture exige `SESSION_END` puis une nouvelle session, jamais un retrait silencieux dans un delta.
-
-Une session FSTL 1.0 rejette `PLAYER_KINEMATICS` comme bit réservé et conserve l'obligation `CORE_SHIP`. Une session FSTL 1.1 annonce toujours `PLAYER_KINEMATICS`; si elle annonce aussi `CORE_SHIP`, elle satisfait les deux lignes de la matrice et positionne les deux bits. Le producteur Phase 1 annonce exactement `PLAYER_KINEMATICS`, avec `required_manifest_id = 0`. La Phase 2 peut ouvrir une nouvelle session 1.1 avec `PLAYER_KINEMATICS | CORE_SHIP` lorsqu'elle possède le manifeste et tous les records système requis ; `state_domain_coverage` ne change jamais dans une session établie.
 
 Les capabilities de la spec 05 sont réservées aux vues et mises à jour spécialisées ; elles ne remplacent ni `state_domain_coverage`, ni les deux bitmaps de couverture d'événements.
 
@@ -1202,8 +1191,5 @@ Les fixtures obligatoires de cette annexe comprennent, pour chacun des 28 types 
 - communication inactive initiale, START, pause, inversion, remplacement et STOP ;
 - événements fiables dupliqués/désordonnés ;
 - perte vidéo sans effet sur l'état canonique.
-- snapshot FSTL 1.1 minimal sans joueur, limité à `SESSION_STATE` et `MISSION_STATE` ;
-- snapshot FSTL 1.1 avec joueur, contenant exactement son `ENTITY_LIFECYCLE` et son `FLIGHT_STATE` à `presence=0` en plus des deux records globaux ;
-- rejet du bit `PLAYER_KINEMATICS` en 1.0, d'un snapshot 1.1 incomplet, de `CORE_SHIP` sans sa matrice complète et d'un remplacement de joueur livré seulement par delta.
 
-Le présent document, le schéma machine-readable et les golden vectors DOIVENT être identiques sur les ordres, offsets, valeurs numériques, bornes, masques et conditions. Toute divergence échoue la gate de Phase 0 ; aucun artefact ne corrige ou ne surclasse implicitement un autre. Le triplet FSTL 1.0 gelé reste indivisible et byte-identical ; l'amendement FSTL 1.1 possède ses propres artefacts versionnés et ne réécrit aucun artefact 1.0.
+Le présent document, le schéma machine-readable et les golden vectors DOIVENT être identiques sur les ordres, offsets, valeurs numériques, bornes, masques et conditions. Toute divergence échoue la gate de Phase 0 ; aucun artefact ne corrige ou ne surclasse implicitement un autre. Après gel, le triplet versionné et hashé forme la référence FSTL 1.0 indivisible.

@@ -128,13 +128,41 @@ def main() -> int:
     args = parse_args()
     repo = args.repo.resolve()
     protocol_root = repo / "test" / "telemetry" / "protocol"
-    schema_path = (args.schema or protocol_root / "schema" / "fstl-v1.yaml").resolve()
+    schema_v1_0_path = (args.schema or protocol_root / "schema" / "fstl-v1.yaml").resolve()
+    schema_v1_1_path = (protocol_root / "schema" / "fstl-v1.1.yaml").resolve()
     vectors = (args.vectors or protocol_root / "vectors").resolve()
     expected = (args.expected or protocol_root / "expected").resolve()
     seeds_path = (args.seeds or protocol_root / "transport-harness-seeds.json").resolve()
 
     try:
-        schema = load_object(schema_path)
+        schema = load_object(schema_v1_0_path)
+        if schema.get("wire_version") != "1.0":
+            raise ValueError(f"FSTL 1.0 schema route drift: {schema_v1_0_path}")
+        amendment_schema = load_object(schema_v1_1_path)
+        if amendment_schema.get("wire_version") != "1.1":
+            raise ValueError(f"FSTL 1.1 schema route drift: {schema_v1_1_path}")
+        coverage_values = amendment_schema["numeric_registries"]["StateDomainCoverage"]["values"]
+        player_values = [entry.get("value") for entry in coverage_values
+                         if entry.get("name") == "PLAYER_KINEMATICS"]
+        if player_values != [0x400]:
+            raise ValueError(f"PLAYER_KINEMATICS drift in schema/fstl-v1.1.yaml: {player_values}")
+        base_schema = amendment_schema.get("base_schema", {})
+        if (base_schema.get("path") != "test/telemetry/protocol/schema/fstl-v1.yaml" or
+                base_schema.get("sha256") != hashlib.sha256(schema_v1_0_path.read_bytes()).hexdigest()):
+            raise ValueError("schema/fstl-v1.1.yaml frozen base_schema identity drift")
+        ledger_path = protocol_root / "fstl-1.0-artifacts.manifest.json"
+        frozen_ledger = load_object(ledger_path)
+        base_manifest = amendment_schema.get("base_artifact_manifest", {})
+        if (base_manifest.get("path") != "test/telemetry/protocol/fstl-1.0-artifacts.manifest.json" or
+                base_manifest.get("sha256") != hashlib.sha256(ledger_path.read_bytes()).hexdigest() or
+                base_manifest.get("file_count") != frozen_ledger.get("fileCount") or
+                base_manifest.get("tree_sha256") != frozen_ledger.get("treeSha256")):
+            raise ValueError("schema/fstl-v1.1.yaml frozen base_artifact_manifest identity drift")
+        for source in amendment_schema.get("normative_sources", []):
+            source_path = repo / source["path"]
+            if (not source_path.is_file() or
+                    hashlib.sha256(source_path.read_bytes()).hexdigest() != source["sha256"]):
+                raise ValueError(f"schema/fstl-v1.1.yaml source drift: {source['path']}")
         message_ids = {int(entry["id"]) for entry in schema["message_types"]}
         record_ids = {int(entry["id"]) for entry in schema["record_types"]}
         validation_names = {int(entry["id"]): str(entry["name"]) for entry in schema["validation_errors"]}
@@ -177,6 +205,12 @@ def main() -> int:
         catalogue_coverage = load_object(protocol_root / "protocol-coverage.json")
         amendment_manifest = load_object(protocol_root / "fstl-1.1-vectors.manifest.json")
         amendment_errors: list[str] = []
+        if amendment_manifest.get("frozenV10ArtifactsManifest") != "fstl-1.0-artifacts.manifest.json":
+            amendment_errors.append("FSTL 1.1 manifest does not reference the frozen FSTL 1.0 ledger")
+        if amendment_manifest.get("frozenV10ArtifactCount") != frozen_ledger.get("fileCount"):
+            amendment_errors.append("FSTL 1.1 manifest frozen artifact count drift")
+        if amendment_manifest.get("frozenV10ArtifactsTreeSha256") != frozen_ledger.get("treeSha256"):
+            amendment_errors.append("FSTL 1.1 manifest frozen artifact tree drift")
         for entry in amendment_manifest.get("files", []):
             candidate = protocol_root / entry["path"]
             if not candidate.is_file() or hashlib.sha256(candidate.read_bytes()).hexdigest() != entry["sha256"]:

@@ -2,7 +2,7 @@
 
 ## 1. Statut et portée
 
-Ce document est normatif. Il définit le cycle de vie d'une session v1.0 et, sans altérer celui-ci, l'amendement de négociation v1.1 nécessaire au profil Phase 1. Il couvre les horloges, les séquences, la fiabilité au-dessus d'UDP, les transactions paginées, les snapshots, les deltas cumulatifs, les resynchronisations, les délais, les limites de débit et les priorités.
+Ce document est normatif. Il définit le cycle de vie d'une session v1.0, la négociation, les horloges, les séquences, la fiabilité au-dessus d'UDP, les transactions paginées, les snapshots, les deltas cumulatifs, les resynchronisations, les délais, les limites de débit et les priorités.
 
 Les mots **DOIT**, **NE DOIT PAS**, **DEVRAIT**, **NE DEVRAIT PAS** et **PEUT** ont le sens normatif défini dans [02 — Format filaire et registres](02-format-filaire-et-registres.md).
 
@@ -121,7 +121,7 @@ stateDiagram-v2
     Disconnected --> Negotiating: Hello
     Negotiating --> Synchronizing: Welcome Accepted
     Negotiating --> Disconnected: Welcome rejeté ou timeout
-    Synchronizing --> Live: SessionBegin + manifestes requis + snapshot conforme
+    Synchronizing --> Live: SessionBegin + manifestes + snapshot commit
     Synchronizing --> Stale: timeout ou erreur
     Live --> Stale: heartbeats manqués ou baseline inconnue
     Stale --> Synchronizing: ResyncRequest accepté
@@ -166,9 +166,7 @@ Tant qu'aucun `Welcome` correspondant n'est reçu, il retransmet le même `Hello
 
 ### 4.4 Choix de version et visibilité
 
-v1.0 accepte uniquement l'intersection `major=1, minor=0`. FSTL 1.1 ajoute l'intersection `major=1, minor=1` sans changer aucun layout. Le producteur choisit la plus haute mineure commune qu'il sait réellement servir. Sans intersection, il répond `Welcome UnsupportedVersion` avec `session_id = 0`.
-
-Le producteur minimal de Phase 1 annonce et accepte exclusivement `minor=1`. Il rejette un client limité à 1.0 au lieu de rétrograder, car le contrat 1.0 exige `CORE_SHIP`. Une implémentation qui annonce `0..1` DOIT posséder deux chemins conformes : couverture 1.0 complète après sélection de 0, ou profil 1.1 après sélection de 1. Le choix de la mineure ne dépend jamais d'une capability visuelle.
+v1.0 accepte uniquement l'intersection `major=1, minor=0`. Sans intersection, le producteur répond `Welcome UnsupportedVersion` avec `session_id = 0`.
 
 Les modes de visibilité sont :
 
@@ -195,7 +193,7 @@ Un `Welcome Accepted` :
 
 - recopie le nonce et `t0` ;
 - porte le `session_id` non nul dans l'en-tête ;
-- sélectionne la plus haute mineure commune, v1.0 ou v1.1, et le mode de visibilité ;
+- sélectionne v1.0 et le mode de visibilité ;
 - annonce `producer_id`, capabilities producteur et capabilities actives ;
 - fixe l'intervalle de heartbeat et le timeout de réassemblage fiable.
 
@@ -222,8 +220,6 @@ Un changement de manifeste pendant la session exige :
 Un delta ne change jamais implicitement de manifeste.
 
 Chaque transaction `Manifest` v1.0 est exhaustive et autonome. Il n'existe ni manifeste incrémental, ni `base_manifest_id` implicite.
-
-Dans le profil minimal FSTL 1.1 de Phase 1, `SessionBegin.required_manifest_id` vaut zéro, aucune transaction `Manifest` n'est envoyée et le snapshot initial annonce exclusivement `PLAYER_KINEMATICS`. Il contient toujours `SESSION_STATE` et `MISSION_STATE`, puis, si un joueur observé existe, exactement son `ENTITY_LIFECYCLE` et son `FLIGHT_STATE`. Le client ne passe `Live` qu'après validation de cette complétude relative. Un changement de `mission_generation` ou le remplacement de l'identité du joueur observé impose une nouvelle keyframe ; il ne peut pas être publié par un delta seul.
 
 ### 4.7 Fin et remplacement de session
 
@@ -817,7 +813,7 @@ Une exposition Internet exige une couche d'authentification, d'intégrité crypt
 Une implémentation de Phase 0 est conforme à ce document si les tests sans moteur démontrent au minimum :
 
 1. handshake accepté, rejeté, dupliqué et expiré ;
-2. sélection stricte v1.0, sélection v1.1 avec intervalle `1..1`, rejet `UnsupportedVersion` sans intersection et contrôle du mode de visibilité ;
+2. sélection stricte v1.0 et contrôle du mode de visibilité ;
 3. rejet d'un endpoint ou `session_id` incorrect ;
 4. calcul d'offset/RTT, overflow, filtrage et invalidation après heartbeats manqués ;
 5. wrap sériel de `packet_sequence` et absence de wrap des IDs stricts ;
@@ -838,8 +834,5 @@ Une implémentation de Phase 0 est conforme à ce document si les tests sans mot
 20. client lent ou silencieux et respect de toutes les limites mémoire ;
 21. priorité de la télémétrie sur les fragments vidéo ;
 22. aucune retransmission d'interframe et rétention IDR au plus 500 ms.
-23. snapshot Phase 1 accepté avec `PLAYER_KINEMATICS` seul, `required_manifest_id = 0`, capabilities et couverture événementielle nulles ;
-24. snapshot Phase 1 rejeté si un record obligatoire manque, si `CORE_SHIP` est annoncé sans sa matrice complète ou si le joueur change sans nouvelle keyframe ;
-25. exécution inchangée de tous les scénarios et golden vectors FSTL 1.0.
 
 Les tests de perte doivent utiliser des graines reproductibles. Le `PacketReader` est fuzzé avec buffers tronqués, valeurs inconnues, non-finis, tailles en overflow, incohérences inter-fragments et datagrammes supérieurs à 1200 octets.

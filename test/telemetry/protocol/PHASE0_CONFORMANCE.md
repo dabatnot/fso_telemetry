@@ -13,9 +13,12 @@ publique déterministe est enregistrée sans anticiper l'état final de la relea
 L'[autorisation explicite](https://github.com/dabatnot/fso_telemetry/issues/1#issuecomment-4984644039)
 permet de démarrer la Phase 1 et `P1-WP-01`.
 
-Ce gel ne prétend pas satisfaire par avance l'amendement FSTL 1.1 :
-`P1-WP-02` reste conditionné aux preuves internes FSTL 1.1 et à sa gate
-contractuelle. Aucune dérogation supplémentaire n'est enregistrée.
+Ce gel ne satisfaisait pas par avance l'amendement FSTL 1.1. Sur l'arbre de
+travail stabilisé du 2026-07-16, les preuves techniques de cet amendement ont
+été reproduites et acceptées : `G0-G PASS`, puis `G1-A PASS`. Cette fermeture
+actuelle n'est pas rétroactive. `P1-WP-02` et `P1-WP-03` avaient déjà commencé
+sans autorisation avant la fermeture documentée de `G0-G`; `P1-REQ-001` reste
+donc en échec historique et aucune dérogation supplémentaire n'est enregistrée.
 
 Ce fichier reste une preuve d'audit. Les décisions humaines ne sont pas
 recréées ici : il référence leurs commentaires GitHub datés et attribués.
@@ -230,26 +233,31 @@ les deux branches et passent dans la suite Release du contenu figé dans `c3a940
 Synthèse des gates FSTL 1.0 : `G0-A`, `G0-B`, `G0-C`, `G0-D`, `G0-E` et
 `G0-F PASS`.
 
-## Frontière FSTL 1.1 hors du gel 1.0
+## Frontière et clôture de l'amendement FSTL 1.1
 
-Le checkout public audité par les commandes ci-dessus n'inventorie pas encore
-les identifiants de l'amendement. Le contrat amendé de travail porte un
-inventaire cible de 28 exigences, 26 critères, 19 décisions, 13 lots et 7 gates.
-Cette information de frontière n'est pas une preuve d'implémentation FSTL 1.1
-et ne modifie aucun verdict FSTL 1.0.
+Les identifiants ci-dessous sont les identifiants legacy de l'amendement. Leur
+crosswalk normatif vers `D1-*`, `P1-REQ-*`, `P1-AC-*`, `P1-WP-01` et `G1-A`
+est conservé dans le document 07 de Phase 1. Ils ne modifient aucun artefact du
+socle FSTL 1.0 gelé.
 
-| Élément du contrat amendé de travail | Statut | Condition de fermeture |
+| Élément legacy de l'amendement | Statut final WP01 | Preuve de fermeture |
 |---|---|---|
-| `P0-F-016` | `PENDING` | implémenter et tester le bit 10 `PLAYER_KINEMATICS`, le snapshot minimal et le rejet sans intersection |
-| `D0-019` | `PENDING` | démontrer que l'amendement est additif, sans manifeste ni faux `CORE_SHIP`, et que FSTL 1.0 reste byte-identical |
-| `P0-AC-025` | `PENDING` | produire schéma, constantes, vectors, deux décodeurs, hashes avant/après et non-régression FSTL 1.0 |
-| `P0-AC-026` | `PENDING` | produire les vectors et le harness de négociation `1..1`, couverture `PLAYER_KINEMATICS` seule et rejets croisés |
-| `P0.13` | `PENDING` | exécuter l'amendement FSTL 1.1 sans réécrire le tag ni les artefacts FSTL 1.0 |
-| `G0-G` | `BLOCKED` | passer les quatre éléments précédents et la non-régression 1.0 |
+| `P0-F-016` | `PASS` | schéma/corpus 1.1, bit 10, snapshot minimal et absence d'intersection |
+| `D0-019` | `PASS` | amendement additif, manifeste nul, aucun faux `CORE_SHIP`, gel 1.0 exhaustif |
+| `P0-AC-025` | `PASS` | ledger 438 fichiers, oracles indépendants, deux décodeurs et layouts versionnés |
+| `P0-AC-026` | `PASS` | profil `1..1`, 15 snapshots, 6 messages, 3 négociations et slice C++ 5/5 |
+| `P0.13` | `PASS` | schéma 1.1 séparé et non-régression complète sans réécriture 1.0 |
+| `G0-G` | `PASS` | tests finaux verts et revue indépendante sans défaut bloquant |
+| `G1-A` | `PASS` | fermé après `G0-G`, sur le même arbre stabilisé |
 
 L'[autorisation du 2026-07-15](https://github.com/dabatnot/fso_telemetry/issues/1#issuecomment-4984644039)
-ouvre `P1-WP-01` pour produire ces preuves. `P1-WP-02` reste `BLOCKED` jusqu'à
-`G0-G PASS` ; aucune dérogation supplémentaire n'est enregistrée.
+n'ouvrait que `P1-WP-01`. Commit `ac3250723` a néanmoins ajouté le squelette
+WP02 alors que son propre rapport maintenait `G0-G` et `G1-A` bloquées; les
+commits `2c4916ae6` et `e1ecd51f3` ont poursuivi WP02, puis `9c0da12ed` a
+démarré WP03. La fermeture présente autorise la poursuite future, mais ne
+répare pas cette violation historique de `P1-REQ-001`. `P1-AC-020` reste
+`BLOCKED/PENDING` jusqu'à disposition explicite et achèvement des autres preuves
+Phase 1.
 
 ## Preuves exigées par la revue finale
 
@@ -365,17 +373,32 @@ court-circuite ni `P0-AC-025`, ni `P0-AC-026`, ni la gate FSTL 1.1 requise avant
 
 ## Preuves techniques additives FSTL 1.1 / P1-WP-01
 
-Le corpus isolé `vectors-v1.1` conserve l'arbre FSTL 1.0 sous le hash
-`099fffd00ea67ed71b6e345c3256b06f8ebf5c5ca14c518fe8e614a2bd4424aa`.
-Il contient exactement 21 cas : neuf valides avec JSON canonique et douze
-invalides avec un unique `expectedValidationError` numérique. Il couvre la
-négociation 1.1, WELCOME accepté/rejeté, deux DELTA cumulatifs (changement puis
-retour baseline), les promotions Phase 2 complète/incomplète, les trois records
-obligatoires manquants, les modes authority/visibility et les invariants
-lifecycle/flight. Le catalogue détaillé est identifié par
-`fstl-1.1-vectors.manifest.json`. Le générateur standard-library et le décodeur Python de
-référence sont indépendants; les tests C++ rejouent les mêmes octets, notamment
-via le chemin ingress/context normatif pour les champs pré-session.
+Le ledger `fstl-1.0-artifacts.manifest.json` couvre désormais les **438**
+artefacts FSTL 1.0 sous la racine indépendante
+`9baac6a20db33bcf350066ed533c5581b7117410899d7bc4a6dc24406e47856d`.
+Il inclut les sept documents canoniques, `fstl-v1.yaml`, 371 fichiers
+`vectors/**`, 54 fichiers `expected/**`, les deux manifests, la couverture, les
+seeds et le dictionnaire fuzz. L'ancien digest `099fffd0…` ne couvrait que
+`vectors/**` et n'est plus présenté comme preuve exhaustive.
 
-Ces résultats sont des preuves reproductibles, pas une décision de passage de
-gate. Cette décision reste à la charge du tracker et des relecteurs indépendants.
+| Artefact versionné | SHA-256 |
+|---|---|
+| schéma FSTL 1.0 gelé | `1d89c4a95a121c178bf85570cd616568fd939942b8d053835069b2d7d6a1f0d4` |
+| schéma FSTL 1.1 séparé | `147439b3ad2d4521a109bf8b191d66a41bfcfdba2201de3be9e19ea75d8cf947` |
+| ledger FSTL 1.0 | `4a437ee1300e86319ebd07a2fc4910cba96c4d15387a30eba5354eec49d1242f` |
+| manifeste vectors FSTL 1.1 | `56c2c6d4c3cb662c9d2f780293be173d5d31bbcc2e36612ecd08ab53f581e846` |
+| jeu documentaire normatif FSTL 1.1 | tree `55855dea16285c185eed64bafed2a6a7f1b4cc54522128a36b39b0b1911fb631` |
+
+La reproduction indépendante finale a passé 15/15 tests de gel et
+anti-contournement, les deux locks de layout `d5e7ae20…` et `416ff38c…`, les 15
+snapshots, 6 messages et 3 négociations de l'amendement, le décodeur de
+référence sur le socle et les 21 cas 1.1, les 182 assets, les générateurs
+20/28/198, le build Release, 394/394 tests C++, le smoke fuzz 4/4 et les
+validateurs des deux spécifications. Les deux workflows enregistrent le
+vérificateur et la suite anti-contournement; aucune nouvelle exécution distante
+de GitHub Actions n'est revendiquée ici.
+
+Le reviewer indépendant n'a trouvé aucun défaut technique bloquant et a
+autorisé la transition ordonnée `G0-G PASS`, puis `G1-A PASS`. La matrice
+détaillée, les commandes exactes et la violation historique sont conservées
+dans `FSTL11_WP01_EVIDENCE.md`.

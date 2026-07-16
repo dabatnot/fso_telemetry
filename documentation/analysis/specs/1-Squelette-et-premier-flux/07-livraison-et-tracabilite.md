@@ -112,6 +112,21 @@ Une gate échouée bloque ses lots descendants. Aucune dérogation ne peut redé
 | `D1-014` | seuils de performance | seuils de `P1-REQ-033`; environnement et percentiles archivés, aucun résultat supposé |
 | `D1-015` | relation documentation/implémentation | la spec peut exister avant les preuves ; tout code reste bloqué par `G1-A` et la gate Phase 0 |
 
+### 6.1 Crosswalk normatif des identifiants legacy de l'amendement
+
+Les identifiants legacy ci-dessous peuvent subsister dans la roadmap, les rapports de conformité et les preuves historiques. Dans le présent contrat, ils sont uniquement des alias de traçabilité pour l'amendement FSTL 1.1 et le gel de ses dépendances FSTL 1.0. Ils **NE DÉFINISSENT PAS** le socle normatif FSTL 1.0, **NE PEUVENT PAS** modifier ses documents, son schéma ou ses artefacts gelés et **NE FERMENT PAS** une gate par leur seule présence. Les identifiants Phase 1 de la colonne « Autorité actuelle » sont les définitions normatives applicables à l'amendement.
+
+| ID legacy amendement | Sémantique conservée | Autorité actuelle dans le contrat Phase 1 | Statut avant preuves finales |
+|---|---|---|---|
+| `P0-F-016` | définir et tester FSTL 1.1, le bit 10, le snapshot minimal et l'absence d'intersection | `D1-001`–`D1-006` ; `P1-REQ-002`, `P1-REQ-020`–`P1-REQ-023` ; `P1-WP-01` ; `P1-AC-002` | preuves et revue finales pendantes |
+| `D0-019` | amendement additif `PLAYER_KINEMATICS=0x0400`, sans manifeste ni faux `CORE_SHIP`, avec FSTL 1.0 inchangé | `D1-001`–`D1-006` ; `P1-REQ-001`, `P1-REQ-002`, `P1-REQ-020`, `P1-REQ-021` ; `P1-AC-001`, `P1-AC-002` | freeze et revue finales pendantes |
+| `P0-AC-025` | aucun octet, ID, layout, CRC, règle de fragmentation ou vector 1.0 modifié ; schéma, constantes, vectors et deux décodeurs concordants | `P1-REQ-001`, `P1-REQ-002`, `P1-REQ-012`, `P1-REQ-034` ; `P1-WP-01` ; `P1-AC-001`, `P1-AC-002` | preuve finale et décision du reviewer pendantes |
+| `P0-AC-026` | profil `1..1`, `PLAYER_KINEMATICS` seul, manifeste nul et rejets du downgrade 1.0 ou du faux `CORE_SHIP` | `D1-002`–`D1-006` ; `P1-REQ-002`, `P1-REQ-020`, `P1-REQ-021`, `P1-REQ-034` ; `P1-AC-002` | preuve contractuelle `P1-WP-01` et décision du reviewer pendantes |
+| `P0.13` | lot d'amendement 1.1 exécuté sans rouvrir le gel 1.0 | `P1-WP-01` ; `P1-REQ-001`, `P1-REQ-002`, `P1-REQ-020`, `P1-REQ-021`, `P1-REQ-034` ; `P1-AC-001`, `P1-AC-002` | gate non fermée |
+| `G0-G` | non-régression 1.0 et acceptation de la négociation, du profil et des rejets 1.1 avant tout lot postérieur à `P1-WP-01` | prédécesseur legacy de `G1-A` ; preuves de `P1-WP-01`, `P1-AC-001` et `P1-AC-002` | bloquée jusqu'aux tests finaux, à la revue et à la réconciliation du tracker |
+
+`G1-A` ne peut être fermée qu'après `G0-G`. Une fermeture présente autorise seulement la poursuite future ; elle n'efface pas la violation historique de `P1-REQ-001` : `P1-WP-02` puis `P1-WP-03` ont commencé avant la fermeture documentée de `G0-G`. Cette non-conformité reste enregistrée et DOIT recevoir une disposition explicite avant `P1-AC-020`.
+
 ## 7. Traçabilité de la roadmap Phase 1
 
 | Bullet roadmap | Exigences / décision | Lot / acceptation |

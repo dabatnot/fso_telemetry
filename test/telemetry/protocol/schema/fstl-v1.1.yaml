@@ -1,4 +1,49 @@
 {
+  "amendment_provenance": {
+    "phase1_minimal_profile": [
+      {
+        "document": "documentation/analysis/specs/1-Squelette-et-premier-flux/01-cadre-normatif-et-perimetre.md",
+        "section": "4.2-4.3"
+      },
+      {
+        "document": "documentation/analysis/specs/1-Squelette-et-premier-flux/04-modele-de-donnees-et-regles-metier.md",
+        "section": "2.2"
+      },
+      {
+        "document": "documentation/analysis/specs/1-Squelette-et-premier-flux/07-livraison-et-tracabilite.md",
+        "section": "6 / D1-003-D1-006"
+      }
+    ],
+    "player_kinematics": [
+      {
+        "document": "documentation/analysis/specs/1-Squelette-et-premier-flux/01-cadre-normatif-et-perimetre.md",
+        "section": "4.2"
+      },
+      {
+        "document": "documentation/analysis/specs/1-Squelette-et-premier-flux/04-modele-de-donnees-et-regles-metier.md",
+        "section": "2.1"
+      },
+      {
+        "document": "documentation/analysis/specs/1-Squelette-et-premier-flux/07-livraison-et-tracabilite.md",
+        "section": "6 / D1-002"
+      }
+    ]
+  },
+  "base_artifact_manifest": {
+    "bytes": 131635,
+    "file_count": 438,
+    "path": "test/telemetry/protocol/fstl-1.0-artifacts.manifest.json",
+    "schema": "FSTL-1.0-FROZEN-ARTIFACTS",
+    "sha256": "4a437ee1300e86319ebd07a2fc4910cba96c4d15387a30eba5354eec49d1242f",
+    "tree_sha256": "9baac6a20db33bcf350066ed533c5581b7117410899d7bc4a6dc24406e47856d",
+    "wire_version": "1.0"
+  },
+  "base_schema": {
+    "bytes": 499786,
+    "path": "test/telemetry/protocol/schema/fstl-v1.yaml",
+    "sha256": "1d89c4a95a121c178bf85570cd616568fd939942b8d053835069b2d7d6a1f0d4",
+    "wire_version": "1.0"
+  },
   "capabilities": [
     {
       "bit": 0,
@@ -305,8 +350,8 @@
     "header": "code/telemetry/protocol/telemetry_protocol_constants.h",
     "unbound_registries": [],
     "verified_bool_constant_count": 2,
-    "verified_constant_count": 173,
-    "verified_enum_count": 134,
+    "verified_constant_count": 179,
+    "verified_enum_count": 135,
     "verified_symbol_alias_count": 1
   },
   "datagram_header": {
@@ -326,7 +371,7 @@
       {
         "name": "version_minor",
         "offset": 5,
-        "rule": "0",
+        "rule": "0 en FSTL 1.0 ; 1 en FSTL 1.1 accepté",
         "wire": "u8"
       },
       {
@@ -467,13 +512,13 @@
         {
           "name": "min_minor",
           "offset": 12,
-          "rule": "0",
+          "rule": "mineure minimale supportée, 0 ou 1",
           "wire": "u8"
         },
         {
           "name": "max_minor",
           "offset": 13,
-          "rule": "0",
+          "rule": "mineure maximale supportée, min_minor..1",
           "wire": "u8"
         },
         {
@@ -563,13 +608,13 @@
         {
           "name": "min_minor",
           "offset": 18,
-          "rule": "0",
+          "rule": "mineure minimale supportée, 0 ou 1",
           "wire": "u8"
         },
         {
           "name": "max_minor",
           "offset": 19,
-          "rule": "0",
+          "rule": "mineure maximale supportée, min_minor..1",
           "wire": "u8"
         },
         {
@@ -688,7 +733,7 @@
         {
           "name": "selected_minor",
           "offset": 34,
-          "rule": "0 si accepté",
+          "rule": "0 ou 1 si accepté, plus haute mineure commune",
           "wire": "u8"
         },
         {
@@ -2430,34 +2475,70 @@
       "symbol": "CAPABILITY_UPDATE"
     }
   ],
+  "normative_document_set": {
+    "documents": [
+      {
+        "path": "documentation/analysis/specs/1-Squelette-et-premier-flux/01-cadre-normatif-et-perimetre.md",
+        "sha256": "1113a3ec3e88db8a0c01069ec804cc382aad51e75c837e7f7842f909911c7dd0"
+      },
+      {
+        "path": "documentation/analysis/specs/1-Squelette-et-premier-flux/02-architecture-contrats-et-interfaces.md",
+        "sha256": "a328dabfcfd7d1317afdd81411598c60625636670e45923e1efa1cf1f91db51d"
+      },
+      {
+        "path": "documentation/analysis/specs/1-Squelette-et-premier-flux/03-flux-cycle-de-vie-et-concurrence.md",
+        "sha256": "f0a5a781181f102a067ecf232d14ea5830056bfc72ceff0b3bd2f830c45abd0a"
+      },
+      {
+        "path": "documentation/analysis/specs/1-Squelette-et-premier-flux/04-modele-de-donnees-et-regles-metier.md",
+        "sha256": "49925c53587069ddd78f1071cb415af863ecb26a811a3d50a0f0e7dcf89210da"
+      },
+      {
+        "path": "documentation/analysis/specs/1-Squelette-et-premier-flux/05-integration-configuration-et-observabilite.md",
+        "sha256": "85fd12bd2b3337238275912869097fc839efdbb03c605721cd8847d44a6b1e74"
+      },
+      {
+        "path": "documentation/analysis/specs/1-Squelette-et-premier-flux/06-validation-securite-et-conformite.md",
+        "sha256": "6c73f775b123a81152d04696870300d5b9dce809c33714052c4376f8326f236d"
+      },
+      {
+        "path": "documentation/analysis/specs/1-Squelette-et-premier-flux/07-livraison-et-tracabilite.md",
+        "sha256": "c8223b6378cc6464e238ac371920c20c078e0bad03446359631a53fd78797a86"
+      }
+    ],
+    "file_count": 7,
+    "identity": "FSTL-1.1-AMENDMENT-NORMATIVE-DOCUMENTS",
+    "tree_sha256": "55855dea16285c185eed64bafed2a6a7f1b4cc54522128a36b39b0b1911fb631",
+    "version": "1.1.0"
+  },
   "normative_sources": [
     {
-      "path": "documentation/analysis/specs/0-Contrat-de-protocole/01-cadre-normatif-et-perimetre.md",
-      "sha256": "0043bf66b424c4faff191b2bfa5189074e9f4c8070bd411bace05dc2f53ee628"
+      "path": "documentation/analysis/specs/1-Squelette-et-premier-flux/01-cadre-normatif-et-perimetre.md",
+      "sha256": "1113a3ec3e88db8a0c01069ec804cc382aad51e75c837e7f7842f909911c7dd0"
     },
     {
-      "path": "documentation/analysis/specs/0-Contrat-de-protocole/02-format-filaire-et-registres.md",
-      "sha256": "841ae4054865c8db0152e7f14251fbd2c6b534aedd01a1db2342861f1708d522"
+      "path": "documentation/analysis/specs/1-Squelette-et-premier-flux/02-architecture-contrats-et-interfaces.md",
+      "sha256": "a328dabfcfd7d1317afdd81411598c60625636670e45923e1efa1cf1f91db51d"
     },
     {
-      "path": "documentation/analysis/specs/0-Contrat-de-protocole/03-session-horloges-fiabilite.md",
-      "sha256": "1b2e2e6974c4d0f6d7aefda8c51991e271ed68e7b9114bd99a38c32812f76188"
+      "path": "documentation/analysis/specs/1-Squelette-et-premier-flux/03-flux-cycle-de-vie-et-concurrence.md",
+      "sha256": "f0a5a781181f102a067ecf232d14ea5830056bfc72ceff0b3bd2f830c45abd0a"
     },
     {
-      "path": "documentation/analysis/specs/0-Contrat-de-protocole/04-modele-de-donnees-v1.md",
-      "sha256": "3b9df71ec9798576e289208974556cebf3e02c81f5702fb24eb78a9f60ab278d"
+      "path": "documentation/analysis/specs/1-Squelette-et-premier-flux/04-modele-de-donnees-et-regles-metier.md",
+      "sha256": "49925c53587069ddd78f1071cb415af863ecb26a811a3d50a0f0e7dcf89210da"
     },
     {
-      "path": "documentation/analysis/specs/0-Contrat-de-protocole/05-capabilities-et-vues-specialisees.md",
-      "sha256": "721a34836f4fe369ea5d7daf203883ae32da1fb32a85782d3eaad4d0738ba9e4"
+      "path": "documentation/analysis/specs/1-Squelette-et-premier-flux/05-integration-configuration-et-observabilite.md",
+      "sha256": "85fd12bd2b3337238275912869097fc839efdbb03c605721cd8847d44a6b1e74"
     },
     {
-      "path": "documentation/analysis/specs/0-Contrat-de-protocole/06-validation-securite-et-conformite.md",
-      "sha256": "304cfaf8cc78692e2d9994fffbfad97fc1eea68b44148925aeb0ff095d7b3e01"
+      "path": "documentation/analysis/specs/1-Squelette-et-premier-flux/06-validation-securite-et-conformite.md",
+      "sha256": "6c73f775b123a81152d04696870300d5b9dce809c33714052c4376f8326f236d"
     },
     {
-      "path": "documentation/analysis/specs/0-Contrat-de-protocole/07-livraison-et-tracabilite.md",
-      "sha256": "08ddedd9a27759a015f0c678fc06ac3d9610a0eaa7b2d78dc8c75b3a56a7798a"
+      "path": "documentation/analysis/specs/1-Squelette-et-premier-flux/07-livraison-et-tracabilite.md",
+      "sha256": "c8223b6378cc6464e238ac371920c20c078e0bad03446359631a53fd78797a86"
     }
   ],
   "numeric_registries": {
@@ -7381,15 +7462,15 @@
     "StateDomainCoverage": {
       "cpp": {
         "enum": "StateDomainCoverageBit",
-        "known_mask_constant": "KnownStateDomainCoverageBits",
+        "known_mask_constant": "KnownStateDomainCoverageBitsV1_1",
         "member_prefix": "StateDomainCoverageBit",
-        "reserved_mask_constant": "ReservedStateDomainCoverageBits"
+        "reserved_mask_constant": "ReservedStateDomainCoverageBitsV1_1"
       },
       "kind": "bitmask",
       "reserved": {
-        "known_mask": 1023,
+        "known_mask": 2047,
         "policy": "reject_nonzero",
-        "reserved_mask": 18446744073709550592
+        "reserved_mask": 18446744073709549568
       },
       "source": {
         "document": "documentation/analysis/specs/0-Contrat-de-protocole/04-modele-de-donnees-v1.md",
@@ -7446,6 +7527,15 @@
           "bit": 9,
           "name": "NAVIGATION",
           "value": 512
+        },
+        {
+          "bit": 10,
+          "name": "PLAYER_KINEMATICS",
+          "source": {
+            "document": "documentation/analysis/specs/1-Squelette-et-premier-flux/04-modele-de-donnees-et-regles-metier.md",
+            "section": "2.1"
+          },
+          "value": 1024
         }
       ],
       "width_bits": 64
@@ -9177,6 +9267,42 @@
     "presence_assigned_bit_count": 196,
     "presence_registry_count": 36,
     "registry_count": 134
+  },
+  "phase1_player_kinematics_record_set": {
+    "authority_mode": "SOLO",
+    "entity_lifecycle_object_type": "SHIP",
+    "entity_lifecycle_presence": 0,
+    "event_coverage_exact": 0,
+    "event_coverage_state_derived": 0,
+    "exact_record_set": true,
+    "flight_state_presence": 0,
+    "forbidden_records": [
+      "SHIP_IDENTITY"
+    ],
+    "negotiated_capabilities": 0,
+    "promotion": {
+      "requires_complete_core_ship_record_set": true,
+      "requires_core_ship_coverage": true,
+      "requires_nonzero_manifest_id": true
+    },
+    "required_always": [
+      "SESSION_STATE",
+      "MISSION_STATE"
+    ],
+    "required_manifest_id": 0,
+    "required_when_observed_player_present": [
+      "ENTITY_LIFECYCLE",
+      "FLIGHT_STATE"
+    ],
+    "same_observed_player_entity_id": true,
+    "visibility_mode": "COCKPIT"
+  },
+  "producer_profiles": {
+    "phase1_minimal": {
+      "maximum_minor": 1,
+      "minimum_minor": 1,
+      "required_state_domain_coverage": 1024
+    }
   },
   "protocol": "FSTL",
   "record_structured_types": [
@@ -11821,7 +11947,7 @@
           "name": "state_domain_coverage",
           "nature": "A",
           "position": "10",
-          "semantics": "domaines garantis complets par rapport au mode ; CORE_SHIP obligatoire pour une session d'état",
+          "semantics": "domaines garantis complets par rapport au mode ; CORE_SHIP obligatoire en FSTL 1.0 ; PLAYER_KINEMATICS obligatoire en FSTL 1.1 et peut être le seul domaine du profil Phase 1",
           "wire": "u64"
         },
         {
@@ -16869,6 +16995,18 @@
     }
   ],
   "schema_format": "FSTL-machine-readable-registry-v1",
+  "supported_wire_versions": {
+    "1.0": {
+      "minor": 0,
+      "player_kinematics": "reserved_and_rejected",
+      "state_domain_known_mask": 1023
+    },
+    "1.1": {
+      "minor": 1,
+      "player_kinematics": 1024,
+      "state_domain_known_mask": 2047
+    }
+  },
   "unknown_value_policy": [
     "message_type inconnu sous une majeure compatible : abandon du message ; NACK UnsupportedMessage uniquement si la session, l'endpoint et ACK_REQUIRED sont validés ;",
     "record_type inconnu : saut borné par record_length ; en v1.0, les exigences de présence viennent uniquement de la matrice statique de 04 ;",
@@ -17552,5 +17690,6 @@
       }
     }
   },
-  "wire_version": "1.0"
+  "wire_version": "1.1",
+  "wire_version_scope": "additive FSTL 1.1 amendment view"
 }

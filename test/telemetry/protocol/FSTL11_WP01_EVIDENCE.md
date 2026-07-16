@@ -1,84 +1,157 @@
 # FSTL 1.1 / P1-WP-01 — reproducible evidence
 
-Technical verdict: **READY FOR INDEPENDENT REVIEW**. Formal gates remain
-`PENDING` or `BLOCKED`; this report does not authorize P1-WP-02.
+Technical verdict on the stabilized working tree: **PASS**. The independent
+test agent reproduced the complete suite and the independent reviewer found no
+blocking WP01 defect. Formal gate reconciliation was performed in dependency
+order: `G0-G PASS`, then `G1-A PASS`.
 
-## Tested revision identity
+This closure is prospective, not retroactive. `P1-REQ-001` remains a
+**historical, non-repairable FAIL** because `P1-WP-02` and then `P1-WP-03`
+started before documented closure of `G0-G`. `P1-AC-020` remains
+`BLOCKED/PENDING` until that deviation receives an explicit disposition and the
+rest of the Phase 1 evidence is complete.
 
-- HEAD: `e433d19220bd7c136f2440b2702d05249d4c7302`
-- tracked binary-diff object (excluding this self-referential report):
-  `1e55cc4da0bb775912eb78c395cd11b0d0695db9`
-- untracked WP01 corpus identity (59 sorted paths, excluding this report; each
-  entry is `path + NUL + binary SHA-256 + LF`, then SHA-256):
-  `fa70d34bd179cf8da53e102617b3147b2b7c8f4eb73658eb175353ffe7abdd42`
-- amendment verifier SHA-256:
-  `550424ead66b135bdb968c7d36228e486a79d6b324bb121e63f90f182a2ec44b`
-- FSTL 1.1 manifest SHA-256: `8aacb4d69a61441cd21c4498268bd4105e94483d9ad56e44d905c1e6275e4938`
-- frozen FSTL 1.0 tree SHA-256:
-  `099fffd00ea67ed71b6e345c3256b06f8ebf5c5ca14c518fe8e614a2bd4424aa`
-- Python `3.14.0`; CMake `4.1.2`; Visual Studio/MSBuild Release build.
+## Tested revision and artifact identity
 
-The tracked diff hash, untracked corpus identity, verifier hash and manifest
-hash identify the dirty patch and generated corpus. Regeneration must
-reproduce all four.
+- dirty-patch base HEAD:
+  `9c0da12ed2f0649648e520107f879b6be5b65b49`;
+- tracked non-report binary diff Git blob (complete tracked diff, excluding only
+  this report and `PHASE0_CONFORMANCE.md` because they are self-referential
+  decision records): `9e9cbda1953462378da668da0eb7025fb6d9a73e`;
+- untracked implementation corpus: 5 sorted paths, aggregate SHA-256
+  `00c6e861003c6875a21ce5e435c9467e9c101c7bf352d895a425c4641d90c679`.
+  The aggregate hashes the UTF-8 concatenation of one entry per sorted path,
+  encoded as `path + NUL + binary SHA-256 + LF`, then applies SHA-256;
+- frozen tag: `fstl-v1.0.0`, commit
+  `900487429bd20e13fcfea1c6e2d163631f1bafe1`;
+- evidence date: 2026-07-16, Europe/Paris;
+- Python `3.14.0`; CMake `4.1.2`; MSBuild `16.4.0+e901037fe`.
+
+Together, the base HEAD, tracked-diff blob and untracked-corpus aggregate bind
+the independently tested dirty tree. The two excluded reports are the decision
+layer reviewed separately after the technical reproduction.
+
+| Artifact or oracle | Bytes | SHA-256 / identity |
+|---|---:|---|
+| frozen `schema/fstl-v1.yaml` | 499,786 | `1d89c4a95a121c178bf85570cd616568fd939942b8d053835069b2d7d6a1f0d4` |
+| additive `schema/fstl-v1.1.yaml` | 505,222 | `147439b3ad2d4521a109bf8b191d66a41bfcfdba2201de3be9e19ea75d8cf947` |
+| `fstl-1.0-artifacts.manifest.json` | 131,635 | `4a437ee1300e86319ebd07a2fc4910cba96c4d15387a30eba5354eec49d1242f` |
+| complete frozen FSTL 1.0 set | 438 files | tree `9baac6a20db33bcf350066ed533c5581b7117410899d7bc4a6dc24406e47856d` |
+| Phase 1 seven-document FSTL 1.1 set | 7 files | tree `55855dea16285c185eed64bafed2a6a7f1b4cc54522128a36b39b0b1911fb631` |
+| `fstl-1.1-vectors.manifest.json` | 10,328 | `56c2c6d4c3cb662c9d2f780293be173d5d31bbcc2e36612ecd08ab53f581e846` |
+| FSTL 1.0 layout lock | — | `d5e7ae20571bc0e08f1d123f7529fd6430466872ad0dd5cb22ea37b24128e0aa` |
+| FSTL 1.1 layout lock | — | `416ff38c4549d2d9fba89e114b94c4fa0ef1fb1f27be59e2126db7fd5ea61136` |
+| common encoded-probe lock | — | `ee45ad75728442145aa2689211f237868f095a39a2735b89ae5868c3dbe95438` |
+
+The 438-file root covers the seven canonical Phase 0 documents, the frozen
+schema, 371 `vectors/**` files, 54 `expected/**` files, both vector manifests,
+the coverage catalogue, transport seeds and fuzz dictionary. It supersedes the
+old `099fffd0…` digest as the complete freeze proof; that older digest covered
+only `vectors/**`.
+
+Tool identities used by the final reproduction:
+
+| Tool | SHA-256 |
+|---|---|
+| `verify_fstl_1_0_freeze.py` | `d381a3bdf67a23415f573df768f4633fce15804f3ef257dbe67ff078aa127284` |
+| `test_fstl_1_0_freeze.py` | `fb611174ad44e0e889848c1e2a427021049a1c4fd0ac8c8c9967151bab442883` |
+| `fstl_schema.py` | `4c4352d511826a47144c3d9ee42a1782575673b8cc2fc3be5792e42d49b0b5dd` |
+| `verify_schema_vectors.py` | `eb9ffaa552d00fc1d6f2c4a5dd4915833851403e2e0ac6243e55fce18d59c75b` |
+| `verify_fstl_1_1_amendment.py` | `b47ec78e086d66d5346014bbee8f1c931c5e9d1a7faec5df6cedcbf2f8085eb3` |
+| `fstl_reference_decoder.py` | `9821caaa6819d72602ce0303e132ecdb09eb406747551522cf06878a006f87ff` |
+| `verify_telemetry_assets.py` | `8ad07e423222e056c6276721b7d2bb1e91ccabcd327006955d915100da533751` |
+
+## RED-to-GREEN freeze repair
+
+The failing baseline remains recorded in
+`FSTL10_FREEZE_RED_EVIDENCE.md`. The repair did not rewrite that historical
+evidence.
+
+| Baseline finding | Final proof | Result |
+|---|---|---|
+| seven Phase 0 documents and `fstl-v1.yaml` had drifted | exact tag comparison plus independent byte/hash oracles | `GREEN` |
+| the amendment reused the 1.0 schema identity | distinct generated `fstl-v1.1.yaml`, derived from and pinning the frozen base | `GREEN` |
+| freeze covered only `vectors/**` | exhaustive 438-file ledger plus independent embedded tree root | `GREEN` |
+| no anti-bypass verifier | 15 mutation tests cover bytes, add/delete, duplicate path, traversal and colluding tree/ledger refresh | `GREEN` |
+| consumers did not route a distinct 1.1 schema | generator, layout verifier, amendment verifier, reference decoder and asset verifier all bind both versioned paths as applicable | `GREEN` |
+| CI did not enforce the repair | both protocol workflows invoke the freeze verifier and the 15-test anti-bypass suite | `GREEN` registration |
+
+Workflow registration was inspected locally; no new remote GitHub Actions run
+is claimed by this report.
 
 ## Corpus and independent paths
 
-The corpus has 21 cases: 15 snapshots and 6 datagram messages. Nine are valid
-and have fixed canonical JSON; twelve are invalid and have one normative
-`expectedValidationError` numeric ID. The Python reference decoder and the C++
-path consume the same `.bin` files. C++ independently projects every field of
-all nine valid cases to a Jansson tree and compares structurally with the fixed
-JSON. For every invalid, C++ reads the metadata ID and asserts the same primary
-`ValidationError`; Python independently asserts that ID.
+The isolated FSTL 1.1 corpus still has 21 cases: 15 snapshot cases and six
+datagram messages. Nine are valid and carry fixed canonical JSON; twelve are
+invalid and carry one normative `expectedValidationError` ID. The amendment
+generator, Python reference decoder and production C++ tests consume the same
+checked-in cases and corpus through independent paths. For the 15 snapshots,
+Python and C++ decode the same payload bytes. For the six datagrams, Python
+validates the checked-in envelope and CRC before decoding its versioned
+`payloadFile`, while C++ traverses and decodes the complete datagram; the
+manifest and generator bind both representations.
 
 The two cumulative DELTAs share baseline 1. Sequence 2 changes position,
 quaternion, world velocity and local rotational velocity. Sequence 3 returns
-those values exactly to baseline. The replication harness loses sequence 1,
-accepts the later cumulative return, ignores reordered/duplicate packets and
-converges to the baseline image.
+those values to baseline. The C++ replication slice demonstrates convergence
+after loss, duplication and reordering.
 
-## Commands and recorded outputs
+## Final independent commands and results
 
 | Command | Exit | Stable result |
 |---|---:|---|
-| `cmake --build build --config Release --target unittests` | 0 | `unittests.vcxproj -> .../unittests.exe` |
-| `unittests.exe --gtest_filter=TelemetryProtocolVectors.*` (five consecutive runs) | 0 | each run: 14 tests, 1 suite, 14 passed |
-| `unittests.exe --gtest_filter=TelemetryProtocol*` | 0 | 394 tests, 36 suites, 394 passed |
-| `unittests.exe --gtest_filter=TelemetryProtocolBusinessStateValidation.Fstl11PlayerKinematicsRequiresCockpitEvenWhenTrustedFullStateIsAuthorized:TelemetryProtocolVectors.MissingCascadeOwnerKeepsBadRecordLengthInFrozenFstl10` | 0 | 2 tests, 2 suites, 2 passed |
-| `python -B .../generate_protocol_vectors.py --check` | 0 | 20 MessageType and 28 RecordType vectors verified |
-| `python -B .../verify_fstl_1_1_amendment.py --check` | 0 | 15 snapshots, 6 messages, 3 negotiations; frozen hash above |
-| `python -B .../fstl_reference_decoder.py --check` | 0 | 21 FSTL 1.1 cases cross-decoded; base corpus and CRC checks passed |
-| `python -B .../fstl_schema.py --self-test` | 0 | 20 messages, 28 records; all record-set/version/profile mutation tests passed |
-| `python -B .../verify_schema_vectors.py --check` | 0 | layout `416ff38c...1136`; encoded probes `ee45ad75...5438` |
-| `python -B .../verify_telemetry_assets.py --require-complete` | 0 | 182 fixtures; messages 20/20; records 28/28 |
-| Phase 0 `validate_phase_specs.ps1` | 0 | 8 documents, 5375 lines; all structural checks passed |
-| Phase 1 `validate_phase_specs.ps1` | 0 | 8 documents, 1897 lines; all structural checks passed |
-| `git diff --check` | 0 | no whitespace error; CRLF conversion warnings only |
-| `Get-ChildItem test -Recurse -Directory -Filter __pycache__` | 0 | no result after cleanup |
+| `python -B test/telemetry/protocol/tools/test_fstl_1_0_freeze.py` | 0 | 15/15 tests passed in 16.564 s, including every anti-bypass mutation |
+| `python -B test/telemetry/protocol/tools/verify_fstl_1_0_freeze.py --check --repo .` | 0 | 438 files; tree `9baac6a2…856d` |
+| `python -B test/telemetry/protocol/tools/fstl_schema.py --self-test` | 0 | 20 messages, 28 records; both versioned layouts and mutation checks passed |
+| `python -B test/telemetry/protocol/tools/verify_schema_vectors.py --check` | 0 | FSTL 1.0 layout `d5e7ae20…e0aa`, probe `ee45ad75…5438` |
+| previous command with `--schema test/telemetry/protocol/schema/fstl-v1.1.yaml` | 0 | FSTL 1.1 layout `416ff38c…1136`, same encoded probe |
+| `python -B test/telemetry/protocol/tools/verify_fstl_1_1_amendment.py --check --repo .` | 0 | 15 snapshots, 6 messages, 3 negotiations; 438-file root matched |
+| `python -B test/telemetry/protocol/tools/fstl_reference_decoder.py --check --repo .` | 0 | base 20/28; invalid 22+20 across 40 categories; transport 6+86; 21 FSTL 1.1 cases |
+| `python -B test/telemetry/protocol/tools/verify_telemetry_assets.py --repo . --require-complete` | 0 | 182 fixtures (54 valid, 128 invalid), messages 20/20, records 28/28, 126 categories, 4 seeds |
+| protocol and transport generators with `--check` | 0 | 20 MessageType, 28 RecordType and 198 transport files verified |
+| `python -B test/telemetry/protocol/fuzz/test_run_fuzz_smoke.py` | 0 | 4/4 deterministic smoke tests passed; no sanitizer claim |
+| `cmake --build build --config Release --target unittests --parallel 2` | 0 | Release unit-test target built |
+| `unittests.exe --gtest_filter=TelemetryProtocolVectors.*` | 0 | 14/14 passed |
+| five-test WP01 negotiation/version/profile/convergence filter | 0 | 5/5 passed |
+| `unittests.exe --gtest_filter=TelemetryProtocol*` | 0 | 394/394 passed in 36 suites |
+| Phase 0 specification validator | 0 | 8 documents, 5,300 lines |
+| Phase 1 specification validator | 0 | 8 documents, 1,912 lines |
+| tag diff over seven Phase 0 documents plus `fstl-v1.yaml` | 0 | no byte difference |
+| `git diff --check` | 0 | no whitespace error |
+| recursive `__pycache__` check after cleanup | 0 | no remaining directory |
 
-## Requirement matrix — WP01 scope only
+## Requirement and gate reconciliation — WP01 scope
 
-| ID | Concrete evidence | Technical status |
-|---|---|---|
-| `P0-F-016` | 1.1 schema/corpus, negotiation, minimal snapshots and rejection fixtures | evidence recorded; independent review pending |
-| `D0-019` | exact bit `0x0400`, profile 1..1, promotion and self-test mutations | evidence recorded; independent review pending |
-| `P0-AC-025` | frozen 1.0 hash, schema vectors and complete C++ vector replay | `PENDING` reviewer decision |
-| `P0-AC-026` | negotiation, minimal profile, downgrade/core promotion rejects | `PENDING` reviewer decision |
-| `P0.13` | full `TelemetryProtocolVectors.*`, Python cross-decoder, JSON equality | evidence recorded; gate not closed here |
-| `P1-REQ-001` | unchanged 1.0 tree and complete 1.0 replay | WP01 evidence recorded |
-| `P1-REQ-002` | exact 1.1 negotiation; 1.0 rejection and no downgrade | WP01 evidence recorded |
-| `P1-REQ-012` | inherited 1.0 schema/vector/limit replays | WP01 protocol slice only |
-| `P1-REQ-020` | versioned `PLAYER_KINEMATICS=0x0400` schema and rejects | WP01 evidence recorded |
-| `P1-REQ-021` | exact minimal/no-player/missing-record snapshots, manifest zero | WP01 evidence recorded |
-| `P1-REQ-022` | exhaustive FLIGHT_STATE wire/JSON and presence rejection | WP01 wire slice only; engine oracle remains WP07 |
-| `P1-REQ-023` | observed/lifecycle/flight ID parity and SHIP_IDENTITY exclusion | WP01 wire slice only; full engine slice later |
-| `P1-REQ-024` | finite canonical kinematic wire values only | `BLOCKED` for WP07 engine-source proof |
-| `P1-REQ-025` | non-zero wire entity identity only | `BLOCKED` for WP07 session/reuse proof |
-| `P1-REQ-034` | Python/C++ identical JSON or identical rejection ID | WP01 interoperability slice recorded; WP10 remains later |
-| `P1-AC-001` | frozen hashes plus two independent complete vector paths | `PENDING` reviewer decision |
-| `P1-AC-002` | exact bit, record-set, version rejection and self-test mutations | `PENDING` reviewer decision |
-| `G0-G` | evidence package above | `BLOCKED` pending tracker/reviewer closure |
-| `G1-A` | WP01 evidence package above | `BLOCKED` pending tracker/reviewer closure |
+| ID | Final evidence/status |
+|---|---|
+| `P0-F-016` | `PASS` — versioned schema/corpus, bit 10, minimal snapshot and no-intersection tests |
+| `D0-019` | `PASS` — additive `0x0400` profile with frozen 1.0 base, no manifest and no false `CORE_SHIP` |
+| `P0-AC-025` | `PASS` — 438 exact artifacts, unchanged IDs/layout/CRC/fragmentation, two decoder paths and anti-bypass suite |
+| `P0-AC-026` | `PASS` — exact `1..1` profile, minimal record-set and downgrade/incomplete-`CORE_SHIP` rejection |
+| `P0.13` | `PASS` — amendment delivered without reopening any FSTL 1.0 artifact |
+| `P1-WP-01` | `VERIFIED` for its contract scope |
+| `P1-REQ-001` | **`FAIL` historical/non-repairable** — byte-freeze sub-clause now passes, but the mandatory WP ordering was violated |
+| `P1-REQ-002` | `VERIFIED` for WP01 — additive minor and exact negotiation/rejection |
+| `P1-REQ-012` | WP01 protocol slice verified; later implementation uses remain in their owning work packages |
+| `P1-REQ-020` | `VERIFIED` for WP01 — versioned `PLAYER_KINEMATICS=0x0400`, immutable and forbidden in 1.0 |
+| `P1-REQ-021` | `VERIFIED` for WP01 — exact minimal/no-player record-set and manifest zero |
+| `P1-REQ-022`–`023` | WP01 wire slices verified; engine-source and lifecycle proofs remain WP07 |
+| `P1-REQ-024`–`025` | not closed by WP01; engine-source/session-reuse proofs remain WP07 |
+| `P1-REQ-034` | WP01 interoperability slice verified; the later client/tool package remains WP10 |
+| `P1-AC-001` | `PASS` — frozen hashes and two independent vector paths |
+| `P1-AC-002` | `PASS` — exact bit, record-set and version rejection |
+| `G0-G` | **`PASS`**, closed first after test and reviewer acceptance |
+| `G1-A` | **`PASS`**, closed only after `G0-G` |
+| `P1-AC-020` | **`BLOCKED/PENDING`** — explicit disposition of the historical `P1-REQ-001` failure and all remaining Phase 1 proofs are required |
 
-No assertion in this report changes a formal gate state.
+### Historical ordering violation
+
+Commit `ac3250723` added the Phase 1 scaffold (`P1-WP-02`) while the evidence
+committed with it explicitly said that `G0-G` and `G1-A` were blocked and did
+not authorize WP02. Commits `2c4916ae6` and `e1ecd51f3` continued WP02 work,
+and `9c0da12ed` started WP03 before the present gate closure. No waiver covered
+those packages.
+
+Closing `G0-G` and `G1-A` on the repaired tree authorizes future dependent
+work. It does not convert this historical process failure into a pass and does
+not by itself complete Phase 1.

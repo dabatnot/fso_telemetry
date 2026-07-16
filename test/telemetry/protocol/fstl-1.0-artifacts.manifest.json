@@ -1,0 +1,2198 @@
+{
+    "schema":  "FSTL-1.0-FROZEN-ARTIFACTS",
+    "wireVersion":  "1.0",
+    "fileCount":  438,
+    "treeSha256":  "9baac6a20db33bcf350066ed533c5581b7117410899d7bc4a6dc24406e47856d",
+    "files":  [
+                  {
+                      "path":  "documentation/analysis/specs/0-Contrat-de-protocole/01-cadre-normatif-et-perimetre.md",
+                      "bytes":  17950,
+                      "sha256":  "0043bf66b424c4faff191b2bfa5189074e9f4c8070bd411bace05dc2f53ee628"
+                  },
+                  {
+                      "path":  "documentation/analysis/specs/0-Contrat-de-protocole/02-format-filaire-et-registres.md",
+                      "bytes":  41063,
+                      "sha256":  "841ae4054865c8db0152e7f14251fbd2c6b534aedd01a1db2342861f1708d522"
+                  },
+                  {
+                      "path":  "documentation/analysis/specs/0-Contrat-de-protocole/03-session-horloges-fiabilite.md",
+                      "bytes":  42371,
+                      "sha256":  "1b2e2e6974c4d0f6d7aefda8c51991e271ed68e7b9114bd99a38c32812f76188"
+                  },
+                  {
+                      "path":  "documentation/analysis/specs/0-Contrat-de-protocole/04-modele-de-donnees-v1.md",
+                      "bytes":  106090,
+                      "sha256":  "3b9df71ec9798576e289208974556cebf3e02c81f5702fb24eb78a9f60ab278d"
+                  },
+                  {
+                      "path":  "documentation/analysis/specs/0-Contrat-de-protocole/05-capabilities-et-vues-specialisees.md",
+                      "bytes":  62754,
+                      "sha256":  "721a34836f4fe369ea5d7daf203883ae32da1fb32a85782d3eaad4d0738ba9e4"
+                  },
+                  {
+                      "path":  "documentation/analysis/specs/0-Contrat-de-protocole/06-validation-securite-et-conformite.md",
+                      "bytes":  29154,
+                      "sha256":  "304cfaf8cc78692e2d9994fffbfad97fc1eea68b44148925aeb0ff095d7b3e01"
+                  },
+                  {
+                      "path":  "documentation/analysis/specs/0-Contrat-de-protocole/07-livraison-et-tracabilite.md",
+                      "bytes":  23695,
+                      "sha256":  "08ddedd9a27759a015f0c678fc06ac3d9610a0eaa7b2d78dc8c75b3a56a7798a"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/expected/messages/ack.json",
+                      "bytes":  294,
+                      "sha256":  "3824d64664f658abace97ec0ad46b56e090c77efd6db34db2dd39af2751590a9"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/expected/messages/capability_update.json",
+                      "bytes":  409,
+                      "sha256":  "5c4fd988979fd285ad2db7bc0545568edb5056bcb3f7520b4fee3c4c5f7a12cc"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/expected/messages/delta.json",
+                      "bytes":  767,
+                      "sha256":  "a3d369afebadbab44cfc64a510237e1dfdd0e2d38a04007cc3280f6aadf96a43"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/expected/messages/discovery.json",
+                      "bytes":  379,
+                      "sha256":  "96dd2df8f5581f12ccce39e061368783f34a571a17205a19a239df466a63e5b0"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/expected/messages/event_batch.json",
+                      "bytes":  907,
+                      "sha256":  "dc0d6d3432af1976ddaada7839c66d45e8eae5dd0191b40595f5b08b7904f12b"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/expected/messages/full_snapshot.json",
+                      "bytes":  2093,
+                      "sha256":  "93a59ce9b43535866875a0b8c3c4404933d71546cb69a8ee8952d767754b4b3b"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/expected/messages/heartbeat.json",
+                      "bytes":  288,
+                      "sha256":  "f3df951bc048e4c17090cf3a608522c3e0f2bd9f9cef575c72908143390eb19f"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/expected/messages/hello.json",
+                      "bytes":  509,
+                      "sha256":  "7a942c5bab3059c623e861d29874bc7ab96009359b8adb7d329bdce952a78035"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/expected/messages/manifest.json",
+                      "bytes":  986,
+                      "sha256":  "16bb9edfdad6355dd3793c61980a65666e7f1f519f6af2a2e285b2f9ce822feb"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/expected/messages/nack.json",
+                      "bytes":  407,
+                      "sha256":  "f1e14b316c57cb11af061ba6609c742df7a010c2cfc34e6b53a9654a6a064f5b"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/expected/messages/resync_request.json",
+                      "bytes":  342,
+                      "sha256":  "4055a78a81ea9bf40c1cd80d4477e577d0bfc3a60de19d5b3d7d33178f15ac3c"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/expected/messages/session_begin.json",
+                      "bytes":  309,
+                      "sha256":  "159f6d186d0dacf95d532760e69025fea978019a0c1d87e551b4c7f47897da1e"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/expected/messages/session_end.json",
+                      "bytes":  273,
+                      "sha256":  "4a761e2ba7147079185055517291b8e8c5cca8a1678abc62af55325c4b7ba556"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/expected/messages/target_video_config.json",
+                      "bytes":  566,
+                      "sha256":  "5e12ac2922c5443aaa8b2a9d747ff5b9617b96bd8bbed2958e168a240eb1733d"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/expected/messages/target_video_frame.json",
+                      "bytes":  458,
+                      "sha256":  "6afe886b98d89e109112253d219045e1bc6fd1fee7d7258584b3f1749bac8cdb"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/expected/messages/target_video_keyframe_request.json",
+                      "bytes":  363,
+                      "sha256":  "a534e1ed3f701e8f85ef97edba09670cb787853d0593043cb4619551d3ad85a3"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/expected/messages/target_video_stats.json",
+                      "bytes":  683,
+                      "sha256":  "03423b3080393e38904816d22df828e08681631b7e249d458134d632f61aa4e5"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/expected/messages/target_video_stop.json",
+                      "bytes":  309,
+                      "sha256":  "768233afa134780dfc4811596acf27bfb3c30c0ce41dd94c90fc2c6e68b6e466"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/expected/messages/target_video_subscribe.json",
+                      "bytes":  590,
+                      "sha256":  "afe458ff9e2c85dd84956c2bb7378aafced8b6189d0a107e03212c1fb5e0eab1"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/expected/messages/welcome.json",
+                      "bytes":  661,
+                      "sha256":  "1849cdba87d1e07c34dde89a3d7207c6a103953a2ee7ac72a43c01f64302e994"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/expected/records/cargo_scan_state.json",
+                      "bytes":  312,
+                      "sha256":  "c0e4ab0c14df57eb81769431f346b8926c369a65240ca9ad94746903f51e64a9"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/expected/records/class_manifest.json",
+                      "bytes":  405,
+                      "sha256":  "dc301c20b897dd280b8db1817ce1ffc1a4eefca3340c4e3f62fc8d53e4c144aa"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/expected/records/comm_asset_manifest.json",
+                      "bytes":  1084,
+                      "sha256":  "9d16ecb4d30bef34638324a6bc599aae8fef20b2e3ddadb875e4e9a9b690cc79"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/expected/records/comm_view_event.json",
+                      "bytes":  543,
+                      "sha256":  "68075374424f90b5a9f9002fd0b239146ae1b5e4d715d7d07f4df2c4f22a80be"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/expected/records/comm_view_state.json",
+                      "bytes":  491,
+                      "sha256":  "ec6d8d13d57f0be7bfeb3eab8d4916336105101909dc2deb41e3a63946cfee18"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/expected/records/control_state.json",
+                      "bytes":  430,
+                      "sha256":  "202814ba0f1b19e2a9d59288e16b239e5c645435eeb40e1efde1a60529b9f083"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/expected/records/damage_state.json",
+                      "bytes":  350,
+                      "sha256":  "df16d73bd42dbead0fd4264dcf9bffd8ff78ac684af308b38857c2b044dc31be"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/expected/records/docking_state.json",
+                      "bytes":  339,
+                      "sha256":  "957afe95008e266e040a8119d80b97a8d7d279c79d1c54c2b0da72a4dffe91bb"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/expected/records/effect_state.json",
+                      "bytes":  289,
+                      "sha256":  "653007854d60d747f83a1221ecb4dbc77716f8ed22dc2d088b4346b666d53227"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/expected/records/energy_state.json",
+                      "bytes":  388,
+                      "sha256":  "8ddaf0923eb1c876bde46bb73cf08d58f37ecbf8742a4868eb629dd7d245dc29"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/expected/records/entity_lifecycle.json",
+                      "bytes":  343,
+                      "sha256":  "fc542148d4a5b3d9a5a494274b4d78a2da1d304bf24746f202eb391615b580fa"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/expected/records/events.json",
+                      "bytes":  443,
+                      "sha256":  "33845a341a12a97f5ede4faf76144a6a0d1b4790b72c30ffcc5466553dfab1c9"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/expected/records/flight_state.json",
+                      "bytes":  599,
+                      "sha256":  "1852cbacf4ae7ea61dc5a95094639e51e7aa463a7a2af6736e2df63ca66727e8"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/expected/records/lock_state.json",
+                      "bytes":  281,
+                      "sha256":  "8da69fc08954e926a341fe6a1c90c09793f5c5711c6823b41f9d0634d2a78be8"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/expected/records/mission_state.json",
+                      "bytes":  354,
+                      "sha256":  "ce10099a9ea5c07cf31abc556eb7acb290ffdcd5bc892157ca47453234dd3bdd"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/expected/records/navigation_state.json",
+                      "bytes":  317,
+                      "sha256":  "4ecf27f3f6437b7cede0a88b858f932ad58a956b62b87a2070f51fb0387e6964"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/expected/records/propulsion_state.json",
+                      "bytes":  316,
+                      "sha256":  "31792e3a3722dc0ed178d459fe6516f80f88eebab93b886d6101bfe48c25a62d"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/expected/records/radar_contacts.json",
+                      "bytes":  529,
+                      "sha256":  "80e9fb9036330c2ae97d48d15ea1a06e22314b4e14f1b54fe2faeae841207cb4"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/expected/records/radar_state.json",
+                      "bytes":  396,
+                      "sha256":  "a31dafc5cf9f3b95d559c74c959f6b8e57c7fa7808356c9194b6adb855656eb6"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/expected/records/session_state.json",
+                      "bytes":  565,
+                      "sha256":  "0a49826193c1ffd80a61fca279510d042827c43c6abb4e8dd36a61dde9d935af"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/expected/records/shield_state.json",
+                      "bytes":  391,
+                      "sha256":  "8629bfcc7b1c8f49071088058ccfe8ff27b750ae16ee438c3e9c5d1de07b7857"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/expected/records/ship_identity.json",
+                      "bytes":  415,
+                      "sha256":  "e06a8d083cc498f424569c9cc7efe7d305d4784ec1b879cc3763e65d7caba7e8"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/expected/records/subsystem_state.json",
+                      "bytes":  405,
+                      "sha256":  "3ee669a69490ec6f8d4e66c79c0c3dba8d3c265090caef696e318b26bf707089"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/expected/records/support_state.json",
+                      "bytes":  333,
+                      "sha256":  "9baaf4c799e77b7037baa96bf1ca5a964b2c04686a3cc24308b48e24c28944c8"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/expected/records/target_state.json",
+                      "bytes":  303,
+                      "sha256":  "2ebb274ecd6ee5df2e6e6fb352205d8cdca1f19ef700b4596cc4a062ba11eecf"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/expected/records/threat_state.json",
+                      "bytes":  318,
+                      "sha256":  "b279d26b168cee4c471fbb97e0f137824023b295ff4bb4d0945a8a6a2db0d51a"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/expected/records/weapon_manifest.json",
+                      "bytes":  461,
+                      "sha256":  "97ab42f46b7c10b800d1990faaa9209e94e92807df63c019adfe70d0375134d8"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/expected/records/weapon_state.json",
+                      "bytes":  555,
+                      "sha256":  "250abe90d0e6b951fd6e3532a5026f62197f748abf51be4d3c362529f3cd5eae"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/expected/transport/transport_0_bytes.json",
+                      "bytes":  132,
+                      "sha256":  "c0e76d814d7226ac7c85e0a5994ea1ff5c686535aeecab6a177fc18521bdf158"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/expected/transport/transport_1132_bytes.json",
+                      "bytes":  138,
+                      "sha256":  "3a64ab26a65cbf84b3b0c01996a52fc49eab7284e367e8a1e26bdbde4964f821"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/expected/transport/transport_1133_bytes.json",
+                      "bytes":  138,
+                      "sha256":  "386ab6562df106fbe34889149529504129d7ebab90d9a2c3f897c5e6d9cb3683"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/expected/transport/transport_1_bytes.json",
+                      "bytes":  132,
+                      "sha256":  "093b4de5b5f68e0db5d26f46c882aafe07dbf6550504a2e7f4309b845b84730e"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/expected/transport/transport_2264_bytes.json",
+                      "bytes":  138,
+                      "sha256":  "ac1111c14dc43aa788daad79eda289229a8276c338cfa3828e10611e795968de"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/expected/transport/transport_2265_bytes.json",
+                      "bytes":  138,
+                      "sha256":  "84f6b8135b3e51dc75aa33ed8e8eb0733d9171d0c5fb6de073cb708c9a356a28"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/fuzz/fstl.dict",
+                      "bytes":  270,
+                      "sha256":  "9ba628f28a2550a47dc6031bd7dde4b7fd2a6b9aafae15d6ada0c067e3e48407"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/protocol-coverage.json",
+                      "bytes":  43662,
+                      "sha256":  "f6eac1b76010ef355b4ab5cd56e0dc75a31b965b4c85ebe41103d5944e59ecbb"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/protocol-vectors.manifest.json",
+                      "bytes":  39967,
+                      "sha256":  "21cb0020029b6a6ffa68ea176c781eada4b7848f00ca7cae8031f912dd995931"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/schema/fstl-v1.yaml",
+                      "bytes":  499786,
+                      "sha256":  "1d89c4a95a121c178bf85570cd616568fd939942b8d053835069b2d7d6a1f0d4"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/transport-harness-seeds.json",
+                      "bytes":  762,
+                      "sha256":  "f97039b35d8ea751c740e71724191d0c37a22f7461bf1c392a1bdcd2f5cfa9d1"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/transport-vectors.manifest.json",
+                      "bytes":  15682,
+                      "sha256":  "9f7bd56abb543f82aeee0aa143de40e6f620fb48a99e6df854c8b1375f0ce6e6"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/bad_datagram_crc/000.bin",
+                      "bytes":  69,
+                      "sha256":  "63a60bae5fbddbd8ea1cd38db8f9140ac43b9998bb2c5fbf6c450f77fd14ee87"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/bad_datagram_crc/bad_datagram_crc.json",
+                      "bytes":  413,
+                      "sha256":  "9e7a0071a8ab3b5e907e62420a639758fc41d1680e92b8e57a39a4d9a4cf3d85"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/bad_header_size/000.bin",
+                      "bytes":  69,
+                      "sha256":  "f439bf6fb89e5976f87876e299c907fc274c16460a66d321d9864da7d22f7a00"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/bad_header_size/bad_header_size.json",
+                      "bytes":  400,
+                      "sha256":  "b015a12052130474973d2bbda769b5b022355004b826f39500f54d3f7468ffc6"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/bad_magic/000.bin",
+                      "bytes":  69,
+                      "sha256":  "b50209951fd4668df8ea8de77f49ad5b631f3b281f8abd5bed203209ed627af3"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/bad_magic/bad_magic.json",
+                      "bytes":  376,
+                      "sha256":  "00073b7ad6b034cfb7da8e132281f5d84ec3ce4c25df04433b3931fd174bd45c"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/bad_message_crc/000.bin",
+                      "bytes":  69,
+                      "sha256":  "e59d148bdee60312a677acf5faeb8fd36ef4213792292fc4424aaa75573a6bec"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/bad_message_crc/bad_message_crc.json",
+                      "bytes":  416,
+                      "sha256":  "85796bcef93c65c3fa460b4b5300a0535c21fb5d4b9bd87b5f59965dc5060071"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/contradictory_duplicate_fragment/000.bin",
+                      "bytes":  1200,
+                      "sha256":  "e9831beeb71dddce0c19341de316c2f15fa4b6757a3e773a106d886db9b0d805"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/contradictory_duplicate_fragment/001.bin",
+                      "bytes":  1200,
+                      "sha256":  "8daff4c9211a1d2c8c0ea92f98984ed75c53c12552b6cba1b67f769ab685542e"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/contradictory_duplicate_fragment/contradictory_duplicate_fragment.json",
+                      "bytes":  475,
+                      "sha256":  "523b9b6cc1b0201acde41642f161b0ce744d5ce579146f83250635e2444531c3"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/datagram_too_large/000.bin",
+                      "bytes":  1201,
+                      "sha256":  "b99f44db548557b8369be25e718b445543ed39faa327c2f6f6b47b9b85d208c7"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/datagram_too_large/datagram_too_large.json",
+                      "bytes":  431,
+                      "sha256":  "2ee6ec9db1a77c322d836d63bbdb4805896eb04dc2ad5ac624994cccc30fb6e2"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/fragment_index_out_of_range/000.bin",
+                      "bytes":  69,
+                      "sha256":  "c14ac1a3776bdd7511520c4f09b200db778c7a1c632dc730dee2ae12c67d6661"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/fragment_index_out_of_range/fragment_index_out_of_range.json",
+                      "bytes":  438,
+                      "sha256":  "0b4825ddceb067b3b0bc07d95721b87d3cf862c2c94fefd3054e20a8e89d617e"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/fragment_offset_noncanonical/000.bin",
+                      "bytes":  69,
+                      "sha256":  "b13b8a11f1e7c90160c4940a92bc35f16fa8e85bf04c29f98a1fe2a2b3e4e799"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/fragment_offset_noncanonical/fragment_offset_noncanonical.json",
+                      "bytes":  442,
+                      "sha256":  "2817f36de63602fd00ba1d0cb2433af54a789bc8c886f281ff6e5fcf33118b3d"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/fragment_slice_noncanonical/000.bin",
+                      "bytes":  69,
+                      "sha256":  "d4da85d22f2107fd095ecc9d3f18096c06d9048ecf14284317931ba48ea9dcd6"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/fragment_slice_noncanonical/fragment_slice_noncanonical.json",
+                      "bytes":  438,
+                      "sha256":  "a38d2ddbc08ed3aa4e4bc29ebe0c439b2b9e4f22ab0879cf077c0489ebaa0428"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/inconsistent_fragment_metadata/000.bin",
+                      "bytes":  1200,
+                      "sha256":  "e9831beeb71dddce0c19341de316c2f15fa4b6757a3e773a106d886db9b0d805"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/inconsistent_fragment_metadata/001.bin",
+                      "bytes":  69,
+                      "sha256":  "bc3fc2f5ed44c7a0c154c9a4f15fc214e8d92efe1e4f2b9025af09b0b201928c"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/inconsistent_fragment_metadata/inconsistent_fragment_metadata.json",
+                      "bytes":  449,
+                      "sha256":  "b5f0481bb5c5b233ce38f790ab8effaac6941cdd5731f813e19403df20c46968"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/message_too_large/000.bin",
+                      "bytes":  69,
+                      "sha256":  "cda0f24e44ccc63c059416903adb118e78ac5d71dba019b509831bab1553dfca"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/message_too_large/message_too_large.json",
+                      "bytes":  434,
+                      "sha256":  "8b5f4f450862575b7e26ff370c4af40f20d3589441d37943556fc879e2730154"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/overlapping_fragment/000.bin",
+                      "bytes":  1200,
+                      "sha256":  "e9831beeb71dddce0c19341de316c2f15fa4b6757a3e773a106d886db9b0d805"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/overlapping_fragment/001.bin",
+                      "bytes":  69,
+                      "sha256":  "98c42a67851c36a6710f96394e238b97cbdd2867f25c0904ef78a1895083fc44"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/overlapping_fragment/overlapping_fragment.json",
+                      "bytes":  465,
+                      "sha256":  "6ba2a2339254044122ce02d5d29186a351bb149011a808fb3a675270242d55f0"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/reassembly_quota_before_allocation/000.bin",
+                      "bytes":  69,
+                      "sha256":  "4e3b90e7c7cd85b075a775834ccea3b096bae2d7d19f1bd16798cc7026cbf189"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/reassembly_quota_before_allocation/reassembly_quota_before_allocation.json",
+                      "bytes":  530,
+                      "sha256":  "2c0e539fa013d5bf020476ffb3cba6ec52e3e60f3e49b75890d21af21d38ecf2"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/reserved_header_flag/000.bin",
+                      "bytes":  69,
+                      "sha256":  "a983f967771c61c3d43f40ce7118040852cc9be8634f81a8c179a1caee7ecf7d"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/reserved_header_flag/reserved_header_flag.json",
+                      "bytes":  418,
+                      "sha256":  "0aae5ef6a6f45a1634aeba65c5dc10ba69375314472e7f5c3e5b4c8510787d75"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/trailing_datagram_byte/000.bin",
+                      "bytes":  70,
+                      "sha256":  "2303689f1119be03676ac62cb0537d05776df1a456624e2f51926b82b3afe023"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/trailing_datagram_byte/trailing_datagram_byte.json",
+                      "bytes":  431,
+                      "sha256":  "b6e2d19fb27ff85a6edc4f1638e62c1461ba11cf5e4741b355601ec7c8009ec3"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_00/000.bin",
+                      "bytes":  0,
+                      "sha256":  "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_00/truncated_header_00.json",
+                      "bytes":  403,
+                      "sha256":  "1c43845e4df039385c6498573650981a6faa786b625fc5df68b1c94e244f0125"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_01/000.bin",
+                      "bytes":  1,
+                      "sha256":  "f67ab10ad4e4c53121b6a5fe4da9c10ddee905b978d3788d2723d7bfacbe28a9"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_01/truncated_header_01.json",
+                      "bytes":  403,
+                      "sha256":  "81bc702997145df09338cd9642c540d615aebde99f83f2e513bc9e0b37b108e9"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_02/000.bin",
+                      "bytes":  2,
+                      "sha256":  "f71f7b443cf23e606f946dc774dcaac9a51d3e10df3bbfa0106351c56e0cf93f"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_02/truncated_header_02.json",
+                      "bytes":  403,
+                      "sha256":  "3e4ae7b5d91ae38d9a315ba04bc7e0edddbfae9e41a488901e88485997aa8e04"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_03/000.bin",
+                      "bytes":  3,
+                      "sha256":  "7f6205660a22342882bc58fd1402a378c22fa0e7fc475639e7340b6486795785"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_03/truncated_header_03.json",
+                      "bytes":  403,
+                      "sha256":  "30ad89eb283cc45c0da446d99080afb9548f024d78c71121388f89c8e82e5acf"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_04/000.bin",
+                      "bytes":  4,
+                      "sha256":  "e5db9fb81acd2727ea8138cc7b1bc428d22e55f5d3f260277f077f5072746b35"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_04/truncated_header_04.json",
+                      "bytes":  403,
+                      "sha256":  "89d7ebb398662e676cf37a6fe203ca74c462e03bb12143a635b92457d3a83746"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_05/000.bin",
+                      "bytes":  5,
+                      "sha256":  "c0d6970c2b767ef7e6fc9d52b4eec4fbbd6f1abdbadb75d69f6476435ccdc90d"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_05/truncated_header_05.json",
+                      "bytes":  403,
+                      "sha256":  "4d2a295f53b4f987f87d84541f88bad309381f7dafbf6b16b9fc72ce5970476f"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_06/000.bin",
+                      "bytes":  6,
+                      "sha256":  "21f5b6671fd43ce4bfa4e2d8f9a919c98111bd9bf84e2160251f3d9879df0878"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_06/truncated_header_06.json",
+                      "bytes":  403,
+                      "sha256":  "673b8837ee67107f3bdab337cdd95aa88ddc0a95ad37fb81e2581ca6cf74734f"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_07/000.bin",
+                      "bytes":  7,
+                      "sha256":  "4a3d7018c99fae19d9d34e55777042aba0fde5f69d59c8fd4a8a4d9b30123ac4"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_07/truncated_header_07.json",
+                      "bytes":  403,
+                      "sha256":  "535ef352781435ec178a5969bc97822aaf131b603da9bbc98ef034769b6e5978"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_08/000.bin",
+                      "bytes":  8,
+                      "sha256":  "490794be06b3dff0eeb1c3f43f5f8b3859b8906efe84d4176bcc6bf910b96625"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_08/truncated_header_08.json",
+                      "bytes":  403,
+                      "sha256":  "2fa67132e123bea091c186cadcee8d5628b6016140f19c534120ae2051a8e02a"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_09/000.bin",
+                      "bytes":  9,
+                      "sha256":  "fae5ba1ab3ad67a774593b79591e443acb493f8d6f6a5f8e7c9cf2bfd4eabd17"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_09/truncated_header_09.json",
+                      "bytes":  403,
+                      "sha256":  "e7fbb21c98459e0ed9621625ebdf6df3c9d977894653d853110a35ccf1cbca86"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_10/000.bin",
+                      "bytes":  10,
+                      "sha256":  "fde5b2d8590e111361674568aeca1ec8b4fd478e209d4e83a7684d86f2eab6d0"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_10/truncated_header_10.json",
+                      "bytes":  404,
+                      "sha256":  "cac09af138ba8fe60e492c9377d3687f9b423b161b86498b4534c05d2016cb73"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_11/000.bin",
+                      "bytes":  11,
+                      "sha256":  "152d66dcf46974f8338fd672d5d1741f9ca51cc1abf881456208ca764eb70930"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_11/truncated_header_11.json",
+                      "bytes":  404,
+                      "sha256":  "cc8942bde34efb19c2b100d9343327539467fa2ca1c6b59ccce465ae1aae6c02"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_12/000.bin",
+                      "bytes":  12,
+                      "sha256":  "7a88a1ea77b53fcc2e9daa7058936bf541778cafb13f6603dde864f0bf437861"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_12/truncated_header_12.json",
+                      "bytes":  404,
+                      "sha256":  "f7775d2ddacbdcbced467b4302fd4daa96005730f7f1fcb7b72b17536350b157"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_13/000.bin",
+                      "bytes":  13,
+                      "sha256":  "80ee985b7245d861163e46b533f48db369db66247f39d2e40b227ddd8a12ec52"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_13/truncated_header_13.json",
+                      "bytes":  404,
+                      "sha256":  "4d0984b3ead7d9f724cd8ce2f564aa9fed06b0598752528c3548d5a2cb43d015"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_14/000.bin",
+                      "bytes":  14,
+                      "sha256":  "b29d8f0ec733f74f4f5f707f813cd9a89089bd1973ee1b7a8a9cfe1f9875bf2c"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_14/truncated_header_14.json",
+                      "bytes":  404,
+                      "sha256":  "db1af6cd6e5e8295c83846b63990f52915aa48871e55dd96f134b28c19c6e60d"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_15/000.bin",
+                      "bytes":  15,
+                      "sha256":  "347beec11b1495d17c7fb3501c09b59df100c9176027d8be8035acdcdc0b3abf"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_15/truncated_header_15.json",
+                      "bytes":  404,
+                      "sha256":  "4c1a34e53fd724eeeaff1be40c137ad8cbc8733256c13038e7b980c95f903854"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_16/000.bin",
+                      "bytes":  16,
+                      "sha256":  "eda4b201cd5e405e4c3e0ba60648fc99f9149113a923425d9efc6c73162731b1"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_16/truncated_header_16.json",
+                      "bytes":  404,
+                      "sha256":  "4e7d93216f70c54debca931cb3220930ead243ac2d88a350cc0aa207abdec524"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_17/000.bin",
+                      "bytes":  17,
+                      "sha256":  "342d1d6f98ee5cbfc7f502d1b3da6690fe6f9faf8d6ed6319fbf2e8b53189c97"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_17/truncated_header_17.json",
+                      "bytes":  404,
+                      "sha256":  "57831594850188a13911e18889e319d7bd69f6f090b472273768fff89d424bf0"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_18/000.bin",
+                      "bytes":  18,
+                      "sha256":  "e9292d2dfb87acca7742b7edbd27a7c7ec0f49bef805847c48f06c14d3a208f3"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_18/truncated_header_18.json",
+                      "bytes":  404,
+                      "sha256":  "6eee7e548e300a23cca19838a952638022b5226973169f5974e6bfc7c2aeb310"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_19/000.bin",
+                      "bytes":  19,
+                      "sha256":  "0ae402b25ca503134c76c56b4e125a9f40a36f63c04b0e63284469f2262f2a0b"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_19/truncated_header_19.json",
+                      "bytes":  404,
+                      "sha256":  "ab5f59a993e692eeaf987b57ae864b72c186c86e0c58b33d8c619f8f1da484d8"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_20/000.bin",
+                      "bytes":  20,
+                      "sha256":  "6e91b5f1f54960bfd1ab1ad9951157626f520ea214953e6ca556c588c1d681d5"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_20/truncated_header_20.json",
+                      "bytes":  404,
+                      "sha256":  "d7d8873694ff3cda7b3c87747d8e6372d7e4f796ad649df978c2a875181da313"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_21/000.bin",
+                      "bytes":  21,
+                      "sha256":  "ad56baec6a33af022b353e1bd86f48b179dcfecd21e47b9441ee8cbf39019ecf"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_21/truncated_header_21.json",
+                      "bytes":  404,
+                      "sha256":  "e715bb3dd18d77288476095647b35d029f65338ec010807c10e4e147ebffc7a6"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_22/000.bin",
+                      "bytes":  22,
+                      "sha256":  "8d55bf5a9fd93fcdb8ee10b097b6675986d68612b82c1894b4784a0da3214194"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_22/truncated_header_22.json",
+                      "bytes":  404,
+                      "sha256":  "2b681f7c6db5df739f4adf0ce6cf3572ec61d759149e227bc7d43e9138b1d6fc"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_23/000.bin",
+                      "bytes":  23,
+                      "sha256":  "723505bf7d06202d9314a20f3f4b8d2ea16326d4037f2a98936b6c2d148cb8a9"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_23/truncated_header_23.json",
+                      "bytes":  404,
+                      "sha256":  "11151b411efc730ef14b92784e0da59b7cc6d5a9dc75de2a93f604c9ccebbb37"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_24/000.bin",
+                      "bytes":  24,
+                      "sha256":  "0b943f92ea4d89612e1820bc8d0fee7fb56861047cae891a5c5b1ed60d14daee"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_24/truncated_header_24.json",
+                      "bytes":  404,
+                      "sha256":  "8b3b64d62c5b9d6bf05ef5f906038ecc1a94580d466606934c820be2dae7d2dc"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_25/000.bin",
+                      "bytes":  25,
+                      "sha256":  "d0c1b2401d010fb0585feda47f81041ef47568269ded5ee7e774cfc6cfb99e58"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_25/truncated_header_25.json",
+                      "bytes":  404,
+                      "sha256":  "ffa7df8074422d63e6d3f6472385abb4e37127f31ba88d44f2b22245b85e8805"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_26/000.bin",
+                      "bytes":  26,
+                      "sha256":  "4536876661eb056d5a3f5ada0d3d362d980878550c32b0b1db32733d5022e6cd"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_26/truncated_header_26.json",
+                      "bytes":  404,
+                      "sha256":  "dfc476395790a115f83fd5d337705185899125ecd757b917a117e764dc05f0a9"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_27/000.bin",
+                      "bytes":  27,
+                      "sha256":  "d55bd2ec1c4075e0f42262b7b2a4d82a20eed2a30d42a2d789e5f7aafcccf4e4"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_27/truncated_header_27.json",
+                      "bytes":  404,
+                      "sha256":  "60f931f6ccfd46be6c1e98e7fd33b2f2b56565de897d3ab8a6cfc9b170318793"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_28/000.bin",
+                      "bytes":  28,
+                      "sha256":  "e746aedcd906b37b5c30b5e28598dd15b628bb1493f6b6e3659bd564bab128a7"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_28/truncated_header_28.json",
+                      "bytes":  404,
+                      "sha256":  "7a824c538aef130639f594452762fd756de9a201109515edccdfdafd99f49768"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_29/000.bin",
+                      "bytes":  29,
+                      "sha256":  "6d490207984bd2af951b3389f790514034a19f675051a601c38bacd460ebfbf4"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_29/truncated_header_29.json",
+                      "bytes":  404,
+                      "sha256":  "3130d3143c0583bdab4da525ee49964158bee41e86720748ccf64720e574d306"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_30/000.bin",
+                      "bytes":  30,
+                      "sha256":  "c6a12e162e552b96f8ff72bd9645f0c929db1ad99add0127058d1f4e4f3e107f"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_30/truncated_header_30.json",
+                      "bytes":  404,
+                      "sha256":  "618771994b8c25ce28cf4fd412f3450bfa8d85dd1eac1d9e54a39807d83b6748"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_31/000.bin",
+                      "bytes":  31,
+                      "sha256":  "224fe676db7651dd097d755f1817e4d343d8e2160cac911c440537f7a608d5c0"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_31/truncated_header_31.json",
+                      "bytes":  404,
+                      "sha256":  "0ab53cf2935368587901b82ea78ef2712ef0c024b56fc7aec2f259fcfb562a4a"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_32/000.bin",
+                      "bytes":  32,
+                      "sha256":  "df2144ee001ee2fe5e85ee8d0b374697ea8f57b9f34cc44437e538ddc83a87bc"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_32/truncated_header_32.json",
+                      "bytes":  404,
+                      "sha256":  "b681d6128e975bb67919f9606b97d4968f3df3ecd4ec91bbfef434d3f02c2328"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_33/000.bin",
+                      "bytes":  33,
+                      "sha256":  "e1f242c4fa19efa04f6538af5f9010241104501f11c65a61aa60edbbce7e9ef2"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_33/truncated_header_33.json",
+                      "bytes":  404,
+                      "sha256":  "6d6d3305a2f790120e649454d1e3e6f580c130cd960de411d4164bcf34d0cd9f"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_34/000.bin",
+                      "bytes":  34,
+                      "sha256":  "34c7f24555695915c89e49161d367782708b10d64e20bd92263f1f2054387bf1"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_34/truncated_header_34.json",
+                      "bytes":  404,
+                      "sha256":  "a5742c4679c9b12af8f6a134d97ee9da7cfc5fb26e7c13a76d42111e1cc39fb4"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_35/000.bin",
+                      "bytes":  35,
+                      "sha256":  "79e0d994ea134b9ea5caf7fd1001873a86fba4b2fdf6a96dac4a585088229d76"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_35/truncated_header_35.json",
+                      "bytes":  404,
+                      "sha256":  "90b033d5ec59fb027554d175d3edca3b672f548d220ef3b137d39bd232786112"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_36/000.bin",
+                      "bytes":  36,
+                      "sha256":  "c6724ef1bbc41b4ad422c2af6bc31f62c71da15c92f994c4afee08b76932b337"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_36/truncated_header_36.json",
+                      "bytes":  404,
+                      "sha256":  "1cb9ca45c8854ec0fb321edfc1dff9eb4e56bd168aca978b3fce24825a0c079c"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_37/000.bin",
+                      "bytes":  37,
+                      "sha256":  "050f9c2a79a328b52b7001b2a2849c90e8c377da64b2bf7b590d296a200e11fb"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_37/truncated_header_37.json",
+                      "bytes":  404,
+                      "sha256":  "28a39dc30abd2d5ccd80cca86173923d6fcc85079098bb160c97a30cfcf1f13e"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_38/000.bin",
+                      "bytes":  38,
+                      "sha256":  "5d01569fc0ea9b0745d33e977342e866bf47e17355ad3ce10e5064ba9f8a3f65"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_38/truncated_header_38.json",
+                      "bytes":  404,
+                      "sha256":  "1781d36a49fa5a6641d20668312dec8ed80b97b925ad695e1cc9d90cebbe2e60"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_39/000.bin",
+                      "bytes":  39,
+                      "sha256":  "c878e3f0f55c3e176221b78c34ec1fac600e4579162d2506eb5332d6b8887270"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_39/truncated_header_39.json",
+                      "bytes":  404,
+                      "sha256":  "4fa2159e2027682fdaf2a26086720fcc0a4a75edb363b4222fa9bf89f67686c8"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_40/000.bin",
+                      "bytes":  40,
+                      "sha256":  "2fc1348982e519f535d39a10518025238da9a93b492ad7b15fbc8dad13f67c56"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_40/truncated_header_40.json",
+                      "bytes":  404,
+                      "sha256":  "cc39dd2b1d198b04e098d08b97be3966b709672c37ef856b069bbed2d9907880"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_41/000.bin",
+                      "bytes":  41,
+                      "sha256":  "dfdbbabe2641bd89822dea59639ab6e8ed18ea50e3eae24a55453712b4259f8b"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_41/truncated_header_41.json",
+                      "bytes":  404,
+                      "sha256":  "1e2d60dfd84cf4bf2a09fab6862f6b0d204c5d9ed22e2176bbc4bf0506d9e039"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_42/000.bin",
+                      "bytes":  42,
+                      "sha256":  "6ef30dd89135a96b43ff149c7ed5fbf4295f6700b12982108dafb0f0afd1eef9"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_42/truncated_header_42.json",
+                      "bytes":  404,
+                      "sha256":  "7afb7e23df4c25985d174b24277fa60db378f6e223354627411455f807bd2c6e"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_43/000.bin",
+                      "bytes":  43,
+                      "sha256":  "5b5a27c3d8357af632c800fb6e9c69e570f5f49611400ea8ddc50e5002cbe0da"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_43/truncated_header_43.json",
+                      "bytes":  404,
+                      "sha256":  "b800ed7588f69e7d96e13f844e16853ecec5e3daa4708834eed21a531da30fa4"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_44/000.bin",
+                      "bytes":  44,
+                      "sha256":  "fbe6a6ae33950e4c68bba99566e02398e8dec7a91512b7d2b9259c30a9e99110"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_44/truncated_header_44.json",
+                      "bytes":  404,
+                      "sha256":  "1edd31b4831516be4b01e33c6f5fa78ba8f1946ade9567fbc1657aefd9556a49"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_45/000.bin",
+                      "bytes":  45,
+                      "sha256":  "74c51e892b530d1c1cfcd444adddb4bfcddab88526eeca5a9790eab6b93d9240"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_45/truncated_header_45.json",
+                      "bytes":  404,
+                      "sha256":  "c21ff831a56c8b5f1a712efc45e7d5382411b35ab962593f85042a8ec2343227"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_46/000.bin",
+                      "bytes":  46,
+                      "sha256":  "7e339cfd7a21d7ba03e1648698a3bb9df39d7d9db4977880fb056579bc06fab5"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_46/truncated_header_46.json",
+                      "bytes":  404,
+                      "sha256":  "5b070a9dc3552dbd73beba4a68a2704e1d1da18372b9614cbe526f322d752c12"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_47/000.bin",
+                      "bytes":  47,
+                      "sha256":  "f1becffd0a7db13ce8b27f0b406d01b3f7a69e54a790ff114997e164c392133c"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_47/truncated_header_47.json",
+                      "bytes":  404,
+                      "sha256":  "6476c192689fd002ec670ac5c83136a0d94284ac4dd3414c161d21e38d4564c1"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_48/000.bin",
+                      "bytes":  48,
+                      "sha256":  "63ccaca05217e4d1d30fa4d8bd1ce125ecccec000f888186c9d4352e82675c5f"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_48/truncated_header_48.json",
+                      "bytes":  404,
+                      "sha256":  "3d946e21e8ed0b2b66e94d96daeba154c4fcc99c2d4f215c7c7dc55375221b5e"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_49/000.bin",
+                      "bytes":  49,
+                      "sha256":  "01e2dde1c6a3de50bd8068a4af779e7bd05f8aec0054a8b94ce11adad9621ba2"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_49/truncated_header_49.json",
+                      "bytes":  404,
+                      "sha256":  "627e0e25e59ef51c438d3801e0d546aaca649e84e704e9b9f29288dbd0f52b71"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_50/000.bin",
+                      "bytes":  50,
+                      "sha256":  "41aea94c1c7c85ed67a0e4db5734e426dec81c20803a8f7d17429d2443c5c10d"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_50/truncated_header_50.json",
+                      "bytes":  404,
+                      "sha256":  "aad9aeb99c76abb0b915e387c9797941690b18687ee5ff62a896988104099505"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_51/000.bin",
+                      "bytes":  51,
+                      "sha256":  "9738be9180e448dc5c41c6071d7a27227fa76e5ad26a7637b5a02f0836660c55"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_51/truncated_header_51.json",
+                      "bytes":  404,
+                      "sha256":  "3435108a9b7a373188cd9cc8e6e137102090ba59aafe317067c1c6f412314c2c"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_52/000.bin",
+                      "bytes":  52,
+                      "sha256":  "9ab973d5b8a90efaf149166f8ceb69a0abf0eb918ff83ab6f7508136990c32de"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_52/truncated_header_52.json",
+                      "bytes":  404,
+                      "sha256":  "4b538a28a77184b2ce8adb2eaadbf26d2b1f70c4a6e697628f1c8b5ab936f59c"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_53/000.bin",
+                      "bytes":  53,
+                      "sha256":  "40ef714e9ff58ee234a42525ba952b6694fbf63aa657fec5b06cf6eb106448db"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_53/truncated_header_53.json",
+                      "bytes":  404,
+                      "sha256":  "ceb8a2b152b12202495309db5df3bc7f5050155eb9a19b85e228d349d1703650"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_54/000.bin",
+                      "bytes":  54,
+                      "sha256":  "d10e89c63bb9c543d0e4d0f809de486c69a927b129b9308cd21dd9baeeacf848"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_54/truncated_header_54.json",
+                      "bytes":  404,
+                      "sha256":  "a65600df83fd56d33a1ee18935d1cd26667008f9e408b831de985d51fc7657d1"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_55/000.bin",
+                      "bytes":  55,
+                      "sha256":  "12bf8dbc5bd6c1dea221669b6747d4246082ee120a187fd55fb7486262a1680a"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_55/truncated_header_55.json",
+                      "bytes":  404,
+                      "sha256":  "7e2253abcf04ce496756dd2bb1de7d7c9a6b02645101f90d2ba033248224f0b8"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_56/000.bin",
+                      "bytes":  56,
+                      "sha256":  "726b0ffa8733a93d9ce76ecbeb59e0121a8098ff9335a64e9021ed61298efeaf"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_56/truncated_header_56.json",
+                      "bytes":  404,
+                      "sha256":  "7699f1cd5183b4dac275286d6efe1bce3f78cfa210e9e9cbe8ab8af849e912b4"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_57/000.bin",
+                      "bytes":  57,
+                      "sha256":  "58619d675970face05d26537a56da95a2dc023d5c664b83d27d6c9260e961e0a"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_57/truncated_header_57.json",
+                      "bytes":  404,
+                      "sha256":  "65443c8f1d009808ae20576852f7ef3388929643351bf32298676d2545052775"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_58/000.bin",
+                      "bytes":  58,
+                      "sha256":  "6448494efa90638639259d67aec578d88032656d6a707cb73a99b6e0fb5ab834"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_58/truncated_header_58.json",
+                      "bytes":  404,
+                      "sha256":  "b0737a6f5a2b4d4402b1f22af5d0fff92f6b0f47b80814545275abab608f1096"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_59/000.bin",
+                      "bytes":  59,
+                      "sha256":  "82a68ae22f9b5be1b81b6fa6be2ab1f1bb9ab913cabc75a932c226127a4e8b81"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_59/truncated_header_59.json",
+                      "bytes":  404,
+                      "sha256":  "11e028b67f9234d57d7afb70e19c81134711071b9d1ea3e1e76689d827101803"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_60/000.bin",
+                      "bytes":  60,
+                      "sha256":  "a35c8d5c826dceea20892054c340507361766f0e38c7a57800c05cab4ae73dd9"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_60/truncated_header_60.json",
+                      "bytes":  404,
+                      "sha256":  "db777c687fe19833ee073f8425f48e0b43fe44d981fec3332af26b61089f22dd"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_61/000.bin",
+                      "bytes":  61,
+                      "sha256":  "da75e467534eb752d05dd2c2f539af37acabae3073a633e3800f38eb8cf7bb23"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_61/truncated_header_61.json",
+                      "bytes":  404,
+                      "sha256":  "4ae450e7c1dfbabb32f2d740c9bb59631513f162032179d3781457bfdfa24e67"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_62/000.bin",
+                      "bytes":  62,
+                      "sha256":  "817c0f5efb8fbc9f7de217e858a9ecfd9698fa5b640246a7811c68eff61a72e1"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_62/truncated_header_62.json",
+                      "bytes":  404,
+                      "sha256":  "046dadbdbbcd50791ecd488f88786ac25bd021239e375fa230ccb18b8b52f199"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_63/000.bin",
+                      "bytes":  63,
+                      "sha256":  "a7774ae9a4282a4d25f07ac7218292be305ff15c4ea6f23140c89972505efa51"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_63/truncated_header_63.json",
+                      "bytes":  404,
+                      "sha256":  "94b4c6f4950e05dcba97b55976df00e28c771099aa0ec03102c9dec7be4e290f"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_64/000.bin",
+                      "bytes":  64,
+                      "sha256":  "65b21cabe1b95ad90274b64b8388b35174eb2576894bfb2f25cdb4e1cf25bd50"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_64/truncated_header_64.json",
+                      "bytes":  404,
+                      "sha256":  "3c46ed6007bd78f7c07d597406d9f18d839dfd055478694a8c91616cd2f4124d"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_65/000.bin",
+                      "bytes":  65,
+                      "sha256":  "e5d9407c4616247e9954fe13803a82040b1aec6d7cdb165b523ecfedd95dff39"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_65/truncated_header_65.json",
+                      "bytes":  404,
+                      "sha256":  "0222d00075c44781252ea6f6f1e83b5eb49bd961c01d9ab10584e2a8a4c6f0fe"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_66/000.bin",
+                      "bytes":  66,
+                      "sha256":  "92433ab5b75b5e270a7deb5010d97f00f34e990c6e0b1f6d19e37e79de7a64d9"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_66/truncated_header_66.json",
+                      "bytes":  404,
+                      "sha256":  "d899d707f19e4659071238e1bfee645f2367f8a517d959220fea427fc80a8a9a"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_67/000.bin",
+                      "bytes":  67,
+                      "sha256":  "f7902ee6153d6956e51ad4d904e73c7902beeb933561ea5f902c2ccc31bff906"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/truncated_header_67/truncated_header_67.json",
+                      "bytes":  404,
+                      "sha256":  "d343f45ec74935acb0379267bff2c6e83502cbfbc3feb52f21e7aa46916a5760"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/unsupported_major/000.bin",
+                      "bytes":  69,
+                      "sha256":  "881f596643bca4fc0080902955e0fdc1959772bac749c85e991230a1aa5fe93f"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/unsupported_major/unsupported_major.json",
+                      "bytes":  408,
+                      "sha256":  "5a662d63044f3d7cf47d2290940764e99a99e00c009c3ccc0b1fa6a088d3f6db"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/unsupported_minor/000.bin",
+                      "bytes":  69,
+                      "sha256":  "1aa67be01045257b18d8aad37f7a398882d0bdc9c226bb1dd73dfc250b1cc755"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/unsupported_minor/unsupported_minor.json",
+                      "bytes":  408,
+                      "sha256":  "b845a2240c5ed889ccc69db99fc7529d5ed53d7b172b60b3f159fd1efe4abd4b"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/zero_fragment_count/000.bin",
+                      "bytes":  69,
+                      "sha256":  "b2dcf1248e4e636e704d83e5fa1d7899bf9a034389ea025c3cccc8465b6d302c"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/datagrams/transport/zero_fragment_count/zero_fragment_count.json",
+                      "bytes":  414,
+                      "sha256":  "58bad360aaa651b613f53f9050e8ee09ebddc5ae431a689d968495fc86c2ac72"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/messages/ack_forged/ack_forged_target.bin",
+                      "bytes":  12,
+                      "sha256":  "299d5456e8019a65b9be5f72996e66e01d01ae50d7705321da862d28a55031e8"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/messages/ack_forged/ack_forged_target.json",
+                      "bytes":  843,
+                      "sha256":  "a4f3194a11bced2103280a774d05082b2c96a181c5f14a9bb5a5d55b393c125d"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/messages/ack_late/ack_late_after_retention.bin",
+                      "bytes":  12,
+                      "sha256":  "86a3b79f83cc3a9ba5e49bd1a4d52dd5d3c86c433925e4ce0651554aaba60806"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/messages/ack_late/ack_late_after_retention.json",
+                      "bytes":  925,
+                      "sha256":  "bee8e04a8b014f1a2525029df8e1304276560ab64a974e85e2226f7b4e3aa1e0"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/messages/ack_wrong_crc/ack_wrong_target_crc.bin",
+                      "bytes":  12,
+                      "sha256":  "18cb928288cd34f13887d0a7708b0779a7a5175f4e40d954946100590873bf3c"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/messages/ack_wrong_crc/ack_wrong_target_crc.json",
+                      "bytes":  862,
+                      "sha256":  "b8d6c1aeff3fcdd4611b1653bcd18616008bb7146f2d8e2ae7ea5ce83124bdae"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/messages/ack_wrong_endpoint/ack_wrong_endpoint.bin",
+                      "bytes":  12,
+                      "sha256":  "86a3b79f83cc3a9ba5e49bd1a4d52dd5d3c86c433925e4ce0651554aaba60806"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/messages/ack_wrong_endpoint/ack_wrong_endpoint.json",
+                      "bytes":  880,
+                      "sha256":  "bdd40fe9dd5d607ff9b322b74d439fe68987e25339a1910c2689d9f98e9f509e"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/messages/client_simulated_command/client_simulated_producer_command.bin",
+                      "bytes":  28,
+                      "sha256":  "8c4b15b5d6bca180ec7ca5102f65cc3f21670b7f0bffbc266d5d6d36d3b89e15"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/messages/client_simulated_command/client_simulated_producer_command.json",
+                      "bytes":  743,
+                      "sha256":  "24215bbc21e3389b150fcc7ce09617f4dab8789494f52ffa75d5516ac5d12f80"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/messages/client_undefined_command/unknown_message_type.bin",
+                      "bytes":  0,
+                      "sha256":  "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/messages/client_undefined_command/unknown_message_type.json",
+                      "bytes":  662,
+                      "sha256":  "2870f908bf34071fa0935ab7194adaecfe28a9bdae68cb7dc2f20952af57e644"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/messages/encoded_frame_size_mismatch/video_encoded_frame_size_mismatch.bin",
+                      "bytes":  66,
+                      "sha256":  "c9c8e4bda801f62a62f5ed4491ac4afe09487396e4b17060b49723bc28dbb4b7"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/messages/encoded_frame_size_mismatch/video_encoded_frame_size_mismatch.json",
+                      "bytes":  647,
+                      "sha256":  "47ccf60bb90be9eb8ae56b1df95d4fe1c6d5e3318ea5a32bff85896c6f48eb3a"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/messages/fixed_payload_trailing/fixed_payload_trailing_byte.bin",
+                      "bytes":  33,
+                      "sha256":  "cbfe35bde605a217cd3ed3ec2d03916cbf610a949b183905b64dd221e715cb8f"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/messages/fixed_payload_trailing/fixed_payload_trailing_byte.json",
+                      "bytes":  596,
+                      "sha256":  "7ece1ec7b118f5dc948f456ffcbf5c1b8d7180ee35435594d5496062cacce582"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/messages/fixed_payload_truncated/fixed_payload_truncated.bin",
+                      "bytes":  31,
+                      "sha256":  "8c30365c27314da9e49d33b6593c3e9c0663f401afe6f91b9aeca94b7bd9bb08"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/messages/fixed_payload_truncated/fixed_payload_truncated.json",
+                      "bytes":  583,
+                      "sha256":  "0e50c1225ce4f3447d149c5c7c11eeef1075e2bcfdb09bb6ea0cbf43c79a9d19"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/messages/nack_bitmap_incoherent/nack_bitmap_tail_bits_set.bin",
+                      "bytes":  26,
+                      "sha256":  "cbcca2205894f5f9b6084c85490b1142eaa77589f39de31c064e0e217c481981"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/messages/nack_bitmap_incoherent/nack_bitmap_tail_bits_set.json",
+                      "bytes":  606,
+                      "sha256":  "1d2c6ace386b7ab66303e893ca6185ea34e15d04d7a6a3ed40d45f2f85c9869c"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/messages/record_count_truncated_region/event_batch_record_count_exceeds_region.bin",
+                      "bytes":  67,
+                      "sha256":  "e663d979245f8c17081931f3f9937eba56424b62d08da7ab9efea6ac56d48c30"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/messages/record_count_truncated_region/event_batch_record_count_exceeds_region.json",
+                      "bytes":  653,
+                      "sha256":  "062d80207c52d5bb436797e7025d8f61b1a9c7ed24227a6697eada89b7fc6d2f"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/messages/record_duplicate_singleton/duplicate_singleton_record.bin",
+                      "bytes":  200,
+                      "sha256":  "6caecaf7613dd3a249021cb0d42f0046272ef254924a863eadc501ce3482a5b9"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/messages/record_duplicate_singleton/duplicate_singleton_record.json",
+                      "bytes":  643,
+                      "sha256":  "72f4b5f310c6b23b2753df67b3c95ff228477a00a156f28c282133e79ee34213"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/messages/stale_video_target/video_old_target_after_change.bin",
+                      "bytes":  66,
+                      "sha256":  "e3bd406aa198f31af174086e4f1e3fe8b4a699eed0f38c78702496dabd4b076a"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/messages/stale_video_target/video_old_target_after_change.json",
+                      "bytes":  957,
+                      "sha256":  "a0d1d8afedbf5a8ec34fe73fb2780b6d125dd926a877c353583eb310b60cc206"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/messages/unknown_baseline/delta_unknown_baseline.bin",
+                      "bytes":  54,
+                      "sha256":  "0d724067dec5aa7918c382744cddeb396edf8a18f5d286672780895e8a5d095d"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/messages/unknown_baseline/delta_unknown_baseline.json",
+                      "bytes":  838,
+                      "sha256":  "6df4f3cdb32dbc1e43118ff1357455956033c2d0a3b1723c8ce12fc24873faa9"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/messages/unknown_generation/video_stale_generation.bin",
+                      "bytes":  66,
+                      "sha256":  "b9bacb33749829d9715e1e1f29e5db701211e0baf0476155c4603bdd1979947e"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/messages/unknown_generation/video_stale_generation.json",
+                      "bytes":  868,
+                      "sha256":  "2d022e1bed71a506be859dff419b9f1bd1aa5559ab1e17e836bcbfdea42e8e26"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/messages/unknown_manifest/snapshot_missing_manifest.bin",
+                      "bytes":  200,
+                      "sha256":  "e4ee97a5bb0137e9d15e466f34cd077b67de31cb925faa80950cf61a3c53b6d7"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/messages/unknown_manifest/snapshot_missing_manifest.json",
+                      "bytes":  766,
+                      "sha256":  "ad6bc5cc915528511f3d074bc6e30321d310acbd546fbae4fe9115fde1e2a6ca"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/messages/unknown_stream/video_unknown_stream.bin",
+                      "bytes":  66,
+                      "sha256":  "4093affb65825e0b9e42723b4f341fa8513bec3cb997b82cdda064235b39bec5"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/messages/unknown_stream/video_unknown_stream.json",
+                      "bytes":  754,
+                      "sha256":  "0d88fb63d610112eb97fddc984a4d0b3fd25f72ba9ef460fada9b70c7045e4c1"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/messages/unknown_target/video_unknown_target.bin",
+                      "bytes":  66,
+                      "sha256":  "477ddeab7806395ddc2cfa555b8e2dedb2d138aef2c23ef0eafe7e5bbbb3feb3"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/messages/unknown_target/video_unknown_target.json",
+                      "bytes":  716,
+                      "sha256":  "b48e2270512b85eb2568651225a62446976b76643c097457645472745f4d0782"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/messages/video_bitrate_not_negotiated/video_bitrate_not_negotiated.bin",
+                      "bytes":  36,
+                      "sha256":  "717c5448f76f090daa2ce3af5f05768d8f98fa19bbd56923b1e8290bb3e8a4a2"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/messages/video_bitrate_not_negotiated/video_bitrate_not_negotiated.json",
+                      "bytes":  856,
+                      "sha256":  "ff52fc9b1f0a068cc6bffff8eef890c1d6a254cbf728bc573f28b5a569a64b07"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/messages/video_codec_not_negotiated/video_codec_not_negotiated.bin",
+                      "bytes":  36,
+                      "sha256":  "ee0588f7b5e1548fa872e3c6c4e2b1b86276dbdcf39950e26f23dd75b940d736"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/messages/video_codec_not_negotiated/video_codec_not_negotiated.json",
+                      "bytes":  846,
+                      "sha256":  "7c60aeff508939298e876d205cac1dfee3826556f5baea8129a3605606e97ca4"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/messages/video_profile_not_negotiated/video_profile_not_negotiated.bin",
+                      "bytes":  36,
+                      "sha256":  "0e98ad1841adda489c9979cd072672451e9c9327e55f290a8419ac31215fb56c"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/messages/video_profile_not_negotiated/video_profile_not_negotiated.json",
+                      "bytes":  865,
+                      "sha256":  "95c621c95c251d5158f30b7c759d94f1ebfc941b2b7b8e202c9e2dfd3c3cf67d"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/messages/video_resolution_not_negotiated/video_resolution_not_negotiated.bin",
+                      "bytes":  36,
+                      "sha256":  "ee0588f7b5e1548fa872e3c6c4e2b1b86276dbdcf39950e26f23dd75b940d736"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/messages/video_resolution_not_negotiated/video_resolution_not_negotiated.json",
+                      "bytes":  862,
+                      "sha256":  "6f400564dff3ed6a158b85fd57458a778ffe11f985201f898ec18566888d15f1"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/records/bool_outside_0_1/bool_outside_closed_domain.bin",
+                      "bytes":  34,
+                      "sha256":  "d2a10cb517e55324e982d8c3ff020a3270f0e5da8fccb5a203a8768f00e285dd"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/records/bool_outside_0_1/bool_outside_closed_domain.json",
+                      "bytes":  631,
+                      "sha256":  "8f5a02fb2e9f208a08102d8b551dd945b4007bb9d65ba4500af8257499a269d3"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/records/closed_enum_unknown/closed_enum_unknown.bin",
+                      "bytes":  32,
+                      "sha256":  "ee8d12449952a38768c0a973f63673c9bf497d533210d797febd328b73a087e9"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/records/closed_enum_unknown/closed_enum_unknown.json",
+                      "bytes":  635,
+                      "sha256":  "67f7c13f97ba746350743f808308bc5621bc5e97aecae10e1bef7bbd98813291"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/records/comm_bundle_hash_inconsistent/comm_bundle_hash_mismatch.bin",
+                      "bytes":  173,
+                      "sha256":  "e09c2a07c739adc6c47a91f62eb97eb43cf5ef952e44e5aecc1a2e9976aa8d99"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/records/comm_bundle_hash_inconsistent/comm_bundle_hash_mismatch.json",
+                      "bytes":  897,
+                      "sha256":  "0ef8ecfdc7296a2bcd214d3f46d40b9448a3f701eeb646b76069aa32b4867d46"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/records/comm_bundle_inconsistent/comm_bundle_version_inconsistent.bin",
+                      "bytes":  173,
+                      "sha256":  "b16e8cfaf2328f7c70789f0a82ed666fafcc04293fd2765447e880a0910d0e0c"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/records/comm_bundle_inconsistent/comm_bundle_version_inconsistent.json",
+                      "bytes":  674,
+                      "sha256":  "05daec21e4ba446fa3e44ab2e518475ec2fac93ebc6af8643c3ec6e4f309c0a5"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/records/comm_duration_inconsistent/comm_duration_mismatch.bin",
+                      "bytes":  74,
+                      "sha256":  "bdc8c6fef2dae33ff4e67827d362b4c89dbee90265d1900b2f87ad4e028b3713"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/records/comm_duration_inconsistent/comm_duration_mismatch.json",
+                      "bytes":  854,
+                      "sha256":  "2e791c44276121d044fc7adec904a72e9d08307e6d60a5d5ee708dc4d91b9ead"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/records/invalid_utf8/invalid_utf8_string.bin",
+                      "bytes":  52,
+                      "sha256":  "df9b21a063f0c4709e587c8372579cf6f922ce0fdeec8772bef5e68fe3c3bcca"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/records/invalid_utf8/invalid_utf8_string.json",
+                      "bytes":  626,
+                      "sha256":  "539ac6e88618d028d64988539db3b8e03cd50bbd7446a80b30819c77065114c3"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/records/non_finite_float/nan_float.bin",
+                      "bytes":  34,
+                      "sha256":  "0b5f22429566042996bedd9f27b91fcb3a33c58b63c7d8503540d52e666688ff"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/records/non_finite_float/nan_float.json",
+                      "bytes":  615,
+                      "sha256":  "acb33d9be67b892b104bcef2ede7e2d0bb75d6c2fef64c3fea7d9d8082aa81bd"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/records/non_finite_float/negative_infinity_float.bin",
+                      "bytes":  34,
+                      "sha256":  "3240b786ec0bdafe394654eeb5b938a044b2f3c4ae6012eb196dc7cc965d037a"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/records/non_finite_float/negative_infinity_float.json",
+                      "bytes":  643,
+                      "sha256":  "fab4451c7bedd973e92f3c8994493254d4a6fff3c424a3cc5ca3d75217bb3111"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/records/non_finite_float/positive_infinity_float.bin",
+                      "bytes":  34,
+                      "sha256":  "3664bd418402f65b7b10218e13dad0edc9ef04cf5cbb5ac182c2cdeb336cd3cc"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/records/non_finite_float/positive_infinity_float.json",
+                      "bytes":  643,
+                      "sha256":  "f3d9d41d62a5aee06aa74b9dcfd91e1b40130cf3f178c69094af9ea089645d57"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/records/quaternion_non_canonical/quaternion_non_canonical_sign.bin",
+                      "bytes":  90,
+                      "sha256":  "7969e5d60f7a95b523232074c27c65a52cf13197c8d8698fef0dd78ad3d978cb"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/records/quaternion_non_canonical/quaternion_non_canonical_sign.json",
+                      "bytes":  672,
+                      "sha256":  "870569694bb3e210d0abdd451da06df204b050510a084647947c9822c28f3e19"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/records/quaternion_non_finite/quaternion_non_finite.bin",
+                      "bytes":  90,
+                      "sha256":  "401b15cc2b5048dbdce21db94445e9cdf8035422937f5efdb60ff5063114fe5d"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/records/quaternion_non_finite/quaternion_non_finite.json",
+                      "bytes":  629,
+                      "sha256":  "e5bb53ee5326ca8c50d60240959987521e3c1c85f6cc67b9eaf3ad8eee9f60a2"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/records/quaternion_non_normalizable/quaternion_zero_non_normalizable.bin",
+                      "bytes":  90,
+                      "sha256":  "0e71839bc2456a0d428a91f14505b0e8df574eca37dce9aea0da73fa88ade0d3"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/records/quaternion_non_normalizable/quaternion_zero_non_normalizable.json",
+                      "bytes":  659,
+                      "sha256":  "7c5f95a758df60614b4df063d0d7847db3e1b046ca6003d62cc17d112f2492af"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/records/quota_before_allocation/comm_asset_count_over_quota.bin",
+                      "bytes":  173,
+                      "sha256":  "c3a7ff5f283823308b4ce146bb0e82ffb3f5c41da9bd918f3da4fcdea752c780"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/records/quota_before_allocation/comm_asset_count_over_quota.json",
+                      "bytes":  668,
+                      "sha256":  "4d2018e587a37452fadfda822f3070f44f6198aefb5a39d9ca7b0a6a0716638d"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/records/record_duplicate_item_key/duplicate_comm_asset_id.bin",
+                      "bytes":  265,
+                      "sha256":  "e569623d6dfc730d62780b978e03787042df9cae0a6e2a99cc414894ecee223a"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/records/record_duplicate_item_key/duplicate_comm_asset_id.json",
+                      "bytes":  666,
+                      "sha256":  "a8b7b1de1e50b80543fd62a80fde985507cfe4aa3bc029abc83052a3c947ba96"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/records/record_invalid_type/invalid_record_type_zero.bin",
+                      "bytes":  34,
+                      "sha256":  "685568a2054e249fbc9e580412930539c179f4fab9c0188d03fa2174bc3cdc3d"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/records/record_invalid_type/invalid_record_type_zero.json",
+                      "bytes":  665,
+                      "sha256":  "fe29c3fb6f09c0b2c70cae0118cfda30019d692bd9c9cea704f04e608a15060b"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/records/record_length_excessive/record_declared_length_exceeds_input.bin",
+                      "bytes":  34,
+                      "sha256":  "929e40f1a44afd3768b05829fa4c10cbc5a31b6207474181021befb74a960869"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/records/record_length_excessive/record_declared_length_exceeds_input.json",
+                      "bytes":  689,
+                      "sha256":  "ea7ed46a88e8cadc30fdfe8ea43bd6fcbf583e8cc0b6210638669c742ebb6d54"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/records/record_reserved_flag/reserved_record_flag.bin",
+                      "bytes":  34,
+                      "sha256":  "7e76b64b53af6f02763cf8a6e3fb925b5b60d213ed5164f0f4195c8a135fef5e"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/records/record_reserved_flag/reserved_record_flag.json",
+                      "bytes":  632,
+                      "sha256":  "ee1d3d4c0e4813cd3faa3f00d619beb7d90cde963ddf722967353d5feaf8b6fc"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/records/record_truncated/record_truncated_header.bin",
+                      "bytes":  5,
+                      "sha256":  "0ccba8168689fa543dd2f6ae683d6f53fc41cd561f4370ffa2e837594c25328b"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/records/record_truncated/record_truncated_header.json",
+                      "bytes":  645,
+                      "sha256":  "a33ff31e925518a3b9c466efcbaecf2dbd8718f53be02330180147e9eb902490"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/records/record_unsupported_version/unsupported_record_version.bin",
+                      "bytes":  34,
+                      "sha256":  "18fbd0e5eb37d21c55eaf302cfc7fab74825a8d1f64a5e70b3fc790d1e0fac92"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/records/record_unsupported_version/unsupported_record_version.json",
+                      "bytes":  670,
+                      "sha256":  "284656be821a452cafaa24cc2aff18c30cb34ecd91e485b4e8a984f5cb7e0c00"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/records/string_too_long/string_over_field_limit.bin",
+                      "bytes":  52,
+                      "sha256":  "6963d6ac255122673dedecdb8766e4ac5c7a17559d5751fd86408a0e465a27ae"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/invalid/records/string_too_long/string_over_field_limit.json",
+                      "bytes":  651,
+                      "sha256":  "9c17bd4e3dbf8d64f9045384ebc89416511dce59ac91f666b3c39e59d7d6cc6c"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/datagrams/transport/transport_0_bytes/000.bin",
+                      "bytes":  68,
+                      "sha256":  "02229a33fdb135c097e2960c692f7ce54bee627746d0970e37727efb8e421266"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/datagrams/transport/transport_0_bytes/transport_0_bytes.json",
+                      "bytes":  377,
+                      "sha256":  "1e9a816e5ebe6ca88e338b4a1f938c7e5b2b6c15d6a7e5ba8f437895ea26e9df"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/datagrams/transport/transport_1132_bytes/000.bin",
+                      "bytes":  1200,
+                      "sha256":  "f96b5c00f528d95afeb50fbf4ba782262ab8f224f7a65a280a2677998ef4226d"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/datagrams/transport/transport_1132_bytes/transport_1132_bytes.json",
+                      "bytes":  386,
+                      "sha256":  "985425da993e9a4a650d02bc2ac9921dea459aba0c9596481bec09c4492502a1"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/datagrams/transport/transport_1133_bytes/000.bin",
+                      "bytes":  1200,
+                      "sha256":  "e9831beeb71dddce0c19341de316c2f15fa4b6757a3e773a106d886db9b0d805"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/datagrams/transport/transport_1133_bytes/001.bin",
+                      "bytes":  69,
+                      "sha256":  "f4559e80c796a3a35e821376fbe37955a19629dfb8df5b62d0764f69cd7d8e12"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/datagrams/transport/transport_1133_bytes/transport_1133_bytes.json",
+                      "bytes":  401,
+                      "sha256":  "6173e39b9356e43293b7f007f9de6ea03e6df516fe6b4720b463a56423ac85a0"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/datagrams/transport/transport_1_bytes/000.bin",
+                      "bytes":  69,
+                      "sha256":  "4e3b90e7c7cd85b075a775834ccea3b096bae2d7d19f1bd16798cc7026cbf189"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/datagrams/transport/transport_1_bytes/transport_1_bytes.json",
+                      "bytes":  377,
+                      "sha256":  "de0c417c4efe8ac8992750241937d665444f1021b3c20813f0c503d89e49b95b"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/datagrams/transport/transport_2264_bytes/000.bin",
+                      "bytes":  1200,
+                      "sha256":  "3e210e736d0249efaad29bf5876983c9207daf6655a62d1b7a9f3323148f0239"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/datagrams/transport/transport_2264_bytes/001.bin",
+                      "bytes":  1200,
+                      "sha256":  "39f8c150b836f212a6de850580e0b0428f39d1778785dfc9dfd5d8a6ecff34ae"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/datagrams/transport/transport_2264_bytes/transport_2264_bytes.json",
+                      "bytes":  401,
+                      "sha256":  "3a68fe6065fcc602f4d4a1c53783fe0eab0330509f2b22af5e7dec3bf953bc91"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/datagrams/transport/transport_2265_bytes/000.bin",
+                      "bytes":  1200,
+                      "sha256":  "f429a950667cc9d7a5044dfe8be743c467eea683353d701e375c6a79b11b1c2a"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/datagrams/transport/transport_2265_bytes/001.bin",
+                      "bytes":  1200,
+                      "sha256":  "93dc30eef0e9fcb4b1c302a0de78338c841569372656e64f067d8fc4be525916"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/datagrams/transport/transport_2265_bytes/002.bin",
+                      "bytes":  69,
+                      "sha256":  "c4f641b90e78c1bb047aa76a9d38eec2b36503eb40aca7f41eeee77ee120cb0d"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/datagrams/transport/transport_2265_bytes/transport_2265_bytes.json",
+                      "bytes":  416,
+                      "sha256":  "4582061c879ea4a631b01cca40685a9e652b359c11a278a8d54a6a2282d1e1e8"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/messages/ack/ack.bin",
+                      "bytes":  12,
+                      "sha256":  "86a3b79f83cc3a9ba5e49bd1a4d52dd5d3c86c433925e4ce0651554aaba60806"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/messages/ack/ack.json",
+                      "bytes":  370,
+                      "sha256":  "9cd0cef3e756f6336856dcf3ff9b1d4972e1bae4f8587c558ae3fac19e9a2a2c"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/messages/capability_update/capability_update.bin",
+                      "bytes":  36,
+                      "sha256":  "80e32e747876681f7cb0f788698400d295266cf3a21b3fdb376aad5e9b88d626"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/messages/capability_update/capability_update.json",
+                      "bytes":  412,
+                      "sha256":  "50dbf573be3fd41fa3104a5c13767f3eca48eac8b8fffa02a4fdf132a5db7d6a"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/messages/delta/delta.bin",
+                      "bytes":  54,
+                      "sha256":  "084c7398d6d0defcdeb6e097003fe4af4caec1218a6875bc6534c9f96adf1741"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/messages/delta/delta.json",
+                      "bytes":  375,
+                      "sha256":  "c81d31b9b59d2b5d9e6c97f711da47815f1f2fb8d59d5c21417d077bfc1f21cc"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/messages/discovery/discovery.bin",
+                      "bytes":  32,
+                      "sha256":  "615c64f57b4d5f41bf3c75b535071ba4c4e16ada2f7bc96d681c84b798077e0b"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/messages/discovery/discovery.json",
+                      "bytes":  387,
+                      "sha256":  "5d01945f632866c4f6620a44e120c83cd4153c29eb5ad198c29626799de960e7"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/messages/event_batch/event_batch.bin",
+                      "bytes":  67,
+                      "sha256":  "1bf0a2f665ffc0660e103480cb33fae610d708c957d47a7d68470f02f40abebe"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/messages/event_batch/event_batch.json",
+                      "bytes":  393,
+                      "sha256":  "894d779f18ab71f232290e9aed5b4075850171e63429d76bc845436bf6d634c8"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/messages/full_snapshot/full_snapshot.bin",
+                      "bytes":  200,
+                      "sha256":  "aba2a4b46809342ab3f65a636c61e932ad91be0b57117bfccabb3e7116454caf"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/messages/full_snapshot/full_snapshot.json",
+                      "bytes":  399,
+                      "sha256":  "dedb64efd81b85cf875b737ec7ddc047a6f3f5f669fdfccc1ed30b6b7130979b"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/messages/heartbeat/heartbeat.bin",
+                      "bytes":  32,
+                      "sha256":  "c3277b9cd041591eab9b09d44c87f6b7d95c214b1e2a91230e342d156cd0e18e"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/messages/heartbeat/heartbeat.json",
+                      "bytes":  387,
+                      "sha256":  "fad151455e45ec598485ee3a13bbe877976fc4cefb9aac7294c4dc36ad0fa804"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/messages/hello/hello.bin",
+                      "bytes":  38,
+                      "sha256":  "d0e1476c650f07d6f149942fafe7499324abc9c36fb2def09452c3a203fdd354"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/messages/hello/hello.json",
+                      "bytes":  375,
+                      "sha256":  "4a67c4bcb3f96e4bb759254e45eadcff6bf41f3230c826dc9886c112f4442305"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/messages/manifest/manifest.bin",
+                      "bytes":  108,
+                      "sha256":  "91aa54b28210f3d96b20ffa71c5f8827fe31a071760559c97f3f9b38b88da4a7"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/messages/manifest/manifest.json",
+                      "bytes":  384,
+                      "sha256":  "d91273fed3743371c6d22b11493969633176f120e3fd60787e1cc038e0236f70"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/messages/nack/nack.bin",
+                      "bytes":  26,
+                      "sha256":  "cd58fff361a44a278863e8b9b4cb5dac5275ad4d61ddae51573750e6bd2a918a"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/messages/nack/nack.json",
+                      "bytes":  373,
+                      "sha256":  "282a8531e61c4a373a2e663fa590a216e35dda18d14195a2f0f07e3ce75777ac"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/messages/resync_request/resync_request.bin",
+                      "bytes":  24,
+                      "sha256":  "adb4b73164cf305f7d5047faa6ed22c95a62b98045a6a2324b9682c545b27049"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/messages/resync_request/resync_request.json",
+                      "bytes":  403,
+                      "sha256":  "06d4dc81d3017c40d60291428f21086000a9a5cf3fecc2ac9ff124144fd0506b"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/messages/session_begin/session_begin.bin",
+                      "bytes":  28,
+                      "sha256":  "8c4b15b5d6bca180ec7ca5102f65cc3f21670b7f0bffbc266d5d6d36d3b89e15"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/messages/session_begin/session_begin.json",
+                      "bytes":  399,
+                      "sha256":  "638f1d47a6279d47e4610ebdff31a3a1ac176d984a448768f3e806fdf2e66fd1"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/messages/session_end/session_end.bin",
+                      "bytes":  16,
+                      "sha256":  "1dc5d4f950582e69106296e12d21c0a1389fcbdfd7c6c68d312d22a692d4c94b"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/messages/session_end/session_end.json",
+                      "bytes":  394,
+                      "sha256":  "2ac39de415dbbd1d689e19d8c9271d0c3c489b17835af7188c470a858e4ad8bf"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/messages/target_video_config/target_video_config.bin",
+                      "bytes":  36,
+                      "sha256":  "ee0588f7b5e1548fa872e3c6c4e2b1b86276dbdcf39950e26f23dd75b940d736"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/messages/target_video_config/target_video_config.json",
+                      "bytes":  418,
+                      "sha256":  "e2fd3e5878ef3117b0c7e18da3b627293c8a48ddd22543569f2b3a84769815c2"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/messages/target_video_frame/target_video_frame.bin",
+                      "bytes":  66,
+                      "sha256":  "e3bd406aa198f31af174086e4f1e3fe8b4a699eed0f38c78702496dabd4b076a"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/messages/target_video_frame/target_video_frame.json",
+                      "bytes":  415,
+                      "sha256":  "a61eef375b927671488b9236a91357153676987cab04455fe3033ddc32e4d8cb"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/messages/target_video_keyframe_request/target_video_keyframe_request.bin",
+                      "bytes":  32,
+                      "sha256":  "d871613ddbf19607761f13c2b20c49b8f837fa0a37276d0b36b7f0afbe7d1a8b"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/messages/target_video_keyframe_request/target_video_keyframe_request.json",
+                      "bytes":  498,
+                      "sha256":  "ad3db838bf99f1243f155465721e09f6a94e6544fa8021aaecdceda35866c3dc"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/messages/target_video_stats/target_video_stats.bin",
+                      "bytes":  72,
+                      "sha256":  "35b32f7b0dc694ba78250221bd62af26ec3e9f2e2700fe31d26f18c84415721a"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/messages/target_video_stats/target_video_stats.json",
+                      "bytes":  415,
+                      "sha256":  "504bcb98727136813fa78d257531c462924b4b66246c4c3a74d16614adb27ced"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/messages/target_video_stop/target_video_stop.bin",
+                      "bytes":  24,
+                      "sha256":  "a2b0d639280c272da4daaadd61828519c1053d6c6d7c04574ce7cf8dc56155ac"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/messages/target_video_stop/target_video_stop.json",
+                      "bytes":  459,
+                      "sha256":  "07e2e9ee26ae50c01f8654ad57c7365592db1fcd505fc213c940f10819d0d598"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/messages/target_video_subscribe/target_video_subscribe.bin",
+                      "bytes":  44,
+                      "sha256":  "4600358012731822276093108a7e2c866a1e4e5632da2f120844282c6513679f"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/messages/target_video_subscribe/target_video_subscribe.json",
+                      "bytes":  427,
+                      "sha256":  "fb9a9f66b995d38bbea5158bca3ef456be5e1297fcafc5dab7568f7bc6724d82"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/messages/welcome/welcome.bin",
+                      "bytes":  68,
+                      "sha256":  "51fd7bc0a6f41eddfb12620eea5180a04446c0c4d70b2bd7ff84c1768883690a"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/messages/welcome/welcome.json",
+                      "bytes":  381,
+                      "sha256":  "df8a23e7d2c0ec4ff7b907bf954a6c68c295066baaef2c4c9a0649867731cca7"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/records/cargo_scan_state/cargo_scan_state.bin",
+                      "bytes":  32,
+                      "sha256":  "c5d1c2b199af6f11d3e8bba891df4d2a034737c3397ef12017df6d2cc80105e0"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/records/cargo_scan_state/cargo_scan_state.json",
+                      "bytes":  478,
+                      "sha256":  "08ceff6d409844e94daabca1a7166aebef44e142f858accc4a5d592776042b27"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/records/class_manifest/class_manifest.bin",
+                      "bytes":  52,
+                      "sha256":  "55bcfe15642a1b41eca3feceaa91518533e08447e95db007fdbf10e824545bd0"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/records/class_manifest/class_manifest.json",
+                      "bytes":  466,
+                      "sha256":  "dcd575fdb58f0415655b0414c9544721b0e3ca0e5530fe9d4d3f30930149a8e9"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/records/comm_asset_manifest/comm_asset_manifest.bin",
+                      "bytes":  173,
+                      "sha256":  "e09c2a07c739adc6c47a91f62eb97eb43cf5ef952e44e5aecc1a2e9976aa8d99"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/records/comm_asset_manifest/comm_asset_manifest.json",
+                      "bytes":  482,
+                      "sha256":  "e77754a1c3aaa49a29326976ac58fdecefd157d00724f6d94b204de7a052fc10"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/records/comm_view_event/comm_view_event.bin",
+                      "bytes":  74,
+                      "sha256":  "bdc8c6fef2dae33ff4e67827d362b4c89dbee90265d1900b2f87ad4e028b3713"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/records/comm_view_event/comm_view_event.json",
+                      "bytes":  482,
+                      "sha256":  "4f41720bd822213b344f9c11476925d19c1f73d47cfe4b2d789ba9756c8d9ffc"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/records/comm_view_state/comm_view_state.bin",
+                      "bytes":  66,
+                      "sha256":  "15dbb98ebfca87ed2769c0d441e8106a3ce52b18435c521a862676740c48f0f9"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/records/comm_view_state/comm_view_state.json",
+                      "bytes":  475,
+                      "sha256":  "1f047fa4096a607aa301d85158321436092d0d58d773182720a6a89efddd020e"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/records/control_state/control_state.bin",
+                      "bytes":  59,
+                      "sha256":  "05a4c2ed3c16c99cfc6c8dca5fe0244362dbf6d7baffed8a893811586250f20a"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/records/control_state/control_state.json",
+                      "bytes":  468,
+                      "sha256":  "c55ff672db6cdf73b3efebaf09e7fe7d227695ce6bb70268ac08d8f42ae572ce"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/records/damage_state/damage_state.bin",
+                      "bytes":  40,
+                      "sha256":  "dc68920e88c4a5cae0873c550387829e48973dde989f6aaee0a6262f984c8476"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/records/damage_state/damage_state.json",
+                      "bytes":  465,
+                      "sha256":  "6a04e04147f5f86a392de06fae262fbffb9045e6ccecc07588653fb7e47c170a"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/records/docking_state/docking_state.bin",
+                      "bytes":  41,
+                      "sha256":  "45e939e054815b6b66c98df670799b499dfc927971dad7932a62bd2431e157a9"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/records/docking_state/docking_state.json",
+                      "bytes":  469,
+                      "sha256":  "56830892d0f2fcefdd4712cf60a90ad1e6d362118657f26d500d48b0a9afa21d"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/records/effect_state/effect_state.bin",
+                      "bytes":  34,
+                      "sha256":  "4cbfc29baaced681b9a556aa762c160a5a02bec59dc46666c208b395d82a5c70"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/records/effect_state/effect_state.json",
+                      "bytes":  466,
+                      "sha256":  "308c70306613f011a63991c60cdd4c0622fa5fc238ff9c21f7b15e657094c45d"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/records/energy_state/energy_state.bin",
+                      "bytes":  35,
+                      "sha256":  "00ac5369d398042ae62bbffe309791481520d4e9c9003c4de1bff044a8c55440"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/records/energy_state/energy_state.json",
+                      "bytes":  466,
+                      "sha256":  "a6da8602cce2505a43ce191463157b432094c9d229506e64acf86fe5f88248cd"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/records/entity_lifecycle/entity_lifecycle.bin",
+                      "bytes":  36,
+                      "sha256":  "83f333cc8e61037aa8139e18472b85cc887d4079797c35afd9190d2e0527455a"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/records/entity_lifecycle/entity_lifecycle.json",
+                      "bytes":  477,
+                      "sha256":  "c80c5303d67b9c9f7bd521ca156d4b24c0c0dadff1f029de07b5cb7aa2a95471"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/records/events/events.bin",
+                      "bytes":  43,
+                      "sha256":  "0f51941e0366b555ff015e44662278d2c825654bc2b97107be0bd31a72b68321"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/records/events/events.json",
+                      "bytes":  455,
+                      "sha256":  "4f3460e43099faf545729ce1ab689ae7339c5efd9a0bba8de6ffc34613a1ce90"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/records/flight_state/flight_state.bin",
+                      "bytes":  90,
+                      "sha256":  "7032d2f88d5ab7a4340a6bb0c137007f35ccbb7d497513cac97b0acabfdedd49"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/records/flight_state/flight_state.json",
+                      "bytes":  465,
+                      "sha256":  "295820fe484226755c388a12ab3eaba3700fae17a84cce80ff1ef0bad876d3f6"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/records/lock_state/lock_state.bin",
+                      "bytes":  32,
+                      "sha256":  "eba328ea777729823939fad00a46c32ae082af242b1b40fa18334608c3a3a79d"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/records/lock_state/lock_state.json",
+                      "bytes":  460,
+                      "sha256":  "91cfe361f55dbe2e4c252b8a33a7876d783278473cfc0cfe94b5edb0e4365814"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/records/mission_state/mission_state.bin",
+                      "bytes":  34,
+                      "sha256":  "75cadba5318158b80e891a84e956148780e77a4ccd39d9541b506338cc43adf9"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/records/mission_state/mission_state.json",
+                      "bytes":  468,
+                      "sha256":  "99a9eb2b8c062e12e1e31b541ebd97518621d194902a2d6861d17a57a0762fe3"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/records/navigation_state/navigation_state.bin",
+                      "bytes":  33,
+                      "sha256":  "ab86b4e1f54e55eabd80ee1f6f240f4d46f83f6c2b1b8482edfbdbe195d9544e"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/records/navigation_state/navigation_state.json",
+                      "bytes":  478,
+                      "sha256":  "be5eef8df12fc79dd2c8dc55e109ab7cbe108c0689b4f1c4fbbe0b45b693c1e0"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/records/propulsion_state/propulsion_state.bin",
+                      "bytes":  34,
+                      "sha256":  "1bd4682b69e32d4f0828f55bf0a269ef77818d1e1f9c5220a9406d919c956f6b"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/records/propulsion_state/propulsion_state.json",
+                      "bytes":  478,
+                      "sha256":  "8cf06a26b2470d2e30e0c3d47055f4904b30b202c63fb11aea0ffc1f30929ffc"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/records/radar_contacts/radar_contacts.bin",
+                      "bytes":  73,
+                      "sha256":  "be46d137de4b9837a6b9aaa2e76801c32eaefbfc69fcf477281480656ddfa785"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/records/radar_contacts/radar_contacts.json",
+                      "bytes":  472,
+                      "sha256":  "3259e5d845c35b135de090577eb188dfed2b5763e0fd9986ff4e816d16fcf0d6"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/records/radar_state/radar_state.bin",
+                      "bytes":  44,
+                      "sha256":  "e68c3258783a36eec2fe97624af2dc5b2bfc9f25c97ef7bd294441dd35c82e76"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/records/radar_state/radar_state.json",
+                      "bytes":  463,
+                      "sha256":  "a68eee52e448fd1dd4821e01754af665c7ef8ba6b60fc67a7b77dbcdbcf839c3"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/records/session_state/session_state.bin",
+                      "bytes":  70,
+                      "sha256":  "cc1fc11b421dfcf5f9e759a561b815b414937fc7a411214eb7aecd38a1f263bd"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/records/session_state/session_state.json",
+                      "bytes":  468,
+                      "sha256":  "5e647835ae142abdb75e89b0beb35338b92a3b35c264896b28b64f08aa5952ec"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/records/shield_state/shield_state.bin",
+                      "bytes":  35,
+                      "sha256":  "c74fdfe0e37cc66f454563dbd149fee4c31f9af2e53513bb38c3f3f9567454db"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/records/shield_state/shield_state.json",
+                      "bytes":  466,
+                      "sha256":  "dbfb89c5a674295822556702536b6bc51e56d694991e37fbcb5cd40537726dd2"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/records/ship_identity/ship_identity.bin",
+                      "bytes":  58,
+                      "sha256":  "9c7be3df946f249a9eef6872b3788310964a0098d4829b3dcea2a25e405186b6"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/records/ship_identity/ship_identity.json",
+                      "bytes":  468,
+                      "sha256":  "f44fe5265ea3b4b0c444dfb641a3c54143c401747807d5fcb27b6b901ea69b7e"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/records/subsystem_state/subsystem_state.bin",
+                      "bytes":  49,
+                      "sha256":  "cea553904aa543fbf1eab0f773817738323ceabbc4a71fca7e3c5f1d8acf6b97"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/records/subsystem_state/subsystem_state.json",
+                      "bytes":  475,
+                      "sha256":  "07eabab1951ace5ea37cb29b11522b7e36c6dc2e365d6ffb4f9a4aa47fb2fea4"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/records/support_state/support_state.bin",
+                      "bytes":  35,
+                      "sha256":  "6f72c058e351c1621ffa46e44f213a396ae6c31ff45d7d865fd2fc2f55efd489"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/records/support_state/support_state.json",
+                      "bytes":  469,
+                      "sha256":  "b1de0bee50e0b40ea3b28a141a28510260356977206a8faff07530ed15f0cb32"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/records/target_state/target_state.bin",
+                      "bytes":  38,
+                      "sha256":  "735bb307c3322a49676e590d9d96118a15d56af3c8029b1dcbb59109f3e42a89"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/records/target_state/target_state.json",
+                      "bytes":  466,
+                      "sha256":  "c9f3d2e8ff5033aa962eaefcf2e100bfc082fce6847c72dbc54173ab39ab38fe"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/records/threat_state/threat_state.bin",
+                      "bytes":  33,
+                      "sha256":  "16c13e4328ca36ab2e3bb77a1583c02f384b295d1b61e81238556680634f6b16"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/records/threat_state/threat_state.json",
+                      "bytes":  466,
+                      "sha256":  "bab4efaa1e5dbdb931f8a0503ee13551b7c68cab4a2a3958559c0f0b71462884"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/records/weapon_manifest/weapon_manifest.bin",
+                      "bytes":  63,
+                      "sha256":  "c78fa4eeb667eef73dd16f00cee088319e55d35e8a95cfd59e02c633042a8725"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/records/weapon_manifest/weapon_manifest.json",
+                      "bytes":  469,
+                      "sha256":  "4c66cc9745c4585d1e813394374bfa01bb2cd8faa89564ffa63a75f6b11b4d57"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/records/weapon_state/weapon_state.bin",
+                      "bytes":  58,
+                      "sha256":  "639dcacb6c4b2c1d15c71c6d1ee8f523b6d3c493fa3c271deb576f45da36d97e"
+                  },
+                  {
+                      "path":  "test/telemetry/protocol/vectors/valid/records/weapon_state/weapon_state.json",
+                      "bytes":  466,
+                      "sha256":  "3cb49887b4ef5044634df38042fcfd9c9408c2b4d0110e700c9f68911a41d136"
+                  }
+              ]
+}

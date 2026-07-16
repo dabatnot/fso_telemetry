@@ -229,7 +229,9 @@
       "sha256": "2fbea9908cdc4a299ad5777333dbaca7f00421760e529e149c28e4d2989ab29e"
     }
   ],
-  "frozenV10TreeSha256": "099fffd00ea67ed71b6e345c3256b06f8ebf5c5ca14c518fe8e614a2bd4424aa",
+  "frozenV10ArtifactCount": 438,
+  "frozenV10ArtifactsManifest": "fstl-1.0-artifacts.manifest.json",
+  "frozenV10ArtifactsTreeSha256": "9baac6a20db33bcf350066ed533c5581b7117410899d7bc4a6dc24406e47856d",
   "playerKinematics": 1024,
   "producerProfileMinorRange": [
     1,

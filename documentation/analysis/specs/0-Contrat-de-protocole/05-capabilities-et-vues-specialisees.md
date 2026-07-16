@@ -4,8 +4,6 @@
 
 Ce document fixe le contrat FSTL 1.0 des capabilities, de la vue de communication par assets locaux et du flux de cible H.264. Il est normatif.
 
-L'amendement FSTL 1.1 n'ajoute ni capability, ni message spécialisé, ni record spécialisé, ni extension à ce document. `PLAYER_KINEMATICS` est un bit de `StateDomainCoverage`, pas une capability. Le profil Phase 1 annonce `producer_capabilities = active_capabilities = negotiated_capabilities = 0`; toutes les règles et tous les octets FSTL 1.0 ci-dessous restent inchangés.
-
 Il complète :
 
 - [02 — Format filaire et registres](02-format-filaire-et-registres.md), autorité pour les scalaires, l'en-tête de 68 octets, les CRC, les types de messages et de records ;
@@ -945,5 +943,3 @@ Les fixtures de [06](06-validation-securite-et-conformite.md) couvrent au minimu
 20. connexion tardive CONFIG puis IDR.
 
 Une implémentation n'est conforme que si les offsets, tailles et valeurs numériques de ce document concordent avec le schéma machine-readable et si deux décodeurs indépendants acceptent et rejettent les mêmes vecteurs.
-
-La conformité FSTL 1.1 réexécute ces mêmes tests sans modifier leurs fixtures 1.0 et vérifie en plus qu'aucune capability visuelle n'est activée par le seul bit `PLAYER_KINEMATICS`.

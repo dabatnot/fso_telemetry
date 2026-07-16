@@ -1,0 +1,91 @@
+# FSTL 1.0 freeze repair — independent RED evidence
+
+Status: **RED — expected contract failures reproduced; no gate is closed.**
+
+- Baseline revision: `9c0da12ed2f0649648e520107f879b6be5b65b49`
+- Baseline tag/oracle: `fstl-v1.0.0`
+- Date: 2026-07-16
+- Independent test: `tools/test_fstl_1_0_freeze.py`
+- Command: `python -B test/telemetry/protocol/tools/test_fstl_1_0_freeze.py`
+- Result: `Ran 15 tests`; `FAILED (failures=24)`; exit code `1`
+- Scope of this RED change: the independent test and this evidence file only.
+
+## Frozen oracles
+
+The test embeds hashes extracted from the raw Git objects at `fstl-v1.0.0`.
+They are not generated from the current working tree or from a mutable
+manifest.
+
+| Frozen FSTL 1.0 artifact | Bytes | Expected SHA-256 | Current bytes | Current SHA-256 | RED |
+|---|---:|---|---:|---|---|
+| `01-cadre-normatif-et-perimetre.md` | 17,950 | `0043bf66b424c4faff191b2bfa5189074e9f4c8070bd411bace05dc2f53ee628` | 19,208 | `5108c24094ae5a7f0f43e081d7bebf1b6ab1b27662dde1ec56f88547b023636e` | FAIL |
+| `02-format-filaire-et-registres.md` | 41,063 | `841ae4054865c8db0152e7f14251fbd2c6b534aedd01a1db2342861f1708d522` | 44,224 | `a5dcda541fe98095f266dda9be60fda42ce8d94c5b68ce19fcecbebdac42dd71` | FAIL |
+| `03-session-horloges-fiabilite.md` | 42,371 | `1b2e2e6974c4d0f6d7aefda8c51991e271ed68e7b9114bd99a38c32812f76188` | 44,981 | `12d936a9bc275c7d7f808587bec10cdc72f9ad63f6e8f6e598689b3515c946da` | FAIL |
+| `04-modele-de-donnees-v1.md` | 106,090 | `3b9df71ec9798576e289208974556cebf3e02c81f5702fb24eb78a9f60ab278d` | 110,759 | `5e90fb5e966cab94593cece4cdf000e246e791693aa583c5df0af538d96940e3` | FAIL |
+| `05-capabilities-et-vues-specialisees.md` | 62,754 | `721a34836f4fe369ea5d7daf203883ae32da1fb32a85782d3eaad4d0738ba9e4` | 64,275 | `de4dd175fbed488ae23c18be7b0b3f002bd56eb1a75e02a7cdc9308d601f9b61` | FAIL |
+| `06-validation-securite-et-conformite.md` | 29,154 | `304cfaf8cc78692e2d9994fffbfad97fc1eea68b44148925aeb0ff095d7b3e01` | 31,734 | `b8f9033ee3feb3239e7ebb09bfe683dd5c32b0347296e3ad240d690886de1ba6` | FAIL |
+| `07-livraison-et-tracabilite.md` | 23,695 | `08ddedd9a27759a015f0c678fc06ac3d9610a0eaa7b2d78dc8c75b3a56a7798a` | 26,773 | `971a16d45e165f8f354dfd407fc068c6bbb310d0e0ab4cc4aea123341c2f4105` | FAIL |
+| `schema/fstl-v1.yaml` | 499,786 | `1d89c4a95a121c178bf85570cd616568fd939942b8d053835069b2d7d6a1f0d4` | 501,519 | `2187315d6d222e8fdeca80eddab95136e43f5bce0a944c2c18fa60489e72394b` | FAIL |
+
+Aggregate independent locks:
+
+- seven normative documents: 7 files, tree SHA-256
+  `7773604cb8c591f567b582b7fa29fc2fe4721d56e94c1a14e677bb4260aa9136`;
+- machine artifacts (`vectors/**`, `expected/**`, two manifests, coverage,
+  transport seeds and fuzz dictionary): 430 files, tree SHA-256
+  `6174ef30453a25ff4810e7253343c84fcce787e445361f1aeb7b1d8964f5a2eb`;
+- complete frozen set: 438 files, tree SHA-256
+  `9baac6a20db33bcf350066ed533c5581b7117410899d7bc4a6dc24406e47856d`;
+- historical v1.0 layout lock:
+  `d5e7ae20571bc0e08f1d123f7529fd6430466872ad0dd5cb22ea37b24128e0aa`;
+- historical encoded-probe lock:
+  `ee45ad75728442145aa2689211f237868f095a39a2735b89ae5868c3dbe95438`.
+
+## Reproduced failures
+
+| Test ID | Contract / gate | Baseline observation |
+|---|---|---|
+| `FRZ-001` | `P0.13`, `D0-019` | All seven canonical normative documents differ byte-for-byte; current document tree is `b9d5519c30f906bbce1d76542ebb03c9d7459ddc8100b947fa0e63f583010301`. |
+| `FRZ-002` | `P0-AC-025`, `P0.13` | `fstl-v1.yaml` has the wrong size and hash and contains 1.1 material. |
+| `FRZ-003` | `D0-019`, `P0-AC-025` | The schema's seven `normative_sources` hashes are not the frozen hashes and do not match the current documents either. |
+| `FRZ-004` | `P0-AC-025` | **PASS:** all 430 machine artifacts remain byte-identical to the tag. This isolates the drift to normative docs/schema/locks and missing separation. |
+| `FRZ-005` | `P0-AC-025` | Layout oracle moved from `d5e7ae…` to `416ff38c…`; encoded probe remains correct. |
+| `FRZ-006` | `P0.13`, `D0-019` | `schema/fstl-v1.1.yaml` and its distinct seven-document normative set do not exist. |
+| `FRZ-007` | `P0.13`, `G0-G` | Complete 438-file in-tree v1.0 ledger does not exist. |
+| `FRZ-008`–`FRZ-011` | `P0-AC-025`, `G0-G` | Independent freeze verifier does not exist, so baseline, per-class mutation, add/delete, duplicate, traversal and tree+ledger collusion checks are RED. |
+| `FRZ-012` | `P0.13`, `G0-G` | Amendment manifest still exposes `frozenV10TreeSha256=099fffd0…`, which covers only `vectors/**`; it does not reference the complete 438-file ledger. |
+| `ROUTE-001` | `D0-019`, `P0.13` | Five Python consumers do not name/use a distinct `fstl-v1.1.yaml`. Base generators remain explicitly pinned to `FSTL-1.0`. |
+| `ROUTE-002` | `P0-AC-025`, `G1-A` | **PASS:** C++ default minor/mask aliases remain v1.0 and Phase 1 / bit 10 are explicit v1.1 opt-ins. |
+| `ROUTE-003` | `D0-019`, `G0-G` | Behavioral v1.1 schema mutation routing cannot run because the distinct v1.1 schema is absent. |
+
+## Mutation and anti-bypass evidence required by GREEN
+
+Once the production verifier exists, the checked-in RED test creates isolated
+temporary roots and requires all of these changes to fail closed:
+
+- byte mutation of a normative document, v1.0 schema, binary golden, expected
+  JSON, either vector manifest, coverage catalogue, transport seeds or fuzz
+  dictionary;
+- unexpected file under a frozen root and deletion of a declared artifact;
+- duplicate ledger path and `../` path traversal;
+- simultaneous mutation of `fstl-v1.yaml` and refresh of both its ledger entry
+  and the mutable ledger tree hash;
+- mutation of `PLAYER_KINEMATICS` in the distinct v1.1 schema, observed by the
+  amendment verifier, reference decoder and aggregate asset verifier.
+
+The simultaneous tree+ledger mutation must still fail against the verifier's
+independent embedded root `9baac6a2…`. A check mode that derives its oracle
+from the tree it is checking cannot satisfy the test.
+
+## Gate state
+
+- `D0-019`: **FAIL**.
+- `P0-AC-025`: **FAIL**.
+- `P0.13`: **FAIL**.
+- `G0-G`: **BLOCKED** until all RED checks become GREEN and are reproduced by
+  the independent reviewer.
+- `G1-A`: **BLOCKED** by `G0-G`, even though the current C++ version-isolation
+  invariants and prior WP01 functional evidence remain green.
+
+This document is evidence of a failing baseline only. It does not authorize a
+gate transition.

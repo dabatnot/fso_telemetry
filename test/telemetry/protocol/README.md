@@ -1,13 +1,19 @@
-# FSTL 1.0 protocol conformance assets
+# FSTL versioned protocol conformance assets
 
-This directory contains the machine-readable FSTL 1.0 schema, independent
-fixture-generation tools, and the byte-authoritative golden vectors used by
-the protocol tests.
+This directory contains the byte-frozen FSTL 1.0 contract and its separately
+versioned, additive FSTL 1.1 amendment. FSTL 1.0 remains the immutable base;
+no 1.1 generator or verifier is allowed to rewrite its artifact set.
 
 ## Layout
 
-- `schema/fstl-v1.yaml`: the normative machine-readable registry and schema;
-- `tools/fstl_schema.py`: schema validation and C++ registry cross-checks;
+- `schema/fstl-v1.yaml`: the byte-frozen FSTL 1.0 registry and schema;
+- `schema/fstl-v1.1.yaml`: the generated additive FSTL 1.1 view, tied to the
+  frozen base and its own seven-document normative set;
+- `fstl-1.0-artifacts.manifest.json`: the exhaustive 438-file frozen ledger;
+- `tools/verify_fstl_1_0_freeze.py`: fail-closed verifier with an independent
+  pinned tree oracle;
+- `tools/fstl_schema.py`: immutable 1.0 validation plus deterministic 1.1
+  generation and C++ registry cross-checks;
 - `tools/verify_schema_vectors.py`: schema-driven reconstruction of all 20
   message payloads and all 28 record envelopes from canonical fields, checked
   byte-for-byte against the golden `.bin` files;
@@ -45,6 +51,11 @@ oracle. Metadata uses one normative truth: `valid`, numeric
 `expectedValidationError`, diagnostic name and `notes`; only valid fixtures
 carry `expectedCanonicalJson`.
 
+The amendment manifest references the complete FSTL 1.0 ledger, its 438-file
+count and its frozen tree SHA-256. `schema/fstl-v1.1.yaml` likewise pins the
+base schema and ledger identities, then records the versioned Phase 1 document
+set and the Phase 1 provenance of the new bit and minimal producer profile.
+
 The 21-case corpus covers minor negotiation, accepted and rejected WELCOME, two
 cumulative DELTAs (real change then return to baseline), minimal snapshots,
 Phase 2 promotion, all three required-record absences, authority/visibility,
@@ -60,8 +71,12 @@ python test/telemetry/protocol/tools/generate_transport_vectors.py --write
 python test/telemetry/protocol/tools/generate_transport_vectors.py --check
 python test/telemetry/protocol/tools/generate_protocol_vectors.py --write
 python test/telemetry/protocol/tools/generate_protocol_vectors.py --check
-python test/telemetry/protocol/tools/fstl_reference_decoder.py --check
+python test/telemetry/protocol/tools/verify_fstl_1_0_freeze.py --check --repo .
+python test/telemetry/protocol/tools/fstl_schema.py --check
+python test/telemetry/protocol/tools/verify_fstl_1_1_amendment.py --check --repo .
+python test/telemetry/protocol/tools/fstl_reference_decoder.py --check --repo .
 python test/telemetry/protocol/tools/verify_schema_vectors.py --check
+python test/telemetry/protocol/tools/verify_schema_vectors.py --check --schema test/telemetry/protocol/schema/fstl-v1.1.yaml
 ```
 
 The generator deliberately does not import or execute the C++ protocol
