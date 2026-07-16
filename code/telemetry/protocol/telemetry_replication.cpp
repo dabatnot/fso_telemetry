@@ -499,6 +499,15 @@ bool operator==(const StateAtom& left, const StateAtom& right) noexcept
 
 StateImageResult StateImage::create(std::vector<StateAtom> records, StateImage& image) noexcept
 {
+	StateImageInvalidRecordReason invalid_record_reason = StateImageInvalidRecordReason::None;
+	return create(std::move(records), image, invalid_record_reason);
+}
+
+StateImageResult StateImage::create(std::vector<StateAtom> records,
+	StateImage& image,
+	StateImageInvalidRecordReason& invalid_record_reason) noexcept
+{
+	invalid_record_reason = StateImageInvalidRecordReason::None;
 	std::size_t total_size = 0;
 	std::size_t retained_size = 0;
 	if (!checked_multiply(records.size(), sizeof(StateAtom), retained_size) ||
@@ -508,6 +517,7 @@ StateImageResult StateImage::create(std::vector<StateAtom> records, StateImage& 
 	for (const auto& record : records) {
 		std::size_t record_size = 0;
 		if (!structurally_valid_atom(record, record_size)) {
+			invalid_record_reason = StateImageInvalidRecordReason::MalformedAtom;
 			return StateImageResult::InvalidRecord;
 		}
 		if (!checked_add(total_size, record_size, total_size) || total_size > MaxTransactionSize) {
@@ -538,8 +548,12 @@ StateImageResult StateImage::create(std::vector<StateAtom> records, StateImage& 
 			records.end(),
 			record.cascade_owner,
 			[](const StateAtom& atom, const StateAtomKey& key) { return atom.key < key; });
-		if (owner == records.end() || owner->key != record.cascade_owner ||
-			owner->lifecycle != StateRecordLifecycle::ExplicitCreateDelete || owner->has_cascade_owner) {
+		if (owner == records.end() || owner->key != record.cascade_owner) {
+			invalid_record_reason = StateImageInvalidRecordReason::MissingCascadeOwner;
+			return StateImageResult::InvalidRecord;
+		}
+		if (owner->lifecycle != StateRecordLifecycle::ExplicitCreateDelete || owner->has_cascade_owner) {
+			invalid_record_reason = StateImageInvalidRecordReason::InvalidCascadeOwner;
 			return StateImageResult::InvalidRecord;
 		}
 	}
@@ -787,7 +801,8 @@ StateDeltaApplyResult apply_cumulative_state_delta(const StateImage& baseline,
 	if (create_result != StateImageResult::Created) {
 		return StateDeltaApplyResult::InvalidTransition;
 	}
-	if (validator != nullptr && validator->validate(candidate) != ValidationError::None) {
+	if (validator != nullptr &&
+		validator->validate_delta_transition(baseline, candidate) != ValidationError::None) {
 		return StateDeltaApplyResult::ValidationFailed;
 	}
 	applied = std::move(candidate);

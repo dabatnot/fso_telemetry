@@ -1,0 +1,17 @@
+{
+  "expectedCanonicalJson": "expected-v1.1/delta-player-kinematics-cumulative.json",
+  "expectedValidationError": 0,
+  "expectedValidationErrorName": "None",
+  "headerVersion": "1.1",
+  "inputFiles": [
+    "delta-player-kinematics-cumulative.bin"
+  ],
+  "kind": "datagram",
+  "messageType": 7,
+  "name": "delta-player-kinematics-cumulative",
+  "notes": "valid FSTL 1.1 transport/message",
+  "payloadFile": "delta-player-kinematics-cumulative.payload.bin",
+  "schema": "FSTL-1.1",
+  "valid": true,
+  "versionMinor": 1
+}

@@ -362,3 +362,20 @@ Actions de clôture établies ou préparées :
 L'autorisation couvre le démarrage de la Phase 1 et `P1-WP-01`. Elle ne
 court-circuite ni `P0-AC-025`, ni `P0-AC-026`, ni la gate FSTL 1.1 requise avant
 `P1-WP-02`.
+
+## Preuves techniques additives FSTL 1.1 / P1-WP-01
+
+Le corpus isolé `vectors-v1.1` conserve l'arbre FSTL 1.0 sous le hash
+`099fffd00ea67ed71b6e345c3256b06f8ebf5c5ca14c518fe8e614a2bd4424aa`.
+Il contient exactement 21 cas : neuf valides avec JSON canonique et douze
+invalides avec un unique `expectedValidationError` numérique. Il couvre la
+négociation 1.1, WELCOME accepté/rejeté, deux DELTA cumulatifs (changement puis
+retour baseline), les promotions Phase 2 complète/incomplète, les trois records
+obligatoires manquants, les modes authority/visibility et les invariants
+lifecycle/flight. Le catalogue détaillé est identifié par
+`fstl-1.1-vectors.manifest.json`. Le générateur standard-library et le décodeur Python de
+référence sont indépendants; les tests C++ rejouent les mêmes octets, notamment
+via le chemin ingress/context normatif pour les champs pré-session.
+
+Ces résultats sont des preuves reproductibles, pas une décision de passage de
+gate. Cette décision reste à la charge du tracker et des relecteurs indépendants.

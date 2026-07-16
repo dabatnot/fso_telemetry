@@ -31,6 +31,28 @@ the protocol tests.
 The `.bin` files are authoritative. JSON files beside each fixture describe
 the expected validation result; they do not replace the wire bytes.
 
+## Isolated FSTL 1.1 amendment corpus
+
+`vectors-v1.1`, `expected-v1.1` and `fstl-1.1-vectors.manifest.json` form a
+separate additive corpus for `PLAYER_KINEMATICS`. The amendment generator
+`tools/verify_fstl_1_1_amendment.py` uses only the Python standard library and
+fixed canonical JSON fixtures; it neither imports nor invokes
+`fstl_reference_decoder.py`. Conversely, the reference decoder independently
+parses the generated wire bytes and compares its output with those fixed
+goldens. The production C++ tests consume the same `.bin` files and independently
+project every valid 1.1 message to JSON for structural equality with the fixed
+oracle. Metadata uses one normative truth: `valid`, numeric
+`expectedValidationError`, diagnostic name and `notes`; only valid fixtures
+carry `expectedCanonicalJson`.
+
+The 21-case corpus covers minor negotiation, accepted and rejected WELCOME, two
+cumulative DELTAs (real change then return to baseline), minimal snapshots,
+Phase 2 promotion, all three required-record absences, authority/visibility,
+and negative player-profile cases
+for duplicate records, owner mismatch, non-ship lifecycle, unexpected
+SHIP_IDENTITY and uncovered FLIGHT_STATE presence flags. Pre-session HELLO and
+WELCOME capture fields are checked through the normative ingress/context path.
+
 Regenerate the Phase 0 transport vectors from the repository root with:
 
 ```text

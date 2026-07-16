@@ -1,0 +1,239 @@
+{
+  "files": [
+    {
+      "path": "expected-v1.1/delta-player-kinematics-cumulative.json",
+      "sha256": "04a44f0edb168dcdc1561a31723a5287430c2381631748a7bd23ddc6aadbd85b"
+    },
+    {
+      "path": "expected-v1.1/delta-player-return-baseline.json",
+      "sha256": "29e125c7a0e7a8e113266d00c1301df09ffce7d7a20a9bc818ae1e55aa5af38b"
+    },
+    {
+      "path": "expected-v1.1/hello-minor-one-only.json",
+      "sha256": "47845cedd5b6c110ff45bccb18c178c4d06aca2a7e6a9c74154d6011d942a422"
+    },
+    {
+      "path": "expected-v1.1/hello-minor-zero-only.json",
+      "sha256": "6c12febcdab86267da01cf4b56b86e835dc0d4087639a2e86035de732e56a058"
+    },
+    {
+      "path": "expected-v1.1/minimal-no-player.json",
+      "sha256": "0ed821296a97d4a3a43384a9a17bce28d6a9d6070f13b281e608abbb4b83d6c8"
+    },
+    {
+      "path": "expected-v1.1/minimal-with-player.json",
+      "sha256": "72774523c495e9ad92d752e01b695d0bad770501922161b0c8652e3a38ffb9fa"
+    },
+    {
+      "path": "expected-v1.1/phase2-promotion.json",
+      "sha256": "34983b6b3edff7b5fea93b017abbc65d9aa22941052804907b877828a42ab8e3"
+    },
+    {
+      "path": "expected-v1.1/welcome-accepted-minor-one.json",
+      "sha256": "b983199b9596733ad4c63b65e81d0f3418b0fdc2978c0265d0a389153de7eb27"
+    },
+    {
+      "path": "expected-v1.1/welcome-unsupported-version.json",
+      "sha256": "0aae67ed37c4a3fdc88dbe795ab99ed9f41ad6d5ecf02a7f3777858312eb73b1"
+    },
+    {
+      "path": "vectors-v1.1/delta-player-kinematics-cumulative/delta-player-kinematics-cumulative.bin",
+      "sha256": "cea42559c1f31c4ec6574c165ae4409d9d2dd1d07d0b850435d3b7ad102d852c"
+    },
+    {
+      "path": "vectors-v1.1/delta-player-kinematics-cumulative/delta-player-kinematics-cumulative.json",
+      "sha256": "ec47f63868f19b36cfc762ccd8655773a06e63250b113fae5ae0f42cf886f5b4"
+    },
+    {
+      "path": "vectors-v1.1/delta-player-kinematics-cumulative/delta-player-kinematics-cumulative.payload.bin",
+      "sha256": "4d913e407c5fe552c54643db0f140be40481dd223c2438162fb173cc2a19dada"
+    },
+    {
+      "path": "vectors-v1.1/delta-player-return-baseline/delta-player-return-baseline.bin",
+      "sha256": "1e94bf2fa2c8775564f12f73363afdece7e380d5e2048b447d4423fbae28b4cc"
+    },
+    {
+      "path": "vectors-v1.1/delta-player-return-baseline/delta-player-return-baseline.json",
+      "sha256": "bc44d1be274386cfd7af86200b1b1e20d1dbb3179be40e379be1bde9ab5f68c8"
+    },
+    {
+      "path": "vectors-v1.1/delta-player-return-baseline/delta-player-return-baseline.payload.bin",
+      "sha256": "d37e405ef0d73e08dddba8ad5b092ccccc63e0f9c69d03b5bd371580ef84194e"
+    },
+    {
+      "path": "vectors-v1.1/duplicate-flight-record/duplicate-flight-record.bin",
+      "sha256": "63eaf5b3a3db94f40d0f4f91f057f4e0edd7ae740d389df9101bd76075ced1d4"
+    },
+    {
+      "path": "vectors-v1.1/duplicate-flight-record/duplicate-flight-record.json",
+      "sha256": "43198c5c7ca325d8f5b45ed502874bd29dfcdb2f034b91ad21a5d1fb11d6a74f"
+    },
+    {
+      "path": "vectors-v1.1/flight-presence-not-covered/flight-presence-not-covered.bin",
+      "sha256": "e59fdb99bc2d6f3c81d332800e6aafc538ec3425c888ff6080f0cd82021d89bd"
+    },
+    {
+      "path": "vectors-v1.1/flight-presence-not-covered/flight-presence-not-covered.json",
+      "sha256": "308ad548e1231f19f8892168f4e2c14ce60cfc98fd7ab8fba368a4a952de62e8"
+    },
+    {
+      "path": "vectors-v1.1/hello-minor-one-only/hello-minor-one-only.bin",
+      "sha256": "a6177b1bfe08344d7c58be788db596dc02ec29109b558cec2749268c804dc930"
+    },
+    {
+      "path": "vectors-v1.1/hello-minor-one-only/hello-minor-one-only.json",
+      "sha256": "16fea706267e1941667a3ec3f185fd244b149808961f6beced6ca1c5f411167d"
+    },
+    {
+      "path": "vectors-v1.1/hello-minor-one-only/hello-minor-one-only.payload.bin",
+      "sha256": "92cd0cda30ae37f3075f4d424219851443e2898b5f6d7d91bec5935329227656"
+    },
+    {
+      "path": "vectors-v1.1/hello-minor-zero-only/hello-minor-zero-only.bin",
+      "sha256": "e44ab629abbcf89d7e1d043688487ffdeeb879dfc2e36c41a544ffc02b7d5dcb"
+    },
+    {
+      "path": "vectors-v1.1/hello-minor-zero-only/hello-minor-zero-only.json",
+      "sha256": "ed7de0be894d7365c02f017a3186be9f9777ced9cf5e11043208a6e7aff6939a"
+    },
+    {
+      "path": "vectors-v1.1/hello-minor-zero-only/hello-minor-zero-only.payload.bin",
+      "sha256": "d0e1476c650f07d6f149942fafe7499324abc9c36fb2def09452c3a203fdd354"
+    },
+    {
+      "path": "vectors-v1.1/minimal-no-player/minimal-no-player.bin",
+      "sha256": "4afbc84fa9c238c5ff7bca33c033aba01a4a123f99a19952a0a9815c3697c967"
+    },
+    {
+      "path": "vectors-v1.1/minimal-no-player/minimal-no-player.json",
+      "sha256": "826b1dc8c3b7cd5ed76a450b24fa6ddd277fb0b3646e2b621e2818e46427545b"
+    },
+    {
+      "path": "vectors-v1.1/minimal-with-player/minimal-with-player.bin",
+      "sha256": "453192957aad4ddbedbb80ad532e3866d9aa1d8aed47b3ed6ab24e742ce3a888"
+    },
+    {
+      "path": "vectors-v1.1/minimal-with-player/minimal-with-player.json",
+      "sha256": "70fc2d0dabdc91d84853df8cc1def6f21fa36c8426473e9e8d7f45189452dc64"
+    },
+    {
+      "path": "vectors-v1.1/minor-zero-reserved-bit/minor-zero-reserved-bit.bin",
+      "sha256": "4afbc84fa9c238c5ff7bca33c033aba01a4a123f99a19952a0a9815c3697c967"
+    },
+    {
+      "path": "vectors-v1.1/minor-zero-reserved-bit/minor-zero-reserved-bit.json",
+      "sha256": "e64b56639acf6289abaa4fc73bd0da8351c12f96d6f682de1d805d9e821a58bc"
+    },
+    {
+      "path": "vectors-v1.1/missing-flight/missing-flight.bin",
+      "sha256": "8ec9fbf5e7d1f05dbe09cac591a64e89c6eb85faa9767ed52a25a629232fc750"
+    },
+    {
+      "path": "vectors-v1.1/missing-flight/missing-flight.json",
+      "sha256": "4b6dd63d2344d0dc7d6c739aef19ea91d125ddd7f10a032c53ac301d3012e79d"
+    },
+    {
+      "path": "vectors-v1.1/missing-lifecycle/missing-lifecycle.bin",
+      "sha256": "ef67f43729c01b8d8338d89e28ecc4554a3546062daae0ab3644bd50d1db2b82"
+    },
+    {
+      "path": "vectors-v1.1/missing-lifecycle/missing-lifecycle.json",
+      "sha256": "bf7a42eb9badde2d450623cda2cd6145596562f2fe8213b8b6ebfd1df9ec633d"
+    },
+    {
+      "path": "vectors-v1.1/missing-mission/missing-mission.bin",
+      "sha256": "aa4ebe7c9e1b8c3d30ef50382e0245cbb7050e27fe41f1d363974b8f91a02e24"
+    },
+    {
+      "path": "vectors-v1.1/missing-mission/missing-mission.json",
+      "sha256": "2bde446cd148a2ecac680b088b48ca34efec7b6f880da27d0177a0c0a17de6a6"
+    },
+    {
+      "path": "vectors-v1.1/non-cockpit-visibility/non-cockpit-visibility.bin",
+      "sha256": "8fbea3772b88a6f85e6ff1f30bdf567cb4b28fdfd0a72a0de18cbee7d7d2d2f8"
+    },
+    {
+      "path": "vectors-v1.1/non-cockpit-visibility/non-cockpit-visibility.json",
+      "sha256": "1b7a8dc2d6b5e82d8c4e924f45742e861cb4200b92db0a1656628d6ca4d13628"
+    },
+    {
+      "path": "vectors-v1.1/non-solo-authority/non-solo-authority.bin",
+      "sha256": "29c4ed80daf11c1129f86c9351ae6d6e81b9bc74d4fbaffda6245aa29e0e69a5"
+    },
+    {
+      "path": "vectors-v1.1/non-solo-authority/non-solo-authority.json",
+      "sha256": "a51fcc71cd33ce5e59afc7a290c8dccb4ec87ccb589c47aaeddb1d42ba1896a6"
+    },
+    {
+      "path": "vectors-v1.1/observed-player-id-mismatch/observed-player-id-mismatch.bin",
+      "sha256": "e6abb99be358710f4452b100d578fe61d8996f3196e80058e268ccacfe2a653d"
+    },
+    {
+      "path": "vectors-v1.1/observed-player-id-mismatch/observed-player-id-mismatch.json",
+      "sha256": "4bc7af47e5d6dd7cfa11445bccb8f4d5f38dbd8a87995863b848c2c84546253f"
+    },
+    {
+      "path": "vectors-v1.1/phase2-promotion-incomplete/phase2-promotion-incomplete.bin",
+      "sha256": "b49a4c3658185840a8f4d88bf21761ec7ca23a15da4911fb21bdbb60f93578f6"
+    },
+    {
+      "path": "vectors-v1.1/phase2-promotion-incomplete/phase2-promotion-incomplete.json",
+      "sha256": "3137a7a19ab1e385d7657e22179250d9b14dea68cde900984288b7c374a4b26d"
+    },
+    {
+      "path": "vectors-v1.1/phase2-promotion/phase2-promotion.bin",
+      "sha256": "abb4d3b9eb5e2a1b1d84a8d1c2cf235be62e832d16bc33c0f63156650cb107b0"
+    },
+    {
+      "path": "vectors-v1.1/phase2-promotion/phase2-promotion.json",
+      "sha256": "75f79315395b1fff71b4eafbd306edf04110cd83e9935dc5d50d19f47700f249"
+    },
+    {
+      "path": "vectors-v1.1/player-lifecycle-non-ship/player-lifecycle-non-ship.bin",
+      "sha256": "eef4bdd64bf576c19952974e35bbf090dc27f4c35c137f4a8f2aefb3aefc0f8c"
+    },
+    {
+      "path": "vectors-v1.1/player-lifecycle-non-ship/player-lifecycle-non-ship.json",
+      "sha256": "160c9b3bb9eab506e15b62b041f1c9bcc7dcb1b5a671dee1928cfec6b95e1cbc"
+    },
+    {
+      "path": "vectors-v1.1/unexpected-ship-identity/unexpected-ship-identity.bin",
+      "sha256": "7754428ef658204bfa29368567e547b73e909f9d4f03a47f9cf72c2f3b158183"
+    },
+    {
+      "path": "vectors-v1.1/unexpected-ship-identity/unexpected-ship-identity.json",
+      "sha256": "cb70212e660b050c374e4c91acf82c274d9cc3fe5fd066d30ec33abdf8801d45"
+    },
+    {
+      "path": "vectors-v1.1/welcome-accepted-minor-one/welcome-accepted-minor-one.bin",
+      "sha256": "ef022073045ebae3b406e63e66aad311943124c663fbc0a18135e99975c3f0a4"
+    },
+    {
+      "path": "vectors-v1.1/welcome-accepted-minor-one/welcome-accepted-minor-one.json",
+      "sha256": "d6411c7efcbb82b677efa6ee7b1eb18c97449763b435a6b9c3ac2f01c41641b7"
+    },
+    {
+      "path": "vectors-v1.1/welcome-accepted-minor-one/welcome-accepted-minor-one.payload.bin",
+      "sha256": "3364e896965ad473e290758a834b3fbe28b4565bb1e280183c37580a8137c885"
+    },
+    {
+      "path": "vectors-v1.1/welcome-unsupported-version/welcome-unsupported-version.bin",
+      "sha256": "15deb3508626d77b26e754e7745e88a71f2e25d3937fa136f20c54b7b23a838e"
+    },
+    {
+      "path": "vectors-v1.1/welcome-unsupported-version/welcome-unsupported-version.json",
+      "sha256": "5aa4210d38b6b9c6a7bf264532843bdc53657d67c562a65e4f0318121b3fc9ef"
+    },
+    {
+      "path": "vectors-v1.1/welcome-unsupported-version/welcome-unsupported-version.payload.bin",
+      "sha256": "2fbea9908cdc4a299ad5777333dbaca7f00421760e529e149c28e4d2989ab29e"
+    }
+  ],
+  "frozenV10TreeSha256": "099fffd00ea67ed71b6e345c3256b06f8ebf5c5ca14c518fe8e614a2bd4424aa",
+  "playerKinematics": 1024,
+  "producerProfileMinorRange": [
+    1,
+    1
+  ],
+  "schema": "FSTL-1.1"
+}

@@ -2692,6 +2692,8 @@ def cpp_registry_bindings() -> dict[str, dict[str, object]]:
             "known": f"Known{constant_stem}",
             "reserved": f"Reserved{constant_stem}",
         }
+    bindings["StateDomainCoverage"]["known"] = "KnownStateDomainCoverageBitsV1_1"
+    bindings["StateDomainCoverage"]["reserved"] = "ReservedStateDomainCoverageBitsV1_1"
     presence_registries = (
         "CargoScanStatePresence",
         "ClassBankPresence",
@@ -2757,8 +2759,10 @@ def verify_cpp_correspondence(
         missing = sorted(set(bindings) - set(registries))
         raise SchemaError(f"C++ registry binding coverage mismatch; missing={missing}")
     bound_enums = {str(binding["enum"]) for binding in bindings.values()}
-    if set(cpp_enums) != bound_enums:
-        missing = sorted(set(cpp_enums) - bound_enums)
+    implementation_only_enums = {"ProtocolMinorNegotiationResult"}
+    comparable_cpp_enums = set(cpp_enums) - implementation_only_enums
+    if comparable_cpp_enums != bound_enums:
+        missing = sorted(comparable_cpp_enums - bound_enums)
         stale = sorted(bound_enums - set(cpp_enums))
         raise SchemaError(f"C++ enum coverage mismatch; unbound={missing}, missing_in_header={stale}")
 
@@ -2893,6 +2897,19 @@ def verify_cpp_correspondence(
     for name, expected in constant_bindings.items():
         if cpp_constants.get(name) != expected:
             raise SchemaError(f"C++ constant {name} drifts: {cpp_constants.get(name)!r} vs {expected}")
+        verified_constant_names.add(name)
+
+    amendment_constants = {
+        "VersionMinorV1_0": 0,
+        "VersionMinorV1_1": 1,
+        "LatestSupportedVersionMinor": 1,
+        "KnownStateDomainCoverageBitsV1_0": 0x3FF,
+        "KnownStateDomainCoverageBits": 0x3FF,
+        "ReservedStateDomainCoverageBits": 0xFFFFFFFFFFFFFC00,
+    }
+    for name, expected in amendment_constants.items():
+        if cpp_constants.get(name) != expected:
+            raise SchemaError(f"C++ amendment constant {name} drifts: {cpp_constants.get(name)!r} vs {expected}")
         verified_constant_names.add(name)
 
     unverified_constants = sorted(set(cpp_constants) - verified_constant_names)
@@ -3075,6 +3092,36 @@ def build_schema() -> dict[str, object]:
         "schema_format": "FSTL-machine-readable-registry-v1",
         "protocol": "FSTL",
         "wire_version": f"{core_constants['version_major']}.{core_constants['version_minor']}",
+        "wire_version_scope": "frozen FSTL 1.0 compatibility view",
+        "supported_wire_versions": {
+            "1.0": {"minor": 0, "state_domain_known_mask": 0x3FF,
+                    "player_kinematics": "reserved_and_rejected"},
+            "1.1": {"minor": 1, "state_domain_known_mask": 0x7FF,
+                    "player_kinematics": 0x400},
+        },
+        "producer_profiles": {
+            "phase1_minimal": {"minimum_minor": 1, "maximum_minor": 1,
+                               "required_state_domain_coverage": 0x400}
+        },
+        "phase1_player_kinematics_record_set": {
+            "required_always": ["SESSION_STATE", "MISSION_STATE"],
+            "required_when_observed_player_present": ["ENTITY_LIFECYCLE", "FLIGHT_STATE"],
+            "exact_record_set": True,
+            "same_observed_player_entity_id": True,
+            "authority_mode": "SOLO",
+            "visibility_mode": "COCKPIT",
+            "entity_lifecycle_object_type": "SHIP",
+            "entity_lifecycle_presence": 0,
+            "flight_state_presence": 0,
+            "required_manifest_id": 0,
+            "negotiated_capabilities": 0,
+            "event_coverage_state_derived": 0,
+            "event_coverage_exact": 0,
+            "forbidden_records": ["SHIP_IDENTITY"],
+            "promotion": {"requires_core_ship_coverage": True,
+                          "requires_nonzero_manifest_id": True,
+                          "requires_complete_core_ship_record_set": True},
+        },
         "generated_by": "test/telemetry/protocol/tools/fstl_schema.py",
         "normative_sources": source_metadata(sources),
         "scalar_types": parse_scalar_types(doc02),
@@ -3102,6 +3149,18 @@ def build_schema() -> dict[str, object]:
 
 
 def validate_schema_shape(schema: dict[str, object]) -> None:
+    expected_versions = {
+        "1.0": {"minor": 0, "state_domain_known_mask": 0x3FF,
+                "player_kinematics": "reserved_and_rejected"},
+        "1.1": {"minor": 1, "state_domain_known_mask": 0x7FF,
+                "player_kinematics": 0x400},
+    }
+    expected_profiles = {"phase1_minimal": {"minimum_minor": 1, "maximum_minor": 1,
+                                             "required_state_domain_coverage": 0x400}}
+    if schema.get("supported_wire_versions") != expected_versions:
+        raise SchemaError("supported FSTL 1.0/1.1 wire-version contract drift")
+    if schema.get("producer_profiles") != expected_profiles:
+        raise SchemaError("Phase 1 producer profile drift")
     messages = schema.get("message_types")
     records = schema.get("record_types")
     structured_types = schema.get("record_structured_types")
@@ -3110,6 +3169,24 @@ def validate_schema_shape(schema: dict[str, object]) -> None:
     errors = schema.get("validation_errors")
     numeric_registries = schema.get("numeric_registries")
     wire_conventions = schema.get("wire_conventions")
+    phase1 = schema.get("phase1_player_kinematics_record_set")
+    expected_phase1 = {
+        "required_always": ["SESSION_STATE", "MISSION_STATE"],
+        "required_when_observed_player_present": ["ENTITY_LIFECYCLE", "FLIGHT_STATE"],
+        "exact_record_set": True, "same_observed_player_entity_id": True,
+        "authority_mode": "SOLO", "visibility_mode": "COCKPIT",
+        "entity_lifecycle_object_type": "SHIP", "entity_lifecycle_presence": 0,
+        "flight_state_presence": 0, "required_manifest_id": 0,
+        "negotiated_capabilities": 0, "event_coverage_state_derived": 0,
+        "event_coverage_exact": 0, "forbidden_records": ["SHIP_IDENTITY"],
+        "promotion": {"requires_core_ship_coverage": True,
+                      "requires_nonzero_manifest_id": True,
+                      "requires_complete_core_ship_record_set": True},
+    }
+    if not isinstance(phase1, dict):
+        raise SchemaError("missing Phase 1 PLAYER_KINEMATICS record-set contract")
+    if phase1 != expected_phase1:
+        raise SchemaError("Phase 1 PLAYER_KINEMATICS record-set invariant drift")
     if not isinstance(messages, list) or not isinstance(records, list):
         raise SchemaError("schema registries must be arrays")
     if not isinstance(structured_types, list) or not structured_types:
@@ -3333,6 +3410,23 @@ def run_negative_self_tests(schema: dict[str, object]) -> tuple[str, ...]:
         path = Path(directory) / "fstl-v1.yaml"
         write_schema(render_schema(drifted_schema), path)
         expect_failure("checked-artifact-drift", lambda: check_schema(expected, path))
+    phase1_contract = schema["phase1_player_kinematics_record_set"]
+    assert isinstance(phase1_contract, dict)
+    for field in phase1_contract:
+        if field == "promotion":
+            for promotion_field in phase1_contract[field]:
+                mutated = clone(schema)
+                mutated["phase1_player_kinematics_record_set"][field][promotion_field] = False
+                expect_failure(f"phase1-{promotion_field}-drift", lambda value=mutated: validate_schema_shape(value))
+        else:
+            mutated = clone(schema)
+            mutated["phase1_player_kinematics_record_set"][field] = None
+            expect_failure(f"phase1-{field}-drift", lambda value=mutated: validate_schema_shape(value))
+    for label, section in (("supported-wire-versions", "supported_wire_versions"),
+                           ("producer-profiles", "producer_profiles")):
+        mutated = clone(schema)
+        mutated[section] = {}
+        expect_failure(f"{label}-drift", lambda value=mutated: validate_schema_shape(value))
     return tuple(passed)
 
 

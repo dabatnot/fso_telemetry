@@ -1,0 +1,15 @@
+{
+  "expectedValidationError": 41,
+  "expectedValidationErrorName": "MissingManifest",
+  "headerVersion": "1.1",
+  "inputFiles": [
+    "phase2-promotion-incomplete.bin"
+  ],
+  "kind": "message-payload",
+  "messageType": 6,
+  "name": "phase2-promotion-incomplete",
+  "notes": "FSTL 1.1 phase2-promotion-incomplete",
+  "schema": "FSTL-1.1",
+  "valid": false,
+  "versionMinor": 1
+}

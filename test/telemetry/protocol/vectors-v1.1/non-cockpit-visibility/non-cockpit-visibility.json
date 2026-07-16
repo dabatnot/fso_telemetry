@@ -1,0 +1,15 @@
+{
+  "expectedValidationError": 43,
+  "expectedValidationErrorName": "VisibilityViolation",
+  "headerVersion": "1.1",
+  "inputFiles": [
+    "non-cockpit-visibility.bin"
+  ],
+  "kind": "message-payload",
+  "messageType": 6,
+  "name": "non-cockpit-visibility",
+  "notes": "FSTL 1.1 non-cockpit-visibility",
+  "schema": "FSTL-1.1",
+  "valid": false,
+  "versionMinor": 1
+}

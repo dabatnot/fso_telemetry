@@ -51,6 +51,12 @@ ValidationError expected_fragment_count(MessageType type,
 	                                     std::uint16_t& count) noexcept;
 ValidationError validate_fragment_layout(const TelemetryDatagramHeader& header) noexcept;
 
+// Version validation is deliberately contextual. The unqualified datagram
+// APIs below remain strict FSTL 1.0; negotiated 1.1 callers pass an explicit
+// one-element range (or the offered range while receiving WELCOME).
+ValidationError validate_datagram_header_version(const TelemetryDatagramHeader& header,
+	ProtocolMinorRange accepted_minors) noexcept;
+
 // These two routines only transform the fixed 68-byte logical header. Full
 // wire validation, including CRC and the fragment slice, is performed by
 // decode_and_validate_datagram().
@@ -68,6 +74,11 @@ ValidationError encode_datagram(TelemetryDatagramHeader header,
 	                             ByteView payload,
 	                             MutableByteView output,
 	                             std::size_t& written) noexcept;
+ValidationError encode_datagram(TelemetryDatagramHeader header,
+	ProtocolMinorRange accepted_minors,
+	ByteView payload,
+	MutableByteView output,
+	std::size_t& written) noexcept;
 
 // Validates only the fixed transport envelope through datagram CRC and returns
 // a bounded view even when the message type or fragment layout is not valid.
@@ -75,10 +86,16 @@ ValidationError encode_datagram(TelemetryDatagramHeader header,
 // normatively precede class/layout validation. No bytes are retained and no
 // allocation is performed.
 ValidationError decode_and_validate_datagram_envelope(ByteView datagram, DatagramView& decoded) noexcept;
+ValidationError decode_and_validate_datagram_envelope(ByteView datagram,
+	ProtocolMinorRange accepted_minors,
+	DatagramView& decoded) noexcept;
 
 // Convenience validator for callers which do not need to interpose contextual
 // session checks. It validates the envelope and the static fragment layout.
 ValidationError decode_and_validate_datagram(ByteView datagram, DatagramView& decoded) noexcept;
+ValidationError decode_and_validate_datagram(ByteView datagram,
+	ProtocolMinorRange accepted_minors,
+	DatagramView& decoded) noexcept;
 
 // Intended for a complete logical payload after reassembly (or an
 // unfragmented payload). It validates length before computing message_crc32.

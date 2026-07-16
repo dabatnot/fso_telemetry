@@ -1,0 +1,15 @@
+{
+  "expectedValidationError": 36,
+  "expectedValidationErrorName": "ReservedFlag",
+  "headerVersion": "1.0",
+  "inputFiles": [
+    "minor-zero-reserved-bit.bin"
+  ],
+  "kind": "message-payload",
+  "messageType": 6,
+  "name": "minor-zero-reserved-bit",
+  "notes": "FSTL 1.0 minor-zero-reserved-bit",
+  "schema": "FSTL-1.0",
+  "valid": false,
+  "versionMinor": 0
+}

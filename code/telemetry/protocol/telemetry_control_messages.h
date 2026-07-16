@@ -27,6 +27,11 @@ constexpr std::uint16_t MinHeartbeatIntervalMs = 200;
 constexpr std::uint16_t MaxHeartbeatIntervalMs = 5000;
 constexpr std::uint16_t ReliableReassemblyTimeoutV1Ms = 2000;
 
+ValidationError validate_protocol_minor_range(ProtocolMinorRange range) noexcept;
+ProtocolMinorNegotiationResult select_highest_common_minor(ProtocolMinorRange local,
+	ProtocolMinorRange remote,
+	std::uint8_t& selected_minor) noexcept;
+
 // Logical view of one common capability-extension envelope. Unknown non-zero
 // types and versions are structurally valid here; their optional semantics are
 // handled only by a negotiated specialized-capability codec.

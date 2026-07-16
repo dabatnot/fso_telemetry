@@ -1,0 +1,112 @@
+{
+  "fields": {
+    "baseline_snapshot_id": 1,
+    "delta_sequence": 3,
+    "producer_sample_time_us": "1000002",
+    "record_count": 4,
+    "records": [
+      {
+        "fields": {
+          "authority_mode": 0,
+          "event_coverage_exact": "0",
+          "event_coverage_state_derived": "0",
+          "negotiated_capabilities": "0",
+          "negotiated_capability_generation": 1,
+          "observed_player_entity_id": "1",
+          "presence": "1",
+          "producer_id": "72623859790382856",
+          "producer_sample_time_us": "1000000",
+          "reserved": 0,
+          "session_phase": 2,
+          "state_domain_coverage": "1024",
+          "visibility_mode": 0
+        },
+        "kind": "record",
+        "recordFlags": 0,
+        "recordLength": 72,
+        "recordName": "SESSION_STATE",
+        "recordType": 1,
+        "recordVersion": 1,
+        "schema": "FSTL-1.1"
+      },
+      {
+        "fields": {
+          "mission_generation": 1,
+          "paused": 0,
+          "phase": 0,
+          "presence": "0",
+          "producer_sample_time_us": "1000000",
+          "reserved": 0,
+          "time_compression": 1.0
+        },
+        "kind": "record",
+        "recordFlags": 0,
+        "recordLength": 28,
+        "recordName": "MISSION_STATE",
+        "recordType": 2,
+        "recordVersion": 1,
+        "schema": "FSTL-1.1"
+      },
+      {
+        "fields": {
+          "entity_id": "1",
+          "lifecycle_flags": 0,
+          "lifecycle_phase": 1,
+          "object_type": 1,
+          "presence": "0",
+          "producer_sample_time_us": "1000000"
+        },
+        "kind": "record",
+        "recordFlags": 0,
+        "recordLength": 30,
+        "recordName": "ENTITY_LIFECYCLE",
+        "recordType": 5,
+        "recordVersion": 1,
+        "schema": "FSTL-1.1"
+      },
+      {
+        "fields": {
+          "entity_id": "1",
+          "orientation_local_to_world": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "physics_mode_flags": 0,
+          "position_world": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "presence": "0",
+          "producer_sample_time_us": "1000000",
+          "radius": 0.0,
+          "rotational_velocity_local": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "velocity_world": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "kind": "record",
+        "recordFlags": 0,
+        "recordLength": 84,
+        "recordName": "FLIGHT_STATE",
+        "recordType": 7,
+        "recordVersion": 1,
+        "schema": "FSTL-1.1"
+      }
+    ],
+    "reserved": 0
+  },
+  "kind": "message-payload",
+  "messageFlags": 0,
+  "messageName": "DELTA",
+  "messageType": 7,
+  "schema": "FSTL-1.1"
+}

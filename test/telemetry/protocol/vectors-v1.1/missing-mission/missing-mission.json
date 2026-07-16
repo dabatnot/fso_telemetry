@@ -1,0 +1,15 @@
+{
+  "expectedValidationError": 37,
+  "expectedValidationErrorName": "InvalidAbsence",
+  "headerVersion": "1.1",
+  "inputFiles": [
+    "missing-mission.bin"
+  ],
+  "kind": "message-payload",
+  "messageType": 6,
+  "name": "missing-mission",
+  "notes": "FSTL 1.1 missing-mission",
+  "schema": "FSTL-1.1",
+  "valid": false,
+  "versionMinor": 1
+}

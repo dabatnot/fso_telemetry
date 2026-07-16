@@ -1711,6 +1711,12 @@ add_file_folder("TgaUtils"
 	tgautils/tgautils.h
 )
 
+# Telemetry files
+add_file_folder("Telemetry"
+	telemetry/telemetry.cpp
+	telemetry/telemetry.h
+)
+
 # Tracing files
 add_file_folder("Tracing"
 	tracing/categories.cpp

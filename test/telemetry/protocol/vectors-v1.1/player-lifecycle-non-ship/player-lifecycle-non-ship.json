@@ -1,0 +1,15 @@
+{
+  "expectedValidationError": 44,
+  "expectedValidationErrorName": "InvalidStateTransition",
+  "headerVersion": "1.1",
+  "inputFiles": [
+    "player-lifecycle-non-ship.bin"
+  ],
+  "kind": "message-payload",
+  "messageType": 6,
+  "name": "player-lifecycle-non-ship",
+  "notes": "FSTL 1.1 player-lifecycle-non-ship",
+  "schema": "FSTL-1.1",
+  "valid": false,
+  "versionMinor": 1
+}

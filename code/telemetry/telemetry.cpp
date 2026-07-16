@@ -1,0 +1,150 @@
+#include "telemetry/telemetry.h"
+
+#include "events/events.h"
+
+#if defined(FSO_TELEMETRY_TEST_SEAMS)
+#include <array>
+#include <cstddef>
+#include <cstdint>
+#endif
+
+namespace {
+
+bool telemetry_initialized = false;
+bool telemetry_disabled    = true;
+
+#if defined(FSO_TELEMETRY_TEST_SEAMS)
+constexpr std::size_t EngineUpdateIndex    = 0;
+constexpr std::size_t EngineShutdownIndex  = 1;
+constexpr std::size_t GameMissionLoadIndex = 2;
+constexpr std::size_t GameEnterStateIndex  = 3;
+constexpr std::size_t GameLeaveStateIndex  = 4;
+constexpr std::size_t EventCount           = 5;
+
+std::array<std::uint64_t, EventCount> registration_attempt_counts{};
+std::array<std::uint64_t, EventCount> callback_invocation_counts{};
+#endif
+
+void on_engine_update() noexcept
+{
+#if defined(FSO_TELEMETRY_TEST_SEAMS)
+	++callback_invocation_counts[EngineUpdateIndex];
+#endif
+
+	if (telemetry_disabled) {
+		return;
+	}
+}
+
+void on_engine_shutdown() noexcept
+{
+#if defined(FSO_TELEMETRY_TEST_SEAMS)
+	++callback_invocation_counts[EngineShutdownIndex];
+#endif
+
+	return;
+}
+
+void on_game_mission_load(const char*) noexcept
+{
+#if defined(FSO_TELEMETRY_TEST_SEAMS)
+	++callback_invocation_counts[GameMissionLoadIndex];
+#endif
+
+	return;
+}
+
+void on_game_enter_state(int, int) noexcept
+{
+#if defined(FSO_TELEMETRY_TEST_SEAMS)
+	++callback_invocation_counts[GameEnterStateIndex];
+#endif
+
+	return;
+}
+
+void on_game_leave_state(int, int) noexcept
+{
+#if defined(FSO_TELEMETRY_TEST_SEAMS)
+	++callback_invocation_counts[GameLeaveStateIndex];
+#endif
+
+	return;
+}
+
+} // namespace
+
+namespace telemetry {
+
+void initialize() noexcept
+{
+	// Engine initialization and all event emissions are main-thread operations.
+	// Register process-lifetime callbacks once; util::event has no individual removal.
+	if (telemetry_initialized) {
+		return;
+	}
+	telemetry_initialized = true;
+
+	try {
+#if defined(FSO_TELEMETRY_TEST_SEAMS)
+		++registration_attempt_counts[EngineUpdateIndex];
+#endif
+		events::EngineUpdate.add(on_engine_update);
+
+#if defined(FSO_TELEMETRY_TEST_SEAMS)
+		++registration_attempt_counts[EngineShutdownIndex];
+#endif
+		events::EngineShutdown.add(on_engine_shutdown);
+
+#if defined(FSO_TELEMETRY_TEST_SEAMS)
+		++registration_attempt_counts[GameMissionLoadIndex];
+#endif
+		events::GameMissionLoad.add(on_game_mission_load);
+
+#if defined(FSO_TELEMETRY_TEST_SEAMS)
+		++registration_attempt_counts[GameEnterStateIndex];
+#endif
+		events::GameEnterState.add(on_game_enter_state);
+
+#if defined(FSO_TELEMETRY_TEST_SEAMS)
+		++registration_attempt_counts[GameLeaveStateIndex];
+#endif
+		events::GameLeaveState.add(on_game_leave_state);
+	} catch (...) {
+		// A partial util::event registration cannot be rolled back safely. Keep
+		// telemetry disabled and prevent a retry from duplicating listeners.
+		return;
+	}
+}
+
+} // namespace telemetry
+
+#if defined(FSO_TELEMETRY_TEST_SEAMS)
+namespace telemetry::test_seam {
+
+void reset_observation_counts() noexcept
+{
+	registration_attempt_counts.fill(0);
+	callback_invocation_counts.fill(0);
+}
+
+std::uint64_t registration_attempts(std::size_t event_index) noexcept
+{
+	if (event_index >= EventCount) {
+		return 0;
+	}
+
+	return registration_attempt_counts[event_index];
+}
+
+std::uint64_t callback_invocations(std::size_t event_index) noexcept
+{
+	if (event_index >= EventCount) {
+		return 0;
+	}
+
+	return callback_invocation_counts[event_index];
+}
+
+} // namespace telemetry::test_seam
+#endif

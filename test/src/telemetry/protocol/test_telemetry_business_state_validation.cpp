@@ -508,6 +508,87 @@ BusinessStateValidationContext valid_context()
 	return context;
 }
 
+StateImage make_phase1_image(std::uint64_t coverage = StateDomainCoverageBitPlayerKinematics,
+	std::uint64_t player = 1U,
+	VisibilityMode visibility = VisibilityMode::Cockpit)
+{
+	std::vector<StateAtom> atoms;
+	atoms.push_back(atom(RecordType::SessionState, session_payload(visibility, 1U, coverage, player), 0));
+	atoms.push_back(atom(RecordType::MissionState, mission_payload(), 0));
+	atoms.push_back(atom(RecordType::EntityLifecycle,
+		lifecycle_payload(player, ObjectType::Ship, 0U, 0U), 8U, StateRecordLifecycle::ExplicitCreateDelete));
+	atoms.push_back(atom(RecordType::FlightState, flight_payload(player), 8U));
+	StateImage image;
+	EXPECT_EQ(StateImageResult::Created, StateImage::create(std::move(atoms), image));
+	return image;
+}
+
+TEST(TelemetryProtocolBusinessStateValidation, Fstl11PlayerKinematicsRequiresCockpitEvenWhenTrustedFullStateIsAuthorized)
+{
+	auto context = valid_context();
+	context.protocol_minor = VersionMinorV1_1;
+	context.required_manifest_id = 0U;
+	context.trusted_full_state_authorized = true;
+	context.source_endpoint_allowlisted = true;
+	BusinessStateImageValidator validator(context);
+	const auto trusted = make_phase1_image(
+		StateDomainCoverageBitPlayerKinematics, 1U, VisibilityMode::TrustedFullState);
+	EXPECT_EQ(ValidationError::VisibilityViolation, validator.validate(trusted));
+}
+
+TEST(TelemetryProtocolBusinessStateValidation, Fstl11PlayerKinematicsProfileAndDeltaInvariants)
+{
+	auto context = valid_context();
+	context.protocol_minor = VersionMinorV1_1;
+	context.required_manifest_id = 0U;
+	BusinessStateImageValidator validator(context);
+	const auto baseline = make_phase1_image();
+	EXPECT_EQ(ValidationError::None, validator.validate(baseline));
+	EXPECT_EQ(ValidationError::None, validator.validate_delta_transition(baseline, baseline));
+	const auto changed_coverage = make_phase1_image(StateDomainCoverageBitPlayerKinematics |
+		StateDomainCoverageBitCoreShip);
+	EXPECT_EQ(ValidationError::MissingManifest,
+		validator.validate_delta_transition(baseline, changed_coverage));
+	const auto changed_player = make_phase1_image(StateDomainCoverageBitPlayerKinematics, 2U);
+	EXPECT_EQ(ValidationError::InvalidStateTransition,
+		validator.validate_delta_transition(baseline, changed_player));
+}
+
+TEST(TelemetryProtocolBusinessStateValidation, Fstl11PlayerKinematicsConvergesAfterLossDuplicationAndReorder)
+{
+	auto context = valid_context(); context.protocol_minor = VersionMinorV1_1; context.required_manifest_id = 0U;
+	BusinessStateImageValidator validator(context);
+	const auto baseline = make_phase1_image();
+	ClientReplicationModel client;
+	ASSERT_EQ(SnapshotCandidateResult::Known, client.note_snapshot_candidate(1U, 0U, 1U, 10'000'001U));
+	ProtocolRateLimiter limiter;
+	ASSERT_EQ(ValidationError::None, ProtocolRateLimiter::configure({}, 0U, limiter));
+	ResyncRequestPayload resync;
+	const auto endpoint = EndpointKey::from_ipv4({127U, 0U, 0U, 1U}, 42042U);
+	ClientResyncChannel channel{1U, endpoint, limiter, resync};
+	ASSERT_EQ(SnapshotCommitResult::Committed, client.commit_snapshot(1U, 0U, baseline, 2U, channel, &validator));
+	auto flight = *std::find_if(baseline.records().begin(), baseline.records().end(), [](const StateAtom& atom) {
+		return atom.key.record_type == static_cast<std::uint16_t>(RecordType::FlightState);
+	});
+	// Sequence 1 carries a real kinematic change (position, quaternion, velocity and rotation).
+	const std::array<float, 13> changed_kinematics{{10.F, 20.F, 30.F, .5F, .5F, .5F, .5F,
+		4.F, 5.F, 6.F, .1F, .2F, .3F}};
+	std::memcpy(flight.value.data() + 24U, changed_kinematics.data(), sizeof(changed_kinematics));
+	CumulativeStateDelta older{1U, 1U, 101U, {{StateMutationKind::Upsert, flight}}};
+	// Sequence 2 is independently cumulative from the active baseline and returns the atom exactly to baseline.
+	CumulativeStateDelta latest{1U, 2U, 102U, {{StateMutationKind::Upsert,
+		*std::find_if(baseline.records().begin(), baseline.records().end(), [](const StateAtom& atom) {
+			return atom.key.record_type == static_cast<std::uint16_t>(RecordType::FlightState);
+		})}}};
+	// Sequence 1 is lost; sequence 2 arrives first, then the reordered change and a duplicate return.
+	ASSERT_EQ(ClientDeltaResult::Applied, client.receive_delta(latest, 2U, 1U, endpoint, limiter, resync, &validator));
+	EXPECT_EQ(ClientDeltaResult::IgnoredOldSequence, client.receive_delta(older, 3U, 1U, endpoint, limiter, resync, &validator));
+	EXPECT_EQ(ClientDeltaResult::IgnoredOldSequence, client.receive_delta(latest, 4U, 1U, endpoint, limiter, resync, &validator));
+	StateImage expected;
+	ASSERT_EQ(StateDeltaApplyResult::Applied, apply_cumulative_state_delta(baseline, latest, &validator, expected));
+	EXPECT_EQ(expected, client.published());
+}
+
 TEST(TelemetryProtocolBusinessStateValidation, MinimalEngineNeutralSnapshotIsCompleteAndValid)
 {
 	const auto image = make_image(session_payload());

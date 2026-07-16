@@ -7,6 +7,7 @@ import argparse
 import json
 import re
 import sys
+import hashlib
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -174,6 +175,12 @@ def main() -> int:
 
         verified_seeds, seed_errors = verify_transport_seeds(repo, seeds_path)
         catalogue_coverage = load_object(protocol_root / "protocol-coverage.json")
+        amendment_manifest = load_object(protocol_root / "fstl-1.1-vectors.manifest.json")
+        amendment_errors: list[str] = []
+        for entry in amendment_manifest.get("files", []):
+            candidate = protocol_root / entry["path"]
+            if not candidate.is_file() or hashlib.sha256(candidate.read_bytes()).hexdigest() != entry["sha256"]:
+                amendment_errors.append(f"FSTL 1.1 vector drift: {entry['path']}")
     except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError) as error:
         print(f"Telemetry asset verification failed: {error}", file=sys.stderr)
         return 1
@@ -203,7 +210,7 @@ def main() -> int:
         args.report.parent.mkdir(parents=True, exist_ok=True)
         args.report.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
-    errors = fixture_errors + seed_errors
+    errors = fixture_errors + seed_errors + amendment_errors
     if args.require_complete and missing_messages:
         errors.append(f"missing message vector coverage for IDs: {missing_messages}")
     if args.require_complete and missing_records:

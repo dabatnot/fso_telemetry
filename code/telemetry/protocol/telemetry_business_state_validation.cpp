@@ -187,6 +187,20 @@ ValidationError parse_session(const StateAtom& atom, SessionFacts& facts) noexce
 	return ValidationError::None;
 }
 
+ValidationError parse_mission_generation(const StateAtom& atom, std::uint32_t& generation) noexcept
+{
+	if (atom.value.size() < 12U) {
+		return ValidationError::BadRecordLength;
+	}
+	generation = read_u32(atom.value.data() + 8U);
+	return generation != 0U ? ValidationError::None : ValidationError::OutOfRange;
+}
+
+bool is_phase1_player_kinematics_profile(std::uint8_t protocol_minor, std::uint64_t coverage) noexcept
+{
+	return protocol_minor == VersionMinorV1_1 && coverage == StateDomainCoverageBitPlayerKinematics;
+}
+
 ValidationError parse_lifecycle(const StateAtom& atom, LifecycleFacts& facts) noexcept
 {
 	facts = LifecycleFacts{};
@@ -375,6 +389,9 @@ bool sorted_unique_nonzero(const std::uint32_t* values, std::size_t count) noexc
 
 ValidationError validate_context(const BusinessStateValidationContext& context) noexcept
 {
+	if (!is_supported_version_minor(context.protocol_minor)) {
+		return ValidationError::UnsupportedMinor;
+	}
 	if ((context.class_catalog_count != 0 && context.class_catalog == nullptr) ||
 		(context.weapon_class_count != 0 && context.weapon_class_ids == nullptr) ||
 		(context.cockpit_entity_count != 0 && context.cockpit_entity_ids == nullptr) ||
@@ -1075,8 +1092,8 @@ ValidationError BusinessStateImageValidator::validate(const StateImage& image) c
 		envelope.record_version = atom.record_version;
 		envelope.record_flags = RecordFlagNone;
 		envelope.payload = ByteView{atom.value.empty() ? nullptr : atom.value.data(), atom.value.size()};
-		if (const auto error =
-				validate_business_record(envelope, BusinessRecordContainer::FullSnapshot, metadata);
+		if (const auto error = validate_business_record(
+				envelope, BusinessRecordContainer::FullSnapshot, m_context.protocol_minor, metadata);
 			error != ValidationError::None) {
 			return error;
 		}
@@ -1096,16 +1113,48 @@ ValidationError BusinessStateImageValidator::validate(const StateImage& image) c
 	if (const auto error = parse_session(*session_atom, session); error != ValidationError::None) {
 		return error;
 	}
+	const bool phase1_player_kinematics =
+		is_phase1_player_kinematics_profile(m_context.protocol_minor, session.coverage);
+	if (phase1_player_kinematics) {
+		if (m_context.required_manifest_id != 0U) {
+			return ValidationError::InvalidStateTransition;
+		}
+		if (session.capabilities != 0U) {
+			return ValidationError::CapabilityNotNegotiated;
+		}
+		if (session.derived_events != 0U || session.exact_events != 0U) {
+			return ValidationError::InvalidStateTransition;
+		}
+		const auto expected_record_count = session.observed_entity_id == 0U ? 2U : 4U;
+		if (atoms.size() != expected_record_count) {
+			return ValidationError::InvalidAbsence;
+		}
+		if (session.observed_entity_id != 0U) {
+			const auto* flight = find_owner(atoms, RecordType::FlightState, session.observed_entity_id);
+			if (flight == nullptr || flight->value.size() < 16U || read_u64(flight->value.data() + 8U) != 0U) {
+				return ValidationError::InvalidAbsence;
+			}
+		}
+	} else if (m_context.protocol_minor == VersionMinorV1_1 &&
+		(session.coverage & StateDomainCoverageBitCoreShip) != 0U && m_context.required_manifest_id == 0U) {
+		return ValidationError::MissingManifest;
+	}
 	if (validate_emittable_active_capabilities(session.capabilities) != ValidationError::None) {
 		return ValidationError::CapabilityNotNegotiated;
 	}
 	if (m_context.enforce_negotiated_capabilities && session.capabilities != m_context.negotiated_capabilities) {
 		return ValidationError::CapabilityNotNegotiated;
 	}
+	if (phase1_player_kinematics && session.visibility_mode != VisibilityMode::Cockpit) {
+		return ValidationError::VisibilityViolation;
+	}
 	if (session.visibility_mode == VisibilityMode::TrustedFullState &&
 		(!m_context.trusted_full_state_authorized || !m_context.source_endpoint_allowlisted ||
 			session.authority_mode == AuthorityMode::MultiplayerClient)) {
 		return ValidationError::VisibilityViolation;
+	}
+	if (phase1_player_kinematics && session.authority_mode != AuthorityMode::Solo) {
+		return ValidationError::InvalidStateTransition;
 	}
 	const auto exact_without_derived = session.exact_events & ~session.derived_events;
 	if ((exact_without_derived & ~m_context.exact_event_hook_families) != 0U ||
@@ -1152,6 +1201,9 @@ ValidationError BusinessStateImageValidator::validate(const StateImage& image) c
 		}
 		if (observed_lifecycle.object_type != ObjectType::Ship) {
 			return ValidationError::InvalidStateTransition;
+		}
+		if (phase1_player_kinematics && observed_lifecycle.presence != 0U) {
+			return ValidationError::InvalidAbsence;
 		}
 	}
 
@@ -1233,7 +1285,7 @@ ValidationError BusinessStateImageValidator::validate(const StateImage& image) c
 			return ValidationError::VisibilityViolation;
 		}
 		const BusinessClassCatalogEntry* class_entry = nullptr;
-		if (lifecycle.object_type == ObjectType::Ship) {
+		if (lifecycle.object_type == ObjectType::Ship && !phase1_player_kinematics) {
 			if (!m_context.class_manifest_installed || !lifecycle.has_class ||
 				(class_entry = find_class(m_context, lifecycle.class_id)) == nullptr) {
 				return ValidationError::MissingManifest;
@@ -1260,6 +1312,11 @@ ValidationError BusinessStateImageValidator::validate(const StateImage& image) c
 			}
 			if ((session.coverage & StateDomainCoverageBitWeapons) != 0U &&
 				find_owner(atoms, RecordType::WeaponState, lifecycle.entity_id) == nullptr) {
+				return ValidationError::InvalidAbsence;
+			}
+		} else if (lifecycle.object_type == ObjectType::Ship) {
+			if (lifecycle.entity_id != session.observed_entity_id || lifecycle.presence != 0U ||
+				lifecycle.has_class || find_owner(atoms, RecordType::FlightState, lifecycle.entity_id) == nullptr) {
 				return ValidationError::InvalidAbsence;
 			}
 		} else if (lifecycle.object_type == ObjectType::Weapon) {
@@ -1353,6 +1410,69 @@ ValidationError BusinessStateImageValidator::validate(const StateImage& image) c
 	const auto comm_active = (session.capabilities & CommViewCapabilityPair) == CommViewCapabilityPair;
 	if (comm_active != has_record_type(atoms, RecordType::CommViewState)) {
 		return comm_active ? ValidationError::InvalidAbsence : ValidationError::CapabilityNotNegotiated;
+	}
+	return ValidationError::None;
+}
+
+ValidationError BusinessStateImageValidator::validate_delta_transition(const StateImage& baseline,
+	const StateImage& candidate) const noexcept
+{
+	if (const auto error = validate(candidate); error != ValidationError::None) {
+		return error;
+	}
+	const auto& baseline_atoms = baseline.records();
+	const auto& candidate_atoms = candidate.records();
+	const auto* baseline_session_atom = find_singleton(baseline_atoms, RecordType::SessionState);
+	const auto* candidate_session_atom = find_singleton(candidate_atoms, RecordType::SessionState);
+	const auto* baseline_mission_atom = find_singleton(baseline_atoms, RecordType::MissionState);
+	const auto* candidate_mission_atom = find_singleton(candidate_atoms, RecordType::MissionState);
+	if (baseline_session_atom == nullptr || candidate_session_atom == nullptr || baseline_mission_atom == nullptr ||
+		candidate_mission_atom == nullptr) {
+		return ValidationError::InvalidAbsence;
+	}
+
+	SessionFacts baseline_session;
+	SessionFacts candidate_session;
+	std::uint32_t baseline_mission_generation = 0;
+	std::uint32_t candidate_mission_generation = 0;
+	if (const auto error = parse_session(*baseline_session_atom, baseline_session); error != ValidationError::None) {
+		return error;
+	}
+	if (const auto error = parse_session(*candidate_session_atom, candidate_session); error != ValidationError::None) {
+		return error;
+	}
+	if (const auto error = parse_mission_generation(*baseline_mission_atom, baseline_mission_generation);
+		error != ValidationError::None) {
+		return error;
+	}
+	if (const auto error = parse_mission_generation(*candidate_mission_atom, candidate_mission_generation);
+		error != ValidationError::None) {
+		return error;
+	}
+	if (baseline_mission_generation != candidate_mission_generation) {
+		return ValidationError::InvalidStateTransition;
+	}
+	if (baseline_session.producer_id != candidate_session.producer_id ||
+		baseline_session.authority_mode != candidate_session.authority_mode ||
+		baseline_session.visibility_mode != candidate_session.visibility_mode ||
+		baseline_session.coverage != candidate_session.coverage ||
+		baseline_session.derived_events != candidate_session.derived_events ||
+		baseline_session.exact_events != candidate_session.exact_events ||
+		candidate_session.producer_sample_time_us < baseline_session.producer_sample_time_us) {
+		return ValidationError::InvalidStateTransition;
+	}
+	if (baseline_session.capabilities == candidate_session.capabilities) {
+		if (baseline_session.capability_generation != candidate_session.capability_generation) {
+			return ValidationError::StaleGeneration;
+		}
+	} else if ((candidate_session.capabilities & ~baseline_session.capabilities) != 0U ||
+		(baseline_session.capabilities & CapabilityUpdate) == 0U ||
+		candidate_session.capability_generation <= baseline_session.capability_generation) {
+		return ValidationError::StaleGeneration;
+	}
+	if ((baseline_session.coverage & StateDomainCoverageBitPlayerKinematics) != 0U &&
+		baseline_session.observed_entity_id != candidate_session.observed_entity_id) {
+		return ValidationError::InvalidStateTransition;
 	}
 	return ValidationError::None;
 }

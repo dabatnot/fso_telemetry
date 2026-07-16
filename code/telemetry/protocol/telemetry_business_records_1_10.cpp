@@ -444,8 +444,11 @@ bool read_class_scan(ValidationCursor& cursor) noexcept
 		   cursor.read_bounded_f32(0.0f, MaxQuantity, value) && cursor.read_bounded_f32(0.0f, Pi, value);
 }
 
-ValidationError validate_session_state(ByteView payload) noexcept
+ValidationError validate_session_state(ByteView payload, std::uint8_t protocol_minor) noexcept
 {
+	if (!is_supported_version_minor(protocol_minor)) {
+		return ValidationError::UnsupportedMinor;
+	}
 	ValidationCursor cursor(payload);
 	std::uint64_t presence = 0;
 	std::uint64_t producer_id = 0;
@@ -467,7 +470,7 @@ ValidationError validate_session_state(ByteView payload) noexcept
 		!cursor.require(reserved == 0U, ValidationError::ReservedFlag) || !cursor.read_u32(generation) ||
 		!cursor.require(generation != 0U, ValidationError::OutOfRange) ||
 		!read_closed_flags(cursor, KnownCapabilities, capabilities) ||
-		!read_closed_flags(cursor, KnownStateDomainCoverageBits, state_coverage) ||
+		!read_closed_flags(cursor, known_state_domain_coverage_bits(protocol_minor), state_coverage) ||
 		!read_closed_flags(cursor, KnownEventFamilyBits, derived_coverage) ||
 		!read_closed_flags(cursor, KnownEventFamilyBits, exact_coverage)) {
 		return cursor.finish();
@@ -480,7 +483,9 @@ ValidationError validate_session_state(ByteView payload) noexcept
 									 static_cast<std::uint64_t>(CapabilityCommViewAuthoritativeSource);
 	const auto video_pair = static_cast<std::uint64_t>(CapabilityTargetVideoH264) |
 							 static_cast<std::uint64_t>(CapabilityTargetVideoRemoteRender);
-	if (!cursor.require((state_coverage & StateDomainCoverageBitCoreShip) != 0U, ValidationError::InvalidAbsence) ||
+	const auto required_domain = protocol_minor == VersionMinorV1_0 ? StateDomainCoverageBitCoreShip
+															 : StateDomainCoverageBitPlayerKinematics;
+	if (!cursor.require((state_coverage & required_domain) != 0U, ValidationError::InvalidAbsence) ||
 		!cursor.require((capabilities & communication_pair) == 0U || (capabilities & communication_pair) == communication_pair,
 			ValidationError::InvalidStateTransition) ||
 		!cursor.require((capabilities & video_pair) == 0U || (capabilities & video_pair) == video_pair,
@@ -1123,11 +1128,13 @@ ValidationError validate_shield_state(ByteView payload) noexcept
 
 } // namespace
 
-ValidationError validate_business_record_1_10(RecordType type, ByteView payload) noexcept
+ValidationError validate_business_record_1_10(RecordType type,
+	ByteView payload,
+	std::uint8_t protocol_minor) noexcept
 {
 	switch (type) {
 	case RecordType::SessionState:
-		return validate_session_state(payload);
+		return validate_session_state(payload, protocol_minor);
 	case RecordType::MissionState:
 		return validate_mission_state(payload);
 	case RecordType::ClassManifest:

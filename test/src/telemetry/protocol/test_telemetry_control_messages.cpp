@@ -564,4 +564,20 @@ TEST(TelemetryProtocolControlMessages, CapabilityUpdateDecodeIsExtensibleButEnco
 	EXPECT_EQ(ValidationError::TrailingBytes, decode_capability_update_payload(byte_view(bytes), decoded));
 }
 
+TEST(TelemetryProtocolControlMessages, Phase1ProfileSelectsMinorOneAndNeverDowngrades)
+{
+	std::uint8_t selected = 0xffU;
+	EXPECT_EQ(ProtocolMinorNegotiationResult::Selected,
+		select_highest_common_minor(Phase1ProducerMinorRange, Phase1ProducerMinorRange, selected));
+	EXPECT_EQ(VersionMinorV1_1, selected);
+	selected = 0xffU;
+	EXPECT_EQ(ProtocolMinorNegotiationResult::Selected,
+		select_highest_common_minor(Phase1ProducerMinorRange, {VersionMinorV1_0, VersionMinorV1_1}, selected));
+	EXPECT_EQ(VersionMinorV1_1, selected);
+	selected = 0xffU;
+	EXPECT_EQ(ProtocolMinorNegotiationResult::NoIntersection,
+		select_highest_common_minor(Phase1ProducerMinorRange, FrozenV1_0MinorRange, selected));
+	EXPECT_EQ(0U, selected);
+}
+
 } // namespace

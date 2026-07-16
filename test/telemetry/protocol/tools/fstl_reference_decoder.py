@@ -175,7 +175,7 @@ def canonical_record(
 def decode_record_payload(record_type: int, reader: Reader) -> dict[str, Any]:
     if record_type == 1:
         presence = reader.u64()
-        require(presence == 0, 37, "fixture profile expects no optional SESSION_STATE field")
+        require(presence in (0, 1), 37, "SESSION_STATE presence")
         producer_id = reader.u64()
         sample = reader.u64()
         authority = reader.u8()
@@ -201,6 +201,10 @@ def decode_record_payload(record_type: int, reader: Reader) -> dict[str, Any]:
             "state_domain_coverage": u64s(state_coverage),
             "visibility_mode": visibility,
         }
+        if presence & 1:
+            observed = reader.u64()
+            require(observed != 0, 34, "observed player id")
+            fields["observed_player_entity_id"] = u64s(observed)
         require(authority in (0, 1, 2) and visibility in (0, 1) and phase in (0, 1, 2, 3), 35, "enum")
         require(reserved == 0 and generation >= 1 and producer_id != 0, 34, "SESSION_STATE invariant")
         return fields
@@ -278,13 +282,13 @@ def decode_record_payload(record_type: int, reader: Reader) -> dict[str, Any]:
     if record_type == 5:
         entity = reader.u64()
         presence = reader.u64()
-        require(presence == 0, 37, "fixture profile expects base ENTITY_LIFECYCLE")
+        require(presence & ~0x1ff == 0, 37, "ENTITY_LIFECYCLE presence")
         sample = reader.u64()
         object_type = reader.u8()
         phase = reader.u8()
         flags = reader.u32()
         require(entity and object_type <= 8 and phase <= 5, 34, "ENTITY_LIFECYCLE invariant")
-        return {
+        result = {
             "entity_id": u64s(entity),
             "lifecycle_flags": flags,
             "lifecycle_phase": phase,
@@ -292,6 +296,15 @@ def decode_record_payload(record_type: int, reader: Reader) -> dict[str, Any]:
             "presence": u64s(presence),
             "producer_sample_time_us": u64s(sample),
         }
+        if presence & 1:
+            result["signature"] = reader.u32()
+        if presence & 2:
+            result["net_signature"] = reader.u32()
+        if presence & 4:
+            class_id = reader.u32()
+            require(class_id != 0, 34, "ENTITY_LIFECYCLE class reference")
+            result["class_id"] = class_id
+        return result
 
     if record_type == 6:
         entity = reader.u64()
@@ -322,7 +335,7 @@ def decode_record_payload(record_type: int, reader: Reader) -> dict[str, Any]:
     if record_type == 7:
         entity = reader.u64()
         presence = reader.u64()
-        require(presence == 0, 37, "fixture profile expects base FLIGHT_STATE")
+        require(presence & ~0xfff == 0, 37, "FLIGHT_STATE presence")
         sample = reader.u64()
         position = vec3(reader)
         orientation = [reader.f32(), reader.f32(), reader.f32(), reader.f32()]
@@ -332,7 +345,7 @@ def decode_record_payload(record_type: int, reader: Reader) -> dict[str, Any]:
         flags = reader.u32()
         norm = sum(component * component for component in orientation)
         require(entity and abs(norm - 1.0) <= 0.001 and orientation[0] >= 0, 34, "FLIGHT_STATE invariant")
-        return {
+        result = {
             "entity_id": u64s(entity),
             "orientation_local_to_world": orientation,
             "physics_mode_flags": flags,
@@ -343,6 +356,9 @@ def decode_record_payload(record_type: int, reader: Reader) -> dict[str, Any]:
             "rotational_velocity_local": rotational,
             "velocity_world": velocity,
         }
+        if presence & 1:
+            result["desired_velocity_world"] = vec3(reader)
+        return result
 
     if record_type == 8:
         entity = reader.u64()
@@ -1367,7 +1383,9 @@ def decode_transport_sequence(
         header = read_header(datagram)
         require(header["magic"] == 0x4C545346, 4, "bad magic")
         require(header["version_major"] == 1, 5, "unsupported major")
-        require(header["version_minor"] == 0, 6, "unsupported minor")
+        accepted_minor_range = context.get("acceptedMinorRange", [0, 0])
+        require(accepted_minor_range[0] <= header["version_minor"] <= accepted_minor_range[1],
+                6, "unsupported minor")
         require(header["header_size"] == HEADER_SIZE, 7, "bad header size")
         require(header["flags"] & 0xE0 == 0, 8, "reserved header flag")
         require(header["payload_size"] <= MAX_FRAGMENT_PAYLOAD, 9, "payload too large")
@@ -1648,6 +1666,88 @@ def verify_cross_endian_and_crc() -> None:
     require(crc32_iso_hdlc(b"123456789") == 0xCBF43926, 44, "CRC-32/ISO-HDLC check value")
 
 
+def fstl11_snapshot_result(decoded: dict[str, Any], minor: int) -> str:
+    records = decoded["fields"]["records"]
+    names = [record["recordName"] for record in records]
+    if len(set(names)) != len(names):
+        return "DuplicateRecord"
+    by_name = {record["recordName"]: record["fields"] for record in records}
+    session = by_name.get("SESSION_STATE")
+    if session is None or "MISSION_STATE" not in by_name:
+        return "InvalidAbsence"
+    coverage = int(session["state_domain_coverage"])
+    if minor == 0 and coverage & 0x400:
+        return "ReservedFlag"
+    if minor != 1 or not coverage & 0x400:
+        return "UNSUPPORTED_VERSION"
+    player = session.get("observed_player_entity_id")
+    if coverage == 0x400:
+        if session["authority_mode"] != 0:
+            return "InvalidStateTransition"
+        if session["visibility_mode"] != 0:
+            return "VisibilityViolation"
+        expected = {"SESSION_STATE", "MISSION_STATE"}
+        if player is not None:
+            expected |= {"ENTITY_LIFECYCLE", "FLIGHT_STATE"}
+        if "SHIP_IDENTITY" in by_name:
+            return "InvalidAbsence"
+        if set(by_name) != expected:
+            return "InvalidAbsence"
+        if player is not None:
+            lifecycle = by_name["ENTITY_LIFECYCLE"]
+            flight = by_name["FLIGHT_STATE"]
+            if lifecycle["entity_id"] != player or flight["entity_id"] != player:
+                return "InvalidAbsence"
+            if lifecycle["presence"] != "0" or lifecycle["object_type"] != 1:
+                return "InvalidStateTransition"
+            if flight["presence"] != "0":
+                return "InvalidAbsence"
+        return "None"
+    core = {"SESSION_STATE", "MISSION_STATE", "ENTITY_LIFECYCLE", "SHIP_IDENTITY", "FLIGHT_STATE",
+            "DAMAGE_STATE", "SHIELD_STATE", "SUBSYSTEM_STATE", "ENERGY_STATE", "PROPULSION_STATE"}
+    if coverage & 1:
+        return "None" if decoded["fields"]["required_manifest_id"] and core <= set(by_name) else "MissingManifest"
+    return "INVALID_COVERAGE"
+
+
+def verify_fstl11_corpus(root: Path) -> int:
+    verified = 0
+    error_ids = {"None": 0, "DuplicateRecord": 29, "ReservedFlag": 36,
+                 "InvalidAbsence": 37, "MissingManifest": 41, "VisibilityViolation": 43,
+                 "InvalidStateTransition": 44}
+    for metadata_path in sorted((root / "vectors-v1.1").glob("*/*.json")):
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        kind = metadata["kind"]
+        if kind == "datagram":
+            encoded = (metadata_path.parent / metadata["inputFiles"][0]).read_bytes()
+            header_minor = int(metadata["headerVersion"].split(".")[1])
+            transport = decode_transport_sequence([encoded], metadata["name"],
+                                      {"acceptedMinorRange": [header_minor, header_minor]})
+            payload = (metadata_path.parent / metadata["payloadFile"]).read_bytes()
+            decoded = decode_message(metadata["messageType"], encoded[7], payload, {})
+            require(metadata["valid"] and metadata["expectedValidationError"] == 0, 44,
+                    f"FSTL 1.1 valid transport metadata drift for {metadata['name']}")
+        elif kind == "message-payload" and metadata["messageType"] == 6:
+            payload = (metadata_path.parent / metadata["inputFiles"][0]).read_bytes()
+            decoded = decode_message(6, 0, payload, {})
+            actual = fstl11_snapshot_result(decoded, int(metadata["versionMinor"]))
+            require(error_ids[actual] == metadata["expectedValidationError"] and
+                    actual == metadata["expectedValidationErrorName"], 44,
+                    f"FSTL 1.1 expected result drift for {metadata['name']}: {actual}")
+        else:
+            fail(44, f"unexpected FSTL 1.1 corpus kind {kind}")
+        canonical = metadata.get("expectedCanonicalJson")
+        if canonical:
+            expected = json.loads((root / canonical).read_text(encoding="utf-8"))
+            decoded["schema"] = "FSTL-1.1"
+            if metadata["messageType"] in (6, 7):
+                for item in decoded["fields"]["records"]:
+                    item["schema"] = "FSTL-1.1"
+            require(decoded == expected, 44, f"FSTL 1.1 canonical JSON drift for {metadata['name']}")
+        verified += 1
+    return verified
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--check", action="store_true", required=True)
@@ -1662,6 +1762,7 @@ def main() -> int:
         messages, records = verify_protocol_fixtures(root)
         invalid_messages, invalid_records, invalid_categories = verify_invalid_protocol_fixtures(root)
         valid_transport, invalid_transport = verify_transport_fixtures(root)
+        fstl11_corpus = verify_fstl11_corpus(root)
     except (DecodeFailure, KeyError, OSError, ValueError, TypeError) as exc:
         if isinstance(exc, DecodeFailure):
             print(f"validation error {exc.code}: {exc.detail}")
@@ -1673,7 +1774,7 @@ def main() -> int:
         f"{invalid_messages} invalid messages and {invalid_records} invalid records "
         f"covering {invalid_categories} negative categories, "
         f"{valid_transport} valid and {invalid_transport} invalid transport fixtures; "
-        "CRC and simulated cross-endian checks passed"
+        f"{fstl11_corpus} FSTL 1.1 corpus cases cross-decoded; CRC and simulated cross-endian checks passed"
     )
     return 0
 

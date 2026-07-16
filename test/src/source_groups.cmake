@@ -116,6 +116,10 @@ add_file_folder("Telemetry\\\\Protocol"
 	telemetry/protocol/test_telemetry_vectors.cpp
 )
 
+add_file_folder("Telemetry\\\\Producer"
+	telemetry/producer/test_telemetry_initialize.cpp
+)
+
 add_file_folder("Test Util"
     util/FSTestFixture.cpp
     util/FSTestFixture.h

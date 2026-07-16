@@ -79,6 +79,16 @@ enum class StateImageResult : std::uint8_t {
 	AllocationFailed = 4,
 };
 
+// Refines InvalidRecord for callers that must distinguish malformed atom
+// storage from a structurally valid record whose required cascade owner is
+// absent. This is a local diagnostic only; StateImageResult remains stable.
+enum class StateImageInvalidRecordReason : std::uint8_t {
+	None = 0,
+	MalformedAtom = 1,
+	MissingCascadeOwner = 2,
+	InvalidCascadeOwner = 3,
+};
+
 // A canonical, immutable-by-interface image. Records are sorted by their
 // atomic key, which makes comparisons and cumulative delta construction
 // deterministic on every platform.
@@ -89,6 +99,9 @@ class StateImage final {
 	// records is passed by value so successful construction can publish by
 	// move. image is unchanged on failure.
 	static StateImageResult create(std::vector<StateAtom> records, StateImage& image) noexcept;
+	static StateImageResult create(std::vector<StateAtom> records,
+		StateImage& image,
+		StateImageInvalidRecordReason& invalid_record_reason) noexcept;
 
 	const std::vector<StateAtom>& records() const noexcept;
 	std::size_t encoded_snapshot_records_size() const noexcept
@@ -168,6 +181,16 @@ class StateImageValidator {
   public:
 	virtual ~StateImageValidator() = default;
 	virtual ValidationError validate(const StateImage& image) const noexcept = 0;
+	virtual ValidationError validate_delta_transition(const StateImage& baseline,
+		const StateImage& candidate) const noexcept
+	{
+		static_cast<void>(baseline);
+		return validate(candidate);
+	}
+	virtual std::uint8_t protocol_minor() const noexcept
+	{
+		return VersionMinor;
+	}
 };
 
 enum class StateDeltaApplyResult : std::uint8_t {

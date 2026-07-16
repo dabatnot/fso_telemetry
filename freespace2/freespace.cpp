@@ -193,6 +193,7 @@
 #include "starfield/supernova.h"
 #include "stats/medals.h"
 #include "stats/stats.h"
+#include "telemetry/telemetry.h"
 #include "tracing/Monitor.h"
 #include "tracing/tracing.h"
 #include "utils/Random.h"
@@ -2075,6 +2076,7 @@ void game_init()
 	
 	// initialize psnet
 	psnet_init(Multi_options_g.port);						// initialize the networking code
+	telemetry::initialize();
 
 	asteroid_init();
 	mission_brief_common_init();	// Mark all the briefing structures as empty.

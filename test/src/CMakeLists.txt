@@ -22,3 +22,56 @@ target_compile_definitions(unittests PRIVATE "FSTL_PROTOCOL_TEST_ASSET_PATH=\"${
 
 INCLUDE(util)
 COPY_FILES_TO_TARGET(unittests)
+
+add_executable(telemetry_initialize_contract_tests
+	telemetry/producer/test_telemetry_initialize_instrumented.cpp
+	${CMAKE_SOURCE_DIR}/code/telemetry/telemetry.cpp
+	${CMAKE_SOURCE_DIR}/code/events/events.cpp
+)
+
+target_compile_features(telemetry_initialize_contract_tests PRIVATE cxx_std_17)
+target_compile_definitions(telemetry_initialize_contract_tests PRIVATE FSO_TELEMETRY_TEST_SEAMS=1)
+target_include_directories(telemetry_initialize_contract_tests PRIVATE
+	${CODE_HEADERS}
+	${FREESPACE_HEADERS}
+	${GENERATED_SOURCE_DIR}
+	${GENERATED_SOURCE_DIR}/code
+)
+target_link_libraries(telemetry_initialize_contract_tests PRIVATE gtest_main sdl2)
+
+set_target_properties(telemetry_initialize_contract_tests PROPERTIES FOLDER "tests")
+
+add_executable(telemetry_disabled_benchmark
+	telemetry/producer/telemetry_disabled_benchmark.cpp
+	${CMAKE_SOURCE_DIR}/code/telemetry/telemetry.cpp
+	${CMAKE_SOURCE_DIR}/code/events/events.cpp
+)
+
+target_compile_features(telemetry_disabled_benchmark PRIVATE cxx_std_17)
+target_include_directories(telemetry_disabled_benchmark PRIVATE
+	${CODE_HEADERS}
+	${FREESPACE_HEADERS}
+	${GENERATED_SOURCE_DIR}
+	${GENERATED_SOURCE_DIR}/code
+)
+target_link_libraries(telemetry_disabled_benchmark PRIVATE sdl2)
+
+set_target_properties(telemetry_disabled_benchmark PROPERTIES FOLDER "tests")
+
+add_executable(telemetry_initialize_failure_contract_tests
+	telemetry/producer/telemetry_initialize_failure_contract_tests.cpp
+	${CMAKE_SOURCE_DIR}/code/telemetry/telemetry.cpp
+	${CMAKE_SOURCE_DIR}/code/events/events.cpp
+)
+
+target_compile_features(telemetry_initialize_failure_contract_tests PRIVATE cxx_std_17)
+target_compile_definitions(telemetry_initialize_failure_contract_tests PRIVATE FSO_TELEMETRY_TEST_SEAMS=1)
+target_include_directories(telemetry_initialize_failure_contract_tests PRIVATE
+	${CODE_HEADERS}
+	${FREESPACE_HEADERS}
+	${GENERATED_SOURCE_DIR}
+	${GENERATED_SOURCE_DIR}/code
+)
+target_link_libraries(telemetry_initialize_failure_contract_tests PRIVATE sdl2)
+
+set_target_properties(telemetry_initialize_failure_contract_tests PROPERTIES FOLDER "tests")

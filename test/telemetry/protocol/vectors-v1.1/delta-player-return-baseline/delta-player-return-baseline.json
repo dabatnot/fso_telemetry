@@ -1,0 +1,17 @@
+{
+  "expectedCanonicalJson": "expected-v1.1/delta-player-return-baseline.json",
+  "expectedValidationError": 0,
+  "expectedValidationErrorName": "None",
+  "headerVersion": "1.1",
+  "inputFiles": [
+    "delta-player-return-baseline.bin"
+  ],
+  "kind": "datagram",
+  "messageType": 7,
+  "name": "delta-player-return-baseline",
+  "notes": "valid FSTL 1.1 transport/message",
+  "payloadFile": "delta-player-return-baseline.payload.bin",
+  "schema": "FSTL-1.1",
+  "valid": true,
+  "versionMinor": 1
+}

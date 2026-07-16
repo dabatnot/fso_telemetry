@@ -30,6 +30,8 @@ struct BusinessSessionInvariants {
 };
 
 struct BusinessStateValidationContext {
+	std::uint8_t protocol_minor = VersionMinor;
+	std::uint32_t required_manifest_id = 0;
 	bool trusted_full_state_authorized = false;
 	bool source_endpoint_allowlisted = false;
 	bool communication_exact_hook_available = false;
@@ -64,6 +66,12 @@ class BusinessStateImageValidator final : public StateImageValidator {
   public:
 	explicit BusinessStateImageValidator(const BusinessStateValidationContext& context) noexcept;
 	ValidationError validate(const StateImage& image) const noexcept override;
+	ValidationError validate_delta_transition(const StateImage& baseline,
+		const StateImage& candidate) const noexcept override;
+	std::uint8_t protocol_minor() const noexcept override
+	{
+		return m_context.protocol_minor;
+	}
 
   private:
 	const BusinessStateValidationContext& m_context;

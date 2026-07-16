@@ -7,7 +7,26 @@ namespace telemetry::protocol {
 
 constexpr std::uint32_t Magic = 0x4c545346U;
 constexpr std::uint8_t VersionMajor = 1;
-constexpr std::uint8_t VersionMinor = 0;
+constexpr std::uint8_t VersionMinorV1_0 = 0;
+constexpr std::uint8_t VersionMinorV1_1 = 1;
+// Keep the historical default pinned to the frozen FSTL 1.0 contract. Code
+// which emits or validates a negotiated 1.1 session must opt in explicitly.
+constexpr std::uint8_t VersionMinor = VersionMinorV1_0;
+constexpr std::uint8_t LatestSupportedVersionMinor = VersionMinorV1_1;
+
+struct ProtocolMinorRange {
+	std::uint8_t minimum = VersionMinor;
+	std::uint8_t maximum = VersionMinor;
+};
+
+constexpr ProtocolMinorRange FrozenV1_0MinorRange{VersionMinorV1_0, VersionMinorV1_0};
+constexpr ProtocolMinorRange Phase1ProducerMinorRange{VersionMinorV1_1, VersionMinorV1_1};
+
+enum class ProtocolMinorNegotiationResult : std::uint8_t {
+	Selected = 0,
+	NoIntersection = 1,
+	InvalidRange = 2,
+};
 constexpr std::size_t HeaderSizeV1 = 68;
 constexpr std::size_t MaxDatagramSize = 1200;
 constexpr std::size_t MaxFragmentPayload = MaxDatagramSize - HeaderSizeV1;
@@ -656,9 +675,26 @@ enum StateDomainCoverageBit : std::uint64_t {
 	StateDomainCoverageBitWeapons = 0x0080ULL,
 	StateDomainCoverageBitCargoDockSupport = 0x0100ULL,
 	StateDomainCoverageBitNavigation = 0x0200ULL,
+	StateDomainCoverageBitPlayerKinematics = 0x0400ULL,
 };
-constexpr std::uint64_t KnownStateDomainCoverageBits = 0x03ffULL;
+constexpr std::uint64_t KnownStateDomainCoverageBitsV1_0 = 0x03ffULL;
+constexpr std::uint64_t KnownStateDomainCoverageBitsV1_1 = 0x07ffULL;
+// The unqualified aliases remain the frozen 1.0 view. This prevents code that
+// has no negotiated-version context from treating the 1.1 bit as valid.
+constexpr std::uint64_t KnownStateDomainCoverageBits = KnownStateDomainCoverageBitsV1_0;
 constexpr std::uint64_t ReservedStateDomainCoverageBits = 0xfffffffffffffc00ULL;
+constexpr std::uint64_t ReservedStateDomainCoverageBitsV1_1 = 0xfffffffffffff800ULL;
+
+constexpr bool is_supported_version_minor(std::uint8_t minor) noexcept
+{
+	return minor == VersionMinorV1_0 || minor == VersionMinorV1_1;
+}
+
+constexpr std::uint64_t known_state_domain_coverage_bits(std::uint8_t minor) noexcept
+{
+	return minor == VersionMinorV1_0 ? KnownStateDomainCoverageBitsV1_0 :
+		minor == VersionMinorV1_1 ? KnownStateDomainCoverageBitsV1_1 : 0U;
+}
 
 enum PropulsionFlag : std::uint16_t {
 	PropulsionFlagNone = 0,

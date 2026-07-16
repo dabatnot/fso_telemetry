@@ -452,4 +452,20 @@ TEST(TelemetryProtocolDatagram, MessageCrcRequiresExactLogicalLengthAndPublishes
 	EXPECT_EQ(ValidationError::None, validate_message_crc(header, ByteView{}));
 }
 
+TEST(TelemetryProtocolDatagram, MinorOneRequiresExplicitVersionRangeAndBadMinorIsRejected) {
+	auto header = base_header(MessageType::Heartbeat, ByteView{});
+	header.version_minor = VersionMinorV1_1;
+	std::vector<std::uint8_t> wire(HeaderSizeV1);
+	std::size_t written = 0U;
+	ASSERT_EQ(ValidationError::None,
+		encode_datagram(header, Phase1ProducerMinorRange, ByteView{}, mutable_byte_view(wire), written));
+	DatagramView decoded;
+	EXPECT_EQ(ValidationError::UnsupportedMinor, decode_and_validate_datagram(byte_view(wire), decoded));
+	EXPECT_EQ(ValidationError::None,
+		decode_and_validate_datagram(byte_view(wire), Phase1ProducerMinorRange, decoded));
+	wire[5] = 2U; reseal_datagram(wire);
+	EXPECT_EQ(ValidationError::UnsupportedMinor,
+		decode_and_validate_datagram(byte_view(wire), {VersionMinorV1_0, VersionMinorV1_1}, decoded));
+}
+
 } // namespace

@@ -1,0 +1,229 @@
+{
+  "fields": {
+    "part_count": 1,
+    "part_index": 0,
+    "producer_sample_time_us": "1000000",
+    "record_count": 10,
+    "records": [
+      {
+        "fields": {
+          "authority_mode": 0,
+          "event_coverage_exact": "0",
+          "event_coverage_state_derived": "0",
+          "negotiated_capabilities": "0",
+          "negotiated_capability_generation": 1,
+          "observed_player_entity_id": "1",
+          "presence": "1",
+          "producer_id": "72623859790382856",
+          "producer_sample_time_us": "1000000",
+          "reserved": 0,
+          "session_phase": 2,
+          "state_domain_coverage": "1025",
+          "visibility_mode": 0
+        },
+        "kind": "record",
+        "recordFlags": 0,
+        "recordLength": 72,
+        "recordName": "SESSION_STATE",
+        "recordType": 1,
+        "recordVersion": 1,
+        "schema": "FSTL-1.1"
+      },
+      {
+        "fields": {
+          "mission_generation": 1,
+          "paused": 0,
+          "phase": 0,
+          "presence": "0",
+          "producer_sample_time_us": "1000000",
+          "reserved": 0,
+          "time_compression": 1.0
+        },
+        "kind": "record",
+        "recordFlags": 0,
+        "recordLength": 28,
+        "recordName": "MISSION_STATE",
+        "recordType": 2,
+        "recordVersion": 1,
+        "schema": "FSTL-1.1"
+      },
+      {
+        "fields": {
+          "class_id": 1,
+          "entity_id": "1",
+          "lifecycle_flags": 0,
+          "lifecycle_phase": 1,
+          "object_type": 1,
+          "presence": "4",
+          "producer_sample_time_us": "1000000"
+        },
+        "kind": "record",
+        "recordFlags": 0,
+        "recordLength": 34,
+        "recordName": "ENTITY_LIFECYCLE",
+        "recordType": 5,
+        "recordVersion": 1,
+        "schema": "FSTL-1.1"
+      },
+      {
+        "fields": {
+          "entity_id": "1",
+          "orientation_local_to_world": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "physics_mode_flags": 0,
+          "position_world": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "presence": "0",
+          "producer_sample_time_us": "1000000",
+          "radius": 0.0,
+          "rotational_velocity_local": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "velocity_world": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "kind": "record",
+        "recordFlags": 0,
+        "recordLength": 84,
+        "recordName": "FLIGHT_STATE",
+        "recordType": 7,
+        "recordVersion": 1,
+        "schema": "FSTL-1.1"
+      },
+      {
+        "fields": {
+          "entity_id": "1",
+          "iff_id": 0,
+          "internal_name": "ship",
+          "presence": "0",
+          "producer_sample_time_us": "1000000",
+          "radius": 0.0,
+          "role_flags": 0,
+          "ship_class_id": 1,
+          "species_id": 0,
+          "team_id": 0
+        },
+        "kind": "record",
+        "recordFlags": 0,
+        "recordLength": 52,
+        "recordName": "SHIP_IDENTITY",
+        "recordType": 6,
+        "recordVersion": 1,
+        "schema": "FSTL-1.1"
+      },
+      {
+        "fields": {
+          "dynamic_max_hull": 100.0,
+          "entity_id": "1",
+          "hull_strength": 50.0,
+          "presence": "0",
+          "producer_sample_time_us": "1000000",
+          "protection_flags": 0
+        },
+        "kind": "record",
+        "recordFlags": 0,
+        "recordLength": 34,
+        "recordName": "DAMAGE_STATE",
+        "recordType": 9,
+        "recordVersion": 1,
+        "schema": "FSTL-1.1"
+      },
+      {
+        "fields": {
+          "entity_id": "1",
+          "has_shields": 0,
+          "presence": "0",
+          "producer_sample_time_us": "1000000",
+          "reserved": 0,
+          "segment_count": 0,
+          "segment_current_hits": [],
+          "segment_max_hits": []
+        },
+        "kind": "record",
+        "recordFlags": 0,
+        "recordLength": 29,
+        "recordName": "SHIELD_STATE",
+        "recordType": 10,
+        "recordVersion": 1,
+        "schema": "FSTL-1.1"
+      },
+      {
+        "fields": {
+          "canonical_index": 0,
+          "current_hits": 0.0,
+          "entity_id": "1",
+          "max_hits": 0.0,
+          "presence": "0",
+          "producer_sample_time_us": "1000000",
+          "subsystem_flags": 0,
+          "subsystem_id": 2,
+          "type": 1
+        },
+        "kind": "record",
+        "recordFlags": 0,
+        "recordLength": 43,
+        "recordName": "SUBSYSTEM_STATE",
+        "recordType": 11,
+        "recordVersion": 1,
+        "schema": "FSTL-1.1"
+      },
+      {
+        "fields": {
+          "entity_id": "1",
+          "ets_engines_index": 0,
+          "ets_mode": 0,
+          "ets_shields_index": 0,
+          "ets_weapons_index": 0,
+          "presence": "0",
+          "producer_sample_time_us": "1000000",
+          "reserved": 0
+        },
+        "kind": "record",
+        "recordFlags": 0,
+        "recordLength": 29,
+        "recordName": "ENERGY_STATE",
+        "recordType": 12,
+        "recordVersion": 1,
+        "schema": "FSTL-1.1"
+      },
+      {
+        "fields": {
+          "entity_id": "1",
+          "presence": "0",
+          "producer_sample_time_us": "1000000",
+          "propulsion_flags": 0,
+          "reserved": 0
+        },
+        "kind": "record",
+        "recordFlags": 0,
+        "recordLength": 28,
+        "recordName": "PROPULSION_STATE",
+        "recordType": 13,
+        "recordVersion": 1,
+        "schema": "FSTL-1.1"
+      }
+    ],
+    "required_manifest_id": 1,
+    "snapshot_flags": 1,
+    "snapshot_id": 1,
+    "transaction_sha256": "6430461562e4825c3a6904f9226ac7273313f835f9621ca2be0c4b6a90fc9509",
+    "transaction_size": 493
+  },
+  "kind": "message-payload",
+  "messageFlags": 0,
+  "messageName": "FULL_SNAPSHOT",
+  "messageType": 6,
+  "schema": "FSTL-1.1"
+}

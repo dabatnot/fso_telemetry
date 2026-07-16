@@ -1,0 +1,17 @@
+{
+  "expectedCanonicalJson": "expected-v1.1/welcome-unsupported-version.json",
+  "expectedValidationError": 0,
+  "expectedValidationErrorName": "None",
+  "headerVersion": "1.0",
+  "inputFiles": [
+    "welcome-unsupported-version.bin"
+  ],
+  "kind": "datagram",
+  "messageType": 3,
+  "name": "welcome-unsupported-version",
+  "notes": "valid UnsupportedVersion rejection status",
+  "payloadFile": "welcome-unsupported-version.payload.bin",
+  "schema": "FSTL-1.1",
+  "valid": true,
+  "versionMinor": 0
+}
