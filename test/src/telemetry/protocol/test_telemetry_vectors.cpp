@@ -153,7 +153,12 @@ json_t* canonical_v11_record(CanonicalReader& region) {
 	} else if (type == 5U) {
 		name="ENTITY_LIFECYCLE"; const auto presence=entity_prefix(); const auto object_type=reader.u8(); const auto phase=reader.u8(); const auto lifecycle=reader.u32();
 		put(fields,"lifecycle_flags",ji(lifecycle)); put(fields,"lifecycle_phase",ji(phase)); put(fields,"object_type",ji(object_type));
-		if (presence&1U) put(fields,"signature",ji(reader.u32())); if (presence&2U) put(fields,"net_signature",ji(reader.u32()));
+		if (presence&1U) {
+			put(fields,"signature",ji(reader.u32()));
+		}
+		if (presence&2U) {
+			put(fields,"net_signature",ji(reader.u32()));
+		}
 		if (presence&4U) put(fields,"class_id",ji(reader.u32()));
 	} else if (type == 6U) {
 		name="SHIP_IDENTITY"; entity_prefix(); const auto class_id=reader.u32(); const auto internal=reader.utf8();

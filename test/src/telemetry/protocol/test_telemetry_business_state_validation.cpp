@@ -392,8 +392,8 @@ std::vector<std::uint8_t> cargo_payload(std::uint64_t entity_id,
 	std::uint64_t target_entity_id,
 	std::uint32_t subsystem_id = 0)
 {
-	const auto presence = CargoScanStatePresenceFlagTarget |
-		(subsystem_id == 0U ? 0U : CargoScanStatePresenceFlagSubsystem);
+	const std::uint32_t presence = static_cast<std::uint32_t>(CargoScanStatePresenceFlagTarget) |
+		(subsystem_id == 0U ? 0U : static_cast<std::uint32_t>(CargoScanStatePresenceFlagSubsystem));
 	std::vector<std::uint8_t> bytes;
 	append_u64(bytes, entity_id);
 	append_u64(bytes, presence);
@@ -992,7 +992,9 @@ TEST(TelemetryProtocolBusinessStateValidation, LargeParentForestUsesCompleteKeys
 	atoms.push_back(atom(RecordType::MissionState, mission_payload(), 0U));
 	for (std::uint64_t entity_id = 1U; entity_id <= EntityCount; ++entity_id) {
 		const auto parent_entity_id = entity_id == EntityCount ? 0U : entity_id + 1U;
-		const auto presence = parent_entity_id == 0U ? 0U : EntityLifecyclePresenceFlagParent;
+		const std::uint32_t presence = parent_entity_id == 0U
+			? 0U
+			: static_cast<std::uint32_t>(EntityLifecyclePresenceFlagParent);
 		atoms.push_back(atom(RecordType::EntityLifecycle,
 			lifecycle_payload(entity_id, ObjectType::Waypoint, presence, 0U, 0U, parent_entity_id),
 			8U,
