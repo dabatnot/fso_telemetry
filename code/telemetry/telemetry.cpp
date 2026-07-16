@@ -51,7 +51,9 @@ void on_engine_shutdown() noexcept
 	++callback_invocation_counts[EngineShutdownIndex];
 #endif
 
-	return;
+	if (telemetry_callbacks_ready && telemetry_runtime != nullptr) {
+		telemetry_runtime->on_engine_shutdown();
+	}
 }
 
 void on_game_mission_load(const char*) noexcept
@@ -60,25 +62,31 @@ void on_game_mission_load(const char*) noexcept
 	++callback_invocation_counts[GameMissionLoadIndex];
 #endif
 
-	return;
+	if (telemetry_callbacks_ready && telemetry_runtime != nullptr) {
+		telemetry_runtime->on_game_mission_load();
+	}
 }
 
-void on_game_enter_state(int, int) noexcept
+void on_game_enter_state(int old_state, int new_state) noexcept
 {
 #if defined(FSO_TELEMETRY_TEST_SEAMS)
 	++callback_invocation_counts[GameEnterStateIndex];
 #endif
 
-	return;
+	if (telemetry_callbacks_ready && telemetry_runtime != nullptr) {
+		telemetry_runtime->on_game_enter_state(old_state, new_state);
+	}
 }
 
-void on_game_leave_state(int, int) noexcept
+void on_game_leave_state(int old_state, int new_state) noexcept
 {
 #if defined(FSO_TELEMETRY_TEST_SEAMS)
 	++callback_invocation_counts[GameLeaveStateIndex];
 #endif
 
-	return;
+	if (telemetry_callbacks_ready && telemetry_runtime != nullptr) {
+		telemetry_runtime->on_game_leave_state(old_state, new_state);
+	}
 }
 
 } // namespace
@@ -166,6 +174,16 @@ detail::RuntimeState runtime_state() noexcept
 detail::RuntimeTerminalReason runtime_terminal_reason() noexcept
 {
 	return telemetry_runtime == nullptr ? detail::RuntimeTerminalReason::None : telemetry_runtime->terminal_reason();
+}
+
+std::uint32_t runtime_mission_generation() noexcept
+{
+	return telemetry_runtime == nullptr ? 0U : telemetry_runtime->mission_generation();
+}
+
+bool runtime_mission_publication_allowed() noexcept
+{
+	return telemetry_runtime != nullptr && telemetry_runtime->mission_publication_allowed();
 }
 
 } // namespace telemetry::test_seam

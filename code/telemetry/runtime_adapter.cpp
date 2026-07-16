@@ -67,8 +67,19 @@ class NativeRuntimeStartupServices final : public RuntimeStartupServices {
 
 	RuntimeTransportStatus start_transport() noexcept override
 	{
+		// The WP04 transport implementation exists, but native startup remains
+		// behind the incomplete global budget (0x00fb). WP05 must not bind here.
 		return RuntimeTransportStatus::Unavailable;
 	}
+
+	void stop_collection() noexcept override {}
+	void invalidate_mission_state_and_entities() noexcept override {}
+	void cancel_replication() noexcept override {}
+	void close_sessions_and_stores() noexcept override {}
+	void reset_mission_scope() noexcept override {}
+	void stop_transport() noexcept override {}
+	void emit_runtime_summary() noexcept override {}
+	void release_runtime_allocations() noexcept override {}
 
 	void release_session_registry() noexcept override
 	{
@@ -110,6 +121,12 @@ class NativeRuntimeStartupServices final : public RuntimeStartupServices {
 			break;
 		case RuntimeTerminalReason::TransportUnavailable:
 			mprintf(("Telemetry startup failed: transport unavailable.\n"));
+			break;
+		case RuntimeTerminalReason::InvalidLifecycleTransition:
+			mprintf(("Telemetry runtime failed: invalid lifecycle transition.\n"));
+			break;
+		case RuntimeTerminalReason::MissionGenerationOverflow:
+			mprintf(("Telemetry runtime failed: mission generation overflow.\n"));
 			break;
 		case RuntimeTerminalReason::None:
 			mprintf(("Telemetry startup stopped.\n"));

@@ -128,6 +128,15 @@ class ScriptedRuntimeStartupServices final : public detail::RuntimeStartupServic
 		return transport_status;
 	}
 
+	void stop_collection() noexcept override {}
+	void invalidate_mission_state_and_entities() noexcept override {}
+	void cancel_replication() noexcept override {}
+	void close_sessions_and_stores() noexcept override {}
+	void reset_mission_scope() noexcept override {}
+	void stop_transport() noexcept override {}
+	void emit_runtime_summary() noexcept override {}
+	void release_runtime_allocations() noexcept override {}
+
 	void release_session_registry() noexcept override
 	{
 		record_call(StartupCall::ReleaseRegistry);
@@ -340,8 +349,12 @@ TEST(TelemetryRuntimeStartupContract, EngineUpdateWithoutMainThreadCaptureFaults
 	expect_terminal_no_retry(runtime, services);
 }
 
-TEST(TelemetryRuntimeStartupContract, WrongThreadFaultsBeforeConfigurationAndNeverRetries)
+TEST(TelemetryRuntimeStartupContract, StartupThreadServiceMismatchFaultsBeforeConfigurationAndNeverRetries)
 {
+	// WP05 supersedes this former wrong-thread oracle with a real worker/join
+	// contract that permits no RuntimeStartupServices call from the worker. This
+	// seam-only false result now covers an inconsistent startup thread service
+	// observation while the caller itself remains on the captured C++ thread.
 	ScriptedRuntimeStartupServices services;
 	services.main_thread_matches = false;
 	detail::Runtime runtime(services);

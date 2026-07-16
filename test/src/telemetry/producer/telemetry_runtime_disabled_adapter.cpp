@@ -18,6 +18,7 @@ class DisabledRuntimeStartupServices final : public RuntimeStartupServices {
 		m_config_loads = 0U;
 		m_post_config_calls = 0U;
 		m_diagnostic_calls = 0U;
+		m_lifecycle_calls = 0U;
 	}
 
 	void capture_main_thread() noexcept override
@@ -77,9 +78,49 @@ class DisabledRuntimeStartupServices final : public RuntimeStartupServices {
 		return RuntimeTransportStatus::Unavailable;
 	}
 
+	void stop_collection() noexcept override
+	{
+		++m_lifecycle_calls;
+	}
+
+	void invalidate_mission_state_and_entities() noexcept override
+	{
+		++m_lifecycle_calls;
+	}
+
+	void cancel_replication() noexcept override
+	{
+		++m_lifecycle_calls;
+	}
+
+	void close_sessions_and_stores() noexcept override
+	{
+		++m_lifecycle_calls;
+	}
+
+	void reset_mission_scope() noexcept override
+	{
+		++m_lifecycle_calls;
+	}
+
+	void stop_transport() noexcept override
+	{
+		++m_lifecycle_calls;
+	}
+
+	void emit_runtime_summary() noexcept override
+	{
+		++m_lifecycle_calls;
+	}
+
+	void release_runtime_allocations() noexcept override
+	{
+		++m_lifecycle_calls;
+	}
+
 	void release_session_registry() noexcept override
 	{
-		++m_post_config_calls;
+		++m_lifecycle_calls;
 	}
 
 	void emit_startup_diagnostic(RuntimeTerminalReason) noexcept override
@@ -107,6 +148,10 @@ class DisabledRuntimeStartupServices final : public RuntimeStartupServices {
 	{
 		return m_diagnostic_calls;
 	}
+	std::uint64_t lifecycle_calls() const noexcept
+	{
+		return m_lifecycle_calls;
+	}
 
   private:
 	std::thread::id m_captured_thread{};
@@ -116,6 +161,7 @@ class DisabledRuntimeStartupServices final : public RuntimeStartupServices {
 	std::uint64_t m_config_loads = 0U;
 	std::uint64_t m_post_config_calls = 0U;
 	std::uint64_t m_diagnostic_calls = 0U;
+	std::uint64_t m_lifecycle_calls = 0U;
 };
 
 DisabledRuntimeStartupServices& disabled_services() noexcept
@@ -172,6 +218,11 @@ std::uint64_t runtime_adapter_post_config_calls() noexcept
 std::uint64_t runtime_adapter_diagnostic_calls() noexcept
 {
 	return detail::disabled_services().diagnostic_calls();
+}
+
+std::uint64_t runtime_adapter_lifecycle_calls() noexcept
+{
+	return detail::disabled_services().lifecycle_calls();
 }
 
 } // namespace telemetry::test_seam

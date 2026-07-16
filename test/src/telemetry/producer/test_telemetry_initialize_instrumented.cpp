@@ -20,6 +20,7 @@ std::uint64_t runtime_adapter_main_thread_checks() noexcept;
 std::uint64_t runtime_adapter_config_loads() noexcept;
 std::uint64_t runtime_adapter_post_config_calls() noexcept;
 std::uint64_t runtime_adapter_diagnostic_calls() noexcept;
+std::uint64_t runtime_adapter_lifecycle_calls() noexcept;
 detail::RuntimeState runtime_state() noexcept;
 detail::RuntimeTerminalReason runtime_terminal_reason() noexcept;
 
@@ -80,6 +81,7 @@ TEST(TelemetryProducerInitializeInstrumented, RegistersExactlyOnceAndRepeatedIni
 	EXPECT_EQ(0U, telemetry::test_seam::runtime_adapter_config_loads());
 	EXPECT_EQ(0U, telemetry::test_seam::runtime_adapter_post_config_calls());
 	EXPECT_EQ(0U, telemetry::test_seam::runtime_adapter_diagnostic_calls());
+	EXPECT_EQ(0U, telemetry::test_seam::runtime_adapter_lifecycle_calls());
 	EXPECT_EQ(telemetry::detail::RuntimeState::Cold, telemetry::test_seam::runtime_state());
 	EXPECT_EQ(telemetry::detail::RuntimeTerminalReason::None,
 		telemetry::test_seam::runtime_terminal_reason());
@@ -106,6 +108,7 @@ TEST(TelemetryProducerInitializeInstrumented, RegistersExactlyOnceAndRepeatedIni
 	EXPECT_EQ(0U, telemetry::test_seam::runtime_adapter_post_config_calls());
 	const auto startup_diagnostic_calls = telemetry::test_seam::runtime_adapter_diagnostic_calls();
 	EXPECT_LE(startup_diagnostic_calls, 1U);
+	EXPECT_EQ(0U, telemetry::test_seam::runtime_adapter_lifecycle_calls());
 
 	events::EngineUpdate();
 
@@ -124,6 +127,8 @@ TEST(TelemetryProducerInitializeInstrumented, RegistersExactlyOnceAndRepeatedIni
 
 	const Counts two_updates_and_one_lifecycle{2, 1, 1, 1, 1};
 	EXPECT_EQ(two_updates_and_one_lifecycle, invocation_counts());
+	EXPECT_EQ(telemetry::detail::RuntimeState::Stopped, telemetry::test_seam::runtime_state());
+	EXPECT_EQ(7U, telemetry::test_seam::runtime_adapter_lifecycle_calls());
 
 	for (std::size_t i = 0; i < RepeatedInitializeCount; ++i) {
 		telemetry::initialize();
@@ -137,6 +142,7 @@ TEST(TelemetryProducerInitializeInstrumented, RegistersExactlyOnceAndRepeatedIni
 	EXPECT_EQ(1U, telemetry::test_seam::runtime_adapter_config_loads());
 	EXPECT_EQ(0U, telemetry::test_seam::runtime_adapter_post_config_calls());
 	EXPECT_EQ(startup_diagnostic_calls, telemetry::test_seam::runtime_adapter_diagnostic_calls());
+	EXPECT_EQ(7U, telemetry::test_seam::runtime_adapter_lifecycle_calls());
 	const Counts final_invocations{3, 2, 2, 2, 2};
 	EXPECT_EQ(final_invocations, invocation_counts());
 }

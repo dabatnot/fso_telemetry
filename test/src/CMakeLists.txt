@@ -47,6 +47,26 @@ target_link_libraries(telemetry_initialize_contract_tests PRIVATE gtest_main sdl
 
 set_target_properties(telemetry_initialize_contract_tests PROPERTIES FOLDER "tests")
 
+add_executable(telemetry_lifecycle_callback_contract_tests
+	telemetry/producer/test_telemetry_lifecycle_callbacks_instrumented.cpp
+	telemetry/producer/telemetry_runtime_ready_adapter.cpp
+	${CMAKE_SOURCE_DIR}/code/telemetry/runtime.cpp
+	${CMAKE_SOURCE_DIR}/code/telemetry/telemetry.cpp
+	${CMAKE_SOURCE_DIR}/code/events/events.cpp
+)
+
+target_compile_features(telemetry_lifecycle_callback_contract_tests PRIVATE cxx_std_17)
+target_compile_definitions(telemetry_lifecycle_callback_contract_tests PRIVATE FSO_TELEMETRY_TEST_SEAMS=1)
+target_include_directories(telemetry_lifecycle_callback_contract_tests PRIVATE
+	${CODE_HEADERS}
+	${FREESPACE_HEADERS}
+	${GENERATED_SOURCE_DIR}
+	${GENERATED_SOURCE_DIR}/code
+)
+target_link_libraries(telemetry_lifecycle_callback_contract_tests PRIVATE gtest_main sdl2)
+
+set_target_properties(telemetry_lifecycle_callback_contract_tests PROPERTIES FOLDER "tests")
+
 add_executable(telemetry_disabled_benchmark
 	telemetry/producer/telemetry_disabled_benchmark.cpp
 	${TELEMETRY_ISOLATED_RUNTIME_SOURCES}

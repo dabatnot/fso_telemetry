@@ -32,6 +32,7 @@ std::uint64_t runtime_adapter_main_thread_checks() noexcept;
 std::uint64_t runtime_adapter_config_loads() noexcept;
 std::uint64_t runtime_adapter_post_config_calls() noexcept;
 std::uint64_t runtime_adapter_diagnostic_calls() noexcept;
+std::uint64_t runtime_adapter_lifecycle_calls() noexcept;
 detail::RuntimeState runtime_state() noexcept;
 detail::RuntimeTerminalReason runtime_terminal_reason() noexcept;
 
@@ -176,7 +177,8 @@ bool runtime_remained_cold_without_startup() noexcept
 		telemetry::test_seam::runtime_adapter_main_thread_checks() == 0U &&
 		telemetry::test_seam::runtime_adapter_config_loads() == 0U &&
 		telemetry::test_seam::runtime_adapter_post_config_calls() == 0U &&
-		telemetry::test_seam::runtime_adapter_diagnostic_calls() == 0U;
+		telemetry::test_seam::runtime_adapter_diagnostic_calls() == 0U &&
+		telemetry::test_seam::runtime_adapter_lifecycle_calls() == 0U;
 }
 
 void print_runtime_observations() noexcept
@@ -196,6 +198,8 @@ void print_runtime_observations() noexcept
 		static_cast<unsigned long long>(telemetry::test_seam::runtime_adapter_post_config_calls()));
 	std::printf("runtime_adapter_diagnostic_calls=%llu\n",
 		static_cast<unsigned long long>(telemetry::test_seam::runtime_adapter_diagnostic_calls()));
+	std::printf("runtime_adapter_lifecycle_calls=%llu\n",
+		static_cast<unsigned long long>(telemetry::test_seam::runtime_adapter_lifecycle_calls()));
 }
 
 bool parse_failure_index(const char* value, std::size_t& failure_index) noexcept
