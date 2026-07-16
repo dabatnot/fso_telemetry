@@ -1,6 +1,7 @@
 #include "telemetry/telemetry.h"
 
 #include "events/events.h"
+#include "telemetry/runtime_adapter.h"
 
 #if defined(FSO_TELEMETRY_TEST_SEAMS)
 #include <array>
@@ -11,7 +12,15 @@
 namespace {
 
 bool telemetry_initialized = false;
-bool telemetry_disabled    = true;
+bool telemetry_callbacks_ready = false;
+telemetry::detail::Runtime* telemetry_runtime = nullptr;
+
+telemetry::detail::Runtime& shared_runtime() noexcept
+{
+	static telemetry::detail::Runtime runtime(telemetry::detail::runtime_startup_services());
+	telemetry_runtime = &runtime;
+	return runtime;
+}
 
 #if defined(FSO_TELEMETRY_TEST_SEAMS)
 constexpr std::size_t EngineUpdateIndex    = 0;
@@ -31,8 +40,8 @@ void on_engine_update() noexcept
 	++callback_invocation_counts[EngineUpdateIndex];
 #endif
 
-	if (telemetry_disabled) {
-		return;
+	if (telemetry_callbacks_ready && telemetry_runtime != nullptr) {
+		telemetry_runtime->on_engine_update();
 	}
 }
 
@@ -84,6 +93,8 @@ void initialize() noexcept
 		return;
 	}
 	telemetry_initialized = true;
+	auto& runtime = shared_runtime();
+	runtime.capture_main_thread();
 
 	try {
 #if defined(FSO_TELEMETRY_TEST_SEAMS)
@@ -115,6 +126,7 @@ void initialize() noexcept
 		// telemetry disabled and prevent a retry from duplicating listeners.
 		return;
 	}
+	telemetry_callbacks_ready = true;
 }
 
 } // namespace telemetry
@@ -144,6 +156,16 @@ std::uint64_t callback_invocations(std::size_t event_index) noexcept
 	}
 
 	return callback_invocation_counts[event_index];
+}
+
+detail::RuntimeState runtime_state() noexcept
+{
+	return telemetry_runtime == nullptr ? detail::RuntimeState::Cold : telemetry_runtime->state();
+}
+
+detail::RuntimeTerminalReason runtime_terminal_reason() noexcept
+{
+	return telemetry_runtime == nullptr ? detail::RuntimeTerminalReason::None : telemetry_runtime->terminal_reason();
 }
 
 } // namespace telemetry::test_seam

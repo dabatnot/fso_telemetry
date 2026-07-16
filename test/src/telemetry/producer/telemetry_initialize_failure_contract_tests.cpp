@@ -1,4 +1,5 @@
 #include "events/events.h"
+#include "telemetry/runtime.h"
 #include "telemetry/telemetry.h"
 
 #include <array>
@@ -24,6 +25,15 @@ namespace telemetry::test_seam {
 void reset_observation_counts() noexcept;
 std::uint64_t registration_attempts(std::size_t event_index) noexcept;
 std::uint64_t callback_invocations(std::size_t event_index) noexcept;
+void reset_runtime_adapter_observations() noexcept;
+std::uint64_t runtime_adapter_factory_requests() noexcept;
+std::uint64_t runtime_adapter_main_thread_captures() noexcept;
+std::uint64_t runtime_adapter_main_thread_checks() noexcept;
+std::uint64_t runtime_adapter_config_loads() noexcept;
+std::uint64_t runtime_adapter_post_config_calls() noexcept;
+std::uint64_t runtime_adapter_diagnostic_calls() noexcept;
+detail::RuntimeState runtime_state() noexcept;
+detail::RuntimeTerminalReason runtime_terminal_reason() noexcept;
 
 } // namespace telemetry::test_seam
 
@@ -157,6 +167,35 @@ void print_counts(const char* label, const Counts& counts) noexcept
 		static_cast<unsigned long long>(counts[2]),
 		static_cast<unsigned long long>(counts[3]),
 		static_cast<unsigned long long>(counts[4]));
+}
+
+bool runtime_remained_cold_without_startup() noexcept
+{
+	return telemetry::test_seam::runtime_state() == telemetry::detail::RuntimeState::Cold &&
+		telemetry::test_seam::runtime_terminal_reason() == telemetry::detail::RuntimeTerminalReason::None &&
+		telemetry::test_seam::runtime_adapter_main_thread_checks() == 0U &&
+		telemetry::test_seam::runtime_adapter_config_loads() == 0U &&
+		telemetry::test_seam::runtime_adapter_post_config_calls() == 0U &&
+		telemetry::test_seam::runtime_adapter_diagnostic_calls() == 0U;
+}
+
+void print_runtime_observations() noexcept
+{
+	std::printf("runtime_state=%u\n", static_cast<unsigned int>(telemetry::test_seam::runtime_state()));
+	std::printf("runtime_terminal_reason=%u\n",
+		static_cast<unsigned int>(telemetry::test_seam::runtime_terminal_reason()));
+	std::printf("runtime_adapter_factory_requests=%llu\n",
+		static_cast<unsigned long long>(telemetry::test_seam::runtime_adapter_factory_requests()));
+	std::printf("runtime_adapter_main_thread_captures=%llu\n",
+		static_cast<unsigned long long>(telemetry::test_seam::runtime_adapter_main_thread_captures()));
+	std::printf("runtime_adapter_main_thread_checks=%llu\n",
+		static_cast<unsigned long long>(telemetry::test_seam::runtime_adapter_main_thread_checks()));
+	std::printf("runtime_adapter_config_loads=%llu\n",
+		static_cast<unsigned long long>(telemetry::test_seam::runtime_adapter_config_loads()));
+	std::printf("runtime_adapter_post_config_calls=%llu\n",
+		static_cast<unsigned long long>(telemetry::test_seam::runtime_adapter_post_config_calls()));
+	std::printf("runtime_adapter_diagnostic_calls=%llu\n",
+		static_cast<unsigned long long>(telemetry::test_seam::runtime_adapter_diagnostic_calls()));
 }
 
 bool parse_failure_index(const char* value, std::size_t& failure_index) noexcept
@@ -308,6 +347,7 @@ int main(int argc, char** argv)
 	});
 
 	telemetry::test_seam::reset_observation_counts();
+	telemetry::test_seam::reset_runtime_adapter_observations();
 	if (calibration_probe) {
 		arm_failure(~std::uint64_t{0});
 		telemetry::initialize();
@@ -316,10 +356,11 @@ int main(int argc, char** argv)
 		const auto registrations = registration_counts();
 		const Counts one_registration_each{1, 1, 1, 1, 1};
 		const bool passed = !injection_fired.load(std::memory_order_relaxed) && attempts == EventCount &&
-			equals(registrations, one_registration_each);
+			equals(registrations, one_registration_each) && runtime_remained_cold_without_startup();
 		std::printf("calibration_probe=1\n");
 		std::printf("allocation_attempts=%llu\n", static_cast<unsigned long long>(attempts));
 		print_counts("registration_attempts", registrations);
+		print_runtime_observations();
 		std::printf("calibration_check=%s\n", passed ? "PASS" : "FAIL");
 		return passed ? 0 : ContractFailureExitCode;
 	}
@@ -347,7 +388,7 @@ int main(int argc, char** argv)
 		attempts_after_first == failure_index + 1 && attempts_after_second == attempts_after_first &&
 		equals(registrations_after_first, expected_registrations) &&
 		equals(registrations_after_second, registrations_after_first) &&
-		equals(invocations_after_emission, expected_invocations);
+		equals(invocations_after_emission, expected_invocations) && runtime_remained_cold_without_startup();
 
 	std::printf("fail_after=%llu\n", static_cast<unsigned long long>(failure_index));
 	std::printf("injection_fired=%u\n", injection_fired.load(std::memory_order_relaxed) ? 1U : 0U);
@@ -356,6 +397,7 @@ int main(int argc, char** argv)
 	print_counts("registrations_after_first", registrations_after_first);
 	print_counts("registrations_after_second", registrations_after_second);
 	print_counts("invocations_after_emission", invocations_after_emission);
+	print_runtime_observations();
 	std::printf("contract_check=%s\n", passed ? "PASS" : "FAIL");
 	return passed ? 0 : ContractFailureExitCode;
 }

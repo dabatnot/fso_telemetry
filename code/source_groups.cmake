@@ -1713,6 +1713,17 @@ add_file_folder("TgaUtils"
 
 # Telemetry files
 add_file_folder("Telemetry"
+	telemetry/config.cpp
+	telemetry/config.h
+	telemetry/identity.cpp
+	telemetry/identity.h
+	telemetry/json_preflight.h
+	telemetry/runtime.cpp
+	telemetry/runtime.h
+	telemetry/runtime_adapter.cpp
+	telemetry/runtime_adapter.h
+	telemetry/startup_budget.cpp
+	telemetry/startup_budget.h
 	telemetry/telemetry.cpp
 	telemetry/telemetry.h
 )

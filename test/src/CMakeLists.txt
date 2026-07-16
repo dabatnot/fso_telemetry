@@ -23,8 +23,14 @@ target_compile_definitions(unittests PRIVATE "FSTL_PROTOCOL_TEST_ASSET_PATH=\"${
 INCLUDE(util)
 COPY_FILES_TO_TARGET(unittests)
 
+set(TELEMETRY_ISOLATED_RUNTIME_SOURCES
+	${CMAKE_SOURCE_DIR}/code/telemetry/runtime.cpp
+	telemetry/producer/telemetry_runtime_disabled_adapter.cpp
+)
+
 add_executable(telemetry_initialize_contract_tests
 	telemetry/producer/test_telemetry_initialize_instrumented.cpp
+	${TELEMETRY_ISOLATED_RUNTIME_SOURCES}
 	${CMAKE_SOURCE_DIR}/code/telemetry/telemetry.cpp
 	${CMAKE_SOURCE_DIR}/code/events/events.cpp
 )
@@ -43,6 +49,7 @@ set_target_properties(telemetry_initialize_contract_tests PROPERTIES FOLDER "tes
 
 add_executable(telemetry_disabled_benchmark
 	telemetry/producer/telemetry_disabled_benchmark.cpp
+	${TELEMETRY_ISOLATED_RUNTIME_SOURCES}
 	${CMAKE_SOURCE_DIR}/code/telemetry/telemetry.cpp
 	${CMAKE_SOURCE_DIR}/code/events/events.cpp
 )
@@ -60,6 +67,7 @@ set_target_properties(telemetry_disabled_benchmark PROPERTIES FOLDER "tests")
 
 add_executable(telemetry_initialize_failure_contract_tests
 	telemetry/producer/telemetry_initialize_failure_contract_tests.cpp
+	${TELEMETRY_ISOLATED_RUNTIME_SOURCES}
 	${CMAKE_SOURCE_DIR}/code/telemetry/telemetry.cpp
 	${CMAKE_SOURCE_DIR}/code/events/events.cpp
 )
