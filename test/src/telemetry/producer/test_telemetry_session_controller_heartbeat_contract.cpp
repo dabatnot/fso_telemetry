@@ -85,15 +85,18 @@ Datagram encode_datagram(protocol::TelemetryDatagramHeader header, protocol::Byt
 	return result;
 }
 
-Datagram make_hello(std::uint64_t nonce, std::uint32_t packet_sequence = 1U)
+Datagram make_hello(std::uint64_t nonce,
+	std::uint32_t packet_sequence = 1U,
+	std::uint8_t min_minor = protocol::VersionMinorV1_1,
+	std::uint8_t max_minor = protocol::VersionMinorV1_1)
 {
 	protocol::HelloPayload hello;
 	hello.client_nonce = nonce;
 	hello.client_send_t0_us = 100U;
 	hello.min_major = protocol::VersionMajor;
 	hello.max_major = protocol::VersionMajor;
-	hello.min_minor = protocol::VersionMinorV1_1;
-	hello.max_minor = protocol::VersionMinorV1_1;
+	hello.min_minor = min_minor;
+	hello.max_minor = max_minor;
 	hello.requested_visibility_mode = protocol::VisibilityMode::Cockpit;
 	hello.requested_heartbeat_ms = 1000U;
 	std::array<std::uint8_t, protocol::HelloPayloadPrefixSize> payload{};
@@ -101,7 +104,7 @@ Datagram make_hello(std::uint64_t nonce, std::uint32_t packet_sequence = 1U)
 	EXPECT_EQ(protocol::ValidationError::None,
 		protocol::encode_hello_payload(hello, mutable_view(payload), written));
 	protocol::TelemetryDatagramHeader header;
-	header.version_minor = protocol::VersionMinorV1_1;
+	header.version_minor = max_minor;
 	header.message_type = protocol::MessageType::Hello;
 	header.packet_sequence = packet_sequence;
 	header.sent_time_us = hello.client_send_t0_us;
@@ -323,6 +326,19 @@ struct has_wp06_heartbeat_contract<Controller,
 		decltype(std::declval<const Controller&>().slot(0U).heartbeat.last_valid_network_activity_us),
 		decltype(std::declval<const Controller&>().slot(0U).heartbeat.last_valid_clock_response_us),
 		decltype(std::declval<const Controller&>().slot(0U).heartbeat.clock_stale)>> : std::true_type {};
+
+template <typename Controller, typename = void>
+struct has_wp06_ordered_tick_phases : std::false_type {};
+
+template <typename Controller>
+struct has_wp06_ordered_tick_phases<Controller,
+	std::void_t<decltype(std::declval<Controller&>().service_timeouts(std::declval<std::uint64_t>())),
+		decltype(std::declval<Controller&>().service_periodic(std::declval<std::uint64_t>())),
+		decltype(std::declval<Controller&>().purge_all(std::declval<detail::SessionCloseReason>()))>>
+	: std::bool_constant<noexcept(
+		  std::declval<Controller&>().service_timeouts(std::declval<std::uint64_t>())) &&
+		  noexcept(std::declval<Controller&>().service_periodic(std::declval<std::uint64_t>())) &&
+		  noexcept(std::declval<Controller&>().purge_all(std::declval<detail::SessionCloseReason>()))> {};
 
 template <typename Controller>
 void expect_request_refreshes_network_activity(Controller& controller, std::uint64_t expected_now_us)
@@ -663,7 +679,8 @@ void expect_rate_limited_request_is_mutation_free(Controller& controller,
 			const auto datagram = make_heartbeat(session_id, request, 1'000U + index, 1'000U + index);
 			ASSERT_EQ(detail::SessionIngressDropReason::None,
 				controller.ingest(peer, view(datagram.bytes), 1'000U + index, 0U, false).drop_reason);
-			(void)pop_output(controller);
+			detail::SessionControllerOutput discarded;
+			ASSERT_TRUE(controller.pop_output(discarded));
 		}
 		const auto activity_before = controller.slot(0U).heartbeat.last_valid_network_activity_us;
 		const auto clock_before = controller.slot(0U).heartbeat.last_valid_clock_response_us;
@@ -1168,6 +1185,398 @@ TEST(TelemetryWp06HeartbeatContract, ClosingUnrelatedSessionPreservesPendingHear
 	(void)establish_ready(controller, endpoint(2U, 42043U), 10U, 100U, 200U, 800U);
 	(void)establish_ready(controller, endpoint(3U, 42044U), 11U, 300U, 400U, 900U);
 	expect_unrelated_close_preserves_heartbeat_output(controller);
+}
+
+template <typename Controller>
+void expect_due_reliable_precedes_periodic(Controller& controller,
+	const protocol::EndpointKey& peer)
+{
+	if constexpr (!has_wp06_ordered_tick_phases<Controller>::value) {
+		FAIL() << "SessionController lacks the noexcept timeout and periodic phase seams required to order timeout -> REL -> periodic.";
+	} else {
+		const auto request = make_hello(7'001U, 101U);
+		ASSERT_EQ(detail::SessionIngressDisposition::ResponseQueued,
+			controller.ingest(peer, view(request.bytes), 1'000U, 0U, false).disposition);
+		const auto welcome = pop_output(controller);
+		const auto proof = make_ack(welcome, 102U);
+		ASSERT_EQ(detail::SessionIngressDisposition::WelcomeProofApplied,
+			controller.ingest(peer, view(proof.bytes), 2'000U, 0U, false).disposition);
+		const auto begin = pop_output(controller);
+		ASSERT_EQ(protocol::MessageType::SessionBegin, begin.datagram.header.message_type);
+		const auto both_due = controller.slot(0U).heartbeat.next_periodic_due_us;
+
+		controller.service_timeouts(both_due);
+		controller.service_reliability(both_due);
+		detail::SessionControllerOutput selected;
+		ASSERT_TRUE(controller.peek_output(selected));
+		protocol::DatagramView selected_datagram;
+		ASSERT_EQ(protocol::ValidationError::None,
+			protocol::decode_and_validate_datagram({selected.bytes.data(), selected.size},
+				protocol::ProtocolMinorRange{protocol::VersionMinorV1_1, protocol::VersionMinorV1_1},
+				selected_datagram));
+		EXPECT_EQ(protocol::MessageType::SessionBegin, selected_datagram.header.message_type)
+			<< "A due reliable control message must win over a periodic heartbeat.";
+
+		controller.service_periodic(both_due);
+		detail::SessionControllerOutput still_selected;
+		ASSERT_TRUE(controller.peek_output(still_selected));
+		EXPECT_EQ(selected.size, still_selected.size);
+		EXPECT_TRUE(std::equal(selected.bytes.begin(),
+			selected.bytes.begin() + static_cast<std::ptrdiff_t>(selected.size),
+			still_selected.bytes.begin()));
+
+		controller.complete_output(detail::IoStatus::Complete);
+		controller.service_periodic(both_due);
+		detail::SessionControllerOutput periodic;
+		ASSERT_TRUE(controller.peek_output(periodic));
+		protocol::DatagramView periodic_datagram;
+		ASSERT_EQ(protocol::ValidationError::None,
+			protocol::decode_and_validate_datagram({periodic.bytes.data(), periodic.size},
+				protocol::ProtocolMinorRange{protocol::VersionMinorV1_1, protocol::VersionMinorV1_1},
+				periodic_datagram));
+		EXPECT_EQ(protocol::MessageType::Heartbeat, periodic_datagram.header.message_type)
+			<< "Periodic work becomes eligible only after the higher-priority output completes.";
+	}
+}
+
+TEST(TelemetryWp06HeartbeatContract, OrderedPhasesGiveDueReliablePriorityOverPeriodicUntilCompletion)
+{
+	EXPECT_TRUE(has_wp06_ordered_tick_phases<detail::SessionController>::value);
+	IdentityHarness ids{0x7101U};
+	auto controller = make_controller(ids.allocator);
+	expect_due_reliable_precedes_periodic(controller, endpoint());
+}
+
+template <typename Controller>
+void expect_timeout_precedes_reliable_and_periodic(Controller& controller,
+	const protocol::EndpointKey& peer)
+{
+	if constexpr (!has_wp06_ordered_tick_phases<Controller>::value) {
+		FAIL() << "SessionController lacks the separate timeout and periodic phase seams.";
+	} else {
+		const auto request = make_hello(7'002U, 111U);
+		ASSERT_EQ(detail::SessionIngressDisposition::ResponseQueued,
+			controller.ingest(peer, view(request.bytes), 1'000U, 0U, false).disposition);
+		const auto welcome = pop_output(controller);
+		const auto proof = make_ack(welcome, 112U);
+		ASSERT_EQ(detail::SessionIngressDisposition::WelcomeProofApplied,
+			controller.ingest(peer, view(proof.bytes), 2'000U, 0U, false).disposition);
+		detail::SessionControllerOutput discarded;
+		ASSERT_TRUE(controller.pop_output(discarded));
+		const auto disconnect_due = controller.slot(0U).heartbeat.last_valid_network_activity_us +
+			controller.slot(0U).heartbeat.disconnect_timeout_us;
+
+		controller.service_timeouts(disconnect_due);
+		controller.service_reliability(disconnect_due);
+		controller.service_periodic(disconnect_due);
+
+		EXPECT_EQ(0U, controller.active_slots());
+		EXPECT_FALSE(controller.has_output())
+			<< "Timeout cleanup must close the slot before due REL or heartbeat can be selected.";
+		EXPECT_EQ(0U, controller.owned_usage().reliable_items);
+	}
+}
+
+TEST(TelemetryWp06HeartbeatContract, OrderedPhasesCloseTimedOutSessionBeforeReliableOrPeriodicSelection)
+{
+	IdentityHarness ids{0x7201U};
+	auto controller = make_controller(ids.allocator);
+	expect_timeout_precedes_reliable_and_periodic(controller, endpoint());
+}
+
+template <typename Controller>
+void expect_periodic_hitch_coalesces_without_catchup(Controller& controller,
+	const protocol::EndpointKey& peer)
+{
+	if constexpr (!has_wp06_ordered_tick_phases<Controller>::value) {
+		FAIL() << "SessionController lacks the separate periodic phase seam.";
+	} else {
+		(void)establish_ready(controller, peer, 7'003U, 1'000U, 2'000U, 121U);
+		const auto interval_us =
+			static_cast<std::uint64_t>(controller.slot(0U).heartbeat.negotiated_interval_ms) * 1000U;
+		const std::uint64_t hitch_now = 9'000'000U;
+		ASSERT_LT(hitch_now,
+			controller.slot(0U).heartbeat.last_valid_network_activity_us +
+				controller.slot(0U).heartbeat.disconnect_timeout_us);
+
+		controller.service_periodic(hitch_now);
+		ASSERT_TRUE(controller.has_output());
+		EXPECT_EQ(hitch_now + interval_us, controller.slot(0U).heartbeat.next_periodic_due_us);
+		controller.complete_output(detail::IoStatus::Complete);
+		controller.service_periodic(hitch_now);
+		EXPECT_FALSE(controller.has_output()) << "A hitch coalesces missed periods into one recent heartbeat.";
+	}
+}
+
+TEST(TelemetryWp06HeartbeatContract, SeparatePeriodicPhaseAdvancesFromNowAndNeverCatchesUpInABurst)
+{
+	IdentityHarness ids{0x7301U};
+	auto controller = make_controller(ids.allocator);
+	expect_periodic_hitch_coalesces_without_catchup(controller, endpoint());
+}
+
+template <typename Controller>
+void expect_purge_all_releases_every_session_scope(Controller& controller,
+	IdentityHarness& ids)
+{
+	if constexpr (!has_wp06_ordered_tick_phases<Controller>::value) {
+		FAIL() << "SessionController lacks purge_all(reason) and the ordered maintenance seams.";
+	} else {
+		const auto first_peer = endpoint(2U, 42043U);
+		const auto begin = establish_ready(controller, first_peer, 8'001U, 1'000U, 2'000U, 201U);
+		const auto first_session_id = begin.datagram.header.session_id;
+		EXPECT_EQ(0x2222U, first_session_id)
+			<< "The startup-reserved 0x1111 candidate must be skipped by the controller allocator.";
+
+		const auto first_due = controller.slot(0U).heartbeat.next_periodic_due_us;
+		controller.service_periodic(first_due);
+		const auto probe_request_output = pop_output(controller);
+		const auto probe_request = decode_heartbeat(probe_request_output);
+		protocol::HeartbeatPayload probe_response = probe_request;
+		probe_response.kind = protocol::HeartbeatKind::Response;
+		probe_response.receive_t1_us = probe_request.origin_t0_us + 10U;
+		probe_response.transmit_t2_us = probe_request.origin_t0_us + 20U;
+		const auto response_time = probe_request.origin_t0_us + 100U;
+		const auto response = make_heartbeat(first_session_id, probe_response, 204U, response_time);
+		ASSERT_EQ(detail::SessionIngressDropReason::None,
+			controller.ingest(first_peer, view(response.bytes), response_time, 0U, false).drop_reason);
+		ASSERT_EQ(1U, controller.slot(0U).heartbeat.clock_filter.sample_count());
+
+		for (std::uint64_t offset = 0U; offset < 3U; ++offset) {
+			const auto request = make_hello(8'010U + offset, static_cast<std::uint32_t>(210U + offset));
+			ASSERT_EQ(detail::SessionIngressDisposition::ResponseQueued,
+				controller
+					.ingest(endpoint(2U, static_cast<std::uint16_t>(42044U + offset)),
+						view(request.bytes),
+						response_time + 1'000U + offset,
+						0U,
+						false)
+					.disposition);
+			detail::SessionControllerOutput unsupported_welcome;
+			ASSERT_TRUE(controller.pop_output(unsupported_welcome));
+		}
+		const auto limited_request = make_hello(8'020U, 220U);
+		const auto limited =
+			controller.ingest(endpoint(2U, 42050U), view(limited_request.bytes), response_time + 2'000U, 0U, false);
+		ASSERT_EQ(detail::SessionIngressDropReason::NoClientSlot, limited.drop_reason);
+		ASSERT_EQ(4U, controller.active_slots());
+		ASSERT_EQ(4U, controller.handshake_cache_entries());
+		ASSERT_EQ(3U, controller.preproof_account_count());
+		ASSERT_GT(controller.owned_usage().reliable_items, 0U);
+
+		const auto pending_due = controller.slot(0U).heartbeat.next_periodic_due_us;
+		controller.service_periodic(pending_due);
+		ASSERT_TRUE(controller.has_output());
+		ASSERT_EQ(1U, controller.slot(0U).heartbeat.probes.in_flight_count());
+		const auto process_ids_before_purge = ids.registry.used_count();
+		ASSERT_EQ(5U, process_ids_before_purge);
+
+		controller.purge_all(detail::SessionCloseReason::MissionDiscontinuity);
+
+		EXPECT_EQ(0U, controller.active_slots());
+		EXPECT_EQ(0U, controller.handshake_cache_entries());
+		EXPECT_EQ(0U, controller.preproof_account_count());
+		EXPECT_EQ(detail::SessionControllerOwnedUsage{}, controller.owned_usage());
+		EXPECT_FALSE(controller.has_output());
+		for (std::size_t slot = 0U; slot < 4U; ++slot) {
+			EXPECT_EQ(0U, controller.slot(slot).heartbeat.probes.in_flight_count());
+			EXPECT_EQ(0U, controller.slot(slot).heartbeat.clock_filter.sample_count());
+		}
+		EXPECT_EQ(process_ids_before_purge, ids.registry.used_count())
+			<< "Mission purge must preserve the process-wide no-reuse registry.";
+
+		const auto after_purge = make_hello(8'021U, 230U);
+		const auto new_first_peer = endpoint(3U, 42043U);
+		const auto admitted = controller.ingest(new_first_peer, view(after_purge.bytes), pending_due, 0U, false);
+		ASSERT_EQ(detail::SessionIngressDisposition::ResponseQueued, admitted.disposition)
+			<< "A fresh source remains eligible after mission-scoped state is purged.";
+		const auto new_welcome = pop_output(controller);
+		EXPECT_EQ(0x6666U, new_welcome.datagram.header.session_id);
+		EXPECT_NE(first_session_id, new_welcome.datagram.header.session_id);
+		const auto first_proof = make_ack(new_welcome, 231U);
+		ASSERT_EQ(detail::SessionIngressDisposition::WelcomeProofApplied,
+			controller.ingest(new_first_peer, view(first_proof.bytes), pending_due + 1U, 0U, false).disposition);
+		(void)pop_output(controller);
+
+		const auto second_peer = endpoint(4U, 42044U);
+		const auto second_after_purge = make_hello(8'030U, 232U);
+		ASSERT_EQ(detail::SessionIngressDisposition::ResponseQueued,
+			controller.ingest(second_peer, view(second_after_purge.bytes), pending_due + 1U, 0U, false).disposition);
+		const auto second_welcome = pop_output(controller);
+		EXPECT_EQ(0x7777U, second_welcome.datagram.header.session_id);
+		const auto second_proof = make_ack(second_welcome, 233U);
+		ASSERT_EQ(detail::SessionIngressDisposition::WelcomeProofApplied,
+			controller.ingest(second_peer, view(second_proof.bytes), pending_due + 1U, 0U, false).disposition);
+		(void)pop_output(controller);
+		ASSERT_EQ(2U, controller.active_slots());
+		EXPECT_EQ(process_ids_before_purge + 2U, ids.registry.used_count());
+
+		const auto simultaneous_due = controller.slot(0U).heartbeat.next_periodic_due_us;
+		ASSERT_EQ(simultaneous_due, controller.slot(1U).heartbeat.next_periodic_due_us);
+		controller.service_reliability(simultaneous_due);
+		detail::SessionControllerOutput reliable;
+		ASSERT_TRUE(controller.peek_output(reliable));
+		protocol::DatagramView reliable_datagram;
+		ASSERT_EQ(protocol::ValidationError::None,
+			protocol::decode_and_validate_datagram({reliable.bytes.data(), reliable.size},
+				protocol::ProtocolMinorRange{protocol::VersionMinorV1_1, protocol::VersionMinorV1_1},
+				reliable_datagram));
+		EXPECT_EQ(0x6666U, reliable_datagram.header.session_id)
+			<< "purge_all must restart the reliable round-robin cursor at slot zero.";
+		controller.complete_output(detail::IoStatus::Complete);
+
+		controller.service_periodic(simultaneous_due);
+		detail::SessionControllerOutput periodic;
+		ASSERT_TRUE(controller.peek_output(periodic));
+		protocol::DatagramView periodic_datagram;
+		ASSERT_EQ(protocol::ValidationError::None,
+			protocol::decode_and_validate_datagram({periodic.bytes.data(), periodic.size},
+				protocol::ProtocolMinorRange{protocol::VersionMinorV1_1, protocol::VersionMinorV1_1},
+				periodic_datagram));
+		EXPECT_EQ(0x6666U, periodic_datagram.header.session_id)
+			<< "purge_all must restart the heartbeat round-robin cursor at slot zero.";
+	}
+}
+
+TEST(TelemetryWp06HeartbeatContract, PurgeAllClearsSessionCachesPreproofOutputHeartbeatReliableAndCursorsButPreservesIds)
+{
+	IdentityHarness ids{0x1111U, 0x2222U, 0x3333U, 0x4444U, 0x5555U, 0x6666U, 0x7777U};
+	ASSERT_EQ(detail::SessionIdRegistrationStatus::Registered, ids.registry.register_candidate(0x1111U));
+	auto controller = make_controller(ids.allocator, 4U);
+	expect_purge_all_releases_every_session_scope(controller, ids);
+}
+
+template <typename Controller>
+void expect_mission_purge_preserves_presession_source_quota(Controller& controller,
+	IdentityHarness& ids)
+{
+	if constexpr (!has_wp06_ordered_tick_phases<Controller>::value) {
+		FAIL() << "SessionController lacks purge_all(reason).";
+	} else {
+		const auto source_octet = 9U;
+		for (std::uint64_t nonce = 0U; nonce < protocol::HelloRateLimit.burst_tokens; ++nonce) {
+			const auto request = make_hello(9'000U + nonce,
+				static_cast<std::uint32_t>(300U + nonce),
+				protocol::VersionMinorV1_0,
+				protocol::VersionMinorV1_0);
+			ASSERT_EQ(detail::SessionIngressDisposition::ResponseQueued,
+				controller
+					.ingest(endpoint(source_octet, static_cast<std::uint16_t>(43000U + nonce)),
+						view(request.bytes),
+						10'000U,
+						0U,
+						false)
+					.disposition);
+			detail::SessionControllerOutput unsupported_welcome;
+			ASSERT_TRUE(controller.pop_output(unsupported_welcome));
+		}
+		ASSERT_EQ(protocol::HelloRateLimit.burst_tokens, controller.handshake_cache_entries());
+		ASSERT_EQ(protocol::HelloRateLimit.burst_tokens, controller.preproof_account_count());
+		ASSERT_EQ(0U, ids.random.index);
+
+		controller.purge_all(detail::SessionCloseReason::MissionDiscontinuity);
+		ASSERT_EQ(0U, controller.handshake_cache_entries());
+		ASSERT_EQ(0U, controller.preproof_account_count());
+		ASSERT_EQ(detail::SessionControllerOwnedUsage{}, controller.owned_usage());
+		const auto before = controller.owned_usage();
+		const auto used_ids_before = ids.registry.used_count();
+
+		const auto still_limited = make_hello(9'999U,
+			399U,
+			protocol::VersionMinorV1_0,
+			protocol::VersionMinorV1_0);
+		const auto result = controller.ingest(
+			endpoint(source_octet, 44000U), view(still_limited.bytes), 10'001U, 0U, false);
+		EXPECT_EQ(detail::SessionIngressDisposition::Dropped, result.disposition);
+		EXPECT_EQ(detail::SessionIngressDropReason::HelloRateLimited, result.drop_reason)
+			<< "Mission purge must preserve the process-scoped HELLO bucket for a source address.";
+		EXPECT_EQ(before, controller.owned_usage());
+		EXPECT_EQ(used_ids_before, ids.registry.used_count());
+		EXPECT_FALSE(controller.has_output());
+	}
+}
+
+TEST(TelemetryWp06HeartbeatContract, MissionPurgePreservesSaturatedHelloSourceQuotaWhileClearingHandshakeState)
+{
+	IdentityHarness ids{0x9101U};
+	auto controller = make_controller(ids.allocator);
+	expect_mission_purge_preserves_presession_source_quota(controller, ids);
+}
+
+template <typename Controller>
+void expect_mission_purge_preserves_global_monotonic_watermark(Controller& controller,
+	IdentityHarness& ids)
+{
+	if constexpr (!has_wp06_ordered_tick_phases<Controller>::value) {
+		FAIL() << "SessionController lacks purge_all(reason).";
+	} else {
+		const auto before_purge = make_hello(9'100U,
+			410U,
+			protocol::VersionMinorV1_0,
+			protocol::VersionMinorV1_0);
+		ASSERT_EQ(detail::SessionIngressDisposition::ResponseQueued,
+			controller.ingest(endpoint(10U), view(before_purge.bytes), 20'000U, 0U, false).disposition);
+		detail::SessionControllerOutput unsupported_welcome;
+		ASSERT_TRUE(controller.pop_output(unsupported_welcome));
+		controller.purge_all(detail::SessionCloseReason::MissionDiscontinuity);
+		const auto before = controller.owned_usage();
+		const auto used_ids_before = ids.registry.used_count();
+
+		const auto regressed = make_hello(9'101U,
+			411U,
+			protocol::VersionMinorV1_0,
+			protocol::VersionMinorV1_0);
+		const auto result =
+			controller.ingest(endpoint(11U), view(regressed.bytes), 19'999U, 0U, false);
+		EXPECT_EQ(detail::SessionIngressDisposition::Dropped, result.disposition);
+		EXPECT_EQ(detail::SessionIngressDropReason::HelloRateLimited, result.drop_reason)
+			<< "Mission purge must not reset the global limiter watermark to zero.";
+		EXPECT_EQ(before, controller.owned_usage()) << "A regressed post-purge datagram is mutation-free.";
+		EXPECT_EQ(used_ids_before, ids.registry.used_count());
+		EXPECT_FALSE(controller.has_output());
+	}
+}
+
+TEST(TelemetryWp06HeartbeatContract, MissionPurgePreservesGlobalLimiterTimeAndRejectsRegressionWithoutMutation)
+{
+	IdentityHarness ids{0x9201U};
+	auto controller = make_controller(ids.allocator);
+	expect_mission_purge_preserves_global_monotonic_watermark(controller, ids);
+}
+
+template <typename Controller>
+void expect_mission_purge_reclaims_session_and_target_admission(Controller& controller)
+{
+	if constexpr (!has_wp06_ordered_tick_phases<Controller>::value) {
+		FAIL() << "SessionController lacks purge_all(reason).";
+	} else {
+		(void)establish_ready(controller, endpoint(20U), 9'200U, 30'000U, 30'001U, 420U);
+		controller.purge_all(detail::SessionCloseReason::MissionDiscontinuity);
+		ASSERT_EQ(0U, controller.active_slots());
+
+		for (std::size_t slot = 0U; slot < 4U; ++slot) {
+			SCOPED_TRACE(slot);
+			const auto peer = endpoint(static_cast<std::uint8_t>(21U + slot));
+			const auto request = make_hello(9'210U + slot, static_cast<std::uint32_t>(430U + slot * 3U));
+			const auto hello_time = 31'000U + slot * 20U;
+			ASSERT_EQ(detail::SessionIngressDisposition::ResponseQueued,
+				controller.ingest(peer, view(request.bytes), hello_time, 0U, false).disposition);
+			const auto welcome = pop_output(controller);
+			const auto proof = make_ack(welcome, static_cast<std::uint32_t>(431U + slot * 3U));
+			ASSERT_EQ(detail::SessionIngressDisposition::WelcomeProofApplied,
+				controller.ingest(peer, view(proof.bytes), hello_time + 10U, 0U, false).disposition)
+				<< "Old session/target limiter ownership must not consume one of the four new admission slots.";
+			(void)pop_output(controller);
+		}
+		EXPECT_EQ(4U, controller.active_slots());
+	}
+}
+
+TEST(TelemetryWp06HeartbeatContract, MissionPurgeReclaimsOldSessionAndTargetLimiterAdmissionCapacity)
+{
+	IdentityHarness ids{0x9301U, 0x9302U, 0x9303U, 0x9304U, 0x9305U};
+	auto controller = make_controller(ids.allocator, 4U);
+	expect_mission_purge_reclaims_session_and_target_admission(controller);
 }
 
 } // namespace

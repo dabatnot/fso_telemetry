@@ -656,4 +656,69 @@ TEST(TelemetryRuntimeStartupContract, IncompleteOrDeferredBudgetFailsBeforeAlloc
 	}
 }
 
+TEST(TelemetryRuntimeStartupContract, RealKnownBudgetRemainsFailClosedBeforeEveryAllocationAndSocketBoundary)
+{
+	ScriptedRuntimeStartupServices services;
+	services.config_result.max_clients = 4U;
+	services.budget_result = detail::calculate_wp04_startup_budget(
+		detail::make_wp03_known_budget_request(services.config_result.max_clients));
+	ASSERT_EQ(detail::StartupBudgetError::None, services.budget_result.error);
+	ASSERT_FALSE(services.budget_result.is_complete);
+	ASSERT_NE(0U, services.budget_result.deferred_categories);
+	detail::Runtime runtime(services);
+	services.observe_runtime(runtime);
+	runtime.capture_main_thread();
+
+	runtime.on_engine_update();
+
+	EXPECT_EQ((std::vector<StartupCall>{StartupCall::CaptureMainThread,
+			  StartupCall::MainThreadCheck,
+			  StartupCall::LoadConfig,
+			  StartupCall::LoadProducerIdentity,
+			  StartupCall::DrawSessionCandidate,
+			  StartupCall::CalculateKnownBudget,
+			  StartupCall::EmitDiagnostic}),
+		services.calls);
+	EXPECT_EQ(0U, services.registry_allocation_calls);
+	EXPECT_EQ(0U, services.registration_calls);
+	EXPECT_EQ(0U, services.transport_calls);
+	EXPECT_EQ(0U, services.registry_release_calls);
+	expect_single_fault_diagnostic(runtime, services, detail::RuntimeTerminalReason::BudgetFailure);
+	expect_terminal_no_retry(runtime, services);
+}
+
+TEST(TelemetryRuntimeStartupContract, InjectedCompleteBudgetReservesCandidateBeforeTransportAndPublishesOnlyReady)
+{
+	ScriptedRuntimeStartupServices services;
+	services.budget_result = successful_complete_budget();
+	services.transport_status = detail::RuntimeTransportStatus::Started;
+	detail::Runtime runtime(services);
+	services.observe_runtime(runtime);
+	runtime.capture_main_thread();
+
+	runtime.on_engine_update();
+
+	EXPECT_EQ((std::vector<StartupCall>{StartupCall::CaptureMainThread,
+			  StartupCall::MainThreadCheck,
+			  StartupCall::LoadConfig,
+			  StartupCall::LoadProducerIdentity,
+			  StartupCall::DrawSessionCandidate,
+			  StartupCall::CalculateKnownBudget,
+			  StartupCall::AllocateRegistry,
+			  StartupCall::RegisterCandidate,
+			  StartupCall::StartTransport}),
+		services.calls);
+	EXPECT_EQ(detail::RuntimeState::Ready, runtime.state());
+	EXPECT_EQ(detail::RuntimeTerminalReason::None, runtime.terminal_reason());
+	EXPECT_TRUE(services.registry_ready);
+	EXPECT_EQ(42U, services.registered_candidate);
+	expect_standard_startup_entry_states(services);
+	EXPECT_EQ(0U, runtime.published_session_id())
+		<< "The startup reservation is process safety state, never an active wire session.";
+	EXPECT_EQ(0U, runtime.socket_count())
+		<< "The scripted service proves ordering only; it must not fake a native socket publication.";
+	EXPECT_EQ(0U, runtime.diagnostic_count());
+	expect_no_publication_at_any_service_boundary(services);
+}
+
 } // namespace

@@ -327,6 +327,16 @@ struct has_wp06_heartbeat_service_and_fixed_state<Controller,
 		decltype(std::declval<const Controller&>().slot(0U).heartbeat.last_valid_network_activity_us)>>
 	: std::true_type {};
 
+template <typename Controller, typename = void>
+struct has_wp06_ordered_phases_and_purge : std::false_type {};
+
+template <typename Controller>
+struct has_wp06_ordered_phases_and_purge<Controller,
+	std::void_t<decltype(std::declval<Controller&>().service_timeouts(std::declval<std::uint64_t>())),
+		decltype(std::declval<Controller&>().service_periodic(std::declval<std::uint64_t>())),
+		decltype(std::declval<Controller&>().purge_all(std::declval<detail::SessionCloseReason>()))>>
+	: std::true_type {};
+
 TEST(TelemetryWp06AllocationContract, HelloAckNackAndRetransmissionAllocateNothingAfterReady)
 {
 	FixedRandom id_random;
@@ -540,6 +550,54 @@ TEST(TelemetryWp06AllocationContract, HeartbeatCadenceResponseFilterAndTimeoutAl
 	ASSERT_EQ(detail::SessionIngressDropReason::None,
 		controller.ingest(peer, {applied.bytes.data(), applied.size}, 2'001U, 0U, false).drop_reason);
 	expect_heartbeat_paths_allocate_nothing(controller, peer);
+}
+
+template <typename Controller>
+void expect_ordered_phases_and_purge_allocate_nothing(Controller& controller, std::uint64_t now_us)
+{
+	if constexpr (!has_wp06_ordered_phases_and_purge<Controller>::value) {
+		FAIL() << "The WP06 timeout/periodic/purge_all seams are absent.";
+	} else {
+		arm_allocation_probe();
+		controller.service_timeouts(now_us);
+		controller.service_reliability(now_us);
+		controller.service_periodic(now_us);
+		controller.purge_all(detail::SessionCloseReason::MissionDiscontinuity);
+		const auto allocations = disarm_allocation_probe();
+		EXPECT_EQ(0U, allocations) << "Ordered maintenance or purge allocated after Ready.";
+		EXPECT_EQ(detail::SessionControllerOwnedUsage{}, controller.owned_usage());
+	}
+}
+
+TEST(TelemetryWp06AllocationContract, OrderedTimeoutReliablePeriodicAndPurgeAllocateNothingAfterReady)
+{
+	EXPECT_TRUE(has_wp06_ordered_phases_and_purge<detail::SessionController>::value);
+	FixedRandom id_random;
+	id_random.draws[0] = 0x9999U;
+	id_random.count = 1U;
+	detail::SessionIdRegistry registry;
+	ASSERT_TRUE(registry.allocate_storage());
+	detail::SessionIdAllocator ids(id_random, registry);
+	FixedRandom sequences;
+	sequences.draws[0] = 0x40506070U;
+	sequences.count = 1U;
+	detail::SessionControllerConfig config;
+	config.max_clients = 1U;
+	config.producer_id = 0x12345678U;
+	config.security.enabled = true;
+	config.security.port = 42042U;
+	config.security.bind_mode = protocol::NetworkBindMode::LoopbackOnly;
+	config.security.resources.max_clients = 1U;
+	config.security.resources.global_state_reassembly_bytes = protocol::MaxStateReassemblyBytesPerClient;
+	detail::SessionController controller;
+	ASSERT_EQ(detail::SessionControllerConfigureResult::Ready,
+		detail::SessionController::configure(config, ids, sequences, 0U, nullptr, controller));
+	const auto hello = make_hello();
+	ASSERT_EQ(detail::SessionIngressDisposition::ResponseQueued,
+		controller.ingest(test_endpoint(), {hello.bytes.data(), hello.size}, 1'000U, 0U, false).disposition);
+	ASSERT_GT(controller.owned_usage().reliable_items, 0U);
+	ASSERT_TRUE(controller.has_output());
+	expect_ordered_phases_and_purge_allocate_nothing(controller, 2'000U);
 }
 
 } // namespace

@@ -1185,10 +1185,10 @@ void SessionController::service_reliability(std::uint64_t now_us) noexcept
 	}
 }
 
-void SessionController::service_session_maintenance(std::uint64_t now_us) noexcept
+bool SessionController::service_timeouts_impl(std::uint64_t now_us) noexcept
 {
 	if (!m_ready || m_faulted || m_config.max_clients == 0U) {
-		return;
+		return false;
 	}
 	for (std::size_t offset = 0U; offset < m_config.max_clients; ++offset) {
 		const auto index = (m_heartbeat_cursor + offset) % m_config.max_clients;
@@ -1205,7 +1205,7 @@ void SessionController::service_session_maintenance(std::uint64_t now_us) noexce
 			network_elapsed >= slot.heartbeat.disconnect_timeout_us) {
 			m_heartbeat_cursor = (index + 1U) % m_config.max_clients;
 			(void)close_slot(index, SessionCloseReason::Timeout);
-			return;
+			return false;
 		}
 		const auto clock_elapsed = now_us >= slot.heartbeat.last_valid_clock_response_us
 			? now_us - slot.heartbeat.last_valid_clock_response_us
@@ -1228,10 +1228,23 @@ void SessionController::service_session_maintenance(std::uint64_t now_us) noexce
 				m_output_heartbeat_pending = false;
 				m_output_heartbeat_owns_probe = false;
 				m_output_heartbeat_probe = {};
-				return;
+				return false;
 			}
 			break;
 		}
+	}
+	return true;
+}
+
+void SessionController::service_timeouts(std::uint64_t now_us) noexcept
+{
+	(void)service_timeouts_impl(now_us);
+}
+
+void SessionController::service_periodic(std::uint64_t now_us) noexcept
+{
+	if (!m_ready || m_faulted || m_config.max_clients == 0U) {
+		return;
 	}
 	if (m_has_output) {
 		return;
@@ -1261,6 +1274,13 @@ void SessionController::service_session_maintenance(std::uint64_t now_us) noexce
 			(void)slot.heartbeat.probes.discard_probe(probe.session_id, probe.probe_id, probe.origin_t0_us);
 		}
 		return;
+	}
+}
+
+void SessionController::service_session_maintenance(std::uint64_t now_us) noexcept
+{
+	if (service_timeouts_impl(now_us)) {
+		service_periodic(now_us);
 	}
 }
 
@@ -1353,6 +1373,17 @@ void SessionController::clear_all() noexcept
 	m_output_heartbeat_pending = false;
 	m_output_heartbeat_owns_probe = false;
 	m_output_heartbeat_probe = {};
+}
+
+void SessionController::purge_all(SessionCloseReason reason) noexcept
+{
+	if (!m_ready || m_rate_limiter == nullptr) {
+		return;
+	}
+	for (std::size_t index = 0U; index < m_config.max_clients; ++index) {
+		(void)close_slot(index, reason);
+	}
+	clear_all();
 }
 
 SessionControllerOwnedCapacity SessionController::owned_capacity() const noexcept

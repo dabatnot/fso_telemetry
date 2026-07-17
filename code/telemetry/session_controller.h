@@ -191,7 +191,10 @@ class SessionController final {
 	bool peek_output(SessionControllerOutput& output) const noexcept;
 	void complete_output(IoStatus status) noexcept;
 	void service_reliability(std::uint64_t now_us) noexcept;
+	void service_timeouts(std::uint64_t now_us) noexcept;
+	void service_periodic(std::uint64_t now_us) noexcept;
 	void service_session_maintenance(std::uint64_t now_us) noexcept;
+	void purge_all(SessionCloseReason reason) noexcept;
 	bool has_output() const noexcept { return m_has_output; }
 	std::size_t active_slots() const noexcept;
 	const SessionControllerSlot& slot(std::size_t index) const noexcept { return m_slots[index]; }
@@ -232,6 +235,7 @@ class SessionController final {
 	void release_cache_preproof(CacheEntry& entry) noexcept;
 	void remove_cache_for_session(std::uint64_t session_id) noexcept;
 	void clear_all() noexcept;
+	bool service_timeouts_impl(std::uint64_t now_us) noexcept;
 	bool queue_bytes(const protocol::EndpointKey& endpoint,
 		const std::uint8_t* bytes,
 		std::size_t size,
