@@ -390,4 +390,103 @@ Capture scheduler stress,
   Release: 7 tests x 50 iterations = 350/350 PASS.
 ```
 
+## WP07-D2 per-slot observation ownership RED checkpoint
+
+WP07-D2 now has an always-compiled, test-only local contract. It reserves no FSTL wire field or numeric value and does not enter cadence, native runtime, startup-budget repricing, WP08 publication, or later-phase functionality.
+
+The guarded future branch locks the exact `SessionPlayerMaterializationResult` name and seven-field aggregate, exact `noexcept` member-pointer signatures for apply/clear, the exact `player_entity_ids`/`latest_player_sample`/`latest_player_sample_status`/`has_latest_player_sample` slot names and types, and the exact static `bool noexcept` friend seed pointer. Its ten tests use complete sample comparisons and unique balanced buckets. They cover Empty/AwaitWelcome ineligibility and rejected seeding; one- and two-Ready-slot new/existing/replacement identity; a timeout-driven Stale slot with all observable session, heartbeat, network and reliable state preserved; an independent explicit switch oracle over every closed enum pair plus `Valid/None` key zero, including invalidation and ID-2 reappearance; idempotent all-state clear; close/reuse isolation; purge; and owning-slot-only exhaustion close with aggregate reset.
+
+The existing allocation executable also contains A11. Its future branch configures two slots and measures every post-configure D2 path: Empty, AwaitWelcome, two Ready owners, new/existing/replacement, the exhaustive status/reason matrix and key zero, repeated clear, real Stale, seeded exhaustion close, explicit close of the survivor, and purge. Probe arming surrounds only the operation under measurement and is disarmed before every assertion.
+
+Final RED reproduction after the reviewer hardening pass:
+
+```text
+cmake --build build --config Debug --target unittests telemetry_session_controller_allocation_contract_tests --parallel 4
+cmake --build build --config Release --target unittests telemetry_session_controller_allocation_contract_tests --parallel 4
+Result: PASS in Debug and Release; both test sources compiled and both executables linked.
+
+unittests --gtest_filter=TelemetrySessionPlayerObservationContract.*
+Debug:   expected RED, 10 ran, 0 PASS, 10 FAIL.
+Release: expected RED, 10 ran, 0 PASS, 10 FAIL.
+Sole cause: SessionController per-slot player observation API/ownership is absent.
+
+telemetry_session_controller_allocation_contract_tests --gtest_filter=TelemetryWp07D2AllocationContract.*
+Debug:   expected RED, 1 ran, 0 PASS, 1 FAIL.
+Release: expected RED, 1 ran, 0 PASS, 1 FAIL.
+Sole cause: D2 apply/clear/friend-seed seams are absent.
+
+Preserved baselines, rerun after the final rebuild:
+  Debug:   D1 7/7; A+B+C 24/24; session 37/37; adjacent 93/93;
+           historical allocation 7/7; opt-in native loopback 2/2 PASS.
+  Release: D1 7/7; A+B+C 24/24; session 37/37; adjacent 93/93;
+           historical allocation 7/7; opt-in native loopback 2/2 PASS.
+```
+
+Final SHA-256 values:
+
+```text
+DDC273CE462A4A4D41E1FA078198CF565F7829A03A0DBB30CC469BB76695F8EC  test_telemetry_player_observation_slot_contract.cpp
+84F6FBA5AA5458D40DB6565E5F1BD526818464FC371A8D70379E03263977F2EB  test_telemetry_session_controller_allocations.cpp
+16C27C6F94F53F42F18CFF4C5106A1B966F1ED7F4CAC5A7D71F1F0D4D4D95038  test/src/source_groups.cmake
+```
+
+This checkpoint is intentionally RED: D1 remains GREEN, D2 production is absent, and D3-D6 plus WP08 remain open. No production source or production build integration was changed.
+
+## WP07-D2 independent GREEN verification
+
+After D2 production landed, the test owner separated handshake message sequences from controller time. `open_ready` and `open_awaiting` now require an explicit `base_time_us`; every multi-slot scenario uses strictly increasing deterministic times, and U7 resumes at 4,000,000 us after creating a real Stale slot. The counter-exhaustion seed seam is now defined exclusively in the shared test header `telemetry_session_controller_player_test_access.h`: its only method refuses invalid, Empty, and AwaitWelcome slots, accepts only Ready/Stale, replaces the test slot registry, and clears only the latest player sample fields. No callable seed symbol exists in production. These changes preserve every API, ownership, lifecycle, outcome-bucket, exhaustion, Empty-slot immutability, and allocation oracle.
+
+Final verification results:
+
+```text
+Build unittests and allocation target:
+  Debug:   PASS.
+  Release: PASS.
+
+TelemetrySessionPlayerObservationContract.*:
+  Debug:   10/10 PASS.
+  Release: 10/10 PASS.
+
+TelemetryWp07D2AllocationContract.*:
+  Debug:   1/1 PASS.
+  Release: 1/1 PASS.
+
+Capture scheduler baseline:
+  Debug:   7/7 PASS.
+  Release: 7/7 PASS.
+
+WP07-A/B/C adapter, collector and entity-registry baseline:
+  Debug:   24/24 PASS.
+  Release: 24/24 PASS.
+
+Session budget/ingress/handshake/security baseline:
+  Debug:   37/37 PASS.
+  Release: 37/37 PASS.
+
+Adjacent native Runtime integration/runtime/heartbeat/reliability baseline:
+  Debug:   93/93 PASS.
+  Release: 93/93 PASS.
+
+Complete allocation executable, including A11:
+  Debug:   8/8 PASS.
+  Release: 8/8 PASS.
+
+Native loopback with FSO_TELEMETRY_RUN_NATIVE_LOOPBACK=1:
+  Debug:   IPv4 and IPv6, 2/2 PASS.
+  Release: IPv4 and IPv6, 2/2 PASS.
+```
+
+Final SHA-256 values inspected:
+
+```text
+62B573B816029B3C5A8CAD49CDB03A53FE5C12A1F1A5D134344A28BE9D673F74  telemetry_session_controller_player_test_access.h
+9BA6907F5E99AFC279E677445044CE51F612413DD0A2089C000909BEE71E5FBC  test_telemetry_player_observation_slot_contract.cpp
+0FC27BD1AA9FC516C17BC01E02D4D0F2F2D385885BAC7C511DC1C92D23D676C2  test_telemetry_session_controller_allocations.cpp
+369B60530E8DAC64BD50695801CF82D458684B033B010C70051ECF0E1D9C379A  test/src/source_groups.cmake
+FEE8F498BB6D80E34145A24D83EC703DAC2DF508CBE2F6A20E78883FE3DC0BF2  session_controller.h
+732F7AAFFB834E46A12E1532DD7A62CE659EAF6B2B1E470901FA4F2502B8DC1E  session_controller.cpp
+```
+
+D2 per-slot player observation ownership, lifecycle reset, balanced outcomes, counter exhaustion isolation, and post-configuration zero-allocation coverage are GREEN. D3-D6 and WP08 remain open. No production defect was observed by this verification.
+
 Final `git diff --check` passed with line-ending warnings only. D1 cadence production is complete and independently GREEN. D2–D6 remain open: per-slot observation ownership, native/runtime capture integration and lifecycle, startup-budget repricing, and scheduler-aware zero-allocation instrumentation. WP08 wire publication remains explicitly excluded.

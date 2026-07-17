@@ -1284,6 +1284,69 @@ void SessionController::service_session_maintenance(std::uint64_t now_us) noexce
 	}
 }
 
+SessionPlayerMaterializationResult SessionController::apply_player_observation(const CaptureResult& capture,
+	const PlayerObservationDto& observation) noexcept
+{
+	SessionPlayerMaterializationResult result;
+	for (std::size_t index = 0U; index < m_config.max_clients; ++index) {
+		auto& slot = m_slots[index];
+		if (slot.progress != ProducerSessionProgress::ReadyForState &&
+			slot.progress != ProducerSessionProgress::Stale) {
+			continue;
+		}
+
+		++result.eligible_slots;
+		auto candidate_registry = slot.player_entity_ids;
+		PlayerKinematicsSample candidate_sample;
+		const auto status = materialize_player_sample(candidate_registry, capture, observation, candidate_sample);
+		if (status == PlayerSampleMaterializeStatus::EntityIdCounterExhausted) {
+			++result.closed_exhausted_slots;
+			(void)close_slot(index, SessionCloseReason::ProtocolError);
+			continue;
+		}
+
+		slot.player_entity_ids = candidate_registry;
+		slot.latest_player_sample = candidate_sample;
+		slot.latest_player_sample_status = status;
+		slot.has_latest_player_sample = status == PlayerSampleMaterializeStatus::MaterializedExisting ||
+			status == PlayerSampleMaterializeStatus::MaterializedNew;
+		switch (status) {
+		case PlayerSampleMaterializeStatus::MaterializedExisting:
+			++result.materialized_existing_slots;
+			break;
+		case PlayerSampleMaterializeStatus::MaterializedNew:
+			++result.materialized_new_slots;
+			break;
+		case PlayerSampleMaterializeStatus::NoPlayer:
+			++result.no_player_slots;
+			break;
+		case PlayerSampleMaterializeStatus::InvalidSource:
+			++result.invalid_source_slots;
+			break;
+		case PlayerSampleMaterializeStatus::InvalidCapture:
+		case PlayerSampleMaterializeStatus::Count:
+		case PlayerSampleMaterializeStatus::EntityIdCounterExhausted:
+			++result.invalid_capture_slots;
+			break;
+		}
+	}
+	return result;
+}
+
+void SessionController::clear_player_observations() noexcept
+{
+	for (std::size_t index = 0U; index < m_config.max_clients; ++index) {
+		auto& slot = m_slots[index];
+		if (slot.progress == ProducerSessionProgress::Empty) {
+			continue;
+		}
+		(void)slot.player_entity_ids.invalidate();
+		slot.latest_player_sample = {};
+		slot.latest_player_sample_status = PlayerSampleMaterializeStatus::InvalidCapture;
+		slot.has_latest_player_sample = false;
+	}
+}
+
 std::size_t SessionController::active_slots() const noexcept
 {
 	std::size_t count = 0U;

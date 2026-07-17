@@ -1,5 +1,6 @@
 #pragma once
 
+#include "telemetry/entity_id_registry.h"
 #include "telemetry/identity.h"
 #include "telemetry/protocol/telemetry_rate_limiter.h"
 #include "telemetry/protocol/telemetry_clock.h"
@@ -17,6 +18,7 @@
 namespace telemetry::detail {
 
 enum class IoStatus : std::uint8_t;
+class SessionControllerPlayerTestAccess;
 
 enum class SessionControllerConfigureResult : std::uint8_t { Ready = 0, InvalidConfiguration, AllocationFailure };
 enum class SessionIngressDisposition : std::uint8_t {
@@ -109,6 +111,20 @@ struct SessionControllerSlot {
 	bool has_reliability_terminal_policy = false;
 	protocol::ReliableTerminalPolicy reliability_terminal_policy = protocol::ReliableTerminalPolicy::Drop;
 	HeartbeatState heartbeat;
+	EntityIdRegistry player_entity_ids;
+	PlayerKinematicsSample latest_player_sample;
+	PlayerSampleMaterializeStatus latest_player_sample_status = PlayerSampleMaterializeStatus::InvalidCapture;
+	bool has_latest_player_sample = false;
+};
+
+struct SessionPlayerMaterializationResult {
+	std::size_t eligible_slots = 0U;
+	std::size_t materialized_existing_slots = 0U;
+	std::size_t materialized_new_slots = 0U;
+	std::size_t no_player_slots = 0U;
+	std::size_t invalid_source_slots = 0U;
+	std::size_t invalid_capture_slots = 0U;
+	std::size_t closed_exhausted_slots = 0U;
 };
 
 enum class PreproofLedgerResult : std::uint8_t {
@@ -194,6 +210,9 @@ class SessionController final {
 	void service_timeouts(std::uint64_t now_us) noexcept;
 	void service_periodic(std::uint64_t now_us) noexcept;
 	void service_session_maintenance(std::uint64_t now_us) noexcept;
+	SessionPlayerMaterializationResult apply_player_observation(const CaptureResult& capture,
+		const PlayerObservationDto& observation) noexcept;
+	void clear_player_observations() noexcept;
 	void purge_all(SessionCloseReason reason) noexcept;
 	bool has_output() const noexcept { return m_has_output; }
 	std::size_t active_slots() const noexcept;
@@ -211,6 +230,8 @@ class SessionController final {
 	static std::size_t handshake_cache_storage_bytes() noexcept;
 
   private:
+	friend class SessionControllerPlayerTestAccess;
+
 	struct CacheEntry {
 		bool used = false;
 		protocol::EndpointKey endpoint;

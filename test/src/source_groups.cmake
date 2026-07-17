@@ -118,6 +118,7 @@ add_file_folder("Telemetry\\\\Protocol"
 )
 
 add_file_folder("Telemetry\\\\Producer"
+	telemetry/producer/telemetry_session_controller_player_test_access.h
 	telemetry/producer/test_telemetry_capture_scheduler_contract.cpp
 	telemetry/producer/test_telemetry_config_contract.cpp
 	telemetry/producer/test_telemetry_datagram_scheduler_contract.cpp
@@ -128,6 +129,7 @@ add_file_folder("Telemetry\\\\Producer"
 	telemetry/producer/test_telemetry_initialize.cpp
 	telemetry/producer/test_telemetry_native_runtime_integration_contract.cpp
 	telemetry/producer/test_telemetry_native_runtime_loopback_contract.cpp
+	telemetry/producer/test_telemetry_player_observation_slot_contract.cpp
 	telemetry/producer/test_telemetry_runtime_lifecycle_contract.cpp
 	telemetry/producer/test_telemetry_runtime_startup_contract.cpp
 	telemetry/producer/test_telemetry_session_controller_contract.cpp

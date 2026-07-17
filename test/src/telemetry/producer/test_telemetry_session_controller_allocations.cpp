@@ -1,6 +1,8 @@
 #include "telemetry/session_controller.h"
 
+#include "telemetry/entity_id_registry.h"
 #include "telemetry/native_session_runtime.h"
+#include "telemetry_session_controller_player_test_access.h"
 
 #include "telemetry/protocol/telemetry_control_messages.h"
 #include "telemetry/protocol/telemetry_crc32.h"
@@ -17,6 +19,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
+#include <limits>
 #include <new>
 #include <optional>
 #include <type_traits>
@@ -183,10 +186,12 @@ struct Datagram {
 	std::size_t size = 0U;
 };
 
-protocol::EndpointKey test_endpoint()
+protocol::EndpointKey test_endpoint(std::uint8_t suffix)
 {
-	return protocol::EndpointKey::from_ipv4({127U, 0U, 0U, 2U}, 42043U);
+	return protocol::EndpointKey::from_ipv4({127U, 0U, 0U, suffix}, static_cast<std::uint16_t>(42041U + suffix));
 }
+
+protocol::EndpointKey test_endpoint() { return test_endpoint(2U); }
 
 Datagram encode_message(protocol::TelemetryDatagramHeader header, protocol::ByteView payload)
 {
@@ -200,10 +205,10 @@ Datagram encode_message(protocol::TelemetryDatagramHeader header, protocol::Byte
 	return result;
 }
 
-Datagram make_hello()
+Datagram make_hello(std::uint64_t nonce, std::uint32_t sequence, std::uint32_t message_id)
 {
 	protocol::HelloPayload hello;
-	hello.client_nonce = 0x1234U;
+	hello.client_nonce = nonce;
 	hello.client_send_t0_us = 1'000U;
 	hello.min_major = protocol::VersionMajor;
 	hello.max_major = protocol::VersionMajor;
@@ -218,13 +223,17 @@ Datagram make_hello()
 	protocol::TelemetryDatagramHeader header;
 	header.version_minor = protocol::VersionMinorV1_1;
 	header.message_type = protocol::MessageType::Hello;
-	header.packet_sequence = 7U;
+	header.packet_sequence = sequence;
 	header.sent_time_us = 1'000U;
-	header.message_id = 1U;
+	header.message_id = message_id;
 	header.message_size = static_cast<std::uint32_t>(written);
 	header.message_crc32 = protocol::crc32_iso_hdlc({payload.data(), written});
 	return encode_message(header, {payload.data(), written});
 }
+
+Datagram make_hello(std::uint64_t nonce, std::uint32_t sequence) { return make_hello(nonce, sequence, sequence); }
+
+Datagram make_hello() { return make_hello(0x1234U, 7U, 1U); }
 
 protocol::DatagramView decode_output(const detail::SessionControllerOutput& output)
 {
@@ -998,6 +1007,157 @@ TEST(TelemetryNativeAllocationContract, PermanentReceiveAndSendFailuresAllocateN
 		const auto shutdown_allocations = disarm_allocation_probe();
 		EXPECT_EQ(0U, shutdown_allocations);
 	}
+}
+
+template <typename Controller, typename = void>
+struct has_wp07_d2_allocation_api : std::false_type {};
+
+template <typename Controller>
+struct has_wp07_d2_allocation_api<Controller,
+	std::void_t<decltype(std::declval<Controller&>().apply_player_observation(
+		std::declval<const detail::CaptureResult&>(),
+		std::declval<const detail::PlayerObservationDto&>())),
+		decltype(std::declval<Controller&>().clear_player_observations())>> : std::true_type {};
+
+template <typename Access, typename Controller, typename = void>
+struct has_wp07_d2_allocation_seed : std::false_type {};
+
+template <typename Access, typename Controller>
+struct has_wp07_d2_allocation_seed<Access,
+	Controller,
+	std::void_t<decltype(Access::seed_last_allocated_entity_id(std::declval<Controller&>(),
+		std::declval<std::size_t>(),
+		std::declval<std::uint64_t>()))>> : std::true_type {};
+
+template <typename Controller, typename Access>
+void expect_wp07_d2_paths_allocate_nothing()
+{
+	if constexpr (!has_wp07_d2_allocation_api<Controller>::value ||
+		!has_wp07_d2_allocation_seed<Access, Controller>::value) {
+		FAIL() << "WP07-D2 allocation contract requires per-slot apply/clear/seed seams.";
+	} else {
+		FixedRandom ids_random;
+		ids_random.draws = {{0x1111U, 0x2222U, 0x3333U, 0x4444U}};
+		ids_random.count = ids_random.draws.size();
+		FixedRandom sequences;
+		sequences.draws = {{0x101U, 0x102U, 0x103U, 0x104U}};
+		sequences.count = sequences.draws.size();
+		detail::SessionIdRegistry registry;
+		ASSERT_TRUE(registry.allocate_storage());
+		detail::SessionIdAllocator ids(ids_random, registry);
+		detail::SessionControllerConfig config;
+		config.max_clients = 2U;
+		config.producer_id = 0x1020304050607080ULL;
+		config.mission_heartbeat_ms = 500U;
+		config.idle_heartbeat_ms = 1000U;
+		config.security.enabled = true;
+		config.security.port = 42042U;
+		config.security.bind_mode = protocol::NetworkBindMode::LoopbackOnly;
+		config.security.resources.max_clients = 2U;
+		config.security.resources.global_state_reassembly_bytes = 2U * protocol::MaxStateReassemblyBytesPerClient;
+		Controller controller;
+		ASSERT_EQ(detail::SessionControllerConfigureResult::Ready,
+			Controller::configure(config, ids, sequences, 0U, nullptr, controller));
+
+		detail::CaptureResult valid{};
+		valid.status = detail::CaptureStatus::Valid;
+		valid.reason = detail::CaptureReason::None;
+		detail::PlayerObservationDto observation{};
+		observation.key.object_signature = 42U;
+		observation.value.orientation_local_to_world.w = 1.0f;
+		observation.value.radius = 1.0f;
+		auto measure = [&](auto&& operation) {
+			arm_allocation_probe();
+			operation();
+			return disarm_allocation_probe();
+		};
+		EXPECT_EQ(0U, measure([&] { (void)controller.apply_player_observation(valid, observation); }))
+			<< "Empty apply allocated";
+
+		const auto peer_a = test_endpoint(2U);
+		const auto peer_b = test_endpoint(3U);
+		const auto request = make_hello(0x1234U, 7U);
+		ASSERT_EQ(detail::SessionIngressDisposition::ResponseQueued,
+			controller.ingest(peer_a, {request.bytes.data(), request.size}, 1'000U, 1U, true).disposition);
+		EXPECT_EQ(0U, measure([&] { (void)controller.apply_player_observation(valid, observation); }))
+			<< "AwaitWelcome apply allocated";
+		detail::SessionControllerOutput welcome_output;
+		ASSERT_TRUE(controller.pop_output(welcome_output));
+		const auto welcome = decode_output(welcome_output);
+		const auto welcome_ack = make_ack(welcome, 8U);
+		ASSERT_EQ(detail::SessionIngressDisposition::WelcomeProofApplied,
+			controller.ingest(peer_a, {welcome_ack.bytes.data(), welcome_ack.size}, 2'000U, 1U, true).disposition);
+		detail::SessionControllerOutput begin_output;
+		ASSERT_TRUE(controller.pop_output(begin_output));
+		const auto begin = decode_output(begin_output);
+		const auto begin_ack = make_ack(begin, 10U);
+		ASSERT_EQ(detail::SessionIngressDisposition::ResponseQueued,
+			controller.ingest(peer_a, {begin_ack.bytes.data(), begin_ack.size}, 3'000U, 1U, true).disposition);
+		ASSERT_EQ(detail::ProducerSessionProgress::ReadyForState, controller.slot(0U).progress);
+
+		const auto request_b = make_hello(0x5678U, 17U);
+		ASSERT_EQ(detail::SessionIngressDisposition::ResponseQueued,
+			controller.ingest(peer_b, {request_b.bytes.data(), request_b.size}, 4'000U, 1U, true).disposition);
+		detail::SessionControllerOutput welcome_output_b;
+		ASSERT_TRUE(controller.pop_output(welcome_output_b));
+		const auto welcome_b = decode_output(welcome_output_b);
+		const auto welcome_ack_b = make_ack(welcome_b, 18U);
+		ASSERT_EQ(detail::SessionIngressDisposition::WelcomeProofApplied,
+			controller.ingest(peer_b, {welcome_ack_b.bytes.data(), welcome_ack_b.size}, 5'000U, 1U, true).disposition);
+		detail::SessionControllerOutput begin_output_b;
+		ASSERT_TRUE(controller.pop_output(begin_output_b));
+		const auto begin_b = decode_output(begin_output_b);
+		const auto begin_ack_b = make_ack(begin_b, 20U);
+		ASSERT_EQ(detail::SessionIngressDisposition::ResponseQueued,
+			controller.ingest(peer_b, {begin_ack_b.bytes.data(), begin_ack_b.size}, 6'000U, 1U, true).disposition);
+		ASSERT_EQ(detail::ProducerSessionProgress::ReadyForState, controller.slot(1U).progress);
+
+		EXPECT_EQ(0U, measure([&] { (void)controller.apply_player_observation(valid, observation); }));
+		EXPECT_EQ(0U, measure([&] { (void)controller.apply_player_observation(valid, observation); }));
+		observation.key.object_signature = 77U;
+		EXPECT_EQ(0U, measure([&] { (void)controller.apply_player_observation(valid, observation); }));
+		for (std::uint8_t status_value = 0U;
+			status_value <= static_cast<std::uint8_t>(detail::CaptureStatus::Count);
+			++status_value) {
+			for (std::uint8_t reason_value = 0U;
+				reason_value <= static_cast<std::uint8_t>(detail::CaptureReason::Count);
+				++reason_value) {
+				const auto status = static_cast<detail::CaptureStatus>(status_value);
+				const auto reason = static_cast<detail::CaptureReason>(reason_value);
+				if (status == detail::CaptureStatus::Valid && reason == detail::CaptureReason::None) continue;
+				detail::CaptureResult closed{};
+				closed.status = status;
+				closed.reason = reason;
+				EXPECT_EQ(0U, measure([&] { (void)controller.apply_player_observation(closed, observation); }));
+			}
+		}
+		observation.key.object_signature = 0U;
+		EXPECT_EQ(0U, measure([&] { (void)controller.apply_player_observation(valid, observation); }));
+		observation.key.object_signature = 77U;
+		EXPECT_EQ(0U, measure([&] { controller.clear_player_observations(); }));
+		EXPECT_EQ(0U, measure([&] { controller.clear_player_observations(); }));
+
+		controller.service_timeouts(controller.slot(0U).heartbeat.last_valid_clock_response_us +
+			controller.slot(0U).heartbeat.stale_timeout_us);
+		ASSERT_EQ(detail::ProducerSessionProgress::Stale, controller.slot(0U).progress);
+		EXPECT_EQ(0U, measure([&] { (void)controller.apply_player_observation(valid, observation); }))
+			<< "Stale apply allocated";
+		ASSERT_TRUE(Access::seed_last_allocated_entity_id(
+			controller, 0U, std::numeric_limits<std::uint64_t>::max()));
+		EXPECT_EQ(0U, measure([&] { (void)controller.apply_player_observation(valid, observation); }))
+			<< "Counter-exhausted close allocated";
+		ASSERT_EQ(detail::ProducerSessionProgress::Empty, controller.slot(0U).progress);
+		EXPECT_EQ(0U, measure([&] { (void)controller.close_slot(1U, detail::SessionCloseReason::Timeout); }))
+			<< "Explicit D2 slot close allocated";
+		EXPECT_EQ(0U, measure([&] { controller.purge_all(detail::SessionCloseReason::MissionDiscontinuity); }))
+			<< "D2 purge allocated";
+	}
+}
+
+TEST(TelemetryWp07D2AllocationContract, EveryPostConfigureOwnershipAndMaterializationPathAllocatesNothing)
+{
+	expect_wp07_d2_paths_allocate_nothing<detail::SessionController,
+		detail::SessionControllerPlayerTestAccess>();
 }
 
 } // namespace
