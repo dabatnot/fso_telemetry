@@ -10,8 +10,11 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <limits>
 
 namespace telemetry::detail {
+
+enum class IoStatus : std::uint8_t;
 
 enum class SessionControllerConfigureResult : std::uint8_t { Ready = 0, InvalidConfiguration, AllocationFailure };
 enum class SessionIngressDisposition : std::uint8_t {
@@ -46,7 +49,7 @@ enum class SessionIngressStage : std::uint8_t {
 	Payload,
 	SessionMutation,
 };
-enum class ProducerSessionProgress : std::uint8_t { Empty = 0, AwaitWelcomeApplied, ReadyForState };
+enum class ProducerSessionProgress : std::uint8_t { Empty = 0, AwaitWelcomeApplied, ReadyForState, Stale };
 enum class SessionCloseReason : std::uint8_t { ProtocolError = 0, Timeout, MissionDiscontinuity, TransportError, Shutdown };
 
 struct SessionIngressResult {
@@ -89,6 +92,8 @@ struct SessionControllerSlot {
 	std::size_t reliable_items_in_use = 0U;
 	std::uint64_t preproof_validated_bytes_received = 0U;
 	std::uint64_t preproof_bytes_sent = 0U;
+	bool has_reliability_terminal_policy = false;
+	protocol::ReliableTerminalPolicy reliability_terminal_policy = protocol::ReliableTerminalPolicy::Drop;
 };
 
 enum class PreproofLedgerResult : std::uint8_t {
@@ -168,6 +173,9 @@ class SessionController final {
 		std::uint32_t mission_generation,
 		bool mission_active) noexcept;
 	bool pop_output(SessionControllerOutput& output) noexcept;
+	bool peek_output(SessionControllerOutput& output) const noexcept;
+	void complete_output(IoStatus status) noexcept;
+	void service_reliability(std::uint64_t now_us) noexcept;
 	bool has_output() const noexcept { return m_has_output; }
 	std::size_t active_slots() const noexcept;
 	const SessionControllerSlot& slot(std::size_t index) const noexcept { return m_slots[index]; }
@@ -208,7 +216,14 @@ class SessionController final {
 	void release_cache_preproof(CacheEntry& entry) noexcept;
 	void remove_cache_for_session(std::uint64_t session_id) noexcept;
 	void clear_all() noexcept;
-	bool queue_bytes(const protocol::EndpointKey& endpoint, const std::uint8_t* bytes, std::size_t size) noexcept;
+	bool queue_bytes(const protocol::EndpointKey& endpoint,
+		const std::uint8_t* bytes,
+		std::size_t size,
+		std::size_t owner_slot = std::numeric_limits<std::size_t>::max()) noexcept;
+	void apply_terminal_policy(std::size_t slot_index, protocol::ReliableTerminalPolicy policy) noexcept;
+	bool queue_retransmission(std::size_t slot_index,
+		const protocol::ReliableWindowAction& action,
+		std::uint64_t now_us) noexcept;
 	SessionIngressResult ingest_hello(const protocol::EndpointKey& endpoint,
 		const protocol::DatagramView& decoded,
 		std::size_t received_size,
@@ -234,10 +249,15 @@ class SessionController final {
 	std::size_t m_cache_size = 0U;
 	PreproofAmplificationLedger m_preproof;
 	SessionControllerOutput m_output{};
+	std::size_t m_output_owner_slot = std::numeric_limits<std::size_t>::max();
+	std::size_t m_pending_reliability_slot = std::numeric_limits<std::size_t>::max();
+	std::uint64_t m_pending_reliability_time_us = 0U;
+	std::size_t m_reliability_cursor = 0U;
 	bool m_has_output = false;
+	bool m_output_reliability_pending = false;
+	bool m_pending_preproof_send_accounted = false;
 	bool m_ready = false;
 	bool m_faulted = false;
-	std::uint32_t m_fallback_packet_sequence = 1U;
 };
 
 } // namespace telemetry::detail

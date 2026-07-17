@@ -4,6 +4,7 @@
 #include "telemetry/protocol/telemetry_crc32.h"
 #include "telemetry/protocol/telemetry_datagram.h"
 #include "telemetry/protocol/telemetry_reliability_messages.h"
+#include "telemetry/transport.h"
 
 #include <algorithm>
 #include <cstring>
@@ -314,7 +315,8 @@ bool SessionController::next_packet_sequence(std::uint32_t& sequence) noexcept
 
 bool SessionController::queue_bytes(const protocol::EndpointKey& endpoint,
 	const std::uint8_t* bytes,
-	std::size_t size) noexcept
+	std::size_t size,
+	std::size_t owner_slot) noexcept
 {
 	if (m_has_output || size > m_output.bytes.size()) {
 		return false;
@@ -323,8 +325,60 @@ bool SessionController::queue_bytes(const protocol::EndpointKey& endpoint,
 	m_output.endpoint = endpoint;
 	std::memcpy(m_output.bytes.data(), bytes, size);
 	m_output.size = size;
+	m_output_owner_slot = owner_slot;
 	m_has_output = true;
 	return true;
+}
+
+bool SessionController::queue_retransmission(std::size_t slot_index,
+	const protocol::ReliableWindowAction& action,
+	std::uint64_t now_us) noexcept
+{
+	if (slot_index >= m_config.max_clients || action.kind != protocol::ReliableWindowActionKind::Retransmit) {
+		return false;
+	}
+	const auto& retransmission = action.retransmission;
+	protocol::TelemetryDatagramHeader header;
+	header.version_minor = protocol::VersionMinorV1_1;
+	header.message_type = retransmission.key.message_type;
+	header.flags = static_cast<std::uint8_t>(retransmission.base_flags | protocol::MessageFlagRetransmission);
+	header.session_id = retransmission.key.session_id;
+	header.packet_sequence = m_slots[slot_index].next_packet_sequence;
+	header.frame_id = retransmission.frame_id;
+	header.mission_time_us = retransmission.mission_time_us;
+	header.sent_time_us = now_us;
+	header.message_id = retransmission.key.message_id;
+	header.fragment_count = retransmission.key.fragment_count;
+	std::array<std::uint8_t, protocol::MaxDatagramSize> encoded{};
+	std::size_t encoded_size = 0U;
+	if (!encode_control_datagram(header, retransmission.logical_payload, encoded, encoded_size) ||
+		!queue_bytes(m_slots[slot_index].endpoint, encoded.data(), encoded_size, slot_index)) {
+		return false;
+	}
+	m_output_reliability_pending = true;
+	m_pending_preproof_send_accounted = false;
+	m_pending_reliability_slot = slot_index;
+	m_pending_reliability_time_us = now_us;
+	return true;
+}
+
+void SessionController::apply_terminal_policy(std::size_t slot_index,
+	protocol::ReliableTerminalPolicy policy) noexcept
+{
+	if (slot_index >= m_config.max_clients) {
+		return;
+	}
+	if (policy == protocol::ReliableTerminalPolicy::CloseSession) {
+		(void)close_slot(slot_index, SessionCloseReason::ProtocolError);
+		return;
+	}
+	auto& slot = m_slots[slot_index];
+	if (policy == protocol::ReliableTerminalPolicy::MarkSessionStale) {
+		slot.progress = ProducerSessionProgress::Stale;
+		slot.has_reliability_terminal_policy = true;
+		slot.reliability_terminal_policy = policy;
+	}
+	slot.reliable_items_in_use = m_reliable_windows[slot_index].entry_count();
 }
 
 SessionIngressResult SessionController::ingest(const protocol::EndpointKey& endpoint,
@@ -402,7 +456,10 @@ SessionIngressResult SessionController::ingest_hello(const protocol::EndpointKey
 			cached.accounted_sent += cached.size;
 			cached.preproof_active = true;
 		}
-		if (!queue_bytes(endpoint, cached.bytes.data(), cached.size)) {
+		if (!queue_bytes(endpoint,
+			cached.bytes.data(),
+			cached.size,
+			cached.session_id == 0U ? InvalidIndex : find_slot(endpoint, cached.session_id))) {
 			return dropped(SessionIngressDropReason::OutputBusy);
 		}
 		return {SessionIngressDisposition::CachedResponseQueued, SessionIngressDropReason::None};
@@ -533,7 +590,7 @@ SessionIngressResult SessionController::ingest_hello(const protocol::EndpointKey
 		slot.preproof_validated_bytes_received = account.validated_bytes_received;
 		slot.preproof_bytes_sent = account.bytes_sent;
 	}
-	if (!queue_bytes(endpoint, encoded.data(), encoded_size)) {
+	if (!queue_bytes(endpoint, encoded.data(), encoded_size, supported ? slot_index : InvalidIndex)) {
 		return dropped(SessionIngressDropReason::OutputBusy);
 	}
 	return {SessionIngressDisposition::ResponseQueued, SessionIngressDropReason::None};
@@ -552,7 +609,29 @@ SessionIngressResult SessionController::ingest_ack(const protocol::EndpointKey& 
 	}
 	auto& slot = m_slots[awaiting];
 	if (slot.progress != ProducerSessionProgress::AwaitWelcomeApplied) {
-		return dropped(SessionIngressDropReason::WelcomeProofMismatch);
+		if (slot.progress != ProducerSessionProgress::ReadyForState) {
+			return dropped(SessionIngressDropReason::PayloadInvalid);
+		}
+		stage(SessionIngressStage::AntiAmplification);
+		stage(SessionIngressStage::Payload);
+		protocol::AckPayload ack;
+		if (protocol::decode_ack_payload(decoded.payload, ack) != protocol::ValidationError::None ||
+			m_rate_limiter->consume_ack_nack(slot.session_id,
+				endpoint,
+				{static_cast<std::uint8_t>(ack.target_message_type), ack.target_message_id,
+					ack.target_message_crc32},
+				now_us) != protocol::ProtocolRateLimitResult::Allowed) {
+			return dropped(SessionIngressDropReason::PayloadInvalid);
+		}
+		const auto response = m_reliable_windows[awaiting].acknowledge(slot.session_id, endpoint, ack, now_us);
+		if (response != protocol::ReliableResponseResult::ValidatedRetained &&
+			response != protocol::ReliableResponseResult::Duplicate &&
+			response != protocol::ReliableResponseResult::Released) {
+			return dropped(SessionIngressDropReason::PayloadInvalid);
+		}
+		stage(SessionIngressStage::SessionMutation);
+		slot.reliable_items_in_use = m_reliable_windows[awaiting].entry_count();
+		return {SessionIngressDisposition::ResponseQueued, SessionIngressDropReason::None};
 	}
 	if (m_rate_limiter->consume_ack_nack(slot.session_id,
 			endpoint,
@@ -623,7 +702,7 @@ SessionIngressResult SessionController::ingest_ack(const protocol::EndpointKey& 
 	retained.required_ack = protocol::RequiredAckLevel::Applied;
 	retained.message_class = protocol::ReliableMessageClass::SessionCritical;
 	if (m_reliable_windows[awaiting].retain(retained, now_us) != protocol::ReliableRetainResult::Retained ||
-		!queue_bytes(endpoint, encoded.data(), encoded_size)) {
+		!queue_bytes(endpoint, encoded.data(), encoded_size, awaiting)) {
 		return dropped(SessionIngressDropReason::OutputBusy);
 	}
 	stage(SessionIngressStage::SessionMutation);
@@ -677,38 +756,49 @@ SessionIngressResult SessionController::ingest_nack(const protocol::EndpointKey&
 	}
 	const auto saved_window = m_reliable_windows[index];
 	protocol::ReliableNackDecision decision;
-	if (m_reliable_windows[index].reject(slot.session_id, endpoint, nack, now_us, decision) !=
-		protocol::ReliableResponseResult::ValidatedRetained) {
+	const auto response = m_reliable_windows[index].reject(slot.session_id, endpoint, nack, now_us, decision);
+	if (response == protocol::ReliableResponseResult::Released &&
+		decision.kind == protocol::ReliableNackDecisionKind::TerminalPolicy) {
+		if (preproof) {
+			m_preproof.release_contribution(endpoint, received_size, 0U);
+		}
+		slot.reliable_items_in_use = m_reliable_windows[index].entry_count();
+		apply_terminal_policy(index, decision.terminal_policy);
+		stage(SessionIngressStage::SessionMutation);
+		return {SessionIngressDisposition::ResponseQueued, SessionIngressDropReason::None};
+	}
+	if (response != protocol::ReliableResponseResult::ValidatedRetained) {
 		m_reliable_windows[index] = saved_window;
 		if (preproof) {
 			m_preproof.release_contribution(endpoint, received_size, 0U);
 		}
 		return dropped(SessionIngressDropReason::PayloadInvalid);
 	}
+	if (decision.kind == protocol::ReliableNackDecisionKind::WaitForScheduledRetry) {
+		if (preproof && cache_index != InvalidIndex) {
+			if (add_would_overflow(m_cache[cache_index].accounted_received, received_size)) {
+				m_reliable_windows[index] = saved_window;
+				m_preproof.release_contribution(endpoint, received_size, 0U);
+				return dropped(SessionIngressDropReason::AntiAmplificationLimit);
+			}
+			m_cache[cache_index].accounted_received += received_size;
+			m_cache[cache_index].preproof_active = true;
+		}
+		if (preproof) {
+			const auto account = m_preproof.account(endpoint);
+			slot.preproof_validated_bytes_received = account.validated_bytes_received;
+			slot.preproof_bytes_sent = account.bytes_sent;
+		}
+		slot.reliable_items_in_use = m_reliable_windows[index].entry_count();
+		stage(SessionIngressStage::SessionMutation);
+		return {SessionIngressDisposition::ResponseQueued, SessionIngressDropReason::None};
+	}
+	auto preview = m_reliable_windows[index];
 	protocol::ReliableWindowAction action;
-	if (m_reliable_windows[index].pull_next_action(now_us, action) != protocol::ReliablePullResult::Action ||
-		action.kind != protocol::ReliableWindowActionKind::Retransmit) {
-		m_reliable_windows[index] = saved_window;
-		if (preproof) {
-			m_preproof.release_contribution(endpoint, received_size, 0U);
-		}
-		return dropped(SessionIngressDropReason::PayloadInvalid);
-	}
-	const auto& retransmission = action.retransmission;
-	protocol::TelemetryDatagramHeader header;
-	header.version_minor = protocol::VersionMinorV1_1;
-	header.message_type = retransmission.key.message_type;
-	header.flags = static_cast<std::uint8_t>(retransmission.base_flags | protocol::MessageFlagRetransmission);
-	header.session_id = retransmission.key.session_id;
-	header.packet_sequence = slot.next_packet_sequence;
-	header.frame_id = retransmission.frame_id;
-	header.mission_time_us = retransmission.mission_time_us;
-	header.sent_time_us = now_us;
-	header.message_id = retransmission.key.message_id;
-	header.fragment_count = retransmission.key.fragment_count;
-	std::array<std::uint8_t, protocol::MaxDatagramSize> encoded{};
-	std::size_t encoded_size = 0U;
-	if (!encode_control_datagram(header, retransmission.logical_payload, encoded, encoded_size)) {
+	if ((decision.kind != protocol::ReliableNackDecisionKind::SelectiveRetransmissionScheduled &&
+			decision.kind != protocol::ReliableNackDecisionKind::FullRetransmissionScheduled) ||
+		preview.pull_next_action(now_us, action) != protocol::ReliablePullResult::Action ||
+		action.kind != protocol::ReliableWindowActionKind::Retransmit || !queue_retransmission(index, action, now_us)) {
 		m_reliable_windows[index] = saved_window;
 		if (preproof) {
 			m_preproof.release_contribution(endpoint, received_size, 0U);
@@ -718,38 +808,171 @@ SessionIngressResult SessionController::ingest_nack(const protocol::EndpointKey&
 	if (preproof &&
 		((cache_index != InvalidIndex &&
 			(add_would_overflow(m_cache[cache_index].accounted_received, received_size) ||
-				add_would_overflow(m_cache[cache_index].accounted_sent, encoded_size))) ||
-			m_preproof.try_account_send(endpoint, encoded_size) != PreproofLedgerResult::Allowed)) {
+				add_would_overflow(m_cache[cache_index].accounted_sent, m_output.size))) ||
+			m_preproof.try_account_send(endpoint, m_output.size) != PreproofLedgerResult::Allowed)) {
 		m_reliable_windows[index] = saved_window;
 		m_preproof.release_contribution(endpoint, received_size, 0U);
+		m_output = {};
+		m_has_output = false;
+		m_output_owner_slot = InvalidIndex;
+		m_output_reliability_pending = false;
+		m_pending_reliability_slot = InvalidIndex;
 		return dropped(SessionIngressDropReason::AntiAmplificationLimit);
-	}
-	if (!queue_bytes(endpoint, encoded.data(), encoded_size)) {
-		m_reliable_windows[index] = saved_window;
-		if (preproof) {
-			m_preproof.release_contribution(endpoint, received_size, encoded_size);
-		}
-		return dropped(SessionIngressDropReason::OutputBusy);
 	}
 	if (preproof && cache_index != InvalidIndex) {
 		m_cache[cache_index].accounted_received += received_size;
-		m_cache[cache_index].accounted_sent += encoded_size;
+		m_cache[cache_index].accounted_sent += m_output.size;
 		m_cache[cache_index].preproof_active = true;
 	}
-	++slot.next_packet_sequence;
+	if (preproof) {
+		const auto account = m_preproof.account(endpoint);
+		slot.preproof_validated_bytes_received = account.validated_bytes_received;
+		slot.preproof_bytes_sent = account.bytes_sent;
+	}
+	m_pending_preproof_send_accounted = preproof;
 	stage(SessionIngressStage::SessionMutation);
 	return {SessionIngressDisposition::ResponseQueued, SessionIngressDropReason::None};
 }
 
 bool SessionController::pop_output(SessionControllerOutput& output) noexcept
 {
+	if (!peek_output(output)) {
+		return false;
+	}
+	complete_output(IoStatus::Complete);
+	return true;
+}
+
+bool SessionController::peek_output(SessionControllerOutput& output) const noexcept
+{
 	if (!m_has_output) {
 		return false;
 	}
 	output = m_output;
+	return true;
+}
+
+void SessionController::complete_output(IoStatus status) noexcept
+{
+	if (!m_has_output || status == IoStatus::WouldBlock) {
+		return;
+	}
+	const auto owner = m_output_owner_slot;
+	if (status == IoStatus::Complete && m_output_reliability_pending &&
+		m_pending_reliability_slot < m_config.max_clients &&
+		m_slots[m_pending_reliability_slot].progress != ProducerSessionProgress::Empty) {
+		const auto slot_index = m_pending_reliability_slot;
+		if (!m_pending_preproof_send_accounted &&
+			m_slots[slot_index].progress == ProducerSessionProgress::AwaitWelcomeApplied) {
+			if (m_preproof.try_account_send(m_slots[slot_index].endpoint, m_output.size) ==
+				PreproofLedgerResult::Allowed) {
+				for (auto& cache : m_cache) {
+					if (cache.used && cache.session_id == m_slots[slot_index].session_id &&
+						!add_would_overflow(cache.accounted_sent, m_output.size)) {
+						cache.accounted_sent += m_output.size;
+						cache.preproof_active = true;
+						break;
+					}
+				}
+				const auto account = m_preproof.account(m_slots[slot_index].endpoint);
+				m_slots[slot_index].preproof_validated_bytes_received = account.validated_bytes_received;
+				m_slots[slot_index].preproof_bytes_sent = account.bytes_sent;
+			}
+		}
+		protocol::ReliableWindowAction committed;
+		if (m_reliable_windows[slot_index].pull_next_action(m_pending_reliability_time_us, committed) ==
+				protocol::ReliablePullResult::Action &&
+			committed.kind == protocol::ReliableWindowActionKind::Retransmit) {
+			++m_slots[slot_index].next_packet_sequence;
+		}
+		m_slots[slot_index].reliable_items_in_use = m_reliable_windows[slot_index].entry_count();
+	}
 	m_output = SessionControllerOutput{};
 	m_has_output = false;
-	return true;
+	m_output_owner_slot = InvalidIndex;
+	m_output_reliability_pending = false;
+	m_pending_preproof_send_accounted = false;
+	m_pending_reliability_slot = InvalidIndex;
+	m_pending_reliability_time_us = 0U;
+	if ((status == IoStatus::Closed || status == IoStatus::Error) && owner < m_config.max_clients) {
+		(void)close_slot(owner, SessionCloseReason::TransportError);
+	}
+}
+
+void SessionController::service_reliability(std::uint64_t now_us) noexcept
+{
+	if (!m_ready || m_faulted || m_config.max_clients == 0U) {
+		return;
+	}
+	if (m_has_output) {
+		for (std::size_t offset = 0U; offset < m_config.max_clients; ++offset) {
+			const auto index = (m_reliability_cursor + offset) % m_config.max_clients;
+			const auto progress = m_slots[index].progress;
+			if (progress == ProducerSessionProgress::Empty || progress == ProducerSessionProgress::Stale) {
+				continue;
+			}
+			auto preview = m_reliable_windows[index];
+			protocol::ReliableWindowAction action;
+			if (preview.pull_next_action(now_us, action) != protocol::ReliablePullResult::Action ||
+				action.kind != protocol::ReliableWindowActionKind::TerminalPolicy) {
+				continue;
+			}
+			protocol::ReliableWindowAction committed;
+			if (m_reliable_windows[index].pull_next_action(now_us, committed) !=
+					protocol::ReliablePullResult::Action ||
+				committed.kind != protocol::ReliableWindowActionKind::TerminalPolicy) {
+				continue;
+			}
+			m_reliability_cursor = (index + 1U) % m_config.max_clients;
+			if (m_output_owner_slot == index) {
+				m_output = {};
+				m_has_output = false;
+				m_output_owner_slot = InvalidIndex;
+				m_output_reliability_pending = false;
+				m_pending_preproof_send_accounted = false;
+				m_pending_reliability_slot = InvalidIndex;
+				m_pending_reliability_time_us = 0U;
+			}
+			apply_terminal_policy(index, committed.terminal_policy);
+			return;
+		}
+		return;
+	}
+	for (std::size_t offset = 0U; offset < m_config.max_clients; ++offset) {
+		const auto index = (m_reliability_cursor + offset) % m_config.max_clients;
+		const auto progress = m_slots[index].progress;
+		if (progress == ProducerSessionProgress::Empty || progress == ProducerSessionProgress::Stale) {
+			continue;
+		}
+		auto preview = m_reliable_windows[index];
+		protocol::ReliableWindowAction action;
+		if (preview.pull_next_action(now_us, action) != protocol::ReliablePullResult::Action) {
+			continue;
+		}
+		m_reliability_cursor = (index + 1U) % m_config.max_clients;
+		if (action.kind == protocol::ReliableWindowActionKind::TerminalPolicy) {
+			protocol::ReliableWindowAction committed;
+			if (m_reliable_windows[index].pull_next_action(now_us, committed) ==
+				protocol::ReliablePullResult::Action) {
+				apply_terminal_policy(index, committed.terminal_policy);
+			}
+			return;
+		}
+		if (progress == ProducerSessionProgress::AwaitWelcomeApplied) {
+			const auto account = m_preproof.account(m_slots[index].endpoint);
+			const auto maximum = std::numeric_limits<std::uint64_t>::max();
+			const auto limit = account.validated_bytes_received > maximum / 3U
+				? maximum
+				: account.validated_bytes_received * 3U;
+			const auto retransmission_size = protocol::HeaderSizeV1 + action.retransmission.logical_payload.size;
+			if (add_would_overflow(account.bytes_sent, retransmission_size) ||
+				account.bytes_sent + retransmission_size > limit) {
+				return;
+			}
+		}
+		(void)queue_retransmission(index, action, now_us);
+		return;
+	}
 }
 
 std::size_t SessionController::active_slots() const noexcept
@@ -790,6 +1013,15 @@ bool SessionController::close_slot(std::size_t index, SessionCloseReason) noexce
 	}
 	const auto old_session_id = m_slots[index].session_id;
 	const auto old_endpoint = m_slots[index].endpoint;
+	if (m_has_output && m_output_owner_slot == index) {
+		m_output = {};
+		m_has_output = false;
+		m_output_owner_slot = InvalidIndex;
+		m_output_reliability_pending = false;
+		m_pending_preproof_send_accounted = false;
+		m_pending_reliability_slot = InvalidIndex;
+		m_pending_reliability_time_us = 0U;
+	}
 	// Session IDs remain process-used in SessionIdRegistry; only slot-owned
 	// resources are released here.
 	remove_cache_for_session(old_session_id);
@@ -819,6 +1051,12 @@ void SessionController::clear_all() noexcept
 	(void)m_preproof.configure(protocol::HandshakeCacheCapacity);
 	m_output = {};
 	m_has_output = false;
+	m_output_owner_slot = InvalidIndex;
+	m_output_reliability_pending = false;
+	m_pending_preproof_send_accounted = false;
+	m_pending_reliability_slot = InvalidIndex;
+	m_pending_reliability_time_us = 0U;
+	m_reliability_cursor = 0U;
 }
 
 SessionControllerOwnedCapacity SessionController::owned_capacity() const noexcept

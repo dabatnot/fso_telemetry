@@ -4,6 +4,7 @@
 #include "telemetry/protocol/telemetry_crc32.h"
 #include "telemetry/protocol/telemetry_datagram.h"
 #include "telemetry/protocol/telemetry_reliability_messages.h"
+#include "telemetry/transport.h"
 
 #include <gtest/gtest.h>
 
@@ -13,6 +14,8 @@
 #include <cstdint>
 #include <cstdlib>
 #include <new>
+#include <type_traits>
+#include <utility>
 
 #if defined(_MSC_VER)
 #include <malloc.h>
@@ -278,6 +281,15 @@ Datagram make_nack(const protocol::DatagramView& target)
 	return encode_message(header, {payload.data(), written});
 }
 
+template <typename Controller, typename = void>
+struct has_wp06_reliability_service_and_transactional_egress : std::false_type {};
+
+template <typename Controller>
+struct has_wp06_reliability_service_and_transactional_egress<Controller,
+	std::void_t<decltype(std::declval<Controller&>().service_reliability(std::declval<std::uint64_t>())),
+		decltype(std::declval<const Controller&>().peek_output(std::declval<detail::SessionControllerOutput&>())),
+		decltype(std::declval<Controller&>().complete_output(std::declval<detail::IoStatus>()))>> : std::true_type {};
+
 TEST(TelemetryWp06AllocationContract, HelloAckNackAndRetransmissionAllocateNothingAfterReady)
 {
 	FixedRandom id_random;
@@ -334,6 +346,64 @@ TEST(TelemetryWp06AllocationContract, HelloAckNackAndRetransmissionAllocateNothi
 	ASSERT_EQ(detail::SessionIngressDisposition::ResponseQueued, nack_result.disposition);
 	ASSERT_TRUE(popped_retransmission);
 	EXPECT_EQ(0U, nack_allocations) << "NACK/retransmission allocated after Ready.";
+}
+
+template <typename Controller>
+void expect_reliability_service_allocates_nothing(Controller& controller,
+	const detail::SessionControllerOutput& retained_welcome)
+{
+	if constexpr (!has_wp06_reliability_service_and_transactional_egress<Controller>::value) {
+		FAIL() << "The WP06 reliability service/transactional egress seams are absent.";
+	} else {
+		const auto welcome = decode_output(retained_welcome);
+		const auto due = 1'000U + protocol::reliable_retry_delay_us(protocol::ReliableDefaultRtoUs,
+			0x4653544c5f52544fULL,
+			welcome.header.session_id,
+			welcome.header.message_id,
+			0U);
+		detail::SessionControllerOutput peeked;
+		arm_allocation_probe();
+		controller.service_reliability(due);
+		const auto exposed = controller.peek_output(peeked);
+		controller.complete_output(detail::IoStatus::WouldBlock);
+		const auto retained = controller.peek_output(peeked);
+		controller.complete_output(detail::IoStatus::Complete);
+		const auto allocations = disarm_allocation_probe();
+		EXPECT_TRUE(exposed);
+		EXPECT_TRUE(retained);
+		EXPECT_EQ(0U, allocations) << "RTO service or WouldBlock completion allocated after Ready.";
+	}
+}
+
+TEST(TelemetryWp06AllocationContract, ReliabilityServiceAndWouldBlockAllocateNothingAfterReady)
+{
+	EXPECT_TRUE(has_wp06_reliability_service_and_transactional_egress<detail::SessionController>::value);
+	FixedRandom id_random;
+	id_random.draws[0] = 0x7777U;
+	id_random.count = 1U;
+	detail::SessionIdRegistry registry;
+	ASSERT_TRUE(registry.allocate_storage());
+	detail::SessionIdAllocator ids(id_random, registry);
+	FixedRandom sequences;
+	sequences.draws[0] = 0x20304050U;
+	sequences.count = 1U;
+	detail::SessionControllerConfig config;
+	config.max_clients = 1U;
+	config.producer_id = 0x12345678U;
+	config.security.enabled = true;
+	config.security.port = 42042U;
+	config.security.bind_mode = protocol::NetworkBindMode::LoopbackOnly;
+	config.security.resources.max_clients = 1U;
+	config.security.resources.global_state_reassembly_bytes = protocol::MaxStateReassemblyBytesPerClient;
+	detail::SessionController controller;
+	ASSERT_EQ(detail::SessionControllerConfigureResult::Ready,
+		detail::SessionController::configure(config, ids, sequences, 0U, nullptr, controller));
+	const auto hello = make_hello();
+	ASSERT_EQ(detail::SessionIngressDisposition::ResponseQueued,
+		controller.ingest(test_endpoint(), {hello.bytes.data(), hello.size}, 1'000U, 0U, false).disposition);
+	detail::SessionControllerOutput welcome;
+	ASSERT_TRUE(controller.pop_output(welcome));
+	expect_reliability_service_allocates_nothing(controller, welcome);
 }
 
 } // namespace

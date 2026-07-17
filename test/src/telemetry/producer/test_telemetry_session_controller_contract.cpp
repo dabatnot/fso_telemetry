@@ -6,9 +6,11 @@
 #include "telemetry/protocol/telemetry_reliability_messages.h"
 #include "telemetry/protocol/telemetry_reliable_window.h"
 #include "telemetry/startup_budget.h"
+#include "telemetry/transport.h"
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -1289,6 +1291,571 @@ TEST(TelemetryWp06HandshakeContract, ControllerRequiresAnExplicitPacketSequenceE
 {
 	EXPECT_FALSE(accepts_legacy_packet_sequence_fallback<detail::SessionController>::value)
 		<< "The public fallback overload produces predictable process-global packet sequences.";
+}
+
+template <typename Controller, typename = void>
+struct has_wp06_reliability_service_and_transactional_egress : std::false_type {};
+
+template <typename Controller>
+struct has_wp06_reliability_service_and_transactional_egress<Controller,
+	std::void_t<decltype(std::declval<Controller&>().service_reliability(std::declval<std::uint64_t>())),
+		decltype(std::declval<const Controller&>().peek_output(std::declval<detail::SessionControllerOutput&>())),
+		decltype(std::declval<Controller&>().complete_output(std::declval<detail::IoStatus>()))>>
+	: std::bool_constant<noexcept(std::declval<Controller&>().service_reliability(std::declval<std::uint64_t>())) &&
+		noexcept(std::declval<const Controller&>().peek_output(std::declval<detail::SessionControllerOutput&>())) &&
+		noexcept(std::declval<Controller&>().complete_output(std::declval<detail::IoStatus>()))> {};
+
+protocol::AckPayload ack_for_target(const DecodedOutput& target, std::uint8_t flags)
+{
+	protocol::AckPayload payload;
+	payload.target_message_id = target.datagram.header.message_id;
+	payload.target_message_type = target.datagram.header.message_type;
+	payload.ack_flags = flags;
+	payload.target_fragment_count = target.datagram.header.fragment_count;
+	payload.target_message_crc32 = target.datagram.header.message_crc32;
+	return payload;
+}
+
+EncodedDatagram nack_for_target(const DecodedOutput& target,
+	protocol::NackReason reason,
+	std::uint32_t packet_sequence)
+{
+	std::array<std::uint8_t, 1U> bitmap{{1U}};
+	protocol::NackPayload nack;
+	nack.target_message_id = target.datagram.header.message_id;
+	nack.target_message_type = target.datagram.header.message_type;
+	nack.reason = reason;
+	nack.target_fragment_count = target.datagram.header.fragment_count;
+	nack.target_message_crc32 = target.datagram.header.message_crc32;
+	if (reason == protocol::NackReason::MissingFragments) {
+		nack.missing_bitmap = {bitmap.data(), bitmap.size()};
+	}
+	if (reason == protocol::NackReason::UnsupportedMessage) {
+		// The canonical encoder permits UnsupportedMessage only for an unknown
+		// target type. Encode that valid form, then make the target known so the
+		// controller's wire decoder exercises the required incoherent rejection.
+		nack.target_message_type = static_cast<protocol::MessageType>(0xfeU);
+	}
+	std::array<std::uint8_t, protocol::NackPayloadPrefixSize + 1U> payload{};
+	std::size_t written = 0U;
+	EXPECT_EQ(protocol::ValidationError::None,
+		protocol::encode_nack_payload(nack, {payload.data(), payload.size()}, written));
+	if (reason == protocol::NackReason::UnsupportedMessage) {
+		payload[4U] = static_cast<std::uint8_t>(target.datagram.header.message_type);
+	}
+	protocol::TelemetryDatagramHeader header;
+	header.version_minor = protocol::VersionMinorV1_1;
+	header.message_type = protocol::MessageType::Nack;
+	header.session_id = target.datagram.header.session_id;
+	header.packet_sequence = packet_sequence;
+	header.sent_time_us = 3'000U;
+	header.message_id = packet_sequence;
+	header.message_size = static_cast<std::uint32_t>(written);
+	header.message_crc32 = protocol::crc32_iso_hdlc({payload.data(), written});
+	return encode_datagram(header, {payload.data(), written});
+}
+
+DecodedOutput establish_session_begin(detail::SessionController& controller,
+	const protocol::EndpointKey& peer,
+	std::uint64_t nonce,
+	std::uint64_t hello_time_us,
+	std::uint64_t proof_time_us)
+{
+	const auto request = hello(nonce);
+	EXPECT_EQ(detail::SessionIngressDisposition::ResponseQueued,
+		controller.ingest(peer, view(request.bytes), hello_time_us, 0U, false).disposition);
+	const auto welcome = pop_output(controller);
+	const auto proof = applied_welcome_ack(welcome);
+	EXPECT_EQ(detail::SessionIngressDisposition::WelcomeProofApplied,
+		controller.ingest(peer, view(proof.bytes), proof_time_us, 0U, false).disposition);
+	return pop_output(controller);
+}
+
+template <typename Controller>
+void expect_session_begin_ack_lifecycle()
+{
+	IdentityHarness ids{{{true, 0x1111U}}};
+	auto controller = make_controller(ids.allocator);
+	const auto begin = establish_session_begin(controller, endpoint(), 10'001U, 1'000U, 2'000U);
+	ASSERT_EQ(1U, controller.slot(0U).reliable_items_in_use);
+	const auto validated_flags = static_cast<std::uint8_t>(protocol::AckFlag::Validated);
+	const auto validated = encode_welcome_ack(begin, ack_for_target(begin, validated_flags));
+	const auto first = controller.ingest(endpoint(), view(validated.bytes), 2'100U, 0U, false);
+	EXPECT_EQ(detail::SessionIngressDropReason::None, first.drop_reason);
+	EXPECT_NE(detail::SessionIngressDisposition::Dropped, first.disposition);
+	EXPECT_NE(detail::SessionIngressDisposition::Faulted, first.disposition);
+	EXPECT_EQ(1U, controller.slot(0U).reliable_items_in_use);
+	EXPECT_FALSE(controller.has_output());
+
+	const auto duplicate = controller.ingest(endpoint(), view(validated.bytes), 2'200U, 0U, false);
+	EXPECT_EQ(detail::SessionIngressDropReason::None, duplicate.drop_reason);
+	EXPECT_NE(detail::SessionIngressDisposition::Dropped, duplicate.disposition);
+	EXPECT_NE(detail::SessionIngressDisposition::Faulted, duplicate.disposition);
+	EXPECT_EQ(1U, controller.slot(0U).reliable_items_in_use)
+		<< "A duplicate VALIDATED ACK must remain accepted without releasing the exact tuple.";
+	EXPECT_FALSE(controller.has_output());
+
+	if constexpr (has_wp06_reliability_service_and_transactional_egress<Controller>::value) {
+		const auto due = 2'000U + protocol::reliable_retry_delay_us(protocol::ReliableDefaultRtoUs,
+			0x4653544c5f52544fULL,
+			begin.datagram.header.session_id,
+			begin.datagram.header.message_id,
+			0U);
+		controller.service_reliability(due);
+		EXPECT_FALSE(controller.has_output()) << "VALIDATED suppresses retries while awaiting APPLIED.";
+
+		auto forged_payload = ack_for_target(begin, protocol::KnownAckFlags);
+		++forged_payload.target_message_id;
+		const auto forged = encode_welcome_ack(begin, forged_payload);
+		const auto before_forged = controller.slot(0U);
+		const auto usage_before_forged = controller.owned_usage();
+		const auto forged_result = controller.ingest(endpoint(), view(forged.bytes), due + 1U, 0U, false);
+		EXPECT_NE(detail::SessionIngressDropReason::None, forged_result.drop_reason);
+		EXPECT_EQ(usage_before_forged, controller.owned_usage());
+		EXPECT_EQ(before_forged.progress, controller.slot(0U).progress);
+		EXPECT_EQ(before_forged.next_message_id, controller.slot(0U).next_message_id);
+		EXPECT_EQ(before_forged.next_packet_sequence, controller.slot(0U).next_packet_sequence);
+		EXPECT_EQ(1U, controller.slot(0U).reliable_items_in_use);
+		EXPECT_FALSE(controller.has_output());
+
+		const auto applied = encode_welcome_ack(begin, ack_for_target(begin, protocol::KnownAckFlags));
+		const auto applied_result = controller.ingest(endpoint(), view(applied.bytes), due + 2U, 0U, false);
+		EXPECT_EQ(detail::SessionIngressDropReason::None, applied_result.drop_reason);
+		EXPECT_NE(detail::SessionIngressDisposition::Dropped, applied_result.disposition);
+		EXPECT_NE(detail::SessionIngressDisposition::Faulted, applied_result.disposition);
+		EXPECT_EQ(0U, controller.slot(0U).reliable_items_in_use);
+		EXPECT_FALSE(controller.has_output());
+
+		const auto before_late = controller.slot(0U);
+		const auto usage_before_late = controller.owned_usage();
+		const auto late = controller.ingest(endpoint(), view(applied.bytes), due + 3U, 0U, false);
+		EXPECT_NE(detail::SessionIngressDropReason::None, late.drop_reason);
+		EXPECT_EQ(usage_before_late, controller.owned_usage());
+		EXPECT_EQ(before_late.progress, controller.slot(0U).progress);
+		EXPECT_EQ(before_late.next_message_id, controller.slot(0U).next_message_id);
+		EXPECT_EQ(before_late.next_packet_sequence, controller.slot(0U).next_packet_sequence);
+		EXPECT_EQ(0U, controller.slot(0U).reliable_items_in_use);
+		EXPECT_EQ(detail::ProducerSessionProgress::ReadyForState, controller.slot(0U).progress);
+		EXPECT_FALSE(controller.has_output());
+	} else {
+		FAIL() << "The missing reliability service prevents the VALIDATED retry-suppression proof.";
+	}
+}
+
+TEST(TelemetryWp06ReliabilityContract, SessionBeginAckLifecycleIsDuplicateSafeAndMutationAtomic)
+{
+	EXPECT_TRUE(has_wp06_reliability_service_and_transactional_egress<detail::SessionController>::value);
+	expect_session_begin_ack_lifecycle<detail::SessionController>();
+}
+
+template <typename Slot, typename = void>
+struct exposes_wp06_stale_terminal_policy : std::false_type {};
+
+template <typename Slot>
+struct exposes_wp06_stale_terminal_policy<Slot,
+	std::void_t<decltype(std::decay_t<decltype(std::declval<Slot>().progress)>::Stale),
+		decltype(std::declval<Slot>().has_reliability_terminal_policy),
+		decltype(std::declval<Slot>().reliability_terminal_policy)>> : std::true_type {};
+
+template <typename Slot>
+void expect_session_begin_terminal_state(const Slot& slot)
+{
+	if constexpr (exposes_wp06_stale_terminal_policy<Slot>::value) {
+		using Progress = std::decay_t<decltype(slot.progress)>;
+		EXPECT_EQ(Progress::Stale, slot.progress);
+		EXPECT_TRUE(slot.has_reliability_terminal_policy);
+		EXPECT_EQ(protocol::ReliableTerminalPolicy::MarkSessionStale, slot.reliability_terminal_policy);
+	} else {
+		FAIL() << "A terminal SESSION_BEGIN NACK must expose Stale progress and MarkSessionStale reason.";
+	}
+}
+
+template <typename Slot>
+void expect_no_session_begin_terminal_state(const Slot& slot)
+{
+	if constexpr (exposes_wp06_stale_terminal_policy<Slot>::value) {
+		EXPECT_FALSE(slot.has_reliability_terminal_policy);
+	}
+}
+
+template <typename Controller>
+void expect_resource_limit_preserves_original_schedule(Controller& controller, const DecodedOutput& begin)
+{
+	if constexpr (has_wp06_reliability_service_and_transactional_egress<Controller>::value) {
+		const auto first_send_us = begin.datagram.header.sent_time_us;
+		const auto due = first_send_us + protocol::reliable_retry_delay_us(protocol::ReliableDefaultRtoUs,
+			0x4653544c5f52544fULL,
+			begin.datagram.header.session_id,
+			begin.datagram.header.message_id,
+			0U);
+		controller.service_reliability(due - 1U);
+		EXPECT_FALSE(controller.has_output()) << "ResourceLimit must not move the original RTO earlier.";
+		controller.service_reliability(due);
+		ASSERT_TRUE(controller.has_output()) << "ResourceLimit must not reset or postpone the original RTO.";
+		const auto retry = pop_output(controller);
+		EXPECT_EQ(begin.datagram.header.message_type, retry.datagram.header.message_type);
+		EXPECT_EQ(begin.datagram.header.message_id, retry.datagram.header.message_id);
+		EXPECT_EQ(begin.datagram.header.fragment_count, retry.datagram.header.fragment_count);
+		EXPECT_EQ(begin.datagram.header.message_crc32, retry.datagram.header.message_crc32);
+		EXPECT_EQ(begin.datagram.payload.size, retry.datagram.payload.size);
+		EXPECT_TRUE(std::equal(begin.datagram.payload.data,
+			begin.datagram.payload.data + begin.datagram.payload.size,
+			retry.datagram.payload.data));
+		EXPECT_NE(begin.datagram.header.packet_sequence, retry.datagram.header.packet_sequence);
+		EXPECT_NE(static_cast<std::uint8_t>(0U),
+			static_cast<std::uint8_t>(retry.datagram.header.flags & protocol::MessageFlagRetransmission));
+
+		controller.service_reliability(first_send_us + protocol::ReliableOrdinaryRetentionUs);
+		EXPECT_FALSE(controller.has_output());
+		EXPECT_EQ(0U, controller.slot(0U).reliable_items_in_use)
+			<< "ResourceLimit must not extend the immutable retention deadline.";
+		expect_session_begin_terminal_state(controller.slot(0U));
+	} else {
+		FAIL() << "The missing reliability service prevents the ResourceLimit RTO/deadline proof.";
+	}
+}
+
+TEST(TelemetryWp06ReliabilityContract, NackDecisionsComposeWithoutRequiringAnImmediateRetransmission)
+{
+	struct Case {
+		protocol::NackReason reason;
+		bool queues_output;
+		bool releases;
+		bool accepted;
+	};
+	for (const auto item : {Case{protocol::NackReason::MissingFragments, true, false, true},
+			 Case{protocol::NackReason::BadMessageCrc, true, false, true},
+			 Case{protocol::NackReason::BadFragmentLayout, true, false, true},
+			 Case{protocol::NackReason::ResourceLimit, false, false, true},
+			 Case{protocol::NackReason::UnsupportedMessage, false, false, false}}) {
+		SCOPED_TRACE(static_cast<unsigned int>(item.reason));
+		IdentityHarness ids{{{true, 0x2222U}}};
+		auto controller = make_controller(ids.allocator);
+		const auto begin = establish_session_begin(
+			controller, endpoint(), 11'000U + static_cast<std::uint8_t>(item.reason), 1'000U, 2'000U);
+		const auto nack = nack_for_target(begin, item.reason, 100U + static_cast<std::uint8_t>(item.reason));
+		const auto result = controller.ingest(endpoint(), view(nack.bytes), 3'000U, 0U, false);
+		EXPECT_EQ(item.accepted ? detail::SessionIngressDropReason::None : detail::SessionIngressDropReason::PayloadInvalid,
+			result.drop_reason);
+		if (item.accepted) {
+			EXPECT_NE(detail::SessionIngressDisposition::Dropped, result.disposition);
+			EXPECT_NE(detail::SessionIngressDisposition::Faulted, result.disposition);
+		}
+		EXPECT_EQ(item.queues_output, controller.has_output());
+		EXPECT_EQ(item.releases ? 0U : 1U, controller.slot(0U).reliable_items_in_use);
+		if (item.reason == protocol::NackReason::ResourceLimit) {
+			expect_resource_limit_preserves_original_schedule(controller, begin);
+		}
+	}
+}
+
+TEST(TelemetryWp06ReliabilityContract, SessionBeginTerminalNacksExposeStaleReasonAndUnsupportedIsAtomic)
+{
+	for (const auto reason : {protocol::NackReason::StaleBaseline,
+			 protocol::NackReason::SemanticValidationFailed,
+			 protocol::NackReason::DeadlineExpired}) {
+		SCOPED_TRACE(static_cast<unsigned int>(reason));
+		IdentityHarness ids{{{true, 0x2323U}}};
+		auto controller = make_controller(ids.allocator);
+		const auto begin = establish_session_begin(
+			controller, endpoint(), 11'500U + static_cast<std::uint8_t>(reason), 1'000U, 2'000U);
+		const auto nack = nack_for_target(begin, reason, 150U + static_cast<std::uint8_t>(reason));
+		const auto result = controller.ingest(endpoint(), view(nack.bytes), 3'000U, 0U, false);
+		EXPECT_EQ(detail::SessionIngressDropReason::None, result.drop_reason);
+		EXPECT_NE(detail::SessionIngressDisposition::Dropped, result.disposition);
+		EXPECT_NE(detail::SessionIngressDisposition::Faulted, result.disposition);
+		EXPECT_EQ(0U, controller.slot(0U).reliable_items_in_use);
+		EXPECT_FALSE(controller.has_output());
+		expect_session_begin_terminal_state(controller.slot(0U));
+	}
+
+	IdentityHarness ids{{{true, 0x2424U}}};
+	auto controller = make_controller(ids.allocator);
+	const auto begin = establish_session_begin(controller, endpoint(), 11'999U, 1'000U, 2'000U);
+	const auto before = controller.owned_usage();
+	const auto progress = controller.slot(0U).progress;
+	const auto nack = nack_for_target(begin, protocol::NackReason::UnsupportedMessage, 199U);
+	const auto result = controller.ingest(endpoint(), view(nack.bytes), 3'000U, 0U, false);
+	EXPECT_EQ(detail::SessionIngressDropReason::PayloadInvalid, result.drop_reason);
+	EXPECT_EQ(detail::SessionIngressDisposition::Dropped, result.disposition);
+	EXPECT_EQ(before, controller.owned_usage());
+	EXPECT_EQ(progress, controller.slot(0U).progress);
+	EXPECT_EQ(1U, controller.slot(0U).reliable_items_in_use);
+	EXPECT_FALSE(controller.has_output());
+	expect_no_session_begin_terminal_state(controller.slot(0U));
+}
+
+template <typename Controller>
+void expect_output_ownership_survives_unrelated_close()
+{
+	IdentityHarness ids{{{true, 0x3333U}, {true, 0x3434U}}};
+	auto controller = make_controller(ids.allocator, nullptr, 2U);
+	const auto first = endpoint(2U, 42043U);
+	const auto second = endpoint(3U, 42044U);
+	const auto first_begin = establish_session_begin(controller, first, 12'001U, 1'000U, 2'000U);
+	(void)establish_session_begin(controller, second, 12'002U, 3'000U, 4'000U);
+	const auto nack = nack_for_target(first_begin, protocol::NackReason::MissingFragments, 200U);
+	ASSERT_EQ(detail::SessionIngressDisposition::ResponseQueued,
+		controller.ingest(first, view(nack.bytes), 5'000U, 0U, false).disposition);
+	ASSERT_TRUE(controller.has_output());
+	if constexpr (has_wp06_reliability_service_and_transactional_egress<Controller>::value) {
+		detail::SessionControllerOutput before;
+		ASSERT_TRUE(controller.peek_output(before));
+		ASSERT_EQ(first, before.endpoint);
+		ASSERT_TRUE(controller.close_slot(1U, detail::SessionCloseReason::MissionDiscontinuity));
+		detail::SessionControllerOutput after;
+		ASSERT_TRUE(controller.peek_output(after));
+		EXPECT_EQ(before.endpoint, after.endpoint);
+		EXPECT_EQ(before.size, after.size);
+		EXPECT_TRUE(std::equal(before.bytes.begin(),
+			before.bytes.begin() + static_cast<std::ptrdiff_t>(before.size),
+			after.bytes.begin()))
+			<< "Closing client B must preserve client A's queued datagram byte-for-byte.";
+		ASSERT_TRUE(controller.close_slot(0U, detail::SessionCloseReason::MissionDiscontinuity));
+		EXPECT_FALSE(controller.has_output()) << "Closing owner A must purge A's queued retransmission.";
+	} else {
+		FAIL() << "Transactional peek is required to prove output ownership across slot cleanup.";
+	}
+}
+
+TEST(TelemetryWp06ReliabilityContract, QueuedOutputIsPurgedOnlyWhenItsOwningSlotCloses)
+{
+	EXPECT_TRUE(has_wp06_reliability_service_and_transactional_egress<detail::SessionController>::value);
+	expect_output_ownership_survives_unrelated_close<detail::SessionController>();
+}
+
+TEST(TelemetryWp06ReliabilityContract, WelcomeWouldBlockAtExactDeadlinePurgesOutputAndClosesOwner)
+{
+	IdentityHarness ids{{{true, 0x3535U}}};
+	auto controller = make_controller(ids.allocator);
+	const auto request = hello(12'100U);
+	ASSERT_EQ(detail::SessionIngressDisposition::ResponseQueued,
+		controller.ingest(endpoint(), view(request.bytes), 1'000U, 0U, false).disposition);
+	ASSERT_EQ(1U, controller.slot(0U).reliable_items_in_use);
+	detail::SessionControllerOutput before;
+	ASSERT_TRUE(controller.peek_output(before));
+	controller.complete_output(detail::IoStatus::WouldBlock);
+	detail::SessionControllerOutput blocked;
+	ASSERT_TRUE(controller.peek_output(blocked));
+	ASSERT_EQ(before.endpoint, blocked.endpoint);
+	ASSERT_EQ(before.size, blocked.size);
+	ASSERT_TRUE(std::equal(before.bytes.begin(),
+		before.bytes.begin() + static_cast<std::ptrdiff_t>(before.size),
+		blocked.bytes.begin()));
+
+	controller.service_reliability(1'000U + protocol::ReliableOrdinaryRetentionUs);
+	EXPECT_FALSE(controller.has_output()) << "An expired WELCOME must never remain sendable after WouldBlock.";
+	EXPECT_EQ(0U, controller.active_slots());
+	EXPECT_EQ(0U, controller.owned_usage().reliable_items);
+	EXPECT_FALSE(controller.owned_usage().output_queued);
+}
+
+TEST(TelemetryWp06ReliabilityContract, SessionBeginRetryWouldBlockAtDeadlinePurgesWithoutSequenceConsumption)
+{
+	IdentityHarness ids{{{true, 0x3636U}}};
+	auto controller = make_controller(ids.allocator);
+	const auto begin = establish_session_begin(controller, endpoint(), 12'200U, 1'000U, 2'000U);
+	const auto nack = nack_for_target(begin, protocol::NackReason::MissingFragments, 250U);
+	ASSERT_EQ(detail::SessionIngressDisposition::ResponseQueued,
+		controller.ingest(endpoint(), view(nack.bytes), 3'000U, 0U, false).disposition);
+	detail::SessionControllerOutput retry;
+	ASSERT_TRUE(controller.peek_output(retry));
+	protocol::DatagramView retry_view;
+	ASSERT_EQ(protocol::ValidationError::None,
+		protocol::decode_and_validate_datagram({retry.bytes.data(), retry.size},
+			protocol::ProtocolMinorRange{protocol::VersionMinorV1_1, protocol::VersionMinorV1_1},
+			retry_view));
+	const auto sequence_before_deadline = controller.slot(0U).next_packet_sequence;
+	ASSERT_EQ(sequence_before_deadline, retry_view.header.packet_sequence);
+	controller.complete_output(detail::IoStatus::WouldBlock);
+	detail::SessionControllerOutput blocked;
+	ASSERT_TRUE(controller.peek_output(blocked));
+	ASSERT_EQ(retry.size, blocked.size);
+	ASSERT_TRUE(std::equal(retry.bytes.begin(),
+		retry.bytes.begin() + static_cast<std::ptrdiff_t>(retry.size),
+		blocked.bytes.begin()));
+
+	controller.service_reliability(2'000U + protocol::ReliableOrdinaryRetentionUs);
+	EXPECT_FALSE(controller.has_output()) << "The deadline must preempt a blocked retry owned by the same tuple.";
+	EXPECT_EQ(0U, controller.slot(0U).reliable_items_in_use);
+	EXPECT_EQ(sequence_before_deadline, controller.slot(0U).next_packet_sequence)
+		<< "Neither WouldBlock nor deadline cleanup may commit the pending retry sequence.";
+	EXPECT_EQ(1U, controller.active_slots()) << "MarkSessionStale does not close the established slot.";
+	expect_session_begin_terminal_state(controller.slot(0U));
+}
+
+TEST(TelemetryWp06ReliabilityContract, CrossOwnerBlockedRetrySurvivesWelcomeOwnerDeadlineByteIdentically)
+{
+	IdentityHarness ids{{{true, 0x3737U}, {true, 0x3838U}}};
+	auto controller = make_controller(ids.allocator, nullptr, 2U);
+	const auto expiring = endpoint(2U, 42043U);
+	const auto blocked_owner = endpoint(3U, 42044U);
+	const auto expiring_hello = hello(12'301U);
+	ASSERT_EQ(detail::SessionIngressDisposition::ResponseQueued,
+		controller.ingest(expiring, view(expiring_hello.bytes), 1'000U, 0U, false).disposition);
+	(void)pop_output(controller);
+	ASSERT_EQ(detail::ProducerSessionProgress::AwaitWelcomeApplied, controller.slot(0U).progress);
+	const auto blocked_begin =
+		establish_session_begin(controller, blocked_owner, 12'302U, 2'000U, 3'000U);
+	const auto nack = nack_for_target(blocked_begin, protocol::NackReason::MissingFragments, 260U);
+	ASSERT_EQ(detail::SessionIngressDisposition::ResponseQueued,
+		controller.ingest(blocked_owner, view(nack.bytes), 4'000U, 0U, false).disposition);
+	detail::SessionControllerOutput before;
+	ASSERT_TRUE(controller.peek_output(before));
+	ASSERT_EQ(blocked_owner, before.endpoint);
+	controller.complete_output(detail::IoStatus::WouldBlock);
+	const auto blocked_sequence = controller.slot(1U).next_packet_sequence;
+	const auto blocked_session = controller.slot(1U).session_id;
+	ASSERT_EQ(1U, controller.slot(0U).reliable_items_in_use);
+	ASSERT_EQ(1U, controller.slot(1U).reliable_items_in_use);
+
+	controller.service_reliability(1'000U + protocol::ReliableOrdinaryRetentionUs);
+	EXPECT_EQ(1U, controller.active_slots());
+	EXPECT_EQ(detail::ProducerSessionProgress::Empty, controller.slot(0U).progress);
+	EXPECT_EQ(0U, controller.slot(0U).reliable_items_in_use);
+	EXPECT_EQ(detail::SessionControllerSlot{}.next_packet_sequence, controller.slot(0U).next_packet_sequence)
+		<< "CloseSession resets A; it must not expose a committed deadline retry sequence.";
+	EXPECT_EQ(blocked_session, controller.slot(1U).session_id);
+	EXPECT_EQ(detail::ProducerSessionProgress::ReadyForState, controller.slot(1U).progress);
+	EXPECT_EQ(1U, controller.slot(1U).reliable_items_in_use);
+	EXPECT_EQ(blocked_sequence, controller.slot(1U).next_packet_sequence);
+	expect_no_session_begin_terminal_state(controller.slot(1U));
+	detail::SessionControllerOutput after;
+	ASSERT_TRUE(controller.peek_output(after));
+	EXPECT_EQ(before.endpoint, after.endpoint);
+	EXPECT_EQ(before.size, after.size);
+	EXPECT_TRUE(std::equal(before.bytes.begin(),
+		before.bytes.begin() + static_cast<std::ptrdiff_t>(before.size),
+		after.bytes.begin()));
+}
+
+TEST(TelemetryWp06ReliabilityContract, CrossOwnerBlockedRetrySurvivesSessionBeginStaleDeadlineByteIdentically)
+{
+	IdentityHarness ids{{{true, 0x3939U}, {true, 0x3a3aU}}};
+	auto controller = make_controller(ids.allocator, nullptr, 2U);
+	const auto expiring = endpoint(2U, 42043U);
+	const auto blocked_owner = endpoint(3U, 42044U);
+	(void)establish_session_begin(controller, expiring, 12'401U, 1'000U, 2'000U);
+	const auto blocked_begin =
+		establish_session_begin(controller, blocked_owner, 12'402U, 3'000U, 4'000U);
+	const auto nack = nack_for_target(blocked_begin, protocol::NackReason::MissingFragments, 270U);
+	ASSERT_EQ(detail::SessionIngressDisposition::ResponseQueued,
+		controller.ingest(blocked_owner, view(nack.bytes), 5'000U, 0U, false).disposition);
+	detail::SessionControllerOutput before;
+	ASSERT_TRUE(controller.peek_output(before));
+	ASSERT_EQ(blocked_owner, before.endpoint);
+	controller.complete_output(detail::IoStatus::WouldBlock);
+	const auto expiring_sequence = controller.slot(0U).next_packet_sequence;
+	const auto blocked_sequence = controller.slot(1U).next_packet_sequence;
+	const auto blocked_session = controller.slot(1U).session_id;
+	ASSERT_EQ(1U, controller.slot(0U).reliable_items_in_use);
+	ASSERT_EQ(1U, controller.slot(1U).reliable_items_in_use);
+
+	controller.service_reliability(2'000U + protocol::ReliableOrdinaryRetentionUs);
+	EXPECT_EQ(2U, controller.active_slots());
+	EXPECT_EQ(0U, controller.slot(0U).reliable_items_in_use);
+	EXPECT_EQ(expiring_sequence, controller.slot(0U).next_packet_sequence);
+	expect_session_begin_terminal_state(controller.slot(0U));
+	EXPECT_EQ(blocked_session, controller.slot(1U).session_id);
+	EXPECT_EQ(detail::ProducerSessionProgress::ReadyForState, controller.slot(1U).progress);
+	EXPECT_EQ(1U, controller.slot(1U).reliable_items_in_use);
+	EXPECT_EQ(blocked_sequence, controller.slot(1U).next_packet_sequence);
+	expect_no_session_begin_terminal_state(controller.slot(1U));
+	detail::SessionControllerOutput after;
+	ASSERT_TRUE(controller.peek_output(after));
+	EXPECT_EQ(before.endpoint, after.endpoint);
+	EXPECT_EQ(before.size, after.size);
+	EXPECT_TRUE(std::equal(before.bytes.begin(),
+		before.bytes.begin() + static_cast<std::ptrdiff_t>(before.size),
+		after.bytes.begin()));
+}
+
+template <typename Controller>
+void expect_wp06_reliability_service_boundaries_and_egress()
+{
+	if constexpr (!has_wp06_reliability_service_and_transactional_egress<Controller>::value) {
+		FAIL() << "SessionController lacks noexcept service_reliability/peek_output/complete_output seams.";
+	} else {
+		IdentityHarness ids{{{true, 0x4444U}}};
+		auto controller = make_controller(ids.allocator);
+		const auto request = hello(13'000U);
+		ASSERT_EQ(detail::SessionIngressDisposition::ResponseQueued,
+			controller.ingest(endpoint(), view(request.bytes), 1'000U, 0U, false).disposition);
+		detail::SessionControllerOutput original;
+		ASSERT_TRUE(controller.peek_output(original));
+		controller.complete_output(detail::IoStatus::WouldBlock);
+		EXPECT_TRUE(controller.has_output());
+		detail::SessionControllerOutput blocked;
+		ASSERT_TRUE(controller.peek_output(blocked));
+		EXPECT_EQ(original.size, blocked.size);
+		EXPECT_TRUE(std::equal(original.bytes.begin(), original.bytes.begin() + static_cast<std::ptrdiff_t>(original.size),
+			blocked.bytes.begin()));
+		controller.complete_output(detail::IoStatus::Complete);
+		EXPECT_FALSE(controller.has_output());
+
+		protocol::DatagramView welcome;
+		ASSERT_EQ(protocol::ValidationError::None,
+			protocol::decode_and_validate_datagram({original.bytes.data(), original.size},
+				protocol::ProtocolMinorRange{protocol::VersionMinorV1_1, protocol::VersionMinorV1_1},
+				welcome));
+		const auto due = 1'000U + protocol::reliable_retry_delay_us(protocol::ReliableDefaultRtoUs,
+			0x4653544c5f52544fULL,
+			welcome.header.session_id,
+			welcome.header.message_id,
+			0U);
+		controller.service_reliability(due - 1U);
+		EXPECT_FALSE(controller.has_output());
+		controller.service_reliability(due);
+		ASSERT_TRUE(controller.has_output());
+		const auto retry = pop_output(controller);
+		EXPECT_EQ(welcome.header.message_id, retry.datagram.header.message_id);
+		EXPECT_EQ(welcome.header.message_crc32, retry.datagram.header.message_crc32);
+		EXPECT_NE(welcome.header.packet_sequence, retry.datagram.header.packet_sequence);
+		EXPECT_NE(static_cast<std::uint8_t>(0U),
+			static_cast<std::uint8_t>(retry.datagram.header.flags & protocol::MessageFlagRetransmission));
+
+		controller.service_reliability(1'000U + protocol::ReliableOrdinaryRetentionUs);
+		EXPECT_EQ(0U, controller.active_slots());
+		EXPECT_FALSE(controller.has_output());
+	}
+}
+
+TEST(TelemetryWp06ReliabilityContract, ServiceRtoDeadlineAndWouldBlockAreBoundedAndTransactional)
+{
+	EXPECT_TRUE(has_wp06_reliability_service_and_transactional_egress<detail::SessionController>::value);
+	expect_wp06_reliability_service_boundaries_and_egress<detail::SessionController>();
+}
+
+template <typename Controller>
+void expect_due_reliable_clients_make_progress()
+{
+	if constexpr (has_wp06_reliability_service_and_transactional_egress<Controller>::value) {
+		IdentityHarness ids{{{true, 0x5555U}, {true, 0x6666U}}};
+		auto controller = make_controller(ids.allocator, nullptr, 2U);
+		const auto first = endpoint(2U, 42043U);
+		const auto second = endpoint(3U, 42044U);
+		for (const auto item : {std::pair{first, 14'001U}, std::pair{second, 14'002U}}) {
+			const auto request = hello(item.second);
+			ASSERT_EQ(detail::SessionIngressDisposition::ResponseQueued,
+				controller.ingest(item.first, view(request.bytes), 1'000U, 0U, false).disposition);
+			controller.complete_output(detail::IoStatus::Complete);
+		}
+		controller.service_reliability(1'000'000U);
+		detail::SessionControllerOutput first_retry;
+		ASSERT_TRUE(controller.peek_output(first_retry));
+		controller.complete_output(detail::IoStatus::Complete);
+		controller.service_reliability(1'000'000U);
+		detail::SessionControllerOutput second_retry;
+		ASSERT_TRUE(controller.peek_output(second_retry));
+		EXPECT_NE(first_retry.endpoint, second_retry.endpoint);
+	} else {
+		FAIL() << "The missing reliability service prevents a bounded multi-client fairness proof.";
+	}
+}
+
+TEST(TelemetryWp06ReliabilityContract, DueReliableClientsMakeProgressOneDatagramPerServiceCall)
+{
+	expect_due_reliable_clients_make_progress<detail::SessionController>();
 }
 
 } // namespace
