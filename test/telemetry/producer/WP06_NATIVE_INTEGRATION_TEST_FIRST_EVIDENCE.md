@@ -304,6 +304,84 @@ TelemetryWp06ReliabilityContract: 13/13 PASS.
 
 The historical RED above is resolved: R2 injectable composition is `GREEN IN DEBUG AND RELEASE`, with independent review and reproduction completed. `P1-AC-005` remains `OPEN` and `G1-D` remains `PARTIAL` only because the incomplete real global budget prevents production bind and therefore leaves real IPv4/IPv6 loopback proof outstanding. Later R3 work remains outside this slice.
 
+## R3 native allocation test-first checkpoint: immediate GREEN gap
+
+This checkpoint extends only the existing allocation-contract source and executable. It adds no production code, no new test target, no R4 source and no real loopback work. The existing target already links the `code` target containing `runtime.cpp` and `native_session_runtime.cpp`, so no CMake source addition was required.
+
+The allocation fixture deliberately differs from the vector-backed R2 behavioral fixture:
+
+- receive scripts, send-status scripts and captured datagrams use fixed-capacity `std::array` storage;
+- all protocol packets are encoded outside an armed allocation window;
+- the real `Runtime` owns startup ordering through a fake `RuntimeStartupServices`;
+- only the synthetic complete-budget fake constructs `NativeSessionRuntime`, and only inside `start_transport()`;
+- the allocation probe is armed only after the outer runtime has reached `RuntimeState::Ready`;
+- the adjacent real-budget test preserves the true deferred mask `0x00f0` and proves zero native construction, socket open or bind boundary crossing.
+
+Three named R3 tests cover the authorized slice:
+
+```text
+RealDeferredBudgetMaskConstructsNoNativeStackOrSocket
+ReadyRuntimeLifecycleAndBackpressureAllocateNothing
+PermanentReceiveAndSendFailuresAllocateNothingAndStayClosed
+```
+
+The main lifecycle oracle measures zero post-Ready allocations across an idle tick, HELLO/WELCOME, WELCOME ACK/SESSION_BEGIN, deterministic REL retry, SESSION_BEGIN ACK, periodic heartbeat, RX and TX `WouldBlock`, correlated heartbeat response, disconnect timeout, explicit mission purge, shutdown and inert late callbacks. Fatal receive and send loops cover both `Closed` and `Error`; each measured path remains allocation-free, releases owned usage, closes its single socket exactly once and performs no I/O on a late tick.
+
+The first Debug execution did not produce a RED failure. This is recorded as an immediate GREEN gap rather than retroactively manufacturing a failure: the production composition delivered by R2 already satisfies these R3 allocation oracles.
+
+```text
+cmake --build build --config Debug --target telemetry_session_controller_allocation_contract_tests --parallel 4
+Result: PASS; the existing allocation executable compiled and linked.
+
+build/bin/Debug/telemetry_session_controller_allocation_contract_tests.exe \
+  --gtest_filter="TelemetryNativeAllocationContract.*"
+Result: 3/3 PASS; immediate GREEN gap.
+```
+
+Debug baseline reproduction after the final oracle strengthening:
+
+```text
+Allocation executable: 7/7 PASS (4 historical WP06 + 3 native R3).
+R2/runtime/heartbeat/reliability filter: 93/93 PASS.
+```
+
+The independent review approved the Debug R3 oracle without requesting production, test, CMake or R4 changes. Final verification then reproduced the unchanged oracle in both configurations.
+
+```text
+Release build:
+  telemetry_session_controller_allocation_contract_tests: PASS.
+  unittests: PASS.
+
+Allocation executable:
+  Debug:   7/7 PASS (4 historical WP06 + 3 native R3).
+  Release: 7/7 PASS (4 historical WP06 + 3 native R3).
+
+Adjacent R2/runtime/heartbeat/reliability filter:
+  Debug:   93/93 PASS.
+  Release: 93/93 PASS.
+
+Full unittests:
+  Debug:   852/852 PASS from 110 suites; 2 pre-existing disabled tests; 13,505 ms.
+  Release: 852/852 PASS from 110 suites; 2 pre-existing disabled tests; 4,084 ms.
+
+R3 allocation stress, --gtest_shuffle --gtest_random_seed=20260717:
+  Debug:   3 tests x 25 iterations = 75/75 PASS.
+  Release: 3 tests x 10 iterations = 30/30 PASS.
+```
+
+Six test-source hashes were identical before and after execution:
+
+```text
+C7B679B0D1D5C7FE60046C50183B7A530EF69178B67D72E25274B94C31504F51  test_telemetry_session_controller_allocations.cpp
+B51C3C193444D190BFB496301EE7A5E235EA386D454236A9D9BC13D08B94F2AF  test_telemetry_native_runtime_integration_contract.cpp
+8C2C2D3C1E9396B813C9DE06126DC2F0D978DB3D3E0D1020731BFB8E66CBF659  test_telemetry_runtime_startup_contract.cpp
+82B0ADA00FDBD9EBFD1C11741B4509C14EF93942119E1079105864E9E093804D  test_telemetry_runtime_lifecycle_contract.cpp
+3243E1DCCFECC22F458E990B8DC1AF843B6702AFFFCF952FF2434E975904B49B  test_telemetry_session_controller_heartbeat_contract.cpp
+84DE2DB14C23D10C64B56E2103E95D5C9283C2388FDFBAC8771566BDE4662EF0  test_telemetry_session_controller_contract.cpp
+```
+
+Full-suite generated artifacts under `test/test_data` were removed. Final status contains only the authorized allocation test and this evidence update. This closes R3 as `GREEN IN DEBUG AND RELEASE`; it does not change the real incomplete global budget, authorize production binding or claim the R4 real-loopback gate.
+
 ## R2 requirement delta
 
 | ID | R2 evidence | Honest status after this run |
