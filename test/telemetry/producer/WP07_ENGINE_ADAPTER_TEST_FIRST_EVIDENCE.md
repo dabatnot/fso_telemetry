@@ -194,3 +194,114 @@ Full-suite generated artifacts under `test/test_data` were removed. Final `git d
 | `P1-REQ-024` | Real view safety, ordered validation, bounds, non-finite handling, subnormal preservation, local-to-world quaternion and positive-zero canonicalization pass. | `VERIFIED FOR WP07-B`. |
 | `P1-REQ-025` | Closed capture reasons and full default output on every non-valid path pass without Runtime, registry or wire ownership. | `VERIFIED FOR WP07-B`. |
 | `P1-AC-006` | Engine source-to-DTO behavior and conversion primitives are GREEN. | `PARTIAL` - identity, publication and later JSON/wire correctness remain WP07-C, WP08 and WP10. |
+
+## WP07-C session entity registry RED checkpoint
+
+WP07-C adds one always-compiled entity-registry contract source to the existing `unittests` target. It changes no production file and does not begin cadence, Runtime integration, session-slot ownership, budget repricing or allocation instrumentation; the latter remains a final WP07-D gate.
+
+Seven explicit tests fail while `telemetry/entity_id_registry.h` is absent. The guarded future branch locks the tracker-frozen `uint8_t` status values and defaults for resolve, invalidation and materialization. It also locks the exact `EntityIdResolveResult` member types, exact return types and `noexcept` status of `resolve`, `invalidate`, `reset_session` and `materialize_player_sample`, plus the exact return types and `const noexcept` contract of `has_active_mapping`, `active_object_signature`, `active_entity_id` and `last_allocated_entity_id`. The registry remains final and nothrow constructible. The contract deliberately makes no size, alignment, aggregate-arity or ABI assertion.
+
+The pure registry oracle requires ID 1 for the first valid key, stability for the same active key, strict increment on replacement, and a new ID when an old key reappears after replacement or explicit invalidation. Invalid key and repeated invalidation clear only the active mapping and preserve the last counter. A reset exercised directly while a mapping is active clears both that mapping and counter, allowing the next wire session to restart at 1. A separate registry initialized at `UINT64_MAX` proves `CounterExhausted` is sticky until `reset_session()`, after which the next key also receives ID 1.
+
+Deterministic injected-counter tests prove that `UINT64_MAX` itself is assignable from `max-1`, the same active key at max remains stable, and every subsequent new-key attempt returns `CounterExhausted`, clears active state and never wraps or reuses an ID. A constructor starting at max also reserves the materialization overflow path without iteration.
+
+Materialization first resets a reused output. A valid observation must resolve exactly one identity transition, distinguish `MaterializedNew` from `MaterializedExisting`, copy every kinematics value exactly, publish the nonzero entity ID, and remain copy-independent. The complete Cartesian product of capture statuses (including `Count`) and reasons (including `Count`) is classified: only the closed NoPlayer and InvalidSource pairs receive their corresponding result; every mismatch is `InvalidCapture`. All non-valid paths invalidate active state exactly once in observable effect, preserve the monotonic counter, consume no ID and leave a full default sample: quaternion `w` is exactly 1 and every zero float is positive zero by `signbit`. Valid capture with signature zero is `InvalidCapture`; exhausted allocation is `EntityIdCounterExhausted` with no partial sample.
+
+Debug RED reproduction:
+
+```text
+cmake --build build --config Debug --target unittests --parallel 4
+Result: PASS; the new test-only source compiled and unittests linked.
+
+build/bin/Debug/unittests.exe \
+  --gtest_filter="TelemetryEntityIdRegistryContract.*" --gtest_color=no
+Result: expected RED; 7 tests ran, 0 PASS, 7 FAIL.
+Cause: telemetry/entity_id_registry.h is absent.
+
+Preserved Debug baselines:
+  WP07-A/B engine adapter and collector: 17/17 PASS.
+  R2/runtime/heartbeat/reliability: 93/93 PASS.
+  Allocation executable: 7/7 PASS.
+  R4 native IPv4/IPv6 loopback with opt-in: 2/2 PASS.
+
+WP07-C contract source SHA-256:
+  E1EA27E7457C2D4DB2D2C52ADD7AA4B2FE3F9FD9986CFDC8EBD2DD497D65EF14
+```
+
+This is a Debug-only RED checkpoint pending independent review. Zero-allocation instrumentation, per-slot ownership, budget proof and cadence remain explicitly deferred to WP07-D.
+
+| ID | WP07-C RED evidence | Honest status after this checkpoint |
+|---|---|---|
+| `P1-WP-07` | Session-scoped identity stability, invalidation, overflow and sample materialization are executable RED contracts. | `PARTIAL / RED` - WP07-A/B remain verified; WP07-C production and WP07-D integration remain open. |
+| `P1-REQ-016` | Exact observation-to-sample materialization and invalid/no-player removal are reserved. | `RED / RESERVED` - registry production is absent. |
+| `P1-REQ-025` | Nonzero monotonic IDs, no reuse, max/exhaustion and session reset semantics are reserved. | `RED / RESERVED` - registry production is absent. |
+| `P1-AC-006` | DTO-to-identity-bearing sample behavior is reserved without publication or wire claims. | `OPEN` - no WP07-C production result exists and later publication/JSON/wire work remains. |
+
+## WP07-C independent GREEN verification
+
+The independent test owner inspected the registry and materialization implementation before execution. `resolve` rejects signature zero transactionally, preserves an existing active mapping, invalidates before every replacement, assigns the complete nonzero `uint64_t` range without wrapping, and leaves exhaustion sticky until `reset_session`. Invalidation clears every active-map observer without changing the monotonic counter; session reset additionally clears that counter.
+
+`materialize_player_sample` resets its output before classification, accepts only the frozen closed capture-status/reason pairs, invalidates on every non-valid path, and resolves identity only for `Valid`/`None` with a nonzero signature. Exhaustion and unexpected resolve results return without a partial sample. Successful materialization copies the observation into a local candidate and commits it once with the resolved ID. No registry, materialization or build-integration anomaly was found.
+
+The hardened WP07-C test source remained unchanged throughout production inspection and verification:
+
+```text
+E1EA27E7457C2D4DB2D2C52ADD7AA4B2FE3F9FD9986CFDC8EBD2DD497D65EF14  test_telemetry_entity_id_registry_contract.cpp
+```
+
+Production SHA-256 values inspected:
+
+```text
+FC8ACED383938572057DED9AFB2E023C723AF8BDFF6F18C1C097E98037EAA3FB  entity_id_registry.h
+4406DA882BBC3FC4901C70A9F129D67DC86E709593D3CCEDF4A0C533BA64D53A  entity_id_registry.cpp
+```
+
+Independent verification results:
+
+```text
+Build unittests and allocation target:
+  Debug:   PASS.
+  Release: PASS.
+
+TelemetryEntityIdRegistryContract.*:
+  Debug:   7/7 PASS.
+  Release: 7/7 PASS.
+
+TelemetryEngineAdapterContract.* + TelemetryEngineCollectorContract.*:
+  Debug:   17/17 PASS.
+  Release: 17/17 PASS.
+
+Adjacent native Runtime integration/runtime/heartbeat/reliability filter:
+  Debug:   93/93 PASS.
+  Release: 93/93 PASS.
+
+Allocation executable:
+  Debug:   7/7 PASS.
+  Release: 7/7 PASS.
+
+R4 native loopback with FSO_TELEMETRY_RUN_NATIVE_LOOPBACK=1:
+  Debug:   IPv4 and IPv6, 2/2 PASS.
+  Release: IPv4 and IPv6, 2/2 PASS.
+
+Full unittests with loopback opt-in unset:
+  Debug:   878 tests from 114 suites; 876 PASS, 2 expected loopback SKIP;
+           2 pre-existing disabled tests; 12,928 ms.
+  Release: 878 tests from 114 suites; 876 PASS, 2 expected loopback SKIP;
+           2 pre-existing disabled tests; 4,250 ms.
+
+A+B+C engine-adapter/collector/registry stress,
+--gtest_shuffle --gtest_random_seed=20260717:
+  Debug:   24 tests x 25 iterations = 600/600 PASS.
+  Release: 24 tests x 10 iterations = 240/240 PASS.
+```
+
+Full-suite generated artifacts under `test/test_data` were removed. Final `git diff --check` passed with line-ending warnings only.
+
+### WP07-C requirement delta
+
+| ID | WP07-C GREEN evidence | Honest status after this checkpoint |
+|---|---|---|
+| `P1-WP-07` | Session-scoped identity stability, invalidation, overflow and transactional sample materialization are GREEN in Debug and Release. | `PARTIAL` - WP07-A/B/C are verified; cadence, slot ownership, budget and allocation instrumentation remain WP07-D. |
+| `P1-REQ-016` | Observation-to-sample materialization, exact value copy and invalid/no-player removal pass. | `VERIFIED FOR WP07-C` - publication remains WP07-D and later JSON/wire work remains WP08/WP10. |
+| `P1-REQ-025` | Nonzero monotonic IDs, no reuse, max/exhaustion and wire-session reset semantics pass. | `VERIFIED FOR WP07-C`. |
+| `P1-AC-006` | DTO-to-identity-bearing sample behavior is GREEN. | `PARTIAL` - cadence/publication and later JSON/wire correctness remain open. |

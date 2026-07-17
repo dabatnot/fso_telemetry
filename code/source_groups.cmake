@@ -1719,6 +1719,8 @@ add_file_folder("Telemetry"
 	telemetry/datagram_scheduler.h
 	telemetry/engine_adapter.cpp
 	telemetry/engine_adapter.h
+	telemetry/entity_id_registry.cpp
+	telemetry/entity_id_registry.h
 	telemetry/identity.cpp
 	telemetry/identity.h
 	telemetry/json_preflight.h
