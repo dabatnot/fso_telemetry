@@ -2,12 +2,14 @@
 
 #if __has_include("telemetry/native_session_runtime.h")
 #include "telemetry/native_session_runtime.h"
+#include "telemetry/engine_adapter.h"
 #include "telemetry/protocol/telemetry_control_messages.h"
 #include "telemetry/protocol/telemetry_crc32.h"
 #include "telemetry/protocol/telemetry_datagram.h"
 #include "telemetry/session_controller.h"
 #include "telemetry/startup_budget.h"
 #include "telemetry/transport.h"
+#include "telemetry_native_session_runtime_player_test_access.h"
 #define FSO_HAS_NATIVE_SESSION_RUNTIME 1
 #else
 #define FSO_HAS_NATIVE_SESSION_RUNTIME 0
@@ -20,6 +22,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <limits>
 #include <thread>
 #include <type_traits>
 #include <utility>
@@ -168,6 +171,41 @@ Packet ack_for(const std::vector<std::uint8_t>& target,
 	return result;
 }
 
+Packet heartbeat_request(std::uint64_t session_id,
+	protocol::EndpointKey endpoint,
+	std::uint32_t packet_sequence,
+	std::uint64_t origin_t0_us)
+{
+	protocol::HeartbeatPayload heartbeat;
+	heartbeat.probe_id = packet_sequence;
+	heartbeat.kind = protocol::HeartbeatKind::Request;
+	heartbeat.origin_t0_us = origin_t0_us;
+	std::array<std::uint8_t, protocol::HeartbeatPayloadSize> payload{};
+	std::size_t payload_size = 0U;
+	EXPECT_EQ(protocol::ValidationError::None,
+		protocol::encode_heartbeat_payload(heartbeat, mutable_byte_view(payload), payload_size));
+	protocol::TelemetryDatagramHeader header;
+	header.version_minor = protocol::VersionMinorV1_1;
+	header.message_type = protocol::MessageType::Heartbeat;
+	header.session_id = session_id;
+	header.packet_sequence = packet_sequence;
+	header.sent_time_us = origin_t0_us;
+	header.message_id = packet_sequence;
+	header.message_size = static_cast<std::uint32_t>(payload_size);
+	header.message_crc32 = protocol::crc32_iso_hdlc({payload.data(), payload_size});
+	Packet result;
+	result.endpoint = endpoint;
+	result.bytes.resize(protocol::HeaderSizeV1 + payload_size);
+	std::size_t written = 0U;
+	EXPECT_EQ(protocol::ValidationError::None,
+		protocol::encode_datagram(header,
+			protocol::ProtocolMinorRange{protocol::VersionMinorV1_1, protocol::VersionMinorV1_1},
+			{payload.data(), payload_size},
+			mutable_byte_view(result.bytes),
+			written));
+	return result;
+}
+
 struct FixedRandom final : detail::RandomSource {
 	std::uint64_t next = 0x1000U;
 	bool next_u64(std::uint64_t& output) noexcept override
@@ -289,6 +327,225 @@ struct NativeFixture {
 		return runtime.start(request);
 	}
 };
+
+using NativePlayerAccess = detail::NativeSessionRuntimePlayerTestAccess;
+using NativePlayerProbe = detail::NativeSessionRuntimePlayerPublicProbe;
+
+constexpr std::uint8_t CaptureUnavailable = 0U;
+constexpr std::uint8_t CaptureInactive = 1U;
+constexpr std::uint8_t CaptureNotDue = 2U;
+constexpr std::uint8_t CaptureValid = 3U;
+constexpr std::uint8_t CaptureNoPlayer = 4U;
+constexpr std::uint8_t CaptureInvalidSource = 5U;
+constexpr std::uint8_t CaptureInvariantFailure = 6U;
+constexpr std::uint8_t CaptureCadenceFailure = 7U;
+constexpr std::uint8_t TickPermanentCaptureFailure = 3U;
+
+#define REQUIRE_NATIVE_PLAYER_D3()                                                                                  \
+	do {                                                                                                            \
+		if (!NativePlayerProbe::public_contract_available() || !NativePlayerAccess::private_contract_available()) { \
+			FAIL() << "WP07-D3 RED: NativeSessionRuntime player capture public/private contract is absent.";        \
+			return;                                                                                                 \
+		}                                                                                                           \
+	} while (false)
+
+struct CountingEngineReadView final : detail::EngineReadView {
+	bool in_mission() const noexcept override
+	{
+		++in_mission_calls;
+		return mission;
+	}
+	bool player_exists() const noexcept override
+	{
+		++player_calls;
+		return player;
+	}
+	bool player_object_exists() const noexcept override
+	{
+		++object_calls;
+		return object;
+	}
+	bool player_ship_exists() const noexcept override
+	{
+		++ship_calls;
+		return ship;
+	}
+	bool player_object_is_ship() const noexcept override
+	{
+		++object_type_calls;
+		return object_is_ship;
+	}
+	bool player_object_ship_instance_in_range() const noexcept override
+	{
+		++instance_calls;
+		return instance_in_range;
+	}
+	bool player_object_matches_player() const noexcept override
+	{
+		++object_match_calls;
+		return object_matches;
+	}
+	bool player_ship_matches_object() const noexcept override
+	{
+		++ship_match_calls;
+		return ship_matches;
+	}
+	void read_player_kinematics(detail::EnginePlayerKinematicsRead& output) const noexcept override
+	{
+		++read_calls;
+		output = input;
+	}
+
+	std::size_t total_calls() const noexcept
+	{
+		return in_mission_calls + player_calls + object_calls + ship_calls + object_type_calls + instance_calls +
+			   object_match_calls + ship_match_calls + read_calls;
+	}
+	void clear_counts() const noexcept
+	{
+		in_mission_calls = player_calls = object_calls = ship_calls = object_type_calls = 0U;
+		instance_calls = object_match_calls = ship_match_calls = read_calls = 0U;
+	}
+
+	detail::EnginePlayerKinematicsRead
+		input{42, {1.0f, 2.0f, 3.0f}, {}, {4.0f, 5.0f, 6.0f}, {0.1f, 0.2f, 0.3f}, 7.0f, {}};
+	bool mission = true;
+	bool player = true;
+	bool object = true;
+	bool ship = true;
+	bool object_is_ship = true;
+	bool instance_in_range = true;
+	bool object_matches = true;
+	bool ship_matches = true;
+	mutable std::size_t in_mission_calls = 0U;
+	mutable std::size_t player_calls = 0U;
+	mutable std::size_t object_calls = 0U;
+	mutable std::size_t ship_calls = 0U;
+	mutable std::size_t object_type_calls = 0U;
+	mutable std::size_t instance_calls = 0U;
+	mutable std::size_t object_match_calls = 0U;
+	mutable std::size_t ship_match_calls = 0U;
+	mutable std::size_t read_calls = 0U;
+};
+
+detail::PlayerObservationDto observation(std::uint32_t signature, std::uint64_t time_us, float marker = 1.0f) noexcept
+{
+	detail::PlayerObservationDto value;
+	value.key.object_signature = signature;
+	value.value.producer_sample_time_us = time_us;
+	value.value.position_world = {marker, marker + 1.0f, marker + 2.0f};
+	value.value.orientation_local_to_world = {1.0f, 0.0f, 0.0f, 0.0f};
+	value.value.velocity_world = {marker + 3.0f, marker + 4.0f, marker + 5.0f};
+	value.value.rotational_velocity_local = {0.1f, 0.2f, 0.3f};
+	value.value.radius = marker + 6.0f;
+	value.value.physics_mode_flags = 0U;
+	return value;
+}
+
+void expect_observation(const detail::PlayerObservationDto& actual, const detail::PlayerObservationDto& expected)
+{
+	EXPECT_EQ(expected.key.object_signature, actual.key.object_signature);
+	EXPECT_EQ(expected.value.producer_sample_time_us, actual.value.producer_sample_time_us);
+	EXPECT_FLOAT_EQ(expected.value.position_world.x, actual.value.position_world.x);
+	EXPECT_FLOAT_EQ(expected.value.position_world.y, actual.value.position_world.y);
+	EXPECT_FLOAT_EQ(expected.value.position_world.z, actual.value.position_world.z);
+	EXPECT_FLOAT_EQ(expected.value.orientation_local_to_world.w, actual.value.orientation_local_to_world.w);
+	EXPECT_FLOAT_EQ(expected.value.orientation_local_to_world.x, actual.value.orientation_local_to_world.x);
+	EXPECT_FLOAT_EQ(expected.value.orientation_local_to_world.y, actual.value.orientation_local_to_world.y);
+	EXPECT_FLOAT_EQ(expected.value.orientation_local_to_world.z, actual.value.orientation_local_to_world.z);
+	EXPECT_FLOAT_EQ(expected.value.velocity_world.x, actual.value.velocity_world.x);
+	EXPECT_FLOAT_EQ(expected.value.velocity_world.y, actual.value.velocity_world.y);
+	EXPECT_FLOAT_EQ(expected.value.velocity_world.z, actual.value.velocity_world.z);
+	EXPECT_FLOAT_EQ(expected.value.rotational_velocity_local.x, actual.value.rotational_velocity_local.x);
+	EXPECT_FLOAT_EQ(expected.value.rotational_velocity_local.y, actual.value.rotational_velocity_local.y);
+	EXPECT_FLOAT_EQ(expected.value.rotational_velocity_local.z, actual.value.rotational_velocity_local.z);
+	EXPECT_FLOAT_EQ(expected.value.radius, actual.value.radius);
+	EXPECT_EQ(expected.value.physics_mode_flags, actual.value.physics_mode_flags);
+}
+
+void expect_player_sample(const detail::PlayerKinematicsSample& actual,
+	const detail::PlayerKinematicsSample& expected)
+{
+	EXPECT_EQ(expected.entity_id, actual.entity_id);
+	detail::PlayerObservationDto actual_value;
+	actual_value.value = actual.value;
+	detail::PlayerObservationDto expected_value;
+	expected_value.value = expected.value;
+	expect_observation(actual_value, expected_value);
+}
+
+void expect_default_current(const detail::NativePlayerCaptureProbe& current)
+{
+	EXPECT_FALSE(current.available);
+	EXPECT_EQ(detail::CaptureStatus::InvalidSource, current.result.status);
+	EXPECT_EQ(detail::CaptureReason::InvalidObservationKey, current.result.reason);
+	expect_observation(current.observation, {});
+}
+
+void expect_zero_materialization(const detail::SessionPlayerMaterializationResult& result)
+{
+	EXPECT_EQ(0U, result.eligible_slots);
+	EXPECT_EQ(0U, result.materialized_existing_slots);
+	EXPECT_EQ(0U, result.materialized_new_slots);
+	EXPECT_EQ(0U, result.no_player_slots);
+	EXPECT_EQ(0U, result.invalid_source_slots);
+	EXPECT_EQ(0U, result.invalid_capture_slots);
+	EXPECT_EQ(0U, result.closed_exhausted_slots);
+}
+
+void expect_materialization(const detail::SessionPlayerMaterializationResult& result,
+	std::size_t eligible,
+	std::size_t existing,
+	std::size_t created,
+	std::size_t no_player,
+	std::size_t invalid_source,
+	std::size_t invalid_capture,
+	std::size_t exhausted)
+{
+	EXPECT_EQ(eligible, result.eligible_slots);
+	EXPECT_EQ(existing, result.materialized_existing_slots);
+	EXPECT_EQ(created, result.materialized_new_slots);
+	EXPECT_EQ(no_player, result.no_player_slots);
+	EXPECT_EQ(invalid_source, result.invalid_source_slots);
+	EXPECT_EQ(invalid_capture, result.invalid_capture_slots);
+	EXPECT_EQ(exhausted, result.closed_exhausted_slots);
+}
+
+std::uint64_t independent_period_us(std::uint32_t flight_hz) noexcept
+{
+	return 1'000'000U / flight_hz + (1'000'000U % flight_hz != 0U ? 1U : 0U);
+}
+
+detail::NativeSessionTickStatus
+capture_tick(NativeFixture& fixture, CountingEngineReadView& view, std::uint64_t now_us, bool active = true) noexcept
+{
+	return NativePlayerProbe::service_tick(fixture.runtime, {now_us, 0U, active}, view);
+}
+
+const detail::SessionControllerSlot* slot(const NativeFixture& fixture, std::size_t index = 0U) noexcept
+{
+	return NativePlayerAccess::slot(fixture.runtime, index);
+}
+
+template <typename Runtime>
+void instantiate_exact_native_player_contract_asserts()
+{
+	if constexpr (detail::HasNativePlayerCapturePublicContract<Runtime>::value) {
+		static_assert(detail::HasNativePlayerCapturePublicContract<Runtime>::value,
+			"D3 accessors, named enum ordinals, CurrentPlayerCapture shape and noexcept returns must be exact.");
+	}
+	static_assert(std::is_same_v<decltype(NativePlayerAccess::slot(
+			std::declval<const Runtime&>(), std::declval<std::size_t>())),
+		const detail::SessionControllerSlot*>);
+	static_assert(std::is_same_v<decltype(NativePlayerAccess::seed_last_allocated_entity_id(
+			std::declval<Runtime&>(), std::declval<std::size_t>(), std::declval<std::uint64_t>())),
+		bool>);
+	static_assert(std::is_same_v<decltype(NativePlayerAccess::inject_collected_player_capture(
+			std::declval<Runtime&>(),
+			std::declval<const detail::CaptureResult&>(),
+			std::declval<const detail::PlayerObservationDto&>())),
+		detail::NativeSessionTickStatus>);
+}
 
 std::uint64_t establish_ready(NativeFixture& fixture,
 	protocol::EndpointKey endpoint,
@@ -1000,6 +1257,607 @@ TEST(TelemetryNativeRuntimeIntegrationContract, ShutdownAndWrongThreadNeverClock
 	EXPECT_EQ(0U, shutdown_services.clock_calls);
 	EXPECT_EQ(0U, shutdown_services.service_calls);
 }
+
+TEST(TelemetryNativePlayerCaptureContract, ExactPublicContractDefaultsAndTestOnlySeamShape)
+{
+	instantiate_exact_native_player_contract_asserts<detail::NativeSessionRuntime>();
+	REQUIRE_NATIVE_PLAYER_D3();
+	expect_default_current(NativePlayerProbe::declared_default_current());
+	NativeFixture fixture;
+	expect_default_current(NativePlayerProbe::current(fixture.runtime));
+	expect_zero_materialization(NativePlayerProbe::materialization(fixture.runtime));
+	EXPECT_EQ(CaptureUnavailable, NativePlayerProbe::last_status(fixture.runtime));
+	EXPECT_EQ(detail::NativeSessionTickStatus::Unavailable,
+		NativePlayerAccess::inject_collected_player_capture(fixture.runtime,
+			{detail::CaptureStatus::Valid, detail::CaptureReason::None},
+			observation(42U, 1U)));
+}
+
+TEST(TelemetryNativePlayerCaptureContract, FlightRateStartBoundariesRejectBeforeOpenAndAcceptOneAndSixty)
+{
+	REQUIRE_NATIVE_PLAYER_D3();
+	for (const auto rates : {std::pair<unsigned, unsigned>{0U, 1U},
+			 std::pair<unsigned, unsigned>{61U, 60U}}) {
+		NativeFixture fixture;
+		auto config = enabled_config();
+		config.flight_hz = static_cast<std::uint8_t>(rates.first);
+		EXPECT_EQ(detail::NativeSessionStartStatus::InvalidConfiguration, fixture.start(config));
+		EXPECT_EQ(0U, fixture.backend.open_calls);
+		EXPECT_EQ(0U, fixture.runtime.socket_count());
+		EXPECT_EQ(0U, fixture.runtime.active_sessions());
+		EXPECT_EQ(CaptureUnavailable, NativePlayerProbe::last_status(fixture.runtime));
+		expect_default_current(NativePlayerProbe::current(fixture.runtime));
+		expect_zero_materialization(NativePlayerProbe::materialization(fixture.runtime));
+		config.flight_hz = static_cast<std::uint8_t>(rates.second);
+		ASSERT_EQ(detail::NativeSessionStartStatus::Started, fixture.start(config));
+		CountingEngineReadView view;
+		EXPECT_EQ(detail::NativeSessionTickStatus::Complete, capture_tick(fixture, view, 123'456U));
+		EXPECT_EQ(1U, view.read_calls);
+		EXPECT_EQ(CaptureValid, NativePlayerProbe::last_status(fixture.runtime));
+	}
+}
+
+TEST(TelemetryNativePlayerCaptureContract, TransportOpenFailureIsColdRetryableAndFirstCaptureIsImmediate)
+{
+	REQUIRE_NATIVE_PLAYER_D3();
+	NativeFixture fixture;
+	fixture.backend.open_statuses = {detail::SocketOpenStatus::SocketCreationFailed,
+		detail::SocketOpenStatus::Complete};
+	auto config = enabled_config();
+	EXPECT_EQ(detail::NativeSessionStartStatus::TransportUnavailable, fixture.start(config));
+	EXPECT_EQ(0U, fixture.runtime.socket_count());
+	EXPECT_EQ(0U, fixture.runtime.active_sessions());
+	EXPECT_EQ(CaptureUnavailable, NativePlayerProbe::last_status(fixture.runtime));
+	expect_default_current(NativePlayerProbe::current(fixture.runtime));
+	expect_zero_materialization(NativePlayerProbe::materialization(fixture.runtime));
+	ASSERT_EQ(detail::NativeSessionStartStatus::Started, fixture.start(config));
+	CountingEngineReadView view;
+	EXPECT_EQ(detail::NativeSessionTickStatus::Complete, capture_tick(fixture, view, 777'777U));
+	EXPECT_EQ(1U, view.read_calls);
+	EXPECT_EQ(CaptureValid, NativePlayerProbe::last_status(fixture.runtime));
+}
+
+TEST(TelemetryNativePlayerCaptureContract, AppliedAckPrecedesSameDueTickMaterialization)
+{
+	REQUIRE_NATIVE_PLAYER_D3();
+	NativeFixture fixture;
+	auto config = enabled_config(64U);
+	ASSERT_EQ(detail::NativeSessionStartStatus::Started, fixture.start(config));
+	const auto endpoint = peer(21U);
+	fixture.backend.receives.push_back({detail::IoStatus::Complete, hello(protocol::VersionMinorV1_1, 901U, endpoint)});
+	fixture.runtime.service_tick({10'000U, 0U, false});
+	ASSERT_FALSE(fixture.backend.sent.empty());
+	const auto welcome_index = fixture.backend.sent.size() - 1U;
+	fixture.backend.receives.push_back(
+		{detail::IoStatus::Complete, ack_for(fixture.backend.sent[welcome_index], endpoint, 902U)});
+	std::size_t begin_index = fixture.backend.sent.size();
+	for (std::uint64_t tick = 0U; tick < 32U && begin_index == fixture.backend.sent.size(); ++tick) {
+		fixture.runtime.service_tick({10'010U + tick, 0U, false});
+		for (std::size_t index = welcome_index + 1U; index < fixture.backend.sent.size(); ++index) {
+			if (sent_type(fixture.backend, index) == protocol::MessageType::SessionBegin) {
+				begin_index = index;
+				break;
+			}
+		}
+	}
+	ASSERT_LT(begin_index, fixture.backend.sent.size());
+	ASSERT_EQ(protocol::MessageType::SessionBegin, sent_type(fixture.backend, begin_index));
+	fixture.backend.receives.push_back(
+		{detail::IoStatus::Complete, ack_for(fixture.backend.sent[begin_index], endpoint, 903U)});
+	CountingEngineReadView view;
+	ASSERT_EQ(detail::NativeSessionTickStatus::Complete, capture_tick(fixture, view, 20'000U));
+	ASSERT_EQ(1U, view.read_calls);
+	const auto* ready = slot(fixture);
+	ASSERT_NE(nullptr, ready);
+	EXPECT_EQ(detail::ProducerSessionProgress::ReadyForState, ready->progress);
+	EXPECT_TRUE(ready->has_latest_player_sample);
+	EXPECT_EQ(1U, ready->latest_player_sample.entity_id);
+	expect_materialization(NativePlayerProbe::materialization(fixture.runtime), 1U, 0U, 1U, 0U, 0U, 0U, 0U);
+	const auto due_current = NativePlayerProbe::current(fixture.runtime);
+	const auto due_sample = ready->latest_player_sample;
+	view.clear_counts();
+	ASSERT_EQ(detail::NativeSessionTickStatus::Complete, capture_tick(fixture, view, 20'001U));
+	EXPECT_EQ(0U, view.total_calls());
+	EXPECT_EQ(CaptureNotDue, NativePlayerProbe::last_status(fixture.runtime));
+	const auto not_due_current = NativePlayerProbe::current(fixture.runtime);
+	EXPECT_EQ(due_current.available, not_due_current.available);
+	EXPECT_EQ(due_current.result.status, not_due_current.result.status);
+	EXPECT_EQ(due_current.result.reason, not_due_current.result.reason);
+	expect_observation(not_due_current.observation, due_current.observation);
+	expect_zero_materialization(NativePlayerProbe::materialization(fixture.runtime));
+	ASSERT_NE(nullptr, slot(fixture));
+	ASSERT_TRUE(slot(fixture)->has_latest_player_sample);
+	expect_player_sample(slot(fixture)->latest_player_sample, due_sample);
+
+	NativeFixture not_due;
+	ASSERT_EQ(detail::NativeSessionStartStatus::Started, not_due.start(config));
+	CountingEngineReadView arm;
+	ASSERT_EQ(detail::NativeSessionTickStatus::Complete, capture_tick(not_due, arm, 30'000U));
+	const auto preserved_current = NativePlayerProbe::current(not_due.runtime);
+	expect_zero_materialization(NativePlayerProbe::materialization(not_due.runtime));
+	arm.clear_counts();
+	const auto not_due_endpoint = peer(22U);
+	not_due.backend.receives.push_back(
+		{detail::IoStatus::Complete, hello(protocol::VersionMinorV1_1, 904U, not_due_endpoint)});
+	not_due.runtime.service_tick({30'001U, 0U, false});
+	ASSERT_FALSE(not_due.backend.sent.empty());
+	const auto not_due_welcome = not_due.backend.sent.size() - 1U;
+	not_due.backend.receives.push_back(
+		{detail::IoStatus::Complete, ack_for(not_due.backend.sent[not_due_welcome], not_due_endpoint, 905U)});
+	for (std::uint64_t tick = 0U;
+		tick < 8U && not_due.backend.sent.size() == not_due_welcome + 1U;
+		++tick) {
+		not_due.runtime.service_tick({30'002U + tick, 0U, false});
+	}
+	ASSERT_GT(not_due.backend.sent.size(), not_due_welcome + 1U);
+	const auto not_due_begin = not_due.backend.sent.size() - 1U;
+	not_due.backend.receives.push_back(
+		{detail::IoStatus::Complete, ack_for(not_due.backend.sent[not_due_begin], not_due_endpoint, 906U)});
+	EXPECT_EQ(detail::NativeSessionTickStatus::Complete, capture_tick(not_due, arm, 30'020U));
+	EXPECT_EQ(0U, arm.total_calls());
+	ASSERT_NE(nullptr, slot(not_due));
+	EXPECT_EQ(detail::ProducerSessionProgress::ReadyForState, slot(not_due)->progress);
+	EXPECT_EQ(CaptureNotDue, NativePlayerProbe::last_status(not_due.runtime));
+	const auto current_after_ack = NativePlayerProbe::current(not_due.runtime);
+	EXPECT_EQ(preserved_current.available, current_after_ack.available);
+	EXPECT_EQ(preserved_current.result.status, current_after_ack.result.status);
+	EXPECT_EQ(preserved_current.result.reason, current_after_ack.result.reason);
+	expect_observation(current_after_ack.observation, preserved_current.observation);
+	expect_zero_materialization(NativePlayerProbe::materialization(not_due.runtime));
+}
+
+TEST(TelemetryNativePlayerCaptureContract, OneSharedCaptureFansOutToReadyAndStaleSlots)
+{
+	REQUIRE_NATIVE_PLAYER_D3();
+	NativeFixture fixture;
+	auto config = enabled_config(64U);
+	config.max_clients = 2U;
+	ASSERT_EQ(detail::NativeSessionStartStatus::Started, fixture.start(config));
+	(void)establish_ready(fixture, peer(23U), 910U, 100'000U, 910U);
+	(void)establish_ready(fixture, peer(24U), 920U, 200'000U, 920U);
+	const auto* first = slot(fixture, 0U);
+	const auto* second = slot(fixture, 1U);
+	ASSERT_NE(nullptr, first);
+	ASSERT_NE(nullptr, second);
+	ASSERT_LT(first->heartbeat.last_valid_network_activity_us,
+		second->heartbeat.last_valid_network_activity_us);
+	const auto first_stale_due = first->heartbeat.last_valid_network_activity_us +
+		first->heartbeat.stale_timeout_us;
+	const auto second_stale_due = second->heartbeat.last_valid_network_activity_us +
+		second->heartbeat.stale_timeout_us;
+	ASSERT_LT(first_stale_due, second_stale_due);
+	fixture.runtime.service_tick({first_stale_due, 0U, true});
+	ASSERT_EQ(detail::ProducerSessionProgress::Stale, slot(fixture, 0U)->progress);
+	ASSERT_EQ(detail::ProducerSessionProgress::ReadyForState, slot(fixture, 1U)->progress);
+	CountingEngineReadView view;
+	ASSERT_EQ(detail::NativeSessionTickStatus::Complete,
+		capture_tick(fixture, view, first_stale_due));
+	EXPECT_EQ(1U, view.in_mission_calls);
+	EXPECT_EQ(1U, view.read_calls);
+	expect_materialization(NativePlayerProbe::materialization(fixture.runtime), 2U, 0U, 2U, 0U, 0U, 0U, 0U);
+	for (std::size_t index = 0U; index < 2U; ++index) {
+		const auto* current_slot = slot(fixture, index);
+		ASSERT_NE(nullptr, current_slot);
+		EXPECT_TRUE(current_slot->has_latest_player_sample);
+		EXPECT_EQ(1U, current_slot->latest_player_sample.entity_id);
+		EXPECT_EQ(first_stale_due, current_slot->latest_player_sample.value.producer_sample_time_us);
+	}
+	view.input.position_world.x = 99.0f;
+	EXPECT_FLOAT_EQ(1.0f, slot(fixture, 0U)->latest_player_sample.value.position_world.x);
+	EXPECT_FLOAT_EQ(1.0f, slot(fixture, 1U)->latest_player_sample.value.position_world.x);
+}
+
+TEST(TelemetryNativePlayerCaptureContract, CadenceSkipsCatchUpAndAppliesExactlyOncePerDueTick)
+{
+	REQUIRE_NATIVE_PLAYER_D3();
+	NativeFixture fixture;
+	auto config = enabled_config();
+	config.flight_hz = 30U;
+	ASSERT_EQ(detail::NativeSessionStartStatus::Started, fixture.start(config));
+	(void)establish_ready(fixture, peer(25U), 930U, 1'000U, 930U);
+	CountingEngineReadView view;
+	const auto period = independent_period_us(config.flight_hz);
+	const std::uint64_t first = 50'000U;
+	ASSERT_EQ(detail::NativeSessionTickStatus::Complete, capture_tick(fixture, view, first));
+	EXPECT_EQ(1U, view.read_calls);
+	expect_materialization(NativePlayerProbe::materialization(fixture.runtime), 1U, 0U, 1U, 0U, 0U, 0U, 0U);
+	(void)capture_tick(fixture, view, first + period - 1U);
+	EXPECT_EQ(1U, view.read_calls);
+	const auto hitch = first + period * 10U;
+	(void)capture_tick(fixture, view, hitch);
+	EXPECT_EQ(2U, view.read_calls);
+	expect_materialization(NativePlayerProbe::materialization(fixture.runtime), 1U, 1U, 0U, 0U, 0U, 0U, 0U);
+	(void)capture_tick(fixture, view, hitch);
+	(void)capture_tick(fixture, view, hitch + period - 1U);
+	EXPECT_EQ(2U, view.read_calls);
+	(void)capture_tick(fixture, view, hitch + period);
+	EXPECT_EQ(3U, view.read_calls);
+	EXPECT_EQ(1U, slot(fixture)->latest_player_sample.entity_id);
+}
+
+TEST(TelemetryNativePlayerCaptureContract, InactiveClearsCurrentPlayerWithoutReadingAndReactivationAllocatesNewId)
+{
+	REQUIRE_NATIVE_PLAYER_D3();
+	NativeFixture fixture;
+	auto config = enabled_config();
+	ASSERT_EQ(detail::NativeSessionStartStatus::Started, fixture.start(config));
+	(void)establish_ready(fixture, peer(32U), 991U, 1'000U, 991U);
+	CountingEngineReadView view;
+	ASSERT_EQ(detail::NativeSessionTickStatus::Complete, capture_tick(fixture, view, 10'000U, true));
+	ASSERT_TRUE(slot(fixture)->has_latest_player_sample);
+	ASSERT_EQ(1U, slot(fixture)->latest_player_sample.entity_id);
+	view.clear_counts();
+	(void)capture_tick(fixture, view, 20'000U, false);
+	(void)capture_tick(fixture, view, 9'000'000U, false);
+	EXPECT_EQ(0U, view.total_calls());
+	EXPECT_EQ(CaptureInactive, NativePlayerProbe::last_status(fixture.runtime));
+	expect_default_current(NativePlayerProbe::current(fixture.runtime));
+	expect_zero_materialization(NativePlayerProbe::materialization(fixture.runtime));
+	ASSERT_FALSE(slot(fixture)->has_latest_player_sample);
+	EXPECT_EQ(1U, slot(fixture)->player_entity_ids.last_allocated_entity_id());
+	(void)capture_tick(fixture, view, 10'000'000U, true);
+	EXPECT_EQ(1U, view.read_calls);
+	EXPECT_EQ(CaptureValid, NativePlayerProbe::last_status(fixture.runtime));
+	ASSERT_TRUE(slot(fixture)->has_latest_player_sample);
+	EXPECT_EQ(2U, slot(fixture)->latest_player_sample.entity_id);
+	const auto calls = view.total_calls();
+	(void)capture_tick(fixture, view, 10'000'000U + independent_period_us(config.flight_hz) - 1U, true);
+	EXPECT_EQ(calls, view.total_calls());
+	EXPECT_EQ(CaptureNotDue, NativePlayerProbe::last_status(fixture.runtime));
+}
+
+TEST(TelemetryNativePlayerCaptureContract, LegalAbsenceAndInvalidSourceClearAndReappearanceGetsNewIds)
+{
+	REQUIRE_NATIVE_PLAYER_D3();
+	NativeFixture fixture;
+	auto config = enabled_config();
+	config.flight_hz = 60U;
+	ASSERT_EQ(detail::NativeSessionStartStatus::Started, fixture.start(config));
+	(void)establish_ready(fixture, peer(26U), 940U, 1'000U, 940U);
+	CountingEngineReadView view;
+	const auto period = independent_period_us(config.flight_hz);
+	std::uint64_t now = 100'000U;
+	(void)capture_tick(fixture, view, now);
+	ASSERT_EQ(1U, slot(fixture)->latest_player_sample.entity_id);
+	view.player = false;
+	(void)capture_tick(fixture, view, now += period);
+	EXPECT_EQ(CaptureNoPlayer, NativePlayerProbe::last_status(fixture.runtime));
+	const auto no_player = NativePlayerProbe::current(fixture.runtime);
+	EXPECT_TRUE(no_player.available);
+	EXPECT_EQ(detail::CaptureStatus::NoPlayer, no_player.result.status);
+	expect_observation(no_player.observation, {});
+	EXPECT_FALSE(slot(fixture)->has_latest_player_sample);
+	expect_materialization(NativePlayerProbe::materialization(fixture.runtime), 1U, 0U, 0U, 1U, 0U, 0U, 0U);
+	view.player = true;
+	(void)capture_tick(fixture, view, now += period);
+	ASSERT_EQ(2U, slot(fixture)->latest_player_sample.entity_id);
+	view.object_is_ship = false;
+	(void)capture_tick(fixture, view, now += period);
+	EXPECT_EQ(CaptureInvalidSource, NativePlayerProbe::last_status(fixture.runtime));
+	const auto invalid = NativePlayerProbe::current(fixture.runtime);
+	EXPECT_TRUE(invalid.available);
+	EXPECT_EQ(detail::CaptureStatus::InvalidSource, invalid.result.status);
+	expect_observation(invalid.observation, {});
+	EXPECT_FALSE(slot(fixture)->has_latest_player_sample);
+	expect_materialization(NativePlayerProbe::materialization(fixture.runtime), 1U, 0U, 0U, 0U, 1U, 0U, 0U);
+	view.object_is_ship = true;
+	(void)capture_tick(fixture, view, now += period);
+	EXPECT_EQ(3U, slot(fixture)->latest_player_sample.entity_id);
+}
+
+TEST(TelemetryNativePlayerCaptureContract, ExhaustiveCaptureResultPairsAcceptOnlyClosedContract)
+{
+	REQUIRE_NATIVE_PLAYER_D3();
+	for (std::uint8_t status_value = 0U; status_value <= static_cast<std::uint8_t>(detail::CaptureStatus::Count);
+		 ++status_value) {
+		for (std::uint8_t reason_value = 0U; reason_value <= static_cast<std::uint8_t>(detail::CaptureReason::Count);
+			 ++reason_value) {
+			NativeFixture fixture;
+			auto config = enabled_config();
+			ASSERT_EQ(detail::NativeSessionStartStatus::Started, fixture.start(config));
+			(void)establish_ready(fixture, peer(27U), 950U, 1'000U, 950U);
+			const auto valid = detail::CaptureResult{detail::CaptureStatus::Valid, detail::CaptureReason::None};
+			const auto seeded = observation(42U, 10U, 2.0f);
+			const auto status = static_cast<detail::CaptureStatus>(status_value);
+			const auto reason = static_cast<detail::CaptureReason>(reason_value);
+			const bool valid_pair = status == detail::CaptureStatus::Valid && reason == detail::CaptureReason::None;
+			const bool no_player_pair = status == detail::CaptureStatus::NoPlayer &&
+										reason >= detail::CaptureReason::NotInMission &&
+										reason <= detail::CaptureReason::MissingPlayerShip;
+			const bool invalid_pair = status == detail::CaptureStatus::InvalidSource &&
+									  reason >= detail::CaptureReason::WrongObjectType &&
+									  reason < detail::CaptureReason::Count;
+			if (!valid_pair) {
+				ASSERT_EQ(detail::NativeSessionTickStatus::Complete,
+					NativePlayerAccess::inject_collected_player_capture(fixture.runtime, valid, seeded));
+			}
+			const detail::CaptureResult candidate{status, reason};
+			const auto result = NativePlayerAccess::inject_collected_player_capture(fixture.runtime,
+				candidate,
+				observation(77U, 20U, 9.0f));
+			if (valid_pair || no_player_pair || invalid_pair) {
+				EXPECT_EQ(detail::NativeSessionTickStatus::Complete, result);
+				const auto current = NativePlayerProbe::current(fixture.runtime);
+				EXPECT_TRUE(current.available);
+				EXPECT_EQ(status, current.result.status);
+				EXPECT_EQ(reason, current.result.reason);
+				EXPECT_EQ(valid_pair       ? CaptureValid
+						  : no_player_pair ? CaptureNoPlayer
+										   : CaptureInvalidSource,
+					NativePlayerProbe::last_status(fixture.runtime));
+				if (valid_pair) {
+					expect_observation(current.observation, observation(77U, 20U, 9.0f));
+					EXPECT_TRUE(slot(fixture)->has_latest_player_sample);
+				} else {
+					expect_observation(current.observation, {});
+					EXPECT_FALSE(slot(fixture)->has_latest_player_sample);
+				}
+				EXPECT_EQ(1U, fixture.runtime.socket_count());
+			} else {
+				EXPECT_EQ(TickPermanentCaptureFailure, static_cast<std::uint8_t>(result));
+				EXPECT_EQ(CaptureInvariantFailure, NativePlayerProbe::last_status(fixture.runtime));
+				expect_default_current(NativePlayerProbe::current(fixture.runtime));
+				expect_zero_materialization(NativePlayerProbe::materialization(fixture.runtime));
+				EXPECT_EQ(0U, fixture.runtime.active_sessions());
+				EXPECT_EQ(0U, fixture.runtime.socket_count());
+				EXPECT_EQ(detail::NativeSessionTickStatus::Unavailable,
+					NativePlayerAccess::inject_collected_player_capture(fixture.runtime, valid, seeded));
+				CountingEngineReadView fault_view;
+				EXPECT_EQ(TickPermanentCaptureFailure,
+					static_cast<std::uint8_t>(capture_tick(fixture, fault_view, 30'000U)));
+				EXPECT_EQ(TickPermanentCaptureFailure,
+					static_cast<std::uint8_t>(fixture.runtime.service_tick({30'001U, 0U, true})));
+				EXPECT_EQ(0U, fault_view.total_calls());
+			}
+		}
+	}
+}
+
+TEST(TelemetryNativePlayerCaptureContract, ClockRegressionFailsClosedBeforeReadingAndStaysSticky)
+{
+	REQUIRE_NATIVE_PLAYER_D3();
+	NativeFixture fixture;
+	auto config = enabled_config();
+	ASSERT_EQ(detail::NativeSessionStartStatus::Started, fixture.start(config));
+	(void)establish_ready(fixture, peer(28U), 960U, 1'000U, 960U);
+	CountingEngineReadView view;
+	ASSERT_EQ(detail::NativeSessionTickStatus::Complete, capture_tick(fixture, view, 100'000U));
+	view.clear_counts();
+	EXPECT_EQ(TickPermanentCaptureFailure, static_cast<std::uint8_t>(capture_tick(fixture, view, 99'999U)));
+	EXPECT_EQ(0U, view.total_calls());
+	EXPECT_EQ(CaptureCadenceFailure, NativePlayerProbe::last_status(fixture.runtime));
+	EXPECT_EQ(0U, fixture.runtime.active_sessions());
+	EXPECT_EQ(0U, fixture.runtime.socket_count());
+	expect_default_current(NativePlayerProbe::current(fixture.runtime));
+	expect_zero_materialization(NativePlayerProbe::materialization(fixture.runtime));
+	EXPECT_EQ(TickPermanentCaptureFailure, static_cast<std::uint8_t>(capture_tick(fixture, view, 200'000U)));
+	EXPECT_EQ(0U, view.total_calls());
+}
+
+TEST(TelemetryNativePlayerCaptureContract, DeadlineOverflowFailsClosedBeforeReadingAndStaysSticky)
+{
+	REQUIRE_NATIVE_PLAYER_D3();
+	NativeFixture fixture;
+	auto config = enabled_config();
+	ASSERT_EQ(detail::NativeSessionStartStatus::Started, fixture.start(config));
+	CountingEngineReadView view;
+	EXPECT_EQ(TickPermanentCaptureFailure,
+		static_cast<std::uint8_t>(capture_tick(fixture, view, std::numeric_limits<std::uint64_t>::max())));
+	EXPECT_EQ(0U, view.total_calls());
+	EXPECT_EQ(CaptureCadenceFailure, NativePlayerProbe::last_status(fixture.runtime));
+	EXPECT_EQ(0U, fixture.runtime.socket_count());
+	expect_default_current(NativePlayerProbe::current(fixture.runtime));
+	expect_zero_materialization(NativePlayerProbe::materialization(fixture.runtime));
+	EXPECT_EQ(TickPermanentCaptureFailure, static_cast<std::uint8_t>(capture_tick(fixture, view, 1U)));
+	EXPECT_EQ(0U, view.total_calls());
+}
+
+TEST(TelemetryNativePlayerCaptureContract, EntityIdExhaustionClosesOnlyAffectedSlotAndTickCompletes)
+{
+	REQUIRE_NATIVE_PLAYER_D3();
+	NativeFixture fixture;
+	auto config = enabled_config();
+	config.max_clients = 2U;
+	ASSERT_EQ(detail::NativeSessionStartStatus::Started, fixture.start(config));
+	(void)establish_ready(fixture, peer(29U), 970U, 1'000U, 970U);
+	(void)establish_ready(fixture, peer(30U), 980U, 2'000U, 980U);
+	ASSERT_TRUE(NativePlayerAccess::seed_last_allocated_entity_id(fixture.runtime,
+		0U,
+		std::numeric_limits<std::uint64_t>::max()));
+	CountingEngineReadView view;
+	EXPECT_EQ(detail::NativeSessionTickStatus::Complete, capture_tick(fixture, view, 100'000U));
+	EXPECT_EQ(1U, view.read_calls);
+	expect_materialization(NativePlayerProbe::materialization(fixture.runtime), 2U, 0U, 1U, 0U, 0U, 0U, 1U);
+	EXPECT_EQ(1U, fixture.runtime.active_sessions());
+	EXPECT_EQ(detail::ProducerSessionProgress::Empty, slot(fixture, 0U)->progress);
+	EXPECT_EQ(detail::ProducerSessionProgress::ReadyForState, slot(fixture, 1U)->progress);
+	EXPECT_EQ(1U, slot(fixture, 1U)->latest_player_sample.entity_id);
+	EXPECT_EQ(1U, fixture.runtime.socket_count());
+}
+
+TEST(TelemetryNativePlayerCaptureContract, PurgeClearsAndRearmsAtIndependentExactBoundaries)
+{
+	REQUIRE_NATIVE_PLAYER_D3();
+	NativeFixture fixture;
+	auto config = enabled_config();
+	config.flight_hz = 30U;
+	ASSERT_EQ(detail::NativeSessionStartStatus::Started, fixture.start(config));
+	CountingEngineReadView view;
+	(void)capture_tick(fixture, view, 10'000U);
+	fixture.runtime.purge_all(detail::SessionCloseReason::MissionDiscontinuity);
+	EXPECT_EQ(CaptureUnavailable, NativePlayerProbe::last_status(fixture.runtime));
+	expect_default_current(NativePlayerProbe::current(fixture.runtime));
+	expect_zero_materialization(NativePlayerProbe::materialization(fixture.runtime));
+	view.clear_counts();
+	const std::uint64_t t2 = 987'654U;
+	const auto period = independent_period_us(config.flight_hz);
+	(void)capture_tick(fixture, view, t2);
+	EXPECT_EQ(1U, view.read_calls);
+	(void)capture_tick(fixture, view, t2 + period - 1U);
+	EXPECT_EQ(1U, view.read_calls);
+	EXPECT_EQ(CaptureNotDue, NativePlayerProbe::last_status(fixture.runtime));
+	(void)capture_tick(fixture, view, t2 + period);
+	EXPECT_EQ(2U, view.read_calls);
+}
+
+TEST(TelemetryNativePlayerCaptureContract, ShutdownClearsAndAllCaptureSeamsStayUnavailable)
+{
+	REQUIRE_NATIVE_PLAYER_D3();
+	NativeFixture fixture;
+	auto config = enabled_config();
+	ASSERT_EQ(detail::NativeSessionStartStatus::Started, fixture.start(config));
+	CountingEngineReadView view;
+	(void)capture_tick(fixture, view, 10'000U);
+	fixture.runtime.shutdown();
+	EXPECT_EQ(CaptureUnavailable, NativePlayerProbe::last_status(fixture.runtime));
+	expect_default_current(NativePlayerProbe::current(fixture.runtime));
+	expect_zero_materialization(NativePlayerProbe::materialization(fixture.runtime));
+	view.clear_counts();
+	EXPECT_EQ(detail::NativeSessionTickStatus::Unavailable, capture_tick(fixture, view, 20'000U));
+	EXPECT_EQ(detail::NativeSessionTickStatus::Unavailable, fixture.runtime.service_tick({20'001U, 0U, true}));
+	EXPECT_EQ(detail::NativeSessionTickStatus::Unavailable,
+		NativePlayerAccess::inject_collected_player_capture(fixture.runtime,
+			{detail::CaptureStatus::Valid, detail::CaptureReason::None},
+			observation(42U, 20'000U)));
+	EXPECT_EQ(0U, view.total_calls());
+}
+
+TEST(TelemetryNativePlayerCaptureContract, OneArgumentCompatibilityPreservesPlayerStateWhileR2Progresses)
+{
+	REQUIRE_NATIVE_PLAYER_D3();
+	NativeFixture fixture;
+	auto config = enabled_config();
+	config.max_clients = 2U;
+	ASSERT_EQ(detail::NativeSessionStartStatus::Started, fixture.start(config));
+	const auto ready_endpoint = peer(31U);
+	const auto ready_session_id = establish_ready(fixture, ready_endpoint, 990U, 1'000U, 990U);
+	CountingEngineReadView view;
+	(void)capture_tick(fixture, view, 100'000U);
+	const auto status_before = NativePlayerProbe::last_status(fixture.runtime);
+	const auto current_before = NativePlayerProbe::current(fixture.runtime);
+	const auto materialization_before = NativePlayerProbe::materialization(fixture.runtime);
+	const auto sample_before = slot(fixture)->latest_player_sample;
+	auto expect_preserved = [&] {
+		EXPECT_EQ(status_before, NativePlayerProbe::last_status(fixture.runtime));
+		const auto current_after = NativePlayerProbe::current(fixture.runtime);
+		EXPECT_EQ(current_before.available, current_after.available);
+		EXPECT_EQ(current_before.result.status, current_after.result.status);
+		EXPECT_EQ(current_before.result.reason, current_after.result.reason);
+		expect_observation(current_after.observation, current_before.observation);
+		expect_materialization(NativePlayerProbe::materialization(fixture.runtime),
+			materialization_before.eligible_slots,
+			materialization_before.materialized_existing_slots,
+			materialization_before.materialized_new_slots,
+			materialization_before.no_player_slots,
+			materialization_before.invalid_source_slots,
+			materialization_before.invalid_capture_slots,
+			materialization_before.closed_exhausted_slots);
+		ASSERT_NE(nullptr, slot(fixture));
+		ASSERT_TRUE(slot(fixture)->has_latest_player_sample);
+		expect_player_sample(slot(fixture)->latest_player_sample, sample_before);
+	};
+	const auto period = independent_period_us(config.flight_hz);
+	const auto activity_before = slot(fixture)->heartbeat.last_valid_network_activity_us;
+	const auto clock_response_before = slot(fixture)->heartbeat.last_valid_clock_response_us;
+	const std::uint64_t heartbeat_tick = 100'001U;
+	fixture.backend.receives.push_back(
+		{detail::IoStatus::Complete, heartbeat_request(ready_session_id, ready_endpoint, 991U, heartbeat_tick - 1U)});
+	const auto sends_before_heartbeat = fixture.backend.sent.size();
+	fixture.runtime.service_tick({heartbeat_tick, 0U, true});
+	ASSERT_GT(fixture.backend.sent.size(), sends_before_heartbeat);
+	EXPECT_EQ(protocol::MessageType::Heartbeat,
+		sent_type(fixture.backend, fixture.backend.sent.size() - 1U));
+	ASSERT_NE(nullptr, slot(fixture));
+	EXPECT_LT(activity_before, slot(fixture)->heartbeat.last_valid_network_activity_us);
+	EXPECT_EQ(heartbeat_tick, slot(fixture)->heartbeat.last_valid_network_activity_us);
+	EXPECT_EQ(clock_response_before, slot(fixture)->heartbeat.last_valid_clock_response_us)
+		<< "A valid client Request refreshes activity and queues Heartbeat Response; it is not a clock-response sample.";
+	expect_preserved();
+
+	const auto second_endpoint = peer(33U);
+	const auto sends_before_second_hello = fixture.backend.sent.size();
+	fixture.backend.receives.push_back(
+		{detail::IoStatus::Complete, hello(protocol::VersionMinorV1_1, 992U, second_endpoint)});
+	fixture.runtime.service_tick({heartbeat_tick + 1U, 0U, false});
+	expect_preserved();
+	ASSERT_GT(fixture.backend.sent.size(), sends_before_second_hello);
+	const auto second_welcome = fixture.backend.sent.size() - 1U;
+	EXPECT_EQ(protocol::MessageType::Welcome, sent_type(fixture.backend, second_welcome));
+	ASSERT_NE(nullptr, slot(fixture, 1U));
+	EXPECT_EQ(detail::ProducerSessionProgress::AwaitWelcomeApplied, slot(fixture, 1U)->progress);
+	EXPECT_EQ(2U, fixture.runtime.active_sessions());
+
+	const auto sends_before_second_welcome_ack = fixture.backend.sent.size();
+	fixture.backend.receives.push_back(
+		{detail::IoStatus::Complete, ack_for(fixture.backend.sent[second_welcome], second_endpoint, 993U)});
+	const auto second_welcome_ack_script_index = fixture.backend.receives.size() - 1U;
+	fixture.runtime.service_tick({heartbeat_tick + 2U, 0U, false});
+	expect_preserved();
+	EXPECT_GT(fixture.backend.receive_script_index, second_welcome_ack_script_index)
+		<< "The one-argument overload must ingest the real WELCOME ACK before later egress.";
+	ASSERT_NE(nullptr, slot(fixture, 1U));
+	EXPECT_EQ(detail::ProducerSessionProgress::ReadyForState, slot(fixture, 1U)->progress)
+		<< "Applying the WELCOME proof is the observable R2 handshake transition.";
+	for (std::uint64_t offset = 0U;
+		offset < 8U && fixture.backend.sent.size() == sends_before_second_welcome_ack;
+		++offset) {
+		fixture.runtime.service_tick({heartbeat_tick + 3U + offset, 0U, false});
+		expect_preserved();
+	}
+	ASSERT_GT(fixture.backend.sent.size(), sends_before_second_welcome_ack);
+	EXPECT_EQ(protocol::MessageType::SessionBegin,
+		sent_type(fixture.backend, fixture.backend.sent.size() - 1U));
+	ASSERT_NE(nullptr, slot(fixture, 1U));
+	EXPECT_EQ(detail::ProducerSessionProgress::ReadyForState, slot(fixture, 1U)->progress);
+
+	fixture.runtime.service_tick({100'000U + period * 2U, 0U, true});
+	expect_preserved();
+	fixture.runtime.service_tick({100'000U + period * 4U, 0U, true});
+	expect_preserved();
+
+	const auto disconnect_due = slot(fixture)->heartbeat.last_valid_network_activity_us +
+		slot(fixture)->heartbeat.disconnect_timeout_us;
+	fixture.runtime.service_tick({disconnect_due, 0U, true});
+	ASSERT_NE(nullptr, slot(fixture));
+	EXPECT_EQ(detail::ProducerSessionProgress::Empty, slot(fixture)->progress)
+		<< "Only the real R2 maintenance deadline may clear the preserved player slot.";
+	EXPECT_EQ(status_before, NativePlayerProbe::last_status(fixture.runtime));
+	const auto current_after_close = NativePlayerProbe::current(fixture.runtime);
+	EXPECT_EQ(current_before.available, current_after_close.available);
+	EXPECT_EQ(current_before.result.status, current_after_close.result.status);
+	EXPECT_EQ(current_before.result.reason, current_after_close.result.reason);
+	expect_observation(current_after_close.observation, current_before.observation);
+	expect_materialization(NativePlayerProbe::materialization(fixture.runtime),
+		materialization_before.eligible_slots,
+		materialization_before.materialized_existing_slots,
+		materialization_before.materialized_new_slots,
+		materialization_before.no_player_slots,
+		materialization_before.invalid_source_slots,
+		materialization_before.invalid_capture_slots,
+		materialization_before.closed_exhausted_slots);
+}
+
+TEST(TelemetryNativePlayerCaptureContract, ClosedAndErrorTransportFailuresAreStickyAndPreemptCapture)
+{
+	REQUIRE_NATIVE_PLAYER_D3();
+	for (const auto io_status : {detail::IoStatus::Closed, detail::IoStatus::Error}) {
+		NativeFixture fixture;
+		auto config = enabled_config();
+		ASSERT_EQ(detail::NativeSessionStartStatus::Started, fixture.start(config));
+		fixture.backend.receives.push_back({io_status, {}});
+		CountingEngineReadView view;
+		EXPECT_EQ(detail::NativeSessionTickStatus::PermanentTransportFailure, capture_tick(fixture, view, 100'000U));
+		EXPECT_EQ(0U, view.total_calls());
+		EXPECT_EQ(CaptureUnavailable, NativePlayerProbe::last_status(fixture.runtime));
+		expect_default_current(NativePlayerProbe::current(fixture.runtime));
+		expect_zero_materialization(NativePlayerProbe::materialization(fixture.runtime));
+		EXPECT_EQ(0U, fixture.runtime.socket_count());
+		EXPECT_EQ(detail::NativeSessionTickStatus::PermanentTransportFailure, capture_tick(fixture, view, 200'000U));
+		EXPECT_EQ(0U, view.total_calls());
+	}
+}
+
+#undef REQUIRE_NATIVE_PLAYER_D3
 
 #endif
 

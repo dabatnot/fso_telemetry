@@ -66,6 +66,10 @@ NativeSessionStartStatus NativeSessionRuntime::start(const NativeSessionStartReq
 		request.packet_sequences == nullptr) {
 		return NativeSessionStartStatus::InvalidConfiguration;
 	}
+	Capture30Hz capture_cadence;
+	if (!capture_cadence.configure(request.config->flight_hz)) {
+		return NativeSessionStartStatus::InvalidConfiguration;
+	}
 
 	SessionControllerConfig controller_config;
 	if (!make_controller_config(*request.config, request.producer_id, controller_config)) {
@@ -97,31 +101,50 @@ NativeSessionStartStatus NativeSessionRuntime::start(const NativeSessionStartReq
 	m_controller_ready = true;
 	m_maximum_attempts = request.config->max_datagrams_per_tick;
 	m_scheduler.reset();
+	m_capture_cadence = capture_cadence;
+	clear_player_capture();
+	m_fault_status = NativeSessionTickStatus::Unavailable;
 	m_state = State::Started;
 	return NativeSessionStartStatus::Started;
 }
 
 NativeSessionTickStatus NativeSessionRuntime::service_tick(const NativeSessionTickContext& context) noexcept
 {
-	if (m_state == State::Faulted) {
-		return NativeSessionTickStatus::PermanentTransportFailure;
-	}
-	if (m_state != State::Started || !m_controller_ready) {
-		return NativeSessionTickStatus::Unavailable;
+	return service_r2_tick(context);
+}
+
+NativeSessionTickStatus NativeSessionRuntime::service_tick(const NativeSessionTickContext& context,
+	const EngineReadView& engine_view) noexcept
+{
+	const auto r2_status = service_r2_tick(context);
+	if (r2_status != NativeSessionTickStatus::Complete) {
+		return r2_status;
 	}
 
-	m_tick_context = context;
-	m_controller.expire_housekeeping(context.now_us);
-	m_controller.service_timeouts(context.now_us);
-	m_controller.service_reliability(context.now_us);
-	m_controller.service_periodic(context.now_us);
-	const auto result = m_scheduler.run_tick(m_maximum_attempts, *this);
-	if (!result.valid_budget || result.terminal_status == IoStatus::Closed ||
-		result.terminal_status == IoStatus::Error) {
-		fail_transport();
-		return NativeSessionTickStatus::PermanentTransportFailure;
+	const auto cadence = m_capture_cadence.poll(context.now_us, context.mission_active);
+	switch (cadence.status) {
+	case CaptureCadenceStatus::Inactive:
+		m_controller.clear_player_observations();
+		clear_player_capture();
+		m_last_player_capture_status = NativePlayerCaptureStatus::Inactive;
+		return NativeSessionTickStatus::Complete;
+	case CaptureCadenceStatus::NotDue:
+		m_last_player_materialization = {};
+		m_last_player_capture_status = NativePlayerCaptureStatus::NotDue;
+		return NativeSessionTickStatus::Complete;
+	case CaptureCadenceStatus::Due:
+		break;
+	case CaptureCadenceStatus::InvalidRate:
+	case CaptureCadenceStatus::ClockRegression:
+	case CaptureCadenceStatus::DeadlineOverflow:
+	case CaptureCadenceStatus::Count:
+		fail_capture(NativePlayerCaptureStatus::CadenceFailure);
+		return NativeSessionTickStatus::PermanentCaptureFailure;
 	}
-	return NativeSessionTickStatus::Complete;
+
+	PlayerObservationDto observation;
+	const auto capture = collect_player_kinematics(engine_view, context.now_us, observation);
+	return apply_collected_player_capture(capture, observation);
 }
 
 void NativeSessionRuntime::purge_all(SessionCloseReason reason) noexcept
@@ -129,6 +152,8 @@ void NativeSessionRuntime::purge_all(SessionCloseReason reason) noexcept
 	if (m_controller_ready) {
 		m_controller.purge_all(reason);
 	}
+	m_capture_cadence.stop();
+	clear_player_capture();
 }
 
 void NativeSessionRuntime::shutdown() noexcept
@@ -141,6 +166,8 @@ void NativeSessionRuntime::shutdown() noexcept
 	}
 	m_transport.close();
 	m_scheduler.reset();
+	m_capture_cadence.reset();
+	clear_player_capture();
 	m_state = State::Stopped;
 }
 
@@ -194,6 +221,66 @@ IoStatus NativeSessionRuntime::try_send() noexcept
 	return status;
 }
 
+NativeSessionTickStatus NativeSessionRuntime::service_r2_tick(const NativeSessionTickContext& context) noexcept
+{
+	if (m_state == State::Faulted) {
+		return m_fault_status;
+	}
+	if (m_state != State::Started || !m_controller_ready) {
+		return NativeSessionTickStatus::Unavailable;
+	}
+
+	m_tick_context = context;
+	m_controller.expire_housekeeping(context.now_us);
+	m_controller.service_timeouts(context.now_us);
+	m_controller.service_reliability(context.now_us);
+	m_controller.service_periodic(context.now_us);
+	const auto result = m_scheduler.run_tick(m_maximum_attempts, *this);
+	if (!result.valid_budget || result.terminal_status == IoStatus::Closed ||
+		result.terminal_status == IoStatus::Error) {
+		fail_transport();
+		return NativeSessionTickStatus::PermanentTransportFailure;
+	}
+	return NativeSessionTickStatus::Complete;
+}
+
+NativeSessionTickStatus NativeSessionRuntime::apply_collected_player_capture(const CaptureResult& result,
+	const PlayerObservationDto& observation) noexcept
+{
+	NativePlayerCaptureStatus status;
+	PlayerObservationDto effective_observation;
+	if (result.status == CaptureStatus::Valid && result.reason == CaptureReason::None) {
+		status = NativePlayerCaptureStatus::CapturedValid;
+		effective_observation = observation;
+	} else if (result.status == CaptureStatus::NoPlayer && result.reason >= CaptureReason::NotInMission &&
+		result.reason <= CaptureReason::MissingPlayerShip) {
+		status = NativePlayerCaptureStatus::CapturedNoPlayer;
+	} else if (result.status == CaptureStatus::InvalidSource && result.reason >= CaptureReason::WrongObjectType &&
+		result.reason < CaptureReason::Count) {
+		status = NativePlayerCaptureStatus::CapturedInvalidSource;
+	} else {
+		fail_capture(NativePlayerCaptureStatus::CaptureInvariantFailure);
+		return NativeSessionTickStatus::PermanentCaptureFailure;
+	}
+
+	const auto materialization = m_controller.apply_player_observation(result, effective_observation);
+	CurrentPlayerCapture current;
+	current.available = true;
+	current.result = result;
+	current.observation = effective_observation;
+	m_current_player_capture = current;
+	m_last_player_materialization = materialization;
+	m_last_player_capture_status = status;
+	return NativeSessionTickStatus::Complete;
+}
+
+void NativeSessionRuntime::clear_player_capture() noexcept
+{
+	m_current_player_capture = {};
+	m_last_player_materialization = {};
+	m_last_player_capture_status = NativePlayerCaptureStatus::Unavailable;
+}
+
 void NativeSessionRuntime::fail_transport() noexcept
 {
 	if (m_state != State::Started) {
@@ -201,6 +288,25 @@ void NativeSessionRuntime::fail_transport() noexcept
 	}
 	m_controller.purge_all(SessionCloseReason::TransportError);
 	m_transport.close();
+	m_scheduler.reset();
+	m_capture_cadence.stop();
+	clear_player_capture();
+	m_fault_status = NativeSessionTickStatus::PermanentTransportFailure;
+	m_state = State::Faulted;
+}
+
+void NativeSessionRuntime::fail_capture(NativePlayerCaptureStatus status) noexcept
+{
+	if (m_state != State::Started) {
+		return;
+	}
+	m_controller.purge_all(SessionCloseReason::ProtocolError);
+	m_transport.close();
+	m_scheduler.reset();
+	m_capture_cadence.stop();
+	clear_player_capture();
+	m_last_player_capture_status = status;
+	m_fault_status = NativeSessionTickStatus::PermanentCaptureFailure;
 	m_state = State::Faulted;
 }
 
