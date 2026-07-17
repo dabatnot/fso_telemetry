@@ -1720,6 +1720,8 @@ add_file_folder("Telemetry"
 	telemetry/identity.cpp
 	telemetry/identity.h
 	telemetry/json_preflight.h
+	telemetry/native_session_runtime.cpp
+	telemetry/native_session_runtime.h
 	telemetry/runtime.cpp
 	telemetry/runtime.h
 	telemetry/runtime_adapter.cpp

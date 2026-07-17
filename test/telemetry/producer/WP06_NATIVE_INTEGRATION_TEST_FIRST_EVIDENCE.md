@@ -129,11 +129,195 @@ Allocation randomized stress: 4 tests x 10 iterations = 40/40 PASS.
 
 No test failure, flaky iteration, allocation regression, build error or purge-semantics anomaly was observed. Expected diagnostics emitted by unrelated parser and safe-string tests appeared during the full suites, but their tests passed.
 
-## Checkpoint status
+## Historical R0/R1 checkpoint status
 
-R0 and the authorized R1 controller slice are GREEN in Debug and Release. Production remains fail-closed before socket allocation because the real global startup budget is incomplete. WP06, native end-to-end `P1-AC-005`, and `G1-D` remain open. R2/native pump and loopback tests have not started.
+At this historical checkpoint, R0 and the authorized R1 controller slice were GREEN in Debug and Release, while R2 had not started. The final R2 verification below supersedes only that native-composition status; production still remains fail-closed before socket allocation because the real global startup budget is incomplete.
 
-## Requirement and acceptance mapping
+## R2 injectable native composition RED checkpoint
+
+This checkpoint adds only the native-runtime test-first harness and its test-source registration. It does not add production code, production CMake integration, a real loopback harness, R3 work, or an R2 allocation target.
+
+The adjudicated R2 contract is locked as follows:
+
+- the native composition is an internal injectable owner with `noexcept` start, tick, purge and shutdown seams;
+- `NativeSessionRuntime` has no startup-budget argument and no completeness bypass;
+- only a fake `RuntimeStartupServices` may inject a complete budget, and construction/configuration of the native stack belongs inside the successful `start_transport()` gate;
+- the real WP06 budget remains incomplete with deferred mask `0x00f0` and therefore constructs no socket stack;
+- an engine update reads the monotonic clock exactly once, then applies lifecycle before timeouts, reliable work, periodic work and nonblocking I/O;
+- order is asserted behaviorally, without a production observer, for the four inversions lifecycle/timeout, timeout/REL, REL/periodic and periodic/I/O;
+- receive `Closed` or `Error` is globally fatal; send `Closed` or `Error` completes the selected controller output once and then performs global teardown;
+- the shared per-tick attempt budget is bounded to `1..256`, alternates its initial I/O direction across ticks, and a direction-local `WouldBlock` does not stop the other direction;
+- shutdown and wrong-thread updates do not clock, service or drain the native stack.
+
+Nine named tests now reserve those behavioral gates:
+
+```text
+NativeCompositionHeaderAndNoexceptContractExist
+BudgetGateConstructsNativeStackOnlyInsideSuccessfulStartTransport
+EngineUpdateReadsOneClockThenAppliesLifecycleBeforeTick
+FourBehavioralInversionsLockLifecycleTimeoutReliablePeriodicAndIoOrder
+SharedBudgetAlternatesAcrossTicksAndWouldBlockStopsOnlyOneDirection
+AllowlistAndVersionNegotiationComposeWithoutDurableRejectedState
+PermanentReceiveClosedOrErrorPurgesAllAndNeverReopens
+PermanentSendClosedOrErrorCompletesOnceThenPurgesGlobally
+ShutdownAndWrongThreadNeverClockServiceOrDrain
+```
+
+The source uses `__has_include("telemetry/native_session_runtime.h")`. This keeps the test target compilable before production exists while making every R2 gate explicitly RED. Once that header exists, the native-backed branch becomes the active harness and any concrete API drift must be adapted to the contract rather than hidden with a production bypass.
+
+### Reviewer-requested R2 oracle strengthening
+
+The future native-backed branch was rewritten after the first RED review. The eight findings are now represented explicitly, while the header-absent branch remains the active expected RED:
+
+1. `RuntimeCompositionServices` returns the real WP06 subtotal (`0x00f0`) to a real `Runtime` and proves `BudgetFailure`, zero native construction and zero socket open. Its synthetic complete variant constructs `NativeSessionRuntime` only inside `start_transport()`.
+2. The same real `Runtime` receives one pending mission-lifecycle marker; the fake counts exactly one monotonic read and one service call, then compares the service context with the post-lifecycle mission generation.
+3. Four separate behavioral sub-scenarios observe lifecycle before service, timeout before a due REL retry, REL before a simultaneous heartbeat, and periodic heartbeat before an `N=1` socket opportunity. No production order observer is requested.
+4. Native start rejects budgets `0` and `257` without opening a socket; `N=1` produces `R,S,R,S` across four ready ticks; RX and TX `WouldBlock` are exercised symmetrically with remaining budget and progress in the other direction.
+5. A nonallowlisted source produces zero bytes and no usage/random mutation; 1.1 creates an accepted slot; 1.0 emits an exact minor-1.0 `WELCOME(UnsupportedVersion, session_id=0)`. Its bounded rejection replay cache is asserted separately from active slots and reliable-window ownership.
+6. Receive and send `Closed` and `Error` start from multiple slots plus cache, preproof, REL, heartbeat schedules and queued output. Every case requires one socket close, complete purge, no reopen/retry on future ticks, and exactly one fatal send attempt for the selected output.
+7. A real `Runtime` callback from a worker performs zero clock/service/RX/TX calls. Main-thread shutdown asserts the existing `stop collection -> close stores -> invalidate mission -> stop transport -> summary -> release allocations -> release registry` order, idempotence and no pending datagram drain.
+8. Native references live entirely below the header guard; `<algorithm>` is explicit; the SFINAE trait reports a partial member API as a focused test failure and requires `noexcept` start/tick/purge/shutdown. A constructor accepting a budget subtotal is explicitly forbidden.
+
+Because the production header is still absent at this checkpoint, this strengthened future branch has not been compiled or claimed GREEN. Its concrete names are an implementation handoff contract; once production lands, the test owner must compile it and adapt only API spelling/shape that preserves these behaviors.
+
+### Second-review precision pass
+
+The next review found that several of the strengthened scenarios were still satisfiable by weaker implementations. The test branch now tightens them as follows:
+
+- the real Runtime service fake appends `C`, lifecycle invalidation appends `L`, and native service appends `T` to one shared trace; the oracle requires exactly `C,L,T` and the exact mission-purge service sequence `1,2,3,4,5`;
+- lifecycle replacement decodes the old and new WELCOME packets, requires the old/new peer endpoints to differ, forbids reuse of the old session ID and requires exactly one surviving new slot;
+- the REL/periodic scenario advances to `1,020,100 us`, where both the retained SESSION_BEGIN retry and the first idle heartbeat are due but disconnect is not; it requires SESSION_BEGIN first and HEARTBEAT on the following eligible send;
+- `establish_ready` snapshots the pre-existing active-session count, waits until the scripted final SESSION_BEGIN ACK is actually consumed, then requires exactly `sessions_before + 1`; it no longer assumes that every fixture starts with zero sessions;
+- the periodic/I/O inversion uses the exact boundary `1,030,010 us`: WELCOME proof is applied at `30,010 us`, and the SESSION_BEGIN ACK at `30,020 us` changes readiness without re-anchoring the `1,000,000 us` idle-heartbeat deadline;
+- the `WouldBlock` harness preloads a real WELCOME without a send attempt by spending all four setup units on three rejected RX datagrams and the final valid HELLO; the following ticks require TX-`WouldBlock` then RX progress, followed by RX-`WouldBlock` then TX progress;
+- every budget assertion now snapshots calls immediately before the tick and checks that tick's RX+TX delta is at most four; no cumulative call-count proxy remains;
+- after the wrong-thread callback's zero-work assertion, the next main-thread tick must fault with `MainThreadViolation`, execute exact global teardown `1,4,2,6,8,9`, free the native composition and still perform zero clock/service/I/O work.
+
+The remaining completion observability point was adjudicated with one narrowly scoped internal seam: `telemetry::detail::NativeOutputCompletionPort` is a mandatory non-null reference with only `complete(SessionController&, IoStatus) noexcept`. The production `NativeOutputCompletionForwarder` is required to be nothrow-default-constructible and to forward exactly to `SessionController::complete_output`; no non-portable object-representation or `is_empty` assertion is made for this polymorphic type. `RuntimeCompositionServices` constructs the native runtime with that production port. The counting fake owns a real `NativeOutputCompletionForwarder`, records usage immediately before the call, delegates to `forwarder.complete(controller, status)` exactly once, then records usage immediately afterwards. A fatal send now requires one additional port call with exact `Closed`/`Error`, queued output before, only the selected owner closed afterwards while unrelated slots still exist, and only then complete global purge. Late ticks must preserve the completion count and perform no send or reopen. A direct purge without completion can no longer satisfy this oracle. No general phase observer, optional/null hook, configuration, dynamic allocation or additional callback surface is introduced by the test contract.
+
+Debug RED capture:
+
+```text
+cmake --build build --config Debug --target unittests --parallel 4
+Result: PASS; test_telemetry_native_runtime_integration_contract.cpp compiled and unittests linked.
+
+build/bin/Debug/unittests.exe --gtest_filter="TelemetryNativeRuntimeIntegrationContract.*"
+Result: 9 tests; 0 PASS, 9 expected FAIL.
+Common blocking oracle: telemetry/native_session_runtime.h does not exist.
+```
+
+The RED is therefore an absent production composition, not a compiler failure or an unrelated regression.
+
+### Post-production R2 GREEN capture
+
+After the native production composition landed, the guarded native branch compiled with the two adjudicated oracle corrections above. Debug verification against the current production implementation is:
+
+```text
+cmake --build build --config Debug --target unittests --parallel 4
+Result: PASS; native_session_runtime.cpp, runtime.cpp, runtime_adapter.cpp and the R2 test linked.
+
+build/bin/Debug/unittests.exe --gtest_filter="TelemetryNativeRuntimeIntegrationContract.*"
+Result: 9 tests; 9 PASS, 0 FAIL (132 ms total).
+```
+
+The same build preserved the focused baselines:
+
+```text
+R0/R1 NAT9: 9/9 PASS.
+Allocation contract: 4/4 PASS.
+TelemetryWp06HeartbeatContract: 24/24 PASS.
+TelemetryWp06ReliabilityContract: 13/13 PASS.
+git diff --check: PASS (line-ending warnings only).
+```
+
+At that intermediate checkpoint, this closed the injectable native-composition R2 test gate in Debug only; the final verification below adds Release and independent test-owner evidence. Real IPv4/IPv6 loopback proof and later R3 work remain outside this slice.
+
+### Final independent R2 GREEN verification
+
+The test owner independently inspected the final production slice after implementation. The inspection confirmed:
+
+- `NativeRuntimeStartupServices::calculate_known_budget()` composes WP04 into the real WP06 subtotal;
+- the real subtotal remains incomplete with deferred mask `0x00f0`, and `Runtime` rejects it before registry allocation, candidate registration, `start_transport()`, native construction or socket bind;
+- the synthetic complete budget exists only in the fake `RuntimeStartupServices`, and native construction occurs inside its successful `start_transport()`;
+- each engine update reads the clock once, applies lifecycle, builds the post-lifecycle context and then calls native tick service;
+- native service order is housekeeping, timeout, REL, periodic, then the bounded alternating I/O scheduler;
+- a real send is followed by exactly one focused output-completion call before fatal global purge; receive/send `Closed` and `Error` close globally and never reopen;
+- wrong-thread and shutdown paths cannot clock, service or drain the native transport.
+
+No production or test source was edited during this final verification. Six test hashes were captured before execution and recaptured afterwards; every value was identical:
+
+```text
+B51C3C193444D190BFB496301EE7A5E235EA386D454236A9D9BC13D08B94F2AF  test_telemetry_native_runtime_integration_contract.cpp
+8C2C2D3C1E9396B813C9DE06126DC2F0D978DB3D3E0D1020731BFB8E66CBF659  test_telemetry_runtime_startup_contract.cpp
+82B0ADA00FDBD9EBFD1C11741B4509C14EF93942119E1079105864E9E093804D  test_telemetry_runtime_lifecycle_contract.cpp
+3243E1DCCFECC22F458E990B8DC1AF843B6702AFFFCF952FF2434E975904B49B  test_telemetry_session_controller_heartbeat_contract.cpp
+84DE2DB14C23D10C64B56E2103E95D5C9283C2388FDFBAC8771566BDE4662EF0  test_telemetry_session_controller_contract.cpp
+09CD4E4F85DB92E9F2F91C8FCBE882203A1E41ECE942560F63DD83A97306F5D6  test_telemetry_session_controller_allocations.cpp
+```
+
+Final Debug and Release build command:
+
+```text
+cmake --build build --config <Debug|Release> --target unittests telemetry_session_controller_allocation_contract_tests --parallel 4
+Result: PASS in Debug and Release.
+```
+
+Final targeted matrix:
+
+| Suite | Debug | Release |
+|---|---:|---:|
+| `TelemetryNativeRuntimeIntegrationContract.*` | 9/9 PASS | 9/9 PASS |
+| R0/R1 NAT9 filter | 9/9 PASS | 9/9 PASS |
+| `TelemetryRuntime*.*` | 47/47 PASS | 47/47 PASS |
+| `TelemetryWp06HeartbeatContract.*` | 24/24 PASS | 24/24 PASS |
+| `TelemetryWp06ReliabilityContract.*` | 13/13 PASS | 13/13 PASS |
+| allocation executable | 4/4 PASS | 4/4 PASS |
+
+Full suites:
+
+```text
+Debug:   852/852 PASS from 110 suites; 2 pre-existing disabled tests; 12,693 ms.
+Release: 852/852 PASS from 110 suites; 2 pre-existing disabled tests; 4,396 ms.
+```
+
+Proportionate deterministic stress used `--gtest_shuffle --gtest_random_seed=20260717`:
+
+```text
+Critical R2/runtime/heartbeat/reliability filter:
+  Debug   93 tests x 10 iterations = 930/930 PASS.
+  Release 93 tests x  5 iterations = 465/465 PASS.
+Allocation executable:
+  Debug    4 tests x 10 iterations = 40/40 PASS.
+  Release  4 tests x  5 iterations = 20/20 PASS.
+```
+
+`git diff --check` passed with line-ending warnings only. Full-suite generated `test/test_data` artifacts were removed, and final status contains only the expected shared production slice plus the authorized R2 test registration, test source and native evidence. No anomaly, flaky iteration, hash drift, test relaxation, unexpected bind, build failure or baseline regression was observed.
+
+Preserved Debug baselines:
+
+```text
+R0/R1 NAT9: 9/9 PASS.
+Allocation contract: 4/4 PASS.
+TelemetryWp06HeartbeatContract: 24/24 PASS.
+TelemetryWp06ReliabilityContract: 13/13 PASS.
+```
+
+The historical RED above is resolved: R2 injectable composition is `GREEN IN DEBUG AND RELEASE`, with independent review and reproduction completed. `P1-AC-005` remains `OPEN` and `G1-D` remains `PARTIAL` only because the incomplete real global budget prevents production bind and therefore leaves real IPv4/IPv6 loopback proof outstanding. Later R3 work remains outside this slice.
+
+## R2 requirement delta
+
+| ID | R2 evidence | Honest status after this run |
+|---|---|---|
+| `P1-REQ-017` | Runtime mission/shutdown and fatal-transport convergence pass with injected sockets and exact teardown order in Debug and Release. | `VERIFIED FOR R2` — independently reviewed and reproduced. |
+| `P1-REQ-018` | Native timeout-before-REL and REL-before-periodic composition pass in Debug and Release. | `VERIFIED FOR R2` — independently reviewed and reproduced. |
+| `P1-REQ-019` | Exact periodic deadline and periodic-before-I/O composition pass in Debug and Release. | `VERIFIED FOR R2` — independently reviewed and reproduced. |
+| `P1-AC-010` | Controller heartbeat 24/24 and native ordered scenarios pass in Debug and Release, including deterministic stress. | `VERIFIED FOR R2` — independent review and reproduction completed. |
+| `P1-AC-005` | Fake-backend allowlist, 1.1 acceptance and exact 1.0 rejection without a durable heavy slot pass in Debug and Release. | `OPEN` — only the incomplete global budget and consequent absence of real IPv4/IPv6 loopback negotiation remain. |
+| `G1-D` | Injected-socket native convergence and lifecycle teardown pass in Debug and Release. | `PARTIAL` — only the incomplete global budget and consequent real socket/loopback proof remain. |
+
+## Historical R0/R1 requirement mapping
+
+The table below records the earlier checkpoint and is retained as historical evidence; statements that native composition was unproven are superseded by the R2 delta above.
 
 | ID | Evidence in this checkpoint | Honest status |
 |---|---|---|
@@ -142,6 +326,3 @@ R0 and the authorized R1 controller slice are GREEN in Debug and Release. Produc
 | `P1-REQ-017` | `purge_all(MissionDiscontinuity)` releases session-scoped slots, REL state, cache, preproof, heartbeat state, output, session/target limiter ownership and cursors while preserving process-scoped IDs and pre-session abuse history. | `PARTIAL` — the R1 controller purge slice is green; engine mission/menu/shutdown and socket convergence remain outside R0/R1. |
 | `P1-REQ-018` | Exact timeout boundary is ordered before REL and periodic work; due REL is ordered before heartbeat and remains transactional until completion. Existing session/REL baselines remain green. | `PARTIAL` — the R1 controller ordering slice is green; native tick composition remains unproven. |
 | `P1-REQ-019` | Periodic heartbeat after REL completion, hitch coalescing, probe/filter purge and cursor restart are green; the existing heartbeat boundary/filter/overflow suite remains green. | `PARTIAL` — isolated/controller behavior is green, native tick composition remains open. |
-| `P1-AC-010` | All 24 heartbeat tests, including ordered timeout/REL/periodic and process-lifetime purge semantics, pass in Debug and Release. | `PARTIAL/OPEN` — the isolated/controller slice is green; do not close acceptance until later native composition evidence is reviewed. |
-| `P1-AC-005` | R0 proves only fail-closed startup and reservation semantics; existing isolated handshake tests remain green. | `OPEN` — no R2 pump or real IPv4/IPv6 loopback negotiation was started. |
-| `G1-D` | R1 defines controller convergence and purge ownership. | `OPEN` — mission/menu/shutdown plus native sockets are not proven end to end. |

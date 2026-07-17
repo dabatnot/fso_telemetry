@@ -74,9 +74,21 @@ struct RuntimeConfigResult {
 	std::size_t max_clients = 0U;
 };
 
+struct RuntimeTickContext {
+	std::uint64_t now_us = 0U;
+	std::uint32_t mission_generation = 0U;
+	bool mission_active = false;
+};
+
+enum class RuntimeTickStatus : std::uint8_t {
+	Complete = 0,
+	Unavailable,
+	PermanentTransportFailure,
+};
+
 // The native runtime remains fail-closed while the global startup budget is
-// incomplete. Started is used by deterministic lifecycle fakes; WP05 does not
-// bind the native transport or publish a client session.
+// incomplete. Started is used by deterministic lifecycle fakes; production
+// does not bind the native transport until every deferred category is priced.
 enum class RuntimeTransportStatus : std::uint8_t {
 	Unavailable = 0,
 	Started,
@@ -95,6 +107,11 @@ class RuntimeStartupServices {
 	virtual bool allocate_session_registry() noexcept = 0;
 	virtual SessionIdRegistrationStatus register_session_candidate(std::uint64_t candidate) noexcept = 0;
 	virtual RuntimeTransportStatus start_transport() noexcept = 0;
+	virtual std::uint64_t monotonic_now_us() noexcept { return 0U; }
+	virtual RuntimeTickStatus service_tick(const RuntimeTickContext&) noexcept
+	{
+		return RuntimeTickStatus::Unavailable;
+	}
 	virtual void stop_collection() noexcept = 0;
 	virtual void invalidate_mission_state_and_entities() noexcept = 0;
 	virtual void cancel_replication() noexcept = 0;

@@ -2,8 +2,12 @@
 
 #include "cmdline/cmdline.h"
 #include "globalincs/pstypes.h"
+#include "io/timer.h"
 #include "telemetry/config.h"
+#include "telemetry/native_session_runtime.h"
 
+#include <memory>
+#include <new>
 #include <thread>
 
 namespace telemetry::detail {
@@ -11,6 +15,8 @@ namespace {
 
 class NativeRuntimeStartupServices final : public RuntimeStartupServices {
   public:
+	NativeRuntimeStartupServices() noexcept : m_session_ids(m_random, m_session_registry) {}
+
 	void capture_main_thread() noexcept override
 	{
 		m_captured_thread = std::this_thread::get_id();
@@ -42,7 +48,9 @@ class NativeRuntimeStartupServices final : public RuntimeStartupServices {
 	IdentityResult load_producer_identity() noexcept override
 	{
 		NativeProducerProfileStore store(profile_storage_root_for_mode(Cmdline_portable_mode));
-		return load_or_create_producer_identity(store, m_random);
+		const auto result = load_or_create_producer_identity(store, m_random);
+		m_producer_id = result.error == IdentityError::None ? result.producer_id : 0U;
+		return result;
 	}
 
 	SessionIdCandidateResult draw_session_candidate() noexcept override
@@ -52,7 +60,8 @@ class NativeRuntimeStartupServices final : public RuntimeStartupServices {
 
 	Wp03KnownBudgetSubtotal calculate_known_budget(std::size_t max_clients) noexcept override
 	{
-		return calculate_wp04_startup_budget(make_wp03_known_budget_request(max_clients));
+		return calculate_wp06_startup_budget(
+			calculate_wp04_startup_budget(make_wp03_known_budget_request(max_clients)), max_clients);
 	}
 
 	bool allocate_session_registry() noexcept override
@@ -67,19 +76,67 @@ class NativeRuntimeStartupServices final : public RuntimeStartupServices {
 
 	RuntimeTransportStatus start_transport() noexcept override
 	{
-		// The WP04 transport implementation exists, but native startup remains
-		// behind the incomplete global budget (0x00fb). WP05 must not bind here.
-		return RuntimeTransportStatus::Unavailable;
+		// Runtime calls this seam only after the complete-budget gate. The real
+		// Phase 1 budget remains incomplete (0x00f0), so production cannot reach
+		// this construction or bind a socket yet.
+		auto native = std::unique_ptr<NativeSessionRuntime>(
+			new (std::nothrow) NativeSessionRuntime(m_backend, m_output_completion));
+		if (native == nullptr) {
+			return RuntimeTransportStatus::Unavailable;
+		}
+		const NativeSessionStartRequest request{&m_effective_config,
+			m_producer_id,
+			&m_session_ids,
+			&m_random};
+		if (native->start(request) != NativeSessionStartStatus::Started) {
+			return RuntimeTransportStatus::Unavailable;
+		}
+		m_native = std::move(native);
+		return RuntimeTransportStatus::Started;
+	}
+
+	std::uint64_t monotonic_now_us() noexcept override { return timer_get_microseconds(); }
+	RuntimeTickStatus service_tick(const RuntimeTickContext& context) noexcept override
+	{
+		if (m_native == nullptr) {
+			return RuntimeTickStatus::Unavailable;
+		}
+		const auto status = m_native->service_tick(
+			{context.now_us, context.mission_generation, context.mission_active});
+		switch (status) {
+		case NativeSessionTickStatus::Complete:
+			return RuntimeTickStatus::Complete;
+		case NativeSessionTickStatus::Unavailable:
+			return RuntimeTickStatus::Unavailable;
+		case NativeSessionTickStatus::PermanentTransportFailure:
+			return RuntimeTickStatus::PermanentTransportFailure;
+		}
+		return RuntimeTickStatus::PermanentTransportFailure;
 	}
 
 	void stop_collection() noexcept override {}
-	void invalidate_mission_state_and_entities() noexcept override {}
+	void invalidate_mission_state_and_entities() noexcept override
+	{
+		if (m_native != nullptr) {
+			m_native->purge_all(SessionCloseReason::MissionDiscontinuity);
+		}
+	}
 	void cancel_replication() noexcept override {}
-	void close_sessions_and_stores() noexcept override {}
+	void close_sessions_and_stores() noexcept override
+	{
+		if (m_native != nullptr) {
+			m_native->purge_all(SessionCloseReason::Shutdown);
+		}
+	}
 	void reset_mission_scope() noexcept override {}
-	void stop_transport() noexcept override {}
+	void stop_transport() noexcept override
+	{
+		if (m_native != nullptr) {
+			m_native->shutdown();
+		}
+	}
 	void emit_runtime_summary() noexcept override {}
-	void release_runtime_allocations() noexcept override {}
+	void release_runtime_allocations() noexcept override { m_native.reset(); }
 
 	void release_session_registry() noexcept override
 	{
@@ -136,9 +193,14 @@ class NativeRuntimeStartupServices final : public RuntimeStartupServices {
 
   private:
 	TelemetryConfig m_effective_config;
+	NativeUdpSocketBackend m_backend;
+	NativeOutputCompletionForwarder m_output_completion;
 	OsRandomSource m_random;
 	SessionIdRegistry m_session_registry;
+	SessionIdAllocator m_session_ids;
+	std::unique_ptr<NativeSessionRuntime> m_native;
 	std::thread::id m_captured_thread{};
+	std::uint64_t m_producer_id = 0U;
 	bool m_main_thread_captured = false;
 };
 

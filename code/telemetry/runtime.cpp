@@ -461,7 +461,22 @@ void Runtime::on_engine_update() noexcept
 
 	if (m_state == RuntimeState::Ready || m_state == RuntimeState::MissionLoading ||
 		m_state == RuntimeState::MissionActive) {
+		const auto now_us = m_services.monotonic_now_us();
+		if (!callback_gate_is_open()) {
+			return;
+		}
 		apply_pending_lifecycle();
+		if (!callback_gate_is_open() || (m_state != RuntimeState::Ready &&
+				m_state != RuntimeState::MissionLoading && m_state != RuntimeState::MissionActive)) {
+			return;
+		}
+		const RuntimeTickContext context{now_us,
+			m_mission_generation,
+			m_state == RuntimeState::MissionActive && !m_publication_blocked};
+		if (m_services.service_tick(context) == RuntimeTickStatus::PermanentTransportFailure &&
+			callback_gate_is_open()) {
+			teardown_faulted_runtime(RuntimeTerminalReason::TransportUnavailable);
+		}
 	}
 }
 
