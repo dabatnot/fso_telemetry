@@ -118,6 +118,7 @@ add_file_folder("Telemetry\\\\Protocol"
 )
 
 add_file_folder("Telemetry\\\\Producer"
+	telemetry/producer/test_telemetry_capture_scheduler_contract.cpp
 	telemetry/producer/test_telemetry_config_contract.cpp
 	telemetry/producer/test_telemetry_datagram_scheduler_contract.cpp
 	telemetry/producer/test_telemetry_engine_adapter_contract.cpp

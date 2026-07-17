@@ -1713,6 +1713,8 @@ add_file_folder("TgaUtils"
 
 # Telemetry files
 add_file_folder("Telemetry"
+	telemetry/capture_scheduler.cpp
+	telemetry/capture_scheduler.h
 	telemetry/config.cpp
 	telemetry/config.h
 	telemetry/datagram_scheduler.cpp

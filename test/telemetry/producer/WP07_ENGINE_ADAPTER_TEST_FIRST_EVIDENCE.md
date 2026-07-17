@@ -305,3 +305,89 @@ Full-suite generated artifacts under `test/test_data` were removed. Final `git d
 | `P1-REQ-016` | Observation-to-sample materialization, exact value copy and invalid/no-player removal pass. | `VERIFIED FOR WP07-C` - publication remains WP07-D and later JSON/wire work remains WP08/WP10. |
 | `P1-REQ-025` | Nonzero monotonic IDs, no reuse, max/exhaustion and wire-session reset semantics pass. | `VERIFIED FOR WP07-C`. |
 | `P1-AC-006` | DTO-to-identity-bearing sample behavior is GREEN. | `PARTIAL` - cadence/publication and later JSON/wire correctness remain open. |
+
+## WP07-D1 capture cadence RED checkpoint
+
+After the independent reviewer approved the oracle and the Linux C++ CI barrier completed successfully, WP07-D1 adds one always-compiled cadence contract source to `unittests`. This API and its closed enum are a local internal implementation contract only: they add no FSTL wire value, field, layout or compatibility claim.
+
+The guarded future branch locks the exact final/noexcept `Capture30Hz` surface, including `configure(std::uint32_t)`, and the tracker-frozen cadence semantics. Every valid rate from 1 through 60 is checked against an independent quotient-plus-remainder ceiling oracle, with explicit 1/30/60 periods of 1,000,000/33,334/16,667 microseconds and rejection of 0/61. Invalid configuration followed by a valid lower timestamp must be immediately due, proving complete history reset. The first active poll is immediately due; exact boundaries emit once; hitches skip missed periods and advance from `now`; inactive, `stop` and `reset` retain distinct scopes; every poll participates in monotonic-time validation; and both initial and later deadline overflow fail closed without a due capture. It deliberately makes no object-size, alignment or wire assertion.
+
+Debug RED reproduction:
+
+```text
+cmake --build build --config Debug --target unittests --parallel 4
+Result: PASS; CMake regenerated, the test-only source compiled and unittests linked.
+
+build/bin/Debug/unittests.exe \
+  --gtest_filter="TelemetryCaptureSchedulerContract.*" --gtest_color=no
+Result: expected RED; 7 tests ran, 0 PASS, 7 FAIL.
+Cause: telemetry/capture_scheduler.h is absent.
+
+Preserved Debug baselines:
+  WP07-C entity registry: 7/7 PASS.
+  WP07-A/B engine adapter and collector: 17/17 PASS.
+  Native Runtime integration/runtime/heartbeat/reliability: 93/93 PASS.
+  Allocation executable: 7/7 PASS.
+  R4 native IPv4/IPv6 loopback with opt-in: 2/2 PASS.
+
+WP07-D1 contract source SHA-256:
+  50E64D211FE92A1CC702C8DF220D1CEDD90772B4C469476F8DFC9CF21856DED4
+```
+
+This is a Debug-only RED checkpoint. Cadence production, per-slot ownership, native/runtime capture integration, budget repricing and allocation instrumentation remain open; WP08 wire publication remains explicitly excluded.
+
+## WP07-D1 independent GREEN verification
+
+The independent test owner inspected the completed scheduler before execution. Configuration resets all prior state, accepts exactly rates 1 through 60 and computes the ceiling period using integer quotient and remainder. Polling validates monotonic time before activity, emits the first active capture immediately, advances every due deadline from the current time without catch-up, and fails closed on deadline overflow. Inactive polling, `stop` and `reset` implement their distinct tracker-frozen state scopes. No scheduler anomaly was found.
+
+The strengthened D1 test source remained unchanged throughout production inspection and verification:
+
+```text
+50E64D211FE92A1CC702C8DF220D1CEDD90772B4C469476F8DFC9CF21856DED4  test_telemetry_capture_scheduler_contract.cpp
+```
+
+Production SHA-256 values inspected:
+
+```text
+6C2198075EABD15DBCD1C96450C5F36171C192B47F36990A6D7FB8F906B90A7F  capture_scheduler.h
+14CDACF3B440A3B3336D2C7CFEAB99D3AA4FE2D8CEEEFB647172F7802982D9C0  capture_scheduler.cpp
+```
+
+The first incremental Debug replay still contained the RED object compiled while `capture_scheduler.h` was absent: MSBuild cannot discover a header that failed `__has_include` as a future dependency. A broad `--clean-first` attempt reported the repository's duplicate-project `MSB5004` condition and did not clean that object. The test owner therefore removed only the stale Debug and Release scheduler-test object files under `build/test/src/unittests.dir`, then rebuilt both configurations; both recompilations visibly compiled `test_telemetry_capture_scheduler_contract.cpp` against the production header.
+
+Independent verification results:
+
+```text
+Build unittests and the existing allocation target after targeted object rebuild:
+  Debug:   PASS.
+  Release: PASS.
+
+TelemetryCaptureSchedulerContract.*:
+  Debug:   7/7 PASS.
+  Release: 7/7 PASS.
+
+WP07-A/B/C adapter, collector and entity-registry contracts:
+  Debug:   24/24 PASS.
+  Release: 24/24 PASS.
+
+Adjacent native Runtime integration/runtime/heartbeat/reliability filter:
+  Debug:   93/93 PASS.
+  Release: 93/93 PASS.
+
+Existing allocation executable:
+  Debug:   7/7 PASS.
+  Release: 7/7 PASS.
+  Qualification: adjacent non-regression only; this executable does not yet
+  exercise Capture30Hz and is not a zero-allocation proof for the scheduler.
+
+R4 native loopback with FSO_TELEMETRY_RUN_NATIVE_LOOPBACK=1:
+  Debug:   IPv4 and IPv6, 2/2 PASS.
+  Release: IPv4 and IPv6, 2/2 PASS.
+
+Capture scheduler stress,
+--gtest_shuffle --gtest_random_seed=20260717:
+  Debug:   7 tests x 100 iterations = 700/700 PASS.
+  Release: 7 tests x 50 iterations = 350/350 PASS.
+```
+
+Final `git diff --check` passed with line-ending warnings only. D1 cadence production is complete and independently GREEN. D2–D6 remain open: per-slot observation ownership, native/runtime capture integration and lifecycle, startup-budget repricing, and scheduler-aware zero-allocation instrumentation. WP08 wire publication remains explicitly excluded.
