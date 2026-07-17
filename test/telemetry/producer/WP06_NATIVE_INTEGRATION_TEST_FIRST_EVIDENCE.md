@@ -302,7 +302,7 @@ TelemetryWp06HeartbeatContract: 24/24 PASS.
 TelemetryWp06ReliabilityContract: 13/13 PASS.
 ```
 
-The historical RED above is resolved: R2 injectable composition is `GREEN IN DEBUG AND RELEASE`, with independent review and reproduction completed. `P1-AC-005` remains `OPEN` and `G1-D` remains `PARTIAL` only because the incomplete real global budget prevents production bind and therefore leaves real IPv4/IPv6 loopback proof outstanding. Later R3 work remains outside this slice.
+The historical RED above is resolved: R2 injectable composition is `GREEN IN DEBUG AND RELEASE`, with independent review and reproduction completed. At this R2-only checkpoint, `P1-AC-005` was `OPEN` and `G1-D` was `PARTIAL` because the incomplete real global budget prevented production bind and real IPv4/IPv6 loopback proof had not yet been added. The later R4 section supersedes that loopback-evidence status without changing the production-budget limitation.
 
 ## R3 native allocation test-first checkpoint: immediate GREEN gap
 
@@ -382,6 +382,100 @@ B51C3C193444D190BFB496301EE7A5E235EA386D454236A9D9BC13D08B94F2AF  test_telemetry
 
 Full-suite generated artifacts under `test/test_data` were removed. Final status contains only the authorized allocation test and this evidence update. This closes R3 as `GREEN IN DEBUG AND RELEASE`; it does not change the real incomplete global budget, authorize production binding or claim the R4 real-loopback gate.
 
+## R4 opt-in native loopback test-first checkpoint: immediate GREEN gap
+
+R4 adds one always-compiled source to the standard `unittests` target and exactly two tests:
+
+```text
+IPv4NegotiationHeartbeatAndShutdown
+IPv6NegotiationHeartbeatAndShutdown
+```
+
+Both tests inspect the exact environment variable `FSO_TELEMETRY_RUN_NATIVE_LOOPBACK`. Any value other than `1`, including absence, produces an explicit skip before socket setup. With opt-in active, the IPv4 path is required. The IPv6 path may skip only for the closed preflight set `WSAEAFNOSUPPORT`/`WSAEPROTONOSUPPORT` at `socket`, `WSAEADDRNOTAVAIL` at `bind`, or the corresponding POSIX `EAFNOSUPPORT`/`EPROTONOSUPPORT` and `EADDRNOTAVAIL`. WinSock bootstrap failure, `getsockname` failure and every other socket or bind error are ordinary failures that report both stage and OS code. The source includes `<cerrno>` explicitly for the POSIX classification.
+
+The test-only harness preserves the production gate and port contract:
+
+- a real `Runtime` owns startup and shutdown ordering;
+- the fake synthetic-complete `RuntimeStartupServices` constructs `NativeSessionRuntime` only inside `start_transport()`;
+- an adjacent real-budget scenario requires deferred mask `0x00f0`, `BudgetFailure`, zero native construction and zero backend open/bind attempt;
+- the server delegates through the real `NativeUdpSocketBackend` and receives a valid configured port in `1024..65535` obtained by OS `bind(0)`/`getsockname()`/close;
+- a bind race retries the complete probe-and-start transaction at most 16 times, without sleeping;
+- the client uses a separate real `NativeUdpSocketBackend` and binds native port zero;
+- WinSock, raw probe sockets, native client sockets and server lifetime are RAII-owned;
+- one shared pump is bounded by 4096 iterations and two wall-clock seconds and uses only `yield()`.
+
+For each available family, the real datagram exchange proves HELLO 1.1, accepted WELCOME 1.1 with nonzero session ID, WELCOME ACK, SESSION_BEGIN, SESSION_BEGIN ACK, one active session, periodic HEARTBEAT request, correlated HEARTBEAT response, activity refresh beyond the previous exact disconnect boundary, and idempotent shutdown with zero server sockets and one server close.
+
+The first opt-in Debug execution passed immediately. As with R3, this is recorded honestly as a GREEN gap rather than manufacturing a RED failure: the existing R2 native composition already supports the real loopback contract.
+
+```text
+cmake --build build --config Debug --target unittests --parallel 4
+Result: PASS; the new source compiled and unittests linked.
+
+FSO_TELEMETRY_RUN_NATIVE_LOOPBACK unset:
+  TelemetryNativeRuntimeLoopbackContract.*: 0 PASS, 2 explicit SKIP.
+
+FSO_TELEMETRY_RUN_NATIVE_LOOPBACK=1:
+  IPv4: PASS (6 ms).
+  IPv6: PASS (4 ms).
+  Total: 2/2 PASS (11 ms).
+
+Preserved Debug baselines:
+  R2/runtime/heartbeat/reliability: 93/93 PASS.
+  Allocation executable: 7/7 PASS.
+
+R4 source SHA-256:
+  E1DDA853D9C54D7C4FED61690F4070CCC7E05919DDDE4F4857443AAC1C37C11A
+```
+
+Independent review approved the Debug R4 oracle after narrowing IPv6 skips to the closed stage/error set above. Final verification reproduced the unchanged oracle in both configurations:
+
+```text
+Release build:
+  unittests: PASS; the loopback source compiled and linked.
+
+FSO_TELEMETRY_RUN_NATIVE_LOOPBACK unset:
+  Debug:   0 PASS, 2 explicit SKIP.
+  Release: 0 PASS, 2 explicit SKIP.
+
+FSO_TELEMETRY_RUN_NATIVE_LOOPBACK=1:
+  Debug:   IPv4 and IPv6, 2/2 PASS (11 ms).
+  Release: IPv4 and IPv6, 2/2 PASS (9 ms).
+
+Bounded opt-in collision/flaky repetition,
+--gtest_shuffle --gtest_random_seed=20260717:
+  Debug:   2 tests x 10 iterations = 20/20 PASS.
+  Release: 2 tests x  5 iterations = 10/10 PASS.
+
+Adjacent R2/runtime/heartbeat/reliability filter:
+  Debug:   93/93 PASS.
+  Release: 93/93 PASS.
+
+Allocation executable:
+  Debug:   7/7 PASS.
+  Release: 7/7 PASS.
+
+Full unittests with loopback opt-in unset:
+  Debug:   854 tests from 111 suites; 852 PASS, 2 expected loopback SKIP;
+           2 pre-existing disabled tests; 13,079 ms.
+  Release: 854 tests from 111 suites; 852 PASS, 2 expected loopback SKIP;
+           2 pre-existing disabled tests; 3,999 ms.
+```
+
+Seven test-source hashes were identical before and after execution:
+
+```text
+E1DDA853D9C54D7C4FED61690F4070CCC7E05919DDDE4F4857443AAC1C37C11A  test_telemetry_native_runtime_loopback_contract.cpp
+B51C3C193444D190BFB496301EE7A5E235EA386D454236A9D9BC13D08B94F2AF  test_telemetry_native_runtime_integration_contract.cpp
+C7B679B0D1D5C7FE60046C50183B7A530EF69178B67D72E25274B94C31504F51  test_telemetry_session_controller_allocations.cpp
+8C2C2D3C1E9396B813C9DE06126DC2F0D978DB3D3E0D1020731BFB8E66CBF659  test_telemetry_runtime_startup_contract.cpp
+82B0ADA00FDBD9EBFD1C11741B4509C14EF93942119E1079105864E9E093804D  test_telemetry_runtime_lifecycle_contract.cpp
+3243E1DCCFECC22F458E990B8DC1AF843B6702AFFFCF952FF2434E975904B49B  test_telemetry_session_controller_heartbeat_contract.cpp
+84DE2DB14C23D10C64B56E2103E95D5C9283C2388FDFBAC8771566BDE4662EF0  test_telemetry_session_controller_contract.cpp
+```
+
+Full-suite generated artifacts under `test/test_data` were removed. Final status contains only the authorized source registration, loopback source and evidence update. R4 is `GREEN IN DEBUG AND RELEASE`. Combined with the already-green R2 allowlist and exact 1.0 rejection oracles, R4 verifies the complete `P1-AC-005` behavior only for the native composition reached through the synthetic-complete test gate. It does not close global `P1-AC-005` or `G1-D`: the real global startup budget remains incomplete with mask `0x00f0`, so the production path remains correctly fail-closed before native construction or bind. No production source, startup budget calculation, port validation or runtime bypass was changed.
+
 ## R2 requirement delta
 
 | ID | R2 evidence | Honest status after this run |
@@ -390,8 +484,8 @@ Full-suite generated artifacts under `test/test_data` were removed. Final status
 | `P1-REQ-018` | Native timeout-before-REL and REL-before-periodic composition pass in Debug and Release. | `VERIFIED FOR R2` — independently reviewed and reproduced. |
 | `P1-REQ-019` | Exact periodic deadline and periodic-before-I/O composition pass in Debug and Release. | `VERIFIED FOR R2` — independently reviewed and reproduced. |
 | `P1-AC-010` | Controller heartbeat 24/24 and native ordered scenarios pass in Debug and Release, including deterministic stress. | `VERIFIED FOR R2` — independent review and reproduction completed. |
-| `P1-AC-005` | Fake-backend allowlist, 1.1 acceptance and exact 1.0 rejection without a durable heavy slot pass in Debug and Release. | `OPEN` — only the incomplete global budget and consequent absence of real IPv4/IPv6 loopback negotiation remain. |
-| `G1-D` | Injected-socket native convergence and lifecycle teardown pass in Debug and Release. | `PARTIAL` — only the incomplete global budget and consequent real socket/loopback proof remain. |
+| `P1-AC-005` | Fake-backend allowlist and exact 1.0 rejection remain green; opt-in real IPv4/IPv6 sockets negotiate 1.1 through Runtime, session and heartbeat in Debug and Release. | `PARTIAL` — the native/synthetic-gate network slice verifies every behavioral clause, but the real `0x00f0` budget still blocks the production bind path. |
+| `G1-D` | Mission/menu/fatal/shutdown convergence remains green; real IPv4/IPv6 session, heartbeat and socket-zero idempotent shutdown pass in Debug and Release. | `PARTIAL` — lifecycle behavior is verified through the injected/synthetic-gate composition, but the incomplete real budget still prevents production native convergence. |
 
 ## Historical R0/R1 requirement mapping
 

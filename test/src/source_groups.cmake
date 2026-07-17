@@ -124,6 +124,7 @@ add_file_folder("Telemetry\\\\Producer"
 	telemetry/producer/test_telemetry_identity_native_contract.cpp
 	telemetry/producer/test_telemetry_initialize.cpp
 	telemetry/producer/test_telemetry_native_runtime_integration_contract.cpp
+	telemetry/producer/test_telemetry_native_runtime_loopback_contract.cpp
 	telemetry/producer/test_telemetry_runtime_lifecycle_contract.cpp
 	telemetry/producer/test_telemetry_runtime_startup_contract.cpp
 	telemetry/producer/test_telemetry_session_controller_contract.cpp
