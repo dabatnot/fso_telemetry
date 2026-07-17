@@ -94,11 +94,49 @@ struct EnginePhysicsFlagInput {
 	bool object_orientation_locked = false;
 };
 
+struct EnginePlayerKinematicsRead {
+	std::int32_t object_signature = 0;
+	CaptureVec3f position_world{};
+	CaptureOrientationBasis orientation{};
+	CaptureVec3f velocity_world{};
+	CaptureVec3f rotational_velocity_local{};
+	float radius = 0.0f;
+	EnginePhysicsFlagInput physics{};
+};
+
 QuaternionConversionStatus convert_fso_orientation_to_local_to_world(
 	const CaptureOrientationBasis& input, CaptureQuaternionf& output) noexcept;
 std::uint32_t map_player_physics_mode_flags(const EnginePhysicsFlagInput& input) noexcept;
 
-class EngineReadView;
+class EngineReadView {
+  public:
+	virtual ~EngineReadView() noexcept = default;
+	virtual bool in_mission() const noexcept = 0;
+	virtual bool player_exists() const noexcept = 0;
+	virtual bool player_object_exists() const noexcept = 0;
+	virtual bool player_ship_exists() const noexcept = 0;
+	virtual bool player_object_is_ship() const noexcept = 0;
+	virtual bool player_object_ship_instance_in_range() const noexcept = 0;
+	virtual bool player_object_matches_player() const noexcept = 0;
+	virtual bool player_ship_matches_object() const noexcept = 0;
+	virtual void read_player_kinematics(EnginePlayerKinematicsRead& output) const noexcept = 0;
+};
+
+class FsoEngineReadView final : public EngineReadView {
+  public:
+	FsoEngineReadView() noexcept = default;
+	bool in_mission() const noexcept override;
+	bool player_exists() const noexcept override;
+	bool player_object_exists() const noexcept override;
+	bool player_ship_exists() const noexcept override;
+	bool player_object_is_ship() const noexcept override;
+	bool player_object_ship_instance_in_range() const noexcept override;
+	bool player_object_matches_player() const noexcept override;
+	bool player_ship_matches_object() const noexcept override;
+	void read_player_kinematics(EnginePlayerKinematicsRead& output) const noexcept override;
+};
+
+FsoEngineReadView make_fso_engine_read_view() noexcept;
 CaptureResult collect_player_kinematics(const EngineReadView& view,
 	std::uint64_t now_us,
 	PlayerObservationDto& output) noexcept;

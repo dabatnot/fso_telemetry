@@ -1,6 +1,10 @@
 #include "telemetry/engine_adapter.h"
 
+#include "globalincs/systemvars.h"
+#include "object/object.h"
 #include "physics/physics.h"
+#include "playerman/player.h"
+#include "ship/ship.h"
 #include "telemetry/protocol/telemetry_protocol_constants.h"
 
 #include <array>
@@ -86,6 +90,41 @@ void canonicalize(CaptureQuaternionf& value) noexcept
 	if (value.x == 0.0f) value.x = 0.0f;
 	if (value.y == 0.0f) value.y = 0.0f;
 	if (value.z == 0.0f) value.z = 0.0f;
+}
+
+bool finite_bounded(float value, float absolute_limit) noexcept
+{
+	return std::isfinite(value) && value >= -absolute_limit && value <= absolute_limit;
+}
+
+bool valid_vector(const CaptureVec3f& value, float absolute_limit) noexcept
+{
+	return finite_bounded(value.x, absolute_limit) && finite_bounded(value.y, absolute_limit) &&
+		finite_bounded(value.z, absolute_limit);
+}
+
+void canonicalize_zero(float& value) noexcept
+{
+	if (value == 0.0f) {
+		value = 0.0f;
+	}
+}
+
+void canonicalize_zero(CaptureVec3f& value) noexcept
+{
+	canonicalize_zero(value.x);
+	canonicalize_zero(value.y);
+	canonicalize_zero(value.z);
+}
+
+CaptureResult no_player(CaptureReason reason) noexcept
+{
+	return {CaptureStatus::NoPlayer, reason};
+}
+
+CaptureResult invalid_source(CaptureReason reason) noexcept
+{
+	return {CaptureStatus::InvalidSource, reason};
 }
 
 } // namespace
@@ -215,6 +254,145 @@ std::uint32_t map_player_physics_mode_flags(const EnginePhysicsFlagInput& input)
 		output |= protocol::PhysicsModeFlagOrientationLocked;
 	}
 	return output & protocol::KnownPhysicsModeFlags;
+}
+
+bool FsoEngineReadView::in_mission() const noexcept
+{
+	return (Game_mode & GM_IN_MISSION) != 0;
+}
+
+bool FsoEngineReadView::player_exists() const noexcept
+{
+	return Player != nullptr;
+}
+
+bool FsoEngineReadView::player_object_exists() const noexcept
+{
+	return Player_obj != nullptr;
+}
+
+bool FsoEngineReadView::player_ship_exists() const noexcept
+{
+	return Player_ship != nullptr;
+}
+
+bool FsoEngineReadView::player_object_is_ship() const noexcept
+{
+	return Player_obj != nullptr && Player_obj->type == OBJ_SHIP;
+}
+
+bool FsoEngineReadView::player_object_ship_instance_in_range() const noexcept
+{
+	return Player_obj != nullptr && Player_obj->type == OBJ_SHIP && Player_obj->instance >= 0 &&
+		Player_obj->instance < MAX_SHIPS;
+}
+
+bool FsoEngineReadView::player_object_matches_player() const noexcept
+{
+	return Player != nullptr && Player_obj != nullptr && Player->objnum >= 0 && Player->objnum < MAX_OBJECTS &&
+		&Objects[Player->objnum] == Player_obj;
+}
+
+bool FsoEngineReadView::player_ship_matches_object() const noexcept
+{
+	if (Player_obj == nullptr || Player_ship == nullptr || Player_obj->type != OBJ_SHIP ||
+		Player_obj->instance < 0 || Player_obj->instance >= MAX_SHIPS) {
+		return false;
+	}
+	return &Ships[Player_obj->instance] == Player_ship && Player_ship->objnum >= 0 &&
+		Player_ship->objnum < MAX_OBJECTS && &Objects[Player_ship->objnum] == Player_obj;
+}
+
+void FsoEngineReadView::read_player_kinematics(EnginePlayerKinematicsRead& output) const noexcept
+{
+	output = {};
+	const auto* player = Player;
+	const auto* object = Player_obj;
+	const auto* ship = Player_ship;
+	if ((Game_mode & GM_IN_MISSION) == 0 || player == nullptr || object == nullptr || ship == nullptr ||
+		object->type != OBJ_SHIP || object->instance < 0 || object->instance >= MAX_SHIPS ||
+		player->objnum < 0 || player->objnum >= MAX_OBJECTS || &Objects[player->objnum] != object ||
+		&Ships[object->instance] != ship || ship->objnum < 0 || ship->objnum >= MAX_OBJECTS ||
+		&Objects[ship->objnum] != object) {
+		return;
+	}
+
+	output.object_signature = static_cast<std::int32_t>(object->signature);
+	output.position_world = {object->pos.xyz.x, object->pos.xyz.y, object->pos.xyz.z};
+	output.orientation.right_world =
+		{object->orient.vec.rvec.xyz.x, object->orient.vec.rvec.xyz.y, object->orient.vec.rvec.xyz.z};
+	output.orientation.up_world =
+		{object->orient.vec.uvec.xyz.x, object->orient.vec.uvec.xyz.y, object->orient.vec.uvec.xyz.z};
+	output.orientation.forward_world =
+		{object->orient.vec.fvec.xyz.x, object->orient.vec.fvec.xyz.y, object->orient.vec.fvec.xyz.z};
+	output.velocity_world =
+		{object->phys_info.vel.xyz.x, object->phys_info.vel.xyz.y, object->phys_info.vel.xyz.z};
+	output.rotational_velocity_local =
+		{object->phys_info.rotvel.xyz.x, object->phys_info.rotvel.xyz.y, object->phys_info.rotvel.xyz.z};
+	output.radius = object->radius;
+	output.physics.raw_physics_flags = static_cast<std::uint32_t>(object->phys_info.flags);
+	output.physics.object_immobile = object->flags[Object::Object_Flags::Immobile];
+	output.physics.object_position_locked = object->flags[Object::Object_Flags::Dont_change_position];
+	output.physics.object_orientation_locked = object->flags[Object::Object_Flags::Dont_change_orientation];
+}
+
+FsoEngineReadView make_fso_engine_read_view() noexcept
+{
+	return {};
+}
+
+CaptureResult collect_player_kinematics(const EngineReadView& view,
+	std::uint64_t now_us,
+	PlayerObservationDto& output) noexcept
+{
+	output = {};
+	if (!view.in_mission()) return no_player(CaptureReason::NotInMission);
+	if (!view.player_exists()) return no_player(CaptureReason::MissingPlayer);
+	if (!view.player_object_exists()) return no_player(CaptureReason::MissingPlayerObject);
+	if (!view.player_ship_exists()) return no_player(CaptureReason::MissingPlayerShip);
+	if (!view.player_object_is_ship()) return invalid_source(CaptureReason::WrongObjectType);
+	if (!view.player_object_ship_instance_in_range()) {
+		return invalid_source(CaptureReason::ShipInstanceOutOfRange);
+	}
+	if (!view.player_object_matches_player()) return invalid_source(CaptureReason::PlayerObjectMismatch);
+	if (!view.player_ship_matches_object()) return invalid_source(CaptureReason::PlayerShipMismatch);
+
+	EnginePlayerKinematicsRead raw;
+	view.read_player_kinematics(raw);
+	if (raw.object_signature <= 0) return invalid_source(CaptureReason::InvalidObservationKey);
+	if (!valid_vector(raw.position_world, 1.0e12f)) return invalid_source(CaptureReason::InvalidPosition);
+	CaptureQuaternionf orientation;
+	if (convert_fso_orientation_to_local_to_world(raw.orientation, orientation) !=
+		QuaternionConversionStatus::Converted) {
+		return invalid_source(CaptureReason::InvalidOrientation);
+	}
+	if (!valid_vector(raw.velocity_world, 1.0e9f)) return invalid_source(CaptureReason::InvalidVelocity);
+	if (!valid_vector(raw.rotational_velocity_local, 1.0e6f)) {
+		return invalid_source(CaptureReason::InvalidRotationalVelocity);
+	}
+	if (!std::isfinite(raw.radius) || raw.radius < 0.0f || raw.radius > 1.0e9f) {
+		return invalid_source(CaptureReason::InvalidRadius);
+	}
+
+	PlayerObservationDto candidate;
+	candidate.key.object_signature = static_cast<std::uint32_t>(raw.object_signature);
+	candidate.value.producer_sample_time_us = now_us;
+	candidate.value.position_world = raw.position_world;
+	candidate.value.orientation_local_to_world = orientation;
+	candidate.value.velocity_world = raw.velocity_world;
+	candidate.value.rotational_velocity_local = raw.rotational_velocity_local;
+	candidate.value.radius = raw.radius;
+	candidate.value.physics_mode_flags = map_player_physics_mode_flags(raw.physics);
+	canonicalize_zero(candidate.value.position_world);
+	canonicalize_zero(candidate.value.orientation_local_to_world.w);
+	canonicalize_zero(candidate.value.orientation_local_to_world.x);
+	canonicalize_zero(candidate.value.orientation_local_to_world.y);
+	canonicalize_zero(candidate.value.orientation_local_to_world.z);
+	canonicalize_zero(candidate.value.velocity_world);
+	canonicalize_zero(candidate.value.rotational_velocity_local);
+	canonicalize_zero(candidate.value.radius);
+	output = candidate;
+	return {CaptureStatus::Valid, CaptureReason::None};
 }
 
 } // namespace telemetry::detail

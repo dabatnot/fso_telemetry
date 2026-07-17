@@ -18,6 +18,12 @@
 #include <type_traits>
 #include <utility>
 
+namespace telemetry::detail {
+struct EnginePlayerKinematicsRead;
+class FsoEngineReadView;
+FsoEngineReadView make_fso_engine_read_view() noexcept;
+}
+
 namespace {
 
 constexpr const char* MissingEngineAdapter =
@@ -620,6 +626,509 @@ TEST(TelemetryEngineAdapterContract, Wp07ABoundariesExcludeSessionWireRuntimeAnd
 	EXPECT_TRUE(std::is_nothrow_default_constructible_v<detail::PlayerObservationDto>);
 	EXPECT_TRUE(std::is_nothrow_copy_constructible_v<detail::PlayerObservationDto>);
 	EXPECT_TRUE(std::is_nothrow_copy_assignable_v<detail::PlayerObservationDto>);
+}
+
+template <typename T, typename = void>
+struct is_complete_type : std::false_type {};
+
+template <typename T>
+struct is_complete_type<T, std::void_t<decltype(sizeof(T))>> : std::true_type {};
+
+template <typename View, typename Raw, typename FsoView>
+struct EngineCollectorContract {
+	class CountedView final : public View {
+	  public:
+		std::array<bool, 8U> gates{{true, true, true, true, true, true, true, true}};
+		Raw raw{};
+		mutable std::array<std::size_t, 9U> calls{};
+		mutable std::array<std::size_t, 9U> order{};
+		mutable std::size_t order_size = 0U;
+		mutable std::size_t total_calls = 0U;
+		mutable bool order_overflow = false;
+
+		bool in_mission() const noexcept override { return predicate(0U); }
+		bool player_exists() const noexcept override { return predicate(1U); }
+		bool player_object_exists() const noexcept override { return predicate(2U); }
+		bool player_ship_exists() const noexcept override { return predicate(3U); }
+		bool player_object_is_ship() const noexcept override { return predicate(4U); }
+		bool player_object_ship_instance_in_range() const noexcept override { return predicate(5U); }
+		bool player_object_matches_player() const noexcept override { return predicate(6U); }
+		bool player_ship_matches_object() const noexcept override { return predicate(7U); }
+		void read_player_kinematics(Raw& output) const noexcept override
+		{
+			record(8U);
+			output = raw;
+		}
+
+	  private:
+		bool predicate(std::size_t index) const noexcept
+		{
+			record(index);
+			return gates[index];
+		}
+		void record(std::size_t index) const noexcept
+		{
+			++calls[index];
+			++total_calls;
+			if (order_size < order.size()) {
+				order[order_size++] = index;
+			} else {
+				order_overflow = true;
+			}
+		}
+	};
+
+	static Raw valid_raw() noexcept
+	{
+		Raw raw{};
+		raw.object_signature = 123;
+		raw.position_world.x = 1.0f;
+		raw.position_world.y = 2.0f;
+		raw.position_world.z = 3.0f;
+		raw.velocity_world.x = 4.0f;
+		raw.velocity_world.y = 5.0f;
+		raw.velocity_world.z = 6.0f;
+		raw.rotational_velocity_local.x = 7.0f;
+		raw.rotational_velocity_local.y = 8.0f;
+		raw.rotational_velocity_local.z = 9.0f;
+		raw.radius = 10.0f;
+		const auto root_half = std::sqrt(0.5f);
+		const auto inverse_axis_norm = 1.0f / std::sqrt(14.0f);
+		raw.orientation = basis_from_quaternion(quat(root_half,
+			root_half * inverse_axis_norm,
+			2.0f * root_half * inverse_axis_norm,
+			3.0f * root_half * inverse_axis_norm));
+		raw.physics.raw_physics_flags = PF_AFTERBURNER_ON | PF_WARP_OUT;
+		raw.physics.object_orientation_locked = true;
+		return raw;
+	}
+
+	static void expect_default(const detail::PlayerObservationDto& output)
+	{
+		const detail::PlayerObservationDto expected{};
+		EXPECT_EQ(expected.key.object_signature, output.key.object_signature);
+		EXPECT_EQ(expected.value.producer_sample_time_us, output.value.producer_sample_time_us);
+		const std::array<float, 14U> actual{{output.value.position_world.x,
+			output.value.position_world.y,
+			output.value.position_world.z,
+			output.value.orientation_local_to_world.w,
+			output.value.orientation_local_to_world.x,
+			output.value.orientation_local_to_world.y,
+			output.value.orientation_local_to_world.z,
+			output.value.velocity_world.x,
+			output.value.velocity_world.y,
+			output.value.velocity_world.z,
+			output.value.rotational_velocity_local.x,
+			output.value.rotational_velocity_local.y,
+			output.value.rotational_velocity_local.z,
+			output.value.radius}};
+		const std::array<float, 14U> defaults{{expected.value.position_world.x,
+			expected.value.position_world.y,
+			expected.value.position_world.z,
+			expected.value.orientation_local_to_world.w,
+			expected.value.orientation_local_to_world.x,
+			expected.value.orientation_local_to_world.y,
+			expected.value.orientation_local_to_world.z,
+			expected.value.velocity_world.x,
+			expected.value.velocity_world.y,
+			expected.value.velocity_world.z,
+			expected.value.rotational_velocity_local.x,
+			expected.value.rotational_velocity_local.y,
+			expected.value.rotational_velocity_local.z,
+			expected.value.radius}};
+		for (std::size_t field = 0U; field < actual.size(); ++field) {
+			EXPECT_FLOAT_EQ(defaults[field], actual[field]);
+			if (defaults[field] == 0.0f) EXPECT_FALSE(std::signbit(actual[field]));
+		}
+		EXPECT_EQ(0U, output.value.physics_mode_flags);
+	}
+
+	static detail::CaptureResult collect(CountedView& view, detail::PlayerObservationDto& output)
+	{
+		return detail::collect_player_kinematics(view, 0x1020304050607080ULL, output);
+	}
+
+	static void api_and_real_view()
+	{
+		static_assert(std::has_virtual_destructor_v<View> && std::is_abstract_v<View>);
+		static_assert(std::is_final_v<FsoView> && std::is_base_of_v<View, FsoView>);
+		static_assert(std::is_nothrow_default_constructible_v<FsoView>);
+		static_assert(std::is_standard_layout_v<Raw> && std::is_trivially_copyable_v<Raw>);
+		static_assert(std::is_same_v<decltype(std::declval<Raw>().object_signature), std::int32_t>);
+		static_assert(std::is_same_v<decltype(std::declval<Raw>().position_world), CaptureVec3f>);
+		static_assert(std::is_same_v<decltype(std::declval<Raw>().orientation), CaptureOrientationBasis>);
+		static_assert(std::is_same_v<decltype(std::declval<Raw>().velocity_world), CaptureVec3f>);
+		static_assert(std::is_same_v<decltype(std::declval<Raw>().rotational_velocity_local), CaptureVec3f>);
+		static_assert(std::is_same_v<decltype(std::declval<Raw>().radius), float>);
+		static_assert(std::is_same_v<decltype(std::declval<Raw>().physics), detail::EnginePhysicsFlagInput>);
+		static_assert(noexcept(detail::make_fso_engine_read_view()));
+		static_assert(std::is_same_v<decltype(detail::make_fso_engine_read_view()), FsoView>);
+		const Raw defaults{};
+		EXPECT_EQ(0, defaults.object_signature);
+		expect_vec_near(defaults.position_world, vec(0.0f, 0.0f, 0.0f), 0.0f);
+		expect_vec_near(defaults.orientation.right_world, vec(1.0f, 0.0f, 0.0f), 0.0f);
+		expect_vec_near(defaults.orientation.up_world, vec(0.0f, 1.0f, 0.0f), 0.0f);
+		expect_vec_near(defaults.orientation.forward_world, vec(0.0f, 0.0f, 1.0f), 0.0f);
+		expect_vec_near(defaults.velocity_world, vec(0.0f, 0.0f, 0.0f), 0.0f);
+		expect_vec_near(defaults.rotational_velocity_local, vec(0.0f, 0.0f, 0.0f), 0.0f);
+		EXPECT_FLOAT_EQ(0.0f, defaults.radius);
+		EXPECT_EQ(0U, defaults.physics.raw_physics_flags);
+		EXPECT_FALSE(defaults.physics.object_immobile);
+		EXPECT_FALSE(defaults.physics.object_position_locked);
+		EXPECT_FALSE(defaults.physics.object_orientation_locked);
+		const FsoView real = detail::make_fso_engine_read_view();
+		(void)real;
+	}
+
+	static void preconditions()
+	{
+		constexpr std::array<detail::CaptureReason, 8U> reasons{{detail::CaptureReason::NotInMission,
+			detail::CaptureReason::MissingPlayer,
+			detail::CaptureReason::MissingPlayerObject,
+			detail::CaptureReason::MissingPlayerShip,
+			detail::CaptureReason::WrongObjectType,
+			detail::CaptureReason::ShipInstanceOutOfRange,
+			detail::CaptureReason::PlayerObjectMismatch,
+			detail::CaptureReason::PlayerShipMismatch}};
+		for (std::size_t failure = 0U; failure < reasons.size(); ++failure) {
+			CountedView view;
+			view.gates[failure] = false;
+			detail::PlayerObservationDto output{};
+			output.key.object_signature = 999U;
+			const auto result = collect(view, output);
+			EXPECT_EQ(failure < 4U ? detail::CaptureStatus::NoPlayer : detail::CaptureStatus::InvalidSource,
+				result.status);
+			EXPECT_EQ(reasons[failure], result.reason);
+			for (std::size_t call = 0U; call < view.calls.size(); ++call) {
+				EXPECT_EQ(call <= failure ? 1U : 0U, view.calls[call]);
+			}
+			ASSERT_EQ(failure + 1U, view.order_size);
+			EXPECT_EQ(failure + 1U, view.total_calls);
+			EXPECT_FALSE(view.order_overflow);
+			for (std::size_t call = 0U; call <= failure; ++call) EXPECT_EQ(call, view.order[call]);
+			expect_default(output);
+		}
+	}
+
+	static void exact_snapshot()
+	{
+		CountedView view;
+		view.raw = valid_raw();
+		detail::PlayerObservationDto output{};
+		const auto result = collect(view, output);
+		EXPECT_EQ(detail::CaptureStatus::Valid, result.status);
+		EXPECT_EQ(detail::CaptureReason::None, result.reason);
+		for (const auto count : view.calls) EXPECT_EQ(1U, count);
+		ASSERT_EQ(9U, view.order_size);
+		EXPECT_EQ(9U, view.total_calls);
+		EXPECT_FALSE(view.order_overflow);
+		for (std::size_t call = 0U; call < view.order_size; ++call) EXPECT_EQ(call, view.order[call]);
+		EXPECT_EQ(123U, output.key.object_signature);
+		EXPECT_EQ(0x1020304050607080ULL, output.value.producer_sample_time_us);
+		EXPECT_FLOAT_EQ(1.0f, output.value.position_world.x);
+		EXPECT_FLOAT_EQ(2.0f, output.value.position_world.y);
+		EXPECT_FLOAT_EQ(3.0f, output.value.position_world.z);
+		EXPECT_FLOAT_EQ(4.0f, output.value.velocity_world.x);
+		EXPECT_FLOAT_EQ(8.0f, output.value.rotational_velocity_local.y);
+		EXPECT_FLOAT_EQ(10.0f, output.value.radius);
+		const auto root_half = std::sqrt(0.5f);
+		const auto inverse_axis_norm = 1.0f / std::sqrt(14.0f);
+		EXPECT_NEAR(root_half, output.value.orientation_local_to_world.w, 2.0e-5f);
+		EXPECT_NEAR(root_half * inverse_axis_norm, output.value.orientation_local_to_world.x, 2.0e-5f);
+		EXPECT_NEAR(2.0f * root_half * inverse_axis_norm,
+			output.value.orientation_local_to_world.y,
+			2.0e-5f);
+		EXPECT_NEAR(3.0f * root_half * inverse_axis_norm,
+			output.value.orientation_local_to_world.z,
+			2.0e-5f);
+		expect_vec_near(rotate_local_axis(output.value.orientation_local_to_world, vec(1.0f, 0.0f, 0.0f)),
+			view.raw.orientation.right_world);
+		expect_vec_near(rotate_local_axis(output.value.orientation_local_to_world, vec(0.0f, 1.0f, 0.0f)),
+			view.raw.orientation.up_world);
+		expect_vec_near(rotate_local_axis(output.value.orientation_local_to_world, vec(0.0f, 0.0f, 1.0f)),
+			view.raw.orientation.forward_world);
+		EXPECT_EQ(protocol::PhysicsModeFlagAfterburner | protocol::PhysicsModeFlagWarpOut |
+				protocol::PhysicsModeFlagOrientationLocked,
+			output.value.physics_mode_flags);
+	}
+
+	static void validation_ladder()
+	{
+		CountedView view;
+		view.raw = valid_raw();
+		const auto infinity = std::numeric_limits<float>::infinity();
+		view.raw.object_signature = 0;
+		view.raw.position_world.x = infinity;
+		view.raw.orientation.right_world = {};
+		view.raw.velocity_world.x = infinity;
+		view.raw.rotational_velocity_local.x = infinity;
+		view.raw.radius = -1.0f;
+		constexpr std::array<detail::CaptureReason, 6U> reasons{{detail::CaptureReason::InvalidObservationKey,
+			detail::CaptureReason::InvalidPosition,
+			detail::CaptureReason::InvalidOrientation,
+			detail::CaptureReason::InvalidVelocity,
+			detail::CaptureReason::InvalidRotationalVelocity,
+			detail::CaptureReason::InvalidRadius}};
+		for (std::size_t stage = 0U; stage < reasons.size(); ++stage) {
+			detail::PlayerObservationDto output{};
+			output.value.radius = 99.0f;
+			const auto result = collect(view, output);
+			EXPECT_EQ(detail::CaptureStatus::InvalidSource, result.status);
+			EXPECT_EQ(reasons[stage], result.reason);
+			expect_default(output);
+			if (stage == 0U) view.raw.object_signature = 123;
+			if (stage == 1U) view.raw.position_world.x = 1.0f;
+			if (stage == 2U) view.raw.orientation = {};
+			if (stage == 3U) view.raw.velocity_world.x = 1.0f;
+			if (stage == 4U) view.raw.rotational_velocity_local.x = 1.0f;
+		}
+	}
+
+	static detail::CaptureReason reason_for_group(std::size_t group) noexcept
+	{
+		constexpr std::array<detail::CaptureReason, 4U> reasons{{detail::CaptureReason::InvalidPosition,
+			detail::CaptureReason::InvalidVelocity,
+			detail::CaptureReason::InvalidRotationalVelocity,
+			detail::CaptureReason::InvalidRadius}};
+		return reasons[group];
+	}
+
+	static float* component(Raw& raw, std::size_t group, std::size_t index) noexcept
+	{
+		if (group == 0U) return index == 0U ? &raw.position_world.x : index == 1U ? &raw.position_world.y : &raw.position_world.z;
+		if (group == 1U) return index == 0U ? &raw.velocity_world.x : index == 1U ? &raw.velocity_world.y : &raw.velocity_world.z;
+		return index == 0U ? &raw.rotational_velocity_local.x : index == 1U ? &raw.rotational_velocity_local.y : &raw.rotational_velocity_local.z;
+	}
+	static const float* output_component(const detail::PlayerKinematicsValue& value,
+		std::size_t group,
+		std::size_t index) noexcept
+	{
+		if (group == 0U) return index == 0U ? &value.position_world.x : index == 1U ? &value.position_world.y : &value.position_world.z;
+		if (group == 1U) return index == 0U ? &value.velocity_world.x : index == 1U ? &value.velocity_world.y : &value.velocity_world.z;
+		return index == 0U ? &value.rotational_velocity_local.x : index == 1U ? &value.rotational_velocity_local.y : &value.rotational_velocity_local.z;
+	}
+
+	static void bounds_and_nonfinite()
+	{
+		constexpr std::array<float, 3U> limits{{1.0e12f, 1.0e9f, 1.0e6f}};
+		const auto infinity = std::numeric_limits<float>::infinity();
+		const std::array<float, 3U> hostile{{std::numeric_limits<float>::quiet_NaN(), infinity, -infinity}};
+		for (std::size_t group = 0U; group < limits.size(); ++group) {
+			for (std::size_t index = 0U; index < 3U; ++index) {
+				for (const auto edge : {-limits[group], limits[group]}) {
+					CountedView view;
+					view.raw = valid_raw();
+					*component(view.raw, group, index) = edge;
+					detail::PlayerObservationDto output{};
+					EXPECT_EQ(detail::CaptureStatus::Valid, collect(view, output).status);
+					EXPECT_FLOAT_EQ(edge, *output_component(output.value, group, index));
+				}
+				for (const auto outside : {std::nextafter(-limits[group], -infinity),
+						 std::nextafter(limits[group], infinity)}) {
+					CountedView view;
+					view.raw = valid_raw();
+					*component(view.raw, group, index) = outside;
+					detail::PlayerObservationDto output{};
+					EXPECT_EQ(reason_for_group(group), collect(view, output).reason);
+					expect_default(output);
+				}
+				for (const auto value : hostile) {
+					CountedView view;
+					view.raw = valid_raw();
+					*component(view.raw, group, index) = value;
+					detail::PlayerObservationDto output{};
+					EXPECT_EQ(reason_for_group(group), collect(view, output).reason);
+					expect_default(output);
+				}
+			}
+		}
+		for (const auto value : hostile) {
+			for (std::size_t coefficient = 0U; coefficient < 9U; ++coefficient) {
+				CountedView view;
+				view.raw = valid_raw();
+				float* fields[] = {&view.raw.orientation.right_world.x,
+					&view.raw.orientation.right_world.y,
+					&view.raw.orientation.right_world.z,
+					&view.raw.orientation.up_world.x,
+					&view.raw.orientation.up_world.y,
+					&view.raw.orientation.up_world.z,
+					&view.raw.orientation.forward_world.x,
+					&view.raw.orientation.forward_world.y,
+					&view.raw.orientation.forward_world.z};
+				*fields[coefficient] = value;
+				detail::PlayerObservationDto output{};
+				EXPECT_EQ(detail::CaptureReason::InvalidOrientation, collect(view, output).reason);
+				expect_default(output);
+			}
+		}
+		for (const auto edge : {0.0f, 1.0e9f}) {
+			CountedView view;
+			view.raw = valid_raw();
+			view.raw.radius = edge;
+			detail::PlayerObservationDto output{};
+			EXPECT_EQ(detail::CaptureStatus::Valid, collect(view, output).status);
+			EXPECT_FLOAT_EQ(edge, output.value.radius);
+		}
+		for (const auto value : {-std::numeric_limits<float>::denorm_min(),
+				 std::nextafter(1.0e9f, infinity),
+				 std::numeric_limits<float>::quiet_NaN(),
+				 infinity,
+				 -infinity}) {
+			CountedView view;
+			view.raw = valid_raw();
+			view.raw.radius = value;
+			detail::PlayerObservationDto output{};
+			EXPECT_EQ(detail::CaptureReason::InvalidRadius, collect(view, output).reason);
+			expect_default(output);
+		}
+	}
+
+	static void subnormal_and_positive_zero()
+	{
+		CountedView view;
+		view.raw = valid_raw();
+		const auto subnormal = std::numeric_limits<float>::denorm_min();
+		view.raw.position_world.x = subnormal;
+		view.raw.position_world.y = -subnormal;
+		view.raw.position_world.z = subnormal;
+		view.raw.velocity_world.x = -subnormal;
+		view.raw.velocity_world.y = subnormal;
+		view.raw.velocity_world.z = -subnormal;
+		view.raw.rotational_velocity_local.x = subnormal;
+		view.raw.rotational_velocity_local.y = -subnormal;
+		view.raw.rotational_velocity_local.z = subnormal;
+		view.raw.radius = subnormal;
+		view.raw.orientation = {};
+		view.raw.orientation.right_world.y = -0.0f;
+		view.raw.orientation.right_world.z = -0.0f;
+		view.raw.orientation.up_world.x = -0.0f;
+		view.raw.orientation.up_world.z = -0.0f;
+		view.raw.orientation.forward_world.x = -0.0f;
+		view.raw.orientation.forward_world.y = -0.0f;
+		detail::PlayerObservationDto output{};
+		ASSERT_EQ(detail::CaptureStatus::Valid, collect(view, output).status);
+		EXPECT_FLOAT_EQ(subnormal, output.value.position_world.x);
+		EXPECT_FLOAT_EQ(-subnormal, output.value.position_world.y);
+		EXPECT_FLOAT_EQ(subnormal, output.value.position_world.z);
+		EXPECT_FLOAT_EQ(-subnormal, output.value.velocity_world.x);
+		EXPECT_FLOAT_EQ(subnormal, output.value.velocity_world.y);
+		EXPECT_FLOAT_EQ(-subnormal, output.value.velocity_world.z);
+		EXPECT_FLOAT_EQ(subnormal, output.value.rotational_velocity_local.x);
+		EXPECT_FLOAT_EQ(-subnormal, output.value.rotational_velocity_local.y);
+		EXPECT_FLOAT_EQ(subnormal, output.value.rotational_velocity_local.z);
+		EXPECT_FLOAT_EQ(subnormal, output.value.radius);
+		const std::array<float, 3U> zeroes{{output.value.orientation_local_to_world.x,
+			output.value.orientation_local_to_world.y,
+			output.value.orientation_local_to_world.z}};
+		for (const auto zero : zeroes) {
+			EXPECT_FLOAT_EQ(0.0f, zero);
+			EXPECT_FALSE(std::signbit(zero));
+		}
+
+		CountedView signed_zero;
+		signed_zero.raw = valid_raw();
+		signed_zero.raw.orientation = {};
+		signed_zero.raw.position_world.x = -0.0f;
+		signed_zero.raw.position_world.y = -0.0f;
+		signed_zero.raw.position_world.z = -0.0f;
+		signed_zero.raw.velocity_world.x = -0.0f;
+		signed_zero.raw.velocity_world.y = -0.0f;
+		signed_zero.raw.velocity_world.z = -0.0f;
+		signed_zero.raw.rotational_velocity_local.x = -0.0f;
+		signed_zero.raw.rotational_velocity_local.y = -0.0f;
+		signed_zero.raw.rotational_velocity_local.z = -0.0f;
+		signed_zero.raw.radius = -0.0f;
+		detail::PlayerObservationDto canonical{};
+		ASSERT_EQ(detail::CaptureStatus::Valid, collect(signed_zero, canonical).status);
+		const std::array<float, 13U> canonical_zeroes{{canonical.value.position_world.x,
+			canonical.value.position_world.y,
+			canonical.value.position_world.z,
+			canonical.value.orientation_local_to_world.x,
+			canonical.value.orientation_local_to_world.y,
+			canonical.value.orientation_local_to_world.z,
+			canonical.value.velocity_world.x,
+			canonical.value.velocity_world.y,
+			canonical.value.velocity_world.z,
+			canonical.value.rotational_velocity_local.x,
+			canonical.value.rotational_velocity_local.y,
+			canonical.value.rotational_velocity_local.z,
+			canonical.value.radius}};
+		for (const auto zero : canonical_zeroes) {
+			EXPECT_FLOAT_EQ(0.0f, zero);
+			EXPECT_FALSE(std::signbit(zero));
+		}
+	}
+
+	static void reused_output_resets()
+	{
+		CountedView valid;
+		valid.raw = valid_raw();
+		detail::PlayerObservationDto output{};
+		ASSERT_EQ(detail::CaptureStatus::Valid, collect(valid, output).status);
+		CountedView absent;
+		absent.gates[1U] = false;
+		EXPECT_EQ(detail::CaptureStatus::NoPlayer, collect(absent, output).status);
+		expect_default(output);
+		CountedView invalid;
+		invalid.raw = valid_raw();
+		invalid.raw.position_world.x = std::numeric_limits<float>::infinity();
+		output.key.object_signature = 999U;
+		EXPECT_EQ(detail::CaptureStatus::InvalidSource, collect(invalid, output).status);
+		expect_default(output);
+	}
+};
+
+enum class CollectorScenario { Api, Preconditions, Snapshot, Validation, Numeric, Subnormal, Reset };
+
+template <CollectorScenario Scenario,
+	typename View = detail::EngineReadView,
+	typename Raw = detail::EnginePlayerKinematicsRead,
+	typename FsoView = detail::FsoEngineReadView>
+void run_engine_collector_contract()
+{
+	if constexpr (!is_complete_type<View>::value || !is_complete_type<Raw>::value ||
+		!is_complete_type<FsoView>::value) {
+		FAIL() << "WP07-B requires the tracker-frozen EnginePlayerKinematicsRead, eight-predicate "
+			  "EngineReadView and stateless FsoEngineReadView collector contract.";
+	} else {
+		using Contract = EngineCollectorContract<View, Raw, FsoView>;
+		if constexpr (Scenario == CollectorScenario::Api) Contract::api_and_real_view();
+		if constexpr (Scenario == CollectorScenario::Preconditions) Contract::preconditions();
+		if constexpr (Scenario == CollectorScenario::Snapshot) Contract::exact_snapshot();
+		if constexpr (Scenario == CollectorScenario::Validation) Contract::validation_ladder();
+		if constexpr (Scenario == CollectorScenario::Numeric) Contract::bounds_and_nonfinite();
+		if constexpr (Scenario == CollectorScenario::Subnormal) Contract::subnormal_and_positive_zero();
+		if constexpr (Scenario == CollectorScenario::Reset) Contract::reused_output_resets();
+	}
+}
+
+TEST(TelemetryEngineCollectorContract, EngineReadViewAndRealFsoViewContractExist)
+{
+	run_engine_collector_contract<CollectorScenario::Api>();
+}
+TEST(TelemetryEngineCollectorContract, PreconditionsShortCircuitInExactOrder)
+{
+	run_engine_collector_contract<CollectorScenario::Preconditions>();
+}
+TEST(TelemetryEngineCollectorContract, OneSnapshotCopiesExactValuesFlagsAndTimestamp)
+{
+	run_engine_collector_contract<CollectorScenario::Snapshot>();
+}
+TEST(TelemetryEngineCollectorContract, PostCopyValidationOrderIsTransactional)
+{
+	run_engine_collector_contract<CollectorScenario::Validation>();
+}
+TEST(TelemetryEngineCollectorContract, InclusiveBoundsOutsideValuesAndNonFiniteInputsAreClosed)
+{
+	run_engine_collector_contract<CollectorScenario::Numeric>();
+}
+TEST(TelemetryEngineCollectorContract, SubnormalsArePreservedAndAllZeroesArePositive)
+{
+	run_engine_collector_contract<CollectorScenario::Subnormal>();
+}
+TEST(TelemetryEngineCollectorContract, InvalidAndNoPlayerResetAReusedOutput)
+{
+	run_engine_collector_contract<CollectorScenario::Reset>();
 }
 
 #endif
