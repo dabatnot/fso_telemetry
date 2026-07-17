@@ -2,6 +2,8 @@
 
 #include "telemetry/identity.h"
 #include "telemetry/protocol/telemetry_rate_limiter.h"
+#include "telemetry/protocol/telemetry_clock.h"
+#include "telemetry/protocol/telemetry_counters.h"
 #include "telemetry/protocol/telemetry_security.h"
 #include "telemetry/protocol/telemetry_session.h"
 #include "telemetry/startup_budget.h"
@@ -78,6 +80,18 @@ struct SessionControllerOutput {
 };
 
 struct SessionControllerSlot {
+	struct HeartbeatState {
+		protocol::ProbeTracker probes;
+		protocol::ClockFilter clock_filter;
+		std::uint16_t negotiated_interval_ms = 0U;
+		std::uint64_t next_periodic_due_us = 0U;
+		std::uint64_t stale_timeout_us = 0U;
+		std::uint64_t disconnect_timeout_us = 0U;
+		std::uint64_t last_valid_network_activity_us = 0U;
+		std::uint64_t last_valid_clock_response_us = 0U;
+		bool clock_stale = false;
+	};
+
 	ProducerSessionProgress progress = ProducerSessionProgress::Empty;
 	protocol::EndpointKey endpoint;
 	std::uint64_t session_id = 0U;
@@ -94,6 +108,7 @@ struct SessionControllerSlot {
 	std::uint64_t preproof_bytes_sent = 0U;
 	bool has_reliability_terminal_policy = false;
 	protocol::ReliableTerminalPolicy reliability_terminal_policy = protocol::ReliableTerminalPolicy::Drop;
+	HeartbeatState heartbeat;
 };
 
 enum class PreproofLedgerResult : std::uint8_t {
@@ -176,6 +191,7 @@ class SessionController final {
 	bool peek_output(SessionControllerOutput& output) const noexcept;
 	void complete_output(IoStatus status) noexcept;
 	void service_reliability(std::uint64_t now_us) noexcept;
+	void service_session_maintenance(std::uint64_t now_us) noexcept;
 	bool has_output() const noexcept { return m_has_output; }
 	std::size_t active_slots() const noexcept;
 	const SessionControllerSlot& slot(std::size_t index) const noexcept { return m_slots[index]; }
@@ -224,16 +240,26 @@ class SessionController final {
 	bool queue_retransmission(std::size_t slot_index,
 		const protocol::ReliableWindowAction& action,
 		std::uint64_t now_us) noexcept;
+	bool queue_heartbeat(std::size_t slot_index,
+		const protocol::HeartbeatPayload& heartbeat,
+		std::uint64_t now_us,
+		bool owns_probe,
+		const protocol::ProbeToken& probe) noexcept;
+	void note_network_activity(std::size_t slot_index, std::uint64_t now_us) noexcept;
 	SessionIngressResult ingest_hello(const protocol::EndpointKey& endpoint,
 		const protocol::DatagramView& decoded,
 		std::size_t received_size,
-		std::uint64_t now_us) noexcept;
+		std::uint64_t now_us,
+		bool mission_active) noexcept;
 	SessionIngressResult ingest_ack(const protocol::EndpointKey& endpoint,
 		const protocol::DatagramView& decoded,
 		std::uint64_t now_us,
 		std::uint32_t mission_generation,
 		bool mission_active) noexcept;
 	SessionIngressResult ingest_nack(const protocol::EndpointKey& endpoint,
+		const protocol::DatagramView& decoded,
+		std::uint64_t now_us) noexcept;
+	SessionIngressResult ingest_heartbeat(const protocol::EndpointKey& endpoint,
 		const protocol::DatagramView& decoded,
 		std::uint64_t now_us) noexcept;
 
@@ -253,9 +279,13 @@ class SessionController final {
 	std::size_t m_pending_reliability_slot = std::numeric_limits<std::size_t>::max();
 	std::uint64_t m_pending_reliability_time_us = 0U;
 	std::size_t m_reliability_cursor = 0U;
+	std::size_t m_heartbeat_cursor = 0U;
 	bool m_has_output = false;
 	bool m_output_reliability_pending = false;
 	bool m_pending_preproof_send_accounted = false;
+	bool m_output_heartbeat_pending = false;
+	bool m_output_heartbeat_owns_probe = false;
+	protocol::ProbeToken m_output_heartbeat_probe{};
 	bool m_ready = false;
 	bool m_faulted = false;
 };

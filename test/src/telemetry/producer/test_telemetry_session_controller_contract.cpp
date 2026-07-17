@@ -1355,6 +1355,16 @@ EncodedDatagram nack_for_target(const DecodedOutput& target,
 	return encode_datagram(header, {payload.data(), written});
 }
 
+EncodedDatagram nack_with_wrong_target_id(const DecodedOutput& target,
+	protocol::NackReason reason,
+	std::uint32_t packet_sequence)
+{
+	auto result = nack_for_target(target, reason, packet_sequence);
+	put_u32(result.bytes, protocol::HeaderSizeV1, target.datagram.header.message_id + 1U);
+	reseal_single_fragment(result.bytes);
+	return result;
+}
+
 DecodedOutput establish_session_begin(detail::SessionController& controller,
 	const protocol::EndpointKey& peer,
 	std::uint64_t nonce,
@@ -1385,6 +1395,8 @@ void expect_session_begin_ack_lifecycle()
 	EXPECT_NE(detail::SessionIngressDisposition::Dropped, first.disposition);
 	EXPECT_NE(detail::SessionIngressDisposition::Faulted, first.disposition);
 	EXPECT_EQ(1U, controller.slot(0U).reliable_items_in_use);
+	EXPECT_EQ(2'100U, controller.slot(0U).heartbeat.last_valid_network_activity_us)
+		<< "A fully admitted exact ACK refreshes network activity.";
 	EXPECT_FALSE(controller.has_output());
 
 	const auto duplicate = controller.ingest(endpoint(), view(validated.bytes), 2'200U, 0U, false);
@@ -1393,6 +1405,8 @@ void expect_session_begin_ack_lifecycle()
 	EXPECT_NE(detail::SessionIngressDisposition::Faulted, duplicate.disposition);
 	EXPECT_EQ(1U, controller.slot(0U).reliable_items_in_use)
 		<< "A duplicate VALIDATED ACK must remain accepted without releasing the exact tuple.";
+	EXPECT_EQ(2'200U, controller.slot(0U).heartbeat.last_valid_network_activity_us)
+		<< "An exact duplicate VALIDATED ACK remains an admitted reliable response.";
 	EXPECT_FALSE(controller.has_output());
 
 	if constexpr (has_wp06_reliability_service_and_transactional_egress<Controller>::value) {
@@ -1409,12 +1423,15 @@ void expect_session_begin_ack_lifecycle()
 		const auto forged = encode_welcome_ack(begin, forged_payload);
 		const auto before_forged = controller.slot(0U);
 		const auto usage_before_forged = controller.owned_usage();
+		const auto activity_before_forged = controller.slot(0U).heartbeat.last_valid_network_activity_us;
 		const auto forged_result = controller.ingest(endpoint(), view(forged.bytes), due + 1U, 0U, false);
 		EXPECT_NE(detail::SessionIngressDropReason::None, forged_result.drop_reason);
 		EXPECT_EQ(usage_before_forged, controller.owned_usage());
 		EXPECT_EQ(before_forged.progress, controller.slot(0U).progress);
 		EXPECT_EQ(before_forged.next_message_id, controller.slot(0U).next_message_id);
 		EXPECT_EQ(before_forged.next_packet_sequence, controller.slot(0U).next_packet_sequence);
+		EXPECT_EQ(activity_before_forged, controller.slot(0U).heartbeat.last_valid_network_activity_us)
+			<< "A forged ACK is rejected before activity mutation.";
 		EXPECT_EQ(1U, controller.slot(0U).reliable_items_in_use);
 		EXPECT_FALSE(controller.has_output());
 
@@ -1424,16 +1441,21 @@ void expect_session_begin_ack_lifecycle()
 		EXPECT_NE(detail::SessionIngressDisposition::Dropped, applied_result.disposition);
 		EXPECT_NE(detail::SessionIngressDisposition::Faulted, applied_result.disposition);
 		EXPECT_EQ(0U, controller.slot(0U).reliable_items_in_use);
+		EXPECT_EQ(due + 2U, controller.slot(0U).heartbeat.last_valid_network_activity_us)
+			<< "The exact APPLIED ACK refreshes activity before releasing its tuple.";
 		EXPECT_FALSE(controller.has_output());
 
 		const auto before_late = controller.slot(0U);
 		const auto usage_before_late = controller.owned_usage();
+		const auto activity_before_late = controller.slot(0U).heartbeat.last_valid_network_activity_us;
 		const auto late = controller.ingest(endpoint(), view(applied.bytes), due + 3U, 0U, false);
 		EXPECT_NE(detail::SessionIngressDropReason::None, late.drop_reason);
 		EXPECT_EQ(usage_before_late, controller.owned_usage());
 		EXPECT_EQ(before_late.progress, controller.slot(0U).progress);
 		EXPECT_EQ(before_late.next_message_id, controller.slot(0U).next_message_id);
 		EXPECT_EQ(before_late.next_packet_sequence, controller.slot(0U).next_packet_sequence);
+		EXPECT_EQ(activity_before_late, controller.slot(0U).heartbeat.last_valid_network_activity_us)
+			<< "An APPLIED ACK becomes late after release and cannot extend the timeout.";
 		EXPECT_EQ(0U, controller.slot(0U).reliable_items_in_use);
 		EXPECT_EQ(detail::ProducerSessionProgress::ReadyForState, controller.slot(0U).progress);
 		EXPECT_FALSE(controller.has_output());
@@ -1545,6 +1567,203 @@ TEST(TelemetryWp06ReliabilityContract, NackDecisionsComposeWithoutRequiringAnImm
 		EXPECT_EQ(item.releases ? 0U : 1U, controller.slot(0U).reliable_items_in_use);
 		if (item.reason == protocol::NackReason::ResourceLimit) {
 			expect_resource_limit_preserves_original_schedule(controller, begin);
+		}
+	}
+}
+
+void expect_rejected_nack_preserves_reliability_state(const EncodedDatagram& nack,
+	detail::SessionController& controller,
+	const DecodedOutput& begin,
+	std::uint64_t now_us)
+{
+	const auto activity_before = controller.slot(0U).heartbeat.last_valid_network_activity_us;
+	const auto usage_before = controller.owned_usage();
+	const auto progress_before = controller.slot(0U).progress;
+	const auto packet_sequence_before = controller.slot(0U).next_packet_sequence;
+	const auto message_id_before = controller.slot(0U).next_message_id;
+	const auto result = controller.ingest(endpoint(), view(nack.bytes), now_us, 0U, false);
+	EXPECT_EQ(detail::SessionIngressDisposition::Dropped, result.disposition);
+	EXPECT_EQ(detail::SessionIngressDropReason::PayloadInvalid, result.drop_reason);
+	EXPECT_EQ(activity_before, controller.slot(0U).heartbeat.last_valid_network_activity_us);
+	EXPECT_EQ(usage_before, controller.owned_usage());
+	EXPECT_EQ(progress_before, controller.slot(0U).progress);
+	EXPECT_EQ(packet_sequence_before, controller.slot(0U).next_packet_sequence);
+	EXPECT_EQ(message_id_before, controller.slot(0U).next_message_id);
+	EXPECT_EQ(1U, controller.slot(0U).reliable_items_in_use);
+	EXPECT_FALSE(controller.has_output());
+
+	const auto due = begin.datagram.header.sent_time_us +
+		protocol::reliable_retry_delay_us(protocol::ReliableDefaultRtoUs,
+			0x4653544c5f52544fULL,
+			begin.datagram.header.session_id,
+			begin.datagram.header.message_id,
+			0U);
+	controller.service_reliability(due - 1U);
+	EXPECT_FALSE(controller.has_output());
+	controller.service_reliability(due);
+	ASSERT_TRUE(controller.has_output()) << "Rejected NACK input cannot perturb the original retry schedule.";
+	const auto retry = pop_output(controller);
+	EXPECT_EQ(begin.datagram.header.message_type, retry.datagram.header.message_type);
+	EXPECT_EQ(begin.datagram.header.message_id, retry.datagram.header.message_id);
+	EXPECT_EQ(begin.datagram.header.message_crc32, retry.datagram.header.message_crc32);
+}
+
+void expect_original_retry_tuple_rto_and_deadline(detail::SessionController& controller,
+	const DecodedOutput& begin)
+{
+	const auto due = begin.datagram.header.sent_time_us +
+		protocol::reliable_retry_delay_us(protocol::ReliableDefaultRtoUs,
+			0x4653544c5f52544fULL,
+			begin.datagram.header.session_id,
+			begin.datagram.header.message_id,
+			0U);
+	controller.service_reliability(due - 1U);
+	EXPECT_FALSE(controller.has_output()) << "Rate-limited input cannot move the original RTO earlier.";
+	controller.service_reliability(due);
+	ASSERT_TRUE(controller.has_output()) << "Rate-limited input cannot reset or postpone the original RTO.";
+	detail::SessionControllerOutput output;
+	ASSERT_TRUE(controller.peek_output(output));
+	EXPECT_EQ(endpoint(), output.endpoint);
+	const auto retry = pop_output(controller);
+	EXPECT_EQ(begin.datagram.header.session_id, retry.datagram.header.session_id);
+	EXPECT_EQ(begin.datagram.header.message_type, retry.datagram.header.message_type);
+	EXPECT_EQ(begin.datagram.header.message_id, retry.datagram.header.message_id);
+	EXPECT_EQ(begin.datagram.header.fragment_count, retry.datagram.header.fragment_count);
+	EXPECT_EQ(begin.datagram.header.message_crc32, retry.datagram.header.message_crc32);
+	EXPECT_EQ(begin.datagram.payload.size, retry.datagram.payload.size);
+	EXPECT_TRUE(std::equal(begin.datagram.payload.data,
+		begin.datagram.payload.data + begin.datagram.payload.size,
+		retry.datagram.payload.data));
+	EXPECT_NE(begin.datagram.header.packet_sequence, retry.datagram.header.packet_sequence);
+	EXPECT_NE(static_cast<std::uint8_t>(0U),
+		static_cast<std::uint8_t>(retry.datagram.header.flags & protocol::MessageFlagRetransmission));
+
+	const auto deadline = begin.datagram.header.sent_time_us + protocol::ReliableOrdinaryRetentionUs;
+	controller.service_reliability(deadline - 1U);
+	if (controller.has_output()) {
+		const auto later_retry = pop_output(controller);
+		EXPECT_EQ(begin.datagram.header.session_id, later_retry.datagram.header.session_id);
+		EXPECT_EQ(begin.datagram.header.message_type, later_retry.datagram.header.message_type);
+		EXPECT_EQ(begin.datagram.header.message_id, later_retry.datagram.header.message_id);
+		EXPECT_EQ(begin.datagram.header.fragment_count, later_retry.datagram.header.fragment_count);
+		EXPECT_EQ(begin.datagram.header.message_crc32, later_retry.datagram.header.message_crc32);
+		EXPECT_EQ(begin.datagram.payload.size, later_retry.datagram.payload.size);
+		EXPECT_TRUE(std::equal(begin.datagram.payload.data,
+			begin.datagram.payload.data + begin.datagram.payload.size,
+			later_retry.datagram.payload.data));
+		EXPECT_NE(static_cast<std::uint8_t>(0U),
+			static_cast<std::uint8_t>(later_retry.datagram.header.flags & protocol::MessageFlagRetransmission));
+	}
+	EXPECT_EQ(1U, controller.slot(0U).reliable_items_in_use);
+	EXPECT_EQ(detail::ProducerSessionProgress::ReadyForState, controller.slot(0U).progress);
+	controller.service_reliability(deadline);
+	EXPECT_FALSE(controller.has_output());
+	EXPECT_EQ(0U, controller.slot(0U).reliable_items_in_use)
+		<< "Rate-limited input cannot extend the immutable retention deadline.";
+	expect_session_begin_terminal_state(controller.slot(0U));
+}
+
+TEST(TelemetryWp06ReliabilityContract, RejectedForgedIncoherentAndUncorrelatedNacksAreActivityAtomic)
+{
+	for (const auto kind : {0U, 1U}) {
+		SCOPED_TRACE(kind);
+		IdentityHarness ids{{{true, 0x2525U + kind}}};
+		auto controller = make_controller(ids.allocator);
+		const auto begin = establish_session_begin(controller, endpoint(), 12'500U + kind, 1'000U, 2'000U);
+		const auto nack = kind == 0U
+			? nack_with_wrong_target_id(begin, protocol::NackReason::MissingFragments, 300U + kind)
+			: nack_for_target(begin, protocol::NackReason::UnsupportedMessage, 300U + kind);
+		expect_rejected_nack_preserves_reliability_state(nack, controller, begin, 3'000U);
+	}
+}
+
+TEST(TelemetryWp06ReliabilityContract, RateLimitedAndLateDuplicateNacksCannotExtendNetworkTimeout)
+{
+	{
+		IdentityHarness ids{{{true, 0x2626U}}};
+		auto controller = make_controller(ids.allocator);
+		const auto begin = establish_session_begin(controller, endpoint(), 12'600U, 1'000U, 2'000U);
+		// The WELCOME APPLIED proof already consumed one token from the session's
+		// common ACK/NACK bucket. Non-correlated NACKs consume the remainder without
+		// validating or otherwise changing the retained SESSION_BEGIN schedule.
+		const auto burner = nack_with_wrong_target_id(begin, protocol::NackReason::MissingFragments, 399U);
+		const auto activity_before_burners = controller.slot(0U).heartbeat.last_valid_network_activity_us;
+		ASSERT_EQ(2'000U, activity_before_burners);
+		for (std::uint32_t index = 0U; index + 1U < protocol::AckNackRateLimit.burst_tokens; ++index) {
+			const auto rejected = controller.ingest(endpoint(), view(burner.bytes), 3'000U, 0U, false);
+			ASSERT_EQ(detail::SessionIngressDisposition::Dropped, rejected.disposition) << index;
+			ASSERT_EQ(detail::SessionIngressDropReason::PayloadInvalid, rejected.drop_reason) << index;
+		}
+		EXPECT_EQ(activity_before_burners, controller.slot(0U).heartbeat.last_valid_network_activity_us)
+			<< "Non-correlated burner NACKs must remain activity-atomic while exhausting the bucket.";
+		const auto usage_before = controller.owned_usage();
+		const auto progress_before = controller.slot(0U).progress;
+		const auto packet_sequence_before = controller.slot(0U).next_packet_sequence;
+		const auto limited = nack_for_target(begin, protocol::NackReason::MissingFragments, 400U);
+		const auto result = controller.ingest(endpoint(), view(limited.bytes), 4'000U, 0U, false);
+		EXPECT_EQ(detail::SessionIngressDisposition::Dropped, result.disposition);
+		EXPECT_EQ(detail::SessionIngressDropReason::PayloadInvalid, result.drop_reason);
+		EXPECT_EQ(activity_before_burners, controller.slot(0U).heartbeat.last_valid_network_activity_us)
+			<< "The shared ACK/NACK bucket must deny before any session mutation.";
+		EXPECT_EQ(usage_before, controller.owned_usage());
+		EXPECT_EQ(progress_before, controller.slot(0U).progress);
+		EXPECT_EQ(packet_sequence_before, controller.slot(0U).next_packet_sequence);
+		EXPECT_EQ(1U, controller.slot(0U).reliable_items_in_use);
+		EXPECT_FALSE(controller.has_output());
+		expect_original_retry_tuple_rto_and_deadline(controller, begin);
+	}
+	{
+		IdentityHarness ids{{{true, 0x2727U}}};
+		auto controller = make_controller(ids.allocator);
+		const auto begin = establish_session_begin(controller, endpoint(), 12'700U, 1'000U, 2'000U);
+		const auto terminal = nack_for_target(begin, protocol::NackReason::StaleBaseline, 500U);
+		ASSERT_EQ(detail::SessionIngressDropReason::None,
+			controller.ingest(endpoint(), view(terminal.bytes), 3'000U, 0U, false).drop_reason);
+		ASSERT_EQ(3'000U, controller.slot(0U).heartbeat.last_valid_network_activity_us);
+		ASSERT_EQ(detail::ProducerSessionProgress::Stale, controller.slot(0U).progress);
+		ASSERT_EQ(0U, controller.slot(0U).reliable_items_in_use);
+		const auto usage_before = controller.owned_usage();
+		const auto duplicate = controller.ingest(endpoint(), view(terminal.bytes), 4'000U, 0U, false);
+		EXPECT_EQ(detail::SessionIngressDisposition::Dropped, duplicate.disposition);
+		EXPECT_EQ(detail::SessionIngressDropReason::PayloadInvalid, duplicate.drop_reason);
+		EXPECT_EQ(3'000U, controller.slot(0U).heartbeat.last_valid_network_activity_us)
+			<< "A terminal NACK is late and uncorrelated once its exact tuple has been released.";
+		EXPECT_EQ(usage_before, controller.owned_usage());
+		EXPECT_EQ(detail::ProducerSessionProgress::Stale, controller.slot(0U).progress);
+		EXPECT_EQ(0U, controller.slot(0U).reliable_items_in_use);
+		EXPECT_FALSE(controller.has_output());
+	}
+}
+
+TEST(TelemetryWp06ReliabilityContract, FullyAdmittedNacksRefreshActivityForRetryWaitAndTerminalOutcomes)
+{
+	for (const auto reason : {protocol::NackReason::MissingFragments,
+			 protocol::NackReason::ResourceLimit,
+			 protocol::NackReason::StaleBaseline}) {
+		SCOPED_TRACE(static_cast<unsigned int>(reason));
+		IdentityHarness ids{{{true, 0x2828U + static_cast<std::uint8_t>(reason)}}};
+		auto controller = make_controller(ids.allocator);
+		const auto begin = establish_session_begin(
+			controller, endpoint(), 12'800U + static_cast<std::uint8_t>(reason), 1'000U, 2'000U);
+		const auto nack = nack_for_target(begin, reason, 600U + static_cast<std::uint8_t>(reason));
+		const auto result = controller.ingest(endpoint(), view(nack.bytes), 3'000U, 0U, false);
+		EXPECT_EQ(detail::SessionIngressDropReason::None, result.drop_reason);
+		EXPECT_NE(detail::SessionIngressDisposition::Dropped, result.disposition);
+		EXPECT_NE(detail::SessionIngressDisposition::Faulted, result.disposition);
+		EXPECT_EQ(3'000U, controller.slot(0U).heartbeat.last_valid_network_activity_us)
+			<< "Activity commits only after bucket admission and exact reliable correlation.";
+		if (reason == protocol::NackReason::MissingFragments) {
+			EXPECT_TRUE(controller.has_output());
+			EXPECT_EQ(1U, controller.slot(0U).reliable_items_in_use);
+			EXPECT_EQ(detail::ProducerSessionProgress::ReadyForState, controller.slot(0U).progress);
+		} else if (reason == protocol::NackReason::ResourceLimit) {
+			EXPECT_FALSE(controller.has_output());
+			EXPECT_EQ(1U, controller.slot(0U).reliable_items_in_use);
+			EXPECT_EQ(detail::ProducerSessionProgress::ReadyForState, controller.slot(0U).progress);
+		} else {
+			EXPECT_FALSE(controller.has_output());
+			EXPECT_EQ(0U, controller.slot(0U).reliable_items_in_use);
+			EXPECT_EQ(detail::ProducerSessionProgress::Stale, controller.slot(0U).progress);
 		}
 	}
 }

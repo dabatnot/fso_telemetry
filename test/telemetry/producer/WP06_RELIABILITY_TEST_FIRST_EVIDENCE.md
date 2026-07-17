@@ -307,3 +307,132 @@ oracle was weakened and no Phase 0 wire or reliability contract was changed.
 
 This approval closes WP06-REL only. WP06-HB and native runtime/transport integration remain open,
 separately owned gates and are not implied complete by this disposition.
+
+## Post-review P1-REQ-013 NACK activity-order RED
+
+A subsequent P1-REQ-013 audit found that the controller-side NACK path refreshed
+`last_valid_network_activity_us` immediately after payload decoding, before the shared ACK/NACK
+bucket and before exact correlation with the retained reliable tuple. Three additive reliability
+tests were authored without production changes:
+
+| Test | Oracle |
+|---|---|
+| `RejectedForgedIncoherentAndUncorrelatedNacksAreActivityAtomic` | wrong target identity and incoherent NACK input preserve activity, retained window, output, progress, sequence state and the original retry boundary |
+| `RateLimitedAndLateDuplicateNacksCannotExtendNetworkTimeout` | a NACK denied after exact exhaustion of the common ACK/NACK bucket and a duplicate terminal NACK after tuple release preserve activity, window/output and progress |
+| `FullyAdmittedNacksRefreshActivityForRetryWaitAndTerminalOutcomes` | exact admitted `MissingFragments`, `ResourceLimit` and `StaleBaseline` NACKs refresh activity only after bucket admission and correlation, including queued retry, scheduled-wait and terminal outcomes |
+
+The existing `SessionBeginAckLifecycleIsDuplicateSafeAndMutationAtomic` oracle was strengthened,
+not relaxed: exact VALIDATED/APPLIED and the still-admitted duplicate VALIDATED ACK refresh
+activity, while forged and late-after-release ACKs preserve it. This ACK analogue remains GREEN.
+
+Debug compilation succeeds, then the focused RED is reproducible:
+
+```powershell
+cmake --build build --target unittests --config Debug --parallel 4
+# exit 0
+
+& .\build\bin\Debug\unittests.exe `
+  '--gtest_filter=TelemetryWp06ReliabilityContract.RejectedForgedIncoherentAndUncorrelatedNacksAreActivityAtomic:TelemetryWp06ReliabilityContract.RateLimitedAndLateDuplicateNacksCannotExtendNetworkTimeout:TelemetryWp06ReliabilityContract.FullyAdmittedNacksRefreshActivityForRetryWaitAndTerminalOutcomes:TelemetryWp06ReliabilityContract.SessionBeginAckLifecycleIsDuplicateSafeAndMutationAtomic' `
+  '--gtest_brief=1' '--gtest_color=no'
+# exit 1: 2/4 passed
+
+& .\build\bin\Debug\unittests.exe `
+  '--gtest_filter=TelemetryWp06ReliabilityContract.*' `
+  '--gtest_brief=1' '--gtest_color=no'
+# exit 1: 11/13 passed
+```
+
+The measured mismatches are limited to premature activity refresh:
+
+1. a decoded `MissingFragments` NACK with `target_message_id + 1` advances activity from `2000` to
+   `3000` despite being non-correlated; its retained item, empty output, Ready progress, sequence
+   state and exact original retry schedule remain unchanged;
+2. after the WELCOME proof, activity is `2000`. The 199 non-correlated burner NACKs that consume the
+   remaining common ACK/NACK burst tokens incorrectly advance it to `3000`; the next rate-limited
+   NACK then advances it again to `4000`. The oracle never adopts either mutation: it requires the
+   original `2000` after the burner loop and again after the denied NACK. The retained window,
+   output and progress remain unchanged throughout;
+3. an exact terminal `StaleBaseline` NACK correctly refreshes activity to `3000`, releases the
+   tuple and marks Stale, but the same NACK once duplicate/late and non-correlated advances activity
+   to `4000`; the released window, empty output and Stale progress remain unchanged.
+
+The wire-incoherent `UnsupportedMessage` form is already rejected before activity mutation. All
+three fully admitted NACK outcomes are GREEN, as is the strengthened ACK analogue. The required
+production correction is therefore narrowly ordered: decode, rate-limit, correlate/decide, then
+commit network activity only for an admitted reliable response.
+
+The rate-limited subcase additionally freezes the complete observable reliable state. At the
+original jittered RTO, `due-1` produces no output and `due` produces the exact retained tuple:
+session, message type, message ID, fragment count, message CRC and logical payload all match the
+original SESSION_BEGIN; only packet sequence and the retransmission flag change as specified. Any
+later retry already due at `retention_deadline-1` retains that same tuple and payload. At the exact
+immutable ordinary retention deadline the entry is released with no sendable output and the slot
+becomes exact `Stale`/`MarkSessionStale`. Thus the rejected rate-limited NACK changes only the
+premature activity timestamp after earlier burner NACKs have already exposed the same ordering bug;
+neither the burners nor the denied NACK reset/postpone the RTO, change bytes or identity, consume
+the retained entry, or extend its deadline.
+
+Fresh baseline results from the same Debug executable are:
+
+| Gate | Result |
+|---|---:|
+| ten predecessor REL tests, including strengthened ACK lifecycle | 10/10 |
+| heartbeat contract suite | 17/17 |
+| WP06 + composed Phase 0 clock/rate/reliability/session families | 197/199 across 17 suites; exactly the two new rejection tests fail |
+| isolated allocation executable | 3/3 |
+
+WP06-REL is RED again only for this P1-REQ-013 NACK activity-order finding. No Phase 0 wire value,
+heartbeat oracle, allocation oracle, CMake registration or production file was changed by this
+test-first expansion. Production handoff and independent review are required before any GREEN is
+claimed.
+
+## Final P1-REQ-013 NACK activity-order GREEN
+
+Independent production changes closed the activity-order finding without editing or relaxing the
+test oracle. The contract source hash was
+`8f69f85ab18e341ca0f462dde1cd66b397d01bf4` before the final builds and remained exactly that value
+after both Debug and Release verification.
+
+The final observed ordering is now exact:
+
+- all 199 non-correlated burner NACKs preserve the original network activity value `2000` while
+  consuming only their admitted rate-limit tokens;
+- the following rate-limited NACK also preserves `2000` and cannot change the retained tuple,
+  output, progress, sequences, RTO or immutable deadline;
+- a wrong-target NACK and a duplicate/late terminal NACK preserve network activity and all reliable
+  state owned by their respective pre-rejection snapshots;
+- exact admitted `MissingFragments`, `ResourceLimit` and `StaleBaseline` NACKs refresh activity at
+  their commit point and retain their previously frozen retry/wait/terminal outcomes;
+- the strengthened ACK analogue remains GREEN: exact and still-admitted duplicate ACKs refresh,
+  while forged and late-after-release ACKs are activity-atomic.
+
+Both final configurations built successfully:
+
+```powershell
+cmake --build build --target unittests telemetry_session_controller_allocation_contract_tests `
+  --config Debug --parallel 4
+# exit 0
+
+cmake --build build --target unittests telemetry_session_controller_allocation_contract_tests `
+  --config Release --parallel 4
+# exit 0
+```
+
+The independent final matrix is:
+
+| Gate | Debug | Release |
+|---|---:|---:|
+| focused P1-REQ-013 NACK/ACK tests | 4/4 | 4/4 |
+| complete reliability contract suite | 13/13 | 13/13 |
+| complete heartbeat contract suite | 17/17 | 17/17 |
+| WP06 + composed Phase 0 clock/rate/reliability/session families | 199/199 across 17 suites | 199/199 across 17 suites |
+| isolated allocation executable | 3/3 | 3/3 |
+| complete unit-test executable | 834/834 across 109 suites, 2 disabled | 834/834 across 109 suites, 2 disabled |
+| complete REL suite repeated | 1,300/1,300 (13 tests x 100) | 650/650 (13 tests x 50) |
+| isolated allocation suite repeated | 1,500/1,500 (3 tests x 500) | 750/750 (3 tests x 250) |
+
+The complete executables emitted only the expected diagnostics from unrelated negative
+string/parser tests; every gtest result passed. No flaky repetition, allocation regression,
+heartbeat regression or Phase 0 regression was observed. On this evidence the post-review
+P1-REQ-013 NACK finding is GREEN; final WP06-REL gate disposition still belongs to the independent
+reviewer and contract tracker roles.

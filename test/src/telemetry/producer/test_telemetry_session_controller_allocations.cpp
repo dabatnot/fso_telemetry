@@ -231,7 +231,7 @@ protocol::DatagramView decode_output(const detail::SessionControllerOutput& outp
 	return view;
 }
 
-Datagram make_ack(const protocol::DatagramView& target)
+Datagram make_ack(const protocol::DatagramView& target, std::uint32_t packet_sequence = 8U)
 {
 	protocol::AckPayload ack;
 	ack.target_message_id = target.header.message_id;
@@ -247,9 +247,30 @@ Datagram make_ack(const protocol::DatagramView& target)
 	header.version_minor = protocol::VersionMinorV1_1;
 	header.message_type = protocol::MessageType::Ack;
 	header.session_id = target.header.session_id;
-	header.packet_sequence = 8U;
+	header.packet_sequence = packet_sequence;
 	header.sent_time_us = 2'000U;
 	header.message_id = 2U;
+	header.message_size = static_cast<std::uint32_t>(written);
+	header.message_crc32 = protocol::crc32_iso_hdlc({payload.data(), written});
+	return encode_message(header, {payload.data(), written});
+}
+
+Datagram make_heartbeat(std::uint64_t session_id,
+	const protocol::HeartbeatPayload& heartbeat,
+	std::uint32_t packet_sequence,
+	std::uint64_t sent_time_us)
+{
+	std::array<std::uint8_t, protocol::HeartbeatPayloadSize> payload{};
+	std::size_t written = 0U;
+	EXPECT_EQ(protocol::ValidationError::None,
+		protocol::encode_heartbeat_payload(heartbeat, {payload.data(), payload.size()}, written));
+	protocol::TelemetryDatagramHeader header;
+	header.version_minor = protocol::VersionMinorV1_1;
+	header.message_type = protocol::MessageType::Heartbeat;
+	header.session_id = session_id;
+	header.packet_sequence = packet_sequence;
+	header.sent_time_us = sent_time_us;
+	header.message_id = packet_sequence;
 	header.message_size = static_cast<std::uint32_t>(written);
 	header.message_crc32 = protocol::crc32_iso_hdlc({payload.data(), written});
 	return encode_message(header, {payload.data(), written});
@@ -289,6 +310,22 @@ struct has_wp06_reliability_service_and_transactional_egress<Controller,
 	std::void_t<decltype(std::declval<Controller&>().service_reliability(std::declval<std::uint64_t>())),
 		decltype(std::declval<const Controller&>().peek_output(std::declval<detail::SessionControllerOutput&>())),
 		decltype(std::declval<Controller&>().complete_output(std::declval<detail::IoStatus>()))>> : std::true_type {};
+
+template <typename Controller, typename = void>
+struct has_wp06_heartbeat_service_and_fixed_state : std::false_type {};
+
+template <typename Controller>
+struct has_wp06_heartbeat_service_and_fixed_state<Controller,
+	std::void_t<decltype(std::declval<Controller&>().service_session_maintenance(
+			std::declval<std::uint64_t>())),
+		decltype(std::declval<const Controller&>().slot(0U).heartbeat.probes.in_flight_count()),
+		decltype(std::declval<const Controller&>().slot(0U).heartbeat.clock_filter.sample_count()),
+		decltype(std::declval<const Controller&>().slot(0U).heartbeat.negotiated_interval_ms),
+		decltype(std::declval<const Controller&>().slot(0U).heartbeat.next_periodic_due_us),
+		decltype(std::declval<const Controller&>().slot(0U).heartbeat.stale_timeout_us),
+		decltype(std::declval<const Controller&>().slot(0U).heartbeat.disconnect_timeout_us),
+		decltype(std::declval<const Controller&>().slot(0U).heartbeat.last_valid_network_activity_us)>>
+	: std::true_type {};
 
 TEST(TelemetryWp06AllocationContract, HelloAckNackAndRetransmissionAllocateNothingAfterReady)
 {
@@ -404,6 +441,105 @@ TEST(TelemetryWp06AllocationContract, ReliabilityServiceAndWouldBlockAllocateNot
 	detail::SessionControllerOutput welcome;
 	ASSERT_TRUE(controller.pop_output(welcome));
 	expect_reliability_service_allocates_nothing(controller, welcome);
+}
+
+template <typename Controller>
+void expect_heartbeat_paths_allocate_nothing(Controller& controller, const protocol::EndpointKey& peer)
+{
+	if constexpr (!has_wp06_heartbeat_service_and_fixed_state<Controller>::value) {
+		FAIL() << "The WP06 heartbeat service/fixed slot state seams are absent.";
+	} else {
+		ASSERT_EQ(1000U, controller.slot(0U).heartbeat.negotiated_interval_ms);
+		ASSERT_EQ(3'000'000U, controller.slot(0U).heartbeat.stale_timeout_us);
+		ASSERT_EQ(10'000'000U, controller.slot(0U).heartbeat.disconnect_timeout_us);
+		ASSERT_EQ(1'002'000U, controller.slot(0U).heartbeat.next_periodic_due_us);
+		const auto due = controller.slot(0U).heartbeat.next_periodic_due_us;
+		detail::SessionControllerOutput request_output;
+		arm_allocation_probe();
+		controller.service_session_maintenance(due);
+		const auto exposed = controller.peek_output(request_output);
+		controller.complete_output(detail::IoStatus::Complete);
+		const auto cadence_allocations = disarm_allocation_probe();
+		ASSERT_TRUE(exposed);
+		EXPECT_EQ(0U, cadence_allocations) << "Periodic heartbeat cadence allocated after Ready.";
+
+		const auto request_datagram = decode_output(request_output);
+		protocol::HeartbeatPayload request;
+		ASSERT_EQ(protocol::ValidationError::None,
+			protocol::decode_heartbeat_payload(request_datagram.payload, request));
+		ASSERT_EQ(protocol::HeartbeatKind::Request, request.kind);
+		protocol::HeartbeatPayload response = request;
+		response.kind = protocol::HeartbeatKind::Response;
+		response.receive_t1_us = request.origin_t0_us + 10U;
+		response.transmit_t2_us = request.origin_t0_us + 20U;
+		const auto response_time = request.origin_t0_us + 100U;
+		const auto response_datagram = make_heartbeat(
+			controller.slot(0U).session_id, response, 30U, response_time);
+
+		arm_allocation_probe();
+		const auto response_result = controller.ingest(peer,
+			{response_datagram.bytes.data(), response_datagram.size}, response_time, 0U, false);
+		const auto response_allocations = disarm_allocation_probe();
+		EXPECT_EQ(detail::SessionIngressDropReason::None, response_result.drop_reason);
+		EXPECT_EQ(0U, response_allocations) << "Heartbeat correlation/filter update allocated after Ready.";
+
+		const auto next_due = controller.slot(0U).heartbeat.next_periodic_due_us;
+		arm_allocation_probe();
+		controller.service_session_maintenance(next_due);
+		const auto would_block_exposed = controller.peek_output(request_output);
+		controller.complete_output(detail::IoStatus::WouldBlock);
+		const auto backpressure_allocations = disarm_allocation_probe();
+		EXPECT_TRUE(would_block_exposed);
+		EXPECT_EQ(0U, backpressure_allocations) << "Heartbeat WouldBlock cleanup allocated after Ready.";
+
+		const auto stale_at = response_time + controller.slot(0U).heartbeat.stale_timeout_us;
+		const auto disconnect_at = response_time + controller.slot(0U).heartbeat.disconnect_timeout_us;
+		arm_allocation_probe();
+		controller.service_session_maintenance(stale_at);
+		controller.service_session_maintenance(disconnect_at);
+		const auto timeout_allocations = disarm_allocation_probe();
+		EXPECT_EQ(0U, timeout_allocations) << "Heartbeat stale/disconnect cleanup allocated after Ready.";
+	}
+}
+
+TEST(TelemetryWp06AllocationContract, HeartbeatCadenceResponseFilterAndTimeoutAllocateNothingAfterReady)
+{
+	EXPECT_TRUE(has_wp06_heartbeat_service_and_fixed_state<detail::SessionController>::value);
+	FixedRandom id_random;
+	id_random.draws[0] = 0x8888U;
+	id_random.count = 1U;
+	detail::SessionIdRegistry registry;
+	ASSERT_TRUE(registry.allocate_storage());
+	detail::SessionIdAllocator ids(id_random, registry);
+	FixedRandom sequences;
+	sequences.draws[0] = 0x30405060U;
+	sequences.count = 1U;
+	detail::SessionControllerConfig config;
+	config.max_clients = 1U;
+	config.producer_id = 0x12345678U;
+	config.security.enabled = true;
+	config.security.port = 42042U;
+	config.security.bind_mode = protocol::NetworkBindMode::LoopbackOnly;
+	config.security.resources.max_clients = 1U;
+	config.security.resources.global_state_reassembly_bytes = protocol::MaxStateReassemblyBytesPerClient;
+	detail::SessionController controller;
+	ASSERT_EQ(detail::SessionControllerConfigureResult::Ready,
+		detail::SessionController::configure(config, ids, sequences, 0U, nullptr, controller));
+	const auto peer = test_endpoint();
+	const auto hello = make_hello();
+	ASSERT_EQ(detail::SessionIngressDisposition::ResponseQueued,
+		controller.ingest(peer, {hello.bytes.data(), hello.size}, 1'000U, 0U, false).disposition);
+	detail::SessionControllerOutput welcome_output;
+	ASSERT_TRUE(controller.pop_output(welcome_output));
+	const auto proof = make_ack(decode_output(welcome_output), 8U);
+	ASSERT_EQ(detail::SessionIngressDisposition::WelcomeProofApplied,
+		controller.ingest(peer, {proof.bytes.data(), proof.size}, 2'000U, 0U, false).disposition);
+	detail::SessionControllerOutput begin_output;
+	ASSERT_TRUE(controller.pop_output(begin_output));
+	const auto applied = make_ack(decode_output(begin_output), 10U);
+	ASSERT_EQ(detail::SessionIngressDropReason::None,
+		controller.ingest(peer, {applied.bytes.data(), applied.size}, 2'001U, 0U, false).drop_reason);
+	expect_heartbeat_paths_allocate_nothing(controller, peer);
 }
 
 } // namespace

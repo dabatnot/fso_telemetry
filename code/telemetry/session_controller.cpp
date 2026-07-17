@@ -178,6 +178,10 @@ SessionControllerConfigureResult SessionController::configure(const SessionContr
 {
 	protocol::TelemetryResourceBudgetTotals totals;
 	if (config.max_clients < 1U || config.max_clients > 4U || config.producer_id == 0U ||
+		config.mission_heartbeat_ms < protocol::MinHeartbeatIntervalMs ||
+		config.mission_heartbeat_ms > protocol::MaxHeartbeatIntervalMs ||
+		config.idle_heartbeat_ms < protocol::MinHeartbeatIntervalMs ||
+		config.idle_heartbeat_ms > protocol::MaxHeartbeatIntervalMs ||
 		config.security.resources.max_clients != config.max_clients ||
 		protocol::validate_security_configuration(config.security, totals) !=
 			protocol::SecurityConfigurationError::None) {
@@ -326,6 +330,9 @@ bool SessionController::queue_bytes(const protocol::EndpointKey& endpoint,
 	std::memcpy(m_output.bytes.data(), bytes, size);
 	m_output.size = size;
 	m_output_owner_slot = owner_slot;
+	m_output_heartbeat_pending = false;
+	m_output_heartbeat_owns_probe = false;
+	m_output_heartbeat_probe = {};
 	m_has_output = true;
 	return true;
 }
@@ -362,6 +369,51 @@ bool SessionController::queue_retransmission(std::size_t slot_index,
 	return true;
 }
 
+bool SessionController::queue_heartbeat(std::size_t slot_index,
+	const protocol::HeartbeatPayload& heartbeat,
+	std::uint64_t now_us,
+	bool owns_probe,
+	const protocol::ProbeToken& probe) noexcept
+{
+	if (slot_index >= m_config.max_clients) {
+		return false;
+	}
+	std::array<std::uint8_t, protocol::HeartbeatPayloadSize> payload{};
+	std::size_t payload_size = 0U;
+	if (protocol::encode_heartbeat_payload(heartbeat, {payload.data(), payload.size()}, payload_size) !=
+		protocol::ValidationError::None) {
+		return false;
+	}
+	protocol::TelemetryDatagramHeader header;
+	header.version_minor = protocol::VersionMinorV1_1;
+	header.message_type = protocol::MessageType::Heartbeat;
+	header.session_id = m_slots[slot_index].session_id;
+	header.packet_sequence = m_slots[slot_index].next_packet_sequence;
+	header.sent_time_us = now_us;
+	header.message_id = m_slots[slot_index].next_message_id;
+	std::array<std::uint8_t, protocol::MaxDatagramSize> encoded{};
+	std::size_t encoded_size = 0U;
+	if (!encode_control_datagram(header, {payload.data(), payload_size}, encoded, encoded_size) ||
+		!queue_bytes(m_slots[slot_index].endpoint, encoded.data(), encoded_size, slot_index)) {
+		return false;
+	}
+	m_output_heartbeat_pending = true;
+	m_output_heartbeat_owns_probe = owns_probe;
+	m_output_heartbeat_probe = owns_probe ? probe : protocol::ProbeToken{};
+	return true;
+}
+
+void SessionController::note_network_activity(std::size_t slot_index, std::uint64_t now_us) noexcept
+{
+	if (slot_index >= m_config.max_clients) {
+		return;
+	}
+	auto& last = m_slots[slot_index].heartbeat.last_valid_network_activity_us;
+	if (now_us >= last) {
+		last = now_us;
+	}
+}
+
 void SessionController::apply_terminal_policy(std::size_t slot_index,
 	protocol::ReliableTerminalPolicy policy) noexcept
 {
@@ -394,12 +446,19 @@ SessionIngressResult SessionController::ingest(const protocol::EndpointKey& endp
 	if (!protocol::source_is_allowed(m_config.security, endpoint)) {
 		return dropped(SessionIngressDropReason::SourceNotAllowed);
 	}
+	protocol::DatagramView decoded;
+	bool predecoded_heartbeat = false;
 	if (m_has_output) {
-		return dropped(SessionIngressDropReason::OutputBusy);
+		if (protocol::decode_and_validate_datagram(datagram,
+				protocol::ProtocolMinorRange{protocol::VersionMinorV1_0, protocol::VersionMinorV1_1},
+				decoded) != protocol::ValidationError::None ||
+			decoded.header.message_type != protocol::MessageType::Heartbeat) {
+			return dropped(SessionIngressDropReason::OutputBusy);
+		}
+		predecoded_heartbeat = true;
 	}
 	stage(SessionIngressStage::DatagramEnvelope);
-	protocol::DatagramView decoded;
-	if (protocol::decode_and_validate_datagram(datagram,
+	if (!predecoded_heartbeat && protocol::decode_and_validate_datagram(datagram,
 			protocol::ProtocolMinorRange{protocol::VersionMinorV1_0, protocol::VersionMinorV1_1},
 			decoded) != protocol::ValidationError::None) {
 		return dropped(SessionIngressDropReason::DatagramEnvelopeInvalid);
@@ -409,7 +468,7 @@ SessionIngressResult SessionController::ingest(const protocol::EndpointKey& endp
 		if (decoded.header.session_id != 0U) {
 			return dropped(SessionIngressDropReason::EndpointSessionMismatch);
 		}
-		return ingest_hello(endpoint, decoded, datagram.size, now_us);
+		return ingest_hello(endpoint, decoded, datagram.size, now_us, mission_active);
 	}
 	if (decoded.header.message_type == protocol::MessageType::Ack) {
 		return ingest_ack(endpoint, decoded, now_us, mission_generation, mission_active);
@@ -417,13 +476,17 @@ SessionIngressResult SessionController::ingest(const protocol::EndpointKey& endp
 	if (decoded.header.message_type == protocol::MessageType::Nack) {
 		return ingest_nack(endpoint, decoded, now_us);
 	}
+	if (decoded.header.message_type == protocol::MessageType::Heartbeat) {
+		return ingest_heartbeat(endpoint, decoded, now_us);
+	}
 	return dropped(SessionIngressDropReason::EndpointSessionMismatch);
 }
 
 SessionIngressResult SessionController::ingest_hello(const protocol::EndpointKey& endpoint,
 	const protocol::DatagramView& decoded,
 	std::size_t received_size,
-	std::uint64_t now_us) noexcept
+	std::uint64_t now_us,
+	bool mission_active) noexcept
 {
 	stage(SessionIngressStage::RateLimit);
 	if (m_rate_limiter->consume_pre_session(protocol::RateLimitClass::Hello, endpoint, now_us) !=
@@ -505,7 +568,8 @@ SessionIngressResult SessionController::ingest_hello(const protocol::EndpointKey
 	welcome.selected_major = supported ? protocol::VersionMajor : 0U;
 	welcome.selected_minor = supported ? protocol::VersionMinorV1_1 : 0U;
 	welcome.selected_visibility_mode = protocol::VisibilityMode::Cockpit;
-	welcome.heartbeat_interval_ms = supported ? hello.requested_heartbeat_ms : 0U;
+	welcome.heartbeat_interval_ms =
+		supported ? (mission_active ? m_config.mission_heartbeat_ms : m_config.idle_heartbeat_ms) : 0U;
 	welcome.reliable_reassembly_timeout_ms = supported ? protocol::ReliableReassemblyTimeoutV1Ms : 0U;
 	welcome.producer_id = m_config.producer_id;
 
@@ -558,6 +622,8 @@ SessionIngressResult SessionController::ingest_hello(const protocol::EndpointKey
 		slot.endpoint = endpoint;
 		slot.session_id = session_id;
 		slot.session_start_us = now_us;
+		slot.heartbeat.negotiated_interval_ms = welcome.heartbeat_interval_ms;
+		(void)slot.heartbeat.probes.reset_session(session_id);
 		slot.welcome_deadline_us = now_us > std::numeric_limits<std::uint64_t>::max() - protocol::ReliableOrdinaryRetentionUs
 			? std::numeric_limits<std::uint64_t>::max()
 			: now_us + protocol::ReliableOrdinaryRetentionUs;
@@ -631,6 +697,7 @@ SessionIngressResult SessionController::ingest_ack(const protocol::EndpointKey& 
 		}
 		stage(SessionIngressStage::SessionMutation);
 		slot.reliable_items_in_use = m_reliable_windows[awaiting].entry_count();
+		note_network_activity(awaiting, now_us);
 		return {SessionIngressDisposition::ResponseQueued, SessionIngressDropReason::None};
 	}
 	if (m_rate_limiter->consume_ack_nack(slot.session_id,
@@ -708,6 +775,23 @@ SessionIngressResult SessionController::ingest_ack(const protocol::EndpointKey& 
 	stage(SessionIngressStage::SessionMutation);
 	slot.progress = ProducerSessionProgress::ReadyForState;
 	slot.reliable_items_in_use = m_reliable_windows[awaiting].entry_count();
+	std::uint32_t stale_timeout_ms = 0U;
+	std::uint32_t disconnect_timeout_ms = 0U;
+	if (protocol::compute_clock_stale_timeout_ms(slot.heartbeat.negotiated_interval_ms, stale_timeout_ms) !=
+			protocol::ClockTimeoutResult::Computed ||
+		protocol::compute_session_disconnect_timeout_ms(
+			slot.heartbeat.negotiated_interval_ms, disconnect_timeout_ms) != protocol::ClockTimeoutResult::Computed) {
+		return dropped(SessionIngressDropReason::PayloadInvalid);
+	}
+	const auto interval_us = static_cast<std::uint64_t>(slot.heartbeat.negotiated_interval_ms) * 1000U;
+	slot.heartbeat.stale_timeout_us = static_cast<std::uint64_t>(stale_timeout_ms) * 1000U;
+	slot.heartbeat.disconnect_timeout_us = static_cast<std::uint64_t>(disconnect_timeout_ms) * 1000U;
+	slot.heartbeat.next_periodic_due_us = add_would_overflow(now_us, interval_us)
+		? std::numeric_limits<std::uint64_t>::max()
+		: now_us + interval_us;
+	slot.heartbeat.last_valid_network_activity_us = now_us;
+	slot.heartbeat.last_valid_clock_response_us = now_us;
+	slot.heartbeat.clock_stale = false;
 	for (auto& cache : m_cache) {
 		if (cache.used && cache.session_id == slot.session_id) {
 			release_cache_preproof(cache);
@@ -764,6 +848,7 @@ SessionIngressResult SessionController::ingest_nack(const protocol::EndpointKey&
 		}
 		slot.reliable_items_in_use = m_reliable_windows[index].entry_count();
 		apply_terminal_policy(index, decision.terminal_policy);
+		note_network_activity(index, now_us);
 		stage(SessionIngressStage::SessionMutation);
 		return {SessionIngressDisposition::ResponseQueued, SessionIngressDropReason::None};
 	}
@@ -790,6 +875,7 @@ SessionIngressResult SessionController::ingest_nack(const protocol::EndpointKey&
 			slot.preproof_bytes_sent = account.bytes_sent;
 		}
 		slot.reliable_items_in_use = m_reliable_windows[index].entry_count();
+		note_network_activity(index, now_us);
 		stage(SessionIngressStage::SessionMutation);
 		return {SessionIngressDisposition::ResponseQueued, SessionIngressDropReason::None};
 	}
@@ -817,6 +903,9 @@ SessionIngressResult SessionController::ingest_nack(const protocol::EndpointKey&
 		m_output_owner_slot = InvalidIndex;
 		m_output_reliability_pending = false;
 		m_pending_reliability_slot = InvalidIndex;
+		m_output_heartbeat_pending = false;
+		m_output_heartbeat_owns_probe = false;
+		m_output_heartbeat_probe = {};
 		return dropped(SessionIngressDropReason::AntiAmplificationLimit);
 	}
 	if (preproof && cache_index != InvalidIndex) {
@@ -830,6 +919,84 @@ SessionIngressResult SessionController::ingest_nack(const protocol::EndpointKey&
 		slot.preproof_bytes_sent = account.bytes_sent;
 	}
 	m_pending_preproof_send_accounted = preproof;
+	note_network_activity(index, now_us);
+	stage(SessionIngressStage::SessionMutation);
+	return {SessionIngressDisposition::ResponseQueued, SessionIngressDropReason::None};
+}
+
+SessionIngressResult SessionController::ingest_heartbeat(const protocol::EndpointKey& endpoint,
+	const protocol::DatagramView& decoded,
+	std::uint64_t now_us) noexcept
+{
+	stage(SessionIngressStage::RateLimit);
+	const auto index = find_slot(endpoint, decoded.header.session_id);
+	if (index == InvalidIndex) {
+		return dropped(SessionIngressDropReason::EndpointSessionMismatch);
+	}
+	auto& slot = m_slots[index];
+	if (slot.progress != ProducerSessionProgress::ReadyForState && slot.progress != ProducerSessionProgress::Stale) {
+		return dropped(SessionIngressDropReason::PayloadInvalid);
+	}
+	stage(SessionIngressStage::AntiAmplification);
+	stage(SessionIngressStage::Payload);
+	protocol::HeartbeatPayload heartbeat;
+	if (protocol::decode_heartbeat_payload(decoded.payload, heartbeat) != protocol::ValidationError::None) {
+		return dropped(SessionIngressDropReason::PayloadInvalid);
+	}
+	if (heartbeat.kind == protocol::HeartbeatKind::Request) {
+		if (m_rate_limiter->consume_session(
+				protocol::RateLimitClass::HeartbeatRequest, slot.session_id, endpoint, now_us) !=
+			protocol::ProtocolRateLimitResult::Allowed) {
+			return dropped(SessionIngressDropReason::PayloadInvalid);
+		}
+		note_network_activity(index, now_us);
+		protocol::HeartbeatPayload response;
+		response.probe_id = heartbeat.probe_id;
+		response.kind = protocol::HeartbeatKind::Response;
+		response.origin_t0_us = heartbeat.origin_t0_us;
+		response.receive_t1_us = now_us;
+		response.transmit_t2_us = now_us;
+		if (!queue_heartbeat(index, response, now_us, false, {})) {
+			return dropped(SessionIngressDropReason::OutputBusy);
+		}
+		stage(SessionIngressStage::SessionMutation);
+		return {SessionIngressDisposition::ResponseQueued, SessionIngressDropReason::None};
+	}
+	if (slot.heartbeat.probes.correlate_response(
+			slot.session_id, heartbeat.probe_id, heartbeat.origin_t0_us) != protocol::ProbeResponseResult::Matched) {
+		return dropped(SessionIngressDropReason::PayloadInvalid);
+	}
+	note_network_activity(index, now_us);
+	protocol::ClockSample sample;
+	const auto sample_result = protocol::compute_clock_sample({heartbeat.origin_t0_us,
+			heartbeat.receive_t1_us,
+			heartbeat.transmit_t2_us,
+			now_us},
+			sample);
+	if (sample_result == protocol::ClockSampleResult::NegativeRoundTrip) {
+		return dropped(SessionIngressDropReason::PayloadInvalid);
+	}
+	if (sample_result == protocol::ClockSampleResult::InitiatorClockMovedBackward) {
+		slot.heartbeat.clock_filter.invalidate();
+		slot.heartbeat.clock_stale = true;
+		slot.progress = ProducerSessionProgress::Stale;
+		return dropped(SessionIngressDropReason::PayloadInvalid);
+	}
+	if (sample_result != protocol::ClockSampleResult::Valid) {
+		slot.heartbeat.clock_filter.invalidate();
+		return dropped(SessionIngressDropReason::PayloadInvalid);
+	}
+	protocol::OrientedClockSample oriented;
+	if (protocol::orient_clock_sample(sample, protocol::LocalClockRole::Initiator, oriented) !=
+		protocol::ClockOffsetConversionResult::Converted) {
+		slot.heartbeat.clock_filter.invalidate();
+		return dropped(SessionIngressDropReason::PayloadInvalid);
+	}
+	slot.heartbeat.clock_filter.add_sample(oriented);
+	if (now_us >= slot.heartbeat.last_valid_clock_response_us) {
+		slot.heartbeat.last_valid_clock_response_us = now_us;
+	}
+	slot.heartbeat.clock_stale = false;
 	stage(SessionIngressStage::SessionMutation);
 	return {SessionIngressDisposition::ResponseQueued, SessionIngressDropReason::None};
 }
@@ -854,10 +1021,38 @@ bool SessionController::peek_output(SessionControllerOutput& output) const noexc
 
 void SessionController::complete_output(IoStatus status) noexcept
 {
-	if (!m_has_output || status == IoStatus::WouldBlock) {
+	if (!m_has_output) {
+		return;
+	}
+	if (status == IoStatus::WouldBlock) {
+		if (!m_output_heartbeat_pending) {
+			return;
+		}
+		if (m_output_heartbeat_owns_probe && m_output_owner_slot < m_config.max_clients) {
+			(void)m_slots[m_output_owner_slot].heartbeat.probes.discard_probe(m_output_heartbeat_probe.session_id,
+				m_output_heartbeat_probe.probe_id,
+				m_output_heartbeat_probe.origin_t0_us);
+		}
+		m_output = {};
+		m_has_output = false;
+		m_output_owner_slot = InvalidIndex;
+		m_output_heartbeat_pending = false;
+		m_output_heartbeat_owns_probe = false;
+		m_output_heartbeat_probe = {};
 		return;
 	}
 	const auto owner = m_output_owner_slot;
+	if (status == IoStatus::Complete && m_output_heartbeat_pending && owner < m_config.max_clients &&
+		m_slots[owner].progress != ProducerSessionProgress::Empty) {
+		++m_slots[owner].next_packet_sequence;
+		++m_slots[owner].next_message_id;
+	}
+	if ((status == IoStatus::Closed || status == IoStatus::Error) && m_output_heartbeat_owns_probe &&
+		owner < m_config.max_clients) {
+		(void)m_slots[owner].heartbeat.probes.discard_probe(m_output_heartbeat_probe.session_id,
+			m_output_heartbeat_probe.probe_id,
+			m_output_heartbeat_probe.origin_t0_us);
+	}
 	if (status == IoStatus::Complete && m_output_reliability_pending &&
 		m_pending_reliability_slot < m_config.max_clients &&
 		m_slots[m_pending_reliability_slot].progress != ProducerSessionProgress::Empty) {
@@ -894,6 +1089,9 @@ void SessionController::complete_output(IoStatus status) noexcept
 	m_pending_preproof_send_accounted = false;
 	m_pending_reliability_slot = InvalidIndex;
 	m_pending_reliability_time_us = 0U;
+	m_output_heartbeat_pending = false;
+	m_output_heartbeat_owns_probe = false;
+	m_output_heartbeat_probe = {};
 	if ((status == IoStatus::Closed || status == IoStatus::Error) && owner < m_config.max_clients) {
 		(void)close_slot(owner, SessionCloseReason::TransportError);
 	}
@@ -908,7 +1106,7 @@ void SessionController::service_reliability(std::uint64_t now_us) noexcept
 		for (std::size_t offset = 0U; offset < m_config.max_clients; ++offset) {
 			const auto index = (m_reliability_cursor + offset) % m_config.max_clients;
 			const auto progress = m_slots[index].progress;
-			if (progress == ProducerSessionProgress::Empty || progress == ProducerSessionProgress::Stale) {
+			if (progress == ProducerSessionProgress::Empty) {
 				continue;
 			}
 			auto preview = m_reliable_windows[index];
@@ -925,6 +1123,11 @@ void SessionController::service_reliability(std::uint64_t now_us) noexcept
 			}
 			m_reliability_cursor = (index + 1U) % m_config.max_clients;
 			if (m_output_owner_slot == index) {
+				if (m_output_heartbeat_owns_probe) {
+					(void)m_slots[index].heartbeat.probes.discard_probe(m_output_heartbeat_probe.session_id,
+						m_output_heartbeat_probe.probe_id,
+						m_output_heartbeat_probe.origin_t0_us);
+				}
 				m_output = {};
 				m_has_output = false;
 				m_output_owner_slot = InvalidIndex;
@@ -932,6 +1135,9 @@ void SessionController::service_reliability(std::uint64_t now_us) noexcept
 				m_pending_preproof_send_accounted = false;
 				m_pending_reliability_slot = InvalidIndex;
 				m_pending_reliability_time_us = 0U;
+				m_output_heartbeat_pending = false;
+				m_output_heartbeat_owns_probe = false;
+				m_output_heartbeat_probe = {};
 			}
 			apply_terminal_policy(index, committed.terminal_policy);
 			return;
@@ -941,12 +1147,16 @@ void SessionController::service_reliability(std::uint64_t now_us) noexcept
 	for (std::size_t offset = 0U; offset < m_config.max_clients; ++offset) {
 		const auto index = (m_reliability_cursor + offset) % m_config.max_clients;
 		const auto progress = m_slots[index].progress;
-		if (progress == ProducerSessionProgress::Empty || progress == ProducerSessionProgress::Stale) {
+		if (progress == ProducerSessionProgress::Empty) {
 			continue;
 		}
 		auto preview = m_reliable_windows[index];
 		protocol::ReliableWindowAction action;
 		if (preview.pull_next_action(now_us, action) != protocol::ReliablePullResult::Action) {
+			continue;
+		}
+		if (progress == ProducerSessionProgress::Stale &&
+			action.kind != protocol::ReliableWindowActionKind::TerminalPolicy) {
 			continue;
 		}
 		m_reliability_cursor = (index + 1U) % m_config.max_clients;
@@ -971,6 +1181,85 @@ void SessionController::service_reliability(std::uint64_t now_us) noexcept
 			}
 		}
 		(void)queue_retransmission(index, action, now_us);
+		return;
+	}
+}
+
+void SessionController::service_session_maintenance(std::uint64_t now_us) noexcept
+{
+	if (!m_ready || m_faulted || m_config.max_clients == 0U) {
+		return;
+	}
+	for (std::size_t offset = 0U; offset < m_config.max_clients; ++offset) {
+		const auto index = (m_heartbeat_cursor + offset) % m_config.max_clients;
+		auto& slot = m_slots[index];
+		if ((slot.progress != ProducerSessionProgress::ReadyForState &&
+				slot.progress != ProducerSessionProgress::Stale) ||
+			slot.heartbeat.negotiated_interval_ms == 0U) {
+			continue;
+		}
+		const auto network_elapsed = now_us >= slot.heartbeat.last_valid_network_activity_us
+			? now_us - slot.heartbeat.last_valid_network_activity_us
+			: 0U;
+		if (now_us >= slot.heartbeat.last_valid_network_activity_us &&
+			network_elapsed >= slot.heartbeat.disconnect_timeout_us) {
+			m_heartbeat_cursor = (index + 1U) % m_config.max_clients;
+			(void)close_slot(index, SessionCloseReason::Timeout);
+			return;
+		}
+		const auto clock_elapsed = now_us >= slot.heartbeat.last_valid_clock_response_us
+			? now_us - slot.heartbeat.last_valid_clock_response_us
+			: 0U;
+		if (now_us >= slot.heartbeat.last_valid_clock_response_us &&
+			clock_elapsed >= slot.heartbeat.stale_timeout_us && !slot.heartbeat.clock_stale) {
+			slot.progress = ProducerSessionProgress::Stale;
+			slot.heartbeat.clock_filter.invalidate();
+			slot.heartbeat.clock_stale = true;
+			m_heartbeat_cursor = (index + 1U) % m_config.max_clients;
+			if (m_has_output && m_output_owner_slot == index && m_output_heartbeat_pending) {
+				if (m_output_heartbeat_owns_probe) {
+					(void)slot.heartbeat.probes.discard_probe(m_output_heartbeat_probe.session_id,
+						m_output_heartbeat_probe.probe_id,
+						m_output_heartbeat_probe.origin_t0_us);
+				}
+				m_output = {};
+				m_has_output = false;
+				m_output_owner_slot = InvalidIndex;
+				m_output_heartbeat_pending = false;
+				m_output_heartbeat_owns_probe = false;
+				m_output_heartbeat_probe = {};
+				return;
+			}
+			break;
+		}
+	}
+	if (m_has_output) {
+		return;
+	}
+	for (std::size_t offset = 0U; offset < m_config.max_clients; ++offset) {
+		const auto index = (m_heartbeat_cursor + offset) % m_config.max_clients;
+		auto& slot = m_slots[index];
+		if ((slot.progress != ProducerSessionProgress::ReadyForState &&
+				slot.progress != ProducerSessionProgress::Stale) ||
+			slot.heartbeat.negotiated_interval_ms == 0U || now_us < slot.heartbeat.next_periodic_due_us) {
+			continue;
+		}
+		m_heartbeat_cursor = (index + 1U) % m_config.max_clients;
+		const auto interval_us = static_cast<std::uint64_t>(slot.heartbeat.negotiated_interval_ms) * 1000U;
+		slot.heartbeat.next_periodic_due_us = add_would_overflow(now_us, interval_us)
+			? std::numeric_limits<std::uint64_t>::max()
+			: now_us + interval_us;
+		protocol::ProbeToken probe;
+		if (slot.heartbeat.probes.begin_probe(now_us, probe) != protocol::ProbeStartResult::Started) {
+			return;
+		}
+		protocol::HeartbeatPayload request;
+		request.probe_id = probe.probe_id;
+		request.kind = protocol::HeartbeatKind::Request;
+		request.origin_t0_us = probe.origin_t0_us;
+		if (!queue_heartbeat(index, request, now_us, true, probe)) {
+			(void)slot.heartbeat.probes.discard_probe(probe.session_id, probe.probe_id, probe.origin_t0_us);
+		}
 		return;
 	}
 }
@@ -1021,6 +1310,9 @@ bool SessionController::close_slot(std::size_t index, SessionCloseReason) noexce
 		m_pending_preproof_send_accounted = false;
 		m_pending_reliability_slot = InvalidIndex;
 		m_pending_reliability_time_us = 0U;
+		m_output_heartbeat_pending = false;
+		m_output_heartbeat_owns_probe = false;
+		m_output_heartbeat_probe = {};
 	}
 	// Session IDs remain process-used in SessionIdRegistry; only slot-owned
 	// resources are released here.
@@ -1057,6 +1349,10 @@ void SessionController::clear_all() noexcept
 	m_pending_reliability_slot = InvalidIndex;
 	m_pending_reliability_time_us = 0U;
 	m_reliability_cursor = 0U;
+	m_heartbeat_cursor = 0U;
+	m_output_heartbeat_pending = false;
+	m_output_heartbeat_owns_probe = false;
+	m_output_heartbeat_probe = {};
 }
 
 SessionControllerOwnedCapacity SessionController::owned_capacity() const noexcept

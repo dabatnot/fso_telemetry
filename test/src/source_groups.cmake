@@ -126,6 +126,7 @@ add_file_folder("Telemetry\\\\Producer"
 	telemetry/producer/test_telemetry_runtime_lifecycle_contract.cpp
 	telemetry/producer/test_telemetry_runtime_startup_contract.cpp
 	telemetry/producer/test_telemetry_session_controller_contract.cpp
+	telemetry/producer/test_telemetry_session_controller_heartbeat_contract.cpp
 	telemetry/producer/test_telemetry_startup_budget_contract.cpp
 	telemetry/producer/test_telemetry_transport_contract.cpp
 	telemetry/producer/test_telemetry_wp04_startup_budget_contract.cpp
