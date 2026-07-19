@@ -785,7 +785,9 @@ struct NativeAllocationServices final : detail::RuntimeStartupServices {
 		if (!native.has_value()) {
 			return detail::RuntimeTickStatus::Unavailable;
 		}
-		return native->service_tick({context.now_us, context.mission_generation, context.mission_active}) ==
+		auto engine_view = detail::make_fso_engine_read_view();
+		return native->service_tick(
+			{context.now_us, context.mission_generation, context.mission_active}, engine_view) ==
 				detail::NativeSessionTickStatus::Complete
 			? detail::RuntimeTickStatus::Complete
 			: detail::RuntimeTickStatus::PermanentTransportFailure;

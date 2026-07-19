@@ -1726,14 +1726,27 @@ add_file_folder("Telemetry"
 	telemetry/identity.cpp
 	telemetry/identity.h
 	telemetry/json_preflight.h
+	telemetry/logging.cpp
+	telemetry/logging.h
+	telemetry/metrics.cpp
+	telemetry/metrics.h
 	telemetry/native_session_runtime.cpp
 	telemetry/native_session_runtime.h
+	telemetry/native_session_runtime_test_seam.h
+	telemetry/phase1_snapshot_slot.cpp
+	telemetry/phase1_snapshot_slot.h
+	telemetry/phase1_snapshot_egress.cpp
+	telemetry/phase1_snapshot_egress.h
+	telemetry/phase1_state_image.cpp
+	telemetry/phase1_state_image.h
 	telemetry/runtime.cpp
 	telemetry/runtime.h
 	telemetry/runtime_adapter.cpp
 	telemetry/runtime_adapter.h
+	telemetry/runtime_adapter_test_seam.h
 	telemetry/session_controller.cpp
 	telemetry/session_controller.h
+	telemetry/session_controller_test_seam.h
 	telemetry/startup_budget.cpp
 	telemetry/startup_budget.h
 	telemetry/telemetry.cpp

@@ -1,7 +1,11 @@
 #pragma once
 
 #include "telemetry/entity_id_registry.h"
+#include "telemetry/phase1_allocation_observer.h"
 #include "telemetry/identity.h"
+#include "telemetry/phase1_delta_egress.h"
+#include "telemetry/phase1_snapshot_egress.h"
+#include "telemetry/phase1_snapshot_slot.h"
 #include "telemetry/protocol/telemetry_rate_limiter.h"
 #include "telemetry/protocol/telemetry_clock.h"
 #include "telemetry/protocol/telemetry_counters.h"
@@ -18,7 +22,7 @@
 namespace telemetry::detail {
 
 enum class IoStatus : std::uint8_t;
-class SessionControllerPlayerTestAccess;
+class SessionControllerTestAccess;
 
 enum class SessionControllerConfigureResult : std::uint8_t { Ready = 0, InvalidConfiguration, AllocationFailure };
 enum class SessionIngressDisposition : std::uint8_t {
@@ -72,6 +76,7 @@ struct SessionControllerConfig {
 	std::uint64_t producer_id = 0U;
 	std::uint16_t mission_heartbeat_ms = 500U;
 	std::uint16_t idle_heartbeat_ms = 1000U;
+	std::uint8_t keyframe_seconds = 2U;
 	protocol::TelemetryOperationalConfig security;
 };
 
@@ -115,6 +120,14 @@ struct SessionControllerSlot {
 	PlayerKinematicsSample latest_player_sample;
 	PlayerSampleMaterializeStatus latest_player_sample_status = PlayerSampleMaterializeStatus::InvalidCapture;
 	bool has_latest_player_sample = false;
+	Phase1SnapshotSlot snapshot;
+	Phase1SnapshotEgress snapshot_egress;
+	Phase1DeltaEgress delta_egress;
+	protocol::CumulativeStateDelta delta_scratch;
+	protocol::ProducerResyncTracker resync;
+	std::uint32_t next_snapshot_id = 1U;
+	std::uint64_t next_keyframe_due_us = 0U;
+	bool keyframe_due = false;
 };
 
 struct SessionPlayerMaterializationResult {
@@ -210,8 +223,27 @@ class SessionController final {
 	void service_timeouts(std::uint64_t now_us) noexcept;
 	void service_periodic(std::uint64_t now_us) noexcept;
 	void service_session_maintenance(std::uint64_t now_us) noexcept;
+	// Benchmark/test instrumentation for the production-owned P8 hot path.
+	// Normal runtime code never enables this observer.
+	void begin_phase1_allocation_observation() noexcept { m_phase1_allocation_observer.begin(); }
+	std::uint64_t phase1_observed_allocation_count() const noexcept
+	{
+		return m_phase1_allocation_observer.observed();
+	}
+	void note_phase1_runtime_allocation_for_test() noexcept { m_phase1_allocation_observer.note_growth(0U, 1U); }
 	SessionPlayerMaterializationResult apply_player_observation(const CaptureResult& capture,
 		const PlayerObservationDto& observation) noexcept;
+	bool begin_initial_snapshot(std::size_t slot_index,
+		const protocol::StateImage& image,
+		std::uint64_t now_us) noexcept;
+	std::size_t service_initial_snapshot_egress(std::size_t datagram_budget, std::uint64_t now_us) noexcept;
+	protocol::ProducerBaselineResult replace_current_state(std::size_t slot_index,
+		const protocol::StateImage& image) noexcept;
+	bool queue_cumulative_delta(std::size_t slot_index, std::uint64_t now_us) noexcept;
+	std::size_t service_delta_egress(std::size_t datagram_budget, std::uint64_t now_us) noexcept;
+	Phase1SnapshotProgress snapshot_progress(std::size_t slot_index) const noexcept;
+	bool session_state_dirty(std::size_t slot_index) const noexcept;
+	bool consume_session_state_dirty(std::size_t slot_index) noexcept;
 	void clear_player_observations() noexcept;
 	void purge_all(SessionCloseReason reason) noexcept;
 	bool has_output() const noexcept { return m_has_output; }
@@ -230,7 +262,7 @@ class SessionController final {
 	static std::size_t handshake_cache_storage_bytes() noexcept;
 
   private:
-	friend class SessionControllerPlayerTestAccess;
+	friend class SessionControllerTestAccess;
 
 	struct CacheEntry {
 		bool used = false;
@@ -265,6 +297,11 @@ class SessionController final {
 	bool queue_retransmission(std::size_t slot_index,
 		const protocol::ReliableWindowAction& action,
 		std::uint64_t now_us) noexcept;
+	void preempt_queued_delta() noexcept;
+	bool begin_replacement_snapshot(std::size_t slot_index, std::uint16_t snapshot_flags, std::uint64_t now_us) noexcept;
+	bool queue_resync_validated_ack(std::size_t slot_index,
+		const protocol::DatagramView& request,
+		std::uint64_t now_us) noexcept;
 	bool queue_heartbeat(std::size_t slot_index,
 		const protocol::HeartbeatPayload& heartbeat,
 		std::uint64_t now_us,
@@ -287,6 +324,9 @@ class SessionController final {
 	SessionIngressResult ingest_heartbeat(const protocol::EndpointKey& endpoint,
 		const protocol::DatagramView& decoded,
 		std::uint64_t now_us) noexcept;
+	SessionIngressResult ingest_resync_request(const protocol::EndpointKey& endpoint,
+		const protocol::DatagramView& decoded,
+		std::uint64_t now_us) noexcept;
 
 	SessionControllerConfig m_config{};
 	SessionIdAllocator* m_ids = nullptr;
@@ -307,6 +347,10 @@ class SessionController final {
 	std::size_t m_heartbeat_cursor = 0U;
 	bool m_has_output = false;
 	bool m_output_reliability_pending = false;
+	bool m_output_snapshot_egress_pending = false;
+	bool m_output_delta_egress_pending = false;
+	Phase1AllocationObserver m_phase1_allocation_observer;
+	bool m_output_resync_ack_pending = false;
 	bool m_pending_preproof_send_accounted = false;
 	bool m_output_heartbeat_pending = false;
 	bool m_output_heartbeat_owns_probe = false;

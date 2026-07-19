@@ -1,0 +1,425 @@
+#!/usr/bin/env python3
+"""WP10 structural contract for the independent Phase 1 console proof tool.
+
+The behavioural UDP transcript remains intentionally black-box: the Phase 1
+contract defines its observable behaviour but not a Python API.  This guard
+keeps the tool location and the D1-013 dependency boundary explicit before
+the integration fixture supplies packets to it.
+"""
+
+from __future__ import annotations
+
+import ast
+import json
+import hashlib
+import socket
+import struct
+import subprocess
+import sys
+import tempfile
+import time
+import unittest
+from pathlib import Path
+
+
+TOOLS = Path(__file__).resolve().parent
+CONSOLE = TOOLS / "fstl_console_client.py"
+REPO = TOOLS.parents[3]
+V11 = REPO / "test" / "telemetry" / "protocol" / "vectors-v1.1"
+
+sys.path.insert(0, str(TOOLS))
+import fstl_reference_decoder as reference
+
+
+def packet(message_type: int, payload: bytes, *, session_id: int, sequence: int, sent_us: int,
+           flags: int = 0, message_id: int | None = None) -> bytes:
+    """Build a test datagram without importing the console implementation."""
+    message_crc = reference.crc32_iso_hdlc(payload)
+    prefix = struct.pack(
+        "<IBBBBHHQIIqQIHHIII",
+        0x4C545346, 1, 1, message_type, flags, 68, len(payload), session_id,
+        sequence, 0, 0, sent_us, sequence if message_id is None else message_id, 0, 1, len(payload), 0, message_crc,
+    )
+    crc = reference.crc32_iso_hdlc(prefix + bytes(4) + payload)
+    return prefix + struct.pack("<I", crc) + payload
+
+
+def v11_payload(name: str, suffix: str) -> bytes:
+    return (V11 / name / f"{name}{suffix}").read_bytes()
+
+
+def snapshot_parts(snapshot_id: int = 1) -> tuple[bytes, bytes]:
+    """Split the Phase-1 snapshot's two record regions without console code."""
+    payload = v11_payload("minimal-with-player", ".bin")
+    region = payload[60:]
+    first_length = 6 + int.from_bytes(region[4:6], "little")
+    first_length += 6 + int.from_bytes(region[first_length + 4:first_length + 6], "little")
+    regions = (region[:first_length], region[first_length:])
+    digest = hashlib.sha256(region).digest()
+    result: list[bytes] = []
+    for index, records in enumerate(regions):
+        prefix = struct.pack("<IHHI32sQIHH", snapshot_id, index, 2, len(region), digest,
+                             1_000_000, 0, 1, 2 if index == 0 else 2)
+        result.append(prefix + records)
+    return tuple(result)  # type: ignore[return-value]
+
+
+def welcome_for(hello: bytes) -> bytes:
+    decoded = reference.decode_message(2, reference.read_header(hello)["flags"], hello[68:], {})
+    fields = decoded["fields"]
+    payload = bytearray(v11_payload("welcome-accepted-minor-one", ".payload.bin"))
+    struct.pack_into("<Q", payload, 0, int(fields["client_nonce"]))
+    struct.pack_into("<Q", payload, 8, int(fields["client_send_t0_us"]))
+    return bytes(payload)
+
+
+def session_begin_payload() -> bytes:
+    payload = bytearray((REPO / "test/telemetry/protocol/vectors/valid/messages/session_begin/session_begin.bin").read_bytes())
+    struct.pack_into("<I", payload, 24, 0)  # Phase-1 snapshot has no required manifest.
+    return bytes(payload)
+
+
+def session_end_payload() -> bytes:
+    return (REPO / "test/telemetry/protocol/vectors/valid/messages/session_end/session_end.bin").read_bytes()
+
+
+def with_snapshot_transaction_size(payload: bytes, size: int, snapshot_id: int | None = None) -> bytes:
+    updated = bytearray(payload)
+    if snapshot_id is not None:
+        struct.pack_into("<I", updated, 0, snapshot_id)
+    struct.pack_into("<I", updated, 8, size)
+    return bytes(updated)
+
+
+def ack_for(header: dict[str, int], flags: int = 1) -> bytes:
+    return struct.pack("<IBBHI", header["message_id"], header["message_type"], flags,
+                       header["fragment_count"], header["message_crc32"])
+
+
+class FstlConsoleClientContractTest(unittest.TestCase):
+    def test_console_tool_exists_and_does_not_import_producer_cpp_bindings(self) -> None:
+        self.assertTrue(
+            CONSOLE.is_file(),
+            "P1-WP-10 requires test/telemetry/protocol/tools/fstl_console_client.py",
+        )
+
+        tree = ast.parse(CONSOLE.read_text(encoding="utf-8"), filename=str(CONSOLE))
+        imported_roots: set[str] = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                imported_roots.update(alias.name.split(".", 1)[0] for alias in node.names)
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                imported_roots.add(node.module.split(".", 1)[0])
+
+        self.assertFalse(
+            {"telemetry", "code"} & imported_roots,
+            "D1-013: console must not import producer C++ parser/DTO bindings",
+        )
+
+    def test_reference_decoder_cross_checks_frozen_and_amendment_corpora(self) -> None:
+        result = subprocess.run(
+            [sys.executable, "-B", str(TOOLS / "fstl_reference_decoder.py"), "--check", "--repo", str(REPO)],
+            cwd=REPO, text=True, capture_output=True, check=False,
+        )
+        self.assertEqual(0, result.returncode, result.stderr + result.stdout)
+        self.assertIn("21 FSTL 1.1 corpus cases cross-decoded", result.stdout)
+        self.assertIn("CRC and simulated cross-endian checks passed", result.stdout)
+
+    def test_replay_never_publishes_snapshot_before_handshake(self) -> None:
+        snapshot = packet(6, v11_payload("minimal-with-player", ".bin"),
+                          session_id=0x1122334455667788, sequence=1, sent_us=1_000_000, flags=2)
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "snapshot-before-session.bin"
+            path.write_bytes(snapshot)
+            result = subprocess.run([sys.executable, "-B", str(CONSOLE), "--replay", str(path), "--stale-ms", "1"],
+                                    cwd=REPO, text=True, capture_output=True, check=False)
+        self.assertNotEqual(0, result.returncode, "pre-handshake snapshot must be rejected")
+        self.assertEqual("", result.stdout)
+
+    def test_welcome_must_echo_hello_nonce_and_t0_before_any_ack(self) -> None:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as server:
+            server.bind(("127.0.0.1", 0)); server.settimeout(1.0)
+            process = subprocess.Popen(
+                [sys.executable, "-B", str(CONSOLE), "--host", "127.0.0.1", "--port", str(server.getsockname()[1]),
+                 "--seconds", "0.25"], cwd=REPO, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            )
+            hello, client = server.recvfrom(1200)
+            bad = bytearray(welcome_for(hello)); bad[0] ^= 0x01  # client_nonce mismatch
+            server.sendto(packet(3, bytes(bad), session_id=0x1122334455667788,
+                                 sequence=1, sent_us=1_000_000, flags=2), client)
+            controls: list[int] = []
+            try:
+                while True:
+                    data, _ = server.recvfrom(1200)
+                    controls.append(reference.read_header(data)["message_type"])
+            except (socket.timeout, ConnectionResetError):
+                pass
+            stdout, stderr = process.communicate(timeout=3)
+
+        self.assertNotEqual(0, process.returncode, "mismatched WELCOME is a failed negotiation")
+        self.assertNotIn(10, controls, "a mismatched WELCOME must not be ACKed")
+        self.assertEqual("", stdout)
+
+    def test_lost_hello_retransmits_same_logical_message_with_retransmission_flag(self) -> None:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as server:
+            server.bind(("127.0.0.1", 0)); server.settimeout(1.5)
+            process = subprocess.Popen(
+                [sys.executable, "-B", str(CONSOLE), "--host", "127.0.0.1", "--port", str(server.getsockname()[1]),
+                 "--seconds", "0.60"], cwd=REPO, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            )
+            first, _ = server.recvfrom(1200)
+            second, _ = server.recvfrom(1200)
+            stdout, stderr = process.communicate(timeout=3)
+
+        first_header, second_header = reference.read_header(first), reference.read_header(second)
+        self.assertEqual(0, process.returncode, stderr + stdout)
+        self.assertEqual((2, 0), (first_header["message_type"], first_header["session_id"]))
+        self.assertEqual(first_header["message_id"], second_header["message_id"])
+        self.assertEqual(first[68:], second[68:], "HELLO retransmission retains nonce/t0/payload")
+        self.assertEqual(0, first_header["flags"] & 0x10)
+        self.assertNotEqual(0, second_header["flags"] & 0x10, "retry carries RETRANSMISSION")
+        self.assertGreater(second_header["packet_sequence"], first_header["packet_sequence"])
+
+    def test_resync_retransmits_until_validated_ack_then_enters_synchronizing(self) -> None:
+        session_id = 0x1122334455667788
+        unknown_payload = bytearray(v11_payload("delta-player-return-baseline", ".payload.bin"))
+        struct.pack_into("<I", unknown_payload, 0, 999)
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as server:
+            server.bind(("127.0.0.1", 0)); server.settimeout(1.5)
+            process = subprocess.Popen(
+                [sys.executable, "-B", str(CONSOLE), "--host", "127.0.0.1", "--port", str(server.getsockname()[1]),
+                 "--seconds", "1.10", "--stale-ms", "100000000"], cwd=REPO, text=True,
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            )
+            hello, client = server.recvfrom(1200)
+            server.sendto(packet(3, welcome_for(hello), session_id=session_id, sequence=1, sent_us=1_000_000, flags=2), client)
+            server.sendto(packet(4, session_begin_payload(), session_id=session_id, sequence=2, sent_us=1_000_001, flags=2), client)
+            server.sendto(packet(6, v11_payload("minimal-with-player", ".bin"), session_id=session_id,
+                                 sequence=3, sent_us=1_000_002, flags=2), client)
+            server.sendto(packet(7, bytes(unknown_payload), session_id=session_id,
+                                 sequence=4, sent_us=1_000_003, flags=2), client)
+            resync_headers: list[dict[str, int]] = []
+            while len(resync_headers) < 2:
+                data, _ = server.recvfrom(1200)
+                header = reference.read_header(data)
+                if header["message_type"] == 12:
+                    resync_headers.append(header)
+            self.assertEqual(resync_headers[0]["message_id"], resync_headers[1]["message_id"])
+            self.assertEqual(resync_headers[0]["message_crc32"], resync_headers[1]["message_crc32"])
+            self.assertEqual(0, resync_headers[0]["flags"] & 0x10)
+            self.assertNotEqual(0, resync_headers[1]["flags"] & 0x10)
+            wrong_crc = bytearray(ack_for(resync_headers[1])); wrong_crc[8] ^= 0x01
+            wrong_count = bytearray(ack_for(resync_headers[1])); struct.pack_into("<H", wrong_count, 6, 2)
+            server.sendto(packet(10, bytes(wrong_crc), session_id=session_id, sequence=5, sent_us=1_000_004), client)
+            server.sendto(packet(10, bytes(wrong_count), session_id=session_id, sequence=6, sent_us=1_000_005), client)
+            while len(resync_headers) < 3:
+                data, _ = server.recvfrom(1200)
+                header = reference.read_header(data)
+                if header["message_type"] == 12:
+                    resync_headers.append(header)
+            self.assertEqual(resync_headers[1]["message_id"], resync_headers[2]["message_id"],
+                             "wrong CRC/count ACKs must not clear pending resync")
+            server.sendto(packet(10, ack_for(resync_headers[2]), session_id=session_id,
+                                 sequence=7, sent_us=1_000_006), client)
+            stdout, stderr = process.communicate(timeout=3)
+
+        self.assertEqual(0, process.returncode, stderr + stdout)
+        states = [json.loads(line)["status"] for line in stdout.splitlines()]
+        self.assertIn("Live", states)
+        self.assertEqual("Synchronizing", states[-1], "only inbound VALIDATED ACK promotes Stale to Synchronizing")
+
+    def test_replay_nominal_handshake_resync_and_shutdown_is_deterministic(self) -> None:
+        """Replay drives the same successful state machine as live UDP, not reject-only paths."""
+        session_id = 0x1122334455667788
+        unknown_payload = bytearray(v11_payload("delta-player-return-baseline", ".payload.bin"))
+        struct.pack_into("<I", unknown_payload, 0, 999)
+        packets = (
+            packet(3, v11_payload("welcome-accepted-minor-one", ".payload.bin"), session_id=session_id,
+                   sequence=1, sent_us=1_000_000, flags=2),
+            packet(4, session_begin_payload(), session_id=session_id, sequence=2, sent_us=1_000_001, flags=2),
+            packet(6, v11_payload("minimal-with-player", ".bin"), session_id=session_id,
+                   sequence=3, sent_us=1_000_002, flags=2),
+            packet(7, bytes(unknown_payload), session_id=session_id, sequence=4, sent_us=1_000_003),
+            packet(13, session_end_payload(), session_id=session_id, sequence=5, sent_us=1_000_004, flags=2),
+        )
+        with tempfile.TemporaryDirectory() as temp:
+            paths: list[str] = []
+            for index, value in enumerate(packets):
+                path = Path(temp) / f"nominal-{index}.bin"; path.write_bytes(value); paths.append(str(path))
+            command = [sys.executable, "-B", str(CONSOLE), "--replay", *paths, "--stale-ms", "100000000"]
+            first = subprocess.run(command, cwd=REPO, text=True, capture_output=True, check=False)
+            second = subprocess.run(command, cwd=REPO, text=True, capture_output=True, check=False)
+        self.assertEqual(0, first.returncode, first.stderr)
+        self.assertEqual(first.stdout, second.stdout, "nominal replay transcript must be byte-for-byte deterministic")
+        states = [json.loads(line)["status"] for line in first.stdout.splitlines()]
+        self.assertEqual(["Synchronizing", "Synchronizing", "Live", "Stale", "Disconnected"], states)
+
+    def test_unknown_baseline_stays_stale_without_resync_ack(self) -> None:
+        session_id = 0x1122334455667788
+        unknown_payload = bytearray(v11_payload("delta-player-return-baseline", ".payload.bin"))
+        struct.pack_into("<I", unknown_payload, 0, 999)
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as server:
+            server.bind(("127.0.0.1", 0)); server.settimeout(1.5)
+            process = subprocess.Popen(
+                [sys.executable, "-B", str(CONSOLE), "--host", "127.0.0.1", "--port", str(server.getsockname()[1]),
+                 "--seconds", "0.65", "--stale-ms", "100000000"], cwd=REPO, text=True,
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            )
+            hello, client = server.recvfrom(1200)
+            server.sendto(packet(3, welcome_for(hello), session_id=session_id, sequence=1, sent_us=1_000_000, flags=2), client)
+            server.sendto(packet(4, session_begin_payload(), session_id=session_id, sequence=2, sent_us=1_000_001, flags=2), client)
+            server.sendto(packet(6, v11_payload("minimal-with-player", ".bin"), session_id=session_id,
+                                 sequence=3, sent_us=1_000_002, flags=2), client)
+            server.sendto(packet(7, bytes(unknown_payload), session_id=session_id,
+                                 sequence=4, sent_us=1_000_003, flags=2), client)
+            controls: list[int] = []
+            deadline = time.monotonic() + 0.45
+            while time.monotonic() < deadline:
+                try:
+                    data, _ = server.recvfrom(1200)
+                except (socket.timeout, ConnectionResetError):
+                    break
+                controls.append(reference.read_header(data)["message_type"])
+            stdout, stderr = process.communicate(timeout=3)
+
+        self.assertEqual(0, process.returncode, stderr + stdout)
+        self.assertIn(12, controls, "unknown baseline starts reliable resync")
+        states = [json.loads(line)["status"] for line in stdout.splitlines()]
+        self.assertIn("Live", states)
+        self.assertEqual("Stale", states[-1], "no ACK must not prematurely enter Synchronizing")
+
+    def test_snapshot_declared_and_aggregate_candidate_quotas_are_fail_closed(self) -> None:
+        """16 MiB per transaction and 32 MiB aggregate are checked before promotion."""
+        first, _ = snapshot_parts()
+        declared_over_limit = with_snapshot_transaction_size(first, 16 * 1024 * 1024 + 1)
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "over-16m.bin"
+            path.write_bytes(packet(6, declared_over_limit, session_id=0x1122334455667788,
+                                    sequence=1, sent_us=1_000_000, flags=2))
+            result = subprocess.run([sys.executable, "-B", str(CONSOLE), "--replay", str(path)],
+                                    cwd=REPO, text=True, capture_output=True, check=False)
+        self.assertNotEqual(0, result.returncode, "a declared snapshot above 16 MiB must be rejected")
+        self.assertEqual("", result.stdout)
+
+        candidates = [with_snapshot_transaction_size(first, 16 * 1024 * 1024, snapshot_id=index)
+                      for index in (11, 12, 13)]
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as server:
+            server.bind(("127.0.0.1", 0)); server.settimeout(1.0)
+            process = subprocess.Popen(
+                [sys.executable, "-B", str(CONSOLE), "--host", "127.0.0.1", "--port", str(server.getsockname()[1]),
+                 "--seconds", "0.40"], cwd=REPO, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            )
+            hello, client = server.recvfrom(1200)
+            session_id = 0x1122334455667788
+            server.sendto(packet(3, welcome_for(hello), session_id=session_id, sequence=1, sent_us=1_000_000, flags=2), client)
+            server.sendto(packet(4, session_begin_payload(), session_id=session_id, sequence=2, sent_us=1_000_001, flags=2), client)
+            for sequence, payload in enumerate(candidates, start=3):
+                server.sendto(packet(6, payload, session_id=session_id, sequence=sequence,
+                                     sent_us=1_000_000 + sequence, flags=2), client)
+            stdout, stderr = process.communicate(timeout=3)
+        self.assertNotEqual(0, process.returncode, "a third 16 MiB candidate exceeds the 32 MiB aggregate quota")
+        self.assertNotIn('"status":"Live"', stdout, "candidate reservations cannot publish a partial snapshot")
+
+    def test_udp_handshake_transaction_resync_and_terminal_semantics(self) -> None:
+        """Exact P0 ordering: Hello/Welcome/SessionBegin before atomic snapshot."""
+        session_id = 0x1122334455667788
+        snapshot_a, snapshot_b = snapshot_parts()
+        changed_payload = v11_payload("delta-player-kinematics-cumulative", ".payload.bin")
+        unknown_payload = bytearray(v11_payload("delta-player-return-baseline", ".payload.bin"))
+        struct.pack_into("<I", unknown_payload, 0, 999)
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as server:
+            server.bind(("127.0.0.1", 0)); server.settimeout(1.0)
+            process = subprocess.Popen(
+                [sys.executable, "-B", str(CONSOLE), "--host", "127.0.0.1", "--port", str(server.getsockname()[1]),
+                 "--seconds", "0.8", "--stale-ms", "5"], cwd=REPO, text=True,
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            )
+            hello, client = server.recvfrom(1200)
+            self.assertEqual(2, reference.read_header(hello)["message_type"])
+            server.sendto(packet(3, welcome_for(hello), session_id=session_id, sequence=1, sent_us=1_000_000, flags=2), client)
+            server.sendto(packet(4, session_begin_payload(), session_id=session_id, sequence=2, sent_us=1_000_001, flags=2), client)
+            server.sendto(packet(6, snapshot_a, session_id=session_id, sequence=3, sent_us=1_000_002, flags=2), client)
+            server.sendto(packet(6, snapshot_b, session_id=session_id, sequence=4, sent_us=1_000_003, flags=2), client)
+            server.sendto(packet(7, changed_payload, session_id=session_id, sequence=5, sent_us=1_000_004), client)
+            server.sendto(packet(7, v11_payload("delta-player-return-baseline", ".payload.bin"),
+                                 session_id=session_id, sequence=6, sent_us=1_000_005), client)
+            # A repeated older sequence must not roll the immutable baseline state backwards.
+            server.sendto(packet(7, changed_payload, session_id=session_id, sequence=7, sent_us=1_000_006), client)
+            server.sendto(packet(7, bytes(unknown_payload), session_id=session_id, sequence=8,
+                                 sent_us=1_000_007, flags=2), client)
+            server.sendto(packet(13, session_end_payload(), session_id=session_id, sequence=9, sent_us=1_000_008, flags=2), client)
+            server.sendto(packet(13, session_end_payload(), session_id=session_id, sequence=10, message_id=9,
+                                 sent_us=1_000_009, flags=2), client)
+            received: list[tuple[int, dict[str, object]]] = []
+            deadline = time.monotonic() + 0.7
+            while time.monotonic() < deadline:
+                try:
+                    data, _ = server.recvfrom(1200)
+                except (socket.timeout, ConnectionResetError):
+                    break
+                header = reference.read_header(data)
+                received.append((header["message_type"], reference.decode_message(header["message_type"], header["flags"], data[68:], {})))
+            stdout, stderr = process.communicate(timeout=3)
+
+        self.assertEqual(0, process.returncode, stderr + stdout)
+        acks = [decoded["fields"] for kind, decoded in received if kind == 10]
+        snapshot_acks = [fields["ack_flags"] for fields in acks if fields["target_message_type"] == 6]
+        self.assertEqual([1, 1, 3, 3], snapshot_acks,
+                         "each snapshot part is VALIDATED, then both become APPLIED only after one atomic commit")
+        self.assertEqual(0, sum(1 for fields in acks if fields["target_message_type"] == 7),
+                         "all Deltas are replaceable: hostile ACK_REQUIRED must never induce an ACK")
+        self.assertGreaterEqual(sum(1 for kind, _ in received if kind == 12), 1,
+                                "unknown baseline triggers a retained ResyncRequest")
+        lines = [json.loads(line) for line in stdout.splitlines()]
+        self.assertIn("Live", [line["status"] for line in lines])
+        terminal = [line for line in lines if line["status"] == "Disconnected"]
+        self.assertEqual(1, len(terminal), "duplicate SessionEnd is tombstoned without a second terminal publication")
+        live = [line for line in lines if line["status"] == "Live"][-1]
+        self.assertEqual([0.0, 0.0, 0.0], live["angular_velocity"])
+        self.assertEqual([0.0, 0.0, 0.0], live["pose"]["position"])
+        live_positions = [line["pose"]["position"] for line in lines if line["status"] == "Live"]
+        self.assertEqual([[0.0, 0.0, 0.0], [10.0, 20.0, 30.0], [0.0, 0.0, 0.0]], live_positions,
+                         "only strictly newer cumulative deltas may alter the immutable-baseline replica")
+
+    def test_snapshot_hash_and_cross_part_mismatch_never_commit(self) -> None:
+        """A candidate transaction is atomic and cannot be promoted by a bad second part."""
+        first, second = snapshot_parts()
+        bad = bytearray(second); bad[12] ^= 0x80  # transaction_sha256 differs across parts
+        with tempfile.TemporaryDirectory() as temp:
+            paths: list[str] = []
+            for index, payload in enumerate((first, bytes(bad))):
+                path = Path(temp) / f"part-{index}.bin"
+                path.write_bytes(packet(6, payload, session_id=0x1122334455667788,
+                                        sequence=index + 1, sent_us=1_000_000 + index, flags=2))
+                paths.append(str(path))
+            result = subprocess.run([sys.executable, "-B", str(CONSOLE), "--replay", *paths, "--stale-ms", "1"],
+                                    cwd=REPO, text=True, capture_output=True, check=False)
+        self.assertNotEqual(0, result.returncode, "cross-part hash mismatch must be rejected")
+        self.assertEqual("", result.stdout, "bad transaction never publishes partial snapshot")
+
+    def test_abrupt_peer_silence_becomes_stale_after_live_snapshot(self) -> None:
+        """A peer disappearing without SESSION_END is a bounded Stale transition."""
+        session_id = 0x1122334455667788
+        snapshot = packet(6, v11_payload("minimal-with-player", ".bin"), session_id=session_id,
+                          sequence=3, sent_us=1_000_002, flags=2)
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as server:
+            server.bind(("127.0.0.1", 0)); server.settimeout(2.0)
+            process = subprocess.Popen(
+                [sys.executable, "-B", str(CONSOLE), "--host", "127.0.0.1", "--port", str(server.getsockname()[1]),
+                 "--seconds", "0.30", "--stale-ms", "1"], cwd=REPO, text=True,
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            )
+            hello, client = server.recvfrom(1200)
+            server.sendto(packet(3, welcome_for(hello), session_id=session_id, sequence=1, sent_us=1_000_000, flags=2), client)
+            server.sendto(packet(4, session_begin_payload(), session_id=session_id, sequence=2, sent_us=1_000_001, flags=2), client)
+            server.sendto(snapshot, client)
+            stdout, stderr = process.communicate(timeout=3)
+
+        self.assertEqual(0, process.returncode, stderr + stdout)
+        states = [json.loads(line)["status"] for line in stdout.splitlines()]
+        self.assertIn("Live", states)
+        self.assertEqual("Stale", states[-1])
+
+
+if __name__ == "__main__":
+    unittest.main()

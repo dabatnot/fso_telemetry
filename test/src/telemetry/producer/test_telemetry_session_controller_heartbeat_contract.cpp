@@ -883,6 +883,56 @@ protocol::HeartbeatPayload issue_periodic_probe(Controller& controller)
 	return request;
 }
 
+TEST(TelemetryWp06HeartbeatContract, CorrelatedResponsePreservesPriorityOutputAndForeignResponseIsMutationFree)
+{
+	IdentityHarness ids{0x6C7CU};
+	auto controller = make_controller(ids.allocator);
+	const auto peer = endpoint();
+	(void)establish_ready(controller, peer, 64U, 100U, 200U, 1'600U);
+	const auto request = issue_periodic_probe(controller);
+	// A second periodic request is a real priority output while the first probe
+	// remains outstanding.
+	controller.service_session_maintenance(controller.slot(0U).heartbeat.next_periodic_due_us);
+	detail::SessionControllerOutput before{};
+	ASSERT_TRUE(controller.peek_output(before));
+	const std::vector<std::uint8_t> bytes(before.bytes.begin(), before.bytes.begin() + before.size);
+	auto response = request;
+	response.kind = protocol::HeartbeatKind::Response;
+	response.receive_t1_us = request.origin_t0_us + 10U;
+	response.transmit_t2_us = request.origin_t0_us + 20U;
+	// The local receive time must follow both remote response timestamps; using
+	// the prior activity timestamp would make this otherwise valid sample fail
+	// clock-sample validation before the correlation result can be observed.
+	const auto now = request.origin_t0_us + 100U;
+	const auto activity_before = controller.slot(0U).heartbeat.last_valid_network_activity_us;
+	// A tuple-correlated response with impossible timestamps is still untrusted:
+	// it must not consume the outstanding probe or disturb the queued priority
+	// output before the later valid response is admitted.
+	auto impossible = response;
+	impossible.receive_t1_us = request.origin_t0_us + 10U;
+	impossible.transmit_t2_us = request.origin_t0_us + 210U;
+	const auto malformed = make_heartbeat(controller.slot(0U).session_id, impossible, 899U, now);
+	EXPECT_NE(detail::SessionIngressDropReason::None,
+		controller.ingest(peer, view(malformed.bytes), now, 0U, false).drop_reason);
+	EXPECT_EQ(activity_before, controller.slot(0U).heartbeat.last_valid_network_activity_us);
+	detail::SessionControllerOutput malformed_after{};
+	ASSERT_TRUE(controller.peek_output(malformed_after));
+	EXPECT_EQ(bytes, std::vector<std::uint8_t>(malformed_after.bytes.begin(), malformed_after.bytes.begin() + malformed_after.size));
+	const auto valid = make_heartbeat(controller.slot(0U).session_id, response, 900U, now);
+	EXPECT_EQ(detail::SessionIngressDropReason::None,
+		controller.ingest(peer, view(valid.bytes), now, 0U, false).drop_reason);
+	detail::SessionControllerOutput after{};
+	ASSERT_TRUE(controller.peek_output(after));
+	EXPECT_EQ(bytes, std::vector<std::uint8_t>(after.bytes.begin(), after.bytes.begin() + after.size));
+	const auto activity = controller.slot(0U).heartbeat.last_valid_network_activity_us;
+	const auto forged = make_heartbeat(controller.slot(0U).session_id, response, 901U, now + 1U);
+	EXPECT_NE(detail::SessionIngressDropReason::None,
+		controller.ingest(endpoint(3U), view(forged.bytes), now + 1U, 0U, false).drop_reason);
+	EXPECT_EQ(activity, controller.slot(0U).heartbeat.last_valid_network_activity_us);
+	ASSERT_TRUE(controller.peek_output(after));
+	EXPECT_EQ(bytes, std::vector<std::uint8_t>(after.bytes.begin(), after.bytes.begin() + after.size));
+}
+
 template <typename Controller>
 std::uint64_t add_reference_clock_sample(Controller& controller,
 	const protocol::EndpointKey& peer,
@@ -938,13 +988,14 @@ TEST(TelemetryWp06HeartbeatContract, PayloadInvalidResponseIsRejectedBeforeProbe
 }
 
 template <typename Controller>
-void expect_negative_round_trip_consumes_without_clock_mutation(Controller& controller,
+void expect_negative_round_trip_preserves_probe_and_clock_state(Controller& controller,
 	const protocol::EndpointKey& peer)
 {
 	if constexpr (!has_wp06_heartbeat_contract<Controller>::value) {
 		FAIL() << "Fixed heartbeat state is required for hostile Response validation.";
 	} else {
 		const auto reference_time = add_reference_clock_sample(controller, peer, 1'800U);
+		const auto activity_before = controller.slot(0U).heartbeat.last_valid_network_activity_us;
 		const auto request = issue_periodic_probe(controller);
 		protocol::HeartbeatPayload response = request;
 		response.kind = protocol::HeartbeatKind::Response;
@@ -955,9 +1006,9 @@ void expect_negative_round_trip_consumes_without_clock_mutation(Controller& cont
 			make_heartbeat(controller.slot(0U).session_id, response, 1'801U, response_time);
 		EXPECT_NE(detail::SessionIngressDropReason::None,
 			controller.ingest(peer, view(datagram.bytes), response_time, 0U, false).drop_reason);
-		EXPECT_EQ(response_time, controller.slot(0U).heartbeat.last_valid_network_activity_us);
+		EXPECT_EQ(activity_before, controller.slot(0U).heartbeat.last_valid_network_activity_us);
 		EXPECT_EQ(reference_time, controller.slot(0U).heartbeat.last_valid_clock_response_us);
-		EXPECT_EQ(0U, controller.slot(0U).heartbeat.probes.in_flight_count());
+		EXPECT_EQ(1U, controller.slot(0U).heartbeat.probes.in_flight_count());
 		EXPECT_EQ(1U, controller.slot(0U).heartbeat.clock_filter.sample_count());
 		EXPECT_TRUE(controller.slot(0U).heartbeat.clock_filter.valid());
 		std::uint64_t minimum_rtt_us = 0U;
@@ -969,14 +1020,14 @@ void expect_negative_round_trip_consumes_without_clock_mutation(Controller& cont
 	}
 }
 
-TEST(TelemetryWp06HeartbeatContract, NegativeRoundTripConsumesProbeAndPreservesPriorClockEvidence)
+TEST(TelemetryWp06HeartbeatContract, NegativeRoundTripPreservesProbeAndPriorClockEvidence)
 {
 	EXPECT_TRUE(has_wp06_heartbeat_contract<detail::SessionController>::value);
 	IdentityHarness ids{0x6E6EU};
 	auto controller = make_controller(ids.allocator);
 	const auto peer = endpoint();
 	(void)establish_ready(controller, peer, 65U, 100U, 200U, 1'900U);
-	expect_negative_round_trip_consumes_without_clock_mutation(controller, peer);
+	expect_negative_round_trip_preserves_probe_and_clock_state(controller, peer);
 }
 
 template <typename Controller>
@@ -986,6 +1037,7 @@ void expect_offset_overflow_invalidates_filter(Controller& controller, const pro
 		FAIL() << "Fixed heartbeat state is required for hostile Response validation.";
 	} else {
 		const auto reference_time = add_reference_clock_sample(controller, peer, 2'000U);
+		const auto activity_before = controller.slot(0U).heartbeat.last_valid_network_activity_us;
 		const auto request = issue_periodic_probe(controller);
 		const auto response_time = request.origin_t0_us + 100U;
 		const auto overflow = make_raw_heartbeat(controller.slot(0U).session_id,
@@ -998,15 +1050,15 @@ void expect_offset_overflow_invalidates_filter(Controller& controller, const pro
 			response_time);
 		EXPECT_NE(detail::SessionIngressDropReason::None,
 			controller.ingest(peer, view(overflow.bytes), response_time, 0U, false).drop_reason);
-		EXPECT_EQ(response_time, controller.slot(0U).heartbeat.last_valid_network_activity_us);
+		EXPECT_EQ(activity_before, controller.slot(0U).heartbeat.last_valid_network_activity_us);
 		EXPECT_EQ(reference_time, controller.slot(0U).heartbeat.last_valid_clock_response_us);
-		EXPECT_EQ(0U, controller.slot(0U).heartbeat.probes.in_flight_count());
-		EXPECT_EQ(0U, controller.slot(0U).heartbeat.clock_filter.sample_count());
-		EXPECT_FALSE(controller.slot(0U).heartbeat.clock_filter.valid());
+		EXPECT_EQ(1U, controller.slot(0U).heartbeat.probes.in_flight_count());
+		EXPECT_EQ(1U, controller.slot(0U).heartbeat.clock_filter.sample_count());
+		EXPECT_TRUE(controller.slot(0U).heartbeat.clock_filter.valid());
 	}
 }
 
-TEST(TelemetryWp06HeartbeatContract, OffsetOverflowConsumesProbeAndPurgesPriorClockFilter)
+TEST(TelemetryWp06HeartbeatContract, OffsetOverflowPreservesProbeAndPriorClockFilter)
 {
 	EXPECT_TRUE(has_wp06_heartbeat_contract<detail::SessionController>::value);
 	IdentityHarness ids{0x6F6FU};
@@ -1024,6 +1076,7 @@ void expect_time_reversal_marks_stale_without_underflow(Controller& controller,
 		FAIL() << "Fixed heartbeat state is required for hostile Response validation.";
 	} else {
 		const auto reference_time = add_reference_clock_sample(controller, peer, 2'200U);
+		const auto activity_before = controller.slot(0U).heartbeat.last_valid_network_activity_us;
 		const auto request = issue_periodic_probe(controller);
 		protocol::HeartbeatPayload response = request;
 		response.kind = protocol::HeartbeatKind::Response;
@@ -1034,29 +1087,29 @@ void expect_time_reversal_marks_stale_without_underflow(Controller& controller,
 			controller.slot(0U).session_id, response, 2'201U, reversed_receive_time);
 		EXPECT_NE(detail::SessionIngressDropReason::None,
 			controller.ingest(peer, view(reversed.bytes), reversed_receive_time, 0U, false).drop_reason);
-		EXPECT_EQ(reversed_receive_time, controller.slot(0U).heartbeat.last_valid_network_activity_us);
+		EXPECT_EQ(activity_before, controller.slot(0U).heartbeat.last_valid_network_activity_us);
 		EXPECT_EQ(reference_time, controller.slot(0U).heartbeat.last_valid_clock_response_us);
-		EXPECT_EQ(0U, controller.slot(0U).heartbeat.probes.in_flight_count());
-		EXPECT_EQ(0U, controller.slot(0U).heartbeat.clock_filter.sample_count());
-		EXPECT_FALSE(controller.slot(0U).heartbeat.clock_filter.valid());
-		EXPECT_EQ(detail::ProducerSessionProgress::Stale, controller.slot(0U).progress);
-		EXPECT_TRUE(controller.slot(0U).heartbeat.clock_stale);
+		EXPECT_EQ(1U, controller.slot(0U).heartbeat.probes.in_flight_count());
+		EXPECT_EQ(1U, controller.slot(0U).heartbeat.clock_filter.sample_count());
+		EXPECT_TRUE(controller.slot(0U).heartbeat.clock_filter.valid());
+		EXPECT_EQ(detail::ProducerSessionProgress::ReadyForState, controller.slot(0U).progress);
+		EXPECT_FALSE(controller.slot(0U).heartbeat.clock_stale);
 
 		EXPECT_NE(detail::SessionIngressDropReason::None,
 			controller.ingest(peer, view(reversed.bytes), reversed_receive_time + 1U, 0U, false).drop_reason);
-		EXPECT_EQ(reversed_receive_time, controller.slot(0U).heartbeat.last_valid_network_activity_us);
+		EXPECT_EQ(activity_before, controller.slot(0U).heartbeat.last_valid_network_activity_us);
 		EXPECT_EQ(reference_time, controller.slot(0U).heartbeat.last_valid_clock_response_us);
-		EXPECT_EQ(0U, controller.slot(0U).heartbeat.probes.in_flight_count());
-		EXPECT_EQ(0U, controller.slot(0U).heartbeat.clock_filter.sample_count());
-		EXPECT_FALSE(controller.slot(0U).heartbeat.clock_filter.valid());
-		EXPECT_EQ(detail::ProducerSessionProgress::Stale, controller.slot(0U).progress)
-			<< "A duplicate hostile Response cannot restore semantic readiness.";
-		EXPECT_TRUE(controller.slot(0U).heartbeat.clock_stale)
-			<< "A duplicate hostile Response cannot clear the stale clock marker.";
+		EXPECT_EQ(1U, controller.slot(0U).heartbeat.probes.in_flight_count());
+		EXPECT_EQ(1U, controller.slot(0U).heartbeat.clock_filter.sample_count());
+		EXPECT_TRUE(controller.slot(0U).heartbeat.clock_filter.valid());
+		EXPECT_EQ(detail::ProducerSessionProgress::ReadyForState, controller.slot(0U).progress)
+			<< "A duplicate hostile Response cannot alter semantic readiness.";
+		EXPECT_FALSE(controller.slot(0U).heartbeat.clock_stale)
+			<< "A duplicate hostile Response cannot alter the clock stale marker.";
 	}
 }
 
-TEST(TelemetryWp06HeartbeatContract, InitiatorTimeReversalConsumesProbeInvalidatesClockAndMarksStale)
+TEST(TelemetryWp06HeartbeatContract, InitiatorTimeReversalPreservesProbeClockAndReadiness)
 {
 	EXPECT_TRUE(has_wp06_heartbeat_contract<detail::SessionController>::value);
 	IdentityHarness ids{0x7070U};

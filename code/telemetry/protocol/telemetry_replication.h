@@ -102,6 +102,12 @@ class StateImage final {
 	static StateImageResult create(std::vector<StateAtom> records,
 		StateImage& image,
 		StateImageInvalidRecordReason& invalid_record_reason) noexcept;
+	// Adopts a startup-owned immutable backing after validating its canonical
+	// order and quotas in place. Unlike create(), this never normalizes or
+	// allocates, so bounded runtime pools can publish a capture safely.
+	static StateImageResult adopt_preallocated(const std::shared_ptr<const std::vector<StateAtom>>& records,
+		StateImage& image,
+		StateImageInvalidRecordReason& invalid_record_reason) noexcept;
 
 	const std::vector<StateAtom>& records() const noexcept;
 	std::size_t encoded_snapshot_records_size() const noexcept
@@ -155,6 +161,14 @@ struct CumulativeStateDelta {
 	std::uint32_t delta_sequence = 0;
 	std::uint64_t producer_sample_time_us = 0;
 	std::vector<StateMutation> mutations;
+	// Zero retains legacy semantics (the entire vector is logical). Producer
+	// scratch storage may retain extra preconstructed elements and expose only
+	// a prefix, without affecting the wire representation.
+	std::size_t active_mutation_count = 0U;
+	std::size_t mutation_count() const noexcept
+	{
+		return active_mutation_count == 0U ? mutations.size() : active_mutation_count;
+	}
 
 	// Exact v1 logical payload size: 20-byte Delta prefix plus each six-byte
 	// Record envelope and its full or deletion-key payload.
@@ -259,6 +273,10 @@ class ProducerResyncTracker final {
 	ProducerResyncResult expire(std::uint64_t now_us) noexcept;
 	ProducerResyncResult complete() noexcept;
 	void clear() noexcept;
+	// Read-only semantic deduplication seam used by the producer ingress path to
+	// replay VALIDATED for an identical reliable request without charging its
+	// rate-limit bucket a second time. Call expire() first when time matters.
+	bool is_known_duplicate(const ResyncRequestPayload& request) const noexcept;
 
 	bool has_candidate() const noexcept
 	{

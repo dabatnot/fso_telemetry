@@ -3,6 +3,7 @@
 #include "gamesequence/gamesequence.h"
 
 #include <array>
+#include <chrono>
 #include <limits>
 #include <thread>
 
@@ -71,6 +72,37 @@ constexpr std::array<RuntimeGameStateDisposition, GS_NUM_STATES> GameStateDispos
 static_assert(GameStateDispositions.size() == static_cast<std::size_t>(GS_NUM_STATES),
 	"Every engine game state requires an explicit telemetry lifecycle disposition");
 
+class CallbackMetricScope final {
+  public:
+	CallbackMetricScope(RuntimeStartupServices& services, TelemetryCallbackKind kind) noexcept
+		: m_services(services), m_kind(kind), m_started_at(std::chrono::steady_clock::now())
+	{
+	}
+	~CallbackMetricScope() noexcept
+	{
+		finish();
+	}
+	void finish() noexcept
+	{
+		if (m_finished) return;
+		m_finished = true;
+		const auto ended_at = std::chrono::steady_clock::now();
+		// The public histogram is microsecond-based.  A completed accepted
+		// callback can be shorter than the source clock's resolution (including
+		// deterministic test clocks); retain a one-microsecond lower bound rather
+		// than publishing an indistinguishable zero-duration completed callback.
+		const auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(ended_at - m_started_at).count();
+		const auto duration_us = elapsed > 0 ? static_cast<std::uint64_t>(elapsed) : 1U;
+		m_services.record_callback_metric(m_kind, duration_us);
+	}
+
+  private:
+	RuntimeStartupServices& m_services;
+	TelemetryCallbackKind m_kind;
+	std::chrono::steady_clock::time_point m_started_at;
+	bool m_finished = false;
+};
+
 } // namespace
 
 RuntimeGameStateDisposition classify_runtime_game_state(int state) noexcept
@@ -129,6 +161,7 @@ void Runtime::enter_disabled(RuntimeTerminalReason reason, bool diagnostic) noex
 	m_terminal_reason = reason;
 	m_state = RuntimeState::Disabled;
 	m_publication_blocked = true;
+	m_services.emit_runtime_disabled(reason);
 	if (diagnostic) {
 		emit_diagnostic_once(reason);
 	}
@@ -139,6 +172,8 @@ void Runtime::enter_faulted(RuntimeTerminalReason reason) noexcept
 	m_terminal_reason = reason;
 	m_state = RuntimeState::Faulted;
 	m_publication_blocked = true;
+	m_services.record_runtime_fault_metric(reason);
+	m_services.emit_runtime_fault(reason);
 	emit_diagnostic_once(reason);
 }
 
@@ -147,6 +182,8 @@ void Runtime::teardown_faulted_runtime(RuntimeTerminalReason reason) noexcept
 	m_terminal_reason = reason;
 	m_state = RuntimeState::Faulted;
 	m_publication_blocked = true;
+	m_services.record_runtime_fault_metric(reason);
+	m_services.emit_runtime_fault(reason);
 	m_mission_load_pending = false;
 	m_mission_purge_pending = false;
 	m_game_state_pending = false;
@@ -170,6 +207,10 @@ void Runtime::teardown_faulted_runtime(RuntimeTerminalReason reason) noexcept
 		return;
 	}
 	m_services.release_runtime_allocations();
+	if (!callback_gate_is_open()) {
+		return;
+	}
+	m_services.release_metrics();
 	if (!callback_gate_is_open()) {
 		return;
 	}
@@ -310,6 +351,11 @@ void Runtime::apply_pending_lifecycle() noexcept
 	}
 
 	if (needs_mission_purge) {
+		// A replacement load is a real discontinuity too: close the previous
+		// mission before incrementing/publishing the next generation.
+		if (m_mission_generation != 0U) {
+			m_services.emit_mission_left(m_mission_generation);
+		}
 		if (!purge_mission()) {
 			return;
 		}
@@ -317,6 +363,7 @@ void Runtime::apply_pending_lifecycle() noexcept
 
 	if (has_mission_load) {
 		++m_mission_generation;
+		m_services.emit_mission_entered(m_mission_generation);
 	}
 
 	if (destination == RuntimeLifecycleDestination::MissionActive) {
@@ -353,6 +400,7 @@ void Runtime::on_engine_update() noexcept
 	if (m_state == RuntimeState::Disabled || m_state == RuntimeState::Faulted) {
 		return;
 	}
+	CallbackMetricScope callback_metric(m_services, TelemetryCallbackKind::EngineUpdate);
 
 	if (m_state == RuntimeState::Cold) {
 		const auto main_thread_matches = m_services.is_on_captured_main_thread();
@@ -411,6 +459,14 @@ void Runtime::on_engine_update() noexcept
 			return;
 		}
 
+		if (!m_services.provision_metrics()) {
+			enter_faulted(RuntimeTerminalReason::AllocationFailure);
+			return;
+		}
+		if (!startup_transaction_is_active()) {
+			return;
+		}
+
 		const auto registry_allocated = m_services.allocate_session_registry();
 		if (!startup_transaction_is_active()) {
 			return;
@@ -421,6 +477,7 @@ void Runtime::on_engine_update() noexcept
 				return;
 			}
 			enter_faulted(RuntimeTerminalReason::AllocationFailure);
+			m_services.release_metrics();
 			return;
 		}
 
@@ -434,6 +491,7 @@ void Runtime::on_engine_update() noexcept
 				return;
 			}
 			enter_faulted(RuntimeTerminalReason::SessionRegistrationFailure);
+			m_services.release_metrics();
 			return;
 		}
 
@@ -451,12 +509,14 @@ void Runtime::on_engine_update() noexcept
 				return;
 			}
 			enter_faulted(RuntimeTerminalReason::TransportUnavailable);
+			m_services.release_metrics();
 			return;
 		}
 
 		m_terminal_reason = RuntimeTerminalReason::None;
 		m_state = RuntimeState::Ready;
 		m_publication_blocked = false;
+		m_services.emit_runtime_activated();
 	}
 
 	if (m_state == RuntimeState::Ready || m_state == RuntimeState::MissionLoading ||
@@ -473,9 +533,20 @@ void Runtime::on_engine_update() noexcept
 		const RuntimeTickContext context{now_us,
 			m_mission_generation,
 			m_state == RuntimeState::MissionActive && !m_publication_blocked};
-		if (m_services.service_tick(context) == RuntimeTickStatus::PermanentTransportFailure &&
-			callback_gate_is_open()) {
-			teardown_faulted_runtime(RuntimeTerminalReason::TransportUnavailable);
+		switch (m_services.service_tick(context)) {
+		case RuntimeTickStatus::PermanentTransportFailure:
+			if (callback_gate_is_open()) {
+				teardown_faulted_runtime(RuntimeTerminalReason::TransportUnavailable);
+			}
+			break;
+		case RuntimeTickStatus::PermanentCaptureFailure:
+			if (callback_gate_is_open()) {
+				teardown_faulted_runtime(RuntimeTerminalReason::CaptureFailure);
+			}
+			break;
+		case RuntimeTickStatus::Complete:
+		case RuntimeTickStatus::Unavailable:
+			break;
 		}
 	}
 }
@@ -488,6 +559,7 @@ void Runtime::on_engine_shutdown() noexcept
 	if (!callback_is_on_captured_thread()) {
 		return;
 	}
+	CallbackMetricScope callback_metric(m_services, TelemetryCallbackKind::EngineShutdown);
 	auto expected_gate = RuntimeCallbackGate::Open;
 	if (!m_callback_gate.compare_exchange_strong(expected_gate,
 			RuntimeCallbackGate::ShuttingDown,
@@ -509,7 +581,11 @@ void Runtime::on_engine_shutdown() noexcept
 	m_services.invalidate_mission_state_and_entities();
 	m_services.stop_transport();
 	m_services.emit_runtime_summary();
+	// The process-summary callback metric must be published while the fixed
+	// Metrics owner is still provisioned.  The scope remains harmless at exit.
+	callback_metric.finish();
 	m_services.release_runtime_allocations();
+	m_services.release_metrics();
 	m_services.release_session_registry();
 	m_state = RuntimeState::Stopped;
 	m_callback_gate.store(RuntimeCallbackGate::Stopped, std::memory_order_release);
@@ -526,6 +602,7 @@ void Runtime::on_game_mission_load() noexcept
 	if (m_state == RuntimeState::Disabled || m_state == RuntimeState::Faulted) {
 		return;
 	}
+	CallbackMetricScope callback_metric(m_services, TelemetryCallbackKind::GameMissionLoad);
 	m_mission_load_pending = true;
 	m_mission_purge_pending = true;
 	m_lifecycle_destination = RuntimeLifecycleDestination::MissionLoading;
@@ -544,6 +621,7 @@ void Runtime::on_game_enter_state(int old_state, int new_state) noexcept
 	if (m_state == RuntimeState::Disabled || m_state == RuntimeState::Faulted) {
 		return;
 	}
+	CallbackMetricScope callback_metric(m_services, TelemetryCallbackKind::GameEnterState);
 	record_game_state_transition(old_state, new_state);
 }
 
@@ -558,6 +636,7 @@ void Runtime::on_game_leave_state(int old_state, int new_state) noexcept
 	if (m_state == RuntimeState::Disabled || m_state == RuntimeState::Faulted) {
 		return;
 	}
+	CallbackMetricScope callback_metric(m_services, TelemetryCallbackKind::GameLeaveState);
 	record_game_state_transition(old_state, new_state);
 }
 

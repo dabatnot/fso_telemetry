@@ -1,6 +1,7 @@
 #pragma once
 
 #include "telemetry/identity.h"
+#include "telemetry/metrics.h"
 #include "telemetry/startup_budget.h"
 
 #include <atomic>
@@ -37,6 +38,7 @@ enum class RuntimeTerminalReason : std::uint8_t {
 	TransportUnavailable,
 	InvalidLifecycleTransition,
 	MissionGenerationOverflow,
+	CaptureFailure,
 };
 
 enum class RuntimeGameStateDisposition : std::uint8_t {
@@ -84,6 +86,7 @@ enum class RuntimeTickStatus : std::uint8_t {
 	Complete = 0,
 	Unavailable,
 	PermanentTransportFailure,
+	PermanentCaptureFailure,
 };
 
 // The native runtime remains fail-closed while the global startup budget is
@@ -104,6 +107,12 @@ class RuntimeStartupServices {
 	virtual IdentityResult load_producer_identity() noexcept = 0;
 	virtual SessionIdCandidateResult draw_session_candidate() noexcept = 0;
 	virtual Wp03KnownBudgetSubtotal calculate_known_budget(std::size_t max_clients) noexcept = 0;
+	// Metrics storage is provisioned before bind. Defaults retain compatibility
+	// with deterministic lifecycle fakes that do not own production storage.
+	virtual bool provision_metrics() noexcept { return true; }
+	virtual void release_metrics() noexcept {}
+	virtual void record_callback_metric(TelemetryCallbackKind, std::uint64_t) noexcept {}
+	virtual void record_runtime_fault_metric(RuntimeTerminalReason) noexcept {}
 	virtual bool allocate_session_registry() noexcept = 0;
 	virtual SessionIdRegistrationStatus register_session_candidate(std::uint64_t candidate) noexcept = 0;
 	virtual RuntimeTransportStatus start_transport() noexcept = 0;
@@ -119,6 +128,13 @@ class RuntimeStartupServices {
 	virtual void reset_mission_scope() noexcept = 0;
 	virtual void stop_transport() noexcept = 0;
 	virtual void emit_runtime_summary() noexcept = 0;
+	// P9.2 structured diagnostics are optional for deterministic test doubles;
+	// production overrides these hooks with a fixed, redaction-safe sink.
+	virtual void emit_runtime_disabled(RuntimeTerminalReason) noexcept {}
+	virtual void emit_runtime_activated() noexcept {}
+	virtual void emit_runtime_fault(RuntimeTerminalReason) noexcept {}
+	virtual void emit_mission_entered(std::uint32_t) noexcept {}
+	virtual void emit_mission_left(std::uint32_t) noexcept {}
 	virtual void release_runtime_allocations() noexcept = 0;
 	virtual void release_session_registry() noexcept = 0;
 	virtual void emit_startup_diagnostic(RuntimeTerminalReason reason) noexcept = 0;

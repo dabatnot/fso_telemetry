@@ -360,6 +360,8 @@ def run_with_evidence(
     exit_code = 1
     execution_error: str | None = None
     report_write_failed = False
+    execution_command = list(command)
+    working_corpus = evidence / "working-corpus"
 
     started_at = datetime.now(timezone.utc).isoformat()
     started = time.monotonic()
@@ -367,14 +369,25 @@ def run_with_evidence(
         initial_manifest = snapshot_tree(
             corpus, evidence / "initial-corpus", evidence / "initial-corpus-manifest.json"
         )
-        exit_code = tee_process(command, environment, log_path)
+        snapshot_tree(
+            evidence / "initial-corpus", working_corpus, evidence / "working-corpus-manifest.json"
+        )
+        # libFuzzer may add, rename, or remove corpus files while it runs.  Keep
+        # the checked-in/generated corpus immutable and archive the mutable copy
+        # only after the child process has stopped.
+        try:
+            corpus_index = execution_command.index(str(corpus))
+        except ValueError as error:
+            raise ValueError("fuzz command does not contain its corpus argument") from error
+        execution_command[corpus_index] = str(working_corpus)
+        exit_code = tee_process(execution_command, environment, log_path)
     except (OSError, ValueError, subprocess.SubprocessError) as error:
         execution_error = f"{type(error).__name__}: {error}"
         print(f"Fuzz target {target} could not run: {execution_error}", file=sys.stderr)
     finally:
         try:
             final_manifest = snapshot_tree(
-                corpus, evidence / "final-corpus", evidence / "final-corpus-manifest.json"
+                working_corpus, evidence / "final-corpus", evidence / "final-corpus-manifest.json"
             )
         except (OSError, ValueError) as error:
             evidence_errors.append(f"final corpus snapshot: {error}")
@@ -391,7 +404,7 @@ def run_with_evidence(
             report = build_report(
                 args=args,
                 target=target,
-                command=command,
+                command=execution_command,
                 executable=executable,
                 environment=environment,
                 revision=revision,

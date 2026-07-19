@@ -412,7 +412,9 @@ struct LoopbackRuntimeServices final : detail::RuntimeStartupServices {
 	{
 		last_tick = context;
 		if (!native.has_value()) return detail::RuntimeTickStatus::Unavailable;
-		return native->service_tick({context.now_us, context.mission_generation, context.mission_active}) ==
+		auto engine_view = detail::make_fso_engine_read_view();
+		return native->service_tick(
+			{context.now_us, context.mission_generation, context.mission_active}, engine_view) ==
 				detail::NativeSessionTickStatus::Complete
 			? detail::RuntimeTickStatus::Complete
 			: detail::RuntimeTickStatus::PermanentTransportFailure;
@@ -550,8 +552,8 @@ testing::AssertionResult exercise_native_runtime_loopback(protocol::IpAddressFam
 {
 	{
 		ServerFixture real_budget(family, first_port, false);
-		if (real_budget.services.budget.deferred_categories != 0x00f0U) {
-			return testing::AssertionFailure() << "real startup mask changed from 0x00f0";
+		if (real_budget.services.budget.deferred_categories != 0x0080U) {
+			return testing::AssertionFailure() << "real startup mask changed from 0x0080";
 		}
 		real_budget.start();
 		if (real_budget.runtime.state() != detail::RuntimeState::Faulted ||
@@ -660,6 +662,28 @@ testing::AssertionResult exercise_native_runtime_loopback(protocol::IpAddressFam
 	if (!server->services.native.has_value() || server->services.native->active_sessions() != 1U) {
 		return testing::AssertionFailure() << "server did not retain exactly one active session";
 	}
+	// The allowlist is address/CIDR based, but a live FSTL session is bound to
+	// the exact UDP endpoint.  A second native loopback socket therefore has
+	// an allowed address and a different source port: its attributed control
+	// datagrams must be rejected without mutating the established session.
+	detail::NativeUdpSocketBackend changed_endpoint_client;
+	const auto opened_changed_endpoint = changed_endpoint_client.open_socket(client_request);
+	if (opened_changed_endpoint.status != detail::SocketOpenStatus::Complete ||
+		opened_changed_endpoint.local_endpoint.port() == 0U ||
+		opened_changed_endpoint.local_endpoint.port() == opened_client.local_endpoint.port()) {
+		return testing::AssertionFailure() << "native endpoint-change client failed to bind a distinct source port";
+	}
+	ClientSocketOwner changed_endpoint_owner(changed_endpoint_client, opened_changed_endpoint.handle);
+	const auto sends_before_wrong_port_ack = server->services.backend.send_calls;
+	const auto receives_before_wrong_port_ack = server->services.backend.complete_receives;
+	if (changed_endpoint_client.try_send(opened_changed_endpoint.handle,
+			server_endpoint,
+			{begin_ack.bytes.data(), begin_ack.size}).status != detail::IoStatus::Complete ||
+		!pump_until_server_receive(*server, receives_before_wrong_port_ack + 1U, pump) ||
+		!server->services.native.has_value() || server->services.native->active_sessions() != 1U ||
+		server->services.backend.send_calls != sends_before_wrong_port_ack) {
+		return testing::AssertionFailure() << "wrong source port ACK changed the live session";
+	}
 	const auto activity_before_heartbeat = server->services.last_tick.now_us;
 
 	server->services.now_us = welcome_proof_time + 1'000'000U;
@@ -683,11 +707,27 @@ testing::AssertionResult exercise_native_runtime_loopback(protocol::IpAddressFam
 
 	Packet heartbeat_response;
 	const auto receives_before_heartbeat = server->services.backend.complete_receives;
-	if (!make_heartbeat_response(heartbeat_view, heartbeat_payload, heartbeat_response) ||
+	// The response's causal receive/transmit timestamps must not be in the future
+	// relative to the synthetic server clock that consumes it.
+	server->services.now_us = heartbeat_payload.origin_t0_us + 20U;
+	if (!make_heartbeat_response(heartbeat_view, heartbeat_payload, heartbeat_response)) {
+		return testing::AssertionFailure() << "could not encode canonical HEARTBEAT response";
+	}
+	const auto sends_before_endpoint_change = server->services.backend.send_calls;
+	if (changed_endpoint_client.try_send(opened_changed_endpoint.handle,
+			server_endpoint,
+			{heartbeat_response.bytes.data(), heartbeat_response.size}).status != detail::IoStatus::Complete ||
+		!pump_until_server_receive(*server, receives_before_heartbeat + 1U, pump) ||
+		!server->services.native.has_value() || server->services.native->active_sessions() != 1U ||
+		server->services.backend.send_calls != sends_before_endpoint_change) {
+		return testing::AssertionFailure() << "endpoint-change HEARTBEAT response changed the live session";
+	}
+	const auto receives_before_expected_heartbeat = server->services.backend.complete_receives;
+	if (
 		client.try_send(opened_client.handle,
 			server_endpoint,
 			{heartbeat_response.bytes.data(), heartbeat_response.size}).status != detail::IoStatus::Complete ||
-		!pump_until_server_receive(*server, receives_before_heartbeat + 1U, pump)) {
+		!pump_until_server_receive(*server, receives_before_expected_heartbeat + 1U, pump)) {
 		return testing::AssertionFailure() << "bounded pump did not apply HEARTBEAT response";
 	}
 	if (!server->services.native.has_value() || server->services.native->active_sessions() != 1U) {
@@ -708,7 +748,8 @@ testing::AssertionResult exercise_native_runtime_loopback(protocol::IpAddressFam
 		return testing::AssertionFailure() << "server shutdown was not socket-zero and idempotent";
 	}
 	client_owner.close();
-	if (!client_owner.closed()) return testing::AssertionFailure() << "client socket did not close";
+	changed_endpoint_owner.close();
+	if (!client_owner.closed() || !changed_endpoint_owner.closed()) return testing::AssertionFailure() << "client socket did not close";
 	return testing::AssertionSuccess();
 }
 

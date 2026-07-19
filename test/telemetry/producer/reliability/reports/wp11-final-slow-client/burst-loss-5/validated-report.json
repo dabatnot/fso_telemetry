@@ -1,0 +1,212 @@
+{
+  "configured": {
+    "burst": true,
+    "lossPercent": 5
+  },
+  "convergence": {
+    "boundedImpairment": {
+      "endUs": 32000000,
+      "firstLivePostEndUs": 33600652,
+      "recoveryAfterEndUs": 1600652,
+      "startUs": 30000000,
+      "withinTenSecondsPostEnd": true
+    },
+    "continuousLossDiagnostic": {
+      "maxLiveRecoveryUs": 900018,
+      "worstTimelineUs": {
+        "ack": 2266692,
+        "live": 3133376,
+        "resyncSend": 2233358,
+        "snapshot": 3100042
+      }
+    },
+    "cycles": 116,
+    "successfulRecoveries": 116
+  },
+  "durationSeconds": 600,
+  "injected": {
+    "ackLoss": 1,
+    "deltaLoss": 378,
+    "downstreamLoss": 699,
+    "duplicateFrames": 1,
+    "jitterDelayedFrames": 82,
+    "outageLoss": 299,
+    "reorderedFrames": 1,
+    "snapshotFragmentLoss": 22,
+    "wouldBlock": 160
+  },
+  "lifecycle": {
+    "initialSessionId": 1,
+    "missionConverged": false,
+    "missionGenerationAfter": 1,
+    "missionGenerationBefore": 1,
+    "missionRequested": false,
+    "missionSessionId": 0,
+    "normalShutdownReleased": true,
+    "processConverged": false,
+    "processRequested": false,
+    "processSessionId": 0,
+    "processShutdownReleased": false
+  },
+  "minuteObservations": [
+    {
+      "baselines": 1,
+      "cacheEntries": 0,
+      "clients": 1,
+      "memoryBytes": 0,
+      "minute": 1,
+      "p99TickNs": 258800,
+      "preproofAccounts": 0,
+      "queueDepth": 0,
+      "reliable": 0,
+      "sockets": 1
+    },
+    {
+      "baselines": 1,
+      "cacheEntries": 0,
+      "clients": 1,
+      "memoryBytes": 0,
+      "minute": 2,
+      "p99TickNs": 226700,
+      "preproofAccounts": 0,
+      "queueDepth": 0,
+      "reliable": 0,
+      "sockets": 1
+    },
+    {
+      "baselines": 1,
+      "cacheEntries": 0,
+      "clients": 1,
+      "memoryBytes": 0,
+      "minute": 3,
+      "p99TickNs": 273500,
+      "preproofAccounts": 0,
+      "queueDepth": 0,
+      "reliable": 0,
+      "sockets": 1
+    },
+    {
+      "baselines": 1,
+      "cacheEntries": 0,
+      "clients": 1,
+      "memoryBytes": 0,
+      "minute": 4,
+      "p99TickNs": 203100,
+      "preproofAccounts": 0,
+      "queueDepth": 0,
+      "reliable": 0,
+      "sockets": 1
+    },
+    {
+      "baselines": 1,
+      "cacheEntries": 0,
+      "clients": 1,
+      "memoryBytes": 0,
+      "minute": 5,
+      "p99TickNs": 246300,
+      "preproofAccounts": 0,
+      "queueDepth": 0,
+      "reliable": 0,
+      "sockets": 1
+    },
+    {
+      "baselines": 1,
+      "cacheEntries": 0,
+      "clients": 1,
+      "memoryBytes": 0,
+      "minute": 6,
+      "p99TickNs": 309900,
+      "preproofAccounts": 0,
+      "queueDepth": 0,
+      "reliable": 0,
+      "sockets": 1
+    },
+    {
+      "baselines": 1,
+      "cacheEntries": 0,
+      "clients": 1,
+      "memoryBytes": 0,
+      "minute": 7,
+      "p99TickNs": 341200,
+      "preproofAccounts": 0,
+      "queueDepth": 0,
+      "reliable": 0,
+      "sockets": 1
+    },
+    {
+      "baselines": 1,
+      "cacheEntries": 0,
+      "clients": 1,
+      "memoryBytes": 0,
+      "minute": 8,
+      "p99TickNs": 539700,
+      "preproofAccounts": 0,
+      "queueDepth": 1,
+      "reliable": 0,
+      "sockets": 1
+    },
+    {
+      "baselines": 1,
+      "cacheEntries": 0,
+      "clients": 1,
+      "memoryBytes": 0,
+      "minute": 9,
+      "p99TickNs": 406000,
+      "preproofAccounts": 0,
+      "queueDepth": 0,
+      "reliable": 0,
+      "sockets": 1
+    },
+    {
+      "baselines": 1,
+      "cacheEntries": 0,
+      "clients": 1,
+      "memoryBytes": 0,
+      "minute": 10,
+      "p99TickNs": 409000,
+      "preproofAccounts": 0,
+      "queueDepth": 0,
+      "reliable": 0,
+      "sockets": 1
+    }
+  ],
+  "peer": {
+    "delta": true,
+    "duplicateDelivered": true,
+    "invalidAck": false,
+    "lastCyclePending": false,
+    "lastCycleResyncAcked": false,
+    "lastCycleSnapshotReceived": false,
+    "liveBaselinePublished": true,
+    "recoveredBaselinePublished": true,
+    "reorderDelivered": true,
+    "resyncCycles": 116,
+    "resyncSnapshotFlagSeen": true,
+    "sessionBegin": true,
+    "sessionEndReason": 0,
+    "sessionEndSeen": false,
+    "snapshot": true,
+    "successfulRecoveries": 116,
+    "welcome": true
+  },
+  "profile": "burst-loss-5",
+  "resourcePeaks": {
+    "baselines": 1,
+    "cacheEntries": 0,
+    "clients": 1,
+    "memoryBytes": 0,
+    "p99TickNs": 539700,
+    "preproofAccounts": 0,
+    "queueDepth": 1,
+    "reliable": 0,
+    "sockets": 1
+  },
+  "schema": "fs2open.telemetry.phase1.reliability-profile.v1",
+  "seed": 4246,
+  "slowClient": {
+    "boundedOutcome": true,
+    "recovered": true,
+    "withheldReliableAcks": 1
+  },
+  "status": "passed"
+}

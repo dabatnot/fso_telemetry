@@ -13,6 +13,20 @@ namespace {
 
 constexpr std::size_t NoEntry = std::numeric_limits<std::size_t>::max();
 
+bool checked_add_size(std::size_t left, std::size_t right, std::size_t& result) noexcept
+{
+	if (right > std::numeric_limits<std::size_t>::max() - left) return false;
+	result = left + right;
+	return true;
+}
+
+bool checked_multiply_size(std::size_t left, std::size_t right, std::size_t& result) noexcept
+{
+	if (left != 0U && right > std::numeric_limits<std::size_t>::max() / left) return false;
+	result = left * right;
+	return true;
+}
+
 void increment_saturated(std::uint64_t& value) noexcept
 {
 	if (value != std::numeric_limits<std::uint64_t>::max()) {
@@ -585,14 +599,17 @@ ReliableSendWindow& ReliableSendWindow::operator=(ReliableSendWindow&& other) no
 	}
 	m_limits = other.m_limits;
 	m_entries = std::move(other.m_entries);
+	m_free_entries = std::move(other.m_free_entries);
 	m_retained_bytes = other.m_retained_bytes;
 	m_video_entry_count = other.m_video_entry_count;
 	m_video_retained_bytes = other.m_video_retained_bytes;
 	m_has_valid_minimum_rtt = other.m_has_valid_minimum_rtt;
 	m_minimum_rtt_us = other.m_minimum_rtt_us;
 	m_counters = other.m_counters;
+	m_allocation_events = other.m_allocation_events;
 
 	std::vector<Entry>{}.swap(other.m_entries);
+	std::vector<Entry>{}.swap(other.m_free_entries);
 	other.m_limits = ReliableWindowLimits{};
 	other.m_retained_bytes = 0;
 	other.m_video_entry_count = 0;
@@ -600,17 +617,33 @@ ReliableSendWindow& ReliableSendWindow::operator=(ReliableSendWindow&& other) no
 	other.m_has_valid_minimum_rtt = false;
 	other.m_minimum_rtt_us = 0;
 	other.m_counters = ReliableWindowCounters{};
+	other.m_allocation_events = 0U;
 	return *this;
 }
 
 ValidationError ReliableSendWindow::configure(const ReliableWindowLimits& limits, ReliableSendWindow& window) noexcept
 {
 	if (limits.max_entries == 0 || limits.max_entries > ReliableWindowMaximumEntries ||
-		limits.max_retained_bytes == 0 || limits.max_retained_bytes > ReliableWindowMaximumRetainedBytes) {
+		limits.max_retained_bytes == 0 || limits.max_retained_bytes > ReliableWindowMaximumRetainedBytes ||
+		limits.preallocated_payload_bytes_per_entry > limits.max_retained_bytes) {
 		return ValidationError::OutOfRange;
 	}
 
 	std::vector<Entry>{}.swap(window.m_entries);
+	std::vector<Entry>{}.swap(window.m_free_entries);
+	try {
+		window.m_entries.reserve(limits.max_entries);
+		if (limits.preallocated_payload_bytes_per_entry != 0U) {
+			window.m_free_entries.reserve(limits.max_entries);
+			for (std::size_t index = 0U; index < limits.max_entries; ++index) {
+				Entry entry;
+				entry.payload.reserve(limits.preallocated_payload_bytes_per_entry);
+				window.m_free_entries.emplace_back(std::move(entry));
+			}
+		}
+	} catch (const std::bad_alloc&) {
+		return ValidationError::ResourceLimit;
+	}
 	window.m_retained_bytes = 0;
 	window.m_video_entry_count = 0;
 	window.m_video_retained_bytes = 0;
@@ -618,7 +651,42 @@ ValidationError ReliableSendWindow::configure(const ReliableWindowLimits& limits
 	window.m_has_valid_minimum_rtt = false;
 	window.m_minimum_rtt_us = 0;
 	window.m_counters = ReliableWindowCounters{};
+	window.m_allocation_events = 0U;
 	return ValidationError::None;
+}
+
+std::size_t ReliableSendWindow::preallocated_heap_bytes(std::size_t entry_count,
+	std::size_t payload_bytes_per_entry) noexcept
+{
+	std::size_t metadata_bytes = 0U;
+	std::size_t payload_bytes = 0U;
+	std::size_t total = 0U;
+	if (!checked_multiply_size(entry_count, sizeof(Entry), metadata_bytes) ||
+		!checked_multiply_size(metadata_bytes, 2U, metadata_bytes) ||
+		!checked_multiply_size(entry_count, payload_bytes_per_entry, payload_bytes) ||
+		!checked_add_size(metadata_bytes, payload_bytes, total)) {
+		return 0U;
+	}
+	return total;
+}
+
+std::size_t ReliableSendWindow::owned_preallocated_heap_bytes() const noexcept
+{
+	std::size_t metadata_bytes = 0U;
+	std::size_t payload_bytes = 0U;
+	std::size_t total = 0U;
+	if (!checked_multiply_size(m_entries.capacity(), sizeof(Entry), metadata_bytes) ||
+		!checked_multiply_size(m_free_entries.capacity(), sizeof(Entry), total) ||
+		!checked_add_size(metadata_bytes, total, metadata_bytes)) {
+		return 0U;
+	}
+	for (const auto& entry : m_entries) {
+		if (!checked_add_size(payload_bytes, entry.payload.capacity(), payload_bytes)) return 0U;
+	}
+	for (const auto& entry : m_free_entries) {
+		if (!checked_add_size(payload_bytes, entry.payload.capacity(), payload_bytes)) return 0U;
+	}
+	return checked_add_size(metadata_bytes, payload_bytes, total) ? total : 0U;
 }
 
 void ReliableSendWindow::set_minimum_rtt_us(bool valid, std::uint64_t minimum_rtt_us) noexcept
@@ -711,6 +779,11 @@ ReliableRetainResult ReliableSendWindow::retain(const ReliableMessageToRetain& m
 	}
 
 	Entry candidate;
+	if (!m_free_entries.empty()) {
+		auto payload = std::move(m_free_entries.back().payload);
+		m_free_entries.pop_back();
+		candidate.payload = std::move(payload);
+	}
 	candidate.key.session_id = message.session_id;
 	candidate.key.endpoint = message.endpoint;
 	candidate.key.message_type = message.message_type;
@@ -735,8 +808,13 @@ ReliableRetainResult ReliableSendWindow::retain(const ReliableMessageToRetain& m
 	}
 
 	try {
+		const auto payload_capacity_before = candidate.payload.capacity();
 		if (!message.logical_payload.empty()) {
 			candidate.payload.assign(message.logical_payload.begin(), message.logical_payload.end());
+		}
+		if (candidate.payload.capacity() > payload_capacity_before &&
+			m_allocation_events != std::numeric_limits<std::uint64_t>::max()) {
+			++m_allocation_events;
 		}
 		m_entries.emplace_back(std::move(candidate));
 	} catch (const std::bad_alloc&) {
@@ -1097,6 +1175,17 @@ std::size_t ReliableSendWindow::discard_session(std::uint64_t session_id) noexce
 
 void ReliableSendWindow::clear() noexcept
 {
+	if (m_limits.preallocated_payload_bytes_per_entry != 0U) {
+		for (auto& entry : m_entries) {
+			entry.payload.clear();
+			m_free_entries.emplace_back(std::move(entry));
+		}
+		m_entries.clear();
+		m_retained_bytes = 0U;
+		m_video_entry_count = 0U;
+		m_video_retained_bytes = 0U;
+		return;
+	}
 	std::vector<Entry>{}.swap(m_entries);
 	m_retained_bytes = 0;
 	m_video_entry_count = 0;
@@ -1122,6 +1211,13 @@ void ReliableSendWindow::erase(std::size_t index) noexcept
 		m_video_retained_bytes -= m_entries[index].payload.size();
 	}
 	m_retained_bytes -= m_entries[index].payload.size();
+	if (m_limits.preallocated_payload_bytes_per_entry != 0U) {
+		Entry recycled = std::move(m_entries[index]);
+		m_entries.erase(m_entries.begin() + static_cast<std::ptrdiff_t>(index));
+		recycled.payload.clear();
+		m_free_entries.emplace_back(std::move(recycled));
+		return;
+	}
 	m_entries.erase(m_entries.begin() + static_cast<std::ptrdiff_t>(index));
 }
 

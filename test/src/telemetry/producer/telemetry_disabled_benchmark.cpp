@@ -76,7 +76,8 @@ constexpr double P99LimitMs = 0.05;
 
 enum class Mode {
 	Baseline,
-	Disabled,
+	ConfigAbsent,
+	ConfigDisabled,
 };
 
 bool parse_mode(const char* value, Mode& mode) noexcept
@@ -85,8 +86,12 @@ bool parse_mode(const char* value, Mode& mode) noexcept
 		mode = Mode::Baseline;
 		return true;
 	}
-	if (std::strcmp(value, "disabled") == 0) {
-		mode = Mode::Disabled;
+	if (std::strcmp(value, "disabled") == 0 || std::strcmp(value, "config-absent") == 0) {
+		mode = Mode::ConfigAbsent;
+		return true;
+	}
+	if (std::strcmp(value, "enabled-false") == 0) {
+		mode = Mode::ConfigDisabled;
 		return true;
 	}
 	return false;
@@ -94,10 +99,19 @@ bool parse_mode(const char* value, Mode& mode) noexcept
 
 const char* mode_name(Mode mode) noexcept
 {
-	return mode == Mode::Baseline ? "baseline" : "disabled";
+	switch (mode) {
+	case Mode::Baseline: return "baseline";
+	case Mode::ConfigAbsent: return "config-absent";
+	case Mode::ConfigDisabled: return "enabled-false";
+	}
+	return "unknown";
 }
 
 } // namespace
+
+namespace telemetry::test_seam {
+void set_runtime_adapter_config_disabled_for_benchmark(bool disabled) noexcept;
+}
 
 void* operator new(std::size_t size)
 {
@@ -218,7 +232,7 @@ void operator delete[](void* allocation, std::align_val_t, const std::nothrow_t&
 int main(int argc, char** argv)
 {
 	if (argc != 3) {
-		std::cerr << "usage: telemetry_disabled_benchmark <baseline|disabled> <raw-samples.csv>\n";
+		std::cerr << "usage: telemetry_disabled_benchmark <baseline|config-absent|enabled-false> <raw-samples.csv>\n";
 		return 2;
 	}
 
@@ -229,7 +243,8 @@ int main(int argc, char** argv)
 	}
 
 	std::vector<std::uint64_t> samples(SampleCount);
-	if (mode == Mode::Disabled) {
+	if (mode != Mode::Baseline) {
+		telemetry::test_seam::set_runtime_adapter_config_disabled_for_benchmark(mode == Mode::ConfigDisabled);
 		telemetry::initialize();
 	}
 

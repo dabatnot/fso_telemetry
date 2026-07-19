@@ -1,0 +1,144 @@
+[CmdletBinding()]
+param(
+    [Parameter(Mandatory = $true)] [string]$RawDirectory,
+    [Parameter(Mandatory = $true)] [string]$OutputReport,
+    [Parameter(Mandatory = $true)] [string]$Revision,
+    [Parameter(Mandatory = $true)] [string]$BuildType,
+    [Parameter(Mandatory = $true)] [string]$Compiler,
+    [Parameter(Mandatory = $true)] [string]$Platform,
+    [Parameter(Mandatory = $true)] [string]$Cpu,
+    [Parameter(Mandatory = $true)] [string]$PowerMode,
+    [Parameter(Mandatory = $true)] [string]$Mission,
+    [Parameter(Mandatory = $true)] [int]$FlightHz,
+    [Parameter(Mandatory = $true)] [int]$StateBytes,
+    [Parameter(Mandatory = $true)] [string]$Duration,
+    [Parameter(Mandatory = $true)] [string]$Warmup,
+    [Parameter(Mandatory = $true)] [string]$Command
+)
+
+Set-StrictMode -Version 2.0
+$ErrorActionPreference = 'Stop'
+$Invariant = [System.Globalization.CultureInfo]::InvariantCulture
+$CallbackWorkloads = @('baseline', 'config-absent', 'disabled')
+$ActiveWorkloads = @('active-one-client', 'active-four-clients', 'would-block-loss-resync')
+$ActiveBaselineLimits = @{ 'active-one-client' = 1; 'active-four-clients' = 4; 'would-block-loss-resync' = 1 }
+$ExpectedCallbacks = 100000
+$OptionalActiveProfileColumns = @('state_image_build_ns', 'state_image_fill_ns', 'state_image_publish_validate_ns', 'state_image_adopt_ns', 'state_image_semantic_validate_ns', 'delta_build_ns')
+
+function Parse-UInt64([object]$Value, [string]$Description) {
+    [UInt64]$Parsed = 0
+    if (-not [UInt64]::TryParse([string]$Value, [System.Globalization.NumberStyles]::Integer, $Invariant, [ref]$Parsed)) {
+        throw "Invalid unsigned integer for ${Description}: $Value"
+    }
+    return $Parsed
+}
+
+function Get-NearestRankP99([UInt64[]]$Values) {
+    if ($Values.Count -eq 0) { throw 'Cannot calculate p99 for zero samples.' }
+    [UInt64[]]$Sorted = $Values | Sort-Object
+    $Rank = [int][Math]::Ceiling($Sorted.Count * 0.99)
+    return $Sorted[$Rank - 1]
+}
+
+function Get-MeanNs([UInt64[]]$Values) {
+    [decimal]$Sum = 0
+    foreach ($Value in $Values) { $Sum += $Value }
+    return [double]($Sum / $Values.Count)
+}
+
+function Read-CallbackWorkload([string]$Name) {
+    $Path = Join-Path $RawDirectory "$Name.csv"
+    $Rows = @(Import-Csv -LiteralPath $Path)
+    if ($Rows.Count -ne $ExpectedCallbacks) { throw "$Name must have exactly $ExpectedCallbacks raw samples; found $($Rows.Count)." }
+    $Durations = [System.Collections.Generic.List[UInt64]]::new()
+    for ($Index = 0; $Index -lt $Rows.Count; ++$Index) {
+        if ($Rows[$Index].sample_index -ne [string]$Index) { throw "$Name has a non-sequential sample index at row $Index." }
+        $Durations.Add((Parse-UInt64 $Rows[$Index].duration_ns "$Name duration row $Index"))
+    }
+    [UInt64[]]$Values = $Durations.ToArray()
+	return [ordered]@{
+        workload = $Name; path = (Resolve-Path -LiteralPath $Path).Path; sha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $Path).Hash
+        samples = $Values.Count; mean_ms = (Get-MeanNs $Values) / 1000000.0; p99_ms = (Get-NearestRankP99 $Values) / 1000000.0
+    }
+}
+
+function Read-ActiveWorkload([string]$Name, [int]$BaselineLimit) {
+    $Path = Join-Path $RawDirectory "$Name.csv"
+    $Rows = @(Import-Csv -LiteralPath $Path)
+    if ($Rows.Count -eq 0) { throw "$Name has zero raw tick samples." }
+	$PresentOptionalProfileColumns = @($OptionalActiveProfileColumns | Where-Object { $Rows[0].PSObject.Properties.Name -contains $_ })
+	foreach ($Column in $OptionalActiveProfileColumns) {
+		if (($PresentOptionalProfileColumns -contains $Column) -ne ($Rows[0].PSObject.Properties.Name -contains $Column)) {
+			throw "$Name has an inconsistent optional profile schema."
+		}
+	}
+    $SteadyTicks = [System.Collections.Generic.List[UInt64]]::new()
+	$SteadyCollect = [System.Collections.Generic.List[UInt64]]::new()
+	$SteadyDiff = [System.Collections.Generic.List[UInt64]]::new()
+	$SteadySerialization = [System.Collections.Generic.List[UInt64]]::new()
+	$SteadyNetwork = [System.Collections.Generic.List[UInt64]]::new()
+	$SteadyProfiles = @{}
+	foreach ($Column in $PresentOptionalProfileColumns) { $SteadyProfiles[$Column] = [System.Collections.Generic.List[UInt64]]::new() }
+	[UInt64]$InitialAllocations = 0; [UInt64]$FinalAllocations = 0; [UInt64]$MaximumQueue = 0; [UInt64]$ObservedMaximumBaselines = 0; [UInt64]$Keyframes = 0
+    for ($Index = 0; $Index -lt $Rows.Count; ++$Index) {
+        if ($Rows[$Index].sample_index -ne [string]$Index) { throw "$Name has a non-sequential sample index at row $Index." }
+        $Tick = Parse-UInt64 $Rows[$Index].tick_duration_ns "$Name tick row $Index"
+        foreach ($Column in @('collect_ns', 'diff_ns', 'serialization_ns', 'network_ns', 'syscall_count', 'queue_depth', 'baselines_active', 'is_keyframe')) {
+            [void](Parse-UInt64 $Rows[$Index].$Column "$Name $Column row $Index")
+        }
+		foreach ($Column in $PresentOptionalProfileColumns) { [void](Parse-UInt64 $Rows[$Index].$Column "$Name $Column row $Index") }
+        $Allocations = Parse-UInt64 $Rows[$Index].allocation_events "$Name allocation row $Index"
+        if ($Index -eq 0) { $InitialAllocations = $Allocations }
+        $FinalAllocations = $Allocations
+        $MaximumQueue = [Math]::Max($MaximumQueue, (Parse-UInt64 $Rows[$Index].queue_depth "$Name queue row $Index"))
+        $Baselines = Parse-UInt64 $Rows[$Index].baselines_active "$Name baseline row $Index"
+		$ObservedMaximumBaselines = [Math]::Max($ObservedMaximumBaselines, $Baselines)
+        $Keyframe = Parse-UInt64 $Rows[$Index].is_keyframe "$Name keyframe row $Index"
+        if ($Keyframe -gt 1) { throw "$Name has non-boolean is_keyframe at row $Index." }
+        if ($Keyframe -eq 1) {
+            ++$Keyframes
+        } else {
+            $SteadyTicks.Add($Tick)
+            $SteadyCollect.Add((Parse-UInt64 $Rows[$Index].collect_ns "$Name collect row $Index"))
+            $SteadyDiff.Add((Parse-UInt64 $Rows[$Index].diff_ns "$Name diff row $Index"))
+            $SteadySerialization.Add((Parse-UInt64 $Rows[$Index].serialization_ns "$Name serialization row $Index"))
+            $SteadyNetwork.Add((Parse-UInt64 $Rows[$Index].network_ns "$Name network row $Index"))
+			foreach ($Column in $PresentOptionalProfileColumns) { $SteadyProfiles[$Column].Add((Parse-UInt64 $Rows[$Index].$Column "$Name $Column row $Index")) }
+        }
+    }
+    if ($SteadyTicks.Count -eq 0) { throw "$Name contains no post-keyframe steady ticks." }
+    [UInt64[]]$Values = $SteadyTicks.ToArray()
+	$Result = [ordered]@{
+        workload = $Name; path = (Resolve-Path -LiteralPath $Path).Path; sha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $Path).Hash
+        raw_samples = $Rows.Count; steady_samples = $Values.Count; keyframe_samples = $Keyframes; steady_p99_ms = (Get-NearestRankP99 $Values) / 1000000.0
+		collect_p99_ms = (Get-NearestRankP99 $SteadyCollect.ToArray()) / 1000000.0; diff_p99_ms = (Get-NearestRankP99 $SteadyDiff.ToArray()) / 1000000.0
+		serialization_p99_ms = (Get-NearestRankP99 $SteadySerialization.ToArray()) / 1000000.0; network_p99_ms = (Get-NearestRankP99 $SteadyNetwork.ToArray()) / 1000000.0
+		profile_p99_ms = [ordered]@{}
+        allocation_events_start = $InitialAllocations; allocation_events_end = $FinalAllocations; allocation_events_steady_delta = $FinalAllocations - $InitialAllocations
+		maximum_queue_depth = $MaximumQueue; maximum_baselines_active = $ObservedMaximumBaselines; baseline_limit = $BaselineLimit
+	}
+	foreach ($Column in $PresentOptionalProfileColumns) { $Result.profile_p99_ms[$Column] = (Get-NearestRankP99 $SteadyProfiles[$Column].ToArray()) / 1000000.0 }
+	return $Result
+}
+
+foreach ($Name in @($CallbackWorkloads + $ActiveWorkloads)) {
+    if (-not (Test-Path -LiteralPath (Join-Path $RawDirectory "$Name.csv") -PathType Leaf)) { throw "Required workload raw CSV missing: $Name.csv" }
+}
+$Callbacks = @($CallbackWorkloads | ForEach-Object { Read-CallbackWorkload $_ })
+$Active = @($ActiveWorkloads | ForEach-Object { Read-ActiveWorkload $_ $ActiveBaselineLimits[$_] })
+$Disabled = @($Callbacks | Where-Object { $_.workload -eq 'disabled' })[0]
+$CallbackPass = $Disabled.mean_ms -le 0.01 -and $Disabled.p99_ms -le 0.05
+$ActivePass = @($Active | Where-Object { $_.steady_p99_ms -gt 0.25 -or $_.allocation_events_steady_delta -ne 0 -or $_.maximum_baselines_active -gt $_.baseline_limit }).Count -eq 0
+
+$Report = [ordered]@{
+    schema = 'fs2open.telemetry.phase1.performance.v1'; requirement = 'P1-REQ-033'; decision = 'D1-014'; generated_utc = [DateTime]::UtcNow.ToString('o', $Invariant)
+    metadata = [ordered]@{ revision = $Revision; build_type = $BuildType; compiler = $Compiler; platform = $Platform; cpu = $Cpu; power_mode = $PowerMode; mission = $Mission; flight_hz = $FlightHz; state_bytes = $StateBytes; duration = $Duration; warmup = $Warmup; command = $Command }
+    callback_workloads = $Callbacks; active_workloads = $Active
+	limits = [ordered]@{ disabled_mean_ms_max = 0.01; disabled_p99_ms_max = 0.05; active_steady_p99_ms_max = 0.25; active_baseline_limits = $ActiveBaselineLimits; active_steady_allocation_events_delta = 0 }
+    results = [ordered]@{ disabled_callback_pass = $CallbackPass; active_tick_pass = $ActivePass; keyframes = 'Measured separately; no threshold is inferred by this analyzer.'; sock_syscall_impairment = 'Raw syscall/queue fields are retained for review; a passing report does not substitute for the required transport harness assertions.' }
+}
+$OutputParent = Split-Path -Parent $OutputReport; if ($OutputParent) { New-Item -ItemType Directory -Force -Path $OutputParent | Out-Null }
+$Report | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $OutputReport -Encoding utf8
+$Report | ConvertTo-Json -Depth 8 | Write-Output
+if (-not $CallbackPass) { throw 'Disabled callback mean or p99 exceeds P1-REQ-033.' }
+if (-not $ActivePass) { throw 'An active steady workload exceeds P1-REQ-033 time, allocation, or baseline limits.' }

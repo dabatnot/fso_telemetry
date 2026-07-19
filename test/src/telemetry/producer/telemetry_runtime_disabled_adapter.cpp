@@ -9,6 +9,11 @@ namespace {
 
 class DisabledRuntimeStartupServices final : public RuntimeStartupServices {
   public:
+	void set_config_disabled_for_benchmark(bool disabled) noexcept
+	{
+		m_config_disabled = disabled;
+	}
+
 	void reset_observations() noexcept
 	{
 		m_main_thread_captured = false;
@@ -37,7 +42,7 @@ class DisabledRuntimeStartupServices final : public RuntimeStartupServices {
 	RuntimeConfigResult load_config() noexcept override
 	{
 		++m_config_loads;
-		return {RuntimeConfigStatus::Absent, 0U};
+		return {m_config_disabled ? RuntimeConfigStatus::Disabled : RuntimeConfigStatus::Absent, 0U};
 	}
 
 	IdentityResult load_producer_identity() noexcept override
@@ -162,6 +167,7 @@ class DisabledRuntimeStartupServices final : public RuntimeStartupServices {
 	std::uint64_t m_post_config_calls = 0U;
 	std::uint64_t m_diagnostic_calls = 0U;
 	std::uint64_t m_lifecycle_calls = 0U;
+	bool m_config_disabled = false;
 };
 
 DisabledRuntimeStartupServices& disabled_services() noexcept
@@ -188,6 +194,14 @@ void reset_runtime_adapter_observations() noexcept
 {
 	detail::disabled_services().reset_observations();
 	detail::factory_requests = 0U;
+}
+
+// Benchmark-only selector. This preserves a separate fresh-process workload
+// for a missing config and for a valid `enabled=false` config without adding a
+// production configuration seam.
+void set_runtime_adapter_config_disabled_for_benchmark(bool disabled) noexcept
+{
+	detail::disabled_services().set_config_disabled_for_benchmark(disabled);
 }
 
 std::uint64_t runtime_adapter_factory_requests() noexcept

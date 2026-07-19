@@ -31,13 +31,21 @@ Together, the base HEAD, tracked-diff blob and untracked-corpus aggregate bind
 the independently tested dirty tree. The two excluded reports are the decision
 layer reviewed separately after the technical reproduction.
 
+Candidate identity reconciliation (2026-07-19, Europe/Paris): the current
+Phase 1 candidate changed documents 05 and 07 after the original technical
+reproduction. The FSTL 1.1 schema was regenerated from all seven current
+normative documents after pinning their derived document-set tree identity.
+The schema, document-tree and generator identities in the following tables
+therefore bind the current candidate content; this reconciliation does not
+change the recorded G0-G/G1-A technical verdict above.
+
 | Artifact or oracle | Bytes | SHA-256 / identity |
 |---|---:|---|
 | frozen `schema/fstl-v1.yaml` | 499,786 | `1d89c4a95a121c178bf85570cd616568fd939942b8d053835069b2d7d6a1f0d4` |
-| additive `schema/fstl-v1.1.yaml` | 505,222 | `147439b3ad2d4521a109bf8b191d66a41bfcfdba2201de3be9e19ea75d8cf947` |
+| additive `schema/fstl-v1.1.yaml` | 505,222 | `9dbe67e18b2d26a1491e8be37433177f61e94f6e4f674a5e993735703c9cd989` |
 | `fstl-1.0-artifacts.manifest.json` | 131,635 | `4a437ee1300e86319ebd07a2fc4910cba96c4d15387a30eba5354eec49d1242f` |
 | complete frozen FSTL 1.0 set | 438 files | tree `9baac6a20db33bcf350066ed533c5581b7117410899d7bc4a6dc24406e47856d` |
-| Phase 1 seven-document FSTL 1.1 set | 7 files | tree `55855dea16285c185eed64bafed2a6a7f1b4cc54522128a36b39b0b1911fb631` |
+| Phase 1 seven-document FSTL 1.1 set | 7 files | tree `fd3660bdf7e7beb8261a67e0464136755e509d794755b27eee1b13f71a72d1ef` |
 | `fstl-1.1-vectors.manifest.json` | 10,328 | `56c2c6d4c3cb662c9d2f780293be173d5d31bbcc2e36612ecd08ab53f581e846` |
 | FSTL 1.0 layout lock | — | `d5e7ae20571bc0e08f1d123f7529fd6430466872ad0dd5cb22ea37b24128e0aa` |
 | FSTL 1.1 layout lock | — | `416ff38c4549d2d9fba89e114b94c4fa0ef1fb1f27be59e2126db7fd5ea61136` |
@@ -55,7 +63,7 @@ Tool identities used by the final reproduction:
 |---|---|
 | `verify_fstl_1_0_freeze.py` | `d381a3bdf67a23415f573df768f4633fce15804f3ef257dbe67ff078aa127284` |
 | `test_fstl_1_0_freeze.py` | `fb611174ad44e0e889848c1e2a427021049a1c4fd0ac8c8c9967151bab442883` |
-| `fstl_schema.py` | `4c4352d511826a47144c3d9ee42a1782575673b8cc2fc3be5792e42d49b0b5dd` |
+| `fstl_schema.py` | `ae800499ea000bfba6a5d65660ff07ec3c45c1b0325eefda826a6d82aa5356c4` |
 | `verify_schema_vectors.py` | `eb9ffaa552d00fc1d6f2c4a5dd4915833851403e2e0ac6243e55fce18d59c75b` |
 | `verify_fstl_1_1_amendment.py` | `b47ec78e086d66d5346014bbee8f1c931c5e9d1a7faec5df6cedcbf2f8085eb3` |
 | `fstl_reference_decoder.py` | `9821caaa6819d72602ce0303e132ecdb09eb406747551522cf06878a006f87ff` |
@@ -142,7 +150,7 @@ after loss, duplication and reordering.
 | `P1-AC-002` | `PASS` — exact bit, record-set and version rejection |
 | `G0-G` | **`PASS`**, closed first after test and reviewer acceptance |
 | `G1-A` | **`PASS`**, closed only after `G0-G` |
-| `P1-AC-020` | **`BLOCKED/PENDING`** — explicit disposition of the historical `P1-REQ-001` failure and all remaining Phase 1 proofs are required |
+| `P1-AC-020` | **`BLOCKED/PENDING`** — the explicit disposition required for the historical `P1-REQ-001` failure is satisfied; all remaining Phase 1 proofs, reviews, and gates are still required |
 
 ### Historical ordering violation
 
@@ -155,3 +163,31 @@ those packages.
 Closing `G0-G` and `G1-A` on the repaired tree authorizes future dependent
 work. It does not convert this historical process failure into a pass and does
 not by itself complete Phase 1.
+
+### Disposition de gouvernance limitée — 2026-07-19
+
+**Décision explicite de l'utilisateur, 2026-07-19 (Europe/Paris) :
+acceptée avec limitation.** Cette disposition reconnaît la chronologie
+immuable ci-dessus : `P1-WP-02`, puis `P1-WP-03`, ont commencé avant la
+fermeture documentée de `G0-G`. Elle ne transforme donc pas
+`P1-REQ-001` en `PASS` : son statut demeure **`FAIL` historique,
+non-réparable**.
+
+L'évaluation technique attachée à cette décision est restreinte aux
+preuves présentes : `G0-G` est maintenant `PASS`, puis `G1-A` est `PASS`,
+conformément aux preuves de gel FSTL 1.0 et d'amendement FSTL 1.1 référencées
+dans ce rapport et dans `PHASE0_CONFORMANCE.md`. La décision n'autorise
+aucune modification du wire FSTL 1.0/1.1, aucun changement de périmètre de
+sécurité, ni aucune extension de fonctionnalité.
+
+L'acceptation est limitée au traitement de cet écart historique dans
+`P1-AC-020` ; elle ne constitue ni une dérogation rétroactive, ni un
+précédent pour une dépendance ou une gate future. Mesure corrective : avant
+l'ouverture de tout futur lot dépendant, le coordinateur consignera dans la
+matrice de conformité le résultat de chaque gate prérequise, avec la preuve
+associée ; le tracker en contrôlera la présence au point de passage du lot.
+
+Effet précis : la disposition explicite exigée pour l'écart
+`P1-REQ-001` est satisfaite. `P1-AC-020` reste toutefois **en attente** de
+toutes les autres preuves, revues et gates de Phase 1 ; aucune clôture de la
+phase n'est déclarée par cette décision.

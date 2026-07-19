@@ -1,5 +1,8 @@
 #include "telemetry/session_controller.h"
 
+#include "telemetry/phase1_snapshot_slot.h"
+#include "telemetry/phase1_state_image.h"
+
 #include "telemetry/protocol/telemetry_control_messages.h"
 #include "telemetry/protocol/telemetry_crc32.h"
 #include "telemetry/protocol/telemetry_datagram.h"
@@ -24,6 +27,18 @@ namespace {
 
 namespace detail = telemetry::detail;
 namespace protocol = telemetry::protocol;
+
+template <typename Controller, typename = void>
+struct has_p8_3_delta_egress_seams : std::false_type {
+};
+
+template <typename Controller>
+struct has_p8_3_delta_egress_seams<Controller,
+	std::void_t<decltype(std::declval<Controller&>().queue_cumulative_delta(
+		std::declval<std::size_t>(), std::declval<std::uint64_t>())),
+		decltype(std::declval<Controller&>().service_delta_egress(
+			std::declval<std::size_t>(), std::declval<std::uint64_t>()))>> : std::true_type {
+};
 
 template <typename Container>
 protocol::ByteView view(const Container& bytes)
@@ -174,6 +189,10 @@ struct DecodedOutput {
 };
 
 EncodedDatagram applied_welcome_ack(const DecodedOutput& welcome);
+protocol::AckPayload welcome_ack_payload(const DecodedOutput& welcome);
+EncodedDatagram encode_welcome_ack(const DecodedOutput& welcome,
+	const protocol::AckPayload& payload,
+	std::uint64_t session_id = 0U);
 
 DecodedOutput pop_output(detail::SessionController& controller)
 {
@@ -214,7 +233,8 @@ detail::SessionControllerConfig config(std::size_t max_clients = 1U)
 
 detail::SessionController make_controller(detail::SessionIdAllocator& ids,
 	StageRecorder* observer = nullptr,
-	std::size_t max_clients = 1U)
+	std::size_t max_clients = 1U,
+	std::uint8_t keyframe_seconds = 2U)
 {
 	struct PacketSequences final : detail::RandomSource {
 		std::uint64_t next = 0x10203040U;
@@ -226,9 +246,11 @@ detail::SessionController make_controller(detail::SessionIdAllocator& ids,
 	};
 	static PacketSequences packet_sequences;
 	detail::SessionController controller;
+	auto controller_config = config(max_clients);
+	controller_config.keyframe_seconds = keyframe_seconds;
 	EXPECT_EQ(detail::SessionControllerConfigureResult::Ready,
 		detail::SessionController::configure(
-			config(max_clients), ids, packet_sequences, 0U, observer, controller));
+			controller_config, ids, packet_sequences, 0U, observer, controller));
 	return controller;
 }
 
@@ -242,6 +264,23 @@ struct has_physical_wp06_capacity_fields<T,
 		decltype(std::declval<T>().handshake_cache_bytes),
 		decltype(std::declval<T>().preproof_ledger_bytes),
 		decltype(std::declval<T>().output_queue_bytes)>> : std::true_type {};
+
+template <typename T, typename = void>
+struct has_phase1_replication_capacity_fields : std::false_type {};
+
+template <typename T>
+struct has_phase1_replication_capacity_fields<T,
+	std::void_t<decltype(std::declval<T>().baseline_slots), decltype(std::declval<T>().delta_slots)>>
+	: std::true_type {};
+
+template <typename Budget, typename Capacity>
+void expect_phase1_replication_capacity(const Budget& budget, const Capacity& owned)
+{
+	if constexpr (has_phase1_replication_capacity_fields<Capacity>::value) {
+		EXPECT_EQ(budget.baseline_slot_count, owned.baseline_slots);
+		EXPECT_EQ(budget.delta_slot_count, owned.delta_slots);
+	}
+}
 
 template <typename T>
 void expect_physical_wp06_capacity(const T& owned)
@@ -279,6 +318,80 @@ struct accepts_legacy_packet_sequence_fallback<T,
 		std::declval<T&>()))>> : std::true_type {};
 
 template <typename T, typename = void>
+struct has_integrated_phase1_snapshot_egress : std::false_type {};
+
+template <typename T>
+struct has_integrated_phase1_snapshot_egress<T,
+	std::void_t<decltype(std::declval<T&>().begin_initial_snapshot(std::declval<std::size_t>(),
+		std::declval<const protocol::StateImage&>(), std::declval<std::uint64_t>())),
+		decltype(std::declval<T&>().service_initial_snapshot_egress(std::declval<std::size_t>(),
+			std::declval<std::uint64_t>())),
+		decltype(std::declval<const T&>().snapshot_progress(std::declval<std::size_t>())),
+		decltype(std::declval<const T&>().session_state_dirty(std::declval<std::size_t>())),
+		decltype(std::declval<T&>().consume_session_state_dirty(std::declval<std::size_t>()))>> : std::true_type {};
+
+detail::Phase1StateImageInput phase1_integration_input()
+{
+	detail::Phase1StateImageInput input{};
+	input.producer_id = 0x1020304050607080ULL;
+	input.negotiated_capability_generation = 3U;
+	input.mission.producer_sample_time_us = 555'000U;
+	input.mission.mission_generation = 7U;
+	input.mission.phase = protocol::MissionPhase::Active;
+	input.mission.time_compression = 1.0F;
+	input.player_capture = {detail::CaptureStatus::Valid, detail::CaptureReason::None};
+	input.player.entity_id = 42U;
+	input.player.value.producer_sample_time_us = input.mission.producer_sample_time_us;
+	input.player.value.position_world = {1.0F, 2.0F, 3.0F};
+	input.player.value.orientation_local_to_world = {1.0F, 0.0F, 0.0F, 0.0F};
+	input.player.value.radius = 1.0F;
+	return input;
+}
+
+protocol::StateImage phase1_integration_image()
+{
+	protocol::StateImage image;
+	EXPECT_EQ(detail::Phase1StateImageBuildStatus::Created,
+		detail::build_phase1_state_image(phase1_integration_input(), image));
+	return image;
+}
+
+protocol::StateImage phase1_integration_image_at(float player_x, std::uint64_t sample_time_us)
+{
+	auto input = phase1_integration_input();
+	input.mission.producer_sample_time_us = sample_time_us;
+	input.player.value.producer_sample_time_us = sample_time_us;
+	input.player.value.position_world.x = player_x;
+	protocol::StateImage image;
+	EXPECT_EQ(detail::Phase1StateImageBuildStatus::Created, detail::build_phase1_state_image(input, image));
+	return image;
+}
+
+void activate_phase1_live_baseline(detail::SessionController& controller, std::uint64_t nonce,
+	std::uint64_t start_us = 1'000U)
+{
+	const auto request = hello(nonce);
+	ASSERT_EQ(detail::SessionIngressDisposition::ResponseQueued,
+		controller.ingest(endpoint(), view(request.bytes), start_us, 7U, true).disposition);
+	const auto welcome = pop_output(controller);
+	const auto welcome_ack = applied_welcome_ack(welcome);
+	ASSERT_EQ(detail::SessionIngressDisposition::WelcomeProofApplied,
+		controller.ingest(endpoint(), view(welcome_ack.bytes), start_us + 1'000U, 7U, true).disposition);
+	(void)pop_output(controller); // SESSION_BEGIN
+	ASSERT_TRUE(controller.begin_initial_snapshot(0U, phase1_integration_image(), start_us + 2'000U));
+	ASSERT_EQ(1U, controller.service_initial_snapshot_egress(1U, start_us + 2'001U));
+	const auto snapshot = pop_output(controller);
+	ASSERT_EQ(protocol::MessageType::FullSnapshot, snapshot.datagram.header.message_type);
+	auto snapshot_ack = welcome_ack_payload(snapshot);
+	snapshot_ack.target_message_type = protocol::MessageType::FullSnapshot;
+	snapshot_ack.ack_flags = protocol::KnownAckFlags;
+	const auto encoded_snapshot_ack = encode_welcome_ack(snapshot, snapshot_ack);
+	ASSERT_NE(detail::SessionIngressDisposition::Dropped,
+		controller.ingest(endpoint(), view(encoded_snapshot_ack.bytes), start_us + 3'000U, 7U, true).disposition);
+	ASSERT_EQ(detail::Phase1SnapshotProgress::Live, controller.snapshot_progress(0U));
+}
+
+template <typename T, typename = void>
 struct has_complete_wp06_budget_fields : std::false_type {};
 
 template <typename T>
@@ -298,7 +411,7 @@ std::size_t wp06_runtime_overhead_bytes(const T& budget)
 	return 0U;
 }
 
-TEST(TelemetryWp06BudgetContract, PricesConcreteSlotsReassemblyAndReliableRetentionWithoutClaimingWp08OrWp09)
+TEST(TelemetryWp06BudgetContract, PricesConcreteSlotsReassemblyReliableRetentionAndWp08Backing)
 {
 	for (const auto clients : {1U, 4U}) {
 		const auto wp04 = detail::calculate_wp04_startup_budget(detail::make_wp03_known_budget_request(clients));
@@ -311,11 +424,15 @@ TEST(TelemetryWp06BudgetContract, PricesConcreteSlotsReassemblyAndReliableRetent
 		const auto projected_wp03_storage = wp04.reassembly_bytes + wp04.reliable_retention_projection_bytes;
 		ASSERT_GE(wp04.known_bytes, projected_wp03_storage);
 		const auto expected_known = wp04.known_bytes - projected_wp03_storage + wp06.client_slot_bytes +
-			wp06.reassembly_bytes + wp06.reliable_retention_projection_bytes + wp06_runtime_overhead_bytes(wp06);
+			wp06.reassembly_bytes + wp06.reliable_retention_projection_bytes + wp06_runtime_overhead_bytes(wp06) +
+			wp06.state_image_pool_bytes + wp06.snapshot_egress_heap_bytes + wp06.delta_egress_heap_bytes +
+			wp06.delta_scratch_heap_bytes;
 		EXPECT_EQ(expected_known, wp06.known_bytes)
-			<< "WP06 replaces WP03 projections with owned storage; it must not add both.";
+			<< "The budget replaces WP03 projections with owned storage and prices all P8 backing exactly once.";
 		EXPECT_EQ(wp06.session_id_registry_bytes + wp06.transport_buffer_bytes + wp06.client_slot_bytes +
-			wp06.reassembly_bytes + wp06.reliable_retention_projection_bytes + wp06_runtime_overhead_bytes(wp06),
+			wp06.reassembly_bytes + wp06.reliable_retention_projection_bytes + wp06_runtime_overhead_bytes(wp06) +
+			wp06.state_image_pool_bytes + wp06.snapshot_egress_heap_bytes + wp06.delta_egress_heap_bytes +
+			wp06.delta_scratch_heap_bytes,
 			wp06.known_bytes);
 		EXPECT_EQ(static_cast<std::uint64_t>(wp06.known_bytes), wp06.metric_known_bytes);
 		EXPECT_FALSE(detail::startup_budget_category_is_deferred(
@@ -324,16 +441,83 @@ TEST(TelemetryWp06BudgetContract, PricesConcreteSlotsReassemblyAndReliableRetent
 			wp06, detail::DeferredStartupBudgetCategory::StateReassemblyStorage));
 		EXPECT_FALSE(detail::startup_budget_category_is_deferred(
 			wp06, detail::DeferredStartupBudgetCategory::ReliableWindowStorage));
-		EXPECT_TRUE(detail::startup_budget_category_is_deferred(
+		EXPECT_FALSE(detail::startup_budget_category_is_deferred(
 			wp06, detail::DeferredStartupBudgetCategory::BaselineStorage));
-		EXPECT_TRUE(detail::startup_budget_category_is_deferred(
+		EXPECT_FALSE(detail::startup_budget_category_is_deferred(
 			wp06, detail::DeferredStartupBudgetCategory::DeltaStorage));
-		EXPECT_TRUE(detail::startup_budget_category_is_deferred(
+		EXPECT_FALSE(detail::startup_budget_category_is_deferred(
 			wp06, detail::DeferredStartupBudgetCategory::SerializationScratch));
 		EXPECT_TRUE(detail::startup_budget_category_is_deferred(
 			wp06, detail::DeferredStartupBudgetCategory::Metrics));
-		EXPECT_FALSE(wp06.is_complete) << "WP08/WP09 storage remains an honest startup blocker.";
+		EXPECT_FALSE(wp06.is_complete) << "Metrics remain an honest post-WP08 startup blocker.";
 	}
+}
+
+TEST(TelemetryP85BudgetContract, ExactP8BudgetDefersMetricsOnly)
+{
+	for (const auto clients : {1U, 4U}) {
+		const auto wp04 = detail::calculate_wp04_startup_budget(detail::make_wp03_known_budget_request(clients));
+		const auto budget = detail::calculate_wp06_startup_budget(wp04, clients);
+		ASSERT_EQ(detail::StartupBudgetError::None, budget.error);
+		EXPECT_FALSE(detail::startup_budget_category_is_deferred(budget, detail::DeferredStartupBudgetCategory::BaselineStorage));
+		EXPECT_FALSE(detail::startup_budget_category_is_deferred(budget, detail::DeferredStartupBudgetCategory::DeltaStorage));
+		EXPECT_FALSE(detail::startup_budget_category_is_deferred(budget, detail::DeferredStartupBudgetCategory::SerializationScratch));
+		EXPECT_TRUE(detail::startup_budget_category_is_deferred(budget, detail::DeferredStartupBudgetCategory::Metrics));
+		EXPECT_FALSE(budget.is_complete) << "P8.5 permits Metrics as the only remaining deferred category.";
+	}
+}
+
+TEST(TelemetryP85BudgetContract, OwnedCapacityAccountsExactlyForP8ReplicationAtOneAndFourClients)
+{
+	for (const auto clients : {1U, 4U}) {
+		IdentityHarness ids{{{true, 1U}}};
+		auto controller = make_controller(ids.allocator, nullptr, clients);
+		const auto owned = controller.owned_capacity();
+		const auto wp04 = detail::calculate_wp04_startup_budget(detail::make_wp03_known_budget_request(clients));
+		const auto budget = detail::calculate_wp06_startup_budget(wp04, clients);
+
+		ASSERT_EQ(detail::StartupBudgetError::None, budget.error);
+		EXPECT_EQ(clients * 2U, budget.baseline_slot_count)
+			<< "Each client owns one active baseline and at most one candidate baseline.";
+		EXPECT_EQ(clients * 2U, budget.delta_slot_count)
+			<< "Each client owns the current/cumulative delta state and one replaceable egress delta.";
+		EXPECT_TRUE(has_phase1_replication_capacity_fields<detail::SessionControllerOwnedCapacity>::value)
+			<< "owned_capacity() must expose the P8 baseline and delta capacities priced by the startup budget.";
+		expect_phase1_replication_capacity(budget, owned);
+		EXPECT_EQ(budget.snapshot_egress_heap_bytes, owned.snapshot_egress_heap_bytes);
+		EXPECT_EQ(budget.delta_egress_heap_bytes, owned.delta_egress_heap_bytes);
+		EXPECT_EQ(budget.delta_scratch_heap_bytes, owned.delta_scratch_heap_bytes);
+		EXPECT_TRUE(detail::wp06_budget_matches_owned_storage(budget, owned));
+	}
+
+	const auto extreme = detail::calculate_wp06_startup_budget(
+		detail::calculate_wp04_startup_budget(
+			detail::make_wp03_known_budget_request(std::numeric_limits<std::size_t>::max())),
+		std::numeric_limits<std::size_t>::max());
+	EXPECT_NE(detail::StartupBudgetError::None, extreme.error)
+		<< "An extreme maxClients value must fail closed before any capacity allocation.";
+	EXPECT_EQ(0U, extreme.known_bytes);
+}
+
+TEST(TelemetryP85ReconnectContract, ClosedLiveSlotRehandshakesAndReusesProvisionedDeltaEgressWithoutAllocation)
+{
+	IdentityHarness ids{{{true, 0x8501U}, {true, 0x8502U}}};
+	auto controller = make_controller(ids.allocator);
+	activate_phase1_live_baseline(controller, 0x8501U);
+	ASSERT_TRUE(controller.close_slot(0U, detail::SessionCloseReason::ProtocolError));
+	EXPECT_EQ(0U, controller.active_slots());
+
+	activate_phase1_live_baseline(controller, 0x8502U, 10'000U);
+	ASSERT_EQ(detail::Phase1SnapshotProgress::Live, controller.snapshot_progress(0U));
+	controller.begin_phase1_allocation_observation();
+	ASSERT_EQ(protocol::ProducerBaselineResult::Applied,
+		controller.replace_current_state(0U, phase1_integration_image_at(12.0F, 8'500U)));
+	ASSERT_TRUE(controller.queue_cumulative_delta(0U, 8'501U));
+	ASSERT_EQ(1U, controller.service_delta_egress(1U, 8'502U));
+	const auto output = pop_output(controller);
+	EXPECT_EQ(protocol::MessageType::Delta, output.datagram.header.message_type);
+	EXPECT_EQ(0U, controller.phase1_observed_allocation_count())
+		<< "A rehandshake must reuse the slot-owned delta egress and its preallocated capacity.";
 }
 
 TEST(TelemetryWp06BudgetContract, ReplacementRejectsIncoherentPriorProjectionInsteadOfUnderflowingOrDoubleCounting)
@@ -889,7 +1073,7 @@ protocol::AckPayload welcome_ack_payload(const DecodedOutput& welcome)
 
 EncodedDatagram encode_welcome_ack(const DecodedOutput& welcome,
 	const protocol::AckPayload& payload,
-	std::uint64_t session_id = 0U)
+	std::uint64_t session_id)
 {
 	std::array<std::uint8_t, protocol::AckPayloadSize> bytes{};
 	auto put_u32 = [&bytes](std::size_t offset, std::uint32_t value) {
@@ -918,6 +1102,94 @@ EncodedDatagram encode_welcome_ack(const DecodedOutput& welcome,
 EncodedDatagram applied_welcome_ack(const DecodedOutput& welcome)
 {
 	return encode_welcome_ack(welcome, welcome_ack_payload(welcome));
+}
+
+enum class IntegratedSnapshotAckMode : std::uint8_t { Applied = 0, ValidatedOnly, PartialTuple };
+
+template <typename Controller>
+void verify_integrated_phase1_snapshot_commit(IntegratedSnapshotAckMode mode)
+{
+	if constexpr (!has_integrated_phase1_snapshot_egress<Controller>::value) {
+		ADD_FAILURE() << "P8.2 integration RED: SessionController must own the snapshot egress and slot lifecycle "
+					  "(begin_initial_snapshot/service_initial_snapshot_egress/progress/dirty latch).";
+		return;
+	} else {
+		IdentityHarness ids{{{true, 0x5151U}}};
+		auto controller = make_controller(ids.allocator);
+		const auto request = hello(0x900U + static_cast<std::uint64_t>(mode));
+		ASSERT_EQ(detail::SessionIngressDisposition::ResponseQueued,
+			controller.ingest(endpoint(), view(request.bytes), 1'000U, 7U, true).disposition);
+		const auto welcome = pop_output(controller);
+		const auto welcome_ack = applied_welcome_ack(welcome);
+		ASSERT_EQ(detail::SessionIngressDisposition::WelcomeProofApplied,
+			controller.ingest(endpoint(), view(welcome_ack.bytes), 2'000U, 7U, true).disposition);
+		const auto begin = pop_output(controller);
+		ASSERT_EQ(protocol::MessageType::SessionBegin, begin.datagram.header.message_type);
+		EXPECT_EQ(detail::ProducerSessionProgress::ReadyForState, controller.slot(0U).progress);
+
+		const auto image = phase1_integration_image();
+		ASSERT_TRUE(controller.begin_initial_snapshot(0U, image, 3'000U));
+		EXPECT_EQ(detail::Phase1SnapshotProgress::Synchronizing, controller.snapshot_progress(0U));
+		EXPECT_FALSE(controller.session_state_dirty(0U));
+		ASSERT_EQ(1U, controller.service_initial_snapshot_egress(1U, 3'001U));
+		const auto snapshot = pop_output(controller);
+		ASSERT_EQ(protocol::MessageType::FullSnapshot, snapshot.datagram.header.message_type);
+		EXPECT_EQ(begin.datagram.header.message_id + 1U, snapshot.datagram.header.message_id)
+			<< "The initial snapshot must consume the controller's next message identity after SESSION_BEGIN.";
+		EXPECT_EQ(begin.datagram.header.packet_sequence + 1U, snapshot.datagram.header.packet_sequence)
+			<< "The initial snapshot must consume the controller's next packet sequence after SESSION_BEGIN.";
+		EXPECT_NE(0U, static_cast<std::uint8_t>(snapshot.datagram.header.flags & protocol::MessageFlagAckRequired));
+		EXPECT_NE(0U, static_cast<std::uint8_t>(snapshot.datagram.header.flags & protocol::MessageFlagKeyframe));
+
+		auto snapshot_ack = welcome_ack_payload(snapshot);
+		snapshot_ack.target_message_type = protocol::MessageType::FullSnapshot;
+		if (mode == IntegratedSnapshotAckMode::ValidatedOnly) {
+			snapshot_ack.ack_flags = static_cast<std::uint8_t>(protocol::AckFlag::Validated);
+		} else {
+			snapshot_ack.ack_flags = protocol::KnownAckFlags;
+			if (mode == IntegratedSnapshotAckMode::PartialTuple) {
+				// ACKs are message-level. A tuple not covering every retained
+				// fragment is the only legal wire representation of a partial
+				// acknowledgement attempt, and must never commit the baseline.
+				++snapshot_ack.target_fragment_count;
+			}
+		}
+		const auto encoded_snapshot_ack = encode_welcome_ack(snapshot, snapshot_ack);
+		const auto ack_result = controller.ingest(endpoint(), view(encoded_snapshot_ack.bytes), 4'000U, 7U, true);
+
+		if (mode != IntegratedSnapshotAckMode::Applied) {
+			if (mode == IntegratedSnapshotAckMode::PartialTuple) {
+				EXPECT_EQ(detail::SessionIngressDisposition::Dropped, ack_result.disposition);
+			} else {
+				EXPECT_NE(detail::SessionIngressDisposition::Dropped, ack_result.disposition);
+			}
+			EXPECT_EQ(detail::Phase1SnapshotProgress::Synchronizing, controller.snapshot_progress(0U));
+			EXPECT_FALSE(controller.session_state_dirty(0U));
+			EXPECT_FALSE(controller.consume_session_state_dirty(0U));
+		} else {
+			EXPECT_NE(detail::SessionIngressDisposition::Dropped, ack_result.disposition);
+			EXPECT_EQ(detail::Phase1SnapshotProgress::Live, controller.snapshot_progress(0U));
+			EXPECT_TRUE(controller.session_state_dirty(0U));
+			EXPECT_TRUE(controller.consume_session_state_dirty(0U));
+			EXPECT_FALSE(controller.consume_session_state_dirty(0U))
+				<< "The P8.3 notification must remain a bounded latch after the controller-level commit.";
+		}
+	}
+}
+
+TEST(TelemetryPhase1SnapshotSessionIntegration, WelcomeReadyImageEgressAndFinalAppliedAckReachLive)
+{
+	verify_integrated_phase1_snapshot_commit<detail::SessionController>(IntegratedSnapshotAckMode::Applied);
+}
+
+TEST(TelemetryPhase1SnapshotSessionIntegration, ValidatedAckNeverCrossesTheControllerLiveGate)
+{
+	verify_integrated_phase1_snapshot_commit<detail::SessionController>(IntegratedSnapshotAckMode::ValidatedOnly);
+}
+
+TEST(TelemetryPhase1SnapshotSessionIntegration, PartialAckTupleNeverCrossesTheControllerLiveGate)
+{
+	verify_integrated_phase1_snapshot_commit<detail::SessionController>(IntegratedSnapshotAckMode::PartialTuple);
 }
 
 EncodedDatagram missing_fragment_nack(const DecodedOutput& target, std::uint32_t packet_sequence)
@@ -952,6 +1224,430 @@ EncodedDatagram missing_fragment_nack(const DecodedOutput& target, std::uint32_t
 	header.message_size = static_cast<std::uint32_t>(payload.size());
 	header.message_crc32 = protocol::crc32_iso_hdlc(view(payload));
 	return encode_datagram(header, view(payload));
+}
+
+protocol::StateImage fragmented_snapshot_image()
+{
+	protocol::StateAtom atom;
+	atom.key.record_type = 0x8001U;
+	atom.value.resize(3'000U, 0x5aU);
+	protocol::StateImage image;
+	EXPECT_EQ(protocol::StateImageResult::Created,
+		protocol::StateImage::create(std::vector<protocol::StateAtom>{std::move(atom)}, image));
+	return image;
+}
+
+void begin_fragmented_snapshot(detail::SessionController& controller,
+	DecodedOutput& begin,
+	DecodedOutput& first_fragment)
+{
+	const auto request = hello(0xa01U);
+	EXPECT_EQ(detail::SessionIngressDisposition::ResponseQueued,
+		controller.ingest(endpoint(), view(request.bytes), 1'000U, 7U, true).disposition);
+	const auto welcome = pop_output(controller);
+	const auto welcome_ack = applied_welcome_ack(welcome);
+	EXPECT_EQ(detail::SessionIngressDisposition::WelcomeProofApplied,
+		controller.ingest(endpoint(), view(welcome_ack.bytes), 2'000U, 7U, true).disposition);
+	begin = pop_output(controller);
+	EXPECT_TRUE(controller.begin_initial_snapshot(0U, fragmented_snapshot_image(), 3'000U));
+	EXPECT_EQ(1U, controller.service_initial_snapshot_egress(1U, 3'001U));
+	first_fragment = pop_output(controller);
+	EXPECT_EQ(protocol::MessageType::FullSnapshot, first_fragment.datagram.header.message_type);
+	EXPECT_GT(first_fragment.datagram.header.fragment_count, 1U)
+		<< "The controller-level retransmission contract needs a genuinely fragmented snapshot.";
+}
+
+TEST(TelemetryPhase1SnapshotSessionIntegration, MissingFragmentNackRetransmitsTheExactSnapshotWithFreshPacketSequence)
+{
+	IdentityHarness ids{{{true, 0x7171U}}};
+	auto controller = make_controller(ids.allocator);
+	DecodedOutput begin, first_fragment;
+	begin_fragmented_snapshot(controller, begin, first_fragment);
+	const auto nack = missing_fragment_nack(first_fragment, 700U);
+	const auto disposition =
+		controller.ingest(endpoint(), view(nack.bytes), 4'000U, 7U, true).disposition;
+	EXPECT_NE(detail::SessionIngressDisposition::Dropped, disposition);
+	ASSERT_TRUE(controller.has_output());
+	const auto retransmission = pop_output(controller);
+	EXPECT_EQ(protocol::MessageType::FullSnapshot, retransmission.datagram.header.message_type);
+	EXPECT_EQ(first_fragment.datagram.header.message_id, retransmission.datagram.header.message_id);
+	EXPECT_EQ(first_fragment.datagram.header.fragment_index, retransmission.datagram.header.fragment_index);
+	EXPECT_NE(first_fragment.datagram.header.packet_sequence, retransmission.datagram.header.packet_sequence);
+	EXPECT_NE(0U,
+		static_cast<std::uint8_t>(retransmission.datagram.header.flags & protocol::MessageFlagRetransmission));
+}
+
+TEST(TelemetryPhase1SnapshotSessionIntegration, SnapshotNackPreemptsQueuedDeltaTail)
+{
+	IdentityHarness ids{{{true, 0x7181U}}};
+	auto controller = make_controller(ids.allocator);
+	activate_phase1_live_baseline(controller, 0x7181U);
+	ASSERT_EQ(protocol::ProducerBaselineResult::Applied,
+		controller.replace_current_state(0U, fragmented_snapshot_image()));
+	protocol::ResyncRequestPayload request{1U, protocol::ResyncReason::UnknownBaseline,
+		protocol::ResyncRequestFlagRequireFullSnapshot, 1U, 0U, 5'000U};
+	std::array<std::uint8_t, protocol::ResyncRequestPayloadSize> payload{}; std::size_t written = 0U;
+	ASSERT_EQ(protocol::ValidationError::None, protocol::encode_resync_request_payload(request, mutable_view(payload), written));
+	protocol::TelemetryDatagramHeader header{}; header.version_minor = protocol::VersionMinorV1_1;
+	header.message_type = protocol::MessageType::ResyncRequest; header.flags = protocol::MessageFlagAckRequired;
+	header.session_id = controller.slot(0U).session_id; header.packet_sequence = 981U; header.sent_time_us = 5'000U;
+	header.message_id = 981U; header.fragment_count = 1U; header.message_size = static_cast<std::uint32_t>(written);
+	header.message_crc32 = protocol::crc32_iso_hdlc({payload.data(), written});
+	const auto request_packet = encode_datagram(header, {payload.data(), written});
+	ASSERT_EQ(detail::SessionIngressDisposition::ResponseQueued,
+		controller.ingest(endpoint(), view(request_packet.bytes), 5'000U, 7U, true).disposition);
+	(void)pop_output(controller); // validated RESYNC ACK
+	ASSERT_EQ(1U, controller.service_initial_snapshot_egress(1U, 5'001U));
+	const auto first_fragment = pop_output(controller);
+	ASSERT_EQ(protocol::MessageType::FullSnapshot, first_fragment.datagram.header.message_type);
+	ASSERT_GT(first_fragment.datagram.header.fragment_count, 1U);
+	ASSERT_EQ(protocol::ProducerBaselineResult::Applied,
+		controller.replace_current_state(0U, phase1_integration_image_at(9.0F, 5'002U)));
+	ASSERT_TRUE(controller.queue_cumulative_delta(0U, 5'003U));
+	ASSERT_EQ(1U, controller.service_delta_egress(1U, 5'004U)); // leave DELTA as the tail output
+	auto expect_delta_tail = [&controller]() {
+		detail::SessionControllerOutput pending;
+		ASSERT_TRUE(controller.peek_output(pending));
+		protocol::DatagramView pending_view;
+		ASSERT_EQ(protocol::ValidationError::None,
+			protocol::decode_and_validate_datagram({pending.bytes.data(), pending.size},
+				protocol::ProtocolMinorRange{protocol::VersionMinorV1_1, protocol::VersionMinorV1_1}, pending_view));
+		EXPECT_EQ(protocol::MessageType::Delta, pending_view.header.message_type);
+	};
+	const auto foreign_nack = missing_fragment_nack(first_fragment, 982U);
+	EXPECT_EQ(detail::SessionIngressDisposition::Dropped,
+		controller.ingest(endpoint(3U), view(foreign_nack.bytes), 5'005U, 7U, true).disposition);
+	expect_delta_tail();
+	// A valid datagram envelope is insufficient: a NACK that does not name the
+	// retained snapshot must not evict the queued Delta either.
+	auto wrong_target_nack = missing_fragment_nack(first_fragment, 983U);
+	put_u32(wrong_target_nack.bytes, protocol::HeaderSizeV1, first_fragment.datagram.header.message_id + 1U);
+	reseal_single_fragment(wrong_target_nack.bytes);
+	EXPECT_EQ(detail::SessionIngressDisposition::Dropped,
+		controller.ingest(endpoint(), view(wrong_target_nack.bytes), 5'006U, 7U, true).disposition);
+	expect_delta_tail();
+	const auto nack = missing_fragment_nack(first_fragment, 984U);
+	ASSERT_EQ(detail::SessionIngressDisposition::ResponseQueued,
+		controller.ingest(endpoint(), view(nack.bytes), 5'007U, 7U, true).disposition);
+	ASSERT_TRUE(controller.has_output());
+	EXPECT_EQ(protocol::MessageType::FullSnapshot, pop_output(controller).datagram.header.message_type);
+}
+
+TEST(TelemetryPhase1SnapshotSessionIntegration, LostAppliedAckRetriesSnapshotAndTransactionExpiryPurgesTheSlot)
+{
+	IdentityHarness ids{{{true, 0x7272U}}};
+	auto controller = make_controller(ids.allocator);
+	DecodedOutput begin, first_fragment;
+	begin_fragmented_snapshot(controller, begin, first_fragment);
+	controller.service_reliability(4'000'000U);
+	ASSERT_TRUE(controller.has_output()) << "A lost ACK must produce a retained snapshot retry before expiry.";
+	const auto retry = pop_output(controller);
+	EXPECT_EQ(protocol::MessageType::FullSnapshot, retry.datagram.header.message_type);
+	EXPECT_NE(0U, static_cast<std::uint8_t>(retry.datagram.header.flags & protocol::MessageFlagRetransmission));
+	for (std::uint16_t fragment_index = 1U; fragment_index < retry.datagram.header.fragment_count; ++fragment_index) {
+		ASSERT_TRUE(controller.has_output())
+			<< "The full RTO retransmission must complete before its transaction can reach the terminal timeout.";
+		const auto next_retry = pop_output(controller);
+		EXPECT_EQ(protocol::MessageType::FullSnapshot, next_retry.datagram.header.message_type);
+		EXPECT_EQ(fragment_index, next_retry.datagram.header.fragment_index);
+	}
+	EXPECT_FALSE(controller.has_output());
+
+	controller.service_reliability(3'000U + protocol::ReliableTransactionRetentionUs);
+	EXPECT_EQ(detail::ProducerSessionProgress::Empty, controller.slot(0U).progress)
+		<< "An initial snapshot transaction that expires after publication must purge the session back to Listening.";
+	EXPECT_FALSE(controller.slot(0U).snapshot.has_candidate());
+	EXPECT_FALSE(controller.slot(0U).snapshot.has_active_baseline());
+	EXPECT_FALSE(controller.slot(0U).snapshot_egress.has_candidate());
+	EXPECT_FALSE(controller.begin_initial_snapshot(0U, fragmented_snapshot_image(),
+		3'000U + protocol::ReliableTransactionRetentionUs + 1U))
+		<< "A purged slot cannot accept a new snapshot before a fresh handshake reaches ReadyForState.";
+}
+
+TEST(TelemetryPhase1SnapshotSessionIntegration, LostAppliedAckRtoRetransmitsEverySnapshotFragmentInTheSameCycle)
+{
+	IdentityHarness ids{{{true, 0x7373U}}};
+	auto controller = make_controller(ids.allocator);
+	DecodedOutput begin, first_fragment;
+	begin_fragmented_snapshot(controller, begin, first_fragment);
+	const auto fragment_count = first_fragment.datagram.header.fragment_count;
+	ASSERT_GT(fragment_count, 1U);
+
+	std::vector<DecodedOutput> original_fragments;
+	original_fragments.push_back(std::move(first_fragment));
+	for (std::uint16_t index = 1U; index < fragment_count; ++index) {
+		ASSERT_EQ(1U, controller.service_initial_snapshot_egress(1U, 3'001U));
+		auto fragment = pop_output(controller);
+		ASSERT_EQ(protocol::MessageType::FullSnapshot, fragment.datagram.header.message_type);
+		ASSERT_EQ(index, fragment.datagram.header.fragment_index);
+		original_fragments.push_back(std::move(fragment));
+	}
+
+	const auto rto_us = 4'000'000U;
+	std::vector<bool> retransmitted(fragment_count, false);
+	controller.service_reliability(rto_us);
+	for (std::uint16_t expected_count = 0U; expected_count < fragment_count; ++expected_count) {
+		ASSERT_TRUE(controller.has_output())
+			<< "Every fragment selected by the one full RTO action must be emitted before a later RTO.";
+		const auto retransmission = pop_output(controller);
+		ASSERT_EQ(protocol::MessageType::FullSnapshot, retransmission.datagram.header.message_type);
+		ASSERT_EQ(original_fragments.front().datagram.header.message_id, retransmission.datagram.header.message_id);
+		ASSERT_EQ(fragment_count, retransmission.datagram.header.fragment_count);
+		ASSERT_LT(retransmission.datagram.header.fragment_index, fragment_count);
+		EXPECT_FALSE(retransmitted[retransmission.datagram.header.fragment_index])
+			<< "A full RTO must select each candidate fragment exactly once.";
+		retransmitted[retransmission.datagram.header.fragment_index] = true;
+		EXPECT_NE(original_fragments[retransmission.datagram.header.fragment_index].datagram.header.packet_sequence,
+			retransmission.datagram.header.packet_sequence);
+		EXPECT_NE(0U, static_cast<std::uint8_t>(
+			retransmission.datagram.header.flags & protocol::MessageFlagRetransmission));
+	}
+	EXPECT_TRUE(std::all_of(retransmitted.begin(), retransmitted.end(), [](bool sent) { return sent; }));
+}
+
+TEST(TelemetryPhase1KeyframeContract, ControllerConsumesDiscontinuityIntoReliableReplacementCandidate)
+{
+	IdentityHarness ids{{{true, 0x7501U}}};
+	auto controller = make_controller(ids.allocator);
+	activate_phase1_live_baseline(controller, 0x7501U);
+	auto no_player = phase1_integration_input();
+	no_player.player_capture = {detail::CaptureStatus::InvalidSource, detail::CaptureReason::WrongObjectType};
+	protocol::StateImage current;
+	ASSERT_EQ(detail::Phase1StateImageBuildStatus::Created, detail::build_phase1_state_image(no_player, current));
+	ASSERT_EQ(protocol::ProducerBaselineResult::Applied, controller.replace_current_state(0U, current));
+	ASSERT_TRUE(controller.queue_cumulative_delta(0U, 5'000U));
+	EXPECT_TRUE(controller.slot(0U).snapshot.has_candidate());
+	EXPECT_TRUE(controller.slot(0U).snapshot_egress.has_candidate());
+	EXPECT_EQ(1U, controller.slot(0U).snapshot.active_snapshot_id());
+	ASSERT_EQ(1U, controller.service_initial_snapshot_egress(1U, 5'001U));
+	const auto replacement = pop_output(controller);
+	EXPECT_EQ(protocol::MessageType::FullSnapshot, replacement.datagram.header.message_type);
+	EXPECT_NE(0U, static_cast<std::uint8_t>(replacement.datagram.header.flags & protocol::MessageFlagAckRequired));
+	EXPECT_NE(0U, static_cast<std::uint8_t>(replacement.datagram.header.flags & protocol::MessageFlagKeyframe));
+	protocol::FullSnapshotPartPayload replacement_payload;
+	ASSERT_EQ(protocol::ValidationError::None,
+		protocol::decode_full_snapshot_part_payload(replacement.datagram.payload, replacement_payload));
+	EXPECT_EQ(2U, replacement_payload.record_count)
+		<< "InvalidSource replacement omits player records; it is not a Delta or EVENT_BATCH workaround.";
+}
+
+TEST(TelemetryPhase1KeyframeContract, DefaultTwoSecondPeriodicDueStartsOneCandidateAndCoalescesWhilePending)
+{
+	IdentityHarness ids{{{true, 0x7502U}}};
+	auto controller = make_controller(ids.allocator);
+	activate_phase1_live_baseline(controller, 0x7502U);
+	const auto due = controller.slot(0U).next_keyframe_due_us;
+	ASSERT_EQ(2'002'000U, due) << "The default keyframeSeconds=2 is anchored at ReadyForState.";
+	controller.service_periodic(due - 1U);
+	EXPECT_FALSE(controller.slot(0U).snapshot.has_candidate());
+	controller.service_periodic(due);
+	ASSERT_TRUE(controller.slot(0U).snapshot.has_candidate());
+	const auto candidate_id = controller.slot(0U).snapshot.candidate_snapshot_id();
+	controller.service_periodic(due + 10'000'000U);
+	EXPECT_TRUE(controller.slot(0U).snapshot.has_candidate());
+	EXPECT_EQ(candidate_id, controller.slot(0U).snapshot.candidate_snapshot_id())
+		<< "Missed periodic intervals coalesce while APPLIED is pending; no third snapshot is retained.";
+}
+
+TEST(TelemetryPhase1KeyframeContract, ResyncRequestIsValidatedAndStartsOneReplacement)
+{
+	IdentityHarness ids{{{true, 0x7503U}}}; auto controller = make_controller(ids.allocator);
+	activate_phase1_live_baseline(controller, 0x7503U);
+	protocol::ResyncRequestPayload request{1U, protocol::ResyncReason::UnknownBaseline,
+		protocol::ResyncRequestFlagRequireFullSnapshot, 1U, 0U, 5'000U};
+	std::array<std::uint8_t, protocol::ResyncRequestPayloadSize> payload{}; std::size_t written = 0U;
+	ASSERT_EQ(protocol::ValidationError::None, protocol::encode_resync_request_payload(request, mutable_view(payload), written));
+	protocol::TelemetryDatagramHeader header; header.version_minor = protocol::VersionMinorV1_1;
+	header.message_type = protocol::MessageType::ResyncRequest; header.flags = protocol::MessageFlagAckRequired;
+	header.session_id = controller.slot(0U).session_id;
+	header.packet_sequence = 99U; header.sent_time_us = 5'000U; header.message_id = 99U;
+	header.fragment_count = 1U; header.message_size = static_cast<std::uint32_t>(written);
+	header.message_crc32 = protocol::crc32_iso_hdlc({payload.data(), written});
+	const auto packet = encode_datagram(header, {payload.data(), written});
+	EXPECT_NE(detail::SessionIngressDisposition::Dropped, controller.ingest(endpoint(), view(packet.bytes), 5'000U, 7U, true).disposition);
+	ASSERT_TRUE(controller.has_output()); const auto ack_output = pop_output(controller);
+	EXPECT_EQ(protocol::MessageType::Ack, ack_output.datagram.header.message_type);
+	EXPECT_TRUE(controller.slot(0U).snapshot.has_candidate());
+	ASSERT_EQ(1U, controller.service_initial_snapshot_egress(1U, 5'001U));
+	const auto full = pop_output(controller);
+	EXPECT_EQ(protocol::MessageType::FullSnapshot, full.datagram.header.message_type);
+	EXPECT_EQ(ack_output.datagram.header.message_id + 1U, full.datagram.header.message_id);
+	EXPECT_EQ(ack_output.datagram.header.packet_sequence + 1U, full.datagram.header.packet_sequence);
+	const auto candidate_id = controller.slot(0U).snapshot.candidate_snapshot_id();
+	EXPECT_NE(detail::SessionIngressDisposition::Dropped,
+		controller.ingest(endpoint(), view(packet.bytes), 5'001U, 7U, true).disposition);
+	EXPECT_EQ(candidate_id, controller.slot(0U).snapshot.candidate_snapshot_id())
+		<< "A duplicate RESYNC identity is idempotent and cannot reserve a second replacement candidate.";
+}
+
+TEST(TelemetryPhase1KeyframeContract, ResyncRateLimitAllowsBurstTwoThenRejectsThirdIdentity)
+{
+	IdentityHarness ids{{{true, 0x7504U}}}; auto controller = make_controller(ids.allocator);
+	activate_phase1_live_baseline(controller, 0x7504U);
+	auto make_resync = [&](std::uint32_t message_id, std::uint32_t request_id) {
+		protocol::ResyncRequestPayload request{request_id, protocol::ResyncReason::UnknownBaseline,
+			protocol::ResyncRequestFlagRequireFullSnapshot, 1U, 0U, 5'000U};
+		std::array<std::uint8_t, protocol::ResyncRequestPayloadSize> payload{}; std::size_t written = 0U;
+		EXPECT_EQ(protocol::ValidationError::None, protocol::encode_resync_request_payload(request, mutable_view(payload), written));
+		protocol::TelemetryDatagramHeader header; header.version_minor = protocol::VersionMinorV1_1;
+		header.message_type = protocol::MessageType::ResyncRequest; header.flags = protocol::MessageFlagAckRequired;
+		header.session_id = controller.slot(0U).session_id; header.packet_sequence = message_id;
+		header.sent_time_us = 5'000U; header.message_id = message_id; header.fragment_count = 1U;
+		header.message_size = static_cast<std::uint32_t>(written); header.message_crc32 = protocol::crc32_iso_hdlc({payload.data(), written});
+		return encode_datagram(header, {payload.data(), written});
+	};
+	const auto first = make_resync(99U, 1U);
+	ASSERT_EQ(detail::SessionIngressDisposition::ResponseQueued, controller.ingest(endpoint(), view(first.bytes), 5'000U, 7U, true).disposition);
+	ASSERT_TRUE(controller.has_output()); (void)pop_output(controller);
+	const auto candidate_id = controller.slot(0U).snapshot.candidate_snapshot_id();
+	const auto second = make_resync(100U, 2U);
+	ASSERT_EQ(detail::SessionIngressDisposition::ResponseQueued, controller.ingest(endpoint(), view(second.bytes), 5'000U, 7U, true).disposition);
+	ASSERT_TRUE(controller.has_output()); (void)pop_output(controller);
+	const auto third = make_resync(101U, 3U);
+	EXPECT_EQ(detail::SessionIngressDisposition::Dropped, controller.ingest(endpoint(), view(third.bytes), 5'000U, 7U, true).disposition);
+	EXPECT_EQ(candidate_id, controller.slot(0U).snapshot.candidate_snapshot_id());
+}
+
+TEST(TelemetryPhase1DeltaEgressContract, DeltaEgressIsV11UnreliableCumulativeAndSingleSlotReplaceable)
+{
+	EXPECT_TRUE(has_p8_3_delta_egress_seams<detail::SessionController>::value)
+		<< "P8.3 RED: controller needs queue_cumulative_delta(slot, now) and service_delta_egress(budget, now). "
+			   "The resulting DELTA must be v1.1, non-reliable, reference the active snapshot id and exact delta sequence; "
+			   "WouldBlock replaces the sole pending delta with the newest cumulative payload, ACK(DELTA) is inert, "
+			   "and only the Phase 1 compatible record-set may be encoded.";
+}
+
+TEST(TelemetryPhase1DeltaEgressContract, SaturatedHeartbeatProbesCannotPreemptOrMutateQueuedDelta)
+{
+	IdentityHarness ids{{{true, 0x7400U}}};
+	auto controller = make_controller(ids.allocator, nullptr, 1U, 5U);
+	activate_phase1_live_baseline(controller, 0x7400U);
+
+	for (std::size_t index = 0U; index < protocol::MaxInFlightProbes; ++index) {
+		controller.service_periodic(controller.slot(0U).heartbeat.next_periodic_due_us);
+		const auto heartbeat = pop_output(controller);
+		ASSERT_EQ(protocol::MessageType::Heartbeat, heartbeat.datagram.header.message_type);
+	}
+	ASSERT_EQ(protocol::MaxInFlightProbes, controller.slot(0U).heartbeat.probes.in_flight_count());
+	const auto blocked_due = controller.slot(0U).heartbeat.next_periodic_due_us;
+	ASSERT_EQ(protocol::ProducerBaselineResult::Applied,
+		controller.replace_current_state(0U, phase1_integration_image_at(9.0F, 5'000U)));
+	ASSERT_TRUE(controller.queue_cumulative_delta(0U, blocked_due - 1U));
+	ASSERT_EQ(1U, controller.service_delta_egress(1U, blocked_due));
+	detail::SessionControllerOutput before;
+	ASSERT_TRUE(controller.peek_output(before));
+	protocol::DatagramView before_datagram;
+	ASSERT_EQ(protocol::ValidationError::None,
+		protocol::decode_and_validate_datagram({before.bytes.data(), before.size},
+			protocol::ProtocolMinorRange{protocol::VersionMinorV1_1, protocol::VersionMinorV1_1}, before_datagram));
+	ASSERT_EQ(protocol::MessageType::Delta, before_datagram.header.message_type);
+	const auto probes_before = controller.slot(0U).heartbeat.probes.in_flight_count();
+	const auto sequence_before = controller.slot(0U).next_packet_sequence;
+
+	controller.service_periodic(blocked_due);
+
+	detail::SessionControllerOutput after;
+	ASSERT_TRUE(controller.peek_output(after));
+	EXPECT_EQ(before.endpoint, after.endpoint);
+	EXPECT_EQ(before.size, after.size);
+	EXPECT_TRUE(std::equal(before.bytes.begin(),
+		before.bytes.begin() + static_cast<std::ptrdiff_t>(before.size), after.bytes.begin()))
+		<< "A saturated periodic heartbeat must not evict the queued DELTA.";
+	EXPECT_EQ(probes_before, controller.slot(0U).heartbeat.probes.in_flight_count());
+	EXPECT_EQ(blocked_due, controller.slot(0U).heartbeat.next_periodic_due_us)
+		<< "A heartbeat with no available probe must not advance its periodic deadline.";
+	EXPECT_EQ(sequence_before, controller.slot(0U).next_packet_sequence)
+		<< "A heartbeat that could not reserve a probe must not consume a packet sequence.";
+}
+
+TEST(TelemetryPhase1DeltaEgressContract, LiveDeltaIsDecodableV11UnreliableAndReferencesTheActiveBaseline)
+{
+	IdentityHarness ids{{{true, 0x7401U}}};
+	auto controller = make_controller(ids.allocator);
+	activate_phase1_live_baseline(controller, 0x7401U);
+
+	ASSERT_EQ(protocol::ProducerBaselineResult::Applied,
+		controller.replace_current_state(0U, phase1_integration_image_at(9.0F, 5'000U)));
+	ASSERT_TRUE(controller.queue_cumulative_delta(0U, 5'001U));
+	const auto expected_packet_sequence = controller.slot(0U).next_packet_sequence;
+	ASSERT_EQ(1U, controller.service_delta_egress(1U, 5'002U));
+	const auto output = pop_output(controller);
+
+	EXPECT_EQ(protocol::VersionMinorV1_1, output.datagram.header.version_minor);
+	EXPECT_EQ(protocol::MessageType::Delta, output.datagram.header.message_type);
+	EXPECT_EQ(0U, static_cast<std::uint8_t>(output.datagram.header.flags & protocol::MessageFlagAckRequired));
+	EXPECT_EQ(0U, static_cast<std::uint8_t>(output.datagram.header.flags & protocol::MessageFlagRetransmission));
+	EXPECT_EQ(1U, output.datagram.header.frame_id);
+	EXPECT_EQ(expected_packet_sequence, output.datagram.header.packet_sequence);
+	protocol::DeltaPayload payload;
+	ASSERT_EQ(protocol::ValidationError::None, protocol::decode_delta_payload(output.datagram.payload, payload));
+	EXPECT_EQ(1U, payload.baseline_snapshot_id);
+	EXPECT_EQ(1U, payload.delta_sequence);
+	EXPECT_EQ(5'001U, payload.producer_sample_time_us);
+	EXPECT_GT(payload.record_count, 0U);
+}
+
+TEST(TelemetryPhase1DeltaEgressContract, NewestUnstartedDeltaReplacesButOutstandingDeltaIsImmutable)
+{
+	IdentityHarness ids{{{true, 0x7402U}}};
+	auto controller = make_controller(ids.allocator);
+	activate_phase1_live_baseline(controller, 0x7402U);
+
+	ASSERT_EQ(protocol::ProducerBaselineResult::Applied,
+		controller.replace_current_state(0U, phase1_integration_image_at(9.0F, 5'000U)));
+	ASSERT_TRUE(controller.queue_cumulative_delta(0U, 5'001U));
+	ASSERT_EQ(protocol::ProducerBaselineResult::Applied,
+		controller.replace_current_state(0U, phase1_integration_image_at(10.0F, 5'002U)));
+	ASSERT_TRUE(controller.queue_cumulative_delta(0U, 5'003U))
+		<< "A newer cumulative delta replaces the sole delta before any fragment has entered the output slot.";
+
+	ASSERT_EQ(1U, controller.service_delta_egress(1U, 5'004U));
+	EXPECT_FALSE(controller.queue_cumulative_delta(0U, 5'005U))
+		<< "A delta already offered to transport is immutable until its completion result is known.";
+	const auto output = pop_output(controller);
+	protocol::DeltaPayload payload;
+	ASSERT_EQ(protocol::ValidationError::None, protocol::decode_delta_payload(output.datagram.payload, payload));
+	EXPECT_EQ(2U, payload.delta_sequence)
+		<< "The output must be the newest cumulative image, not the superseded unstarted delta.";
+	EXPECT_EQ(5'003U, payload.producer_sample_time_us);
+}
+
+TEST(TelemetryPhase1DeltaEgressContract, WouldBlockDropsNonReliableDeltaAndDeltaAckCannotChangeState)
+{
+	IdentityHarness ids{{{true, 0x7403U}}};
+	auto controller = make_controller(ids.allocator);
+	activate_phase1_live_baseline(controller, 0x7403U);
+
+	ASSERT_EQ(protocol::ProducerBaselineResult::Applied,
+		controller.replace_current_state(0U, phase1_integration_image_at(9.0F, 5'000U)));
+	ASSERT_TRUE(controller.queue_cumulative_delta(0U, 5'001U));
+	ASSERT_EQ(1U, controller.service_delta_egress(1U, 5'002U));
+	detail::SessionControllerOutput pending;
+	ASSERT_TRUE(controller.peek_output(pending));
+	protocol::DatagramView pending_view;
+	ASSERT_EQ(protocol::ValidationError::None,
+		protocol::decode_and_validate_datagram({pending.bytes.data(), pending.size},
+			protocol::ProtocolMinorRange{protocol::VersionMinorV1_1, protocol::VersionMinorV1_1}, pending_view));
+	ASSERT_EQ(protocol::MessageType::Delta, pending_view.header.message_type);
+
+	// ACK(DELTA) is neither a reliable completion nor a baseline transition.
+	DecodedOutput pending_output;
+	pending_output.storage.assign(pending.bytes.begin(), pending.bytes.begin() + static_cast<std::ptrdiff_t>(pending.size));
+	pending_output.datagram = pending_view;
+	auto delta_ack = welcome_ack_payload(pending_output);
+	delta_ack.target_message_type = protocol::MessageType::Delta;
+	delta_ack.ack_flags = protocol::KnownAckFlags;
+	const auto encoded_delta_ack = encode_welcome_ack(pending_output, delta_ack);
+	EXPECT_EQ(detail::SessionIngressDisposition::Dropped,
+		controller.ingest(endpoint(), view(encoded_delta_ack.bytes), 5'003U, 7U, true).disposition);
+	EXPECT_TRUE(controller.has_output()) << "An ACK for DELTA must not complete or replace the pending non-reliable output.";
+
+	controller.complete_output(detail::IoStatus::WouldBlock);
+	EXPECT_FALSE(controller.has_output());
+	ASSERT_EQ(protocol::ProducerBaselineResult::Applied,
+		controller.replace_current_state(0U, phase1_integration_image_at(10.0F, 5'004U)));
+	EXPECT_TRUE(controller.queue_cumulative_delta(0U, 5'005U))
+		<< "WouldBlock abandons the non-reliable delta so the next cumulative image can replace it.";
 }
 
 TEST(TelemetryWp06HandshakeContract, ExactWelcomeAppliedProofQueuesSessionBeginWithMissionGenerationOrZero)
@@ -1421,15 +2117,17 @@ void expect_session_begin_ack_lifecycle()
 		auto forged_payload = ack_for_target(begin, protocol::KnownAckFlags);
 		++forged_payload.target_message_id;
 		const auto forged = encode_welcome_ack(begin, forged_payload);
-		const auto before_forged = controller.slot(0U);
+		const auto progress_before_forged = controller.slot(0U).progress;
+		const auto message_id_before_forged = controller.slot(0U).next_message_id;
+		const auto packet_sequence_before_forged = controller.slot(0U).next_packet_sequence;
 		const auto usage_before_forged = controller.owned_usage();
 		const auto activity_before_forged = controller.slot(0U).heartbeat.last_valid_network_activity_us;
 		const auto forged_result = controller.ingest(endpoint(), view(forged.bytes), due + 1U, 0U, false);
 		EXPECT_NE(detail::SessionIngressDropReason::None, forged_result.drop_reason);
 		EXPECT_EQ(usage_before_forged, controller.owned_usage());
-		EXPECT_EQ(before_forged.progress, controller.slot(0U).progress);
-		EXPECT_EQ(before_forged.next_message_id, controller.slot(0U).next_message_id);
-		EXPECT_EQ(before_forged.next_packet_sequence, controller.slot(0U).next_packet_sequence);
+		EXPECT_EQ(progress_before_forged, controller.slot(0U).progress);
+		EXPECT_EQ(message_id_before_forged, controller.slot(0U).next_message_id);
+		EXPECT_EQ(packet_sequence_before_forged, controller.slot(0U).next_packet_sequence);
 		EXPECT_EQ(activity_before_forged, controller.slot(0U).heartbeat.last_valid_network_activity_us)
 			<< "A forged ACK is rejected before activity mutation.";
 		EXPECT_EQ(1U, controller.slot(0U).reliable_items_in_use);
@@ -1445,15 +2143,17 @@ void expect_session_begin_ack_lifecycle()
 			<< "The exact APPLIED ACK refreshes activity before releasing its tuple.";
 		EXPECT_FALSE(controller.has_output());
 
-		const auto before_late = controller.slot(0U);
+		const auto progress_before_late = controller.slot(0U).progress;
+		const auto message_id_before_late = controller.slot(0U).next_message_id;
+		const auto packet_sequence_before_late = controller.slot(0U).next_packet_sequence;
 		const auto usage_before_late = controller.owned_usage();
 		const auto activity_before_late = controller.slot(0U).heartbeat.last_valid_network_activity_us;
 		const auto late = controller.ingest(endpoint(), view(applied.bytes), due + 3U, 0U, false);
 		EXPECT_NE(detail::SessionIngressDropReason::None, late.drop_reason);
 		EXPECT_EQ(usage_before_late, controller.owned_usage());
-		EXPECT_EQ(before_late.progress, controller.slot(0U).progress);
-		EXPECT_EQ(before_late.next_message_id, controller.slot(0U).next_message_id);
-		EXPECT_EQ(before_late.next_packet_sequence, controller.slot(0U).next_packet_sequence);
+		EXPECT_EQ(progress_before_late, controller.slot(0U).progress);
+		EXPECT_EQ(message_id_before_late, controller.slot(0U).next_message_id);
+		EXPECT_EQ(packet_sequence_before_late, controller.slot(0U).next_packet_sequence);
 		EXPECT_EQ(activity_before_late, controller.slot(0U).heartbeat.last_valid_network_activity_us)
 			<< "An APPLIED ACK becomes late after release and cannot extend the timeout.";
 		EXPECT_EQ(0U, controller.slot(0U).reliable_items_in_use);

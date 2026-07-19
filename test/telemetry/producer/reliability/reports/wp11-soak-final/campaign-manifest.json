@@ -1,0 +1,16 @@
+{
+  "schema": "fs2open.telemetry.phase1.soak-campaign.v1",
+  "status": "passed",
+  "configuration": {
+    "profile": "independent-loss-1",
+    "selection": "lowest accepted steady loss profile; retains the real UDP impairment and resynchronization oracles",
+    "seed": 4242,
+    "durationSeconds": 1800,
+    "requiredMinuteObservations": 30
+  },
+  "runs": [
+    {"name":"normal","report":"soak-normal-1800s-seed4242.json","status":"passed","observations":30,"initialSessionId":1,"normalShutdownReleased":true,"peakP99TickNs":3341300,"peakMemoryBytes":0,"peakQueueDepth":1,"recoveryAfterEndUs":1600652},
+    {"name":"restart-mission","report":"soak-restart-mission-1800s-seed4242.json","status":"passed","observations":30,"initialSessionId":1,"missionGenerationBefore":1,"missionGenerationAfter":2,"missionSessionId":2,"missionConverged":true,"normalShutdownReleased":true,"peakP99TickNs":2992700,"peakMemoryBytes":0,"peakQueueDepth":1,"recoveryAfterEndUs":1600652},
+    {"name":"restart-process","report":"soak-restart-process-1800s-seed4242.json","status":"passed","observations":30,"initialSessionId":1,"processSessionId":4096,"processConverged":true,"normalShutdownReleased":true,"processShutdownReleased":true,"peakP99TickNs":2084300,"peakMemoryBytes":0,"peakQueueDepth":1,"recoveryAfterEndUs":1600652}
+  ]
+}

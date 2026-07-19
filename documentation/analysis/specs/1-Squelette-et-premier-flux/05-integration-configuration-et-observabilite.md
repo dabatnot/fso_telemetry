@@ -322,7 +322,7 @@ La première keyframe est mesurée séparément avec temps, allocations et taill
 
 ### 10.3 Protocole de mesure
 
-Le rapport enregistre révision, build type, compilateur, plateforme, CPU, fréquence/power mode, mission, `flightHz`, nombre de clients, taille des états, durée, warm-up, nombre d'échantillons et commandes. Les percentiles sont calculés sur les échantillons bruts archivés, pas sur les moyennes de buckets. Au minimum :
+Le rapport enregistre révision, build type, compilateur, plateforme, CPU, fréquence/power mode, mission, `flightHz`, nombre de clients, taille des états, durée, warm-up, nombre d'échantillons et commandes. Les percentiles sont calculés sur les échantillons bruts archivés, pas sur les moyennes de buckets. Les seuils numériques de `P1-REQ-033` sont évalués sur une build `Release`; une build `Debug` DOIT compiler et exécuter les contrats fonctionnels du protocole de mesure, mais ses p99 ne ferment ni ne bloquent aucune gate de performance. Au minimum :
 
 1. témoin sans module ;
 2. module compilé mais fichier absent ;

@@ -1,0 +1,20 @@
+{
+  "schema": "fs2open.telemetry.phase1.native-udp-evidence.v1",
+  "status": "passed",
+  "command": "FSO_TELEMETRY_RUN_NATIVE_LOOPBACK=1 build\\bin\\Debug\\unittests.exe --gtest_filter=TelemetryNativeRuntimeLoopbackContract.IPv4NegotiationHeartbeatAndShutdown:TelemetryNativeRuntimeLoopbackContract.IPv6NegotiationHeartbeatAndShutdown:TelemetryNativeRuntimeIntegrationContract.AllowlistAndVersionNegotiationComposeWithoutDurableRejectedState --gtest_color=no",
+  "result": "passed",
+  "passedTests": [
+    "TelemetryNativeRuntimeLoopbackContract.IPv4NegotiationHeartbeatAndShutdown",
+    "TelemetryNativeRuntimeLoopbackContract.IPv6NegotiationHeartbeatAndShutdown",
+    "TelemetryNativeRuntimeIntegrationContract.AllowlistAndVersionNegotiationComposeWithoutDurableRejectedState"
+  ],
+  "covered": {
+    "ipv4Loopback": true,
+    "ipv6Loopback": true,
+    "nonAllowlistedSource": true,
+    "badSourcePort": true,
+    "endpointChange": true
+  },
+  "uncovered": [],
+  "note": "The loopback tests use actual native UDP sockets. Each now establishes a session on one loopback socket, then injects a valid ACK and a valid HEARTBEAT response from a second OS socket with a distinct source port and asserts that the established session is unchanged. The allowlist test remains an integration backend test."
+}

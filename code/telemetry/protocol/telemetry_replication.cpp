@@ -91,8 +91,9 @@ CumulativeStateDelta normalized_delta_copy(const CumulativeStateDelta& delta)
 	normalized.baseline_snapshot_id = delta.baseline_snapshot_id;
 	normalized.delta_sequence = delta.delta_sequence;
 	normalized.producer_sample_time_us = delta.producer_sample_time_us;
-	normalized.mutations.reserve(delta.mutations.size());
-	for (const auto& mutation : delta.mutations) {
+	normalized.mutations.reserve(delta.mutation_count());
+	for (std::size_t index = 0U; index < delta.mutation_count(); ++index) {
+		const auto& mutation = delta.mutations[index];
 		normalized.mutations.push_back({mutation.kind, normalized_atom_copy(mutation.atom)});
 	}
 	return normalized;
@@ -125,11 +126,12 @@ bool is_implicitly_deleted_by_cascade(const StateAtom& atom, const StateImage& c
 
 const StateMutation* find_mutation(const CumulativeStateDelta& delta, const StateAtomKey& key) noexcept
 {
+	const auto logical_end = delta.mutations.begin() + static_cast<std::ptrdiff_t>(delta.mutation_count());
 	const auto iterator = std::lower_bound(delta.mutations.begin(),
-		delta.mutations.end(),
+		logical_end,
 		key,
 		[](const StateMutation& mutation, const StateAtomKey& searched) { return mutation.atom.key < searched; });
-	return iterator != delta.mutations.end() && iterator->atom.key == key ? &*iterator : nullptr;
+	return iterator != logical_end && iterator->atom.key == key ? &*iterator : nullptr;
 }
 
 bool cascade_owner_is_deleted(const StateAtom& atom, const CumulativeStateDelta& delta) noexcept
@@ -178,11 +180,11 @@ StateDeltaApplyResult merge_cumulative_state_delta(const StateImage& baseline,
 	const auto& baseline_records = baseline.records();
 	std::size_t baseline_index = 0;
 	std::size_t mutation_index = 0;
-	while (baseline_index < baseline_records.size() || mutation_index < delta.mutations.size()) {
+	while (baseline_index < baseline_records.size() || mutation_index < delta.mutation_count()) {
 		const StateAtom* old_atom =
 			baseline_index < baseline_records.size() ? &baseline_records[baseline_index] : nullptr;
 		const StateMutation* mutation =
-			mutation_index < delta.mutations.size() ? &delta.mutations[mutation_index] : nullptr;
+			mutation_index < delta.mutation_count() ? &delta.mutations[mutation_index] : nullptr;
 
 		if (mutation == nullptr || (old_atom != nullptr && old_atom->key < mutation->atom.key)) {
 			if (!cascade_owner_is_deleted(*old_atom, delta)) {
@@ -376,11 +378,6 @@ ProducerBaselineResult build_delta(const StateImage& baseline,
 	std::uint64_t producer_sample_time_us,
 	CumulativeStateDelta& delta) noexcept
 {
-	CumulativeStateDelta candidate;
-	candidate.baseline_snapshot_id = baseline_snapshot_id;
-	candidate.delta_sequence = delta_sequence;
-	candidate.producer_sample_time_us = producer_sample_time_us;
-
 	DeltaPlan plan;
 	if (const auto result = analyze_delta(baseline, current, plan); result != ProducerBaselineResult::Applied) {
 		return result;
@@ -388,10 +385,43 @@ ProducerBaselineResult build_delta(const StateImage& baseline,
 	try {
 		// analyze_delta proves this reservation and all copied record payloads
 		// fit the one-MiB Delta gate before any proportional output allocation.
-		candidate.mutations.reserve(plan.mutation_count);
+		if (delta.mutations.capacity() < plan.mutation_count) {
+			delta.mutations.reserve(plan.mutation_count);
+		}
+		if (delta.mutations.size() < plan.mutation_count) {
+			delta.mutations.resize(plan.mutation_count);
+		}
 	} catch (const std::bad_alloc&) {
 		return ProducerBaselineResult::AllocationFailed;
 	}
+	delta.baseline_snapshot_id = baseline_snapshot_id;
+	delta.delta_sequence = delta_sequence;
+	delta.producer_sample_time_us = producer_sample_time_us;
+	delta.active_mutation_count = plan.mutation_count;
+	std::size_t mutation_index = 0U;
+	auto append_mutation = [&delta, &mutation_index](StateMutationKind kind, const StateAtom& atom) noexcept {
+		if (mutation_index >= delta.mutation_count()) {
+			return false;
+		}
+		auto& target = delta.mutations[mutation_index++];
+		target.kind = kind;
+		target.atom = atom;
+		return true;
+	};
+	auto append_delete = [&delta, &mutation_index](const StateAtom& atom) noexcept {
+		if (mutation_index >= delta.mutation_count()) {
+			return false;
+		}
+		auto& target = delta.mutations[mutation_index++];
+		target.kind = StateMutationKind::Delete;
+		target.atom.key = atom.key;
+		target.atom.record_version = atom.record_version;
+		target.atom.lifecycle = StateRecordLifecycle::ExplicitCreateDelete;
+		target.atom.value.clear();
+		target.atom.has_cascade_owner = false;
+		target.atom.cascade_owner = {};
+		return true;
+	};
 
 	const auto& before = baseline.records();
 	const auto& after = current.records();
@@ -401,10 +431,8 @@ ProducerBaselineResult build_delta(const StateImage& baseline,
 		while (before_index < before.size() || after_index < after.size()) {
 			if (before_index == before.size()) {
 				const auto& atom = after[after_index++];
-				candidate.mutations.push_back(
-					{atom.lifecycle == StateRecordLifecycle::ExplicitCreateDelete ? StateMutationKind::Create
-																				  : StateMutationKind::Upsert,
-						atom});
+				if (!append_mutation(atom.lifecycle == StateRecordLifecycle::ExplicitCreateDelete ? StateMutationKind::Create
+																												: StateMutationKind::Upsert, atom)) return ProducerBaselineResult::AllocationFailed;
 				continue;
 			}
 			if (after_index == after.size()) {
@@ -415,7 +443,7 @@ ProducerBaselineResult build_delta(const StateImage& baseline,
 				if (atom.lifecycle != StateRecordLifecycle::ExplicitCreateDelete) {
 					return ProducerBaselineResult::KeyframeRequired;
 				}
-				candidate.mutations.push_back(make_delete_mutation(atom));
+				if (!append_delete(atom)) return ProducerBaselineResult::AllocationFailed;
 				continue;
 			}
 
@@ -429,13 +457,11 @@ ProducerBaselineResult build_delta(const StateImage& baseline,
 				if (old_atom.lifecycle != StateRecordLifecycle::ExplicitCreateDelete) {
 					return ProducerBaselineResult::KeyframeRequired;
 				}
-				candidate.mutations.push_back(make_delete_mutation(old_atom));
+				if (!append_delete(old_atom)) return ProducerBaselineResult::AllocationFailed;
 				++before_index;
 			} else if (new_atom.key < old_atom.key) {
-				candidate.mutations.push_back(
-					{new_atom.lifecycle == StateRecordLifecycle::ExplicitCreateDelete ? StateMutationKind::Create
-																					  : StateMutationKind::Upsert,
-						new_atom});
+				if (!append_mutation(new_atom.lifecycle == StateRecordLifecycle::ExplicitCreateDelete ? StateMutationKind::Create
+																														 : StateMutationKind::Upsert, new_atom)) return ProducerBaselineResult::AllocationFailed;
 				++after_index;
 			} else {
 				if (old_atom.record_version != new_atom.record_version || old_atom.lifecycle != new_atom.lifecycle ||
@@ -444,7 +470,7 @@ ProducerBaselineResult build_delta(const StateImage& baseline,
 					return ProducerBaselineResult::KeyframeRequired;
 				}
 				if (old_atom.value != new_atom.value) {
-					candidate.mutations.push_back({StateMutationKind::Upsert, new_atom});
+					if (!append_mutation(StateMutationKind::Upsert, new_atom)) return ProducerBaselineResult::AllocationFailed;
 				}
 				++before_index;
 				++after_index;
@@ -454,11 +480,10 @@ ProducerBaselineResult build_delta(const StateImage& baseline,
 		return ProducerBaselineResult::AllocationFailed;
 	}
 
-	if (validate_cumulative_state_delta(candidate) != StateDeltaValidationResult::Valid) {
-		return candidate.encoded_size() > MaxStateMessageSize ? ProducerBaselineResult::KeyframeRequired
-															  : ProducerBaselineResult::InvalidArgument;
+	if (validate_cumulative_state_delta(delta) != StateDeltaValidationResult::Valid) {
+		return delta.encoded_size() > MaxStateMessageSize ? ProducerBaselineResult::KeyframeRequired
+																													 : ProducerBaselineResult::InvalidArgument;
 	}
-	delta = std::move(candidate);
 	return ProducerBaselineResult::Applied;
 }
 
@@ -583,6 +608,61 @@ StateImageResult StateImage::create(std::vector<StateAtom> records,
 	return StateImageResult::Created;
 }
 
+StateImageResult StateImage::adopt_preallocated(const std::shared_ptr<const std::vector<StateAtom>>& records,
+	StateImage& image,
+	StateImageInvalidRecordReason& invalid_record_reason) noexcept
+{
+	invalid_record_reason = StateImageInvalidRecordReason::None;
+	if (!records) {
+		return StateImageResult::InvalidRecord;
+	}
+	std::size_t total_size = 0U;
+	std::size_t retained_size = 0U;
+	if (!checked_multiply(records->size(), sizeof(StateAtom), retained_size) ||
+		retained_size > MaxReplicationStateImageRetainedBytes) {
+		return StateImageResult::SizeLimitExceeded;
+	}
+	for (std::size_t index = 0U; index < records->size(); ++index) {
+		const auto& record = (*records)[index];
+		std::size_t record_size = 0U;
+		if (!structurally_valid_atom(record, record_size)) {
+			invalid_record_reason = StateImageInvalidRecordReason::MalformedAtom;
+			return StateImageResult::InvalidRecord;
+		}
+		if ((index != 0U && !((*records)[index - 1U].key < record.key)) ||
+			!checked_add(total_size, record_size, total_size) || total_size > MaxTransactionSize) {
+			return index != 0U && (*records)[index - 1U].key == record.key ? StateImageResult::DuplicateKey
+																									 : StateImageResult::InvalidRecord;
+		}
+		std::size_t record_retained_size = 0U;
+		if (!checked_add(record.value.size(), record.key.identity.size(), record_retained_size) ||
+			!checked_add(record_retained_size, record.cascade_owner.identity.size(), record_retained_size) ||
+			!checked_add(retained_size, record_retained_size, retained_size) ||
+			retained_size > MaxReplicationStateImageRetainedBytes) {
+			return StateImageResult::SizeLimitExceeded;
+		}
+	}
+	for (const auto& record : *records) {
+		if (!record.has_cascade_owner) continue;
+		const auto owner = std::lower_bound(records->begin(), records->end(), record.cascade_owner,
+			[](const StateAtom& atom, const StateAtomKey& key) { return atom.key < key; });
+		if (owner == records->end() || owner->key != record.cascade_owner) {
+			invalid_record_reason = StateImageInvalidRecordReason::MissingCascadeOwner;
+			return StateImageResult::InvalidRecord;
+		}
+		if (owner->lifecycle != StateRecordLifecycle::ExplicitCreateDelete || owner->has_cascade_owner) {
+			invalid_record_reason = StateImageInvalidRecordReason::InvalidCascadeOwner;
+			return StateImageResult::InvalidRecord;
+		}
+	}
+	StateImage candidate;
+	candidate.m_records = records;
+	candidate.m_encoded_snapshot_records_size = total_size;
+	candidate.m_retained_payload_bytes = retained_size;
+	image = std::move(candidate);
+	return StateImageResult::Created;
+}
+
 const std::vector<StateAtom>& StateImage::records() const noexcept
 {
 	static const std::vector<StateAtom> EmptyRecords;
@@ -602,7 +682,8 @@ bool operator==(const StateMutation& left, const StateMutation& right) noexcept
 std::size_t CumulativeStateDelta::encoded_size() const noexcept
 {
 	std::size_t total = DeltaPayloadPrefixSize;
-	for (const auto& mutation : mutations) {
+	for (std::size_t index = 0U; index < mutation_count(); ++index) {
+		const auto& mutation = mutations[index];
 		const auto payload_size =
 			mutation.kind == StateMutationKind::Delete ? mutation.atom.key.identity.size() : mutation.atom.value.size();
 		std::size_t record_size = 0;
@@ -616,8 +697,14 @@ std::size_t CumulativeStateDelta::encoded_size() const noexcept
 
 bool operator==(const CumulativeStateDelta& left, const CumulativeStateDelta& right) noexcept
 {
-	return left.baseline_snapshot_id == right.baseline_snapshot_id && left.delta_sequence == right.delta_sequence &&
-		   left.producer_sample_time_us == right.producer_sample_time_us && left.mutations == right.mutations;
+	if (left.baseline_snapshot_id != right.baseline_snapshot_id || left.delta_sequence != right.delta_sequence ||
+		left.producer_sample_time_us != right.producer_sample_time_us || left.mutation_count() != right.mutation_count()) {
+		return false;
+	}
+	for (std::size_t index = 0U; index < left.mutation_count(); ++index) {
+		if (!(left.mutations[index] == right.mutations[index])) return false;
+	}
+	return true;
 }
 
 namespace {
@@ -674,6 +761,19 @@ ProducerResyncResult ProducerResyncTracker::accept(const ResyncRequestPayload& r
 	return ProducerResyncResult::AcceptedNewCandidate;
 }
 
+bool ProducerResyncTracker::is_known_duplicate(const ResyncRequestPayload& request) const noexcept
+{
+	if (validate_resync_request_payload(request) != ValidationError::None) {
+		return false;
+	}
+	for (const auto& entry : m_deduplication_entries) {
+		if (entry.occupied && entry.request.request_id == request.request_id) {
+			return same_resync_request(request, entry.request);
+		}
+	}
+	return false;
+}
+
 ProducerResyncResult ProducerResyncTracker::expire(std::uint64_t now_us) noexcept
 {
 	expire_deduplication_entries(now_us);
@@ -717,18 +817,19 @@ void ProducerResyncTracker::expire_deduplication_entries(std::uint64_t now_us) n
 
 StateDeltaValidationResult validate_cumulative_state_delta(const CumulativeStateDelta& delta) noexcept
 {
-	if (delta.baseline_snapshot_id == 0 || delta.delta_sequence == 0 || delta.mutations.empty() ||
-		delta.mutations.size() > std::numeric_limits<std::uint16_t>::max()) {
+	if (delta.baseline_snapshot_id == 0 || delta.delta_sequence == 0 || delta.mutation_count() == 0U ||
+		delta.mutation_count() > std::numeric_limits<std::uint16_t>::max()) {
 		return StateDeltaValidationResult::InvalidIdentity;
 	}
 	std::size_t retained_size = 0;
-	if (!checked_multiply(delta.mutations.size(), sizeof(StateMutation), retained_size) ||
+	if (!checked_multiply(delta.mutation_count(), sizeof(StateMutation), retained_size) ||
 		retained_size > MaxReplicationDeltaRetainedBytes) {
 		return StateDeltaValidationResult::SizeLimitExceeded;
 	}
 
 	const StateAtomKey* previous_key = nullptr;
-	for (const auto& mutation : delta.mutations) {
+	for (std::size_t index = 0U; index < delta.mutation_count(); ++index) {
+		const auto& mutation = delta.mutations[index];
 		std::size_t ignored = 0;
 		if (!is_known_mutation(mutation.kind) ||
 			(mutation.kind == StateMutationKind::Delete ? !structurally_valid_delete_atom(mutation.atom)
@@ -954,25 +1055,28 @@ ProducerBaselineResult ProducerBaselineTracker::emit_cumulative_delta(std::uint6
 	if (m_next_delta_sequence == 0) {
 		return ProducerBaselineResult::SequenceExhausted;
 	}
-	if (dirty_record_count(m_active_baseline, m_current) == 0) {
-		// v1 forbids an empty Delta. Once a non-empty cumulative delta may
-		// have reached the peer, returning completely to the baseline needs a
-		// keyframe; otherwise the peer could retain the previous difference
-		// forever.
-		return m_emitted_delta_for_active_baseline ? ProducerBaselineResult::KeyframeRequired
-												   : ProducerBaselineResult::NoChange;
-	}
-	CumulativeStateDelta candidate;
+	// The caller supplies a per-session scratch delta with its mutation and
+	// payload capacities provisioned at startup. Building through a fresh local
+	// candidate defeats that ownership and reallocates/copies every tick before
+	// moving into the same scratch. analyze_delta runs before build_delta writes
+	// anything, and callers discard the scratch on non-Applied, so direct reuse
+	// preserves the transaction result while keeping steady-state work bounded.
 	const auto result = build_delta(m_active_baseline,
 		m_current,
 		m_active_snapshot_id,
 		m_next_delta_sequence,
 		producer_sample_time_us,
-		candidate);
+		delta);
+	if (result == ProducerBaselineResult::NoChange) {
+		// v1 forbids an empty Delta. analyze_delta already performed the exact
+		// ordered comparison, so do not repeat it with dirty_record_count just
+		// to distinguish this case.
+		return m_emitted_delta_for_active_baseline ? ProducerBaselineResult::KeyframeRequired
+												   : ProducerBaselineResult::NoChange;
+	}
 	if (result != ProducerBaselineResult::Applied) {
 		return result;
 	}
-	delta = std::move(candidate);
 	m_emitted_delta_for_active_baseline = true;
 	m_next_delta_sequence =
 		m_next_delta_sequence == std::numeric_limits<std::uint32_t>::max() ? 0 : m_next_delta_sequence + 1;

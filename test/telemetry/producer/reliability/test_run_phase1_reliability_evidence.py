@@ -1,0 +1,89 @@
+#!/usr/bin/env python3
+"""Contract tests for the WP11 reliability evidence orchestrator."""
+
+from __future__ import annotations
+
+import importlib.util
+import json
+import subprocess
+import sys
+import tempfile
+import textwrap
+import unittest
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parent
+RUNNER = ROOT / "run_phase1_reliability_evidence.py"
+
+
+def load_runner():
+    spec = importlib.util.spec_from_file_location("phase1_reliability", RUNNER)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+class ReliabilityEvidenceContractTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.module = load_runner()
+        self.temp = tempfile.TemporaryDirectory()
+        self.root = Path(self.temp.name)
+        self.harness = self.root / "fake_harness.py"
+
+    def tearDown(self) -> None:
+        self.temp.cleanup()
+
+    def write_harness(self, missing: str = "") -> None:
+        code = f'''#!/usr/bin/env python3
+import argparse, json
+from pathlib import Path
+p=argparse.ArgumentParser(); p.add_argument("--profile"); p.add_argument("--seed", type=int); p.add_argument("--duration-seconds", type=int); p.add_argument("--report", type=Path); p.add_argument("--restart-mission", action="store_true"); p.add_argument("--restart-process", action="store_true"); a=p.parse_args()
+model, _, percent=a.profile.rpartition("-"); model=model.replace("-loss", "")
+report={{"schema":"fs2open.telemetry.phase1.reliability-profile.v1","status":"passed","profile":a.profile,"seed":a.seed,"durationSeconds":a.duration_seconds,
+"injection":{{"lossModel":model,"lossPercent":int(percent),"duplication":True,"reordering":True,"jitter":True,"temporaryCut":True,"missingFragments":True,"slowOrSilentClient":True,"wouldBlock":True}},
+"transport":{{"ipv4Loopback":True,"ipv6Loopback":True,"nonAllowlistedSource":True,"badSourcePort":True,"endpointChange":True}},
+"oracles":{{"boundedNoWait":True,"reliableNotEvictedByDelta":True,"finalStateEqualsCanonical":True,"countersConsistent":True,"returnedLiveWithinSeconds":10}},
+"minuteSamples":[{{"minute":0,"memoryCurrentBytes":1,"memoryPeakBytes":1,"socketHandles":2,"queueDepth":0,"clients":1,"baselines":1,"p99TickNs":1}}],
+"lifecycle":{{"missionGenerationIncreased":True,"missionSessionRenewed":True,"processSessionChanged":True,"noLiveModuleAllocationsAfterShutdown":True}}}}
+if {missing!r}: report["injection"].pop({missing!r}, None)
+a.report.parent.mkdir(parents=True, exist_ok=True); a.report.write_text(json.dumps(report), encoding="utf-8")
+'''
+        self.harness.write_text(textwrap.dedent(code), encoding="utf-8")
+
+    def invoke(self, *extra: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run([sys.executable, str(RUNNER), "--harness", str(self.harness), "--output-dir", str(self.root / "out"), "--duration-seconds", "1", "--seed", "70", "--restart-mission", "--restart-process", *extra], text=True, capture_output=True, check=False)
+
+    def test_all_six_profiles_archive_deterministic_command_and_validated_report(self) -> None:
+        self.write_harness()
+        result = self.invoke()
+        self.assertEqual(0, result.returncode, result.stderr)
+        manifest = json.loads((self.root / "out" / "campaign-manifest.json").read_text(encoding="utf-8"))
+        self.assertEqual("passed", manifest["status"])
+        self.assertEqual(list(self.module.PROFILES), [record["profile"] for record in manifest["profiles"]])
+        self.assertEqual([70, 71, 72, 73, 74, 75], [record["seed"] for record in manifest["profiles"]])
+        for record in manifest["profiles"]:
+            self.assertEqual("passed", record["status"])
+            self.assertEqual(0, record["exitCode"])
+            self.assertIn("--restart-process", record["command"])
+            self.assertTrue((self.root / "out" / record["profile"] / "validated-report.json").is_file())
+
+    def test_missing_required_impairment_fails_and_keeps_failure_evidence(self) -> None:
+        self.write_harness("wouldBlock")
+        result = self.invoke("--profile", "independent-loss-1")
+        self.assertEqual(1, result.returncode)
+        manifest = json.loads((self.root / "out" / "campaign-manifest.json").read_text(encoding="utf-8"))
+        self.assertEqual("failed", manifest["status"])
+        self.assertEqual("failed", manifest["profiles"][0]["status"])
+        self.assertIn("wouldBlock", manifest["profiles"][0]["error"])
+
+    def test_existing_p93_runner_is_rejected_as_missing_wp11_harness_interface(self) -> None:
+        missing = self.root / "does-not-exist.exe"
+        result = subprocess.run([sys.executable, str(RUNNER), "--harness", str(missing), "--output-dir", str(self.root / "out")], text=True, capture_output=True, check=False)
+        self.assertEqual(2, result.returncode)
+        self.assertIn("missing WP11 test-only harness", result.stderr)
+
+
+if __name__ == "__main__":
+    unittest.main()

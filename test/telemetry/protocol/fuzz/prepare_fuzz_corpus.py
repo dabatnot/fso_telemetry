@@ -61,10 +61,11 @@ class Corpus:
             if not self.entries[target]:
                 self.add(target, b"", "synthetic:empty-input")
 
-    def manifest(self, vectors: Path, metadata_count: int, input_count: int) -> dict[str, Any]:
+    def manifest(self, vector_sources: list[dict[str, Any]], metadata_count: int, input_count: int) -> dict[str, Any]:
         return {
-            "schema": "FSTL-1.0-fuzz-corpus",
-            "sourceVectors": "test/telemetry/protocol/vectors",
+            "schema": "FSTL-1.1-fuzz-corpus",
+            "sourceVectors": [source["root"] for source in vector_sources],
+            "sourceVectorRoots": vector_sources,
             "metadataCount": metadata_count,
             "inputFileCount": input_count,
             "targets": {
@@ -207,13 +208,18 @@ def safe_input_path(metadata_path: Path, value: str) -> Path:
     return candidate
 
 
-def prepare(vectors: Path, output: Path) -> dict[str, Any]:
-    vectors = vectors.resolve()
+def prepare(vector_roots: Iterable[Path], output: Path) -> dict[str, Any]:
+    vectors = [vector_root.resolve() for vector_root in vector_roots]
     output = output.resolve()
-    if not vectors.is_dir():
-        raise ValueError(f"vector directory does not exist: {vectors}")
-    if output == vectors or output in vectors.parents or vectors in output.parents:
-        raise ValueError("corpus output must not contain, or be contained by, the checked-in vector directory")
+    if not vectors:
+        raise ValueError("at least one vector directory is required")
+    if len(set(vectors)) != len(vectors):
+        raise ValueError("vector directories must be unique")
+    for vector_root in vectors:
+        if not vector_root.is_dir():
+            raise ValueError(f"vector directory does not exist: {vector_root}")
+        if output == vector_root or output in vector_root.parents or vector_root in output.parents:
+            raise ValueError("corpus output must not contain, or be contained by, a checked-in vector directory")
     if output.exists():
         shutil.rmtree(output)
     output.mkdir(parents=True)
@@ -221,69 +227,87 @@ def prepare(vectors: Path, output: Path) -> dict[str, Any]:
     corpus = Corpus(output)
     metadata_count = 0
     input_count = 0
-    for metadata_path in sorted(vectors.rglob("*.json")):
-        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
-        if not isinstance(metadata, dict) or not isinstance(metadata.get("inputFiles"), list):
-            continue
-        metadata_count += 1
-        inputs: list[tuple[str, bytes]] = []
-        for input_name in metadata["inputFiles"]:
-            if not isinstance(input_name, str):
-                raise ValueError(f"non-string input file in {metadata_path}")
-            input_path = safe_input_path(metadata_path, input_name)
-            data = input_path.read_bytes()
-            source = input_path.relative_to(vectors).as_posix()
-            inputs.append((source, data))
-            input_count += 1
-            corpus.add("fuzz_packet_reader", data, source)
+    vector_sources: list[dict[str, Any]] = []
+    for vectors_root in vectors:
+        source_metadata_count = 0
+        source_input_count = 0
+        source_root = vectors_root.name
+        for metadata_path in sorted(vectors_root.rglob("*.json")):
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            if not isinstance(metadata, dict) or not isinstance(metadata.get("inputFiles"), list):
+                continue
+            metadata_count += 1
+            source_metadata_count += 1
+            inputs: list[tuple[str, bytes]] = []
+            for input_name in metadata["inputFiles"]:
+                if not isinstance(input_name, str):
+                    raise ValueError(f"non-string input file in {metadata_path}")
+                input_path = safe_input_path(metadata_path, input_name)
+                data = input_path.read_bytes()
+                source = f"{source_root}/{input_path.relative_to(vectors_root).as_posix()}"
+                inputs.append((source, data))
+                input_count += 1
+                source_input_count += 1
+                corpus.add("fuzz_packet_reader", data, source)
 
-        kind = str(metadata.get("kind", ""))
-        message_type = int(metadata.get("messageType", 0) or 0)
-        if kind == "record":
-            for source, data in inputs:
-                record_type, version, flags, payload = normalize_record_vector(data, metadata)
-                container = record_container(record_type, flags)
-                direct = (
-                    bytes((1,))
-                    + struct.pack("<HBB", record_type, version, flags)
-                    + bytes((container, 0))
-                    + payload
-                )
-                corpus.add("fuzz_records", direct, source)
-                add_comm_record(corpus, record_type, payload, source)
-            continue
+            kind = str(metadata.get("kind", ""))
+            message_type = int(metadata.get("messageType", 0) or 0)
+            if kind == "record":
+                for source, data in inputs:
+                    record_type, version, flags, payload = normalize_record_vector(data, metadata)
+                    container = record_container(record_type, flags)
+                    direct = (
+                        bytes((1,))
+                        + struct.pack("<HBB", record_type, version, flags)
+                        + bytes((container, 0))
+                        + payload
+                    )
+                    corpus.add("fuzz_records", direct, source)
+                    add_comm_record(corpus, record_type, payload, source)
+                continue
 
-        if kind == "message-payload":
-            for source, payload in inputs:
-                add_message_payload(corpus, message_type, payload, source)
-            continue
+            if kind == "message-payload":
+                for source, payload in inputs:
+                    add_message_payload(corpus, message_type, payload, source)
+                continue
 
-        if kind == "datagram-sequence" or "datagrams" in metadata_path.parts:
-            sequence = bytearray()
-            parsed: list[Datagram] = []
-            for source, data in inputs:
-                corpus.add("fuzz_datagram", data, source)
-                if len(data) <= 0xFFFF:
-                    sequence += struct.pack("<H", len(data)) + data
-                candidate = parse_datagram(data)
-                if candidate is not None:
-                    parsed.append(candidate)
-                    add_message_payload(corpus, candidate.message_type, candidate.payload, source, candidate.flags)
-            if sequence:
-                corpus.add("fuzz_reassembler", bytes(sequence), metadata_path.relative_to(vectors).as_posix())
-            complete = logical_payload(parsed)
-            if complete is not None:
-                parsed_type, parsed_flags, payload = complete
-                add_message_payload(
-                    corpus,
-                    message_type or parsed_type,
-                    payload,
-                    f"{metadata_path.relative_to(vectors).as_posix()}#logical",
-                    parsed_flags,
-                )
+            if kind == "datagram-sequence" or "datagrams" in metadata_path.parts:
+                sequence = bytearray()
+                parsed: list[Datagram] = []
+                for source, data in inputs:
+                    corpus.add("fuzz_datagram", data, source)
+                    if len(data) <= 0xFFFF:
+                        sequence += struct.pack("<H", len(data)) + data
+                    candidate = parse_datagram(data)
+                    if candidate is not None:
+                        parsed.append(candidate)
+                        add_message_payload(corpus, candidate.message_type, candidate.payload, source, candidate.flags)
+                if sequence:
+                    corpus.add(
+                        "fuzz_reassembler",
+                        bytes(sequence),
+                        f"{source_root}/{metadata_path.relative_to(vectors_root).as_posix()}",
+                    )
+                complete = logical_payload(parsed)
+                if complete is not None:
+                    parsed_type, parsed_flags, payload = complete
+                    add_message_payload(
+                        corpus,
+                        message_type or parsed_type,
+                        payload,
+                        f"{source_root}/{metadata_path.relative_to(vectors_root).as_posix()}#logical",
+                        parsed_flags,
+                    )
+        vector_sources.append(
+            {
+                "root": f"test/telemetry/protocol/{source_root}",
+                "metadataCount": source_metadata_count,
+                "inputFileCount": source_input_count,
+            }
+        )
 
     corpus.ensure_nonempty()
-    manifest = corpus.manifest(vectors, metadata_count, input_count)
+    manifest = corpus.manifest(vector_sources, metadata_count, input_count)
     (output / "manifest.json").write_text(
         json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
@@ -292,7 +316,7 @@ def prepare(vectors: Path, output: Path) -> dict[str, Any]:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--vectors", type=Path, required=True)
+    parser.add_argument("--vectors", type=Path, action="append", required=True)
     parser.add_argument("--output", type=Path, required=True)
     return parser.parse_args()
 

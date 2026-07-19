@@ -55,7 +55,11 @@ FROZEN_ARTIFACT_COUNT_V1_0 = 438
 FROZEN_ARTIFACT_TREE_SHA256_V1_0 = "9baac6a20db33bcf350066ed533c5581b7117410899d7bc4a6dc24406e47856d"
 FSTL_1_1_DOCUMENT_SET_ID = "FSTL-1.1-AMENDMENT-NORMATIVE-DOCUMENTS"
 FSTL_1_1_DOCUMENT_SET_VERSION = "1.1.0"
-FSTL_1_1_DOCUMENT_TREE_SHA256 = "55855dea16285c185eed64bafed2a6a7f1b4cc54522128a36b39b0b1911fb631"
+# Computed by phase1_source_metadata(): SHA-256 over sorted
+# ``repo-relative-path + NUL + per-file-SHA-256 + LF`` entries for
+# PHASE1_SOURCE_NAMES.  Keep this pinned derived value so a normative-document
+# change cannot silently alter the generated FSTL 1.1 contract.
+FSTL_1_1_DOCUMENT_TREE_SHA256 = "fd3660bdf7e7beb8261a67e0464136755e509d794755b27eee1b13f71a72d1ef"
 
 SOURCE_NAMES = (
     "01-cadre-normatif-et-perimetre.md",

@@ -66,6 +66,10 @@ struct ReliableWindowLimits {
 	// consume capacity needed by a reliable message.
 	std::size_t max_entries = ReliableWindowDefaultEntries;
 	std::size_t max_retained_bytes = ReliableWindowDefaultRetainedBytes;
+	// Optional startup-only payload pool. Zero preserves the general-purpose
+	// window behaviour; a bounded runtime can reserve one fixed payload backing
+	// per entry and therefore retain without allocating after Ready.
+	std::size_t preallocated_payload_bytes_per_entry = 0U;
 	// A local, test-injectable secret. The peer controls neither this value nor
 	// the final jitter because session_id, message_id and retry number are mixed.
 	std::uint64_t jitter_seed = 0x4653544c5f52544fULL;
@@ -349,6 +353,13 @@ class ReliableSendWindow final {
 	{
 		return m_counters;
 	}
+	std::uint64_t allocation_events() const noexcept { return m_allocation_events; }
+	// Bytes in the startup-owned vector capacities. This deliberately prices
+	// both metadata vectors and the payload backing retained by the free-entry
+	// pool; sizeof(ReliableSendWindow) alone excludes all of these allocations.
+	static std::size_t preallocated_heap_bytes(std::size_t entry_count,
+		std::size_t payload_bytes_per_entry) noexcept;
+	std::size_t owned_preallocated_heap_bytes() const noexcept;
 
   private:
 	struct Entry {
@@ -383,12 +394,14 @@ class ReliableSendWindow final {
 
 	ReliableWindowLimits m_limits{};
 	std::vector<Entry> m_entries;
+	std::vector<Entry> m_free_entries;
 	std::size_t m_retained_bytes = 0;
 	std::size_t m_video_entry_count = 0;
 	std::size_t m_video_retained_bytes = 0;
 	bool m_has_valid_minimum_rtt = false;
 	std::uint64_t m_minimum_rtt_us = 0;
 	ReliableWindowCounters m_counters{};
+	std::uint64_t m_allocation_events = 0U;
 };
 
 } // namespace telemetry::protocol

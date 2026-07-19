@@ -2495,7 +2495,7 @@
       },
       {
         "path": "documentation/analysis/specs/1-Squelette-et-premier-flux/05-integration-configuration-et-observabilite.md",
-        "sha256": "85fd12bd2b3337238275912869097fc839efdbb03c605721cd8847d44a6b1e74"
+        "sha256": "dc3c7925298b12baa97a8b099690893b7e0c5ab0720a61ba0f6ac566bad11f69"
       },
       {
         "path": "documentation/analysis/specs/1-Squelette-et-premier-flux/06-validation-securite-et-conformite.md",
@@ -2503,12 +2503,12 @@
       },
       {
         "path": "documentation/analysis/specs/1-Squelette-et-premier-flux/07-livraison-et-tracabilite.md",
-        "sha256": "c8223b6378cc6464e238ac371920c20c078e0bad03446359631a53fd78797a86"
+        "sha256": "d367a5464d34b67f98f880de7d3c9b14df36730aeb4d513e2913fd17ab8b548a"
       }
     ],
     "file_count": 7,
     "identity": "FSTL-1.1-AMENDMENT-NORMATIVE-DOCUMENTS",
-    "tree_sha256": "55855dea16285c185eed64bafed2a6a7f1b4cc54522128a36b39b0b1911fb631",
+    "tree_sha256": "fd3660bdf7e7beb8261a67e0464136755e509d794755b27eee1b13f71a72d1ef",
     "version": "1.1.0"
   },
   "normative_sources": [
@@ -2530,7 +2530,7 @@
     },
     {
       "path": "documentation/analysis/specs/1-Squelette-et-premier-flux/05-integration-configuration-et-observabilite.md",
-      "sha256": "85fd12bd2b3337238275912869097fc839efdbb03c605721cd8847d44a6b1e74"
+      "sha256": "dc3c7925298b12baa97a8b099690893b7e0c5ab0720a61ba0f6ac566bad11f69"
     },
     {
       "path": "documentation/analysis/specs/1-Squelette-et-premier-flux/06-validation-securite-et-conformite.md",
@@ -2538,7 +2538,7 @@
     },
     {
       "path": "documentation/analysis/specs/1-Squelette-et-premier-flux/07-livraison-et-tracabilite.md",
-      "sha256": "c8223b6378cc6464e238ac371920c20c078e0bad03446359631a53fd78797a86"
+      "sha256": "d367a5464d34b67f98f880de7d3c9b14df36730aeb4d513e2913fd17ab8b548a"
     }
   ],
   "numeric_registries": {

@@ -226,6 +226,13 @@ Wp03KnownBudgetSubtotal calculate_wp06_startup_budget(const Wp03KnownBudgetSubto
 	std::size_t subtotal4 = 0U;
 	std::size_t subtotal5 = 0U;
 	std::size_t subtotal6 = 0U;
+	std::size_t subtotal7 = 0U;
+	std::size_t subtotal8 = 0U;
+	std::size_t subtotal9 = 0U;
+	std::size_t snapshot_egress_heap_bytes = 0U;
+	std::size_t delta_egress_heap_bytes = 0U;
+	std::size_t delta_scratch_heap_bytes = 0U;
+	std::size_t state_image_pool_bytes = 0U;
 	std::size_t known_bytes = 0U;
 	if (!checked_add_size(wp04_subtotal.reassembly_bytes,
 			wp04_subtotal.reliable_retention_projection_bytes,
@@ -237,13 +244,21 @@ Wp03KnownBudgetSubtotal calculate_wp06_startup_budget(const Wp03KnownBudgetSubto
 	if (!checked_multiply_size(max_clients, Wp06ClientSlotStorageBytes, client_slot_bytes) ||
 		!checked_multiply_size(max_clients, protocol::MaxStateReassemblyBytesPerClient, reassembly_bytes) ||
 		!checked_multiply_size(max_clients, Wp06ReliableRetentionBytesPerClient, reliable_bytes) ||
+		!checked_multiply_size(max_clients, Wp06SnapshotEgressHeapBytesPerClient, snapshot_egress_heap_bytes) ||
+		!checked_multiply_size(max_clients, Wp06DeltaEgressHeapBytesPerClient, delta_egress_heap_bytes) ||
+		!checked_multiply_size(max_clients, Wp06DeltaScratchHeapBytesPerClient, delta_scratch_heap_bytes) ||
+		!checked_multiply_size(max_clients, Phase1StateImagePool::BackingBytesPerClient, state_image_pool_bytes) ||
 		!checked_add_size(retained_known, client_slot_bytes, subtotal) ||
 		!checked_add_size(subtotal, reassembly_bytes, subtotal2) ||
 		!checked_add_size(subtotal2, reliable_bytes, subtotal3) ||
 		!checked_add_size(subtotal3, Wp06RateLimiterStorageBytes, subtotal4) ||
 		!checked_add_size(subtotal4, Wp06HandshakeCacheStorageBytes, subtotal5) ||
 		!checked_add_size(subtotal5, Wp06PreproofLedgerStorageBytes, subtotal6) ||
-		!checked_add_size(subtotal6, Wp06OutputQueueStorageBytes, known_bytes)) {
+		!checked_add_size(subtotal6, Wp06OutputQueueStorageBytes, subtotal7) ||
+		!checked_add_size(subtotal7, snapshot_egress_heap_bytes, subtotal8) ||
+		!checked_add_size(subtotal8, delta_egress_heap_bytes, subtotal9) ||
+		!checked_add_size(subtotal9, delta_scratch_heap_bytes, subtotal7) ||
+		!checked_add_size(subtotal7, state_image_pool_bytes, known_bytes)) {
 		return failed_result(StartupBudgetError::ArithmeticOverflow);
 	}
 	if (known_bytes > WP03ProvisionalKnownBudgetCapBytes) {
@@ -258,13 +273,22 @@ Wp03KnownBudgetSubtotal calculate_wp06_startup_budget(const Wp03KnownBudgetSubto
 	result.handshake_cache_bytes = Wp06HandshakeCacheStorageBytes;
 	result.preproof_ledger_bytes = Wp06PreproofLedgerStorageBytes;
 	result.output_queue_bytes = Wp06OutputQueueStorageBytes;
+	result.state_image_pool_bytes = state_image_pool_bytes;
+	result.snapshot_egress_heap_bytes = snapshot_egress_heap_bytes;
+	result.delta_egress_heap_bytes = delta_egress_heap_bytes;
+	result.delta_scratch_heap_bytes = delta_scratch_heap_bytes;
 	result.reassembly_bytes = reassembly_bytes;
 	result.reliable_retention_projection_bytes = reliable_bytes;
 	result.client_slot_count = max_clients;
 	result.reassembly_slot_count = max_clients * protocol::MaxStateReassembliesPerClient;
 	for (const auto category : {DeferredStartupBudgetCategory::ClientSlotStorage,
 			 DeferredStartupBudgetCategory::StateReassemblyStorage,
-			 DeferredStartupBudgetCategory::ReliableWindowStorage}) {
+			 DeferredStartupBudgetCategory::ReliableWindowStorage,
+				 // P8's inline trackers live in SessionControllerSlot; their separate
+				 // vector capacities are priced above as dedicated owned heap storage.
+			 DeferredStartupBudgetCategory::BaselineStorage,
+			 DeferredStartupBudgetCategory::DeltaStorage,
+			 DeferredStartupBudgetCategory::SerializationScratch}) {
 		const auto bit = static_cast<std::uint16_t>(1U << static_cast<std::uint8_t>(category));
 		result.deferred_categories = static_cast<std::uint16_t>(result.deferred_categories & ~bit);
 	}
@@ -276,7 +300,11 @@ bool wp06_budget_matches_owned_storage(const Wp03KnownBudgetSubtotal& budget,
 	const Wp06OwnedCapacity& owned) noexcept
 {
 	std::size_t expected_client_slot_bytes = 0U;
-	if (!checked_multiply_size(owned.client_slots, Wp06ClientSlotStorageBytes, expected_client_slot_bytes)) {
+	std::size_t expected_baseline_slots = 0U;
+	std::size_t expected_delta_slots = 0U;
+	if (!checked_multiply_size(owned.client_slots, Wp06ClientSlotStorageBytes, expected_client_slot_bytes) ||
+		!checked_multiply_size(owned.client_slots, BaselineSlotsPerClient, expected_baseline_slots) ||
+		!checked_multiply_size(owned.client_slots, DeltaSlotsPerClient, expected_delta_slots)) {
 		return false;
 	}
 	return budget.error == StartupBudgetError::None &&
@@ -285,11 +313,70 @@ bool wp06_budget_matches_owned_storage(const Wp03KnownBudgetSubtotal& budget,
 		budget.reassembly_slot_count == owned.state_reassembly_slots &&
 		budget.reassembly_bytes == owned.state_reassembly_bytes &&
 		budget.reliable_retention_projection_bytes == owned.reliable_retention_bytes &&
+		budget.baseline_slot_count == expected_baseline_slots && budget.baseline_slot_count == owned.baseline_slots &&
+		budget.delta_slot_count == expected_delta_slots && budget.delta_slot_count == owned.delta_slots &&
 		budget.rate_limiter_bytes == owned.rate_limiter_bytes &&
 		budget.handshake_cache_bytes == owned.handshake_cache_bytes &&
 		budget.preproof_ledger_bytes == owned.preproof_ledger_bytes &&
 		budget.output_queue_bytes == owned.output_queue_bytes &&
+		budget.snapshot_egress_heap_bytes == owned.snapshot_egress_heap_bytes &&
+		budget.delta_egress_heap_bytes == owned.delta_egress_heap_bytes &&
+		budget.delta_scratch_heap_bytes == owned.delta_scratch_heap_bytes &&
 		owned.dynamic_allocations_after_ready == 0U;
+}
+
+bool wp06_budget_matches_state_image_pool(const Wp03KnownBudgetSubtotal& budget,
+	std::size_t client_count,
+	std::size_t state_image_pool_bytes) noexcept
+{
+	std::size_t expected = 0U;
+	return budget.error == StartupBudgetError::None &&
+		checked_multiply_size(client_count, Phase1StateImagePool::BackingBytesPerClient, expected) &&
+		budget.state_image_pool_bytes == expected && state_image_pool_bytes == expected;
+}
+
+Wp03KnownBudgetSubtotal apply_wp09_metrics_budget(const Wp03KnownBudgetSubtotal& wp08_subtotal,
+	std::size_t metrics_bytes,
+	bool metrics_provisioned) noexcept
+{
+	if (wp08_subtotal.error != StartupBudgetError::None) {
+		return failed_result(wp08_subtotal.error);
+	}
+	std::size_t known_bytes = 0U;
+	std::uint64_t metric_bytes = 0U;
+	std::uint64_t metric_known_bytes = 0U;
+	if (!checked_add_size(wp08_subtotal.known_bytes, metrics_bytes, known_bytes) ||
+		!size_value_to_metric(metrics_bytes, metric_bytes) ||
+		!checked_add_metric_u64(wp08_subtotal.metric_known_bytes, metric_bytes, metric_known_bytes)) {
+		return failed_result(StartupBudgetError::ArithmeticOverflow);
+	}
+	if (known_bytes > WP03ProvisionalKnownBudgetCapBytes) {
+		return failed_result(StartupBudgetError::StaticCapExceeded);
+	}
+	auto result = wp08_subtotal;
+	result.known_bytes = known_bytes;
+	result.metric_known_bytes = metric_known_bytes;
+	result.metrics_bytes = metrics_bytes;
+	if (metrics_provisioned) {
+		const auto bit = static_cast<std::uint16_t>(1U << static_cast<std::uint8_t>(DeferredStartupBudgetCategory::Metrics));
+		result.deferred_categories = static_cast<std::uint16_t>(result.deferred_categories & ~bit);
+	}
+	result.is_complete = result.deferred_categories == 0U;
+	return result;
+}
+
+Wp03KnownBudgetSubtotal calculate_wp09_startup_budget(const Wp03KnownBudgetSubtotal& wp08_subtotal,
+	const TelemetryMetrics& metrics) noexcept
+{
+	return apply_wp09_metrics_budget(wp08_subtotal, TelemetryMetrics::StorageBytes, metrics.is_provisioned());
+}
+
+bool wp09_budget_matches_metrics(const Wp03KnownBudgetSubtotal& budget,
+	const TelemetryMetrics& metrics) noexcept
+{
+	return budget.error == StartupBudgetError::None && budget.metrics_bytes == TelemetryMetrics::StorageBytes &&
+		metrics.is_provisioned() && metrics.owned_bytes() == budget.metrics_bytes &&
+		budget.deferred_categories == 0U && budget.is_complete;
 }
 
 bool startup_budget_category_is_deferred(const Wp03KnownBudgetSubtotal& subtotal,

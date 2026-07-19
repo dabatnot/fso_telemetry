@@ -1,0 +1,12 @@
+{
+  "schema": "fs2open.telemetry.phase1.reliability-profile.v1",
+  "status": "passed",
+  "profile": "burst-loss-20",
+  "seed": 4242,
+  "durationSeconds": 600,
+  "configured": {"lossPercent": 20, "burst": true},
+  "peer": {"welcome": true, "sessionBegin": true, "snapshot": true, "delta": true, "resync": false, "resyncAck": false, "recoveredSnapshot": false, "duplicateDelivered": true, "reorderDelivered": true, "resyncSnapshotFlagSeen": true, "liveBaselinePublished": true, "recoveredBaselinePublished": true, "sessionEndSeen": false, "sessionEndReason": 0, "invalidAck": false},
+  "injected": {"downstreamLoss": 1767, "deltaLoss": 1392, "snapshotFragmentLoss": 71, "outageLoss": 304, "ackLoss": 1, "duplicateFrames": 1, "reorderedFrames": 1, "jitterDelayedFrames": 90, "wouldBlock": 180},
+  "convergence": {"cycles": 111, "successfulRecoveries": 111, "continuousLossDiagnostic": {"maxLiveRecoveryUs": 20367074, "worstTimelineUs": {"resyncSend": 425175150, "ack": 425208484, "snapshot": 445508890, "live": 445542224}}, "boundedImpairment": {"startUs": 30000000, "endUs": 32000000, "firstLivePostEndUs": 34267332, "recoveryAfterEndUs": 2267332, "withinTenSecondsPostEnd": true}},
+  "minuteObservations": [{"minute":1,"clients":1,"baselines":1,"reliable":0,"queueDepth":1,"p99TickNs":219600},{"minute":2,"clients":1,"baselines":1,"reliable":0,"queueDepth":1,"p99TickNs":180400},{"minute":3,"clients":1,"baselines":1,"reliable":0,"queueDepth":1,"p99TickNs":172300},{"minute":4,"clients":1,"baselines":1,"reliable":0,"queueDepth":0,"p99TickNs":170000},{"minute":5,"clients":1,"baselines":1,"reliable":0,"queueDepth":1,"p99TickNs":176800},{"minute":6,"clients":1,"baselines":1,"reliable":0,"queueDepth":1,"p99TickNs":174800},{"minute":7,"clients":1,"baselines":1,"reliable":0,"queueDepth":1,"p99TickNs":278000},{"minute":8,"clients":1,"baselines":1,"reliable":0,"queueDepth":0,"p99TickNs":322200},{"minute":9,"clients":1,"baselines":1,"reliable":0,"queueDepth":0,"p99TickNs":282700},{"minute":10,"clients":1,"baselines":1,"reliable":0,"queueDepth":1,"p99TickNs":224600}]
+}

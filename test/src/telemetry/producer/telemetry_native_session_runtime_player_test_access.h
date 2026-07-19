@@ -4,6 +4,7 @@
 
 #include "telemetry/engine_adapter.h"
 #include "telemetry/native_session_runtime.h"
+#include "telemetry/native_session_runtime_test_seam.h"
 #include "telemetry/session_controller.h"
 
 #include <cstddef>
@@ -27,6 +28,7 @@ struct NativePlayerCaptureProbe {
 // Test-only friend seam. All production state remains owned by
 // NativeSessionRuntime; this class neither adds a production symbol nor
 // duplicates controller mutation logic.
+#if 0 // Replaced by the production-owned friend seam below.
 class NativeSessionRuntimePlayerTestAccess final {
   private:
 	template <typename Runtime, typename = void>
@@ -101,6 +103,28 @@ class NativeSessionRuntimePlayerTestAccess final {
 		return slot_impl(runtime, index, HasPrivateContract<NativeSessionRuntime>{});
 	}
 
+	static SessionController* controller(NativeSessionRuntime& runtime) noexcept
+	{
+		return runtime.m_controller_ready ? &runtime.m_controller : nullptr;
+	}
+
+	// P8.5 startup test seam. Production must route SessionController provisioning
+	// through this failpoint before transport.open(), without publishing a partial
+	// controller or binding a socket. The declaration intentionally has no test
+	// implementation: the runtime owns the allocation decision and must provide
+	// the backing test-only hook.
+	static void set_session_controller_provision_failure(NativeSessionRuntime& runtime, bool fail) noexcept;
+
+	// P8.5 steady-state allocation seam. The tracker is scoped to runtime-owned
+	// allocations so test fixture bookkeeping is excluded. It starts only after
+	// startup and warm-up are complete, then observes capture/replication/egress.
+	static void begin_steady_state_allocation_tracking(NativeSessionRuntime& runtime) noexcept;
+	static std::uint64_t steady_state_allocation_count(const NativeSessionRuntime& runtime) noexcept;
+	// Proves the tracker observes a runtime-owned allocation event. This must be
+	// implemented by the same production accounting path used for real P8 work;
+	// a counter that merely remains zero cannot satisfy the contract.
+	static void force_steady_state_allocation_for_tests(NativeSessionRuntime& runtime) noexcept;
+
 	static bool
 	seed_last_allocated_entity_id(NativeSessionRuntime& runtime, std::size_t index, std::uint64_t last_id) noexcept
 	{
@@ -113,7 +137,15 @@ class NativeSessionRuntimePlayerTestAccess final {
 	{
 		return inject_impl(runtime, result, observation, HasPrivateContract<NativeSessionRuntime>{});
 	}
+
+	static NativeSessionTickStatus service_r2_tick(NativeSessionRuntime& runtime,
+		const NativeSessionTickContext& context) noexcept
+	{
+		return runtime.service_r2_tick(context);
+	}
 };
+#endif
+using NativeSessionRuntimePlayerTestAccess = NativeSessionRuntimeTestAccess;
 
 template <typename Runtime, typename = void>
 struct HasNativePlayerCapturePublicContract : std::false_type {};
@@ -191,24 +223,6 @@ struct HasNativePlayerCapturePublicContract<Runtime,
 class NativeSessionRuntimePlayerPublicProbe final {
   private:
 	template <typename Runtime>
-	static NativeSessionTickStatus service_impl(Runtime& runtime,
-		const NativeSessionTickContext& context,
-		const EngineReadView& view,
-		std::true_type) noexcept
-	{
-		return runtime.service_tick(context, view);
-	}
-
-	template <typename Runtime>
-	static NativeSessionTickStatus service_impl(Runtime& runtime,
-		const NativeSessionTickContext& context,
-		const EngineReadView&,
-		std::false_type) noexcept
-	{
-		return runtime.service_tick(context);
-	}
-
-	template <typename Runtime>
 	static std::uint8_t status_impl(const Runtime& runtime, std::true_type) noexcept
 	{
 		return static_cast<std::uint8_t>(runtime.last_player_capture_status());
@@ -270,7 +284,7 @@ class NativeSessionRuntimePlayerPublicProbe final {
 		const NativeSessionTickContext& context,
 		const EngineReadView& view) noexcept
 	{
-		return service_impl(runtime, context, view, HasNativePlayerCapturePublicContract<NativeSessionRuntime>{});
+		return runtime.service_tick(context, view);
 	}
 
 	static std::uint8_t last_status(const NativeSessionRuntime& runtime) noexcept

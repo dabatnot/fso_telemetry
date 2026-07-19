@@ -1,0 +1,19 @@
+{
+  "schema": "fs2open.telemetry.phase1.reliability-campaign.v1",
+  "configuration": {
+    "executable": "build\\bin\\Debug\\telemetry_phase1_reliability_harness.exe",
+    "seed": 4242,
+    "durationSecondsPerProfile": 600,
+    "recoveryGate": "first Live after bounded impairment end <= 10000000 us",
+    "continuousLossRecovery": "diagnostic-only"
+  },
+  "status": "passed",
+  "profiles": [
+    {"profile":"independent-loss-1","report":"independent-loss-1-600s-seed4242.json","status":"passed","observations":10,"recoveryAfterEndUs":1600652,"withinTenSecondsPostEnd":true},
+    {"profile":"independent-loss-5","report":"independent-loss-5-600s-seed4242.json","status":"passed","observations":10,"recoveryAfterEndUs":1600652,"withinTenSecondsPostEnd":true},
+    {"profile":"independent-loss-20","report":"independent-loss-20-600s-seed4242.json","status":"passed","observations":10,"recoveryAfterEndUs":2534004,"withinTenSecondsPostEnd":true},
+    {"profile":"burst-loss-1","report":"burst-loss-1-600s-seed4242.json","status":"passed","observations":10,"recoveryAfterEndUs":1600652,"withinTenSecondsPostEnd":true},
+    {"profile":"burst-loss-5","report":"burst-loss-5-600s-seed4242.json","status":"passed","observations":10,"recoveryAfterEndUs":1600652,"withinTenSecondsPostEnd":true},
+    {"profile":"burst-loss-20","report":"burst-loss-20-600s-seed4242.json","status":"passed","observations":10,"recoveryAfterEndUs":2267332,"withinTenSecondsPostEnd":true}
+  ]
+}

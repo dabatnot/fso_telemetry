@@ -1081,8 +1081,16 @@ def decode_message(message_type: int, flags: int, payload: bytes, context: dict[
             snapshot_flags = reader.u16()
             count = reader.u16()
         region = reader.data[reader.offset :]
-        require(len(region) == transaction_size, 28, "transaction_size mismatch")
-        require(hashlib.sha256(region).digest() == transaction_sha, 44, "transaction SHA-256")
+        # ``transaction_size`` and ``transaction_sha`` describe the ordered
+        # concatenation of *all* transaction parts, not this one part's
+        # record-region.  A single-part decoder must therefore validate only
+        # its own bounded structure; the console transaction receiver checks
+        # cross-part metadata, aggregate size and aggregate SHA-256 before
+        # publishing atomically.
+        require(transaction_id != 0 and 0 < part_count <= 64 and part_index < part_count,
+                34, "transaction part bounds")
+        require(0 < transaction_size <= 16_777_216 and 0 < len(region) <= transaction_size,
+                28, "transaction part size")
         require(count > 0, 34, "empty transaction part")
         enforce_record_count_quota(count, context)
         records = decode_record_region(reader, count)

@@ -109,7 +109,7 @@ Une gate échouée bloque ses lots descendants. Aucune dérogation ne peut redé
 | `D1-011` | cadences | vol 30 Hz, keyframe 2 s, heartbeat 500 ms mission/1000 ms hors mission ; tous configurables dans les bornes |
 | `D1-012` | événements et respawn | aucun `EVENT_BATCH` métier ; discontinuité corrigée par keyframe/session ; réplication complète Phase 2 |
 | `D1-013` | outil indépendant | le client console utilise le décodeur indépendant, jamais le parser/DTO C++ producteur |
-| `D1-014` | seuils de performance | seuils de `P1-REQ-033`; environnement et percentiles archivés, aucun résultat supposé |
+| `D1-014` | seuils de performance | seuils de `P1-REQ-033` évalués en `Release`; `Debug` exécute les contrats fonctionnels sans gate p99; environnement et percentiles archivés, aucun résultat supposé |
 | `D1-015` | relation documentation/implémentation | la spec peut exister avant les preuves ; tout code reste bloqué par `G1-A` et la gate Phase 0 |
 
 ### 6.1 Crosswalk normatif des identifiants legacy de l'amendement

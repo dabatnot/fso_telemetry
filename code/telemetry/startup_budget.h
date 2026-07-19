@@ -1,6 +1,8 @@
 #pragma once
 
 #include "telemetry/identity.h"
+#include "telemetry/metrics.h"
+#include "telemetry/phase1_state_image.h"
 #include "telemetry/protocol/telemetry_protocol_constants.h"
 #include "telemetry/protocol/telemetry_reliable_window.h"
 
@@ -22,6 +24,9 @@ extern const std::size_t Wp06RateLimiterStorageBytes;
 extern const std::size_t Wp06HandshakeCacheStorageBytes;
 extern const std::size_t Wp06PreproofLedgerStorageBytes;
 extern const std::size_t Wp06OutputQueueStorageBytes;
+extern const std::size_t Wp06SnapshotEgressHeapBytesPerClient;
+extern const std::size_t Wp06DeltaEgressHeapBytesPerClient;
+extern const std::size_t Wp06DeltaScratchHeapBytesPerClient;
 constexpr std::size_t Wp06ReliableRetentionBytesPerClient =
 	sizeof(protocol::PreallocatedReliableControlWindow);
 
@@ -68,6 +73,11 @@ struct Wp03KnownBudgetSubtotal {
 	std::size_t handshake_cache_bytes = 0U;
 	std::size_t preproof_ledger_bytes = 0U;
 	std::size_t output_queue_bytes = 0U;
+	std::size_t state_image_pool_bytes = 0U;
+	std::size_t snapshot_egress_heap_bytes = 0U;
+	std::size_t delta_egress_heap_bytes = 0U;
+	std::size_t delta_scratch_heap_bytes = 0U;
+	std::size_t metrics_bytes = 0U;
 	std::size_t client_slot_count = 0U;
 	std::size_t reassembly_slot_count = 0U;
 	std::size_t baseline_slot_count = 0U;
@@ -80,12 +90,17 @@ struct Wp06OwnedCapacity {
 	std::size_t state_reassembly_slots = 0U;
 	std::size_t state_reassembly_bytes = 0U;
 	std::size_t reliable_retention_bytes = 0U;
+	std::size_t baseline_slots = 0U;
+	std::size_t delta_slots = 0U;
 	std::size_t dynamic_allocations_after_ready = 0U;
 	std::size_t client_slot_bytes = 0U;
 	std::size_t rate_limiter_bytes = 0U;
 	std::size_t handshake_cache_bytes = 0U;
 	std::size_t preproof_ledger_bytes = 0U;
 	std::size_t output_queue_bytes = 0U;
+	std::size_t snapshot_egress_heap_bytes = 0U;
+	std::size_t delta_egress_heap_bytes = 0U;
+	std::size_t delta_scratch_heap_bytes = 0U;
 };
 
 bool checked_add_size(std::size_t left, std::size_t right, std::size_t& output) noexcept;
@@ -103,6 +118,16 @@ Wp03KnownBudgetSubtotal calculate_wp06_startup_budget(const Wp03KnownBudgetSubto
 	std::size_t max_clients) noexcept;
 bool wp06_budget_matches_owned_storage(const Wp03KnownBudgetSubtotal& budget,
 	const Wp06OwnedCapacity& owned) noexcept;
+bool wp06_budget_matches_state_image_pool(const Wp03KnownBudgetSubtotal& budget,
+	std::size_t client_count,
+	std::size_t state_image_pool_bytes) noexcept;
+Wp03KnownBudgetSubtotal apply_wp09_metrics_budget(const Wp03KnownBudgetSubtotal& wp08_subtotal,
+	std::size_t metrics_bytes,
+	bool metrics_provisioned) noexcept;
+Wp03KnownBudgetSubtotal calculate_wp09_startup_budget(const Wp03KnownBudgetSubtotal& wp08_subtotal,
+	const TelemetryMetrics& metrics) noexcept;
+bool wp09_budget_matches_metrics(const Wp03KnownBudgetSubtotal& budget,
+	const TelemetryMetrics& metrics) noexcept;
 bool startup_budget_category_is_deferred(const Wp03KnownBudgetSubtotal& subtotal,
 	DeferredStartupBudgetCategory category) noexcept;
 

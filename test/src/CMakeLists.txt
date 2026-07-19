@@ -85,6 +85,50 @@ target_link_libraries(telemetry_disabled_benchmark PRIVATE sdl2)
 
 set_target_properties(telemetry_disabled_benchmark PROPERTIES FOLDER "tests")
 
+add_executable(telemetry_native_performance_runner
+	telemetry/producer/telemetry_native_performance_runner.cpp
+	test_stubs.cpp
+)
+
+target_compile_features(telemetry_native_performance_runner PRIVATE cxx_std_17)
+target_compile_definitions(telemetry_native_performance_runner PRIVATE FSO_TELEMETRY_TEST_SEAMS=1)
+target_include_directories(telemetry_native_performance_runner PRIVATE
+	${CODE_HEADERS}
+	${FREESPACE_HEADERS}
+	${GENERATED_SOURCE_DIR}
+	${GENERATED_SOURCE_DIR}/code
+)
+target_link_libraries(telemetry_native_performance_runner PRIVATE code)
+
+set_target_properties(telemetry_native_performance_runner PROPERTIES
+	FOLDER "tests"
+	OUTPUT_NAME "telemetry_native_performance_runner_p93"
+	# Keep the executable next to the engine's runtime DLLs.  A test/bin output
+	# directory produces a runner that cannot be launched without a manual PATH
+	# workaround and caused the P9.3 campaign to pick up a stale binary.
+	RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/$<CONFIG>"
+)
+
+# WP11 evidence harness.  It remains test-only and deliberately separate from
+# P9.3 so profile injection/lifecycle proof cannot be mistaken for a benchmark.
+add_executable(telemetry_phase1_reliability_harness
+	telemetry/producer/telemetry_phase1_reliability_harness.cpp
+	test_stubs.cpp
+)
+target_compile_features(telemetry_phase1_reliability_harness PRIVATE cxx_std_17)
+target_compile_definitions(telemetry_phase1_reliability_harness PRIVATE FSO_TELEMETRY_TEST_SEAMS=1)
+target_include_directories(telemetry_phase1_reliability_harness PRIVATE
+	${CODE_HEADERS}
+	${FREESPACE_HEADERS}
+	${GENERATED_SOURCE_DIR}
+	${GENERATED_SOURCE_DIR}/code
+)
+target_link_libraries(telemetry_phase1_reliability_harness PRIVATE code)
+set_target_properties(telemetry_phase1_reliability_harness PROPERTIES
+	FOLDER "tests"
+	RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/$<CONFIG>"
+)
+
 add_executable(telemetry_initialize_failure_contract_tests
 	telemetry/producer/telemetry_initialize_failure_contract_tests.cpp
 	${TELEMETRY_ISOLATED_RUNTIME_SOURCES}

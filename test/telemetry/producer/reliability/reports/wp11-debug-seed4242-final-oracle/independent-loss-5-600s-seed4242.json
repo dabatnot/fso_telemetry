@@ -1,0 +1,12 @@
+{
+  "schema": "fs2open.telemetry.phase1.reliability-profile.v1",
+  "status": "passed",
+  "profile": "independent-loss-5",
+  "seed": 4242,
+  "durationSeconds": 600,
+  "configured": {"lossPercent": 5, "burst": false},
+  "peer": {"welcome": true, "sessionBegin": true, "snapshot": true, "delta": true, "resync": false, "resyncAck": false, "recoveredSnapshot": false, "duplicateDelivered": true, "reorderDelivered": true, "resyncSnapshotFlagSeen": true, "liveBaselinePublished": true, "recoveredBaselinePublished": true, "sessionEndSeen": false, "sessionEndReason": 0, "invalidAck": false},
+  "injected": {"downstreamLoss": 717, "deltaLoss": 397, "snapshotFragmentLoss": 18, "outageLoss": 302, "ackLoss": 1, "duplicateFrames": 1, "reorderedFrames": 1, "jitterDelayedFrames": 97, "wouldBlock": 161},
+  "convergence": {"cycles": 117, "successfulRecoveries": 117, "continuousLossDiagnostic": {"maxLiveRecoveryUs": 900018, "worstTimelineUs": {"resyncSend": 2233358, "ack": 2266692, "snapshot": 3100042, "live": 3133376}}, "boundedImpairment": {"startUs": 30000000, "endUs": 32000000, "firstLivePostEndUs": 33600652, "recoveryAfterEndUs": 1600652, "withinTenSecondsPostEnd": true}},
+  "minuteObservations": [{"minute":1,"clients":1,"baselines":1,"reliable":0,"queueDepth":0,"p99TickNs":175900},{"minute":2,"clients":1,"baselines":1,"reliable":0,"queueDepth":1,"p99TickNs":225500},{"minute":3,"clients":1,"baselines":1,"reliable":0,"queueDepth":1,"p99TickNs":185600},{"minute":4,"clients":1,"baselines":1,"reliable":0,"queueDepth":1,"p99TickNs":220300},{"minute":5,"clients":1,"baselines":1,"reliable":0,"queueDepth":1,"p99TickNs":359900},{"minute":6,"clients":1,"baselines":1,"reliable":0,"queueDepth":0,"p99TickNs":541800},{"minute":7,"clients":1,"baselines":1,"reliable":0,"queueDepth":0,"p99TickNs":422800},{"minute":8,"clients":1,"baselines":1,"reliable":0,"queueDepth":1,"p99TickNs":321700},{"minute":9,"clients":1,"baselines":1,"reliable":0,"queueDepth":1,"p99TickNs":278500},{"minute":10,"clients":1,"baselines":1,"reliable":0,"queueDepth":0,"p99TickNs":212000}]
+}

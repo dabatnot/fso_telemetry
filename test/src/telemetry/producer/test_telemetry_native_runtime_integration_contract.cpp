@@ -2,7 +2,11 @@
 
 #if __has_include("telemetry/native_session_runtime.h")
 #include "telemetry/native_session_runtime.h"
+#include "telemetry/config.h"
 #include "telemetry/engine_adapter.h"
+#include "telemetry/runtime_adapter.h"
+#include "telemetry/runtime_adapter_test_seam.h"
+#include "telemetry/phase1_state_image.h"
 #include "telemetry/protocol/telemetry_control_messages.h"
 #include "telemetry/protocol/telemetry_crc32.h"
 #include "telemetry/protocol/telemetry_datagram.h"
@@ -10,6 +14,7 @@
 #include "telemetry/startup_budget.h"
 #include "telemetry/transport.h"
 #include "telemetry_native_session_runtime_player_test_access.h"
+#include "telemetry_runtime_adapter_player_test_access.h"
 #define FSO_HAS_NATIVE_SESSION_RUNTIME 1
 #else
 #define FSO_HAS_NATIVE_SESSION_RUNTIME 0
@@ -314,6 +319,7 @@ struct NativeFixture {
 	FixedRandom packet_random;
 	detail::SessionIdRegistry registry;
 	detail::SessionIdAllocator ids;
+	detail::TelemetryStructuredLog log;
 	detail::NativeSessionRuntime runtime;
 
 	NativeFixture() : ids(ids_random, registry), runtime(backend, completion)
@@ -323,7 +329,8 @@ struct NativeFixture {
 
 	detail::NativeSessionStartStatus start(telemetry::TelemetryConfig& config)
 	{
-		detail::NativeSessionStartRequest request{&config, 0x1020304050607080ULL, &ids, &packet_random};
+		detail::NativeSessionStartRequest request{
+			&config, 0x1020304050607080ULL, &ids, &packet_random, nullptr, &log};
 		return runtime.start(request);
 	}
 };
@@ -393,6 +400,7 @@ struct CountingEngineReadView final : detail::EngineReadView {
 	void read_player_kinematics(detail::EnginePlayerKinematicsRead& output) const noexcept override
 	{
 		++read_calls;
+		last_read_thread = std::this_thread::get_id();
 		output = input;
 	}
 
@@ -426,6 +434,7 @@ struct CountingEngineReadView final : detail::EngineReadView {
 	mutable std::size_t object_match_calls = 0U;
 	mutable std::size_t ship_match_calls = 0U;
 	mutable std::size_t read_calls = 0U;
+	mutable std::thread::id last_read_thread{};
 };
 
 detail::PlayerObservationDto observation(std::uint32_t signature, std::uint64_t time_us, float marker = 1.0f) noexcept
@@ -522,9 +531,73 @@ capture_tick(NativeFixture& fixture, CountingEngineReadView& view, std::uint64_t
 	return NativePlayerProbe::service_tick(fixture.runtime, {now_us, 0U, active}, view);
 }
 
+detail::NativeSessionTickStatus native_tick(NativeFixture& fixture,
+	const detail::NativeSessionTickContext& context) noexcept
+{
+	return NativePlayerAccess::service_r2_tick(fixture.runtime, context);
+}
+
 const detail::SessionControllerSlot* slot(const NativeFixture& fixture, std::size_t index = 0U) noexcept
 {
 	return NativePlayerAccess::slot(fixture.runtime, index);
+}
+
+Packet pop_controller_packet(detail::SessionController& controller)
+{
+	detail::SessionControllerOutput output;
+	EXPECT_TRUE(controller.pop_output(output));
+	Packet result;
+	result.endpoint = output.endpoint;
+	result.bytes.assign(output.bytes.begin(), output.bytes.begin() + static_cast<std::ptrdiff_t>(output.size));
+	return result;
+}
+
+protocol::StateImage phase1_state_image_at(float player_x, std::uint64_t sample_time_us)
+{
+	detail::Phase1StateImageInput input{};
+	input.producer_id = 0x1020304050607080ULL;
+	input.negotiated_capability_generation = 1U;
+	input.mission.producer_sample_time_us = sample_time_us;
+	input.mission.mission_generation = 7U;
+	input.mission.phase = protocol::MissionPhase::Active;
+	input.mission.time_compression = 1.0F;
+	input.player_capture = {detail::CaptureStatus::Valid, detail::CaptureReason::None};
+	input.player.entity_id = 42U;
+	input.player.value.producer_sample_time_us = sample_time_us;
+	input.player.value.position_world = {player_x, 2.0F, 3.0F};
+	input.player.value.orientation_local_to_world = {1.0F, 0.0F, 0.0F, 0.0F};
+	input.player.value.radius = 1.0F;
+	protocol::StateImage image;
+	EXPECT_EQ(detail::Phase1StateImageBuildStatus::Created, detail::build_phase1_state_image(input, image));
+	return image;
+}
+
+void activate_live_baseline_without_acknowledging_session_begin(detail::SessionController& controller,
+	protocol::EndpointKey endpoint,
+	std::uint64_t nonce)
+{
+	const auto hello_packet = hello(protocol::VersionMinorV1_1, nonce, endpoint);
+	ASSERT_EQ(detail::SessionIngressDisposition::ResponseQueued,
+		controller.ingest(endpoint, byte_view(hello_packet.bytes), 1'000U, 7U, true).disposition);
+	const auto welcome = pop_controller_packet(controller);
+	const auto welcome_ack = ack_for(welcome.bytes, endpoint, 2U);
+	ASSERT_EQ(detail::SessionIngressDisposition::WelcomeProofApplied,
+		controller.ingest(endpoint, byte_view(welcome_ack.bytes), 2'000U, 7U, true).disposition);
+	const auto begin = pop_controller_packet(controller);
+	// Keeping SESSION_BEGIN unacknowledged leaves a due reliable item for the
+	// priority oracle below.
+	protocol::DatagramView begin_view;
+	ASSERT_EQ(protocol::ValidationError::None,
+		protocol::decode_and_validate_datagram(byte_view(begin.bytes),
+			protocol::ProtocolMinorRange{protocol::VersionMinorV1_1, protocol::VersionMinorV1_1}, begin_view));
+	ASSERT_EQ(protocol::MessageType::SessionBegin, begin_view.header.message_type);
+	ASSERT_TRUE(controller.begin_initial_snapshot(0U, phase1_state_image_at(1.0F, 3'000U), 3'000U));
+	ASSERT_EQ(1U, controller.service_initial_snapshot_egress(1U, 3'001U));
+	const auto snapshot = pop_controller_packet(controller);
+	const auto snapshot_ack = ack_for(snapshot.bytes, endpoint, 3U);
+	ASSERT_NE(detail::SessionIngressDisposition::Dropped,
+		controller.ingest(endpoint, byte_view(snapshot_ack.bytes), 4'000U, 7U, true).disposition);
+	ASSERT_EQ(detail::Phase1SnapshotProgress::Live, controller.snapshot_progress(0U));
 }
 
 template <typename Runtime>
@@ -558,7 +631,7 @@ std::uint64_t establish_ready(NativeFixture& fixture,
 	const auto sessions_before = fixture.runtime.active_sessions();
 	auto drive_new_send = [&](std::size_t previous, std::uint64_t first_tick) {
 		for (std::uint64_t offset = 0U; offset < 8U && fixture.backend.sent.size() == previous; ++offset) {
-			fixture.runtime.service_tick(
+			native_tick(fixture,
 				{first_tick + offset, mission_generation, mission_active});
 		}
 	};
@@ -586,7 +659,7 @@ std::uint64_t establish_ready(NativeFixture& fixture,
 	for (std::uint64_t offset = 0U;
 		offset < 8U && fixture.backend.receive_script_index <= final_ack_script_index;
 		++offset) {
-		fixture.runtime.service_tick({now_us + 20U + offset, mission_generation, mission_active});
+		native_tick(fixture, {now_us + 20U + offset, mission_generation, mission_active});
 	}
 	EXPECT_GT(fixture.backend.receive_script_index, final_ack_script_index)
 		<< "The final SESSION_BEGIN ACK must be consumed, not merely queued.";
@@ -620,7 +693,7 @@ struct RuntimeCompositionServices final : detail::RuntimeStartupServices {
 	}
 	detail::RuntimeConfigResult load_config() noexcept override
 	{
-		return {detail::RuntimeConfigStatus::Enabled, config.max_clients};
+		return {config_status, config.max_clients};
 	}
 	detail::IdentityResult load_producer_identity() noexcept override
 	{
@@ -634,6 +707,16 @@ struct RuntimeCompositionServices final : detail::RuntimeStartupServices {
 	{
 		++budget_calls;
 		return budget;
+	}
+	bool provision_metrics() noexcept override
+	{
+		++metrics_provision_calls;
+		return metrics_provision_succeeds && metrics.provision();
+	}
+	void release_metrics() noexcept override { metrics.release(); }
+	void record_callback_metric(detail::TelemetryCallbackKind kind, std::uint64_t duration_us) noexcept override
+	{
+		metrics.record_callback(kind, duration_us);
 	}
 	bool allocate_session_registry() noexcept override
 	{
@@ -673,32 +756,91 @@ struct RuntimeCompositionServices final : detail::RuntimeStartupServices {
 		runtime_trace.push_back('T');
 		last_tick = context;
 		if (native == nullptr) return detail::RuntimeTickStatus::Unavailable;
+		if (use_runtime_adapter_helper && detail::RuntimeAdapterPlayerPublicProbe::contract_available()) {
+			return detail::RuntimeAdapterPlayerPublicProbe::service_tick(native.get(), context);
+		}
+		CountingEngineReadView view;
+		view.mission = context.mission_active;
 		const auto status = native->service_tick(
-			{context.now_us, context.mission_generation, context.mission_active});
-		return status == detail::NativeSessionTickStatus::Complete ? detail::RuntimeTickStatus::Complete
-															  : detail::RuntimeTickStatus::PermanentTransportFailure;
+			{context.now_us, context.mission_generation, context.mission_active}, view);
+		return map_native_tick_status(status);
 	}
 
-	void stop_collection() noexcept override { teardown.push_back('1'); }
+	static detail::RuntimeTickStatus map_native_tick_status(detail::NativeSessionTickStatus status) noexcept
+	{
+		if (detail::RuntimeAdapterPlayerPublicProbe::contract_available()) {
+			return detail::RuntimeAdapterPlayerPublicProbe::map_tick_status(status);
+		}
+		switch (status) {
+		case detail::NativeSessionTickStatus::Complete:
+			return detail::RuntimeTickStatus::Complete;
+		case detail::NativeSessionTickStatus::Unavailable:
+			return detail::RuntimeTickStatus::Unavailable;
+		case detail::NativeSessionTickStatus::PermanentTransportFailure:
+			return detail::RuntimeTickStatus::PermanentTransportFailure;
+		case detail::NativeSessionTickStatus::PermanentCaptureFailure:
+		default:
+			return static_cast<detail::RuntimeTickStatus>(3U);
+		}
+	}
+
+	void stop_collection() noexcept override
+	{
+		teardown.push_back('1');
+		if (use_runtime_adapter_helper && detail::RuntimeAdapterPlayerPublicProbe::contract_available()) {
+			detail::RuntimeAdapterPlayerPublicProbe::stop_collection(native.get());
+		}
+	}
 	void invalidate_mission_state_and_entities() noexcept override
 	{
 		teardown.push_back('2');
 		runtime_trace.push_back('L');
-		if (native != nullptr) native->purge_all(detail::SessionCloseReason::MissionDiscontinuity);
+		if (use_runtime_adapter_helper && detail::RuntimeAdapterPlayerPublicProbe::contract_available()) {
+			detail::RuntimeAdapterPlayerPublicProbe::invalidate_mission_state_and_entities(native.get());
+		} else if (native != nullptr) {
+			native->purge_all(detail::SessionCloseReason::MissionDiscontinuity);
+		}
 	}
 	void cancel_replication() noexcept override { teardown.push_back('3'); }
 	void close_sessions_and_stores() noexcept override
 	{
 		teardown.push_back('4');
-		if (native != nullptr) native->purge_all(detail::SessionCloseReason::Shutdown);
+		for (std::size_t index = 0U; index < detail::TelemetryMetricsMaxClients; ++index) {
+			metrics.deactivate_session(index);
+		}
+		if (use_runtime_adapter_helper && detail::RuntimeAdapterPlayerPublicProbe::contract_available()) {
+			detail::RuntimeAdapterPlayerPublicProbe::close_sessions_and_stores(native.get());
+		} else if (native != nullptr) {
+			native->purge_all(detail::SessionCloseReason::Shutdown);
+		}
 	}
-	void reset_mission_scope() noexcept override { teardown.push_back('5'); }
+	void reset_mission_scope() noexcept override
+	{
+		teardown.push_back('5');
+		metrics.reset_mission();
+	}
 	void stop_transport() noexcept override
 	{
 		teardown.push_back('6');
-		if (native != nullptr) native->shutdown();
+		if (use_runtime_adapter_helper && detail::RuntimeAdapterPlayerPublicProbe::contract_available()) {
+			detail::RuntimeAdapterPlayerPublicProbe::stop_transport(native.get());
+		} else if (native != nullptr) {
+			native->shutdown();
+		}
 	}
 	void emit_runtime_summary() noexcept override { teardown.push_back('7'); }
+	void emit_runtime_disabled(detail::RuntimeTerminalReason reason) noexcept override
+	{
+		disabled_reasons.push_back(reason);
+	}
+	void emit_mission_entered(std::uint32_t generation) noexcept override
+	{
+		lifecycle_log.push_back({'E', generation});
+	}
+	void emit_mission_left(std::uint32_t generation) noexcept override
+	{
+		lifecycle_log.push_back({'L', generation});
+	}
 	void release_runtime_allocations() noexcept override
 	{
 		teardown.push_back('8');
@@ -713,12 +855,16 @@ struct RuntimeCompositionServices final : detail::RuntimeStartupServices {
 	FixedRandom packet_random;
 	detail::SessionIdRegistry registry;
 	detail::SessionIdAllocator ids;
+	detail::TelemetryMetrics metrics;
 	telemetry::TelemetryConfig config;
+	detail::RuntimeConfigStatus config_status = detail::RuntimeConfigStatus::Enabled;
 	detail::Wp03KnownBudgetSubtotal budget;
 	std::unique_ptr<detail::NativeSessionRuntime> native;
 	detail::RuntimeTickContext last_tick{};
 	std::vector<char> teardown;
 	std::vector<char> runtime_trace;
+	std::vector<detail::RuntimeTerminalReason> disabled_reasons;
+	std::vector<std::pair<char, std::uint32_t>> lifecycle_log;
 	std::uint64_t clock_now_us = 9'000U;
 	std::size_t clock_calls = 0U;
 	std::size_t service_calls = 0U;
@@ -728,8 +874,11 @@ struct RuntimeCompositionServices final : detail::RuntimeStartupServices {
 	std::size_t start_transport_calls = 0U;
 	std::size_t native_constructions = 0U;
 	std::size_t diagnostics = 0U;
+	std::size_t metrics_provision_calls = 0U;
 	bool captured = false;
 	bool thread_matches = true;
+	bool use_runtime_adapter_helper = false;
+	bool metrics_provision_succeeds = true;
 };
 
 template <typename T, typename = void>
@@ -738,7 +887,8 @@ struct has_native_contract : std::false_type {};
 template <typename T>
 struct has_native_contract<T,
 	std::void_t<decltype(std::declval<T&>().start(std::declval<const detail::NativeSessionStartRequest&>())),
-		decltype(std::declval<T&>().service_tick(std::declval<const detail::NativeSessionTickContext&>())),
+		decltype(std::declval<T&>().service_tick(std::declval<const detail::NativeSessionTickContext&>(),
+			std::declval<const detail::EngineReadView&>())),
 		decltype(std::declval<T&>().purge_all(std::declval<detail::SessionCloseReason>())),
 		decltype(std::declval<T&>().shutdown()),
 		decltype(std::declval<const T&>().socket_count()),
@@ -746,8 +896,8 @@ struct has_native_contract<T,
 		decltype(std::declval<const T&>().owned_usage())>>
 	: std::bool_constant<noexcept(std::declval<T&>().start(
 		  std::declval<const detail::NativeSessionStartRequest&>())) &&
-		  noexcept(std::declval<T&>().service_tick(
-			  std::declval<const detail::NativeSessionTickContext&>())) &&
+		  noexcept(std::declval<T&>().service_tick(std::declval<const detail::NativeSessionTickContext&>(),
+			  std::declval<const detail::EngineReadView&>())) &&
 		  noexcept(std::declval<T&>().purge_all(std::declval<detail::SessionCloseReason>())) &&
 		  noexcept(std::declval<T&>().shutdown())> {};
 
@@ -808,12 +958,330 @@ TEST(TelemetryNativeRuntimeIntegrationContract, NativeCompositionHeaderAndNoexce
 	expect_native_api_contract<detail::NativeSessionRuntime>();
 }
 
+TEST(TelemetryP85PreallocationContract, ProvisionFailurePreventsBindAndAColdRuntimeCanRetry)
+{
+	NativeFixture fixture;
+	auto config = enabled_config(1U);
+
+	NativePlayerAccess::set_session_controller_provision_failure(fixture.runtime, true);
+	EXPECT_EQ(detail::NativeSessionStartStatus::AllocationFailure, fixture.start(config));
+	EXPECT_EQ(0U, fixture.backend.open_calls)
+		<< "SessionController preallocation must finish before the first socket open attempt.";
+	EXPECT_EQ(0U, fixture.runtime.socket_count());
+	EXPECT_EQ(0U, fixture.runtime.active_sessions());
+
+	NativePlayerAccess::set_session_controller_provision_failure(fixture.runtime, false);
+	EXPECT_EQ(detail::NativeSessionStartStatus::Started, fixture.start(config));
+	EXPECT_GT(fixture.backend.open_calls, 0U)
+		<< "A provisioning failure must leave the runtime cold and retryable once the allocation succeeds.";
+	EXPECT_GT(fixture.runtime.socket_count(), 0U);
+	EXPECT_EQ(0U, fixture.runtime.active_sessions());
+}
+
+TEST(TelemetryP91RuntimeMetricsContract, MetricsProvisionFailureFaultsBeforeBindAndSuccessfulRetryPublishesCallbacks)
+{
+	RuntimeCompositionServices failing;
+	failing.budget.is_complete = true;
+	failing.budget.deferred_categories = 0U;
+	failing.metrics_provision_succeeds = false;
+	detail::Runtime failed_runtime(failing);
+	failed_runtime.capture_main_thread();
+	failed_runtime.on_engine_update();
+	EXPECT_EQ(detail::RuntimeState::Faulted, failed_runtime.state());
+	EXPECT_EQ(detail::RuntimeTerminalReason::AllocationFailure, failed_runtime.terminal_reason());
+	EXPECT_EQ(1U, failing.metrics_provision_calls);
+	EXPECT_EQ(0U, failing.start_transport_calls);
+	EXPECT_EQ(0U, failing.backend.open_calls)
+		<< "Metrics provisioning is a pre-bind transaction and must fail closed.";
+
+	RuntimeCompositionServices ready;
+	ready.budget.is_complete = true;
+	ready.budget.deferred_categories = 0U;
+	detail::Runtime runtime(ready);
+	runtime.capture_main_thread();
+	runtime.on_engine_update();
+	ASSERT_EQ(detail::RuntimeState::Ready, runtime.state());
+	EXPECT_EQ(1U, ready.metrics_provision_calls);
+	EXPECT_EQ(1U, ready.start_transport_calls);
+	EXPECT_GT(ready.backend.open_calls, 0U);
+	runtime.on_game_mission_load();
+	const auto metrics = ready.metrics.snapshot();
+	EXPECT_TRUE(metrics.provisioned);
+	EXPECT_EQ(1U, metrics.callbacks[static_cast<std::size_t>(detail::TelemetryCallbackKind::GameMissionLoad)]);
+}
+
+TEST(TelemetryP91MetricsLifecycleContract, MissionLifecycleResetsMissionAndSessionMetricsThroughRuntime)
+{
+	RuntimeCompositionServices services;
+	services.budget.is_complete = true;
+	services.budget.deferred_categories = 0U;
+	detail::Runtime runtime(services);
+	runtime.capture_main_thread();
+	runtime.on_engine_update();
+	ASSERT_EQ(detail::RuntimeState::Ready, runtime.state());
+	services.metrics.activate_session(0U, 7U);
+	services.metrics.increment_session(0U, detail::TelemetryMetricCounter::HeartbeatProbes, 2U);
+	services.metrics.set_current_player_entity_id(0x1234U);
+	services.metrics.observe_mission(detail::TelemetryMetricHistogram::CaptureDuration, 25U);
+
+	runtime.on_game_mission_load();
+	runtime.on_engine_update();
+	const auto metrics = services.metrics.snapshot();
+	EXPECT_FALSE(metrics.sessions[0].active);
+	EXPECT_EQ(0U, metrics.sessions[0].counters[static_cast<std::size_t>(detail::TelemetryMetricCounter::HeartbeatProbes)]);
+	EXPECT_EQ(0U, metrics.current_player_entity_id);
+	EXPECT_EQ(0U, metrics.mission_histograms[static_cast<std::size_t>(detail::TelemetryMetricHistogram::CaptureDuration)].count);
+	EXPECT_EQ(2U, metrics.process_counters[static_cast<std::size_t>(detail::TelemetryMetricCounter::HeartbeatProbes)]);
+}
+
+TEST(TelemetryP91MetricsLifecycleContract, RejectedOffMainCallbackDoesNotMutateMetrics)
+{
+	RuntimeCompositionServices services;
+	services.budget.is_complete = true;
+	services.budget.deferred_categories = 0U;
+	detail::Runtime runtime(services);
+	runtime.capture_main_thread();
+	runtime.on_engine_update();
+	ASSERT_EQ(detail::RuntimeState::Ready, runtime.state());
+	const auto callback = static_cast<std::size_t>(detail::TelemetryCallbackKind::GameMissionLoad);
+	ASSERT_EQ(0U, services.metrics.snapshot().callbacks[callback]);
+
+	std::thread worker([&] { runtime.on_game_mission_load(); });
+	worker.join();
+	EXPECT_EQ(0U, services.metrics.snapshot().callbacks[callback])
+		<< "A callback rejected before lifecycle work must not alter metrics.";
+}
+
+TEST(TelemetryP91MetricsLifecycleContract, AcceptedCallbackPublishesNonZeroDurationIntoItsFixedHistogram)
+{
+	RuntimeCompositionServices services;
+	services.budget.is_complete = true;
+	services.budget.deferred_categories = 0U;
+	detail::Runtime runtime(services);
+	runtime.capture_main_thread();
+	runtime.on_engine_update();
+	ASSERT_EQ(detail::RuntimeState::Ready, runtime.state());
+	runtime.on_game_mission_load();
+	const auto& histogram = services.metrics.snapshot().process_histograms[
+		static_cast<std::size_t>(detail::TelemetryMetricHistogram::CallbackDuration)];
+	EXPECT_EQ(2U, histogram.count);
+	EXPECT_GT(histogram.sum_us, 0U);
+	std::uint64_t bucket_total = 0U;
+	for (const auto count : histogram.buckets) {
+		bucket_total += count;
+	}
+	EXPECT_EQ(histogram.count, bucket_total)
+		<< "Every accepted callback duration must be represented by exactly one fixed bucket.";
+}
+
+TEST(TelemetryP85SteadyStateAllocationContract, LiveCaptureKeyframeDeltaAndEgressAllocateNothing)
+{
+	NativeFixture fixture;
+	auto config = enabled_config(64U);
+	ASSERT_EQ(detail::NativeSessionStartStatus::Started, fixture.start(config));
+	auto* controller = NativePlayerAccess::controller(fixture.runtime);
+	ASSERT_NE(nullptr, controller);
+	const auto endpoint = peer(92U);
+	activate_live_baseline_without_acknowledging_session_begin(*controller, endpoint, 0x92U);
+
+	// Warm-up is deliberately outside the observation window. The tracked path
+	// starts with an already-live slot and exercises the P8 mutation/egress work.
+	NativePlayerAccess::begin_steady_state_allocation_tracking(fixture.runtime);
+	NativePlayerAccess::force_steady_state_allocation_for_tests(fixture.runtime);
+	EXPECT_EQ(1U, NativePlayerAccess::steady_state_allocation_count(fixture.runtime))
+		<< "The scoped counter must observe a forced runtime-owned allocation event.";
+	NativePlayerAccess::begin_steady_state_allocation_tracking(fixture.runtime);
+	CountingEngineReadView view;
+	ASSERT_EQ(detail::NativeSessionTickStatus::Complete, capture_tick(fixture, view, 90'000U, true));
+	for (const auto sample : std::array<float, 4U>{{10.0F, 14.0F, 10.0F, 14.0F}}) {
+		const auto now = 90'001U + static_cast<std::uint64_t>((sample == 10.0F ? 0U : 1U));
+		ASSERT_EQ(protocol::ProducerBaselineResult::Applied,
+			controller->replace_current_state(0U, phase1_state_image_at(sample, now)));
+		ASSERT_TRUE(controller->queue_cumulative_delta(0U, now + 1U));
+		ASSERT_EQ(1U, controller->service_delta_egress(1U, now + 2U));
+		(void)pop_controller_packet(*controller);
+	}
+	EXPECT_EQ(0U, NativePlayerAccess::steady_state_allocation_count(fixture.runtime))
+		<< "Capture and alternating 1/4 delta egresses must remain within startup-owned capacity.";
+	NativePlayerAccess::begin_steady_state_allocation_tracking(fixture.runtime);
+	controller->service_periodic(2'100'000U);
+	while (controller->has_output()) {
+		(void)pop_controller_packet(*controller);
+	}
+	ASSERT_EQ(1U, controller->service_initial_snapshot_egress(1U, 2'100'001U));
+	const auto keyframe = pop_controller_packet(*controller);
+	protocol::DatagramView keyframe_view;
+	ASSERT_EQ(protocol::ValidationError::None,
+		protocol::decode_and_validate_datagram(byte_view(keyframe.bytes),
+			protocol::ProtocolMinorRange{protocol::VersionMinorV1_1, protocol::VersionMinorV1_1}, keyframe_view));
+	ASSERT_EQ(protocol::MessageType::FullSnapshot, keyframe_view.header.message_type);
+	EXPECT_NE(0U, static_cast<std::uint8_t>(keyframe_view.header.flags & protocol::MessageFlagAckRequired));
+	EXPECT_NE(0U, static_cast<std::uint8_t>(keyframe_view.header.flags & protocol::MessageFlagKeyframe));
+	protocol::FullSnapshotPartPayload keyframe_payload;
+	ASSERT_EQ(protocol::ValidationError::None,
+		protocol::decode_full_snapshot_part_payload(keyframe_view.payload, keyframe_payload));
+	EXPECT_EQ(4U, keyframe_payload.record_count);
+
+	controller->service_reliability(2'100'001U + protocol::ReliableDefaultRtoUs);
+	ASSERT_TRUE(controller->has_output());
+	const auto retransmission = pop_controller_packet(*controller);
+	protocol::DatagramView retransmission_view;
+	ASSERT_EQ(protocol::ValidationError::None,
+		protocol::decode_and_validate_datagram(byte_view(retransmission.bytes),
+			protocol::ProtocolMinorRange{protocol::VersionMinorV1_1, protocol::VersionMinorV1_1}, retransmission_view));
+	EXPECT_EQ(protocol::MessageType::FullSnapshot, retransmission_view.header.message_type);
+	EXPECT_NE(0U, static_cast<std::uint8_t>(retransmission_view.header.flags & protocol::MessageFlagRetransmission));
+	EXPECT_EQ(0U, NativePlayerAccess::steady_state_allocation_count(fixture.runtime))
+		<< "Periodic keyframe egress and its RTO retransmission must use startup-owned storage.";
+}
+
+TEST(TelemetryP85StateImagePoolContract, ExhaustionFailsClosedAndReleasedBackingIsReusable)
+{
+	detail::Phase1StateImagePool pool;
+	ASSERT_TRUE(pool.provision());
+	detail::Phase1StateImageInput input{};
+	input.producer_id = 0x1020304050607080ULL;
+	input.negotiated_capability_generation = 1U;
+	input.mission.mission_generation = 7U;
+	input.mission.phase = protocol::MissionPhase::Active;
+	input.mission.time_compression = 1.0F;
+	input.player_capture = {detail::CaptureStatus::Valid, detail::CaptureReason::None};
+	input.player.entity_id = 42U;
+	input.player.value.orientation_local_to_world = {1.0F, 0.0F, 0.0F, 0.0F};
+	input.player.value.radius = 1.0F;
+
+	std::array<protocol::StateImage, detail::Phase1StateImagePool::SlotsPerRecordSet> retained{};
+	for (std::size_t index = 0U; index < retained.size(); ++index) {
+		input.mission.producer_sample_time_us = 100U + index;
+		input.player.value.producer_sample_time_us = 100U + index;
+		input.player.value.position_world = {static_cast<float>(index), 2.0F, 3.0F};
+		ASSERT_EQ(detail::Phase1StateImageBuildStatus::Created,
+			detail::build_phase1_state_image_preallocated(input, pool, retained[index]));
+		ASSERT_FALSE(retained[index].records().empty());
+	}
+	const auto first_record_count = retained[0U].records().size();
+	protocol::StateImage rejected;
+	EXPECT_EQ(detail::Phase1StateImageBuildStatus::AllocationFailed,
+		detail::build_phase1_state_image_preallocated(input, pool, rejected));
+	EXPECT_TRUE(rejected.records().empty());
+	EXPECT_EQ(first_record_count, retained[0U].records().size())
+		<< "Pool exhaustion must not mutate any image already retained by a baseline/candidate.";
+
+	retained[2U] = {};
+	EXPECT_EQ(detail::Phase1StateImageBuildStatus::Created,
+		detail::build_phase1_state_image_preallocated(input, pool, rejected));
+	EXPECT_FALSE(rejected.records().empty());
+}
+
+TEST(TelemetryNativeRuntimeIntegrationContract, RuntimeCompositionMapsCaptureSeparatelyFromTransportExhaustively)
+{
+	EXPECT_EQ(0U, static_cast<std::uint8_t>(RuntimeCompositionServices::map_native_tick_status(
+			detail::NativeSessionTickStatus::Complete)));
+	EXPECT_EQ(1U, static_cast<std::uint8_t>(RuntimeCompositionServices::map_native_tick_status(
+			detail::NativeSessionTickStatus::Unavailable)));
+	EXPECT_EQ(2U, static_cast<std::uint8_t>(RuntimeCompositionServices::map_native_tick_status(
+			detail::NativeSessionTickStatus::PermanentTransportFailure)));
+	EXPECT_EQ(3U, static_cast<std::uint8_t>(RuntimeCompositionServices::map_native_tick_status(
+			detail::NativeSessionTickStatus::PermanentCaptureFailure)));
+	EXPECT_EQ(3U, static_cast<std::uint8_t>(RuntimeCompositionServices::map_native_tick_status(
+			static_cast<detail::NativeSessionTickStatus>(0xffU))));
+}
+
+TEST(TelemetryP92RuntimeLoggingContract, MissionReplacementLogsOldLeaveBeforeNewEnter)
+{
+	RuntimeCompositionServices services;
+	services.budget.is_complete = true;
+	services.budget.deferred_categories = 0U;
+	detail::Runtime runtime(services);
+	runtime.capture_main_thread();
+	runtime.on_engine_update();
+	ASSERT_EQ(detail::RuntimeState::Ready, runtime.state());
+
+	runtime.on_game_mission_load();
+	runtime.on_engine_update();
+	runtime.on_game_mission_load();
+	runtime.on_engine_update();
+
+	EXPECT_EQ((std::vector<std::pair<char, std::uint32_t>>{{'E', 1U}, {'L', 1U}, {'E', 2U}}),
+		services.lifecycle_log)
+		<< "A replacement must close the old mission aggregate before opening the new generation.";
+}
+
+TEST(TelemetryP92RuntimeLoggingContract, ClosedConfigErrorsUseTheRequiredStructuredReasonFamilies)
+{
+	EXPECT_EQ(detail::TelemetryLogReason::ConfigSchema,
+		detail::RuntimeAdapterPlayerTestAccess::config_log_reason(telemetry::ConfigError::InvalidJson));
+	EXPECT_EQ(detail::TelemetryLogReason::ConfigRange,
+		detail::RuntimeAdapterPlayerTestAccess::config_log_reason(telemetry::ConfigError::OutOfRange));
+	EXPECT_EQ(detail::TelemetryLogReason::ConfigSecurity,
+		detail::RuntimeAdapterPlayerTestAccess::config_log_reason(telemetry::ConfigError::UnsafeExposure));
+	EXPECT_EQ(detail::TelemetryLogReason::ConfigProfile,
+		detail::RuntimeAdapterPlayerTestAccess::config_log_reason(telemetry::ConfigError::ReadFailure));
+}
+
+TEST(TelemetryP92AdapterLoggingContract, ActualAdapterActivationIsOneShotAndDeclaresProtocolV11)
+{
+	detail::RuntimeAdapterDiagnosticsTestAccess::reset_for_test();
+	detail::RuntimeAdapterDiagnosticsTestAccess::emit_activation_for_test(42U);
+	detail::RuntimeAdapterDiagnosticsTestAccess::emit_activation_for_test(43U);
+	const auto snapshot = detail::RuntimeAdapterDiagnosticsTestAccess::log_snapshot();
+	ASSERT_EQ(1U, snapshot.count);
+	const auto& record = snapshot.records[0];
+	EXPECT_EQ(detail::TelemetryLogEvent::Activated, record.event);
+	EXPECT_EQ(detail::TelemetryLogLevel::Info, record.level);
+	EXPECT_EQ(1U, record.protocol_major);
+	EXPECT_EQ(protocol::VersionMinorV1_1, record.protocol_minor);
+}
+
+TEST(TelemetryP92AdapterLoggingContract, EveryRuntimeFaultMapsToOneClosedOneShotNumericRecord)
+{
+	const std::array<std::pair<detail::RuntimeTerminalReason, detail::TelemetryLogFault>, 15U> cases{{
+		{detail::RuntimeTerminalReason::None, detail::TelemetryLogFault::None},
+		{detail::RuntimeTerminalReason::ConfigAbsent, detail::TelemetryLogFault::Config},
+		{detail::RuntimeTerminalReason::ConfigInvalid, detail::TelemetryLogFault::Config},
+		{detail::RuntimeTerminalReason::ConfigDisabled, detail::TelemetryLogFault::Config},
+		{detail::RuntimeTerminalReason::MainThreadNotCaptured, detail::TelemetryLogFault::MainThread},
+		{detail::RuntimeTerminalReason::MainThreadViolation, detail::TelemetryLogFault::MainThread},
+		{detail::RuntimeTerminalReason::ProducerIdentityFailure, detail::TelemetryLogFault::IdentityStore},
+		{detail::RuntimeTerminalReason::SessionCandidateFailure, detail::TelemetryLogFault::Entropy},
+		{detail::RuntimeTerminalReason::BudgetFailure, detail::TelemetryLogFault::BudgetOverflow},
+		{detail::RuntimeTerminalReason::AllocationFailure, detail::TelemetryLogFault::Allocation},
+		{detail::RuntimeTerminalReason::SessionRegistrationFailure, detail::TelemetryLogFault::SessionRegistration},
+		{detail::RuntimeTerminalReason::TransportUnavailable, detail::TelemetryLogFault::Socket},
+		{detail::RuntimeTerminalReason::InvalidLifecycleTransition, detail::TelemetryLogFault::Lifecycle},
+		{detail::RuntimeTerminalReason::MissionGenerationOverflow, detail::TelemetryLogFault::Lifecycle},
+		{detail::RuntimeTerminalReason::CaptureFailure, detail::TelemetryLogFault::Capture},
+	}};
+
+	for (const auto& entry : cases) {
+		detail::RuntimeAdapterDiagnosticsTestAccess::reset_for_test();
+		detail::RuntimeAdapterDiagnosticsTestAccess::emit_fault_for_test(entry.first);
+		detail::RuntimeAdapterDiagnosticsTestAccess::emit_fault_for_test(entry.first);
+		const auto snapshot = detail::RuntimeAdapterDiagnosticsTestAccess::log_snapshot();
+		ASSERT_EQ(1U, snapshot.count);
+		const auto& record = snapshot.records[0];
+		EXPECT_EQ(detail::TelemetryLogEvent::TransportFault, record.event);
+		EXPECT_EQ(detail::TelemetryLogLevel::Error, record.level);
+		EXPECT_EQ(entry.second, record.fault);
+		EXPECT_EQ(entry.second, detail::RuntimeAdapterDiagnosticsTestAccess::runtime_fault_log(entry.first));
+		EXPECT_EQ(entry.first == detail::RuntimeTerminalReason::TransportUnavailable
+				? detail::TelemetryLogReason::Bind
+				: detail::TelemetryLogReason::ProtocolError,
+			record.reason);
+		EXPECT_LT(static_cast<std::uint8_t>(record.event), static_cast<std::uint8_t>(detail::TelemetryLogEvent::Count));
+		EXPECT_LE(static_cast<std::uint8_t>(record.level), static_cast<std::uint8_t>(detail::TelemetryLogLevel::Error));
+		EXPECT_LT(static_cast<std::uint8_t>(record.reason), static_cast<std::uint8_t>(detail::TelemetryLogReason::Count));
+		EXPECT_LT(static_cast<std::uint8_t>(record.fault), static_cast<std::uint8_t>(detail::TelemetryLogFault::Count));
+	}
+}
+
 TEST(TelemetryNativeRuntimeIntegrationContract, BudgetGateConstructsNativeStackOnlyInsideSuccessfulStartTransport)
 {
 	RuntimeCompositionServices real_services;
 	ASSERT_EQ(detail::StartupBudgetError::None, real_services.budget.error);
 	ASSERT_FALSE(real_services.budget.is_complete);
-	ASSERT_EQ(0x00f0U, real_services.budget.deferred_categories);
+	ASSERT_EQ(0x0080U, real_services.budget.deferred_categories)
+		<< "P8.5 prices baseline, delta and serialization storage; Metrics is the sole deferred category.";
 	detail::Runtime real_runtime(real_services);
 	real_runtime.capture_main_thread();
 	EXPECT_EQ(0U, real_services.native_constructions);
@@ -867,6 +1335,117 @@ TEST(TelemetryNativeRuntimeIntegrationContract, EngineUpdateReadsOneClockThenApp
 		<< "Mission discontinuity uses the exact bounded Runtime purge sequence.";
 }
 
+TEST(TelemetryRuntimeAdapterPlayerContract, StopCollectionDiffersFromMissionPurgeAndRearmsImmediately)
+{
+	if (!detail::RuntimeAdapterPlayerPublicProbe::contract_available()) {
+		FAIL() << "WP07-D4 RED: the production runtime-adapter test access to the unique local-FSO-view "
+				  "helper is absent.";
+		return;
+	}
+	RuntimeCompositionServices services;
+	services.use_runtime_adapter_helper = true;
+	services.budget.is_complete = true;
+	services.budget.deferred_categories = 0U;
+	detail::Runtime runtime(services);
+	runtime.capture_main_thread();
+	runtime.on_engine_update();
+	ASSERT_EQ(detail::RuntimeState::Ready, runtime.state());
+	ASSERT_NE(nullptr, services.native.get());
+
+	auto drive = [&](std::uint64_t now_us) {
+		services.clock_now_us = now_us;
+		runtime.on_engine_update();
+	};
+	auto establish = [&](protocol::EndpointKey endpoint,
+		std::uint64_t nonce,
+		std::uint64_t now_us,
+		std::uint32_t packet_base) {
+		const auto sessions_before = services.native->active_sessions();
+		auto drive_new_send = [&](std::size_t previous, std::uint64_t first_tick) {
+			for (std::uint64_t offset = 0U; offset < 8U && services.backend.sent.size() == previous; ++offset) {
+				drive(first_tick + offset);
+			}
+		};
+		services.backend.receives.push_back(
+			{detail::IoStatus::Complete, hello(protocol::VersionMinorV1_1, nonce, endpoint)});
+		drive_new_send(services.backend.sent.size(), now_us);
+		EXPECT_FALSE(services.backend.sent.empty());
+		const auto welcome_index = services.backend.sent.size() - 1U;
+		EXPECT_EQ(protocol::MessageType::Welcome, sent_type(services.backend, welcome_index));
+		services.backend.receives.push_back(
+			{detail::IoStatus::Complete,
+				ack_for(services.backend.sent[welcome_index], endpoint, packet_base + 1U)});
+		drive_new_send(services.backend.sent.size(), now_us + 10U);
+		const auto begin_index = services.backend.sent.size() - 1U;
+		EXPECT_EQ(protocol::MessageType::SessionBegin, sent_type(services.backend, begin_index));
+		std::vector<std::uint8_t> stable;
+		const auto begin = decode_sent(services.backend, begin_index, stable);
+		services.backend.receives.push_back(
+			{detail::IoStatus::Complete,
+				ack_for(services.backend.sent[begin_index], endpoint, packet_base + 2U)});
+		const auto final_ack = services.backend.receives.size() - 1U;
+		for (std::uint64_t offset = 0U;
+			offset < 8U && services.backend.receive_script_index <= final_ack;
+			++offset) {
+			drive(now_us + 20U + offset);
+		}
+		EXPECT_EQ(sessions_before + 1U, services.native->active_sessions());
+		return begin.header.session_id;
+	};
+
+	const auto first_session = establish(peer(90U), 900U, 10'000U, 1'000U);
+	ASSERT_NE(0U, first_session);
+	ASSERT_EQ(detail::NativeSessionTickStatus::Complete,
+		NativePlayerAccess::inject_collected_player_capture(*services.native,
+			{detail::CaptureStatus::Valid, detail::CaptureReason::None},
+			observation(90U, 20'000U, 9.0f)));
+	const auto* ready = NativePlayerAccess::slot(*services.native, 0U);
+	ASSERT_NE(nullptr, ready);
+	ASSERT_EQ(detail::ProducerSessionProgress::ReadyForState, ready->progress);
+	ASSERT_EQ(first_session, ready->session_id);
+	ASSERT_TRUE(ready->has_latest_player_sample);
+	ASSERT_EQ(1U, ready->latest_player_sample.entity_id);
+	ASSERT_EQ(1U, ready->player_entity_ids.last_allocated_entity_id());
+
+	services.stop_collection();
+	ready = NativePlayerAccess::slot(*services.native, 0U);
+	ASSERT_NE(nullptr, ready);
+	EXPECT_EQ(detail::ProducerSessionProgress::ReadyForState, ready->progress);
+	EXPECT_EQ(first_session, ready->session_id);
+	EXPECT_EQ(1U, ready->player_entity_ids.last_allocated_entity_id());
+	EXPECT_FALSE(ready->has_latest_player_sample);
+	EXPECT_EQ(1U, services.native->active_sessions());
+	EXPECT_EQ(1U, services.native->socket_count());
+
+	services.teardown.clear();
+	services.runtime_trace.clear();
+	services.service_calls = 0U;
+	runtime.on_game_mission_load();
+	drive(30'000U);
+	EXPECT_EQ(detail::RuntimeState::MissionLoading, runtime.state());
+	EXPECT_EQ((std::vector<char>{'1', '2', '3', '4', '5'}), services.teardown)
+		<< "Mission update must stop collection before invalidating/purging the native runtime.";
+	EXPECT_EQ((std::vector<char>{'C', 'L', 'T'}), services.runtime_trace)
+		<< "The helper-backed inactive tick follows the complete mission purge.";
+	EXPECT_EQ(1U, services.service_calls);
+	EXPECT_FALSE(services.last_tick.mission_active);
+	EXPECT_EQ(runtime.mission_generation(), services.last_tick.mission_generation);
+	EXPECT_EQ(0U, services.native->active_sessions());
+	EXPECT_EQ(1U, services.native->socket_count());
+	const auto second_session = establish(peer(91U), 901U, 40'000U, 2'000U);
+	EXPECT_NE(0U, second_session);
+	EXPECT_NE(first_session, second_session);
+	ASSERT_EQ(detail::NativeSessionTickStatus::Complete,
+		NativePlayerAccess::inject_collected_player_capture(*services.native,
+			{detail::CaptureStatus::Valid, detail::CaptureReason::None},
+			observation(91U, 50'000U, 10.0f)));
+	ready = NativePlayerAccess::slot(*services.native, 0U);
+	ASSERT_NE(nullptr, ready);
+	EXPECT_TRUE(ready->has_latest_player_sample);
+	EXPECT_EQ(1U, ready->latest_player_sample.entity_id)
+		<< "Mission purge resets the per-session entity-ID registry before immediate rearm.";
+}
+
 TEST(TelemetryNativeRuntimeIntegrationContract, FourBehavioralInversionsLockLifecycleTimeoutReliablePeriodicAndIoOrder)
 {
 	// 1. Lifecycle > service: a queued old-generation session is purged by the
@@ -912,15 +1491,15 @@ TEST(TelemetryNativeRuntimeIntegrationContract, FourBehavioralInversionsLockLife
 	ASSERT_EQ(detail::NativeSessionStartStatus::Started, timeout.start(broad));
 	timeout.backend.receives.push_back(
 		{detail::IoStatus::Complete, hello(protocol::VersionMinorV1_1, 110U, peer(4U))});
-	timeout.runtime.service_tick({1'000U, 0U, false});
+	native_tick(timeout, {1'000U, 0U, false});
 	ASSERT_FALSE(timeout.backend.sent.empty());
 	const auto welcome = timeout.backend.sent.back();
 	timeout.backend.receives.push_back(
 		{detail::IoStatus::Complete, ack_for(welcome, peer(4U), 111U)});
-	timeout.runtime.service_tick({2'000U, 0U, false});
+	native_tick(timeout, {2'000U, 0U, false});
 	ASSERT_GT(timeout.runtime.owned_usage().reliable_items, 0U);
 	const auto sends_before_timeout = timeout.backend.send_calls;
-	timeout.runtime.service_tick({2'000U + 10'000'000U, 0U, false});
+	native_tick(timeout, {2'000U + 10'000'000U, 0U, false});
 	EXPECT_EQ(sends_before_timeout, timeout.backend.send_calls);
 	EXPECT_EQ(detail::SessionControllerOwnedUsage{}, timeout.runtime.owned_usage());
 
@@ -936,7 +1515,7 @@ TEST(TelemetryNativeRuntimeIntegrationContract, FourBehavioralInversionsLockLife
 	priority.backend.receives.push_back(
 		{detail::IoStatus::Complete, hello(protocol::VersionMinorV1_1, 121U, peer(6U))});
 	for (std::uint64_t tick = 0U; tick < 8U && priority.backend.sent.size() == sent_before_second; ++tick) {
-		priority.runtime.service_tick({21'000U + tick, 0U, false});
+		native_tick(priority, {21'000U + tick, 0U, false});
 	}
 	ASSERT_GT(priority.backend.sent.size(), sent_before_second);
 	const auto second_welcome = priority.backend.sent[sent_before_second];
@@ -944,21 +1523,21 @@ TEST(TelemetryNativeRuntimeIntegrationContract, FourBehavioralInversionsLockLife
 	priority.backend.receives.push_back(
 		{detail::IoStatus::Complete, ack_for(second_welcome, peer(6U), 122U)});
 	for (std::uint64_t tick = 0U; tick < 8U && priority.backend.sent.size() == sent_before_begin; ++tick) {
-		priority.runtime.service_tick({22'000U + tick, 0U, false});
+		native_tick(priority, {22'000U + tick, 0U, false});
 	}
 	ASSERT_GT(priority.backend.sent.size(), sent_before_begin);
 	ASSERT_EQ(protocol::MessageType::SessionBegin, sent_type(priority.backend, sent_before_begin));
 	const auto simultaneous_due = 1'020'100U;
 	const auto sent_before_due = priority.backend.sent.size();
 	for (std::uint64_t offset = 0U; offset < 4U && priority.backend.sent.size() == sent_before_due; ++offset) {
-		priority.runtime.service_tick({simultaneous_due + offset, 0U, false});
+		native_tick(priority, {simultaneous_due + offset, 0U, false});
 	}
 	ASSERT_GT(priority.backend.sent.size(), sent_before_due);
 	EXPECT_EQ(protocol::MessageType::SessionBegin,
 		sent_type(priority.backend, sent_before_due));
 	const auto sent_after_rel = priority.backend.sent.size();
 	for (std::uint64_t offset = 4U; offset < 8U && priority.backend.sent.size() == sent_after_rel; ++offset) {
-		priority.runtime.service_tick({simultaneous_due + offset, 0U, false});
+		native_tick(priority, {simultaneous_due + offset, 0U, false});
 	}
 	ASSERT_GT(priority.backend.sent.size(), sent_after_rel);
 	EXPECT_EQ(protocol::MessageType::Heartbeat,
@@ -980,12 +1559,75 @@ TEST(TelemetryNativeRuntimeIntegrationContract, FourBehavioralInversionsLockLife
 	// WELCOME proof is applied at 30'010.  The SESSION_BEGIN ACK consumed at
 	// 30'020 makes the session Ready but does not re-anchor the periodic clock.
 	constexpr std::uint64_t ExactPeriodicDueUs = 1'030'010U;
-	periodic.runtime.service_tick({ExactPeriodicDueUs, 0U, false});
+	native_tick(periodic, {ExactPeriodicDueUs, 0U, false});
 	ASSERT_GT(periodic.backend.sent.size(), sent_before_periodic);
 	EXPECT_EQ(protocol::MessageType::Heartbeat,
 		sent_type(periodic.backend, periodic.backend.sent.size() - 1U));
 	EXPECT_EQ(rx_before, periodic.backend.receive_script_index)
 		<< "Periodic scheduling precedes and consumes the N=1 I/O opportunity.";
+}
+
+TEST(TelemetryPhase1DeltaEgressContract, RuntimeQueuesDeltaOnlyAfterReliableAndHeartbeatTail)
+{
+	NativeFixture fixture;
+	auto config = enabled_config(1U);
+	ASSERT_EQ(detail::NativeSessionStartStatus::Started, fixture.start(config));
+	auto* controller = NativePlayerAccess::controller(fixture.runtime);
+	ASSERT_NE(nullptr, controller);
+	const auto endpoint = peer(91U);
+	activate_live_baseline_without_acknowledging_session_begin(*controller, endpoint, 0x91U);
+	ASSERT_GT(controller->slot(0U).reliable_items_in_use, 0U);
+	ASSERT_EQ(protocol::ProducerBaselineResult::Applied,
+		controller->replace_current_state(0U, phase1_state_image_at(9.0F, 5'000U)));
+	ASSERT_TRUE(controller->queue_cumulative_delta(0U, 5'001U));
+
+	const auto first = fixture.backend.sent.size();
+	for (std::uint64_t offset = 0U; offset < 8U && fixture.backend.sent.size() == first; ++offset) {
+		ASSERT_EQ(detail::NativeSessionTickStatus::Complete, native_tick(fixture, {1'002'000U + offset, 7U, true}));
+	}
+	ASSERT_EQ(first + 1U, fixture.backend.sent.size());
+	EXPECT_EQ(protocol::MessageType::SessionBegin, sent_type(fixture.backend, first))
+		<< "A due reliable control retransmission must precede DELTA.";
+
+	for (std::uint64_t offset = 8U; offset < 16U && fixture.backend.sent.size() == first + 1U; ++offset) {
+		ASSERT_EQ(detail::NativeSessionTickStatus::Complete, native_tick(fixture, {1'002'000U + offset, 7U, true}));
+	}
+	ASSERT_EQ(first + 2U, fixture.backend.sent.size());
+	EXPECT_EQ(protocol::MessageType::Heartbeat, sent_type(fixture.backend, first + 1U))
+		<< "DELTA remains tail traffic: a due heartbeat must precede a delta queued by the prior idle tail.";
+
+	// The superseded non-reliable delta may be discarded while yielding the
+	// output slot; P8.3 only permits it to occupy the idle tail, never to delay
+	// a due reliable/control/heartbeat datagram.
+}
+
+TEST(TelemetryPhase1DeltaEgressContract, RealRuntimeEventuallyEmitsQueuedDeltaAfterPriorityWorkDrains)
+{
+	NativeFixture fixture;
+	auto config = enabled_config(64U);
+	ASSERT_EQ(detail::NativeSessionStartStatus::Started, fixture.start(config));
+	auto* controller = NativePlayerAccess::controller(fixture.runtime);
+	ASSERT_NE(nullptr, controller);
+	const auto endpoint = peer(93U);
+	// This establishes the same live baseline used by the native allocation
+	// contract, then drives the actual runtime R2 scheduler rather than invoking
+	// controller egress directly.
+	activate_live_baseline_without_acknowledging_session_begin(*controller, endpoint, 0x93U);
+	while (controller->has_output()) (void)pop_controller_packet(*controller);
+	ASSERT_EQ(protocol::ProducerBaselineResult::Applied,
+		controller->replace_current_state(0U, phase1_state_image_at(12.0F, 6'000U)));
+	ASSERT_TRUE(controller->queue_cumulative_delta(0U, 6'001U));
+	const auto sent_before = fixture.backend.sent.size();
+	bool delta_emitted = false;
+	for (std::uint64_t offset = 0U; offset < 32U && !delta_emitted; ++offset) {
+		ASSERT_EQ(detail::NativeSessionTickStatus::Complete,
+			native_tick(fixture, {6'100U + offset, 7U, true}));
+		for (std::size_t index = sent_before; index < fixture.backend.sent.size(); ++index) {
+			delta_emitted = delta_emitted || sent_type(fixture.backend, index) == protocol::MessageType::Delta;
+		}
+	}
+	EXPECT_TRUE(delta_emitted)
+		<< "Once no reliable/control/heartbeat work is due, queued DELTA must reach the real transport scheduler.";
 }
 
 TEST(TelemetryNativeRuntimeIntegrationContract, SharedBudgetAlternatesAcrossTicksAndWouldBlockStopsOnlyOneDirection)
@@ -1009,7 +1651,7 @@ TEST(TelemetryNativeRuntimeIntegrationContract, SharedBudgetAlternatesAcrossTick
 	alternating.backend.receives.push_back(
 		{detail::IoStatus::Complete, hello(protocol::VersionMinorV1_1, 21U, peer(3U))});
 	for (std::uint64_t tick = 0U; tick < 4U; ++tick) {
-		alternating.runtime.service_tick({2'000U + tick, 0U, false});
+		native_tick(alternating, {2'000U + tick, 0U, false});
 	}
 	EXPECT_EQ((std::vector<char>{'R', 'S', 'R', 'S'}), alternating.backend.io_trace);
 
@@ -1027,7 +1669,7 @@ TEST(TelemetryNativeRuntimeIntegrationContract, SharedBudgetAlternatesAcrossTick
 		{detail::IoStatus::Complete, hello(protocol::VersionMinorV1_1, 30U, peer(4U))});
 	const auto setup_rx = blocked.backend.receive_calls;
 	const auto setup_tx = blocked.backend.send_calls;
-	blocked.runtime.service_tick({2'100U, 0U, false});
+	native_tick(blocked, {2'100U, 0U, false});
 	EXPECT_EQ(4U, blocked.backend.receive_calls - setup_rx);
 	EXPECT_EQ(0U, blocked.backend.send_calls - setup_tx);
 	ASSERT_TRUE(blocked.runtime.owned_usage().output_queued);
@@ -1037,7 +1679,7 @@ TEST(TelemetryNativeRuntimeIntegrationContract, SharedBudgetAlternatesAcrossTick
 	blocked.backend.io_trace.clear();
 	const auto tx_block_rx = blocked.backend.receive_calls;
 	const auto tx_block_tx = blocked.backend.send_calls;
-	blocked.runtime.service_tick({2'101U, 0U, false});
+	native_tick(blocked, {2'101U, 0U, false});
 	const auto tx_block_rx_delta = blocked.backend.receive_calls - tx_block_rx;
 	const auto tx_block_tx_delta = blocked.backend.send_calls - tx_block_tx;
 	ASSERT_FALSE(blocked.backend.io_trace.empty());
@@ -1051,7 +1693,7 @@ TEST(TelemetryNativeRuntimeIntegrationContract, SharedBudgetAlternatesAcrossTick
 	blocked.backend.receives.push_back({detail::IoStatus::WouldBlock, {}});
 	const auto rx_block_rx = blocked.backend.receive_calls;
 	const auto rx_block_tx = blocked.backend.send_calls;
-	blocked.runtime.service_tick({2'102U, 0U, false});
+	native_tick(blocked, {2'102U, 0U, false});
 	const auto rx_block_rx_delta = blocked.backend.receive_calls - rx_block_rx;
 	const auto rx_block_tx_delta = blocked.backend.send_calls - rx_block_tx;
 	ASSERT_FALSE(blocked.backend.io_trace.empty());
@@ -1069,7 +1711,7 @@ TEST(TelemetryNativeRuntimeIntegrationContract, AllowlistAndVersionNegotiationCo
 	ASSERT_EQ(detail::NativeSessionStartStatus::Started, accepted.start(accepted_config));
 	accepted.backend.receives.push_back(
 		{detail::IoStatus::Complete, hello(protocol::VersionMinorV1_1, 10U)});
-	accepted.runtime.service_tick({3'000U, 0U, false});
+	native_tick(accepted, {3'000U, 0U, false});
 	ASSERT_EQ(1U, accepted.backend.sent.size());
 	EXPECT_EQ(protocol::MessageType::Welcome, sent_type(accepted.backend, 0U));
 	EXPECT_EQ(1U, accepted.runtime.active_sessions());
@@ -1079,7 +1721,7 @@ TEST(TelemetryNativeRuntimeIntegrationContract, AllowlistAndVersionNegotiationCo
 	ASSERT_EQ(detail::NativeSessionStartStatus::Started, unsupported.start(unsupported_config));
 	unsupported.backend.receives.push_back(
 		{detail::IoStatus::Complete, hello(protocol::VersionMinorV1_0, 11U)});
-	unsupported.runtime.service_tick({3'050U, 0U, false});
+	native_tick(unsupported, {3'050U, 0U, false});
 	ASSERT_EQ(1U, unsupported.backend.sent.size());
 	std::vector<std::uint8_t> storage;
 	const auto datagram = decode_sent(unsupported.backend, 0U, storage);
@@ -1106,11 +1748,104 @@ TEST(TelemetryNativeRuntimeIntegrationContract, AllowlistAndVersionNegotiationCo
 	const auto packet_random_before = rejected.packet_random.next;
 	rejected.backend.receives.push_back({detail::IoStatus::Complete,
 		hello(protocol::VersionMinorV1_1, 99U, protocol::EndpointKey::from_ipv4({192U, 0U, 2U, 1U}, 43000U))});
-	rejected.runtime.service_tick({3'100U, 0U, false});
+	native_tick(rejected, {3'100U, 0U, false});
 	EXPECT_TRUE(rejected.backend.sent.empty());
 	EXPECT_EQ(usage_before, rejected.runtime.owned_usage());
 	EXPECT_EQ(id_random_before, rejected.ids_random.next);
 	EXPECT_EQ(packet_random_before, rejected.packet_random.next);
+}
+
+TEST(TelemetryP92NativeLoggingContract, RealWouldBlockIngressIsAggregatedAtTheR2Cadence)
+{
+	NativeFixture fixture;
+	auto config = enabled_config(1U);
+	ASSERT_EQ(detail::NativeSessionStartStatus::Started, fixture.start(config));
+
+	fixture.backend.receives.push_back({detail::IoStatus::WouldBlock, {}});
+	ASSERT_EQ(detail::NativeSessionTickStatus::Complete, native_tick(fixture, {1'000'000U, 0U, false}));
+	const auto first = NativePlayerAccess::log_snapshot(fixture.runtime);
+	ASSERT_GE(first.count, 2U);
+	EXPECT_TRUE(std::any_of(first.records.begin(), first.records.begin() + first.count,
+		[](const detail::TelemetryLogRecord& record) {
+			return record.event == detail::TelemetryLogEvent::DropSummary &&
+				record.drops[static_cast<std::size_t>(detail::TelemetryLogDrop::WouldBlock)] == 1U;
+		}));
+
+	fixture.backend.receives.push_back({detail::IoStatus::WouldBlock, {}});
+	ASSERT_EQ(detail::NativeSessionTickStatus::Complete, native_tick(fixture, {1'999'999U, 0U, false}));
+	EXPECT_EQ(first.count, NativePlayerAccess::log_snapshot(fixture.runtime).count)
+		<< "The runtime must retain repeated drops until the next one-second aggregate window.";
+
+	ASSERT_EQ(detail::NativeSessionTickStatus::Complete, native_tick(fixture, {2'000'000U, 0U, false}));
+	const auto second = NativePlayerAccess::log_snapshot(fixture.runtime);
+	EXPECT_EQ(first.count + 1U, second.count);
+	EXPECT_EQ(detail::TelemetryLogEvent::DropSummary, second.records[second.count - 1U].event);
+	EXPECT_GT(second.records[second.count - 1U].drops[static_cast<std::size_t>(detail::TelemetryLogDrop::WouldBlock)], 0U);
+}
+
+TEST(TelemetryP92NativeLoggingContract, RealSessionCloseSummarizesObservedBudgetAndRemainsSilentAfterShutdown)
+{
+	NativeFixture fixture;
+	auto config = enabled_config(64U);
+	ASSERT_EQ(detail::NativeSessionStartStatus::Started, fixture.start(config));
+	ASSERT_NE(0U, establish_ready(fixture, peer(71U), 710U, 10'000U, 710U));
+
+	fixture.runtime.shutdown();
+	const auto closed = NativePlayerAccess::log_snapshot(fixture.runtime);
+	EXPECT_TRUE(std::any_of(closed.records.begin(), closed.records.begin() + closed.count,
+		[](const detail::TelemetryLogRecord& record) {
+			return record.event == detail::TelemetryLogEvent::BudgetHighWater &&
+				record.budget == detail::TelemetryLogBudget::StateImage && record.high_water != 0U;
+		}));
+	EXPECT_TRUE(std::any_of(closed.records.begin(), closed.records.begin() + closed.count,
+		[](const detail::TelemetryLogRecord& record) {
+			return record.event == detail::TelemetryLogEvent::SessionClosed &&
+				record.reason == detail::TelemetryLogReason::Shutdown && record.value >= 10U;
+		}));
+	EXPECT_TRUE(std::any_of(closed.records.begin(), closed.records.begin() + closed.count,
+		[](const detail::TelemetryLogRecord& record) {
+			return record.event == detail::TelemetryLogEvent::BudgetSessionSummary &&
+				record.budget == detail::TelemetryLogBudget::StateImage;
+		}));
+
+	EXPECT_EQ(detail::NativeSessionTickStatus::Unavailable, native_tick(fixture, {20'000U, 0U, false}));
+	EXPECT_EQ(closed.count, NativePlayerAccess::log_snapshot(fixture.runtime).count)
+		<< "A stopped runtime must not emit per-tick diagnostics after its terminal summary.";
+}
+
+TEST(TelemetryP93NativePerformanceContract, ExplicitObservationMeasuresActualTicksAndSteadyResources)
+{
+	NativeFixture fixture;
+	auto config = enabled_config(64U);
+	ASSERT_EQ(detail::NativeSessionStartStatus::Started, fixture.start(config));
+	CountingEngineReadView view;
+
+	// The measurement seam is inert until explicitly armed after startup/warm-up.
+	const auto inert = NativePlayerAccess::last_performance_sample(fixture.runtime);
+	EXPECT_EQ(0U, inert.tick_duration_ns);
+	EXPECT_EQ(0U, inert.collect_duration_ns);
+	EXPECT_EQ(0U, inert.diff_duration_ns);
+	EXPECT_EQ(0U, inert.network_duration_ns);
+	NativePlayerAccess::begin_performance_observation(fixture.runtime);
+	ASSERT_EQ(detail::NativeSessionTickStatus::Complete, capture_tick(fixture, view, 90'000U, true));
+	const auto first = NativePlayerAccess::last_performance_sample(fixture.runtime);
+	EXPECT_GT(first.tick_duration_ns, 0U);
+	EXPECT_GT(first.collect_duration_ns, 0U);
+	EXPECT_GT(first.diff_duration_ns, 0U);
+	EXPECT_EQ(0U, first.allocation_events);
+	EXPECT_EQ(0U, first.baselines_active);
+
+	// A real socket WouldBlock remains a measured network tick, but creates no
+	// allocation or unbounded queue/baseline state in the steady observation.
+	fixture.backend.receives.push_back({detail::IoStatus::WouldBlock, {}});
+	ASSERT_EQ(detail::NativeSessionTickStatus::Complete, capture_tick(fixture, view, 90'001U, true));
+	const auto steady = NativePlayerAccess::last_performance_sample(fixture.runtime);
+	EXPECT_GT(steady.tick_duration_ns, 0U);
+	EXPECT_GT(steady.network_duration_ns, 0U);
+	EXPECT_GT(steady.syscall_count, 0U);
+	EXPECT_EQ(first.allocation_events, steady.allocation_events);
+	EXPECT_LE(steady.baselines_active, config.max_clients);
+	EXPECT_LE(steady.queue_depth, static_cast<std::size_t>(config.max_clients) * protocol::ReliableWindowMaximumEntries + 1U);
 }
 
 TEST(TelemetryNativeRuntimeIntegrationContract, PermanentReceiveClosedOrErrorPurgesAllAndNeverReopens)
@@ -1125,7 +1860,7 @@ TEST(TelemetryNativeRuntimeIntegrationContract, PermanentReceiveClosedOrErrorPur
 		fixture.backend.receives.push_back(
 			{detail::IoStatus::Complete, hello(protocol::VersionMinorV1_1, 202U, peer(12U))});
 		fixture.backend.sends.push_back(detail::IoStatus::WouldBlock);
-		fixture.runtime.service_tick({42'000U, 0U, false});
+		native_tick(fixture, {42'000U, 0U, false});
 		const auto rich = fixture.runtime.owned_usage();
 		ASSERT_GE(rich.active_slots, 3U);
 		ASSERT_GT(rich.cache_entries, 0U);
@@ -1135,13 +1870,13 @@ TEST(TelemetryNativeRuntimeIntegrationContract, PermanentReceiveClosedOrErrorPur
 		const auto closes_before = fixture.backend.closed.size();
 		fixture.backend.receives.push_back({status, {}});
 		EXPECT_EQ(detail::NativeSessionTickStatus::PermanentTransportFailure,
-			fixture.runtime.service_tick({42'001U, 0U, false}));
+			native_tick(fixture, {42'001U, 0U, false}));
 		EXPECT_EQ(0U, fixture.runtime.socket_count());
 		EXPECT_EQ(detail::SessionControllerOwnedUsage{}, fixture.runtime.owned_usage());
 		EXPECT_EQ(closes_before + 1U, fixture.backend.closed.size());
 		const auto calls = fixture.backend.open_calls + fixture.backend.receive_calls + fixture.backend.send_calls;
-		fixture.runtime.service_tick({42'002U, 0U, false});
-		fixture.runtime.service_tick({42'003U, 0U, false});
+		native_tick(fixture, {42'002U, 0U, false});
+		native_tick(fixture, {42'003U, 0U, false});
 		EXPECT_EQ(calls, fixture.backend.open_calls + fixture.backend.receive_calls + fixture.backend.send_calls);
 		EXPECT_EQ(closes_before + 1U, fixture.backend.closed.size());
 	}
@@ -1159,7 +1894,7 @@ TEST(TelemetryNativeRuntimeIntegrationContract, PermanentSendClosedOrErrorComple
 		fixture.backend.receives.push_back(
 			{detail::IoStatus::Complete, hello(protocol::VersionMinorV1_1, 212U, peer(15U))});
 		fixture.backend.sends.push_back(detail::IoStatus::WouldBlock);
-		fixture.runtime.service_tick({52'000U, 0U, false});
+		native_tick(fixture, {52'000U, 0U, false});
 		const auto rich = fixture.runtime.owned_usage();
 		ASSERT_GE(rich.active_slots, 3U);
 		ASSERT_GT(rich.cache_entries, 0U);
@@ -1171,7 +1906,7 @@ TEST(TelemetryNativeRuntimeIntegrationContract, PermanentSendClosedOrErrorComple
 		const auto completions_before = fixture.completion.calls;
 		fixture.backend.sends.push_back(status);
 		EXPECT_EQ(detail::NativeSessionTickStatus::PermanentTransportFailure,
-			fixture.runtime.service_tick({52'001U, 0U, false}));
+			native_tick(fixture, {52'001U, 0U, false}));
 		EXPECT_EQ(sends_before + 1U, fixture.backend.send_calls)
 			<< "The selected controller output is completed exactly once on fatal send.";
 		EXPECT_EQ(completions_before + 1U, fixture.completion.calls);
@@ -1184,8 +1919,8 @@ TEST(TelemetryNativeRuntimeIntegrationContract, PermanentSendClosedOrErrorComple
 		EXPECT_EQ(0U, fixture.runtime.socket_count());
 		EXPECT_EQ(detail::SessionControllerOwnedUsage{}, fixture.runtime.owned_usage());
 		EXPECT_EQ(closes_before + 1U, fixture.backend.closed.size());
-		fixture.runtime.service_tick({52'002U, 0U, false});
-		fixture.runtime.service_tick({52'003U, 0U, false});
+		native_tick(fixture, {52'002U, 0U, false});
+		native_tick(fixture, {52'003U, 0U, false});
 		EXPECT_EQ(sends_before + 1U, fixture.backend.send_calls);
 		EXPECT_EQ(completions_before + 1U, fixture.completion.calls);
 		EXPECT_EQ(closes_before + 1U, fixture.backend.closed.size());
@@ -1325,28 +2060,17 @@ TEST(TelemetryNativePlayerCaptureContract, AppliedAckPrecedesSameDueTickMaterial
 	ASSERT_EQ(detail::NativeSessionStartStatus::Started, fixture.start(config));
 	const auto endpoint = peer(21U);
 	fixture.backend.receives.push_back({detail::IoStatus::Complete, hello(protocol::VersionMinorV1_1, 901U, endpoint)});
-	fixture.runtime.service_tick({10'000U, 0U, false});
+	native_tick(fixture, {10'000U, 1U, true});
 	ASSERT_FALSE(fixture.backend.sent.empty());
 	const auto welcome_index = fixture.backend.sent.size() - 1U;
 	fixture.backend.receives.push_back(
 		{detail::IoStatus::Complete, ack_for(fixture.backend.sent[welcome_index], endpoint, 902U)});
-	std::size_t begin_index = fixture.backend.sent.size();
-	for (std::uint64_t tick = 0U; tick < 32U && begin_index == fixture.backend.sent.size(); ++tick) {
-		fixture.runtime.service_tick({10'010U + tick, 0U, false});
-		for (std::size_t index = welcome_index + 1U; index < fixture.backend.sent.size(); ++index) {
-			if (sent_type(fixture.backend, index) == protocol::MessageType::SessionBegin) {
-				begin_index = index;
-				break;
-			}
-		}
-	}
-	ASSERT_LT(begin_index, fixture.backend.sent.size());
-	ASSERT_EQ(protocol::MessageType::SessionBegin, sent_type(fixture.backend, begin_index));
-	fixture.backend.receives.push_back(
-		{detail::IoStatus::Complete, ack_for(fixture.backend.sent[begin_index], endpoint, 903U)});
 	CountingEngineReadView view;
-	ASSERT_EQ(detail::NativeSessionTickStatus::Complete, capture_tick(fixture, view, 20'000U));
+	ASSERT_EQ(detail::NativeSessionTickStatus::Complete,
+		NativePlayerProbe::service_tick(fixture.runtime, {10'010U, 1U, true}, view));
 	ASSERT_EQ(1U, view.read_calls);
+	ASSERT_GT(fixture.backend.sent.size(), welcome_index + 1U);
+	EXPECT_EQ(protocol::MessageType::SessionBegin, sent_type(fixture.backend, fixture.backend.sent.size() - 1U));
 	const auto* ready = slot(fixture);
 	ASSERT_NE(nullptr, ready);
 	EXPECT_EQ(detail::ProducerSessionProgress::ReadyForState, ready->progress);
@@ -1373,37 +2097,184 @@ TEST(TelemetryNativePlayerCaptureContract, AppliedAckPrecedesSameDueTickMaterial
 	ASSERT_EQ(detail::NativeSessionStartStatus::Started, not_due.start(config));
 	CountingEngineReadView arm;
 	ASSERT_EQ(detail::NativeSessionTickStatus::Complete, capture_tick(not_due, arm, 30'000U));
-	const auto preserved_current = NativePlayerProbe::current(not_due.runtime);
 	expect_zero_materialization(NativePlayerProbe::materialization(not_due.runtime));
 	arm.clear_counts();
 	const auto not_due_endpoint = peer(22U);
 	not_due.backend.receives.push_back(
 		{detail::IoStatus::Complete, hello(protocol::VersionMinorV1_1, 904U, not_due_endpoint)});
-	not_due.runtime.service_tick({30'001U, 0U, false});
+	native_tick(not_due, {30'001U, 1U, true});
 	ASSERT_FALSE(not_due.backend.sent.empty());
 	const auto not_due_welcome = not_due.backend.sent.size() - 1U;
 	not_due.backend.receives.push_back(
 		{detail::IoStatus::Complete, ack_for(not_due.backend.sent[not_due_welcome], not_due_endpoint, 905U)});
-	for (std::uint64_t tick = 0U;
-		tick < 8U && not_due.backend.sent.size() == not_due_welcome + 1U;
-		++tick) {
-		not_due.runtime.service_tick({30'002U + tick, 0U, false});
-	}
-	ASSERT_GT(not_due.backend.sent.size(), not_due_welcome + 1U);
-	const auto not_due_begin = not_due.backend.sent.size() - 1U;
-	not_due.backend.receives.push_back(
-		{detail::IoStatus::Complete, ack_for(not_due.backend.sent[not_due_begin], not_due_endpoint, 906U)});
-	EXPECT_EQ(detail::NativeSessionTickStatus::Complete, capture_tick(not_due, arm, 30'020U));
-	EXPECT_EQ(0U, arm.total_calls());
+	EXPECT_EQ(detail::NativeSessionTickStatus::Complete,
+		NativePlayerProbe::service_tick(not_due.runtime, {30'002U, 1U, true}, arm));
+	ASSERT_EQ(1U, arm.read_calls)
+		<< "WP07 strict ReadyForState RED: the transition must force exactly one immediate capture even "
+			  "when the regular 30 Hz deadline is not due.";
+	EXPECT_EQ(std::this_thread::get_id(), arm.last_read_thread)
+		<< "The forced capture remains synchronous on the EngineUpdate/main thread.";
 	ASSERT_NE(nullptr, slot(not_due));
 	EXPECT_EQ(detail::ProducerSessionProgress::ReadyForState, slot(not_due)->progress);
-	EXPECT_EQ(CaptureNotDue, NativePlayerProbe::last_status(not_due.runtime));
+	EXPECT_EQ(CaptureValid, NativePlayerProbe::last_status(not_due.runtime));
 	const auto current_after_ack = NativePlayerProbe::current(not_due.runtime);
-	EXPECT_EQ(preserved_current.available, current_after_ack.available);
-	EXPECT_EQ(preserved_current.result.status, current_after_ack.result.status);
-	EXPECT_EQ(preserved_current.result.reason, current_after_ack.result.reason);
-	expect_observation(current_after_ack.observation, preserved_current.observation);
+	EXPECT_TRUE(current_after_ack.available);
+	EXPECT_EQ(30'002U, current_after_ack.observation.value.producer_sample_time_us);
+	EXPECT_TRUE(slot(not_due)->has_latest_player_sample);
+	EXPECT_EQ(30'002U, slot(not_due)->latest_player_sample.value.producer_sample_time_us);
+	expect_materialization(NativePlayerProbe::materialization(not_due.runtime), 1U, 0U, 1U, 0U, 0U, 0U, 0U);
+
+	const auto forced_sample = slot(not_due)->latest_player_sample;
+	arm.clear_counts();
+	EXPECT_EQ(detail::NativeSessionTickStatus::Complete, capture_tick(not_due, arm, 30'003U));
+	EXPECT_EQ(0U, arm.total_calls()) << "ReadyForState is an edge trigger, not a capture loop.";
+	EXPECT_EQ(CaptureNotDue, NativePlayerProbe::last_status(not_due.runtime));
 	expect_zero_materialization(NativePlayerProbe::materialization(not_due.runtime));
+	ASSERT_NE(nullptr, slot(not_due));
+	ASSERT_TRUE(slot(not_due)->has_latest_player_sample);
+	expect_player_sample(slot(not_due)->latest_player_sample, forced_sample);
+
+	arm.clear_counts();
+	EXPECT_EQ(detail::NativeSessionTickStatus::Complete, capture_tick(not_due, arm, 30'004U, false));
+	EXPECT_EQ(0U, arm.total_calls()) << "A ReadyForState edge never bypasses the out-of-mission no-op gate.";
+	EXPECT_EQ(CaptureInactive, NativePlayerProbe::last_status(not_due.runtime));
+}
+
+TEST(TelemetryNativePlayerCaptureContract, MultipleReadyTransitionsInOneTickShareOneCapture)
+{
+	REQUIRE_NATIVE_PLAYER_D3();
+	NativeFixture fixture;
+	auto config = enabled_config(64U);
+	config.max_clients = 2U;
+	ASSERT_EQ(detail::NativeSessionStartStatus::Started, fixture.start(config));
+	CountingEngineReadView view;
+	ASSERT_EQ(detail::NativeSessionTickStatus::Complete, capture_tick(fixture, view, 40'000U));
+	view.clear_counts();
+
+	const auto first_endpoint = peer(31U);
+	const auto second_endpoint = peer(32U);
+	fixture.backend.receives.push_back(
+		{detail::IoStatus::Complete, hello(protocol::VersionMinorV1_1, 931U, first_endpoint)});
+	fixture.backend.receives.push_back(
+		{detail::IoStatus::Complete, hello(protocol::VersionMinorV1_1, 932U, second_endpoint)});
+	native_tick(fixture, {40'001U, 1U, true});
+	std::vector<std::size_t> welcomes;
+	for (std::size_t index = 0U; index < fixture.backend.sent.size(); ++index) {
+		if (sent_type(fixture.backend, index) == protocol::MessageType::Welcome) welcomes.push_back(index);
+	}
+	ASSERT_EQ(2U, welcomes.size());
+	fixture.backend.receives.push_back(
+		{detail::IoStatus::Complete,
+			ack_for(fixture.backend.sent[welcomes[0]], fixture.backend.send_endpoints[welcomes[0]], 933U)});
+	fixture.backend.receives.push_back(
+		{detail::IoStatus::Complete,
+			ack_for(fixture.backend.sent[welcomes[1]], fixture.backend.send_endpoints[welcomes[1]], 934U)});
+
+	ASSERT_EQ(detail::NativeSessionTickStatus::Complete,
+		NativePlayerProbe::service_tick(fixture.runtime, {40'020U, 1U, true}, view));
+	EXPECT_EQ(1U, view.read_calls) << "All ReadyForState edges in one EngineUpdate share one canonical capture.";
+	ASSERT_NE(nullptr, slot(fixture, 0U));
+	ASSERT_NE(nullptr, slot(fixture, 1U));
+	EXPECT_EQ(detail::ProducerSessionProgress::ReadyForState, slot(fixture, 0U)->progress);
+	EXPECT_EQ(detail::ProducerSessionProgress::ReadyForState, slot(fixture, 1U)->progress);
+	EXPECT_TRUE(slot(fixture, 0U)->has_latest_player_sample);
+	EXPECT_TRUE(slot(fixture, 1U)->has_latest_player_sample);
+	expect_materialization(NativePlayerProbe::materialization(fixture.runtime), 2U, 0U, 2U, 0U, 0U, 0U, 0U);
+}
+
+TEST(TelemetryNativePlayerCaptureContract, EngineUpdateBuildsAndEgressesTheP8SnapshotWithinTheSharedBudget)
+{
+	REQUIRE_NATIVE_PLAYER_D3();
+	NativeFixture fixture;
+	auto config = enabled_config(1U);
+	ASSERT_EQ(detail::NativeSessionStartStatus::Started, fixture.start(config));
+	const auto endpoint = peer(81U);
+	ASSERT_NE(0U, establish_ready(fixture, endpoint, 0xb81U, 80'000U, 1'800U, 7U, true));
+	CountingEngineReadView view;
+	const auto sent_before_capture = fixture.backend.sent.size();
+	ASSERT_EQ(detail::NativeSessionTickStatus::Complete,
+		capture_tick(fixture, view, 81'000U, true));
+	ASSERT_EQ(1U, view.read_calls) << "The D5/P8 image is sourced by exactly one main-thread EngineUpdate read.";
+	ASSERT_NE(nullptr, slot(fixture));
+	EXPECT_TRUE(slot(fixture)->snapshot.has_candidate())
+		<< "A valid D5/P8.1 capture must start the controller-owned initial snapshot transaction.";
+	EXPECT_LE(fixture.backend.sent.size() - sent_before_capture, 1U)
+		<< "max_datagrams_per_tick=1 forbids a capture tick from overspending egress budget.";
+
+	for (std::uint64_t now = 81'001U; now != 81'004U; ++now) {
+		const auto sent_before = fixture.backend.sent.size();
+		ASSERT_EQ(detail::NativeSessionTickStatus::Complete, capture_tick(fixture, view, now, true));
+		EXPECT_LE(fixture.backend.sent.size() - sent_before, 1U)
+			<< "Initial-snapshot egress must share the native per-tick send budget.";
+	}
+
+	std::size_t snapshot_index = fixture.backend.sent.size();
+	for (std::size_t index = sent_before_capture; index < fixture.backend.sent.size(); ++index) {
+		if (sent_type(fixture.backend, index) == protocol::MessageType::FullSnapshot) {
+			snapshot_index = index;
+			break;
+		}
+	}
+	ASSERT_LT(snapshot_index, fixture.backend.sent.size())
+		<< "EngineUpdate must drive the captured P8.1 image through begin_initial_snapshot and egress.";
+	std::vector<std::uint8_t> stable;
+	const auto snapshot = decode_sent(fixture.backend, snapshot_index, stable);
+	EXPECT_NE(0U, static_cast<std::uint8_t>(snapshot.header.flags & protocol::MessageFlagAckRequired));
+	EXPECT_NE(0U, static_cast<std::uint8_t>(snapshot.header.flags & protocol::MessageFlagKeyframe));
+	protocol::FullSnapshotPartPayload payload;
+	ASSERT_EQ(protocol::ValidationError::None,
+		protocol::decode_full_snapshot_part_payload(snapshot.payload, payload));
+	EXPECT_EQ(4U, payload.record_count) << "The runtime egress must serialize the D5/P8.1 canonical player image.";
+}
+
+TEST(TelemetryNativePlayerCaptureContract, TerminalTransportFailureAfterReadyTransitionSuppressesCapture)
+{
+	REQUIRE_NATIVE_PLAYER_D3();
+	NativeFixture fixture;
+	auto config = enabled_config(64U);
+	ASSERT_EQ(detail::NativeSessionStartStatus::Started, fixture.start(config));
+	CountingEngineReadView view;
+	ASSERT_EQ(detail::NativeSessionTickStatus::Complete, capture_tick(fixture, view, 50'000U));
+	view.clear_counts();
+	const auto endpoint = peer(33U);
+	fixture.backend.receives.push_back(
+		{detail::IoStatus::Complete, hello(protocol::VersionMinorV1_1, 941U, endpoint)});
+	native_tick(fixture, {50'001U, 0U, false});
+	ASSERT_FALSE(fixture.backend.sent.empty());
+	const auto welcome = fixture.backend.sent.size() - 1U;
+	fixture.backend.receives.push_back(
+		{detail::IoStatus::Complete, ack_for(fixture.backend.sent[welcome], endpoint, 942U)});
+	fixture.backend.receives.push_back({detail::IoStatus::Error, {}});
+
+	EXPECT_EQ(detail::NativeSessionTickStatus::PermanentTransportFailure,
+		capture_tick(fixture, view, 50'020U));
+	EXPECT_EQ(0U, view.total_calls()) << "A terminal transport result aborts the tick before engine capture.";
+}
+
+TEST(TelemetryNativePlayerCaptureContract, ReadyTransitionDuringInactiveMissionDoesNotCapture)
+{
+	REQUIRE_NATIVE_PLAYER_D3();
+	NativeFixture fixture;
+	auto config = enabled_config(64U);
+	ASSERT_EQ(detail::NativeSessionStartStatus::Started, fixture.start(config));
+	CountingEngineReadView view;
+	ASSERT_EQ(detail::NativeSessionTickStatus::Complete, capture_tick(fixture, view, 60'000U));
+	view.clear_counts();
+	const auto endpoint = peer(34U);
+	fixture.backend.receives.push_back(
+		{detail::IoStatus::Complete, hello(protocol::VersionMinorV1_1, 951U, endpoint)});
+	native_tick(fixture, {60'001U, 0U, false});
+	ASSERT_FALSE(fixture.backend.sent.empty());
+	const auto welcome = fixture.backend.sent.size() - 1U;
+	fixture.backend.receives.push_back(
+		{detail::IoStatus::Complete, ack_for(fixture.backend.sent[welcome], endpoint, 952U)});
+
+	EXPECT_EQ(detail::NativeSessionTickStatus::Complete, capture_tick(fixture, view, 60'020U, false));
+	EXPECT_EQ(0U, view.total_calls()) << "ReadyForState never bypasses the mission-active capture gate.";
+	ASSERT_NE(nullptr, slot(fixture));
+	EXPECT_EQ(detail::ProducerSessionProgress::ReadyForState, slot(fixture)->progress);
+	EXPECT_EQ(CaptureInactive, NativePlayerProbe::last_status(fixture.runtime));
+	expect_zero_materialization(NativePlayerProbe::materialization(fixture.runtime));
 }
 
 TEST(TelemetryNativePlayerCaptureContract, OneSharedCaptureFansOutToReadyAndStaleSlots)
@@ -1426,7 +2297,7 @@ TEST(TelemetryNativePlayerCaptureContract, OneSharedCaptureFansOutToReadyAndStal
 	const auto second_stale_due = second->heartbeat.last_valid_network_activity_us +
 		second->heartbeat.stale_timeout_us;
 	ASSERT_LT(first_stale_due, second_stale_due);
-	fixture.runtime.service_tick({first_stale_due, 0U, true});
+	native_tick(fixture, {first_stale_due, 0U, true});
 	ASSERT_EQ(detail::ProducerSessionProgress::Stale, slot(fixture, 0U)->progress);
 	ASSERT_EQ(detail::ProducerSessionProgress::ReadyForState, slot(fixture, 1U)->progress);
 	CountingEngineReadView view;
@@ -1606,7 +2477,7 @@ TEST(TelemetryNativePlayerCaptureContract, ExhaustiveCaptureResultPairsAcceptOnl
 				EXPECT_EQ(TickPermanentCaptureFailure,
 					static_cast<std::uint8_t>(capture_tick(fixture, fault_view, 30'000U)));
 				EXPECT_EQ(TickPermanentCaptureFailure,
-					static_cast<std::uint8_t>(fixture.runtime.service_tick({30'001U, 0U, true})));
+					static_cast<std::uint8_t>(native_tick(fixture, {30'001U, 0U, true})));
 				EXPECT_EQ(0U, fault_view.total_calls());
 			}
 		}
@@ -1714,7 +2585,7 @@ TEST(TelemetryNativePlayerCaptureContract, ShutdownClearsAndAllCaptureSeamsStayU
 	expect_zero_materialization(NativePlayerProbe::materialization(fixture.runtime));
 	view.clear_counts();
 	EXPECT_EQ(detail::NativeSessionTickStatus::Unavailable, capture_tick(fixture, view, 20'000U));
-	EXPECT_EQ(detail::NativeSessionTickStatus::Unavailable, fixture.runtime.service_tick({20'001U, 0U, true}));
+	EXPECT_EQ(detail::NativeSessionTickStatus::Unavailable, native_tick(fixture, {20'001U, 0U, true}));
 	EXPECT_EQ(detail::NativeSessionTickStatus::Unavailable,
 		NativePlayerAccess::inject_collected_player_capture(fixture.runtime,
 			{detail::CaptureStatus::Valid, detail::CaptureReason::None},
@@ -1722,7 +2593,7 @@ TEST(TelemetryNativePlayerCaptureContract, ShutdownClearsAndAllCaptureSeamsStayU
 	EXPECT_EQ(0U, view.total_calls());
 }
 
-TEST(TelemetryNativePlayerCaptureContract, OneArgumentCompatibilityPreservesPlayerStateWhileR2Progresses)
+TEST(TelemetryNativePlayerCaptureContract, R2OnlyTestSeamPreservesPlayerStateWhileR2Progresses)
 {
 	REQUIRE_NATIVE_PLAYER_D3();
 	NativeFixture fixture;
@@ -1763,7 +2634,7 @@ TEST(TelemetryNativePlayerCaptureContract, OneArgumentCompatibilityPreservesPlay
 	fixture.backend.receives.push_back(
 		{detail::IoStatus::Complete, heartbeat_request(ready_session_id, ready_endpoint, 991U, heartbeat_tick - 1U)});
 	const auto sends_before_heartbeat = fixture.backend.sent.size();
-	fixture.runtime.service_tick({heartbeat_tick, 0U, true});
+	native_tick(fixture, {heartbeat_tick, 0U, true});
 	ASSERT_GT(fixture.backend.sent.size(), sends_before_heartbeat);
 	EXPECT_EQ(protocol::MessageType::Heartbeat,
 		sent_type(fixture.backend, fixture.backend.sent.size() - 1U));
@@ -1778,7 +2649,7 @@ TEST(TelemetryNativePlayerCaptureContract, OneArgumentCompatibilityPreservesPlay
 	const auto sends_before_second_hello = fixture.backend.sent.size();
 	fixture.backend.receives.push_back(
 		{detail::IoStatus::Complete, hello(protocol::VersionMinorV1_1, 992U, second_endpoint)});
-	fixture.runtime.service_tick({heartbeat_tick + 1U, 0U, false});
+	native_tick(fixture, {heartbeat_tick + 1U, 0U, false});
 	expect_preserved();
 	ASSERT_GT(fixture.backend.sent.size(), sends_before_second_hello);
 	const auto second_welcome = fixture.backend.sent.size() - 1U;
@@ -1791,17 +2662,17 @@ TEST(TelemetryNativePlayerCaptureContract, OneArgumentCompatibilityPreservesPlay
 	fixture.backend.receives.push_back(
 		{detail::IoStatus::Complete, ack_for(fixture.backend.sent[second_welcome], second_endpoint, 993U)});
 	const auto second_welcome_ack_script_index = fixture.backend.receives.size() - 1U;
-	fixture.runtime.service_tick({heartbeat_tick + 2U, 0U, false});
+	native_tick(fixture, {heartbeat_tick + 2U, 0U, false});
 	expect_preserved();
 	EXPECT_GT(fixture.backend.receive_script_index, second_welcome_ack_script_index)
-		<< "The one-argument overload must ingest the real WELCOME ACK before later egress.";
+		<< "The R2-only test seam must ingest the real WELCOME ACK before later egress.";
 	ASSERT_NE(nullptr, slot(fixture, 1U));
 	EXPECT_EQ(detail::ProducerSessionProgress::ReadyForState, slot(fixture, 1U)->progress)
 		<< "Applying the WELCOME proof is the observable R2 handshake transition.";
 	for (std::uint64_t offset = 0U;
 		offset < 8U && fixture.backend.sent.size() == sends_before_second_welcome_ack;
 		++offset) {
-		fixture.runtime.service_tick({heartbeat_tick + 3U + offset, 0U, false});
+		native_tick(fixture, {heartbeat_tick + 3U + offset, 0U, false});
 		expect_preserved();
 	}
 	ASSERT_GT(fixture.backend.sent.size(), sends_before_second_welcome_ack);
@@ -1810,14 +2681,14 @@ TEST(TelemetryNativePlayerCaptureContract, OneArgumentCompatibilityPreservesPlay
 	ASSERT_NE(nullptr, slot(fixture, 1U));
 	EXPECT_EQ(detail::ProducerSessionProgress::ReadyForState, slot(fixture, 1U)->progress);
 
-	fixture.runtime.service_tick({100'000U + period * 2U, 0U, true});
+	native_tick(fixture, {100'000U + period * 2U, 0U, true});
 	expect_preserved();
-	fixture.runtime.service_tick({100'000U + period * 4U, 0U, true});
+	native_tick(fixture, {100'000U + period * 4U, 0U, true});
 	expect_preserved();
 
 	const auto disconnect_due = slot(fixture)->heartbeat.last_valid_network_activity_us +
 		slot(fixture)->heartbeat.disconnect_timeout_us;
-	fixture.runtime.service_tick({disconnect_due, 0U, true});
+	native_tick(fixture, {disconnect_due, 0U, true});
 	ASSERT_NE(nullptr, slot(fixture));
 	EXPECT_EQ(detail::ProducerSessionProgress::Empty, slot(fixture)->progress)
 		<< "Only the real R2 maintenance deadline may clear the preserved player slot.";

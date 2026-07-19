@@ -3,15 +3,20 @@
 #include "telemetry/capture_scheduler.h"
 #include "telemetry/config.h"
 #include "telemetry/datagram_scheduler.h"
+#include "telemetry/metrics.h"
+#include "telemetry/phase1_state_image.h"
 #include "telemetry/session_controller.h"
 #include "telemetry/transport.h"
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 
 namespace telemetry::detail {
 
-class NativeSessionRuntimePlayerTestAccess;
+class NativeSessionRuntimeTestAccess;
+class TelemetryStructuredLog;
 
 enum class NativeSessionStartStatus : std::uint8_t {
 	Started = 0,
@@ -51,12 +56,39 @@ struct NativeSessionStartRequest {
 	std::uint64_t producer_id = 0U;
 	SessionIdAllocator* session_ids = nullptr;
 	RandomSource* packet_sequences = nullptr;
+	TelemetryMetrics* metrics = nullptr;
+	TelemetryStructuredLog* log = nullptr;
 };
 
 struct NativeSessionTickContext {
 	std::uint64_t now_us = 0U;
 	std::uint32_t mission_generation = 0U;
 	bool mission_active = false;
+};
+
+// Bounded, test-only benchmark observation copied from the actual native
+// runtime tick. It is populated only after the explicit test seam enables
+// observation, so normal Phase 1 execution pays only guarded assignments.
+// Durations are monotonic-clock nanoseconds and are never exported on wire.
+struct NativeRuntimePerformanceSample {
+	std::uint64_t tick_duration_ns = 0U;
+	std::uint64_t collect_duration_ns = 0U;
+	std::uint64_t diff_duration_ns = 0U;
+	// Test-only subcomponents of the producer capture/diff path. They are
+	// populated only while the explicit performance observation seam is armed.
+	std::uint64_t state_image_build_duration_ns = 0U;
+	std::uint64_t state_image_fill_duration_ns = 0U;
+	std::uint64_t state_image_publish_validate_duration_ns = 0U;
+	std::uint64_t state_image_adopt_duration_ns = 0U;
+	std::uint64_t state_image_semantic_validate_duration_ns = 0U;
+	std::uint64_t delta_build_duration_ns = 0U;
+	std::uint64_t serialization_duration_ns = 0U;
+	std::uint64_t network_duration_ns = 0U;
+	std::uint64_t allocation_events = 0U;
+	std::uint64_t syscall_count = 0U;
+	std::size_t queue_depth = 0U;
+	std::size_t baselines_active = 0U;
+	bool keyframe = false;
 };
 
 class NativeOutputCompletionPort {
@@ -81,9 +113,9 @@ class NativeSessionRuntime final : private DatagramIoWork {
 	NativeSessionRuntime& operator=(NativeSessionRuntime&&) = delete;
 
 	NativeSessionStartStatus start(const NativeSessionStartRequest& request) noexcept;
-	NativeSessionTickStatus service_tick(const NativeSessionTickContext& context) noexcept;
 	NativeSessionTickStatus service_tick(const NativeSessionTickContext& context,
 		const EngineReadView& engine_view) noexcept;
+	void stop_collection() noexcept;
 	void purge_all(SessionCloseReason reason) noexcept;
 	void shutdown() noexcept;
 
@@ -104,7 +136,7 @@ class NativeSessionRuntime final : private DatagramIoWork {
 	}
 
   private:
-	friend class NativeSessionRuntimePlayerTestAccess;
+	friend class NativeSessionRuntimeTestAccess;
 
 	enum class State : std::uint8_t { Cold = 0, Started, Faulted, Stopped };
 
@@ -118,6 +150,14 @@ class NativeSessionRuntime final : private DatagramIoWork {
 	void clear_player_capture() noexcept;
 	void fail_transport() noexcept;
 	void fail_capture(NativePlayerCaptureStatus status) noexcept;
+	bool provision_state_image_pools(std::size_t client_count) noexcept;
+	void release_state_image_pools() noexcept;
+	void refresh_metrics_session_scope() noexcept;
+	void refresh_log_budget_high_water() noexcept;
+	void record_capture_metric(NativePlayerCaptureStatus status, std::uint64_t duration_us) noexcept;
+	void refresh_performance_resource_sample() noexcept;
+	std::uint64_t state_image_pool_allocation_count() const noexcept;
+	std::size_t state_image_pool_backing_bytes() const noexcept;
 
 	DedicatedUdpTransport m_transport;
 	NativeOutputCompletionPort& m_output_completion;
@@ -130,8 +170,25 @@ class NativeSessionRuntime final : private DatagramIoWork {
 	NativePlayerCaptureStatus m_last_player_capture_status = NativePlayerCaptureStatus::Unavailable;
 	NativeSessionTickStatus m_fault_status = NativeSessionTickStatus::Unavailable;
 	std::uint16_t m_maximum_attempts = 0U;
+	std::uint64_t m_producer_id = 0U;
 	State m_state = State::Cold;
 	bool m_controller_ready = false;
+	// Test-only failpoint, reached before controller provisioning and bind. It
+	// is deliberately inert in normal runtime operation.
+	bool m_fail_session_controller_provision = false;
+	std::size_t m_state_image_pool_backing_bytes = 0U;
+	// Retained only by the production-owned friend seam to prove that the
+	// scoped observer sees a real runtime allocation event.
+	std::unique_ptr<std::uint8_t[]> m_test_allocation_probe;
+	std::array<Phase1StateImagePool, 4U> m_state_image_pools{};
+	TelemetryMetrics* m_metrics = nullptr;
+	TelemetryStructuredLog* m_log = nullptr;
+	std::array<bool, TelemetryMetricsMaxClients> m_metrics_session_active{};
+	std::array<std::uint64_t, TelemetryMetricsMaxClients> m_session_started_at_us{};
+	bool m_capture_after_ready_transition = false;
+	bool m_applying_engine_capture = false;
+	bool m_performance_observation_active = false;
+	NativeRuntimePerformanceSample m_last_performance_sample{};
 };
 
 } // namespace telemetry::detail
