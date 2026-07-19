@@ -293,6 +293,9 @@ bool parse_cidr(const json_t* value, protocol::IpCidr& output) noexcept
 	std::memcpy(address_text.data(), text.data(), slash);
 	address_text[slash] = '\0';
 
+	if (contains_character(address_text.data(), '%')) {
+		return false;
+	}
 	if (is_strict_ipv4_candidate(address_text.data()) && !is_canonical_ipv4_decimal(address_text.data())) {
 		return false;
 	}
