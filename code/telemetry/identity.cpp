@@ -17,6 +17,9 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
+#ifdef __APPLE__
+#include <stdlib.h>
+#endif
 #endif
 
 #include <array>
@@ -308,7 +311,16 @@ bool OsRandomSource::next_u64(std::uint64_t& value) noexcept
 			static_cast<ULONG>(sizeof(value)),
 			UseSystemPreferredRng) >= 0;
 #else
+	// `getentropy` is unavailable in older macOS SDK/deployment combinations,
+	// while arc4random_buf is a system CSPRNG available across supported macOS.
+	// Keep getentropy on the other Unix targets, where it remains the native
+	// no-allocation entropy source.
+#ifdef __APPLE__
+	arc4random_buf(&value, sizeof(value));
+	return true;
+#else
 	return getentropy(&value, sizeof(value)) == 0;
+#endif
 #endif
 }
 

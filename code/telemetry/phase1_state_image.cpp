@@ -89,7 +89,9 @@ bool make_session_atom(const Phase1StateImageInput& input, bool has_player, Stat
 	reset_atom(atom);
 	std::array<std::uint8_t, SessionStatePayloadBytes> bytes{};
 	PacketWriter writer(MutableByteView{bytes.data(), bytes.size()});
-	const auto presence = has_player ? protocol::SessionStatePresenceFlagObservedPlayer : 0U;
+	const std::uint64_t presence = has_player
+		? static_cast<std::uint64_t>(protocol::SessionStatePresenceFlagObservedPlayer)
+		: 0U;
 	const bool written = writer.write_u64(presence) && writer.write_u64(input.producer_id) &&
 		writer.write_u64(input.mission.producer_sample_time_us) &&
 		writer.write_u8(static_cast<std::uint8_t>(protocol::AuthorityMode::Solo)) &&

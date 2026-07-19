@@ -143,7 +143,7 @@ void expect_session_record(const protocol::StateAtom& atom, bool has_player)
 	ASSERT_TRUE(reader.read_u64(state_coverage));
 	ASSERT_TRUE(reader.read_u64(derived));
 	ASSERT_TRUE(reader.read_u64(exact));
-	EXPECT_EQ(has_player ? protocol::SessionStatePresenceFlagObservedPlayer : 0U, presence);
+	EXPECT_EQ(has_player ? static_cast<std::uint64_t>(protocol::SessionStatePresenceFlagObservedPlayer) : 0U, presence);
 	EXPECT_EQ(0x1020304050607080ULL, producer_id);
 	EXPECT_EQ(SampleTime, sample_time);
 	EXPECT_EQ(static_cast<std::uint8_t>(protocol::AuthorityMode::Solo), authority);

@@ -130,18 +130,6 @@ protocol::StateImage image_pair(std::uint8_t first, std::uint8_t second)
 	return result;
 }
 
-protocol::StateImage image_with_identity(std::uint8_t identity, std::uint8_t value)
-{
-	protocol::StateAtom atom;
-	atom.key.record_type = 1U;
-	atom.key.identity = {identity};
-	atom.value = {value};
-	protocol::StateImage result;
-	EXPECT_EQ(protocol::StateImageResult::Created,
-		protocol::StateImage::create(std::vector<protocol::StateAtom>{std::move(atom)}, result));
-	return result;
-}
-
 protocol::StateImage canonical_player_image(std::uint64_t entity_id)
 {
 	detail::Phase1StateImageInput input{};

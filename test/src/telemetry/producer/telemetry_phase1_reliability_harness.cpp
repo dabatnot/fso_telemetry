@@ -143,13 +143,6 @@ bool valid_profile(const char* profile, Backend& backend) noexcept {
 	backend.loss_percent=static_cast<std::uint32_t>(value);
 	return value == 1U || value == 5U || value == 20U;
 }
-std::uint32_t recovery_loss_budget(const Backend& backend) noexcept
-{
-	// This is a short deterministic smoke profile, not the ten-minute rate
-	// proof.  Two retained retransmission windows fit in its bounded simulated
-	// timeline; the JSON still records the requested percentage/mode exactly.
-	return backend.loss_percent == 1U ? 1U : 2U;
-}
 bool tick(detail::NativeSessionRuntime& runtime, const Engine& engine, std::uint64_t now, std::uint32_t mission_generation=1U) noexcept {
 	return runtime.service_tick({now,mission_generation,true},engine) == detail::NativeSessionTickStatus::Complete;
 }
