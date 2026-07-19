@@ -97,6 +97,7 @@ jobs:
           ARCH: ${{ matrix.arch }}
         run: $GITHUB_WORKSPACE/ci/linux/create_dist_pack.sh Linux
       - name: Upload result package
+        if: github.repository == 'scp-fs2open/fs2open.github.com'
         working-directory: ./builds
         env:
           INDIEGAMES_USER: ${{ secrets.INDIEGAMES_USER }}
@@ -236,6 +237,7 @@ jobs:
           ID: ${{ env.artifact_id }}
         run: $GITHUB_WORKSPACE/ci/linux/create_dist_pack.sh Windows
       - name: Upload result package
+        if: github.repository == 'scp-fs2open/fs2open.github.com'
         working-directory: ./builds
         shell: bash
         env:
@@ -345,6 +347,7 @@ jobs:
           ARCH: ${{ matrix.arch }}
         run: $GITHUB_WORKSPACE/ci/linux/create_dist_pack.sh Mac
       - name: Upload result package
+        if: github.repository == 'scp-fs2open/fs2open.github.com'
         working-directory: ./builds
         env:
           INDIEGAMES_USER: ${{ secrets.INDIEGAMES_USER }}
