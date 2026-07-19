@@ -24,6 +24,14 @@ namespace {
 
 constexpr char ConfigFilename[] = "telemetry.json";
 constexpr std::size_t MaximumJsonContainerDepth = 4;
+constexpr std::uint32_t ConfigLocationSearchFlags[]{
+	static_cast<std::uint32_t>(CF_LOCATION_ROOT_USER | CF_LOCATION_TYPE_PRIMARY_MOD),
+	static_cast<std::uint32_t>(CF_LOCATION_ROOT_USER | CF_LOCATION_TYPE_SECONDARY_MODS),
+	static_cast<std::uint32_t>(CF_LOCATION_ROOT_USER | CF_LOCATION_TYPE_ROOT),
+	static_cast<std::uint32_t>(CF_LOCATION_ROOT_GAME | CF_LOCATION_TYPE_SECONDARY_MODS),
+	static_cast<std::uint32_t>(CF_LOCATION_ROOT_GAME | CF_LOCATION_TYPE_PRIMARY_MOD),
+	static_cast<std::uint32_t>(CF_LOCATION_ROOT_GAME | CF_LOCATION_TYPE_ROOT),
+};
 
 struct CFileCloser {
 	void operator()(CFILE* file) const noexcept
@@ -70,6 +78,11 @@ ConfigLoadResult valid_result(const TelemetryConfig& config) noexcept
 	result.status = config.enabled ? ConfigStatus::ValidEnabled : ConfigStatus::ValidDisabled;
 	result.effective = config;
 	return result;
+}
+
+bool is_loose_config_location(const CFileLocation& location) noexcept
+{
+	return location.found && location.offset == 0U && location.data_ptr == nullptr;
 }
 
 bool is_known_key(const char* key) noexcept
@@ -665,8 +678,15 @@ TelemetryConfig::TelemetryConfig() noexcept
 ConfigLoadResult load_telemetry_config() noexcept
 {
 	try {
-		const auto location = cf_find_file_location(ConfigFilename, CF_TYPE_CONFIG, CF_LOCATION_ALL);
-		if (!location.found || location.offset != 0U) {
+		CFileLocation location;
+		for (const auto location_flags : ConfigLocationSearchFlags) {
+			auto candidate = cf_find_file_location(ConfigFilename, CF_TYPE_CONFIG, location_flags);
+			if (is_loose_config_location(candidate)) {
+				location = std::move(candidate);
+				break;
+			}
+		}
+		if (!location.found) {
 			return absent_result();
 		}
 		if (location.size > MaximumTelemetryConfigBytes) {

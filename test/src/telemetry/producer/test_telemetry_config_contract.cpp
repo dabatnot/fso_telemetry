@@ -1,5 +1,8 @@
 #include "telemetry/config.h"
 
+#include "cfile/cfilesystem.h"
+#include "util/FSTestFixture.h"
+
 #include <gtest/gtest.h>
 
 #include <array>
@@ -108,6 +111,11 @@ void expect_valid_enabled(std::string_view json)
 	EXPECT_EQ(0, enum_value(result.error));
 	EXPECT_TRUE(result.effective.enabled);
 }
+
+class TelemetryConfigCFileIntegrationTest : public test::FSTestFixture {
+  public:
+	TelemetryConfigCFileIntegrationTest() : FSTestFixture(test::INIT_CFILE) {}
+};
 
 TEST(TelemetryConfigContract, MinimalObjectAppliesEveryFailClosedDefault)
 {
@@ -500,6 +508,40 @@ TEST(TelemetryConfigLocationContract, ALooseFileStillUsesTheSameStrictParser)
 	EXPECT_EQ(ConfigStatus::Invalid, result.status);
 	EXPECT_NE(0, enum_value(result.error));
 	expect_safe_defaults(result);
+}
+
+TEST_F(TelemetryConfigCFileIntegrationTest, LooseRootGameTelemetryJsonIsDiscoveredAndActivated)
+{
+	const auto location = cf_find_file_location("telemetry.json", CF_TYPE_CONFIG, CF_LOCATION_ROOT_GAME);
+	ASSERT_TRUE(location.found)
+		<< "A loose data/config/telemetry.json in the game root must be discoverable through CF_TYPE_CONFIG.";
+	ASSERT_EQ(0U, location.offset);
+	ASSERT_EQ(nullptr, location.data_ptr);
+
+	const auto result = telemetry::load_telemetry_config();
+	ASSERT_EQ(ConfigStatus::ValidEnabled, result.status);
+	EXPECT_EQ(telemetry::ConfigError::None, result.error);
+	EXPECT_TRUE(result.effective.enabled);
+}
+
+TEST_F(TelemetryConfigCFileIntegrationTest, ActiveModConfigurationPrecedesLooseGameRoot)
+{
+	const auto active_mod =
+		cf_find_file_location("telemetry.json", CF_TYPE_CONFIG, CF_LOCATION_ROOT_GAME | CF_LOCATION_TYPE_PRIMARY_MOD);
+	ASSERT_TRUE(active_mod.found);
+	ASSERT_EQ(0U, active_mod.offset);
+	ASSERT_EQ(nullptr, active_mod.data_ptr);
+
+	const auto game_root =
+		cf_find_file_location("telemetry.json", CF_TYPE_CONFIG, CF_LOCATION_ROOT_GAME | CF_LOCATION_TYPE_ROOT);
+	ASSERT_TRUE(game_root.found);
+	ASSERT_EQ(0U, game_root.offset);
+	ASSERT_EQ(nullptr, game_root.data_ptr);
+
+	const auto result = telemetry::load_telemetry_config();
+	ASSERT_EQ(ConfigStatus::ValidDisabled, result.status);
+	EXPECT_EQ(telemetry::ConfigError::None, result.error);
+	EXPECT_FALSE(result.effective.enabled);
 }
 
 } // namespace

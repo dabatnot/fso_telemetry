@@ -247,7 +247,9 @@ void Runtime::record_game_state_transition(int old_state, int new_state) noexcep
 {
 	const auto old_disposition = classify_runtime_game_state(old_state);
 	const auto new_disposition = classify_runtime_game_state(new_state);
-	if (old_disposition == RuntimeGameStateDisposition::Invalid ||
+	const auto bootstrap_old_state_sentinel = old_state == GS_STATE_INVALID && m_mission_generation == 0U &&
+		(m_state == RuntimeState::Cold || m_state == RuntimeState::Ready);
+	if ((old_disposition == RuntimeGameStateDisposition::Invalid && !bootstrap_old_state_sentinel) ||
 		new_disposition == RuntimeGameStateDisposition::Invalid) {
 		m_pending_game_state = RuntimeGameStateDisposition::Invalid;
 		m_game_state_pending = true;

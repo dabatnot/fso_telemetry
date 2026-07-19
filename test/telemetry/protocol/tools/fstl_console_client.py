@@ -78,6 +78,12 @@ def hello_payload(nonce: int, sent_us: int) -> bytes:
     return struct.pack("<QQBBBBB3xQHHH", nonce, sent_us, 1, 1, 1, 1, 0, 0, 1000, 0, 0)
 
 
+def heartbeat_payload(probe_id: int, kind: int, origin_t0_us: int,
+                      receive_t1_us: int, transmit_t2_us: int) -> bytes:
+    return struct.pack("<IB3xQQQ", probe_id, kind, origin_t0_us,
+                       receive_t1_us, transmit_t2_us)
+
+
 def ack_payload(header: dict[str, int], ack_flags: int) -> bytes:
     return struct.pack("<IBBHI", header["message_id"], header["message_type"],
                        ack_flags, header["fragment_count"],
@@ -314,7 +320,9 @@ class ConsoleClient:
         return base * jitter // 10_000
 
     def _send_hello(self, sent: int, retransmission: bool) -> None:
-        flags = ACK_REQUIRED | (RETRANSMISSION if retransmission else 0)
+        # HELLO is retransmitted by the client-side negotiation timer, not ACKed.
+        # RETRANSMISSION remains legal on retries without ACK_REQUIRED.
+        flags = RETRANSMISSION if retransmission else 0
         packet = pack_header(message_type=2, flags=flags, session_id=0,
                              sequence=self.sequence, sent_us=sent, message_id=self.hello_message_id,
                              payload=self.hello_payload_bytes)
@@ -330,6 +338,21 @@ class ConsoleClient:
         packet = pack_header(message_type=10, flags=0, session_id=header["session_id"],
                              sequence=self.sequence, sent_us=sent, message_id=self.sequence,
                              payload=ack_payload(header, ack_flags), minor=header["version_minor"])
+        self.sequence += 1
+        self._send(packet)
+
+    def _respond_heartbeat(self, header: dict[str, int], fields: dict[str, Any], at_us: int) -> None:
+        if (not self.state.session_begun or header["session_id"] != self.state.session_id or
+                fields["kind"] != 1 or fields["probe_id"] == 0 or
+                fields["receive_t1_us"] != "0" or fields["transmit_t2_us"] != "0"):
+            raise ValueError("invalid HEARTBEAT request")
+        receive_t1_us = at_us
+        transmit_t2_us = now_us()
+        payload = heartbeat_payload(fields["probe_id"], 2, int(fields["origin_t0_us"]),
+                                    receive_t1_us, transmit_t2_us)
+        packet = pack_header(message_type=9, flags=0, session_id=self.state.session_id,
+                             sequence=self.sequence, sent_us=transmit_t2_us,
+                             message_id=self.sequence, payload=payload)
         self.sequence += 1
         self._send(packet)
 
@@ -434,6 +457,9 @@ class ConsoleClient:
             if self.state.session_id and header["session_id"] != self.state.session_id:
                 raise ValueError("ACK outside active session")
             self._on_ack(header, decoded["fields"])
+            return False
+        if header["message_type"] == 9:
+            self._respond_heartbeat(header, decoded["fields"], at_us)
             return False
         if header["message_type"] == 13 and self.session_end_tombstone is not None:
             session_id, message_id, message_crc32, expiry_us = self.session_end_tombstone

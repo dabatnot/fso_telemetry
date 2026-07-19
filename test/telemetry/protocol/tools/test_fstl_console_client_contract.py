@@ -96,6 +96,19 @@ def ack_for(header: dict[str, int], flags: int = 1) -> bytes:
                        header["fragment_count"], header["message_crc32"])
 
 
+def heartbeat_request_payload(probe_id: int, origin_t0_us: int) -> bytes:
+    return struct.pack("<IB3xQQQ", probe_id, 1, origin_t0_us, 0, 0)
+
+
+def receive_message_type(server: socket.socket, message_type: int) -> tuple[bytes, tuple[str, int]]:
+    deadline = time.monotonic() + 2.0
+    while time.monotonic() < deadline:
+        data, client = server.recvfrom(1200)
+        if reference.read_header(data)["message_type"] == message_type:
+            return data, client
+    raise AssertionError(f"did not receive FSTL message type {message_type}")
+
+
 class FstlConsoleClientContractTest(unittest.TestCase):
     def test_console_tool_exists_and_does_not_import_producer_cpp_bindings(self) -> None:
         self.assertTrue(
@@ -174,11 +187,72 @@ class FstlConsoleClientContractTest(unittest.TestCase):
         first_header, second_header = reference.read_header(first), reference.read_header(second)
         self.assertEqual(0, process.returncode, stderr + stdout)
         self.assertEqual((2, 0), (first_header["message_type"], first_header["session_id"]))
+        # Decode the actual ConsoleClient HELLO and independently validate its
+        # complete transport envelope, including both CRC layers.
+        decoded_hello = reference.decode_message(
+            first_header["message_type"], first_header["flags"], first[68:], {}
+        )
+        envelope = reference.decode_transport_sequence(
+            [first], "console-hello", {"acceptedMinorRange": [1, 1]}
+        )
+        self.assertEqual("HELLO", decoded_hello["messageName"])
+        self.assertEqual(1, envelope["fragmentCount"])
+        self.assertEqual(len(first) - 68, envelope["messageSize"])
+        self.assertEqual(0, first_header["flags"] & 0x02, "HELLO must not request an ACK")
         self.assertEqual(first_header["message_id"], second_header["message_id"])
         self.assertEqual(first[68:], second[68:], "HELLO retransmission retains nonce/t0/payload")
         self.assertEqual(0, first_header["flags"] & 0x10)
+        self.assertEqual(0, second_header["flags"] & 0x02, "HELLO retry must not request an ACK")
         self.assertNotEqual(0, second_header["flags"] & 0x10, "retry carries RETRANSMISSION")
         self.assertGreater(second_header["packet_sequence"], first_header["packet_sequence"])
+
+    def test_heartbeat_requests_receive_correlated_responses_and_keep_the_udp_session_alive(self) -> None:
+        session_id = 0x1122334455667788
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as server:
+            server.bind(("127.0.0.1", 0)); server.settimeout(2.0)
+            process = subprocess.Popen(
+                [sys.executable, "-B", str(CONSOLE), "--host", "127.0.0.1", "--port", str(server.getsockname()[1]),
+                 "--seconds", "13.0", "--stale-ms", "100000000"], cwd=REPO, text=True,
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            )
+            hello, client = server.recvfrom(1200)
+            server.sendto(packet(3, welcome_for(hello), session_id=session_id,
+                                 sequence=1, sent_us=1_000_000, flags=2), client)
+            server.sendto(packet(4, session_begin_payload(), session_id=session_id,
+                                 sequence=2, sent_us=1_000_001, flags=2), client)
+
+            def request_and_assert_response(probe_id: int, origin_t0_us: int) -> None:
+                server.sendto(packet(9, heartbeat_request_payload(probe_id, origin_t0_us), session_id=session_id,
+                                     sequence=probe_id, sent_us=origin_t0_us, flags=0), client)
+                response, response_client = receive_message_type(server, 9)
+                self.assertEqual(client, response_client)
+                header = reference.read_header(response)
+                envelope = reference.decode_transport_sequence(
+                    [response], "console-heartbeat-response", {"acceptedMinorRange": [1, 1]}
+                )
+                decoded = reference.decode_message(9, header["flags"], response[68:], {})["fields"]
+                self.assertEqual(0, header["flags"])
+                self.assertEqual(session_id, header["session_id"])
+                self.assertEqual(1, header["fragment_count"])
+                self.assertEqual(header["packet_sequence"], header["message_id"])
+                self.assertEqual(header["sent_time_us"], int(decoded["transmit_t2_us"]))
+                self.assertEqual(1, envelope["fragmentCount"])
+                self.assertEqual(probe_id, decoded["probe_id"])
+                self.assertEqual(2, decoded["kind"])
+                self.assertEqual(str(origin_t0_us), decoded["origin_t0_us"])
+                self.assertGreaterEqual(int(decoded["transmit_t2_us"]), int(decoded["receive_t1_us"]))
+
+            request_and_assert_response(1, 1_100_000)
+            # The producer's minimum disconnect timeout is 10 seconds.  A
+            # second correlated response before that deadline keeps the same
+            # negotiated UDP session alive past its initial timeout horizon.
+            time.sleep(9.25)
+            request_and_assert_response(2, 10_350_000)
+            time.sleep(1.0)
+            request_and_assert_response(3, 11_400_000)
+            stdout, stderr = process.communicate(timeout=3)
+
+        self.assertEqual(0, process.returncode, stderr + stdout)
 
     def test_resync_retransmits_until_validated_ack_then_enters_synchronizing(self) -> None:
         session_id = 0x1122334455667788

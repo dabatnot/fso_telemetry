@@ -489,6 +489,37 @@ TEST(TelemetryRuntimeLifecycleContract, ContextAndLoadingScreensNeverInventAMiss
 	}
 }
 
+TEST(TelemetryRuntimeLifecycleContract, BootstrapInvalidToMainMenuAfterStartupDoesNotFaultTheRuntime)
+{
+	LifecycleServices services;
+	detail::Runtime runtime(services);
+
+	runtime.capture_main_thread();
+	runtime.on_engine_update();
+	ASSERT_EQ(detail::RuntimeState::Ready, runtime.state());
+	ASSERT_EQ(detail::RuntimeTerminalReason::None, runtime.terminal_reason());
+	ASSERT_TRUE(services.transport_active);
+	ASSERT_TRUE(services.registry_ready);
+	services.clear_calls();
+
+	// game_init starts telemetry before the initial game-sequence transition.
+	// The engine reports its sentinel state while entering the initial UI.
+	runtime.on_game_enter_state(GS_STATE_INVALID, GS_STATE_MAIN_MENU);
+	EXPECT_EQ(detail::RuntimeState::Ready, runtime.state());
+	EXPECT_FALSE(runtime.mission_publication_allowed());
+
+	runtime.on_engine_update();
+
+	EXPECT_TRUE(services.calls.empty());
+	EXPECT_EQ(detail::RuntimeState::Ready, runtime.state());
+	EXPECT_EQ(detail::RuntimeTerminalReason::None, runtime.terminal_reason());
+	EXPECT_EQ(0U, runtime.mission_generation());
+	EXPECT_FALSE(runtime.mission_publication_allowed());
+	EXPECT_TRUE(services.transport_active);
+	EXPECT_TRUE(services.registry_ready);
+	EXPECT_TRUE(services.diagnostic_reasons.empty());
+}
+
 TEST(TelemetryRuntimeLifecycleContract, EveryLoadingPreserveStateKeepsAnAppliedMissionLoadingWithoutPurge)
 {
 	for (int state = 0; state < GS_NUM_STATES; ++state) {
@@ -550,7 +581,8 @@ TEST(TelemetryRuntimeLifecycleContract, InvalidOldOrNewStateValuesFailClosedOnEn
 		int new_state;
 	};
 	const std::array<CallbackKind, 2> callbacks{{CallbackKind::Enter, CallbackKind::Leave}};
-	const std::array<InvalidTransition, 6> invalid_transitions{{
+	const std::array<InvalidTransition, 7> invalid_transitions{{
+		{GS_STATE_INVALID, GS_STATE_MAIN_MENU},
 		{-1, GS_STATE_GAME_PLAY},
 		{GS_STATE_GAME_PLAY, -1},
 		{GS_NUM_STATES, GS_STATE_GAME_PLAY},
