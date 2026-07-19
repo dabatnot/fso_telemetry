@@ -738,7 +738,9 @@ struct EngineCollectorContract {
 			expected.value.radius}};
 		for (std::size_t field = 0U; field < actual.size(); ++field) {
 			EXPECT_FLOAT_EQ(defaults[field], actual[field]);
-			if (defaults[field] == 0.0f) EXPECT_FALSE(std::signbit(actual[field]));
+			if (defaults[field] == 0.0f) {
+				EXPECT_FALSE(std::signbit(actual[field]));
+			}
 		}
 		EXPECT_EQ(0U, output.value.physics_mode_flags);
 	}

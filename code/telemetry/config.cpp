@@ -201,7 +201,7 @@ bool is_canonical_ipv4_decimal(const char* text) noexcept
 		if (character != '.' && character != '\0') {
 			return false;
 		}
-		if (digits == 0U || octet >= 3U) {
+		if (digits == 0U || (character == '.' && octet >= 3U)) {
 			return false;
 		}
 		if (character == '\0') {
