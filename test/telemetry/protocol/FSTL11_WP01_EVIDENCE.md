@@ -7,9 +7,9 @@ order: `G0-G PASS`, then `G1-A PASS`.
 
 This closure is prospective, not retroactive. `P1-REQ-001` remains a
 **historical, non-repairable FAIL** because `P1-WP-02` and then `P1-WP-03`
-started before documented closure of `G0-G`. `P1-AC-020` remains
-`BLOCKED/PENDING` until that deviation receives an explicit disposition and the
-rest of the Phase 1 evidence is complete.
+started before documented closure of `G0-G`. The explicit disposition records
+that exception without converting it into a pass; after final Phase 1
+certification, `P1-AC-020` is acceptable with that recorded limitation.
 
 ## Tested revision and artifact identity
 
@@ -150,7 +150,7 @@ after loss, duplication and reordering.
 | `P1-AC-002` | `PASS` — exact bit, record-set and version rejection |
 | `G0-G` | **`PASS`**, closed first after test and reviewer acceptance |
 | `G1-A` | **`PASS`**, closed only after `G0-G` |
-| `P1-AC-020` | **`BLOCKED/PENDING`** — the explicit disposition required for the historical `P1-REQ-001` failure is satisfied; all remaining Phase 1 proofs, reviews, and gates are still required |
+| `P1-AC-020` | **`PASS`** — all Phase 1 proofs, gates and final review are accepted; `P1-REQ-001` remains a recorded historical/non-repairable `FAIL` under its limited governance disposition |
 
 ### Historical ordering violation
 
@@ -188,6 +188,32 @@ matrice de conformité le résultat de chaque gate prérequise, avec la preuve
 associée ; le tracker en contrôlera la présence au point de passage du lot.
 
 Effet précis : la disposition explicite exigée pour l'écart
-`P1-REQ-001` est satisfaite. `P1-AC-020` reste toutefois **en attente** de
-toutes les autres preuves, revues et gates de Phase 1 ; aucune clôture de la
-phase n'est déclarée par cette décision.
+`P1-REQ-001` est satisfaite. Elle n'était pas, à elle seule, une clôture de
+Phase 1 ; la clôture intervient seulement avec la certification finale
+ci-dessous.
+
+## Certification finale Phase 1 — 2026-07-19
+
+La certification du candidat `911de1f6e59ab309924806f91fc7e6fdaf4d0aaa`
+est **PASS**. La revue indépendante a approuvé la clôture après le run GitHub
+Actions [29698743284](https://github.com/dabatnot/fso_telemetry/actions/runs/29698743284)
+(`Build Test package`, branche `test/telemetry-phase-1-certification`) :
+
+- 14/14 jobs de compilation et tests ont réussi ;
+- 7/7 jobs de paquets ZIP ont réussi, avec `Create Distribution package`
+  réussi ;
+- 7/7 étapes `Upload result package` ont été `skipped` dans le fork, comme
+  requis par la garde SFTP réservée au dépôt officiel.
+
+| ID | Disposition finale |
+|---|---|
+| `P1-REQ-036` | `PASS` — toutes les variantes supportées de la matrice certifiée compilent et exécutent leurs tests au SHA ci-dessus |
+| `P1-AC-003` | `PASS` — matrice, seam du socle et fast path disabled acceptés ; la publication SFTP externe ne fait pas partie de ce critère |
+| `G1-B` | `PASS/CLOSED` |
+| `G1-G` | `PASS/CLOSED` — preuves WP11 (fuzz, réseau, soak, relances) et matrice build acceptées |
+| `P1-AC-020` | `PASS` — 38 exigences, 20 critères, 11 lots et 7 gates réconciliés ; aucune réserve bloquante de revue |
+| `P1-REQ-001` | **`FAIL` historique/non-réparable, disposition acceptée** — ce statut ne devient jamais `PASS` |
+
+Cette certification ne modifie pas les checkboxes du contrat de livraison ;
+elle archive la preuve et la décision de clôture qui permettent leur mise à
+jour formelle par le tracker.
