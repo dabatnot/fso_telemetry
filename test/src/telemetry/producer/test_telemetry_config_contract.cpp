@@ -512,7 +512,8 @@ TEST(TelemetryConfigLocationContract, ALooseFileStillUsesTheSameStrictParser)
 
 TEST_F(TelemetryConfigCFileIntegrationTest, LooseRootGameTelemetryJsonIsDiscoveredAndActivated)
 {
-	const auto location = cf_find_file_location("telemetry.json", CF_TYPE_CONFIG, CF_LOCATION_ROOT_GAME);
+	const auto location =
+		cf_find_file_location("telemetry.json", CF_TYPE_CONFIG, CF_LOCATION_ROOT_GAME | CF_LOCATION_TYPE_ROOT);
 	ASSERT_TRUE(location.found)
 		<< "A loose data/config/telemetry.json in the game root must be discoverable through CF_TYPE_CONFIG.";
 	ASSERT_EQ(0U, location.offset);
