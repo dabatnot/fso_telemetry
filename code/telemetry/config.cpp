@@ -169,6 +169,56 @@ bool copy_json_string_to_c_buffer(const json_t* value, char* buffer, std::size_t
 	return true;
 }
 
+bool contains_character(const char* text, char expected) noexcept
+{
+	for (; *text != '\0'; ++text) {
+		if (*text == expected) {
+			return true;
+		}
+	}
+	return false;
+}
+
+bool is_canonical_ipv4_decimal(const char* text) noexcept
+{
+	std::size_t octet = 0U;
+	std::size_t digits = 0U;
+	std::uint16_t value = 0U;
+	char first_digit = '\0';
+	for (const char* current = text;; ++current) {
+		const auto character = *current;
+		if (character >= '0' && character <= '9') {
+			if (digits == 0U) {
+				first_digit = character;
+			}
+			++digits;
+			value = static_cast<std::uint16_t>(value * 10U + static_cast<std::uint16_t>(character - '0'));
+			if (value > 255U || (digits > 1U && first_digit == '0')) {
+				return false;
+			}
+			continue;
+		}
+		if (character != '.' && character != '\0') {
+			return false;
+		}
+		if (digits == 0U || octet >= 3U) {
+			return false;
+		}
+		if (character == '\0') {
+			return octet == 3U;
+		}
+		++octet;
+		digits = 0U;
+		value = 0U;
+		first_digit = '\0';
+	}
+}
+
+bool is_strict_ipv4_candidate(const char* text) noexcept
+{
+	return contains_character(text, '.') && !contains_character(text, ':');
+}
+
 bool parse_numeric_address(const json_t* value, NumericIpAddress& output) noexcept
 {
 	std::array<char, INET6_ADDRSTRLEN> text{};
@@ -176,6 +226,9 @@ bool parse_numeric_address(const json_t* value, NumericIpAddress& output) noexce
 		return false;
 	}
 
+	if (is_strict_ipv4_candidate(text.data()) && !is_canonical_ipv4_decimal(text.data())) {
+		return false;
+	}
 	in_addr ipv4{};
 	if (inet_pton(AF_INET, text.data(), &ipv4) == 1) {
 		std::array<std::uint8_t, 4> bytes{};
@@ -240,6 +293,9 @@ bool parse_cidr(const json_t* value, protocol::IpCidr& output) noexcept
 	std::memcpy(address_text.data(), text.data(), slash);
 	address_text[slash] = '\0';
 
+	if (is_strict_ipv4_candidate(address_text.data()) && !is_canonical_ipv4_decimal(address_text.data())) {
+		return false;
+	}
 	in_addr ipv4{};
 	if (inet_pton(AF_INET, address_text.data(), &ipv4) == 1) {
 		std::uint8_t prefix = 0;

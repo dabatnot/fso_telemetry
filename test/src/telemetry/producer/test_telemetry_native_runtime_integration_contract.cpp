@@ -1062,7 +1062,8 @@ TEST(TelemetryP91MetricsLifecycleContract, AcceptedCallbackPublishesNonZeroDurat
 	runtime.on_engine_update();
 	ASSERT_EQ(detail::RuntimeState::Ready, runtime.state());
 	runtime.on_game_mission_load();
-	const auto& histogram = services.metrics.snapshot().process_histograms[
+	const auto metrics = services.metrics.snapshot();
+	const auto& histogram = metrics.process_histograms[
 		static_cast<std::size_t>(detail::TelemetryMetricHistogram::CallbackDuration)];
 	EXPECT_EQ(2U, histogram.count);
 	EXPECT_GT(histogram.sum_us, 0U);
