@@ -429,7 +429,11 @@ SocketReceiveResult NativeUdpSocketBackend::try_receive(SocketHandle handle,
 	message.msg_namelen = source_length;
 	message.msg_iov = &buffer;
 	message.msg_iovlen = 1U;
-	const auto bytes_received = recvmsg(native_socket(handle), &message, MSG_TRUNC);
+	// MSG_TRUNC is an output condition.  Passing it as an input flag is not
+	// portable: BSD-derived stacks may report it back even for a datagram that
+	// completely fits the supplied buffer.  recvmsg reports actual truncation
+	// through msg_flags on every supported POSIX target.
+	const auto bytes_received = recvmsg(native_socket(handle), &message, 0);
 	if (bytes_received < 0) {
 		result.status = map_io_error(last_socket_error());
 		return result;

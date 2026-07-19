@@ -1503,9 +1503,13 @@ TEST(TelemetryPhase1KeyframeContract, ResyncRateLimitAllowsBurstTwoThenRejectsTh
 	const auto second = make_resync(100U, 2U);
 	ASSERT_EQ(detail::SessionIngressDisposition::ResponseQueued, controller.ingest(endpoint(), view(second.bytes), 5'000U, 7U, true).disposition);
 	ASSERT_TRUE(controller.has_output()); (void)pop_output(controller);
+	const auto candidate_after_second = controller.slot(0U).snapshot.candidate_snapshot_id();
+	EXPECT_NE(candidate_id, candidate_after_second)
+		<< "The second allowed RESYNC identity replaces the pending recovery keyframe with a fresh candidate.";
 	const auto third = make_resync(101U, 3U);
 	EXPECT_EQ(detail::SessionIngressDisposition::Dropped, controller.ingest(endpoint(), view(third.bytes), 5'000U, 7U, true).disposition);
-	EXPECT_EQ(candidate_id, controller.slot(0U).snapshot.candidate_snapshot_id());
+	EXPECT_EQ(candidate_after_second, controller.slot(0U).snapshot.candidate_snapshot_id())
+		<< "The rate-limited third identity cannot reserve another replacement candidate.";
 }
 
 TEST(TelemetryPhase1DeltaEgressContract, DeltaEgressIsV11UnreliableCumulativeAndSingleSlotReplaceable)
