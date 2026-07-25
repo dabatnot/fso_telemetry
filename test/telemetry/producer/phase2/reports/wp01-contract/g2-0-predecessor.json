@@ -1,0 +1,70 @@
+{
+  "schema": "fs2open.telemetry.phase2.g2-0-predecessor.v1",
+  "gate": "G2-0",
+  "status": "closed",
+  "eligibleWorkPackages": ["P2-WP-01"],
+  "baseRevision": {
+    "commit": "09ead0ad01c8b8eb0df9af43e7ebc432471e859c",
+    "tree": "2984a9d7b138a21ca9bed08025b482ffc2f77d7f",
+    "subject": "telemetry: fix restart mission lifecycle"
+  },
+  "predecessor": {
+    "gate": "G1-G",
+    "status": "closed",
+    "reconciledAtUtc": "2026-07-25T12:06:21.7586830Z",
+    "independentReviewer": "Meitner",
+    "reviewStatus": "pass",
+    "phase1Acceptance": {
+      "P1-AC-020": "approved",
+      "traceability": "38/38",
+      "historicalP1Req001Disposition": "approved"
+    }
+  },
+  "evidence": {
+    "traceabilityAudit": {
+      "path": "../../../reliability/reports/wp11-restart-fix-certification-20260724/p1-ac020-traceability-audit.json",
+      "result": "pass"
+    },
+    "provenance": {
+      "path": "../../../reliability/reports/wp11-restart-fix-certification-20260724/p1-restart-fix-provenance.json",
+      "result": "pass"
+    },
+    "buildMatrix": {
+      "path": "../../../reliability/reports/wp11-restart-fix-certification-20260724/build-matrix/build-matrix-manifest.json",
+      "sha256": "7B28E2FEF7B2D40DFE436B6E8DC613C9FDE174AA742FAE45A6313D5EA2E18587",
+      "result": "pass"
+    },
+    "udpCampaign": {
+      "path": "../../../reliability/reports/wp11-restart-fix-certification-20260724/udp-current-20260724-2210/campaign-manifest.json",
+      "sha256": "630D63B68F4829033584B5FD35D5B2D4E9A39CC9CF44BC055FA76473ACBF6E28",
+      "result": "pass"
+    },
+    "fuzzCampaign": {
+      "path": "../../../reliability/reports/wp11-restart-fix-certification-20260724/fuzz-8x1800/<target>/report.json",
+      "targets": 8,
+      "durationSecondsPerTarget": 1800,
+      "result": "pass"
+    }
+  },
+  "verification": [
+    {
+      "command": "git rev-parse 09ead0ad01c8b8eb0df9af43e7ebc432471e859c^{commit}",
+      "exitCode": 0,
+      "result": "pass"
+    },
+    {
+      "command": "git ls-tree -r 09ead0ad01c8b8eb0df9af43e7ebc432471e859c -- code/telemetry/runtime.cpp test/src/telemetry/producer/test_telemetry_runtime_lifecycle_contract.cpp test/telemetry/producer/reliability/capture_phase1_windows_resource_snapshot.ps1 test/telemetry/producer/reliability/fixtures/telemetry_phase1_soak_solo.fs2 test/telemetry/producer/reliability/run_phase1_physical_soak.py test/telemetry/producer/reliability/test_run_phase1_physical_soak.py test/telemetry/protocol/tools/fstl_console_client.py test/telemetry/protocol/tools/test_fstl_console_client_contract.py",
+      "exitCode": 0,
+      "result": "pass"
+    }
+  ],
+  "results": {
+    "P2-REQ-001": "pass",
+    "P2-AC-001": "pass",
+    "G2-0": "closed"
+  },
+  "limitations": [
+    "This predecessor manifest admits P2-WP-01 only; it does not certify any later Phase 2 gate or acceptance criterion.",
+    "The Phase 1 campaign provenance retains its recorded pre-freeze-equivalent qualification."
+  ]
+}

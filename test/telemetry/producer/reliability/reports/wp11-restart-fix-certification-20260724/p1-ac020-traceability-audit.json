@@ -2,12 +2,38 @@
   "schema": "fs2open.telemetry.phase1.ac020-traceability-audit.v1",
   "acceptanceCriterion": "P1-AC-020",
   "normativeTracker": "documentation/analysis/specs/1-Squelette-et-premier-flux/07-livraison-et-tracabilite.md",
-  "disposition": "not-approved-historical-exception-open",
+  "disposition": "approved",
+  "historicalExceptionDisposition": {
+    "status": "approved",
+    "approvedAtUtc": "2026-07-25T12:04:30.6102461Z",
+    "authority": "responsable désigné",
+    "scope": "Formal disposition of the historical process/order non-conformity only: P1-WP-02 and P1-WP-03 began before documented G0-G closure. This does not change the historical event order; G0-G and successor gates are closed separately by the independent review and reconciliation recorded below."
+  },
+  "independentReview": {
+    "status": "pass",
+    "reviewer": "Meitner",
+    "reviewedAtUtc": "2026-07-25T12:06:21.7586830Z",
+    "scope": "WP11/G1-G final review, including the 38/38 P1 requirement traceability and the approved historical P1-REQ-001 disposition.",
+    "decision": "The independent review accepts the WP11 evidence and confirms that the designated-responsible approval plus complete traceability permit Phase 1 closure."
+  },
+  "gateReconciliation": {
+    "reconciledAtUtc": "2026-07-25T12:06:21.7586830Z",
+    "G0-G": "closed",
+    "G1-A": "closed",
+    "G1-B": "closed",
+    "G1-C": "closed",
+    "G1-D": "closed",
+    "G1-E": "closed",
+    "G1-F": "closed",
+    "G1-G": "closed"
+  },
   "checklist": {
     "requirementsEnumerated": 38,
-    "evidenceLinked": 37,
-    "historicalExceptionOpen": ["P1-REQ-001"],
-    "blockingReservation": "The tracker records that WP02/WP03 began before documented G0-G closure. This audit preserves that historical P1-REQ-001 non-conformity; it does not erase or approve it."
+    "evidenceLinked": 38,
+    "historicalExceptionOpen": [],
+    "historicalExceptionApproved": ["P1-REQ-001"],
+    "finalChecklistApproved": true,
+    "blockingReservations": []
   },
   "evidenceRefs": {
     "protocol": "../wp11-head-0189f0b9-fuzz/telemetry-fuzz-campaign/campaign-report.json",
@@ -20,7 +46,7 @@
     "console": "../wp11-head-0189f0b9-corrected-binary-lifecycle-manual/"
   },
   "requirements": {
-    "P1-REQ-001": { "status": "historical-exception-open", "evidence": ["protocol"], "note": "G0-G is the legacy predecessor of G1-A; the tracker-required explicit disposition remains open." },
+    "P1-REQ-001": { "status": "approved", "evidence": ["protocol"], "note": "The designated responsible formally approved the historical WP02/WP03-before-G0-G exception on 2026-07-25T12:04:30.6102461Z. Independent reviewer Meitner then accepted the final WP11/G1-G review and gate reconciliation on 2026-07-25T12:06:21.7586830Z." },
     "P1-REQ-002": { "status": "evidence-linked", "evidence": ["protocol"] },
     "P1-REQ-003": { "status": "evidence-linked", "evidence": ["unitLifecycle", "physical"] },
     "P1-REQ-004": { "status": "evidence-linked", "evidence": ["unitLifecycle"] },
@@ -60,7 +86,7 @@
     "P1-REQ-038": { "status": "evidence-linked", "evidence": ["udp", "fuzz", "protocol"] }
   },
   "limitations": [
-    "An evidence link is a traceability pointer, not a replacement for reviewer approval of every normative detail.",
-    "P1-AC-020 remains unapproved until the explicit historic G0-G/P1-REQ-001 disposition is accepted by the designated reviewer."
+    "The campaign reports are evidence for the pre-freeze tracked equivalent recorded by the provenance manifest; they are not a post-freeze clean-SHA rerun.",
+    "The historical exception remains recorded as history even though its disposition, independent review, and final gate reconciliation are approved."
   ]
 }
