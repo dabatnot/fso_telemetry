@@ -148,6 +148,17 @@ class LifecycleServices final : public detail::RuntimeStartupServices {
 		return transport_status;
 	}
 
+	std::uint64_t monotonic_now_us() noexcept override
+	{
+		return next_monotonic_us++;
+	}
+
+	detail::RuntimeTickStatus service_tick(const detail::RuntimeTickContext& context) noexcept override
+	{
+		tick_contexts.push_back(context);
+		return tick_status;
+	}
+
 	void stop_collection() noexcept override
 	{
 		record(LifecycleCall::StopCollection);
@@ -230,9 +241,12 @@ class LifecycleServices final : public detail::RuntimeStartupServices {
 	detail::SessionIdRegistrationStatus registration_status =
 		detail::SessionIdRegistrationStatus::Registered;
 	detail::RuntimeTransportStatus transport_status = detail::RuntimeTransportStatus::Started;
+	detail::RuntimeTickStatus tick_status = detail::RuntimeTickStatus::Unavailable;
 	RuntimeCallbackKind worker_callback_during_stop_collection = RuntimeCallbackKind::None;
 	std::uint64_t registered_candidate = 0U;
+	std::uint64_t next_monotonic_us = 1U;
 	std::size_t reentrant_shutdown_attempts = 0U;
+	std::vector<detail::RuntimeTickContext> tick_contexts;
 	bool main_thread_captured = false;
 	bool main_thread_check_result = true;
 	bool allocation_result = true;
@@ -755,6 +769,35 @@ TEST(TelemetryRuntimeLifecycleContract, TerminalThenMissionLoadThenGamePlayPrese
 	EXPECT_EQ(detail::RuntimeState::MissionActive, runtime.state());
 	EXPECT_EQ(2U, runtime.mission_generation());
 	EXPECT_TRUE(runtime.mission_publication_allowed());
+}
+
+TEST(TelemetryRuntimeLifecycleContract, RestartMissionSelfTransitionLoadsAfterGamePlayAndReactivatesTheReplacementGeneration)
+{
+	LifecycleServices services;
+	detail::Runtime runtime(services);
+	start_mission_active(runtime, services);
+	ASSERT_EQ(1U, runtime.mission_generation());
+	services.tick_contexts.clear();
+
+	// ESC -> Restart Mission posts a forced GAME_PLAY -> GAME_PLAY transition.
+	// The engine enters GAME_PLAY before mission_load() emits GameMissionLoad.
+	runtime.on_game_leave_state(GS_STATE_GAME_PLAY, GS_STATE_GAME_PLAY);
+	runtime.on_game_enter_state(GS_STATE_GAME_PLAY, GS_STATE_GAME_PLAY);
+	runtime.on_game_mission_load();
+	EXPECT_FALSE(runtime.mission_publication_allowed());
+	EXPECT_TRUE(services.calls.empty());
+
+	runtime.on_engine_update();
+
+	EXPECT_EQ(MissionPurgeOrder, services.calls);
+	EXPECT_EQ(detail::RuntimeState::MissionActive, runtime.state());
+	EXPECT_EQ(2U, runtime.mission_generation());
+	EXPECT_TRUE(runtime.mission_publication_allowed());
+	EXPECT_TRUE(services.transport_active) << "Restart Mission must retain the process-lifetime listener.";
+	EXPECT_TRUE(services.registry_ready) << "Restart Mission must retain the process session-ID registry.";
+	ASSERT_EQ(1U, services.tick_contexts.size());
+	EXPECT_EQ(2U, services.tick_contexts.front().mission_generation);
+	EXPECT_TRUE(services.tick_contexts.front().mission_active);
 }
 
 TEST(TelemetryRuntimeLifecycleContract, PreserveContextKeepsThePendingActiveDestinationAfterTerminalReentry)

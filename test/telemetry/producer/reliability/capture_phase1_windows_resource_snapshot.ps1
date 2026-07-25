@@ -1,0 +1,62 @@
+[CmdletBinding()]
+param(
+    [Parameter(Mandatory = $true)]
+    [ValidateNotNullOrEmpty()]
+    [string]$Phase,
+
+    [Parameter(Mandatory = $true)]
+    [ValidateRange(1, 2147483647)]
+    [int]$ProducerPid,
+
+    [Parameter(Mandatory = $true)]
+    [ValidateRange(1, 65535)]
+    [int]$UdpPort,
+
+    [Parameter(Mandatory = $true)]
+    [string]$OutputPath
+)
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+
+$capturedUtc = [DateTime]::UtcNow.ToString('o')
+$process = Get-Process -Id $ProducerPid -ErrorAction SilentlyContinue
+$endpoints = @(Get-NetUDPEndpoint -LocalPort $UdpPort -ErrorAction SilentlyContinue)
+$owners = @($endpoints | ForEach-Object {
+    [ordered]@{
+        localAddress = $_.LocalAddress
+        localPort = [int]$_.LocalPort
+        owningProcess = [int]$_.OwningProcess
+    }
+})
+$ownerPids = @($owners | ForEach-Object { $_.owningProcess } | Sort-Object -Unique)
+
+$snapshot = [ordered]@{
+    schema = 'fs2open.telemetry.phase1.windows-resource-snapshot.v1'
+    capturedUtc = $capturedUtc
+    phase = $Phase
+    producer = [ordered]@{
+        expectedPid = $ProducerPid
+        processPresent = ($null -ne $process)
+        handleCount = if ($null -ne $process) { [int64]$process.HandleCount } else { $null }
+    }
+    udp = [ordered]@{
+        port = $UdpPort
+        endpointCount = $owners.Count
+        ownerPids = $ownerPids
+        expectedPidOwnsPort = ($ownerPids -contains $ProducerPid)
+        endpoints = $owners
+    }
+}
+
+$destination = [IO.Path]::GetFullPath($OutputPath)
+$directory = Split-Path -Parent $destination
+if ([string]::IsNullOrWhiteSpace($directory)) {
+    throw 'OutputPath must include a directory.'
+}
+New-Item -ItemType Directory -Path $directory -Force | Out-Null
+$temporary = Join-Path $directory ('.' + [IO.Path]::GetFileName($destination) + '.tmp')
+$snapshot | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $temporary -Encoding UTF8
+Move-Item -LiteralPath $temporary -Destination $destination -Force
+
+[PSCustomObject]$snapshot | ConvertTo-Json -Depth 6

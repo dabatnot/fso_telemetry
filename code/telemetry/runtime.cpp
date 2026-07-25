@@ -607,7 +607,16 @@ void Runtime::on_game_mission_load() noexcept
 	CallbackMetricScope callback_metric(m_services, TelemetryCallbackKind::GameMissionLoad);
 	m_mission_load_pending = true;
 	m_mission_purge_pending = true;
-	m_lifecycle_destination = RuntimeLifecycleDestination::MissionLoading;
+	// Restart Mission re-enters GAME_PLAY before the replacement mission-load
+	// callback arrives.  That queued ActiveRoot transition is authoritative for
+	// the state after the load applies; do not overwrite it with the loading
+	// fallback.  Other orders (including terminal -> load) still intentionally
+	// resolve to MissionLoading until a subsequent GAME_PLAY transition.
+	const auto game_play_already_pending = m_game_state_pending &&
+		m_pending_game_state == RuntimeGameStateDisposition::ActiveRoot;
+	if (!game_play_already_pending) {
+		m_lifecycle_destination = RuntimeLifecycleDestination::MissionLoading;
+	}
 	m_active_continuity = false;
 	m_publication_blocked = true;
 }

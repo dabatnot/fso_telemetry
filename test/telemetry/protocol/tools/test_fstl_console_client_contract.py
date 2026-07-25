@@ -325,8 +325,18 @@ class FstlConsoleClientContractTest(unittest.TestCase):
             second = subprocess.run(command, cwd=REPO, text=True, capture_output=True, check=False)
         self.assertEqual(0, first.returncode, first.stderr)
         self.assertEqual(first.stdout, second.stdout, "nominal replay transcript must be byte-for-byte deterministic")
-        states = [json.loads(line)["status"] for line in first.stdout.splitlines()]
+        transcript = [json.loads(line) for line in first.stdout.splitlines()]
+        states = [line["status"] for line in transcript]
         self.assertEqual(["Synchronizing", "Synchronizing", "Live", "Stale", "Disconnected"], states)
+        for line in transcript:
+            self.assertEqual("replay-simulated", line["observation_clock"])
+            self.assertRegex(line["observed_at_utc"], r"^1970-01-01T00:00:\d\d\.\d{6}Z$")
+            self.assertIsInstance(int(line["observed_at_monotonic_us"]), int)
+        protocol_stale = next(line for line in transcript if line["status"] == "Stale")
+        self.assertEqual("protocol-resync", protocol_stale["stale_reason"])
+        self.assertIsNone(protocol_stale["stale_detected_monotonic_us"])
+        self.assertIsNone(protocol_stale["stale_detected_utc"])
+        self.assertIsNone(protocol_stale["stale_duration_us"])
 
     def test_unknown_baseline_stays_stale_without_resync_ack(self) -> None:
         session_id = 0x1122334455667788
@@ -490,9 +500,29 @@ class FstlConsoleClientContractTest(unittest.TestCase):
             stdout, stderr = process.communicate(timeout=3)
 
         self.assertEqual(0, process.returncode, stderr + stdout)
-        states = [json.loads(line)["status"] for line in stdout.splitlines()]
+        transcript = [json.loads(line) for line in stdout.splitlines()]
+        states = [line["status"] for line in transcript]
         self.assertIn("Live", states)
         self.assertEqual("Stale", states[-1])
+        stale = transcript[-1]
+        self.assertEqual("local", stale["observation_clock"])
+        self.assertRegex(stale["observed_at_utc"], r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{6}Z$")
+        self.assertIsNotNone(stale["last_live_observed_monotonic_us"])
+        self.assertIsNotNone(stale["last_live_observed_utc"])
+        self.assertGreater(int(stale["last_live_age_us"]), 1_000)
+        self.assertEqual("silence", stale["stale_reason"])
+        self.assertIsNotNone(stale["stale_detected_monotonic_us"])
+        self.assertIsNotNone(stale["stale_detected_utc"])
+        self.assertEqual(
+            int(stale["observed_at_monotonic_us"]) - int(stale["last_live_observed_monotonic_us"]),
+            int(stale["last_live_age_us"]),
+            "the final Stale record must quantify local silence since the last Live observation",
+        )
+        self.assertEqual(
+            int(stale["observed_at_monotonic_us"]) - int(stale["stale_detected_monotonic_us"]),
+            int(stale["stale_duration_us"]),
+            "the final Stale record must retain the actual timer transition and its elapsed Stale duration",
+        )
 
 
 if __name__ == "__main__":

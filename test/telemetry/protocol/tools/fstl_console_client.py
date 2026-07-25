@@ -55,6 +55,22 @@ def now_us() -> int:
     return time.monotonic_ns() // 1000
 
 
+def utc_iso8601_from_ns(timestamp_ns: int) -> str:
+    """Format an absolute client-observation time without losing microseconds."""
+    seconds, nanoseconds = divmod(timestamp_ns, 1_000_000_000)
+    return time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(seconds)) + f".{nanoseconds // 1000:06d}Z"
+
+
+def local_observation() -> tuple[int, str]:
+    """Return the client's monotonic and UTC clocks at one observation point."""
+    return now_us(), utc_iso8601_from_ns(time.time_ns())
+
+
+def replay_observation(at_us: int) -> tuple[int, str]:
+    """Return deterministic simulated client clocks for an offline replay."""
+    return at_us, utc_iso8601_from_ns(at_us * 1000)
+
+
 def pack_header(*, message_type: int, flags: int, session_id: int,
                 sequence: int, sent_us: int, message_id: int,
                 payload: bytes, minor: int = 1) -> bytes:
@@ -121,6 +137,10 @@ class ConsoleState:
     baseline: int = 0
     delta_sequence: int = 0
     last_state_us: int | None = None
+    last_state_utc: str | None = None
+    stale_reason: str | None = None
+    stale_detected_us: int | None = None
+    stale_detected_utc: str | None = None
     records: dict[str, dict[str, Any]] = field(default_factory=dict)
     baseline_records: dict[str, dict[str, Any]] = field(default_factory=dict)
     transactions: dict[int, dict[str, Any]] = field(default_factory=dict)
@@ -144,6 +164,10 @@ class ConsoleState:
         self.status = "Disconnected"
         self.baseline = self.delta_sequence = 0
         self.last_state_us = None
+        self.last_state_utc = None
+        self.stale_reason = None
+        self.stale_detected_us = None
+        self.stale_detected_utc = None
         self.records.clear()
         self.baseline_records.clear()
         self.transactions.clear()
@@ -153,7 +177,7 @@ class ConsoleState:
         self.ended = True
 
     def apply(self, message_type: int, fields: dict[str, Any], payload: bytes,
-              header: dict[str, int], at_us: int) -> tuple[bool, list[dict[str, int]], list[dict[str, int]]]:
+              header: dict[str, int], at_us: int, at_utc: str) -> tuple[bool, list[dict[str, int]], list[dict[str, int]]]:
         """Apply a validated producer message and return publish/ACK outcomes.
 
         Snapshot parts are ACK VALIDATED when reserved. ACK APPLIED headers are
@@ -233,6 +257,10 @@ class ConsoleState:
             self.baseline_records = copy.deepcopy(self.records)
             self.delta_sequence = 0
             self.last_state_us = at_us
+            self.last_state_utc = at_utc
+            self.stale_reason = None
+            self.stale_detected_us = None
+            self.stale_detected_utc = None
             self.status = "Live"
             ack_headers = [candidate["headers"][part] for part in range(count)]
             self.transactions.clear()
@@ -242,6 +270,9 @@ class ConsoleState:
                 # Phase 0: a bad baseline makes a live replica stale.  It only
                 # becomes Synchronizing after the reliable resync is accepted.
                 self.status = "Stale"
+                self.stale_reason = "protocol-resync"
+                self.stale_detected_us = None
+                self.stale_detected_utc = None
                 return False, [], []
             replica = copy.deepcopy(self.baseline_records)
             for record in fields["records"]:
@@ -249,27 +280,48 @@ class ConsoleState:
             self.records = replica
             self.delta_sequence = fields["delta_sequence"]
             self.last_state_us = at_us
+            self.last_state_utc = at_utc
+            self.stale_reason = None
+            self.stale_detected_us = None
+            self.stale_detected_utc = None
             self.status = "Live"
             return True, [], []
         return False, [], []
 
-    def stale_if_needed(self, at_us: int, stale_us: int) -> None:
-        if self.last_state_us is not None and at_us - self.last_state_us > stale_us:
+    def stale_if_needed(self, at_us: int, at_utc: str, stale_us: int) -> None:
+        if self.status == "Live" and self.last_state_us is not None and at_us - self.last_state_us > stale_us:
             self.status = "Stale"
+            self.stale_reason = "silence"
+            self.stale_detected_us = at_us
+            self.stale_detected_utc = at_utc
 
-    def transcript(self, at_us: int) -> str:
+    def transcript(self, at_us: int, at_utc: str, observation_clock: str) -> str:
         session = self.records.get("SESSION_STATE", {})
         mission = self.records.get("MISSION_STATE", {})
         player_id = session.get("observed_player_entity_id", "none")
         flight = self.records.get("FLIGHT_STATE", {})
         sample = int(flight.get("producer_sample_time_us", session.get("producer_sample_time_us", "0")))
         age = max(0, at_us - sample) if sample else 0
+        last_state_age = max(0, at_us - self.last_state_us) if self.last_state_us is not None else None
+        stale_duration = (max(0, at_us - self.stale_detected_us)
+                          if self.status == "Stale" and self.stale_reason == "silence" and self.stale_detected_us is not None
+                          else None)
         result = {
             "age_us": age, "baseline": self.baseline, "delta_sequence": self.delta_sequence,
+            "last_live_age_us": last_state_age,
+            "last_live_observed_monotonic_us": str(self.last_state_us) if self.last_state_us is not None else None,
+            "last_live_observed_utc": self.last_state_utc,
             "mission_generation": mission.get("mission_generation", 0),
+            "observation_clock": observation_clock,
+            "observed_at_monotonic_us": str(at_us),
+            "observed_at_utc": at_utc,
             "player": player_id, "pose": {"orientation": flight.get("orientation_local_to_world", []),
             "position": flight.get("position_world", [])}, "session": str(self.session_id),
             "status": self.status, "time_us": str(sample),
+            "stale_detected_monotonic_us": str(self.stale_detected_us) if self.stale_detected_us is not None else None,
+            "stale_detected_utc": self.stale_detected_utc,
+            "stale_duration_us": stale_duration,
+            "stale_reason": self.stale_reason if self.status == "Stale" else None,
             "angular_velocity": flight.get("rotational_velocity_local", []),
             "velocity": flight.get("velocity_world", []),
         }
@@ -412,7 +464,7 @@ class ConsoleClient:
             return True
         return False
 
-    def receive(self, datagram: bytes, at_us: int) -> bool:
+    def receive(self, datagram: bytes, at_us: int, at_utc: str) -> bool:
         if len(datagram) > MAX_DATAGRAM:
             raise ValueError("oversized datagram")
         header = reference.read_header(datagram)
@@ -470,7 +522,7 @@ class ConsoleClient:
                     self._ack(header, ACK_APPLIED)
                 return False
         changed, validated_headers, applied_headers = self.state.apply(
-            header["message_type"], decoded["fields"], payload, header, at_us)
+            header["message_type"], decoded["fields"], payload, header, at_us, at_utc)
         for ack_header in validated_headers:
             if ack_header["flags"] & ACK_REQUIRED:
                 self._ack(ack_header, ACK_VALIDATED)
@@ -517,15 +569,18 @@ def replay(paths: list[Path], stale_us: int) -> int:
         packet = path.read_bytes()
         header = reference.read_header(packet)
         tick = header["sent_time_us"]
-        changed = client.receive(packet, tick)
+        observed_at_us, observed_at_utc = replay_observation(tick)
+        changed = client.receive(packet, observed_at_us, observed_at_utc)
         # A rejected delta deliberately does not publish data, but its required
         # resync transition is observable proof-client state and belongs in the
         # deterministic transcript.
         if changed or (header["message_type"] == 7 and client.state.status in ("Stale", "Synchronizing")):
-            print(client.state.transcript(tick))
+            print(client.state.transcript(observed_at_us, observed_at_utc, "replay-simulated"))
     if not client.terminal_published:
-        client.state.stale_if_needed((client.state.last_state_us or 0) + stale_us + 1, stale_us)
-        print(client.state.transcript((client.state.last_state_us or 0) + stale_us + 1))
+        observed_at_us = (client.state.last_state_us or 0) + stale_us + 1
+        observed_at_us, observed_at_utc = replay_observation(observed_at_us)
+        client.state.stale_if_needed(observed_at_us, observed_at_utc, stale_us)
+        print(client.state.transcript(observed_at_us, observed_at_utc, "replay-simulated"))
     return 0
 
 
@@ -541,13 +596,17 @@ def live(host: str, port: int, seconds: float, stale_us: int) -> int:
             client.poll_reliable(now_us())
             try:
                 data = sock.recv(MAX_DATAGRAM)
-                if client.receive(data, now_us()):
-                    print(client.state.transcript(now_us()))
+                received_at_us, received_at_utc = local_observation()
+                if client.receive(data, received_at_us, received_at_utc):
+                    observed_at_us, observed_at_utc = local_observation()
+                    print(client.state.transcript(observed_at_us, observed_at_utc, "local"))
             except socket.timeout:
                 pass
-            client.state.stale_if_needed(now_us(), stale_us)
+            observed_at_us, observed_at_utc = local_observation()
+            client.state.stale_if_needed(observed_at_us, observed_at_utc, stale_us)
         if not client.terminal_published:
-            print(client.state.transcript(now_us()))
+            observed_at_us, observed_at_utc = local_observation()
+            print(client.state.transcript(observed_at_us, observed_at_utc, "local"))
     return 0
 
 
