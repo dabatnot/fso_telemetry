@@ -247,7 +247,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             "command": args.restart_command_json,
             "exitCode": None,
             "checkpoint": (
-                {"operatorAction": "Restart Mission, wait for the briefing, then select Fly Mission", 
+                {"operatorAction": "Restart Mission, wait for the briefing, then select Fly Mission",
                  "completionSignal": "external command exits 0 only after the cockpit is active again",
                  "postObservation": "must end Live with a new session and increased missionGeneration"}
                 if args.mode == "restart-mission" else None),
