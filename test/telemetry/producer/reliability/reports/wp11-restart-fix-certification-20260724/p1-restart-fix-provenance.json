@@ -1,0 +1,44 @@
+{
+  "schema": "fs2open.telemetry.phase1.restart-fix-provenance.v1",
+  "scope": "compact versionable provenance; raw corpora, logs, packets and binaries are intentionally not copied",
+  "frozenCommit": {
+    "sha": "09ead0ad01c8b8eb0df9af43e7ebc432471e859c",
+    "tree": "2984a9d7b138a21ca9bed08025b482ffc2f77d7f",
+    "subject": "telemetry: fix restart mission lifecycle",
+    "trackedDiffFromCommitAtAudit": [],
+    "trackedStatus": "clean"
+  },
+  "preFreezeEvidenceIdentity": {
+    "head": "0189f0b9d4b76f16252da2774b0a0d7d96eb6889",
+    "worktreeDiffGitObject": "ba849dc3b3e27342a5ac17b0c2e5a5f7abe86998",
+    "indexDiffGitObject": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+    "relationship": "the restart-fix commit freezes the tracked pre-freeze equivalent diff; certification campaigns were executed before this commit against that dirty equivalent, not against a clean checkout at the frozen SHA"
+  },
+  "sourceSha256": {
+    "code/telemetry/runtime.cpp": "1F748DDF24FF7BAFA089B7D1B2D674DDFA34B7C28F72DA824AB848303FF92863",
+    "test/src/telemetry/producer/test_telemetry_runtime_lifecycle_contract.cpp": "69E0116A4371D82D814EBC12F38E5CF0382968936F4EBE65936A75C2752AD8C7",
+    "test/telemetry/producer/reliability/capture_phase1_windows_resource_snapshot.ps1": "2C826025FB0E99DDA625708944FD9F2443B5BECD557F6D92F25CCB6E2FCCD99D",
+    "test/telemetry/producer/reliability/fixtures/telemetry_phase1_soak_solo.fs2": "DCB607609C0142D44690F31162EFA8B2A4ACC83F7F4D6F75C0953550B5AA8C5F",
+    "test/telemetry/producer/reliability/run_phase1_physical_soak.py": "241CF406EDA80BC8FD9BFB3828BF5C00A33D3DAD8FF0716E284EE9576653DA39",
+    "test/telemetry/producer/reliability/test_run_phase1_physical_soak.py": "A04AD90090731C24822F70BFE807F95443312D51F5807042E859CEA218A661BC",
+    "test/telemetry/protocol/tools/fstl_console_client.py": "785566C0B9163CA3E1A646FC0EB746550E4AB125FD6D889D6BA47166FB7E380E",
+    "test/telemetry/protocol/tools/test_fstl_console_client_contract.py": "1D57BAD78570F7789A27A811EDE0A55782D02482F50EEB6555D5E9E37A69603B"
+  },
+  "physicalBinary": {
+    "path": "build-restart-lifecycle/bin/Debug/fs2_open_26_1_0_x64_AVX2-DEBUG.exe",
+    "sha256": "6EBA52D9FB69F8E63292308CF231B3D48C42819538766A1CD2ADD1A5008A4697"
+  },
+  "evidence": {
+    "physicalSoak": { "path": "../wp11-restart-fix-physical-final-soak-20260723/physical-final-evidence-summary.json", "sha256": "9222FC0706268B9F8D5E4F687555A6FE09BEF9601212B04C16D101B665C8C60E" },
+    "resourceRelease": { "path": "../wp11-restart-fix-physical-resource-20260723/resource-release-evidence-summary.json", "sha256": "B8313D5AA4250185F547113A609F5CB134E8EDED71F133C4FDAC6C6EB8E50540" },
+    "udpCampaign": { "path": "udp-current-20260724-2210/campaign-manifest.json", "sha256": "630D63B68F4829033584B5FD35D5B2D4E9A39CC9CF44BC055FA76473ACBF6E28", "command": "C:/Python314/python.exe -B test/telemetry/producer/reliability/run_phase1_reliability_evidence.py --harness build-restart-lifecycle/bin/Debug/telemetry_phase1_reliability_harness.exe --output-dir .../udp-current-20260724-2210 --duration-seconds 600 --seed 424242 --restart-mission --restart-process" },
+    "fuzzCampaign": { "path": "fuzz-8x1800/<target>/report.json", "targets": 8, "durationSecondsPerTarget": 1800, "command": "C:/Python314/python.exe test/telemetry/protocol/fuzz/run_fuzz_smoke.py --binary-dir build-fuzz-clang/bin --corpus build-fuzz-clang/telemetry-fuzz-corpus --artifacts build-fuzz-clang/telemetry-fuzz-artifacts-certification-20260724 --max-total-time 1800 --max-len 2097220 --dictionary test/telemetry/protocol/fuzz/fstl.dict --target <target> --seed 1001..1008 --evidence-dir .../fuzz-8x1800", "runtimePathPrefix": "C:/Program Files/LLVM/lib/clang/22/lib/windows" },
+    "buildMatrix": { "path": "build-matrix/build-matrix-manifest.json", "sha256": "7B28E2FEF7B2D40DFE436B6E8DC613C9FDE174AA742FAE45A6313D5EA2E18587" }
+  },
+  "limitations": [
+    "The campaign reports are evidence for the pre-freeze dirty equivalent identified above; they are not a post-freeze clean-SHA rerun.",
+    "The physical proof uses the stated Debug binary and manual game interaction; it is not a signed release artifact.",
+    "Windows HandleCount plus UDP ownership snapshots demonstrate the recorded resource observations only; they are not a heap-leak proof.",
+    "This manifest references compact reports and hashes only; raw fuzz corpora, logs and packet captures remain at their referenced paths."
+  ]
+}

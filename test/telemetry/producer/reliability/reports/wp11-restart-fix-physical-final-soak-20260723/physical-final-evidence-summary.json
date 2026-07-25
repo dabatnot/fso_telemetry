@@ -1,0 +1,86 @@
+{
+  "schema": "fs2open.telemetry.phase1.wp11.restart-fix.physical-evidence.v1",
+  "status": "completed",
+  "verdict": "PASS for the corrected-binary physical 30-minute observation and its subsequent manual mission/process restart probes.",
+  "producer": {
+    "binarySha256": "6EBA52D9FB69F8E63292308CF231B3D48C42819538766A1CD2ADD1A5008A4697",
+    "processPid": 38992
+  },
+  "soak": {
+    "kind": "physical-console-client-observation",
+    "startedUtc": "2026-07-23T05:53:08.983590Z",
+    "completedUtc": "2026-07-23T06:23:08.985893Z",
+    "measuredWallSeconds": 1800.002303,
+    "consoleStderrExitCode": 0,
+    "samples": 17944,
+    "liveSamples": 17942,
+    "synchronizingSamples": 2,
+    "staleSamples": 0,
+    "missionGeneration": {
+      "initial": 0,
+      "final": 1
+    },
+    "rawTranscripts": {
+      "stdoutJsonl": {
+        "path": "console.stdout.jsonl",
+        "sha256": "0F2B246E96AFE54AC8EB602464F238207B823351CA3646D0977C49CBA5BFA5C4"
+      },
+      "stderrLog": {
+        "path": "console.stderr.log",
+        "sha256": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855"
+      }
+    }
+  },
+  "manualPostSoakMissionRestart": {
+    "kind": "physical-manual-console-client-probe",
+    "prior": {
+      "producerPid": 7592,
+      "session": "17316635635738227536",
+      "missionGeneration": 1
+    },
+    "post": {
+      "producerPid": 7592,
+      "sameProcessPid": true,
+      "session": "858708693999486233",
+      "missionGeneration": 2,
+      "liveSamples": 335,
+      "samples": 337,
+      "staleSamples": 0,
+      "completedUtc": "2026-07-23T06:25:01.483740Z"
+    },
+    "assertions": {
+      "missionGenerationAdvanced": true,
+      "sessionChanged": true,
+      "liveRecoveryObserved": true,
+      "noStaleObserved": true
+    }
+  },
+  "manualPostSoakProcessRestart": {
+    "kind": "physical-manual-console-client-probe",
+    "prior": {
+      "producerPid": 7592,
+      "session": "858708693999486233"
+    },
+    "post": {
+      "producerPid": 4828,
+      "newProcessPid": true,
+      "session": "955216495244312956",
+      "missionGeneration": 1,
+      "liveSamples": 344,
+      "samples": 346,
+      "staleSamples": 0,
+      "completedUtc": "2026-07-23T06:26:17.402598Z"
+    },
+    "assertions": {
+      "processPidChanged": true,
+      "sessionChanged": true,
+      "liveRecoveryObserved": true,
+      "noStaleObserved": true
+    }
+  },
+  "limitations": [
+    "The soak transcript is a physical console-client observation; it is not a runner-controlled launch artifact.",
+    "The mission-restart and process-restart follow-ups are manual console-client probes, not full-duration soak runs.",
+    "The two Synchronizing samples are recorded as observed startup state; no Stale sample was observed."
+  ]
+}

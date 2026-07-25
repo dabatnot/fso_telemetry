@@ -1,0 +1,149 @@
+{
+  "completedAtUtc": "2026-07-23T22:06:09.354242+00:00",
+  "durationSeconds": 600,
+  "harness": "D:\\david\\Documents\\Dev\\fsotelemetry\\fs2open.github.com\\build-restart-lifecycle\\bin\\Debug\\telemetry_phase1_reliability_harness.exe",
+  "harnessSha256": "ef84b582ca12692d8f1d91d94956c85ea7fd9b73166773c4b56d1013accd4c86",
+  "platform": "Windows-11-10.0.26200-SP0",
+  "profiles": [
+    {
+      "command": [
+        "build-restart-lifecycle\\bin\\Debug\\telemetry_phase1_reliability_harness.exe",
+        "--profile",
+        "independent-loss-1",
+        "--seed",
+        "424242",
+        "--duration-seconds",
+        "600",
+        "--report",
+        "test\\telemetry\\producer\\reliability\\reports\\wp11-restart-fix-certification-20260724\\udp-current-20260724-2210\\independent-loss-1\\harness-report.json",
+        "--restart-mission",
+        "--restart-process"
+      ],
+      "error": null,
+      "exitCode": 0,
+      "profile": "independent-loss-1",
+      "report": "test\\telemetry\\producer\\reliability\\reports\\wp11-restart-fix-certification-20260724\\udp-current-20260724-2210\\independent-loss-1\\harness-report.json",
+      "reportSha256": "4cc29c5f6e42d7307969ed04e84c65c0b4d346c41c07beb3fe11331b53ff9ca5",
+      "seed": 424242,
+      "status": "passed"
+    },
+    {
+      "command": [
+        "build-restart-lifecycle\\bin\\Debug\\telemetry_phase1_reliability_harness.exe",
+        "--profile",
+        "independent-loss-5",
+        "--seed",
+        "424243",
+        "--duration-seconds",
+        "600",
+        "--report",
+        "test\\telemetry\\producer\\reliability\\reports\\wp11-restart-fix-certification-20260724\\udp-current-20260724-2210\\independent-loss-5\\harness-report.json",
+        "--restart-mission",
+        "--restart-process"
+      ],
+      "error": null,
+      "exitCode": 0,
+      "profile": "independent-loss-5",
+      "report": "test\\telemetry\\producer\\reliability\\reports\\wp11-restart-fix-certification-20260724\\udp-current-20260724-2210\\independent-loss-5\\harness-report.json",
+      "reportSha256": "6bb30df35e7730a700f4b2754426649f5a85aef1588fdb3984709d91630d124e",
+      "seed": 424243,
+      "status": "passed"
+    },
+    {
+      "command": [
+        "build-restart-lifecycle\\bin\\Debug\\telemetry_phase1_reliability_harness.exe",
+        "--profile",
+        "independent-loss-20",
+        "--seed",
+        "424244",
+        "--duration-seconds",
+        "600",
+        "--report",
+        "test\\telemetry\\producer\\reliability\\reports\\wp11-restart-fix-certification-20260724\\udp-current-20260724-2210\\independent-loss-20\\harness-report.json",
+        "--restart-mission",
+        "--restart-process"
+      ],
+      "error": null,
+      "exitCode": 0,
+      "profile": "independent-loss-20",
+      "report": "test\\telemetry\\producer\\reliability\\reports\\wp11-restart-fix-certification-20260724\\udp-current-20260724-2210\\independent-loss-20\\harness-report.json",
+      "reportSha256": "874cdb29c387f1fff343c4448ae2b3b7bd18779515cf1484ec4497a1eedf9c66",
+      "seed": 424244,
+      "status": "passed"
+    },
+    {
+      "command": [
+        "build-restart-lifecycle\\bin\\Debug\\telemetry_phase1_reliability_harness.exe",
+        "--profile",
+        "burst-loss-1",
+        "--seed",
+        "424245",
+        "--duration-seconds",
+        "600",
+        "--report",
+        "test\\telemetry\\producer\\reliability\\reports\\wp11-restart-fix-certification-20260724\\udp-current-20260724-2210\\burst-loss-1\\harness-report.json",
+        "--restart-mission",
+        "--restart-process"
+      ],
+      "error": null,
+      "exitCode": 0,
+      "profile": "burst-loss-1",
+      "report": "test\\telemetry\\producer\\reliability\\reports\\wp11-restart-fix-certification-20260724\\udp-current-20260724-2210\\burst-loss-1\\harness-report.json",
+      "reportSha256": "d02a3db4cd560f791b2f2b91ecb68df496645626814e56de9cfaaa0b9a6459df",
+      "seed": 424245,
+      "status": "passed"
+    },
+    {
+      "command": [
+        "build-restart-lifecycle\\bin\\Debug\\telemetry_phase1_reliability_harness.exe",
+        "--profile",
+        "burst-loss-5",
+        "--seed",
+        "424246",
+        "--duration-seconds",
+        "600",
+        "--report",
+        "test\\telemetry\\producer\\reliability\\reports\\wp11-restart-fix-certification-20260724\\udp-current-20260724-2210\\burst-loss-5\\harness-report.json",
+        "--restart-mission",
+        "--restart-process"
+      ],
+      "error": null,
+      "exitCode": 0,
+      "profile": "burst-loss-5",
+      "report": "test\\telemetry\\producer\\reliability\\reports\\wp11-restart-fix-certification-20260724\\udp-current-20260724-2210\\burst-loss-5\\harness-report.json",
+      "reportSha256": "ce435bb7fcd1638836d35cebd38f3443bf0a1a1b5b8ec7aa4010d0abaf185a34",
+      "seed": 424246,
+      "status": "passed"
+    },
+    {
+      "command": [
+        "build-restart-lifecycle\\bin\\Debug\\telemetry_phase1_reliability_harness.exe",
+        "--profile",
+        "burst-loss-20",
+        "--seed",
+        "424247",
+        "--duration-seconds",
+        "600",
+        "--report",
+        "test\\telemetry\\producer\\reliability\\reports\\wp11-restart-fix-certification-20260724\\udp-current-20260724-2210\\burst-loss-20\\harness-report.json",
+        "--restart-mission",
+        "--restart-process"
+      ],
+      "error": null,
+      "exitCode": 0,
+      "profile": "burst-loss-20",
+      "report": "test\\telemetry\\producer\\reliability\\reports\\wp11-restart-fix-certification-20260724\\udp-current-20260724-2210\\burst-loss-20\\harness-report.json",
+      "reportSha256": "2ae050b277355cd318ce7f5b975cd62680407bc0878dd081e3c50d4cfe17d6a1",
+      "seed": 424247,
+      "status": "passed"
+    }
+  ],
+  "python": "3.14.0 (tags/v3.14.0:ebf955d, Oct  7 2025, 10:15:03) [MSC v.1944 64 bit (AMD64)]",
+  "restartMission": true,
+  "restartProcess": true,
+  "revision": "0189f0b9d4b76f16252da2774b0a0d7d96eb6889",
+  "schema": "fs2open.telemetry.phase1.reliability-campaign.v1",
+  "seed": 424242,
+  "startedAtUtc": "2026-07-23T22:05:35.211688+00:00",
+  "status": "passed"
+}
