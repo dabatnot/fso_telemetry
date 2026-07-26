@@ -48,7 +48,9 @@ The independent reviewer inspects:
 - narrow raw test results;
 - proposed checkpoint command set.
 
-Return all blocking findings in one batch. Do not build Release evidence or rewrite a gate report before readiness returns no blocking finding.
+Return all blocking findings in one batch. Every blocker must cite the violated contract row. Classify adjacent harness debt and non-required proof strengthening as nonblocking follow-up. Do not build Release evidence or rewrite a gate report before readiness returns no blocking finding.
+
+Apply one consolidated correction batch and one focused rereview. A third cycle requires a coordinator decision and is limited to a changed-contract regression, a specification-required proof defect, or a regression introduced by the correction batch.
 
 ## 4. Work-package checkpoint
 
@@ -56,13 +58,15 @@ After readiness approval:
 
 1. build the changed production/test targets in Release;
 2. run unit/contract and directly affected integration/lifecycle tests;
-3. run one broad suite when shared runtime, protocol, build integration, or common harness changed;
+3. run at most one broad suite when the contract requires it or production changed shared runtime, protocol, or build integration outside the WP;
 4. rerun only proofs invalidated by a fix;
 5. bind conclusive evidence once;
 6. reconcile the compliance matrix and progress tracker;
 7. perform a focused disposition/evidence re-review.
 
 A checkpoint may establish `implemented` or `verified` work-package status. It does not imply phase certification.
+
+Test-only fixture or dedicated-target changes do not by themselves authorize a broad suite. Reuse a successful build when its production, test, CMake, configuration, and generated inputs are unchanged.
 
 ## 5. Phase certification
 
@@ -81,3 +85,9 @@ Use only for a final or certification-only gate, a user-requested release claim,
 | build/platform | changed dedicated target | packaging/platform gate |
 
 A finding expands the immediate proof in its row. It does not pull unrelated certification campaigns into the inner loop.
+
+## 7. Scope and evidence control
+
+Use one blocker per root cause. Do not create blockers for every affected test, migrated fixture, intermediate attempt, or reviewer message.
+
+Invalidate evidence only when a changed input belongs to its dependency cone. Keep conclusive evidence and the latest active diagnostic in the progress tracker; keep transient retries in raw logs. Prefer a narrow target or fixture adapter over global harness cleanup.

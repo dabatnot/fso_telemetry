@@ -87,6 +87,10 @@ For every `P<N>-WP-nn` work package (or legacy Phase 0 `P0.x` lot):
 
 Do not combine unrelated work packages merely to reduce file count. Do not refactor neighboring systems unless required to expose the minimal seam defined by the spec.
 
+Do not strengthen a gate during implementation. A blocking review finding must identify the violated requirement, acceptance criterion, or evidence row. Treat broader cleanup, generalized harness modernization, and proof not assigned to the gate as follow-up unless the current change makes a required proof impossible.
+
+Use one batched readiness review, one consolidated correction batch, and one focused rereview in the normal `balanced` path. Escalate before a third cycle rather than allowing an internal slice to expand indefinitely.
+
 Do not use a monolithic Release/LTO build, full suite, hash manifest, or certification campaign as the normal edit-test loop. Those are checkpoint or certification proofs. A narrow high-risk oracle remains immediate.
 
 When the codebase offers multiple viable seams, prefer the one that:
@@ -129,7 +133,7 @@ Invalid evidence includes:
 - an unrun command listed as though it passed;
 - an unchecked assumption that a dependency or encoder exists.
 
-`documentation/analysis/progress/phase-<N>.json` is status metadata, not evidence. A gate report and its raw proof remain authoritative. Mark tracker evidence stale whenever later production/test changes invalidate it.
+`documentation/analysis/progress/phase-<N>.json` is status metadata, not evidence. A gate report and its raw proof remain authoritative. Mark tracker evidence stale only when later production/test/build/configuration changes affect that evidence's dependency cone.
 
 Do not persist evidence as an extra file inside `documentation/analysis/specs/<N>-*/`. If persistent evidence is required, use the artifact location specified by document 07 or request approval for a separate evidence location.
 

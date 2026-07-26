@@ -41,11 +41,21 @@ Track:
 
 Status buckets must form an exact, duplicate-free partition of the IDs inventoried from the contract.
 
+Keep operational history compact:
+
+- one blocker per root cause;
+- one latest diagnostic per active blocker;
+- conclusive checkpoint evidence;
+- no row per retry, migrated fixture, role message, or superseded intermediate build.
+
+Detailed attempt history belongs in raw logs or a required gate report, not in the status tracker.
+
 ## 5. Update rules
 
 1. The coordinator updates current activity and next actions after a meaningful batched handoff.
 2. The tracker agent reconciles exhaustive buckets at readiness and checkpoint.
-3. A reopened gate moves affected verified rows back to `implemented` or `blocked`, marks invalidated evidence stale, and suspends downstream WPs.
+3. A reopened gate moves affected verified rows back to `implemented` or `blocked`, marks only dependency-invalidated evidence stale, and suspends downstream WPs.
 4. A closed gate requires an existing evidence path and no active blocker assigned to it.
 5. A pause sets execution state to `paused`, records stale or unrun proofs and active processes, validates the file, and emits a self-contained handoff.
 6. Never update timestamps or statuses merely to make progress appear newer.
+7. After a report-only sealing step, remove or replace any next action that still requests that completed step at the next permitted tracker reconciliation.
