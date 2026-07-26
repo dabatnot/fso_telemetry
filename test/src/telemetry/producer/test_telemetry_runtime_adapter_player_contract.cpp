@@ -90,6 +90,7 @@ struct NativeFixture {
 
 	NativeFixture()
 	{
+		detail::capture_phase2_main_thread_authority();
 		EXPECT_TRUE(registry.allocate_storage());
 		telemetry::TelemetryConfig config;
 		config.enabled = true;
@@ -126,7 +127,11 @@ struct AdapterRuntimeServices final : detail::RuntimeStartupServices {
 		config.max_datagrams_per_tick = 64U;
 	}
 
-	void capture_main_thread() noexcept override { captured = true; }
+	void capture_main_thread() noexcept override
+	{
+		detail::capture_phase2_main_thread_authority();
+		captured = true;
+	}
 	bool is_on_captured_main_thread() noexcept override { return captured; }
 	detail::RuntimeConfigResult load_config() noexcept override
 	{
@@ -348,30 +353,30 @@ template <typename Access = detail::RuntimeAdapterPlayerPublicProbe>
 void real_globals_capture()
 {
 	REQUIRE_RUNTIME_ADAPTER_D4(Access);
-	NativeFixture fixture;
+	auto fixture = std::make_unique<NativeFixture>();
 	EngineGlobalsGuard globals;
 	EXPECT_EQ(detail::RuntimeTickStatus::Complete,
-		Access::service_tick(&fixture.native, {100'000U, 7U, true}));
-	expect_capture(fixture.native, 101, 100'000U, 1.0f);
+		Access::service_tick(&fixture->native, {100'000U, 7U, true}));
+	expect_capture(fixture->native, 101, 100'000U, 1.0f);
 }
 
 template <typename Access = detail::RuntimeAdapterPlayerPublicProbe>
 void callback_copy_lifetime()
 {
 	REQUIRE_RUNTIME_ADAPTER_D4(Access);
-	NativeFixture fixture;
+	auto fixture = std::make_unique<NativeFixture>();
 	EngineGlobalsGuard globals;
 	ASSERT_EQ(detail::RuntimeTickStatus::Complete,
-		Access::service_tick(&fixture.native, {100'000U, 1U, true}));
-	const auto copied = fixture.native.current_player_capture().observation;
+		Access::service_tick(&fixture->native, {100'000U, 1U, true}));
+	const auto copied = fixture->native.current_player_capture().observation;
 	globals.configure(202, 20.0f);
 	globals.null_player_globals();
 	EXPECT_EQ(101U, copied.key.object_signature);
 	EXPECT_FLOAT_EQ(1.0f, copied.value.position_world.x);
 	globals.configure(202, 20.0f);
 	ASSERT_EQ(detail::RuntimeTickStatus::Complete,
-		Access::service_tick(&fixture.native, {200'000U, 1U, true}));
-	expect_capture(fixture.native, 202, 200'000U, 20.0f);
+		Access::service_tick(&fixture->native, {200'000U, 1U, true}));
+	expect_capture(fixture->native, 202, 200'000U, 20.0f);
 }
 
 template <typename Access = detail::RuntimeAdapterPlayerPublicProbe>

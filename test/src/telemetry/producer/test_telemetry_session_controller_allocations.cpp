@@ -20,8 +20,8 @@
 #include <cstdint>
 #include <cstdlib>
 #include <limits>
+#include <memory>
 #include <new>
-#include <optional>
 #include <type_traits>
 #include <utility>
 
@@ -768,7 +768,8 @@ struct NativeAllocationServices final : detail::RuntimeStartupServices {
 	detail::RuntimeTransportStatus start_transport() noexcept override
 	{
 		++start_transport_calls;
-		native.emplace(backend, completion);
+		native.reset(new (std::nothrow) detail::NativeSessionRuntime(backend, completion));
+		if (!native) return detail::RuntimeTransportStatus::Unavailable;
 		++native_constructions;
 		const detail::NativeSessionStartRequest request{&config,
 			0x1020304050607080ULL,
@@ -782,7 +783,7 @@ struct NativeAllocationServices final : detail::RuntimeStartupServices {
 	detail::RuntimeTickStatus service_tick(const detail::RuntimeTickContext& context) noexcept override
 	{
 		++service_calls;
-		if (!native.has_value()) {
+		if (!native) {
 			return detail::RuntimeTickStatus::Unavailable;
 		}
 		auto engine_view = detail::make_fso_engine_read_view();
@@ -795,12 +796,12 @@ struct NativeAllocationServices final : detail::RuntimeStartupServices {
 	void stop_collection() noexcept override {}
 	void invalidate_mission_state_and_entities() noexcept override
 	{
-		if (native.has_value()) native->purge_all(detail::SessionCloseReason::MissionDiscontinuity);
+		if (native) native->purge_all(detail::SessionCloseReason::MissionDiscontinuity);
 	}
 	void cancel_replication() noexcept override {}
 	void close_sessions_and_stores() noexcept override
 	{
-		if (native.has_value()) {
+		if (native) {
 			native->purge_all(detail::SessionCloseReason::Shutdown);
 			usage_after_close = native->owned_usage();
 		}
@@ -808,7 +809,7 @@ struct NativeAllocationServices final : detail::RuntimeStartupServices {
 	void reset_mission_scope() noexcept override {}
 	void stop_transport() noexcept override
 	{
-		if (native.has_value()) {
+		if (native) {
 			native->shutdown();
 			sockets_after_stop = native->socket_count();
 		}
@@ -826,7 +827,7 @@ struct NativeAllocationServices final : detail::RuntimeStartupServices {
 	detail::SessionIdAllocator ids;
 	telemetry::TelemetryConfig config;
 	detail::Wp03KnownBudgetSubtotal budget{};
-	std::optional<detail::NativeSessionRuntime> native;
+	std::unique_ptr<detail::NativeSessionRuntime> native;
 	std::uint64_t now_us = 10'000U;
 	std::size_t service_calls = 0U;
 	std::size_t start_transport_calls = 0U;
@@ -861,41 +862,41 @@ struct NativeAllocationFixture {
 
 TEST(TelemetryNativeAllocationContract, RealDeferredBudgetMaskConstructsNoNativeStackOrSocket)
 {
-	NativeAllocationFixture fixture(false);
-	EXPECT_EQ(0x00f0U, fixture.services.budget.deferred_categories);
-	fixture.start();
-	EXPECT_EQ(detail::RuntimeState::Faulted, fixture.runtime.state());
-	EXPECT_EQ(detail::RuntimeTerminalReason::BudgetFailure, fixture.runtime.terminal_reason());
-	EXPECT_EQ(0U, fixture.services.start_transport_calls);
-	EXPECT_EQ(0U, fixture.services.native_constructions);
-	EXPECT_EQ(0U, fixture.services.backend.open_calls);
-	EXPECT_FALSE(fixture.services.backend.socket_open);
+	auto fixture = std::make_unique<NativeAllocationFixture>(false);
+	EXPECT_EQ(0x0080U, fixture->services.budget.deferred_categories);
+	fixture->start();
+	EXPECT_EQ(detail::RuntimeState::Faulted, fixture->runtime.state());
+	EXPECT_EQ(detail::RuntimeTerminalReason::BudgetFailure, fixture->runtime.terminal_reason());
+	EXPECT_EQ(0U, fixture->services.start_transport_calls);
+	EXPECT_EQ(0U, fixture->services.native_constructions);
+	EXPECT_EQ(0U, fixture->services.backend.open_calls);
+	EXPECT_FALSE(fixture->services.backend.socket_open);
 }
 
 TEST(TelemetryNativeAllocationContract, ReadyRuntimeLifecycleAndBackpressureAllocateNothing)
 {
-	NativeAllocationFixture fixture;
-	fixture.start();
-	ASSERT_EQ(detail::RuntimeState::Ready, fixture.runtime.state());
-	ASSERT_TRUE(fixture.services.native.has_value());
-	ASSERT_EQ(1U, fixture.services.backend.open_calls);
-	ASSERT_EQ(1U, fixture.services.native->socket_count());
+	auto fixture = std::make_unique<NativeAllocationFixture>();
+	fixture->start();
+	ASSERT_EQ(detail::RuntimeState::Ready, fixture->runtime.state());
+	ASSERT_TRUE(fixture->services.native);
+	ASSERT_EQ(1U, fixture->services.backend.open_calls);
+	ASSERT_EQ(1U, fixture->services.native->socket_count());
 
-	EXPECT_EQ(0U, fixture.tick_and_count_allocations(20'000U)) << "idle native tick allocated after Ready";
+	EXPECT_EQ(0U, fixture->tick_and_count_allocations(20'000U)) << "idle native tick allocated after Ready";
 
 	const auto endpoint = test_endpoint();
 	const auto hello = make_hello();
-	ASSERT_TRUE(fixture.services.backend.queue_receive(detail::IoStatus::Complete, hello, endpoint));
-	EXPECT_EQ(0U, fixture.tick_and_count_allocations(30'000U)) << "HELLO/WELCOME native tick allocated";
-	ASSERT_GE(fixture.services.backend.sent_count, 1U);
-	const auto welcome = decode_fixed_datagram(fixture.services.backend.sent[0U]);
+	ASSERT_TRUE(fixture->services.backend.queue_receive(detail::IoStatus::Complete, hello, endpoint));
+	EXPECT_EQ(0U, fixture->tick_and_count_allocations(30'000U)) << "HELLO/WELCOME native tick allocated";
+	ASSERT_GE(fixture->services.backend.sent_count, 1U);
+	const auto welcome = decode_fixed_datagram(fixture->services.backend.sent[0U]);
 	ASSERT_EQ(protocol::MessageType::Welcome, welcome.header.message_type);
 
 	const auto welcome_ack = make_ack(welcome, 8U);
-	ASSERT_TRUE(fixture.services.backend.queue_receive(detail::IoStatus::Complete, welcome_ack, endpoint));
-	EXPECT_EQ(0U, fixture.tick_and_count_allocations(30'010U)) << "WELCOME ACK/SESSION_BEGIN native tick allocated";
-	ASSERT_GE(fixture.services.backend.sent_count, 2U);
-	const auto begin = decode_fixed_datagram(fixture.services.backend.sent[1U]);
+	ASSERT_TRUE(fixture->services.backend.queue_receive(detail::IoStatus::Complete, welcome_ack, endpoint));
+	EXPECT_EQ(0U, fixture->tick_and_count_allocations(30'010U)) << "WELCOME ACK/SESSION_BEGIN native tick allocated";
+	ASSERT_GE(fixture->services.backend.sent_count, 2U);
+	const auto begin = decode_fixed_datagram(fixture->services.backend.sent[1U]);
 	ASSERT_EQ(protocol::MessageType::SessionBegin, begin.header.message_type);
 
 	const auto retry_due = 30'010U + protocol::reliable_retry_delay_us(protocol::ReliableDefaultRtoUs,
@@ -903,25 +904,25 @@ TEST(TelemetryNativeAllocationContract, ReadyRuntimeLifecycleAndBackpressureAllo
 		begin.header.session_id,
 		begin.header.message_id,
 		0U);
-	const auto sent_before_retry = fixture.services.backend.sent_count;
-	EXPECT_EQ(0U, fixture.tick_and_count_allocations(retry_due)) << "REL retry native tick allocated";
-	EXPECT_GT(fixture.services.backend.sent_count, sent_before_retry);
+	const auto sent_before_retry = fixture->services.backend.sent_count;
+	EXPECT_EQ(0U, fixture->tick_and_count_allocations(retry_due)) << "REL retry native tick allocated";
+	EXPECT_GT(fixture->services.backend.sent_count, sent_before_retry);
 
 	const auto begin_ack = make_ack(begin, 10U);
-	ASSERT_TRUE(fixture.services.backend.queue_receive(detail::IoStatus::Complete, begin_ack, endpoint));
-	EXPECT_EQ(0U, fixture.tick_and_count_allocations(retry_due + 10U)) << "SESSION_BEGIN ACK native tick allocated";
-	ASSERT_EQ(1U, fixture.services.native->active_sessions());
+	ASSERT_TRUE(fixture->services.backend.queue_receive(detail::IoStatus::Complete, begin_ack, endpoint));
+	EXPECT_EQ(0U, fixture->tick_and_count_allocations(retry_due + 10U)) << "SESSION_BEGIN ACK native tick allocated";
+	ASSERT_EQ(1U, fixture->services.native->active_sessions());
 
 	const auto heartbeat_due = 1'030'010U;
-	ASSERT_TRUE(fixture.services.backend.queue_send_status(detail::IoStatus::WouldBlock));
-	const auto receive_before_would_block = fixture.services.backend.receive_calls;
-	const auto send_before_would_block = fixture.services.backend.send_calls;
-	EXPECT_EQ(0U, fixture.tick_and_count_allocations(heartbeat_due)) << "periodic HB and RX/TX WouldBlock allocated";
-	EXPECT_GT(fixture.services.backend.receive_calls, receive_before_would_block);
-	EXPECT_GT(fixture.services.backend.send_calls, send_before_would_block);
-	ASSERT_GE(fixture.services.backend.sent_count, 4U);
+	ASSERT_TRUE(fixture->services.backend.queue_send_status(detail::IoStatus::WouldBlock));
+	const auto receive_before_would_block = fixture->services.backend.receive_calls;
+	const auto send_before_would_block = fixture->services.backend.send_calls;
+	EXPECT_EQ(0U, fixture->tick_and_count_allocations(heartbeat_due)) << "periodic HB and RX/TX WouldBlock allocated";
+	EXPECT_GT(fixture->services.backend.receive_calls, receive_before_would_block);
+	EXPECT_GT(fixture->services.backend.send_calls, send_before_would_block);
+	ASSERT_GE(fixture->services.backend.sent_count, 4U);
 	const auto heartbeat_request = decode_fixed_datagram(
-		fixture.services.backend.sent[fixture.services.backend.sent_count - 1U]);
+		fixture->services.backend.sent[fixture->services.backend.sent_count - 1U]);
 	ASSERT_EQ(protocol::MessageType::Heartbeat, heartbeat_request.header.message_type);
 	protocol::HeartbeatPayload request_payload;
 	ASSERT_EQ(protocol::ValidationError::None,
@@ -933,79 +934,79 @@ TEST(TelemetryNativeAllocationContract, ReadyRuntimeLifecycleAndBackpressureAllo
 	response_payload.transmit_t2_us = request_payload.origin_t0_us + 20U;
 	const auto response = make_heartbeat(
 		begin.header.session_id, response_payload, 30U, heartbeat_due + 100U);
-	ASSERT_TRUE(fixture.services.backend.queue_receive(detail::IoStatus::Complete, response, endpoint));
-	EXPECT_EQ(0U, fixture.tick_and_count_allocations(heartbeat_due + 100U))
+	ASSERT_TRUE(fixture->services.backend.queue_receive(detail::IoStatus::Complete, response, endpoint));
+	EXPECT_EQ(0U, fixture->tick_and_count_allocations(heartbeat_due + 100U))
 		<< "HB response and retained TX retry allocated";
 
 	const auto timeout_at = heartbeat_due + 100U + 10'000'000U;
-	EXPECT_EQ(0U, fixture.tick_and_count_allocations(timeout_at)) << "timeout cleanup allocated";
-	EXPECT_EQ(0U, fixture.services.native->active_sessions());
+	EXPECT_EQ(0U, fixture->tick_and_count_allocations(timeout_at)) << "timeout cleanup allocated";
+	EXPECT_EQ(0U, fixture->services.native->active_sessions());
 	arm_allocation_probe();
-	fixture.services.native->purge_all(detail::SessionCloseReason::MissionDiscontinuity);
+	fixture->services.native->purge_all(detail::SessionCloseReason::MissionDiscontinuity);
 	const auto purge_allocations = disarm_allocation_probe();
 	EXPECT_EQ(0U, purge_allocations) << "native purge allocated";
-	EXPECT_EQ(detail::SessionControllerOwnedUsage{}, fixture.services.native->owned_usage());
+	EXPECT_EQ(detail::SessionControllerOwnedUsage{}, fixture->services.native->owned_usage());
 
 	arm_allocation_probe();
-	fixture.runtime.on_engine_shutdown();
-	fixture.runtime.on_engine_update();
-	fixture.runtime.on_engine_shutdown();
+	fixture->runtime.on_engine_shutdown();
+	fixture->runtime.on_engine_update();
+	fixture->runtime.on_engine_shutdown();
 	const auto shutdown_allocations = disarm_allocation_probe();
 	EXPECT_EQ(0U, shutdown_allocations) << "native shutdown or late callbacks allocated";
-	EXPECT_EQ(detail::RuntimeState::Stopped, fixture.runtime.state());
-	EXPECT_EQ(1U, fixture.services.backend.close_calls);
-	EXPECT_FALSE(fixture.services.backend.socket_open);
-	EXPECT_EQ(0U, fixture.services.sockets_after_stop);
-	EXPECT_EQ(detail::SessionControllerOwnedUsage{}, fixture.services.usage_after_close);
+	EXPECT_EQ(detail::RuntimeState::Stopped, fixture->runtime.state());
+	EXPECT_EQ(1U, fixture->services.backend.close_calls);
+	EXPECT_FALSE(fixture->services.backend.socket_open);
+	EXPECT_EQ(0U, fixture->services.sockets_after_stop);
+	EXPECT_EQ(detail::SessionControllerOwnedUsage{}, fixture->services.usage_after_close);
 }
 
 TEST(TelemetryNativeAllocationContract, PermanentReceiveAndSendFailuresAllocateNothingAndStayClosed)
 {
 	for (const auto receive_status : {detail::IoStatus::Closed, detail::IoStatus::Error}) {
-		NativeAllocationFixture fixture;
-		fixture.start();
-		ASSERT_EQ(detail::RuntimeState::Ready, fixture.runtime.state());
-		ASSERT_TRUE(fixture.services.backend.queue_receive(receive_status));
-		EXPECT_EQ(0U, fixture.tick_and_count_allocations(40'000U)) << "fatal receive allocated";
-		EXPECT_EQ(detail::RuntimeState::Faulted, fixture.runtime.state());
-		EXPECT_EQ(detail::RuntimeTerminalReason::TransportUnavailable, fixture.runtime.terminal_reason());
-		EXPECT_EQ(1U, fixture.services.backend.close_calls);
-		EXPECT_FALSE(fixture.services.backend.socket_open);
-		EXPECT_EQ(0U, fixture.services.sockets_after_stop);
-		EXPECT_EQ(detail::SessionControllerOwnedUsage{}, fixture.services.usage_after_close);
-		const auto receives = fixture.services.backend.receive_calls;
-		const auto sends = fixture.services.backend.send_calls;
-		EXPECT_EQ(0U, fixture.tick_and_count_allocations(40'001U)) << "late fatal receive tick allocated";
-		EXPECT_EQ(receives, fixture.services.backend.receive_calls);
-		EXPECT_EQ(sends, fixture.services.backend.send_calls);
+		auto fixture = std::make_unique<NativeAllocationFixture>();
+		fixture->start();
+		ASSERT_EQ(detail::RuntimeState::Ready, fixture->runtime.state());
+		ASSERT_TRUE(fixture->services.backend.queue_receive(receive_status));
+		EXPECT_EQ(0U, fixture->tick_and_count_allocations(40'000U)) << "fatal receive allocated";
+		EXPECT_EQ(detail::RuntimeState::Faulted, fixture->runtime.state());
+		EXPECT_EQ(detail::RuntimeTerminalReason::TransportUnavailable, fixture->runtime.terminal_reason());
+		EXPECT_EQ(1U, fixture->services.backend.close_calls);
+		EXPECT_FALSE(fixture->services.backend.socket_open);
+		EXPECT_EQ(0U, fixture->services.sockets_after_stop);
+		EXPECT_EQ(detail::SessionControllerOwnedUsage{}, fixture->services.usage_after_close);
+		const auto receives = fixture->services.backend.receive_calls;
+		const auto sends = fixture->services.backend.send_calls;
+		EXPECT_EQ(0U, fixture->tick_and_count_allocations(40'001U)) << "late fatal receive tick allocated";
+		EXPECT_EQ(receives, fixture->services.backend.receive_calls);
+		EXPECT_EQ(sends, fixture->services.backend.send_calls);
 		arm_allocation_probe();
-		fixture.runtime.on_engine_shutdown();
+		fixture->runtime.on_engine_shutdown();
 		const auto shutdown_allocations = disarm_allocation_probe();
 		EXPECT_EQ(0U, shutdown_allocations);
 	}
 
 	for (const auto send_status : {detail::IoStatus::Closed, detail::IoStatus::Error}) {
-		NativeAllocationFixture fixture;
-		fixture.start();
-		ASSERT_EQ(detail::RuntimeState::Ready, fixture.runtime.state());
-		ASSERT_TRUE(fixture.services.backend.queue_receive(
+		auto fixture = std::make_unique<NativeAllocationFixture>();
+		fixture->start();
+		ASSERT_EQ(detail::RuntimeState::Ready, fixture->runtime.state());
+		ASSERT_TRUE(fixture->services.backend.queue_receive(
 			detail::IoStatus::Complete, make_hello(), test_endpoint()));
-		ASSERT_TRUE(fixture.services.backend.queue_send_status(send_status));
-		EXPECT_EQ(0U, fixture.tick_and_count_allocations(50'000U)) << "fatal send completion allocated";
-		EXPECT_EQ(detail::RuntimeState::Faulted, fixture.runtime.state());
-		EXPECT_EQ(detail::RuntimeTerminalReason::TransportUnavailable, fixture.runtime.terminal_reason());
-		EXPECT_EQ(1U, fixture.services.backend.send_calls);
-		EXPECT_EQ(1U, fixture.services.backend.close_calls);
-		EXPECT_FALSE(fixture.services.backend.socket_open);
-		EXPECT_EQ(0U, fixture.services.sockets_after_stop);
-		EXPECT_EQ(detail::SessionControllerOwnedUsage{}, fixture.services.usage_after_close);
-		const auto receives = fixture.services.backend.receive_calls;
-		const auto sends = fixture.services.backend.send_calls;
-		EXPECT_EQ(0U, fixture.tick_and_count_allocations(50'001U)) << "late fatal send tick allocated";
-		EXPECT_EQ(receives, fixture.services.backend.receive_calls);
-		EXPECT_EQ(sends, fixture.services.backend.send_calls);
+		ASSERT_TRUE(fixture->services.backend.queue_send_status(send_status));
+		EXPECT_EQ(0U, fixture->tick_and_count_allocations(50'000U)) << "fatal send completion allocated";
+		EXPECT_EQ(detail::RuntimeState::Faulted, fixture->runtime.state());
+		EXPECT_EQ(detail::RuntimeTerminalReason::TransportUnavailable, fixture->runtime.terminal_reason());
+		EXPECT_EQ(1U, fixture->services.backend.send_calls);
+		EXPECT_EQ(1U, fixture->services.backend.close_calls);
+		EXPECT_FALSE(fixture->services.backend.socket_open);
+		EXPECT_EQ(0U, fixture->services.sockets_after_stop);
+		EXPECT_EQ(detail::SessionControllerOwnedUsage{}, fixture->services.usage_after_close);
+		const auto receives = fixture->services.backend.receive_calls;
+		const auto sends = fixture->services.backend.send_calls;
+		EXPECT_EQ(0U, fixture->tick_and_count_allocations(50'001U)) << "late fatal send tick allocated";
+		EXPECT_EQ(receives, fixture->services.backend.receive_calls);
+		EXPECT_EQ(sends, fixture->services.backend.send_calls);
 		arm_allocation_probe();
-		fixture.runtime.on_engine_shutdown();
+		fixture->runtime.on_engine_shutdown();
 		const auto shutdown_allocations = disarm_allocation_probe();
 		EXPECT_EQ(0U, shutdown_allocations);
 	}

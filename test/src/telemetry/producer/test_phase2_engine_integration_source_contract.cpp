@@ -337,6 +337,220 @@ TEST(TelemetryPhase2EngineIntegrationSourceContract,
 }
 
 TEST(TelemetryPhase2EngineIntegrationSourceContract,
+	Wp02ReviewB3ProductionDoesNotPrefillOutputCatalogBeforePureMapper)
+{
+	const auto adapter = read_source("code/telemetry/engine_adapter.cpp");
+	const auto production = function_body(adapter,
+		"SourceReadResult extract_production_static_authorities(");
+	ASSERT_FALSE(production.empty());
+	const auto mapper =
+		production.find("map_phase2_static_authorities(");
+	ASSERT_NE(std::string::npos, mapper);
+	const auto before_mapper = production.substr(0U, mapper);
+	EXPECT_EQ(std::string::npos,
+		before_mapper.find("output.raw_static_catalog"))
+		<< "Production must collect raw authorities only; the shared mapper "
+		   "must be the sole owner of the output catalog shape.";
+	EXPECT_EQ(std::string::npos,
+		before_mapper.find("auto& catalog = output.raw_static_catalog"))
+		<< "An output-catalog alias before the mapper permits private "
+		   "production prefill and catalog-shape bifurcation.";
+}
+
+TEST(TelemetryPhase2EngineIntegrationSourceContract,
+	Wp02ReviewB3SharedMapperConsumesExhaustiveRawInputAndFreshOutput)
+{
+	const auto observation =
+		read_source("code/telemetry/phase2_observation.cpp");
+	const auto mapper = function_body(observation,
+		"SourceReadResult map_phase2_static_authorities(");
+	const auto production = function_body(
+		read_source("code/telemetry/engine_adapter.cpp"),
+		"SourceReadResult extract_production_static_authorities(");
+	ASSERT_FALSE(mapper.empty());
+	ASSERT_FALSE(production.empty());
+	for (const auto authority : {
+			 "input.ship_info",
+			 "input.weapon_info",
+			 "input.model",
+			 "input.subsystems",
+			 "input.banks",
+			 "input.registries"}) {
+		EXPECT_NE(std::string::npos, production.find(authority))
+			<< "Production does not populate exhaustive raw authority: "
+			<< authority;
+		EXPECT_NE(std::string::npos, mapper.find(authority))
+			<< "The shared mapper does not consume raw authority: "
+			<< authority;
+	}
+	EXPECT_EQ(std::string::npos,
+		mapper.find("validate_raw_static_catalog_bounds(catalog)"))
+		<< "A pure mapper must not validate or branch on caller-prefilled "
+		   "output before constructing its own fresh catalog.";
+	EXPECT_EQ(std::string::npos, mapper.find("std::max(catalog.class_count"))
+		<< "Class shape must derive from raw input, not prior output state.";
+	EXPECT_EQ(std::string::npos, mapper.find("std::max(catalog.weapon_count"))
+		<< "Weapon shape must derive from referenced raw authorities, not "
+		   "prior output state.";
+}
+
+TEST(TelemetryPhase2EngineIntegrationSourceContract,
+	Wp02ReviewB3BuildDependencyProducesCurrentAdapterObjectWithoutLinkingCode)
+{
+#if !defined(FSO_PHASE2_MSVC_LINK_EVIDENCE) || !FSO_PHASE2_MSVC_LINK_EVIDENCE
+	GTEST_SKIP()
+		<< "The current adapter-object dependency contract is MSVC-only.";
+#else
+	const auto root = std::filesystem::path{FSO_PHASE2_SOURCE_ROOT};
+	const auto adapter_object =
+		std::filesystem::path{FSO_PHASE2_ENGINE_ADAPTER_OBJECT};
+	ASSERT_TRUE(std::filesystem::is_regular_file(adapter_object))
+		<< "The source-contract target must depend on `code` so this exact "
+		   "configured adapter object exists for inspection.";
+	EXPECT_GE(std::filesystem::last_write_time(adapter_object),
+		std::filesystem::last_write_time(
+			root / "code/telemetry/engine_adapter.cpp"))
+		<< "The inspected production object is stale.";
+
+	const auto cmake = read_source("test/src/CMakeLists.txt");
+	EXPECT_NE(std::string::npos,
+		cmake.find(
+			"add_dependencies(telemetry_phase2_engine_integration_source_contract_tests code)"));
+	const auto link = cmake.find(
+		"target_link_libraries(telemetry_phase2_engine_integration_source_contract_tests PRIVATE");
+	ASSERT_NE(std::string::npos, link);
+	const auto link_end = cmake.find(')', link);
+	ASSERT_NE(std::string::npos, link_end);
+	EXPECT_EQ(std::string::npos,
+		cmake.substr(link, link_end - link).find(" code"))
+		<< "The test may inspect the current adapter object but must not link "
+		   "the monolithic engine library or claim adapter execution.";
+#endif
+}
+
+TEST(TelemetryPhase2EngineIntegrationSourceContract,
+	Wp02SourceNonMsvcCompileGuardsEveryAdapterObjectTestReference)
+{
+	const auto source = read_source(
+		"test/src/telemetry/producer/"
+		"test_phase2_engine_integration_source_contract.cpp");
+	const auto object_macro =
+		std::string{"FSO_PHASE2_ENGINE_"} + "ADAPTER_OBJECT";
+	std::size_t reference_count = 0U;
+	for (auto reference = source.find(object_macro);
+		 reference != std::string::npos;
+		 reference = source.find(object_macro, reference + object_macro.size())) {
+		++reference_count;
+		const auto test_start = source.rfind("\nTEST(", reference);
+		const auto next_test = source.find("\nTEST(", reference);
+		ASSERT_NE(std::string::npos, test_start);
+		const auto test_end =
+			next_test == std::string::npos ? source.size() : next_test;
+		const auto test_block =
+			source.substr(test_start, test_end - test_start);
+		const auto relative_reference = reference - test_start;
+		const auto guard =
+			test_block.find("FSO_PHASE2_MSVC_LINK_EVIDENCE");
+		const auto skip = test_block.find("GTEST_SKIP()");
+		EXPECT_NE(std::string::npos, guard)
+			<< "Every executable test that names the MSVC adapter object "
+			   "must compile on non-MSVC through an explicit evidence guard.";
+		EXPECT_NE(std::string::npos, skip)
+			<< "Every guarded MSVC-only object test needs an explicit skip.";
+		if (guard != std::string::npos) {
+			EXPECT_LT(guard, relative_reference)
+				<< "The MSVC evidence guard must precede the object macro.";
+		}
+	}
+	EXPECT_GT(reference_count, 0U);
+
+	const auto cmake = read_source("test/src/CMakeLists.txt");
+	const auto evidence_target =
+		cmake.find("if(MSVC)\n\tadd_library("
+			"telemetry_phase2_engine_adapter_evidence_object");
+	const auto non_msvc = cmake.find("else()", evidence_target);
+	const auto evidence_end = cmake.find("endif()", non_msvc);
+	const auto object_definition =
+		cmake.find("FSO_PHASE2_ENGINE_ADAPTER_OBJECT=", evidence_target);
+	ASSERT_NE(std::string::npos, evidence_target);
+	ASSERT_NE(std::string::npos, non_msvc);
+	ASSERT_NE(std::string::npos, evidence_end);
+	ASSERT_NE(std::string::npos, object_definition);
+	EXPECT_LT(object_definition, non_msvc)
+		<< "The MSVC object path must not be defined in the non-MSVC branch.";
+	const auto non_msvc_block =
+		cmake.substr(non_msvc, evidence_end - non_msvc);
+	EXPECT_NE(std::string::npos,
+		non_msvc_block.find("FSO_PHASE2_MSVC_LINK_EVIDENCE=0"));
+	EXPECT_EQ(std::string::npos,
+		non_msvc_block.find("FSO_PHASE2_ENGINE_ADAPTER_OBJECT="));
+}
+
+TEST(TelemetryPhase2EngineIntegrationSourceContract,
+	Wp02ReviewB3ProductionResetsOwnedAuthorityScratchInPlaceWithoutAggregateTemporary)
+{
+	const auto adapter = read_source("code/telemetry/engine_adapter.cpp");
+	const auto production = function_body(adapter,
+		"SourceReadResult extract_production_static_authorities(");
+	ASSERT_FALSE(production.empty());
+	EXPECT_NE(std::string::npos,
+		production.find("auto& input = output.static_authority_input"))
+		<< "Production must reuse the Phase2ShipSource-owned authority scratch.";
+	for (const auto forbidden_local_or_allocation : {
+			 "Phase2StaticAuthorityInput input",
+			 "Phase2StaticAuthorityInput{",
+			 "make_unique<Phase2StaticAuthorityInput",
+			 "new Phase2StaticAuthorityInput",
+			 "input = {};",
+			 "input = Phase2StaticAuthorityInput{}",
+			 "input = Phase2StaticAuthorityInput()"}) {
+		EXPECT_EQ(std::string::npos,
+			production.find(forbidden_local_or_allocation))
+			<< "The exhaustive static-authority fixture is maximum-sized; "
+			   "production must map directly into provisioned owned scratch, "
+			   "never create/reset it through a giant aggregate temporary: "
+			<< forbidden_local_or_allocation;
+	}
+	EXPECT_EQ(1U,
+		occurrence_count(
+			production, "reset_phase2_static_authority_input(input)"))
+		<< "The owned scratch needs one explicit named in-place reset.";
+
+	const auto observation_header =
+		read_source("code/telemetry/phase2_observation.h");
+	const auto observation_source =
+		read_source("code/telemetry/phase2_observation.cpp");
+	EXPECT_NE(std::string::npos,
+		observation_header.find("reset_phase2_static_authority_input("))
+		<< "The in-place reset contract must be named and shared.";
+	const auto reset = function_body(
+		observation_source, "void reset_phase2_static_authority_input(");
+	ASSERT_FALSE(reset.empty())
+		<< "The named reset must have an inspectable production implementation.";
+	for (const auto forbidden_aggregate_reset : {
+			 "input = {};",
+			 "input = Phase2StaticAuthorityInput{}",
+			 "input = Phase2StaticAuthorityInput()"}) {
+		EXPECT_EQ(std::string::npos, reset.find(forbidden_aggregate_reset))
+			<< forbidden_aggregate_reset;
+	}
+	for (const auto owned_member : {
+			 "input.guards_valid",
+			 "input.ship_info",
+			 "input.weapon_info",
+			 "input.model",
+			 "input.subsystem_count",
+			 "input.subsystems",
+			 "input.bank_count",
+			 "input.banks",
+			 "input.registries"}) {
+		EXPECT_NE(std::string::npos, reset.find(owned_member))
+			<< "The in-place reset does not visibly clear owned member: "
+			<< owned_member;
+	}
+}
+
+TEST(TelemetryPhase2EngineIntegrationSourceContract,
 	Wp02ReviewB3ProductionNeverPlacesFullStaticAuthorityInputOnStack)
 {
 	const auto adapter = read_source("code/telemetry/engine_adapter.cpp");
@@ -372,13 +586,16 @@ TEST(TelemetryPhase2EngineIntegrationSourceContract, S11TST008RuntimeSelectsProf
 		function_body(source, "NativeSessionStartStatus NativeSessionRuntime::start(");
 	ASSERT_FALSE(start.empty());
 	const auto selection = start.find("select_phase2_profile(");
-	const auto dto = start.find("Phase2ObservationBuffer phase2_observation");
+	const auto dto = start.find("std::unique_ptr<Phase2ObservationBuffer>");
+	const auto publication = start.find("std::move(*phase2_observation)");
 	const auto transport = start.find("m_transport.open(");
 	ASSERT_NE(std::string::npos, selection) <<
 		"RED S11: the profile gate is not integrated into NativeSessionRuntime::start.";
 	ASSERT_NE(std::string::npos, dto);
+	ASSERT_NE(std::string::npos, publication);
 	ASSERT_NE(std::string::npos, transport);
 	EXPECT_LT(selection, dto) << "Profile rejection must precede Phase 2 DTO allocation.";
+	EXPECT_LT(dto, publication) << "The unique_ptr candidate must exist before ownership is published.";
 	EXPECT_LT(selection, transport) << "Profile rejection must precede transport and any WELCOME.";
 }
 
@@ -1200,11 +1417,15 @@ TEST(TelemetryPhase2EngineIntegrationSourceContract, S9RuntimeOwnsAndProvisionsP
 	ASSERT_FALSE(start.empty());
 	EXPECT_NE(std::string::npos,
 		start.find("Phase2ProvisioningMode::ValidEnabled"));
-	EXPECT_NE(std::string::npos, start.find(".provision("));
-	EXPECT_NE(std::string::npos, start.find(".enter_ready()"));
-	const auto provision = start.find(".provision(");
+	const auto provision = start.find("phase2_observation->provision(");
+	const auto enter_ready = start.find("phase2_observation->enter_ready()");
+	EXPECT_NE(std::string::npos, provision);
+	EXPECT_NE(std::string::npos, enter_ready);
 	const auto bind = start.find("m_transport.open(");
 	const auto ready = start.find("m_state = State::Started");
+	if (provision != std::string::npos && enter_ready != std::string::npos) {
+		EXPECT_LT(provision, enter_ready);
+	}
 	if (provision != std::string::npos && bind != std::string::npos) {
 		EXPECT_LT(provision, bind);
 	}
@@ -1439,9 +1660,9 @@ TEST(TelemetryPhase2EngineIntegrationSourceContract, ReviewerS8V4StartupOwnedBud
 		function_body(native, "NativeSessionStartStatus NativeSessionRuntime::start(");
 	ASSERT_FALSE(start.empty());
 	EXPECT_NE(std::string::npos, observation_header.find("MaximumPhase2OwnedBytes"));
-	EXPECT_NE(std::string::npos, start.find("phase2_observation.owned_bytes()"));
+	EXPECT_NE(std::string::npos, start.find("phase2_observation->owned_bytes()"));
 	EXPECT_NE(std::string::npos, start.find("64U * 1024U * 1024U"));
-	const auto measured = start.find("phase2_observation.owned_bytes()");
+	const auto measured = start.find("phase2_observation->owned_bytes()");
 	const auto transport = start.find("m_transport.open(");
 	ASSERT_NE(std::string::npos, measured);
 	ASSERT_NE(std::string::npos, transport);
@@ -1757,6 +1978,11 @@ TEST(TelemetryPhase2EngineIntegrationSourceContract,
 TEST(TelemetryPhase2EngineIntegrationSourceContract,
 	ReviewerFinalTst009ScansBuiltAdapterArtifactForSpecializedLeakage)
 {
+#if !defined(FSO_PHASE2_MSVC_LINK_EVIDENCE) || !FSO_PHASE2_MSVC_LINK_EVIDENCE
+	GTEST_SKIP()
+		<< "TST009 linker-visible object evidence is an explicit MSVC-only "
+		   "contract.";
+#else
 	const auto root = std::filesystem::path{FSO_PHASE2_SOURCE_ROOT};
 	const auto adapter = std::filesystem::path{FSO_PHASE2_ENGINE_ADAPTER_OBJECT};
 	ASSERT_TRUE(std::filesystem::is_regular_file(adapter))
@@ -1799,6 +2025,20 @@ TEST(TelemetryPhase2EngineIntegrationSourceContract,
 	const std::string linkable{std::istreambuf_iterator<char>{linkable_input},
 		std::istreambuf_iterator<char>{}};
 	ASSERT_FALSE(linkable.empty());
+	EXPECT_EQ(std::string::npos, linkable.find("ANONYMOUS OBJECT"))
+		<< "RED TST009: an MSVC LTCG placeholder exposes no linker-visible "
+		   "symbols and is therefore vacuous evidence.";
+	const std::array<std::string_view, 3U> required_adapter_markers{{
+		"FsoEngineReadView",
+		"extract_production_static_authorities",
+		"map_phase2_static_authorities"}};
+	EXPECT_TRUE(std::any_of(required_adapter_markers.begin(),
+		required_adapter_markers.end(),
+		[&linkable](const auto marker) {
+			return linkable.find(marker) != std::string::npos;
+		}))
+		<< "RED TST009: linker-visible evidence must identify the engine "
+		   "adapter or its shared static-authority mapper.";
 	// Only linker-visible symbols, directives, imports, and dependencies are
 	// scanned. CodeView type-name substrings in the raw OBJ are intentionally
 	// excluded from this proof.
@@ -1828,6 +2068,7 @@ TEST(TelemetryPhase2EngineIntegrationSourceContract,
 		EXPECT_EQ(std::string::npos, linkable.find(forbidden))
 			<< forbidden << " leaked into " << adapter.string();
 	}
+#endif
 }
 
 } // namespace

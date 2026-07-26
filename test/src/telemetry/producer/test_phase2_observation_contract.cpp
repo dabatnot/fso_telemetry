@@ -690,6 +690,24 @@ void clear_phase2_s8_relations(Ship& ship) noexcept
 	}
 }
 
+void initialize_minimal_valid_phase2_ship_source(
+	Phase2ShipSource& source) noexcept
+{
+	source.identity.class_source_key.value = 1U;
+	source.raw_static_references.class_capture_key = 1U;
+	source.raw_static_catalog.class_count = 1U;
+	auto& ship_class = source.raw_static_catalog.class_definitions[0];
+	ship_class.class_capture_key = 1U;
+	(void)ship_class.internal_name.assign("fixture-class");
+}
+
+std::unique_ptr<Phase2ShipSource> make_minimal_valid_phase2_ship_source()
+{
+	auto source = std::make_unique<Phase2ShipSource>();
+	initialize_minimal_valid_phase2_ship_source(*source);
+	return source;
+}
+
 class FakePhase2EngineReadView final : public Phase2EngineReadView {
   public:
 	bool main_thread = true;
@@ -721,7 +739,7 @@ class FakePhase2EngineReadView final : public Phase2EngineReadView {
 	std::array<Phase2DiscoveryNode, MaximumPhase2ObservationShips>
 		discovery_node_sources{};
 	std::unique_ptr<Phase2ShipSource> block_source =
-		std::make_unique<Phase2ShipSource>();
+		make_minimal_valid_phase2_ship_source();
 	std::array<Phase2ShipSource*, MaximumPhase2ObservationShips>
 		block_source_by_ship{};
 	PlayerControlObservation control_source;
@@ -859,6 +877,7 @@ void reset_phase2_ship_source(Phase2ShipSource& source) noexcept
 {
 	source.~Phase2ShipSource();
 	new (&source) Phase2ShipSource;
+	initialize_minimal_valid_phase2_ship_source(source);
 }
 
 class RecordingPhase2SeamDouble final : public Phase2SeamTestDouble {
@@ -934,6 +953,7 @@ template <typename Source>
 void initialize_s8_ship_blocks(Source& blocks, bool maximum)
 {
 	if constexpr (has_phase2_s8_ship_blocks<Source>::value) {
+		initialize_minimal_valid_phase2_ship_source(blocks);
 		blocks.weapons.presence = telemetry::protocol::WeaponStatePresenceFlagCountermeasure;
 		blocks.weapons.countermeasure_count = 7U;
 		blocks.weapons.countermeasure_maximum = 7U;
@@ -971,7 +991,8 @@ void initialize_s8_ship_blocks(Source& blocks, bool maximum)
 		for (std::size_t index = 0U; index < blocks.subsystems.count; ++index) {
 			auto& subsystem = blocks.subsystems.values[index];
 			subsystem.presence = telemetry::protocol::SubsystemStatePresenceFlagNone;
-			subsystem.source_key.value = static_cast<std::uint32_t>(index);
+			subsystem.source_key.value =
+				static_cast<std::uint32_t>(index + 1U);
 			subsystem.kind = index == 0U ? ShipSubsystemKind::Turret : ShipSubsystemKind::Generic;
 			subsystem.hits_current = 25.0F;
 			subsystem.hits_maximum = 100.0F;
@@ -1132,8 +1153,7 @@ void run_s8_fail_closed_contract()
 		invalid->subsystems.values[0].presence = std::numeric_limits<std::uint64_t>::max();
 		expect_atomic_rejection(*invalid);
 		initialize_s8_ship_blocks(*invalid, false);
-		invalid->subsystems.values[0].source_key.value =
-			static_cast<std::uint32_t>(std::numeric_limits<int>::max()) + 1U;
+		invalid->subsystems.values[0].source_key.value = 0U;
 		expect_atomic_rejection(*invalid);
 		initialize_s8_ship_blocks(*invalid, false);
 		invalid->subsystems.values[0].hits_current = std::numeric_limits<float>::infinity();
@@ -1534,7 +1554,10 @@ TEST(TelemetryPhase2ObservationContract, ShipSourceCopiesIdentityLifecycleEnergy
 	source.block_source->identity.presence =
 		telemetry::protocol::ShipIdentityPresenceFlagDisplayName |
 		telemetry::protocol::ShipIdentityPresenceFlagWing;
-	source.block_source->identity.class_source_key = 77U;
+	source.block_source->identity.class_source_key.value = 77U;
+	source.block_source->raw_static_references.class_capture_key = 77U;
+	source.block_source->raw_static_catalog.class_definitions[0]
+		.class_capture_key = 77U;
 	source.block_source->lifecycle.presence =
 		telemetry::protocol::EntityLifecyclePresenceFlagClassReference;
 	source.block_source->lifecycle.state = ShipLifecycleState::Disabled;
@@ -1574,7 +1597,9 @@ TEST(TelemetryPhase2ObservationContract, ShipSourceCopiesIdentityLifecycleEnergy
 	EXPECT_EQ(telemetry::protocol::ShipIdentityPresenceFlagDisplayName |
 			telemetry::protocol::ShipIdentityPresenceFlagWing,
 		ship.identity.presence);
-	EXPECT_EQ(77U, ship.identity.class_source_key);
+	// Source-local class key 77 is normalized to the observation-local key 1
+	// together with the matching catalog definition and static reference.
+	EXPECT_EQ(1U, ship.identity.class_source_key.value);
 	EXPECT_EQ("owned-alpha", ship.identity.internal_name);
 	EXPECT_EQ(SampleTime, ship.lifecycle.sample_time_us);
 	EXPECT_EQ(telemetry::protocol::EntityLifecyclePresenceFlagClassReference,
@@ -1620,16 +1645,17 @@ TEST(TelemetryPhase2ObservationContract, LifecycleIdentityAndKnownMasksFailClose
 		return collect_fake_phase2_observation(source, 100U, observation).status;
 	};
 
-	auto blocks_ptr = std::make_unique<Phase2ShipSource>();
+	auto blocks_ptr = make_minimal_valid_phase2_ship_source();
 	blocks_ptr->lifecycle.state = ShipLifecycleState::Count;
 	EXPECT_EQ(Phase2CaptureStatus::UnsupportedEngineState, capture(*blocks_ptr));
 	blocks_ptr->lifecycle.state = static_cast<ShipLifecycleState>(0xffU);
 	EXPECT_EQ(Phase2CaptureStatus::UnsupportedEngineState, capture(*blocks_ptr));
 
 	reset_phase2_ship_source(*blocks_ptr);
-	blocks_ptr->identity.class_source_key =
-		static_cast<std::uint32_t>(std::numeric_limits<int>::max()) + 1U;
-	EXPECT_EQ(Phase2CaptureStatus::UnsupportedEngineState, capture(*blocks_ptr));
+	// Capture-local keys have no signed engine-index range. Zero is the
+	// invalid opaque-key sentinel and is rejected at the source boundary.
+	blocks_ptr->identity.class_source_key.value = 0U;
+	EXPECT_EQ(Phase2CaptureStatus::SourceLimitExceeded, capture(*blocks_ptr));
 
 	reset_phase2_ship_source(*blocks_ptr);
 	blocks_ptr->identity.presence =
@@ -3195,6 +3221,7 @@ void exercise_wp02_real_fso_static_extractor()
 			input->ship_info.max_rear_velocity = 102.0F;
 			input->weapon_info.mass = 103.0F;
 			input->weapon_info.damage = 104.0F;
+			input->weapon_info.reloaded_per_batch = 1U;
 			input->model.center_of_mass = {105.0F, 106.0F, 107.0F};
 			input->subsystem_count = 1U;
 			input->subsystems[0].subsystem_capture_key = 121U;
@@ -3219,6 +3246,7 @@ void exercise_wp02_real_fso_static_extractor()
 			input->banks[0].has_capacity = true;
 			input->banks[0].capacity = 132.0F;
 			input->banks[0].firing_pattern_source_code = 5U;
+			input->banks[0].num_slots = 1U;
 			input->banks[0].fire_point_count = 1U;
 			input->banks[0].fire_points[0] =
 				{111.0F, 112.0F, 113.0F};
@@ -3338,6 +3366,58 @@ TEST(TelemetryPhase2ObservationContract,
 	Wp02ReopenedRealFsoExtractorMapsEveryGuardedAuthority)
 {
 	exercise_wp02_real_fso_static_extractor<FsoEngineReadView>();
+}
+
+template <typename View>
+void exercise_wp02_review_b3_real_fso_zero_slot_bank_fail_empty()
+{
+	if constexpr (has_wp02_fso_static_extractor_seam<View>::value) {
+		using Arguments = wp02_member_function_arguments<
+			decltype(&View::extract_static_authorities_for_test)>;
+		using Input = typename Arguments::input_type;
+		using Output = typename Arguments::output_type;
+		if constexpr (
+			has_wp02_fso_extractor_fixture_authorities<Input>::value &&
+			has_wp02_catalog_shape<Output>::value) {
+			auto input = std::make_unique<Input>();
+			input->guards_valid = true;
+			input->bank_count = 1U;
+			input->banks[0].family_source = 1U;
+			input->banks[0].num_slots = 0U;
+			input->banks[0].fire_point_count = 0U;
+
+			View view;
+			auto output = std::make_unique<Output>();
+			output->raw_static_catalog.class_count = 7U;
+			output->raw_static_catalog.weapon_count = 9U;
+			output->raw_static_catalog.auxiliary_count = 3U;
+			output->raw_static_catalog.aggregate_subsystem_count = 5U;
+			const auto result =
+				view.extract_static_authorities_for_test(*input, *output);
+			EXPECT_EQ(
+				Phase2SourceReadStatus::UnsupportedEngineState, result.status);
+			EXPECT_EQ(0U, output->raw_static_catalog.class_count);
+			EXPECT_EQ(0U, output->raw_static_catalog.weapon_count);
+			EXPECT_EQ(0U, output->raw_static_catalog.auxiliary_count);
+			EXPECT_EQ(
+				0U, output->raw_static_catalog.aggregate_subsystem_count);
+		} else {
+			ADD_FAILURE()
+				<< "B3 RED: the real FSO extractor seam lacks the typed bank "
+				   "authority or catalog required for a zero-slot fail-empty "
+				   "oracle.";
+		}
+	} else {
+		ADD_FAILURE()
+			<< "B3 RED: the real FSO static extractor seam is absent.";
+	}
+}
+
+TEST(TelemetryPhase2ObservationContract,
+	Wp02ReviewB3RealFsoZeroSlotBankRejectsAndClearsPrefilledCatalog)
+{
+	exercise_wp02_review_b3_real_fso_zero_slot_bank_fail_empty<
+		FsoEngineReadView>();
 }
 
 TEST(TelemetryPhase2ObservationContract,
@@ -3581,6 +3661,7 @@ void exercise_wp02_deep_copy_and_atomic_plus_one(Source& source, Buffer& buffer)
 		source_catalog.auxiliary_count = 1U;
 		source_catalog.aggregate_subsystem_count = 1U;
 		source_catalog.class_definitions[0].class_capture_key = 11U;
+		source.block_source->identity.class_source_key.value = 11U;
 		ASSERT_TRUE(source_catalog.class_definitions[0].internal_name.assign(
 			"deep-class"));
 		auto& subsystem = source_catalog.subsystem_storage[0];
@@ -3707,6 +3788,7 @@ void initialize_wp02_merge_source(Phase2ShipSource& source,
 	ASSERT_TRUE(weapon.internal_name.assign("same-weapon-name"));
 	weapon.damage = weapon_damage;
 	source.raw_static_references.class_capture_key = 11U;
+	source.identity.class_source_key.value = 11U;
 	source.raw_static_references.weapon_count = 1U;
 	source.raw_static_references.weapon_capture_keys[0] = 21U;
 }
@@ -3758,6 +3840,7 @@ TEST(TelemetryPhase2ObservationContract,
 	second->raw_static_catalog.class_definitions[0].class_capture_key = 901U;
 	second->raw_static_catalog.weapon_definitions[0].weapon_capture_key = 701U;
 	second->raw_static_references.class_capture_key = 901U;
+	second->identity.class_source_key.value = 901U;
 	second->raw_static_references.weapon_capture_keys[0] = 701U;
 	auto observation = std::make_unique<Phase2ObservationDto>();
 	ASSERT_EQ(Phase2CaptureStatus::Valid,
@@ -3808,22 +3891,20 @@ TEST(TelemetryPhase2ObservationContract,
 		ship->raw_static_references.auxiliary_count = 1U;
 		ship->raw_static_references.auxiliary_capture_keys[0] = 301U;
 	}
+	first->raw_static_catalog.auxiliary_entries[0]
+		.firing_pattern_source_code = 1U;
 	second->raw_static_catalog.auxiliary_entries[0]
-		.firing_pattern_source_code = 9U;
+		.firing_pattern_source_code = 2U;
 
 	auto observation = std::make_unique<Phase2ObservationDto>();
 	const auto result = collect_fake_phase2_observation(*source, 712U,
 		*observation, Phase2ObservationProjection::CompleteShip);
-	if (result.status == Phase2CaptureStatus::Valid) {
-		EXPECT_EQ(2U, observation->raw_static_catalog.auxiliary_count)
-			<< "A same-name descriptor conflict must not silently alias.";
-		expect_wp02_variant_diagnostic(*observation);
-	} else {
-		EXPECT_EQ(Phase2CaptureStatus::UnsupportedEngineState, result.status);
-		EXPECT_EQ(0U, observation->raw_static_catalog.auxiliary_count);
-		EXPECT_TRUE(observation->ships.empty());
-		expect_wp02_variant_diagnostic(*observation);
-	}
+	ASSERT_EQ(Phase2CaptureStatus::Valid, result.status);
+	EXPECT_EQ(2U, observation->raw_static_catalog.auxiliary_count)
+		<< "Pattern identity includes its valid source code, so equal display "
+		   "names with distinct codes are not named-registry ambiguity.";
+	EXPECT_EQ(Phase2ObservationDto::RawStaticDiagnostic::Reason::None,
+		observation->raw_static_diagnostic.reason);
 }
 
 TEST(TelemetryPhase2ObservationContract,
@@ -3846,6 +3927,8 @@ TEST(TelemetryPhase2ObservationContract,
 		initialize_wp02_merge_source(*first, 10.0F, 20.0F);
 		initialize_wp02_merge_source(*second, 10.0F, 20.0F);
 		for (auto* ship : {first.get(), second.get()}) {
+			ship->identity.class_source_key.value =
+				ship->raw_static_references.class_capture_key;
 			auto& entry = ship->raw_static_catalog.auxiliary_entries[0];
 			ship->raw_static_catalog.auxiliary_count = 1U;
 			entry.registry = registry;
@@ -3876,6 +3959,8 @@ TEST(TelemetryPhase2ObservationContract,
 	initialize_wp02_merge_source(*first, 10.0F, 20.0F);
 	initialize_wp02_merge_source(*second, 10.0F, 20.0F);
 	for (auto* ship : {first.get(), second.get()}) {
+		ship->identity.class_source_key.value =
+			ship->raw_static_references.class_capture_key;
 		auto& entry = ship->raw_static_catalog.auxiliary_entries[0];
 		ship->raw_static_catalog.auxiliary_count = 1U;
 		entry.registry = Phase2RawAuxiliaryRegistry::Pattern;
@@ -3909,7 +3994,7 @@ void exercise_wp02_review_b3_same_mapper_hostiles()
 		EXPECT_EQ(0U, catalog->class_count);
 		EXPECT_EQ(0U, catalog->weapon_count);
 
-		*input = {};
+		input = std::make_unique<Input>();
 		input->guards_valid = true;
 		input->bank_count = 1U;
 		input->banks[0].num_slots = 0U;
@@ -3931,21 +4016,344 @@ TEST(TelemetryPhase2ObservationContract,
 	exercise_wp02_review_b3_same_mapper_hostiles<Phase2StaticAuthorityInput>();
 }
 
-void initialize_wp02_hostile_catalog(Phase2RawStaticCatalog& catalog)
+TEST(TelemetryPhase2ObservationContract,
+	Wp02ReviewB3ZeroReferencedWeaponsRemainEmptyWithoutGhostDefinition)
 {
-	catalog.clear();
-	catalog.class_count = 1U;
-	catalog.weapon_count = 1U;
-	catalog.aggregate_subsystem_count = 1U;
-	auto& ship_class = catalog.class_definitions[0];
+	auto input = std::make_unique<Phase2StaticAuthorityInput>();
+	input->guards_valid = true;
+	auto catalog = std::make_unique<Phase2RawStaticCatalog>();
+
+	const auto result = map_phase2_static_authorities(*input, *catalog);
+	ASSERT_EQ(Phase2SourceReadStatus::Valid, result.status);
+	EXPECT_EQ(0U, catalog->weapon_count);
+	EXPECT_EQ(0U, catalog->weapon_definitions[0].weapon_capture_key);
+	EXPECT_EQ(0U, catalog->weapon_definitions[0].reloaded_per_batch);
+	EXPECT_TRUE(catalog->weapon_definitions[0].internal_name.empty());
+}
+
+TEST(TelemetryPhase2ObservationContract,
+	Wp02ReviewB3EveryEarlyBankRejectionClearsPrefilledCatalog)
+{
+	const auto expect_fail_empty =
+		[](Phase2StaticAuthorityInput& input,
+			Phase2SourceReadStatus expected_status) {
+			auto catalog = std::make_unique<Phase2RawStaticCatalog>();
+			catalog->class_count = 7U;
+			catalog->weapon_count = 9U;
+			catalog->auxiliary_count = 3U;
+			catalog->aggregate_subsystem_count = 5U;
+
+			const auto result =
+				map_phase2_static_authorities(input, *catalog);
+			EXPECT_EQ(expected_status, result.status);
+			EXPECT_EQ(0U, catalog->class_count);
+			EXPECT_EQ(0U, catalog->weapon_count);
+			EXPECT_EQ(0U, catalog->auxiliary_count);
+			EXPECT_EQ(0U, catalog->aggregate_subsystem_count);
+		};
+
+	auto over_capacity = std::make_unique<Phase2StaticAuthorityInput>();
+	over_capacity->guards_valid = true;
+	over_capacity->bank_count = 1U;
+	over_capacity->banks[0].family_source = 1U;
+	over_capacity->banks[0].num_slots =
+		static_cast<std::uint32_t>(MaximumPhase2StaticFirePoints + 1U);
+	over_capacity->banks[0].fire_point_count =
+		over_capacity->banks[0].num_slots;
+	expect_fail_empty(
+		*over_capacity, Phase2SourceReadStatus::SourceLimitExceeded);
+
+	auto zero_slots = std::make_unique<Phase2StaticAuthorityInput>();
+	zero_slots->guards_valid = true;
+	zero_slots->bank_count = 1U;
+	zero_slots->banks[0].family_source = 1U;
+	zero_slots->banks[0].num_slots = 0U;
+	zero_slots->banks[0].fire_point_count = 0U;
+	expect_fail_empty(
+		*zero_slots, Phase2SourceReadStatus::UnsupportedEngineState);
+}
+
+TEST(TelemetryPhase2ObservationContract,
+	Wp02ReviewB3ExhaustivePureMapperPreservesAuthoritiesAndTransitiveReferences)
+{
+	auto input = std::make_unique<Phase2StaticAuthorityInput>();
+	input->guards_valid = true;
+	auto& ship = input->ship_info;
+	ship.class_capture_key = 1U;
+	ASSERT_TRUE(ship.internal_name.assign("exhaustive-class"));
+	ship.model_mass = 11.0F;
+	ship.density = 12.0F;
+	ship.model_inertia[0] = 13.0F;
+	ship.effective_mass = 14.0F;
+	ship.effective_inertia[0] = 15.0F;
+	ship.max_velocity = {16.0F, 17.0F, 18.0F};
+	ship.max_rear_velocity = 19.0F;
+	ship.species_capture_key = 201U;
+	ship.ship_type_capture_key = 202U;
+	ship.iff_capture_key = 203U;
+	ship.wing_capture_key = 204U;
+	ship.armor_capture_key = 205U;
+	ship.damage_type_capture_key = 206U;
+	ship.countermeasure_weapon_capture_key = 102U;
+	input->model.center_of_mass = {21.0F, 22.0F, 23.0F};
+
+	auto initialize_weapon =
+		[](Phase2RawWeaponDefinition& weapon,
+			std::uint32_t key,
+			std::string_view name,
+			std::string_view title,
+			float scalar) {
+			weapon.weapon_capture_key = key;
+			ASSERT_TRUE(weapon.internal_name.assign(name));
+			ASSERT_TRUE(weapon.title.assign(title));
+			weapon.weapon_subtype_source = 1U;
+			weapon.raw_class_flags = key;
+			weapon.max_speed = scalar + 1.0F;
+			weapon.mass = scalar + 2.0F;
+			weapon.lifetime_seconds = scalar + 3.0F;
+			weapon.minimum_range = scalar + 4.0F;
+			weapon.optimal_range = scalar + 5.0F;
+			weapon.maximum_range = scalar + 6.0F;
+			weapon.fire_wait_seconds = scalar + 7.0F;
+			weapon.energy_consumed = scalar + 8.0F;
+			weapon.damage = scalar + 9.0F;
+			weapon.damage_type_capture_key = 206U;
+			weapon.raw_effect_flags = key + 1U;
+			weapon.guidance_type_source = 2U;
+			weapon.guidance_fov_source_cosine = 0.5F;
+			weapon.lock_time_seconds = scalar + 10.0F;
+			weapon.lock_fov_source_cosine = 0.25F;
+			weapon.cargo_size = scalar + 11.0F;
+			weapon.rearm_rate_seconds = scalar + 12.0F;
+			weapon.reloaded_per_batch = 2U;
+			weapon.burst_shots = 3;
+			weapon.burst_delay_seconds = scalar + 13.0F;
+			weapon.swarm_count_source = 4;
+			weapon.shots_source = 5;
+		};
+	initialize_weapon(input->weapon_info, 101U,
+		"exhaustive-primary", "Primary", 30.0F);
+	input->weapon_info.additional_count = 1U;
+	initialize_weapon(input->weapon_info.additional_definitions[0], 102U,
+		"exhaustive-secondary", "Secondary", 50.0F);
+
+	input->subsystem_count = 2U;
+	for (std::uint32_t index = 0U; index < input->subsystem_count; ++index) {
+		auto& subsystem = input->subsystems[index];
+		subsystem.subsystem_capture_key = 401U + index;
+		ASSERT_TRUE(subsystem.internal_name.assign(
+			index == 0U ? "reactor" : "turret"));
+		ASSERT_TRUE(subsystem.alt_name.assign(
+			index == 0U ? "core" : "gun"));
+		ASSERT_TRUE(subsystem.hud_name.assign(
+			index == 0U ? "Reactor" : "Turret"));
+		subsystem.local_position = {
+			60.0F + index, 70.0F + index, 80.0F + index};
+		subsystem.radius = 90.0F + index;
+		subsystem.max_hits = 100.0F + index;
+		subsystem.subsystem_type_source =
+			static_cast<std::uint8_t>(index + 1U);
+		subsystem.raw_static_flags = 0x10U + index;
+		subsystem.armor_capture_key = 205U;
+	}
+
+	input->bank_count = 2U;
+	auto& primary = input->banks[0];
+	primary.num_slots = 2U;
+	primary.bank_capture_key = 501U;
+	primary.family_source = 1U;
+	primary.bank_index = 0U;
+	primary.weapon_capture_key = 101U;
+	primary.consumes_ammunition = true;
+	primary.has_capacity = true;
+	primary.capacity = 110.0F;
+	primary.firing_pattern_source_code = 7U;
+	primary.fire_point_count = 2U;
+	primary.fire_points[0] = {1.0F, 2.0F, 3.0F};
+	primary.fire_points[1] = {4.0F, 5.0F, 6.0F};
+	auto& turret = input->banks[1];
+	turret.num_slots = 1U;
+	turret.bank_capture_key = 502U;
+	turret.owner_subsystem_capture_key = 402U;
+	turret.family_source = 4U;
+	turret.source_family = 2U;
+	turret.bank_index = 1U;
+	turret.weapon_capture_key = 102U;
+	turret.firing_pattern_source_code = 8U;
+	turret.fire_point_count = 1U;
+	turret.fire_points[0] = {7.0F, 8.0F, 9.0F};
+
+	const auto set_registry =
+		[](Phase2RawAuxiliaryEntry& entry,
+			Phase2RawAuxiliaryRegistry registry,
+			std::uint32_t key,
+			std::string_view name,
+			std::uint8_t code = 0U) {
+			entry.registry = registry;
+			entry.capture_key = key;
+			ASSERT_TRUE(entry.name.assign(name));
+			entry.firing_pattern_source_code = code;
+		};
+	set_registry(input->registries.species,
+		Phase2RawAuxiliaryRegistry::Species, 201U, "species");
+	set_registry(input->registries.weapon_damage_type,
+		Phase2RawAuxiliaryRegistry::DamageType, 206U, "damage");
+	const std::array<Phase2RawAuxiliaryRegistry, 6U> registries{{
+		Phase2RawAuxiliaryRegistry::ShipType,
+		Phase2RawAuxiliaryRegistry::Iff,
+		Phase2RawAuxiliaryRegistry::Wing,
+		Phase2RawAuxiliaryRegistry::Armor,
+		Phase2RawAuxiliaryRegistry::Pattern,
+		Phase2RawAuxiliaryRegistry::Pattern}};
+	const std::array<std::uint32_t, 6U> registry_keys{{
+		202U, 203U, 204U, 205U, 207U, 208U}};
+	const std::array<const char*, 6U> registry_names{{
+		"ship-type", "iff", "wing", "armor", "pattern-a", "pattern-b"}};
+	input->registries.additional_count =
+		static_cast<std::uint32_t>(registries.size());
+	for (std::size_t index = 0U; index < registries.size(); ++index) {
+		set_registry(input->registries.additional_entries[index],
+			registries[index], registry_keys[index], registry_names[index],
+			index >= 4U ? static_cast<std::uint8_t>(index + 3U) : 0U);
+	}
+
+	auto catalog = std::make_unique<Phase2RawStaticCatalog>();
+	const auto result = map_phase2_static_authorities(*input, *catalog);
+	ASSERT_EQ(Phase2SourceReadStatus::Valid, result.status);
+	ASSERT_EQ(1U, catalog->class_count);
+	ASSERT_EQ(2U, catalog->weapon_count);
+	ASSERT_EQ(8U, catalog->auxiliary_count);
+	ASSERT_EQ(2U, catalog->aggregate_subsystem_count);
+
+	const auto& mapped_class = catalog->class_definitions[0];
+	EXPECT_EQ(ship.class_capture_key, mapped_class.class_capture_key);
+	EXPECT_EQ(ship.internal_name.view(), mapped_class.internal_name.view());
+	EXPECT_FLOAT_EQ(ship.model_mass, mapped_class.model_mass);
+	EXPECT_FLOAT_EQ(ship.density, mapped_class.density);
+	EXPECT_EQ(ship.model_inertia, mapped_class.model_inertia);
+	EXPECT_FLOAT_EQ(ship.effective_mass, mapped_class.effective_mass);
+	EXPECT_EQ(ship.effective_inertia, mapped_class.effective_inertia);
+	expect_raw_vec3_equal(input->model.center_of_mass,
+		mapped_class.center_of_mass);
+	expect_raw_vec3_equal(ship.max_velocity, mapped_class.max_velocity);
+	EXPECT_FLOAT_EQ(ship.max_rear_velocity, mapped_class.max_rear_velocity);
+	EXPECT_EQ(0U, mapped_class.subsystem_offset);
+	EXPECT_EQ(2U, mapped_class.subsystem_count);
+	EXPECT_EQ(0U, mapped_class.bank_offset);
+	EXPECT_EQ(2U, mapped_class.bank_count);
+	EXPECT_EQ(1U, mapped_class.primary_bank_count);
+	EXPECT_EQ(0U, mapped_class.secondary_bank_count);
+	EXPECT_EQ(0U, mapped_class.tertiary_bank_count);
+	EXPECT_EQ(1U, mapped_class.turret_bank_count);
+	EXPECT_EQ(201U, mapped_class.species_capture_key);
+	EXPECT_EQ(202U, mapped_class.ship_type_capture_key);
+	EXPECT_EQ(203U, mapped_class.iff_capture_key);
+	EXPECT_EQ(204U, mapped_class.wing_capture_key);
+	EXPECT_EQ(205U, mapped_class.armor_capture_key);
+	EXPECT_EQ(206U, mapped_class.damage_type_capture_key);
+	EXPECT_EQ(102U, mapped_class.countermeasure_weapon_capture_key);
+
+	for (std::size_t index = 0U; index < 2U; ++index) {
+		const auto& expected = index == 0U
+			? static_cast<const Phase2RawWeaponDefinition&>(
+				  input->weapon_info)
+			: input->weapon_info.additional_definitions[0];
+		const auto& actual = catalog->weapon_definitions[index];
+		EXPECT_EQ(expected.weapon_capture_key, actual.weapon_capture_key);
+		EXPECT_EQ(expected.internal_name.view(), actual.internal_name.view());
+		EXPECT_EQ(expected.title.view(), actual.title.view());
+		EXPECT_EQ(expected.weapon_subtype_source,
+			actual.weapon_subtype_source);
+		EXPECT_EQ(expected.raw_class_flags, actual.raw_class_flags);
+		EXPECT_FLOAT_EQ(expected.max_speed, actual.max_speed);
+		EXPECT_FLOAT_EQ(expected.mass, actual.mass);
+		EXPECT_FLOAT_EQ(expected.minimum_range, actual.minimum_range);
+		EXPECT_FLOAT_EQ(expected.optimal_range, actual.optimal_range);
+		EXPECT_FLOAT_EQ(expected.maximum_range, actual.maximum_range);
+		EXPECT_FLOAT_EQ(expected.fire_wait_seconds,
+			actual.fire_wait_seconds);
+		EXPECT_FLOAT_EQ(expected.damage, actual.damage);
+		EXPECT_EQ(expected.damage_type_capture_key,
+			actual.damage_type_capture_key);
+		EXPECT_EQ(expected.raw_effect_flags, actual.raw_effect_flags);
+		EXPECT_EQ(expected.reloaded_per_batch, actual.reloaded_per_batch);
+		EXPECT_EQ(expected.burst_shots, actual.burst_shots);
+		EXPECT_EQ(expected.swarm_count_source, actual.swarm_count_source);
+		EXPECT_EQ(expected.shots_source, actual.shots_source);
+	}
+	for (std::size_t index = 0U; index < 2U; ++index) {
+		const auto& expected = input->subsystems[index];
+		const auto& actual = catalog->subsystem_storage[index];
+		EXPECT_EQ(expected.subsystem_capture_key,
+			actual.subsystem_capture_key);
+		EXPECT_EQ(expected.internal_name.view(), actual.internal_name.view());
+		EXPECT_EQ(expected.alt_name.view(), actual.alt_name.view());
+		EXPECT_EQ(expected.hud_name.view(), actual.hud_name.view());
+		expect_raw_vec3_equal(expected.local_position, actual.local_position);
+		EXPECT_FLOAT_EQ(expected.radius, actual.radius);
+		EXPECT_FLOAT_EQ(expected.max_hits, actual.max_hits);
+		EXPECT_EQ(expected.subsystem_type_source,
+			actual.subsystem_type_source);
+		EXPECT_EQ(expected.raw_static_flags, actual.raw_static_flags);
+		EXPECT_EQ(expected.armor_capture_key, actual.armor_capture_key);
+	}
+	for (std::size_t index = 0U; index < 2U; ++index) {
+		const auto& expected =
+			static_cast<const Phase2RawBankDefinition&>(input->banks[index]);
+		const auto& actual = catalog->bank_storage[index];
+		EXPECT_EQ(expected.bank_capture_key, actual.bank_capture_key);
+		EXPECT_EQ(expected.owner_subsystem_capture_key,
+			actual.owner_subsystem_capture_key);
+		EXPECT_EQ(expected.family_source, actual.family_source);
+		EXPECT_EQ(expected.source_family, actual.source_family);
+		EXPECT_EQ(expected.bank_index, actual.bank_index);
+		EXPECT_EQ(expected.weapon_capture_key, actual.weapon_capture_key);
+		EXPECT_EQ(expected.firing_pattern_source_code,
+			actual.firing_pattern_source_code);
+		EXPECT_EQ(expected.fire_point_count, actual.fire_point_count);
+		for (std::size_t point = 0U;
+			 point < expected.fire_point_count;
+			 ++point) {
+			expect_raw_vec3_equal(
+				expected.fire_points[point], actual.fire_points[point]);
+		}
+	}
+	std::array<const Phase2RawAuxiliaryEntry*, 8U> expected_registries{{
+		&input->registries.species,
+		&input->registries.weapon_damage_type,
+		&input->registries.additional_entries[0],
+		&input->registries.additional_entries[1],
+		&input->registries.additional_entries[2],
+		&input->registries.additional_entries[3],
+		&input->registries.additional_entries[4],
+		&input->registries.additional_entries[5]}};
+	for (std::size_t index = 0U; index < expected_registries.size();
+		 ++index) {
+		const auto& expected = *expected_registries[index];
+		const auto& actual = catalog->auxiliary_entries[index];
+		EXPECT_EQ(expected.registry, actual.registry);
+		EXPECT_EQ(expected.capture_key, actual.capture_key);
+		EXPECT_EQ(expected.name.view(), actual.name.view());
+		EXPECT_EQ(expected.firing_pattern_source_code,
+			actual.firing_pattern_source_code);
+	}
+	EXPECT_EQ(0U, catalog->weapon_definitions[2].weapon_capture_key);
+	EXPECT_EQ(0U, catalog->subsystem_storage[2].subsystem_capture_key);
+	EXPECT_EQ(0U, catalog->bank_storage[2].bank_capture_key);
+	EXPECT_EQ(0U, catalog->auxiliary_entries[8].capture_key);
+}
+
+void initialize_wp02_hostile_input(Phase2StaticAuthorityInput& input)
+{
+	input.guards_valid = true;
+	auto& ship_class = input.ship_info;
 	ship_class.class_capture_key = 1U;
 	ASSERT_TRUE(ship_class.internal_name.assign("hostile-class"));
-	ship_class.subsystem_count = 1U;
-	ship_class.subsystem_offset = 0U;
-	auto& subsystem = catalog.subsystem_storage[0];
+	input.subsystem_count = 1U;
+	auto& subsystem = input.subsystems[0];
 	subsystem.subsystem_capture_key = 1U;
 	ASSERT_TRUE(subsystem.internal_name.assign("hostile-subsystem"));
-	auto& weapon = catalog.weapon_definitions[0];
+	auto& weapon = input.weapon_info;
 	weapon.weapon_capture_key = 1U;
 	ASSERT_TRUE(weapon.internal_name.assign("hostile-weapon"));
 	weapon.maximum_range = 100.0F;
@@ -3957,45 +4365,45 @@ void initialize_wp02_hostile_catalog(Phase2RawStaticCatalog& catalog)
 TEST(TelemetryPhase2ObservationContract,
 	Wp02ReopenedHostileStaticScalarMatrixFailsWithoutCoercion)
 {
-	using Mutation = void (*)(Phase2RawStaticCatalog&);
+	using Mutation = void (*)(Phase2StaticAuthorityInput&);
 	const std::array<std::pair<const char*, Mutation>, 12U> hostile{{
 		{"negative-reloaded-per-batch", [](auto& value) {
-			 value.weapon_definitions[0].reloaded_per_batch =
+			 value.weapon_info.reloaded_per_batch =
 				 static_cast<std::uint32_t>(-1);
 		 }},
 		{"zero-reload-slots", [](auto& value) {
-			 value.weapon_definitions[0].reloaded_per_batch = 0U;
+			 value.weapon_info.reloaded_per_batch = 0U;
 		 }},
 		{"negative-firewait", [](auto& value) {
-			 value.weapon_definitions[0].fire_wait_seconds = -1.0F;
+			 value.weapon_info.fire_wait_seconds = -1.0F;
 		 }},
 		{"negative-hitpoints", [](auto& value) {
-			 value.class_definitions[0].max_hull_strength = -1.0F;
+			 value.ship_info.max_hull_strength = -1.0F;
 		 }},
 		{"negative-radius", [](auto& value) {
-			 value.subsystem_storage[0].radius = -1.0F;
+			 value.subsystems[0].radius = -1.0F;
 		 }},
 		{"negative-minimum-range", [](auto& value) {
-			 value.weapon_definitions[0].minimum_range = -1.0F;
+			 value.weapon_info.minimum_range = -1.0F;
 		 }},
 		{"inverted-ranges", [](auto& value) {
-			 value.weapon_definitions[0].optimal_range = 101.0F;
+			 value.weapon_info.optimal_range = 101.0F;
 		 }},
 		{"negative-lifetime", [](auto& value) {
-			 value.weapon_definitions[0].lifetime_seconds = -1.0F;
+			 value.weapon_info.lifetime_seconds = -1.0F;
 		 }},
 		{"negative-lock-duration", [](auto& value) {
-			 value.weapon_definitions[0].lock_time_seconds = -1.0F;
+			 value.weapon_info.lock_time_seconds = -1.0F;
 		 }},
 		{"invalid-subtype-enum", [](auto& value) {
-			 value.weapon_definitions[0].weapon_subtype_source = 0xffU;
+			 value.weapon_info.weapon_subtype_source = 0xffU;
 		 }},
 		{"invalid-guidance-enum", [](auto& value) {
-			 value.weapon_definitions[0].guidance_type_source = 0xffU;
+			 value.weapon_info.guidance_type_source = 0xffU;
 		 }},
 		{"invalid-capacity-presence", [](auto& value) {
-			 value.class_definitions[0].countermeasure_uses_capacity = true;
-			 value.class_definitions[0].countermeasure_capacity = 0.0F;
+			 value.ship_info.countermeasure_uses_capacity = true;
+			 value.ship_info.countermeasure_capacity = 0.0F;
 		 }},
 	}};
 
@@ -4003,9 +4411,8 @@ TEST(TelemetryPhase2ObservationContract,
 		SCOPED_TRACE(label);
 		auto input = std::make_unique<Phase2StaticAuthorityInput>();
 		auto catalog = std::make_unique<Phase2RawStaticCatalog>();
-		input->guards_valid = true;
-		initialize_wp02_hostile_catalog(*catalog);
-		mutate(*catalog);
+		initialize_wp02_hostile_input(*input);
+		mutate(*input);
 		const auto result = map_phase2_static_authorities(*input, *catalog);
 		EXPECT_EQ(Phase2SourceReadStatus::UnsupportedEngineState, result.status);
 		EXPECT_EQ(0U, catalog->class_count);

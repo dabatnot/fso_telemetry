@@ -905,7 +905,8 @@ bool canonicalize_ship_blocks(ShipObservationDto& ship) noexcept
 {
 	if (static_cast<std::uint8_t>(ship.lifecycle.state) >=
 			static_cast<std::uint8_t>(ShipLifecycleState::Count) ||
-		ship.identity.class_source_key > static_cast<std::uint32_t>(std::numeric_limits<int>::max()) ||
+		ship.identity.class_source_key.value == 0U ||
+		ship.identity.class_source_key.value > MaximumPhase2StaticClasses ||
 		(ship.identity.presence & ~protocol::KnownShipIdentityPresenceFlags) != 0U ||
 		(ship.lifecycle.presence & ~protocol::KnownEntityLifecyclePresenceFlags) != 0U ||
 		(ship.lifecycle.lifecycle_flags & ~protocol::KnownEntityLifecycleFlags) != 0U ||
@@ -1351,43 +1352,64 @@ Phase2SourceReadStatus validate_discovery_keys(
 	return Phase2SourceReadStatus::Valid;
 }
 
+template <typename Value>
+void reconstruct_phase2_authority_member(Value& value) noexcept
+{
+	value.~Value();
+	new (static_cast<void*>(&value)) Value();
+}
+
 } // namespace
+
+void reset_phase2_static_authority_input(
+	Phase2StaticAuthorityInput& input) noexcept
+{
+	input.guards_valid = false;
+	reconstruct_phase2_authority_member(input.ship_info);
+	reconstruct_phase2_authority_member(input.weapon_info);
+	reconstruct_phase2_authority_member(input.model);
+	input.subsystem_count = 0U;
+	reconstruct_phase2_authority_member(input.subsystems);
+	input.bank_count = 0U;
+	reconstruct_phase2_authority_member(input.banks);
+	reconstruct_phase2_authority_member(input.registries);
+}
 
 SourceReadResult map_phase2_static_authorities(
 	const Phase2StaticAuthorityInput& input,
 	Phase2RawStaticCatalog& catalog) noexcept
 {
-	if (input.bank_count <= MaximumPhase2StaticBanksPerClass) {
-		for (std::uint32_t bank = 0U; bank < input.bank_count; ++bank) {
-			const auto& authority = input.banks[bank];
-			if (authority.fire_point_count >
-					MaximumPhase2StaticFirePoints ||
-				authority.num_slots > MaximumPhase2StaticFirePoints) {
-				return {Phase2SourceReadStatus::SourceLimitExceeded};
-			}
-			if (authority.family_source != 3U &&
-				(authority.num_slots == 0U ||
-				 authority.fire_point_count != authority.num_slots)) {
-				return {Phase2SourceReadStatus::UnsupportedEngineState};
-			}
-		}
-	}
+	catalog.clear();
 	if (!input.guards_valid ||
 		!std::isfinite(input.weapon_info.fire_wait_seconds) ||
-		input.weapon_info.fire_wait_seconds < 0.0F ||
-		input.subsystem_count > MaximumPhase2SubsystemsPerShip ||
-		input.bank_count > MaximumPhase2StaticBanksPerClass ||
-		!validate_raw_static_catalog_bounds(catalog)) {
-		catalog.clear();
+		input.weapon_info.fire_wait_seconds < 0.0F) {
 		return {Phase2SourceReadStatus::UnsupportedEngineState};
 	}
+	if (input.subsystem_count > MaximumPhase2SubsystemsPerShip ||
+		input.bank_count > MaximumPhase2StaticBanksPerClass ||
+		input.weapon_info.additional_count >
+			input.weapon_info.additional_definitions.size() ||
+		input.registries.additional_count >
+			input.registries.additional_entries.size()) {
+		return {Phase2SourceReadStatus::SourceLimitExceeded};
+	}
+	for (std::uint32_t bank = 0U; bank < input.bank_count; ++bank) {
+		const auto& authority = input.banks[bank];
+		if (authority.fire_point_count > MaximumPhase2StaticFirePoints ||
+			authority.num_slots > MaximumPhase2StaticFirePoints) {
+			return {Phase2SourceReadStatus::SourceLimitExceeded};
+		}
+		if (authority.num_slots == 0U ||
+			(authority.family_source != 3U &&
+			 authority.fire_point_count != authority.num_slots)) {
+			return {Phase2SourceReadStatus::UnsupportedEngineState};
+		}
+	}
 
-	catalog.class_count = std::max(catalog.class_count, 1U);
-	catalog.weapon_count = std::max(catalog.weapon_count, 1U);
+	catalog.class_count = 1U;
 	auto& ship_class = catalog.class_definitions[0];
+	ship_class = input.ship_info;
 	ship_class.class_capture_key = 1U;
-	ship_class.effective_mass = input.ship_info.effective_mass;
-	ship_class.max_rear_velocity = input.ship_info.max_rear_velocity;
 	ship_class.center_of_mass = input.model.center_of_mass;
 	ship_class.subsystem_count = input.subsystem_count;
 	ship_class.subsystem_offset = 0U;
@@ -1414,17 +1436,42 @@ SourceReadResult map_phase2_static_authorities(
 		}
 	}
 
-	auto& weapon = catalog.weapon_definitions[0];
-	weapon.reloaded_per_batch =
-		std::max(weapon.reloaded_per_batch, 1U);
-	weapon.weapon_capture_key = 1U;
-	weapon.mass = input.weapon_info.mass;
-	weapon.damage = input.weapon_info.damage;
-	weapon.fire_wait_seconds = input.weapon_info.fire_wait_seconds;
+	const auto& first_weapon =
+		static_cast<const Phase2RawWeaponDefinition&>(input.weapon_info);
+	const bool has_first_weapon =
+		first_weapon.weapon_capture_key != 0U ||
+		!first_weapon.internal_name.empty() ||
+		first_weapon.mass != 0.0F ||
+		first_weapon.damage != 0.0F ||
+		first_weapon.fire_wait_seconds != 0.0F;
+	if (!has_first_weapon && input.weapon_info.additional_count != 0U) {
+		catalog.clear();
+		return {Phase2SourceReadStatus::UnsupportedEngineState};
+	}
+	catalog.weapon_count =
+		(has_first_weapon ? 1U : 0U) +
+		input.weapon_info.additional_count;
+	if (catalog.weapon_count > MaximumPhase2StaticWeapons) {
+		catalog.clear();
+		return {Phase2SourceReadStatus::SourceLimitExceeded};
+	}
+	if (has_first_weapon) {
+		auto& weapon = catalog.weapon_definitions[0];
+		weapon = first_weapon;
+		weapon.weapon_capture_key =
+			first_weapon.weapon_capture_key == 0U
+			? 1U
+			: first_weapon.weapon_capture_key;
+	}
+	for (std::uint32_t index = 0U;
+		 index < input.weapon_info.additional_count;
+		 ++index) {
+		catalog.weapon_definitions[index + 1U] =
+			input.weapon_info.additional_definitions[index];
+	}
 	catalog.aggregate_subsystem_count = input.subsystem_count;
 
-	if (catalog.auxiliary_count == 0U &&
-		input.registries.species.capture_key != 0U) {
+	if (input.registries.species.capture_key != 0U) {
 		catalog.auxiliary_entries[catalog.auxiliary_count] =
 			input.registries.species;
 		catalog.auxiliary_entries[catalog.auxiliary_count].registry =
@@ -1434,19 +1481,30 @@ SourceReadResult map_phase2_static_authorities(
 		++catalog.auxiliary_count;
 	}
 	if (input.registries.weapon_damage_type.capture_key != 0U) {
-		if (catalog.auxiliary_count == 0U ||
-			catalog.weapon_definitions[0].damage_type_capture_key == 0U) {
-			catalog.auxiliary_entries[catalog.auxiliary_count] =
-				input.registries.weapon_damage_type;
-			catalog.auxiliary_entries[catalog.auxiliary_count].registry =
-				Phase2RawAuxiliaryRegistry::DamageType;
-			++catalog.auxiliary_count;
+		catalog.auxiliary_entries[catalog.auxiliary_count] =
+			input.registries.weapon_damage_type;
+		catalog.auxiliary_entries[catalog.auxiliary_count].registry =
+			Phase2RawAuxiliaryRegistry::DamageType;
+		++catalog.auxiliary_count;
+		if (catalog.weapon_count != 0U) {
+			catalog.weapon_definitions[0].damage_type_capture_key =
+				input.registries.weapon_damage_type.capture_key;
 		}
-		weapon.damage_type_capture_key =
-			input.registries.weapon_damage_type.capture_key;
 	}
-	if (catalog.class_count != 1U ||
-		!validate_raw_static_catalog_bounds(catalog)) {
+	if (catalog.auxiliary_count >
+			MaximumPhase2StaticAuxiliaryEntries -
+				input.registries.additional_count) {
+		catalog.clear();
+		return {Phase2SourceReadStatus::SourceLimitExceeded};
+	}
+	for (std::uint32_t index = 0U;
+		 index < input.registries.additional_count;
+		 ++index) {
+		catalog.auxiliary_entries[catalog.auxiliary_count++] =
+			input.registries.additional_entries[index];
+	}
+	const auto& constructed_catalog = catalog;
+	if (!validate_raw_static_catalog_bounds(constructed_catalog)) {
 		catalog.clear();
 		return {Phase2SourceReadStatus::UnsupportedEngineState};
 	}
@@ -1742,7 +1800,10 @@ static Phase2CaptureResult collect_phase2_observation_with_scratch(
 			if(!validate_raw_static_catalog_bounds(source_ship.raw_static_catalog)||
 				source_ship.raw_static_references.weapon_count>MaximumPhase2StaticWeapons||
 				source_ship.raw_static_references.auxiliary_count>
-					MaximumPhase2StaticAuxiliaryEntries) {
+					MaximumPhase2StaticAuxiliaryEntries ||
+				source_ship.identity.class_source_key.value == 0U ||
+				source_ship.identity.class_source_key.value !=
+					source_ship.raw_static_references.class_capture_key) {
 				return capture_failure(output,Phase2CaptureStatus::SourceLimitExceeded,
 					Phase2CaptureReason::UnsupportedShipBlock);
 			}
@@ -1763,7 +1824,8 @@ static Phase2CaptureResult collect_phase2_observation_with_scratch(
 			ship.capture_key = {
 				static_cast<std::uint32_t>(index + 1U)};
 			ship.identity.presence = source_ship.identity.presence;
-			ship.identity.class_source_key = source_ship.identity.class_source_key;
+			ship.identity.class_source_key.value =
+				source_ship.raw_static_references.class_capture_key;
 			ship.lifecycle = source_ship.lifecycle;
 			ship.flight = source_ship.flight;
 			ship.damage = source_ship.damage;
@@ -2142,6 +2204,13 @@ Phase2CaptureResult collect_phase2_observation(const Phase2EngineReadView& sourc
 	}
 	return collect_phase2_observation(
 		source,selection,producer_sample_time_us,output,projection);
+}
+
+void reset_phase2_observation_buffer_in_place(
+	Phase2ObservationBuffer& buffer) noexcept
+{
+	buffer.~Phase2ObservationBuffer();
+	new (static_cast<void*>(&buffer)) Phase2ObservationBuffer();
 }
 
 bool Phase2ObservationBuffer::provision(Phase2ProvisioningMode mode) noexcept

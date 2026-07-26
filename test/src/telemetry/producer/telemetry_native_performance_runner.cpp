@@ -16,6 +16,7 @@
 #include <cstring>
 #include <fstream>
 #include <iostream>
+#include <memory>
 #include <vector>
 
 namespace {
@@ -854,7 +855,7 @@ int main(int argc, char** argv)
 	detail::SessionIdRegistry registry;
 	if (!registry.allocate_storage()) return 3;
 	detail::SessionIdAllocator ids(ids_random, registry);
-	detail::NativeSessionRuntime runtime(backend, completion);
+	auto runtime = std::make_unique<detail::NativeSessionRuntime>(backend, completion);
 	telemetry::TelemetryConfig config;
 	config.enabled = true;
 	config.bind_addresses.clear();
@@ -862,7 +863,7 @@ int main(int argc, char** argv)
 	config.flight_hz = static_cast<std::uint8_t>(flight_hz);
 	config.max_clients = workload_mode == PerformanceWorkload::ActiveFourClients ? 4U : 1U;
 	detail::NativeSessionStartRequest request{&config, 0x1020304050607080ULL, &ids, &packet_random};
-	if (runtime.start(request) != detail::NativeSessionStartStatus::Started) return 3;
+	if (runtime->start(request) != detail::NativeSessionStartStatus::Started) return 3;
 
 	EngineView view;
 	std::uint64_t now_us = 1'000'000U;
@@ -870,18 +871,18 @@ int main(int argc, char** argv)
 	ClientResponseTracker responses;
 	responses.trace_bootstrap = diagnostic;
 	for (std::size_t client = 0U; client < expected_clients; ++client) {
-		if (!establish_ready(backend, runtime, view, peer(static_cast<std::uint8_t>(client + 1U),
+		if (!establish_ready(backend, *runtime, view, peer(static_cast<std::uint8_t>(client + 1U),
 			static_cast<std::uint16_t>(43000U + client)), seed + client + 1U, now_us,
 			static_cast<std::uint32_t>(10U + client), responses)) return 41;
 	}
-	if (runtime.active_sessions() != expected_clients) return 42;
-	if (!establish_live_baselines(backend, runtime, view, now_us, expected_clients,
+	if (runtime->active_sessions() != expected_clients) return 42;
+	if (!establish_live_baselines(backend, *runtime, view, now_us, expected_clients,
 		responses, diagnostic)) return 43;
 	const auto tick_step_us = (1'000'000U + flight_hz - 1U) / flight_hz;
 	for (std::uint64_t index = 0U; index < warmup; ++index) {
-		if (!tick(runtime, view, now_us)) return benchmark_stage_failure("warmup-tick", index, now_us, runtime, responses);
-		if (!queue_new_client_responses(backend, responses, now_us)) return benchmark_stage_failure("warmup-response", index, now_us, runtime, responses);
-		if (!drain_for_pending_snapshot_acks(backend, runtime, responses, now_us)) return benchmark_stage_failure("warmup-drain", index, now_us, runtime, responses);
+		if (!tick(*runtime, view, now_us)) return benchmark_stage_failure("warmup-tick", index, now_us, *runtime, responses);
+		if (!queue_new_client_responses(backend, responses, now_us)) return benchmark_stage_failure("warmup-response", index, now_us, *runtime, responses);
+		if (!drain_for_pending_snapshot_acks(backend, *runtime, responses, now_us)) return benchmark_stage_failure("warmup-drain", index, now_us, *runtime, responses);
 		now_us += tick_step_us;
 	}
 	// Active traffic legitimately keeps one output datagram and/or reliable
@@ -889,18 +890,18 @@ int main(int argc, char** argv)
 	// not an artificially empty scheduler. Snapshot ACKs, sessions and active
 	// baselines must nevertheless be fully settled before timing begins.
 	const auto resource_limit = expected_clients * protocol::ReliableWindowMaximumEntries + 1U;
-	if (!responses.pending_snapshot_acks.empty() || runtime.active_sessions() != expected_clients ||
-		active_baseline_count(runtime) != expected_clients || runtime.owned_usage().reliable_items > resource_limit) return 44;
+	if (!responses.pending_snapshot_acks.empty() || runtime->active_sessions() != expected_clients ||
+		active_baseline_count(*runtime) != expected_clients || runtime->owned_usage().reliable_items > resource_limit) return 44;
 	if (impairment_mode) {
-		if (!force_authoritative_delta(runtime, now_us, diagnostic)) return 47;
+		if (!force_authoritative_delta(*runtime, now_us, diagnostic)) return 47;
 		backend.impairment_stage = Backend::ImpairmentStage::WouldBlockDelta;
 		backend.would_block_remaining = 4U;
 		if (diagnostic) std::cerr << "impairment-transition armed would-block-delta\n";
 	}
 	std::size_t max_observed_queue_depth = 0U;
-	std::size_t max_observed_reliable_items = runtime.owned_usage().reliable_items;
+	std::size_t max_observed_reliable_items = runtime->owned_usage().reliable_items;
 	responses.trace_bootstrap = false;
-	detail::NativeSessionRuntimeTestAccess::begin_performance_observation(runtime);
+	detail::NativeSessionRuntimeTestAccess::begin_performance_observation(*runtime);
 	std::ofstream output(output_path, std::ios::out | std::ios::trunc);
 	if (!output) return 5;
 	output << "sample_index,tick_duration_ns,collect_ns,diff_ns,state_image_build_ns,state_image_fill_ns,state_image_publish_validate_ns,state_image_adopt_ns,state_image_semantic_validate_ns,delta_build_ns,serialization_ns,network_ns,allocation_events,syscall_count,queue_depth,baselines_active,is_keyframe\n";
@@ -912,26 +913,26 @@ int main(int argc, char** argv)
 			index >= 595U && index <= 606U;
 		if (trace_periodic_window) {
 			responses.trace_bootstrap = true;
-			trace_periodic_snapshot_state(runtime, responses, index, now_us);
+			trace_periodic_snapshot_state(*runtime, responses, index, now_us);
 		}
-		if (!drain_for_pending_snapshot_acks(backend, runtime, responses, now_us)) return benchmark_stage_failure("sample-pre-drain", index, now_us, runtime, responses);
-		if (!tick(runtime, view, now_us)) return benchmark_stage_failure("sample-tick", index, now_us, runtime, responses);
-		if (!queue_new_client_responses(backend, responses, now_us)) return benchmark_stage_failure("sample-response", index, now_us, runtime, responses);
-		release_snapshot_acks_when_ingress_is_safe(backend, runtime, responses);
-		if (trace_periodic_window) trace_periodic_snapshot_state(runtime, responses, index, now_us);
+		if (!drain_for_pending_snapshot_acks(backend, *runtime, responses, now_us)) return benchmark_stage_failure("sample-pre-drain", index, now_us, *runtime, responses);
+		if (!tick(*runtime, view, now_us)) return benchmark_stage_failure("sample-tick", index, now_us, *runtime, responses);
+		if (!queue_new_client_responses(backend, responses, now_us)) return benchmark_stage_failure("sample-response", index, now_us, *runtime, responses);
+		release_snapshot_acks_when_ingress_is_safe(backend, *runtime, responses);
+		if (trace_periodic_window) trace_periodic_snapshot_state(*runtime, responses, index, now_us);
 		responses.trace_bootstrap = false;
 		now_us += tick_step_us;
-		const auto sample = detail::NativeSessionRuntimeTestAccess::last_performance_sample(runtime);
-		const auto direct_baselines = active_baseline_count(runtime);
-		const auto usage = runtime.owned_usage();
+		const auto sample = detail::NativeSessionRuntimeTestAccess::last_performance_sample(*runtime);
+		const auto direct_baselines = active_baseline_count(*runtime);
+		const auto usage = runtime->owned_usage();
 		max_observed_queue_depth = std::max(max_observed_queue_depth, sample.queue_depth);
 		max_observed_reliable_items = std::max(max_observed_reliable_items, usage.reliable_items);
-		if (!responses.pending_snapshot_acks.empty() || runtime.active_sessions() != expected_clients ||
+		if (!responses.pending_snapshot_acks.empty() || runtime->active_sessions() != expected_clients ||
 			usage.reliable_items > resource_limit || sample.queue_depth > resource_limit ||
 			direct_baselines != expected_clients || sample.baselines_active != direct_baselines) {
 			std::cerr << "baseline-sample invariant index=" << index << " expected=" << expected_clients
 					  << " direct=" << direct_baselines << " measured=" << sample.baselines_active
-					  << " sessions=" << runtime.active_sessions() << " reliable=" << usage.reliable_items
+					  << " sessions=" << runtime->active_sessions() << " reliable=" << usage.reliable_items
 					  << " queue-depth=" << sample.queue_depth << " pending-acks=" << responses.pending_snapshot_acks.size() << '\n';
 			return 45;
 		}
@@ -948,20 +949,20 @@ int main(int argc, char** argv)
 				  << " max-reliable-items=" << max_observed_reliable_items << " limit=" << resource_limit << '\n';
 	}
 	if (impairment_mode) {
-		const auto final_baselines = active_baseline_count(runtime);
+		const auto final_baselines = active_baseline_count(*runtime);
 		if (diagnostic) {
 			std::cerr << "impairment-evidence would-block=" << backend.would_block_sends
 					  << " lost-delta=" << backend.lost_delta_sends
 					  << " resync-injected=" << backend.resync_requests_injected
 					  << " resync-validated=" << backend.resync_validated_acks_seen
 					  << " fullsnapshot-acks=" << backend.full_snapshot_acks_injected
-					  << " sessions=" << runtime.active_sessions()
+					  << " sessions=" << runtime->active_sessions()
 					  << " baselines=" << final_baselines << '\n';
 		}
 		if (backend.would_block_sends == 0U || backend.lost_delta_sends != 1U || backend.resync_requests_injected != 1U ||
 			backend.resync_validated_acks_seen == 0U || backend.full_snapshot_acks_injected < 2U ||
 			backend.impairment_stage != Backend::ImpairmentStage::Recovered ||
-			runtime.active_sessions() != expected_clients || final_baselines != expected_clients) return 46;
+			runtime->active_sessions() != expected_clients || final_baselines != expected_clients) return 46;
 	}
 	return output ? 0 : 5;
 }

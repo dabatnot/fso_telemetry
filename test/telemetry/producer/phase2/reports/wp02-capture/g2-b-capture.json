@@ -1,15 +1,17 @@
 {
   "schema": "fs2open.telemetry.phase2.g2-b-capture.v1",
   "gate": "G2-B",
-  "status": "reopened",
+  "status": "closed",
   "workPackage": "P2-WP-02",
-  "workPackageStatus": "pending",
+  "workPackageStatus": "verified",
   "reopenedAtUtc": "2026-07-26T04:52:37.7436763Z",
+  "sealedAtUtc": "2026-07-26T16:33:51.2927844Z",
   "gateDecision": {
-    "decision": "reopened",
-    "status": "pending",
-    "authorizesWp03": false,
-    "authorizesWp09": false
+    "decision": "closed",
+    "status": "closed",
+    "closure": true,
+    "authorizesWp03": true,
+    "authorizesWp09": true
   },
   "historicalSupersededRecordedAtUtc": "2026-07-26T01:34:06.4901043Z",
   "historicalSupersededReview": {
@@ -20,7 +22,8 @@
     "gateClosureRecorded": false
   },
   "reopening": {
-    "status": "pending",
+    "status": "closed-after-final-independent-review-go",
+    "historicalState": true,
     "supersededReportSha256": "49943c8c2efded383432af8a430aca225e3794bf4654a9b308d055b896eacbdf",
     "reason": "Missing owned raw static class, weapon, auxiliary-registry, per-loadout reference, and reciprocal-topology authorities required before WP03.",
     "latestIndependentReview": {
@@ -74,6 +77,35 @@
       "P2-WP-03": "suspended",
       "P2-WP-09": "suspended"
     }
+  },
+  "finalResolution": {
+    "status": "closed",
+    "sealedAtUtc": "2026-07-26T16:33:51.2927844Z",
+    "reviewDecision": "GO",
+    "closure": true,
+    "workPackage": "P2-WP-02",
+    "workPackageStatus": "verified",
+    "verifiedRequirements": [
+      "P2-REQ-009",
+      "P2-REQ-010",
+      "P2-REQ-011",
+      "P2-REQ-012",
+      "P2-REQ-013",
+      "P2-REQ-014"
+    ],
+    "verifiedTests": [
+      "P2-TST-007",
+      "P2-TST-008",
+      "P2-TST-009"
+    ],
+    "verifiedAcceptanceCriteria": [
+      "P2-AC-004"
+    ],
+    "authorizations": {
+      "P2-WP-03": "authorized-not-started",
+      "P2-WP-09": "authorized-not-started"
+    },
+    "trackerSha256": "321c1cc05887b326fb7218aebd2c061d4c96296c98b5a8aa7596a6ac96a14941"
   },
   "predecessor": {
     "gate": "G2-A",
@@ -802,6 +834,455 @@
       "sha256": "dad2b1ca547907f10f9dc2347cee82ad728565714c208284f150b0317424e8ea"
     }
   ],
+  "freshEvidence": {
+    "recordedAtUtc": "2026-07-26T16:15:46.7947607Z",
+    "profile": "balanced",
+    "cadence": "wp-checkpoint",
+    "disposition": "verified",
+    "gateState": "closed",
+    "gateClosureRecorded": true,
+    "authorizesWp03": true,
+    "authorizesWp09": true,
+    "binding": {
+      "head": "b5b059d20f86e079fce4fb1f39762d46183657bf",
+      "headTree": "b0c0550e469d444ff78d8ce92a26f22e87809034",
+      "branch": "codex/phase2-pre-skill-checkpoint",
+      "worktree": "dirty",
+      "statusLineCountBeforeReportWrite": 106,
+      "statusSha256Utf8BeforeReportWrite": "02e9512631e35d8a71a261f1397732cd196689953b05d9403e8292922ae371ab",
+      "diffSha256Utf8BeforeReportWrite": "694d8f12ec346214e86beb4759637450b6d424877bbc63f1f89825a9b134daa4",
+      "statusLineCountAfterReportWrite": 107,
+      "statusSha256Utf8AfterReportWrite": "b2ee05073e1311fd93ea4f3a5aa9a1def99409eb71d9df4b44f1c70e931e0d2b",
+      "preWriteReportSha256": "d3e1e7d81af47f5a3e35e0e492892c589fdf6a9dab5a28f7d6bfeb81c08d5908",
+      "postWriteReportSha256": "recorded externally after final write to avoid a self-referential hash",
+      "reviewedReadyForReviewReportBytes": 49255,
+      "reviewedReadyForReviewReportSha256": "58ae6ed5742a98a9e9e954fc6251655098d267c52c725187efcf63dc3dd4bfb6",
+      "stableTrackerPath": "documentation/analysis/progress/phase-2.json",
+      "stableTrackerBytes": 110066,
+      "stableTrackerMtimeUtc": "2026-07-26T16:31:27.2950096Z",
+      "stableTrackerSha256": "321c1cc05887b326fb7218aebd2c061d4c96296c98b5a8aa7596a6ac96a14941",
+      "note": "The dirty worktree is bound by the recorded status/diff fingerprints plus individual source and artifact hashes. Historical evidence remains explicitly superseded or stale and is not promoted by this report."
+    },
+    "finalIndependentReview": {
+      "decision": "GO",
+      "blockingFindingCount": 0,
+      "reviewerIdentity": "review_agent",
+      "trackerEvidenceId": "WP02-G2-B-final-independent-review-go",
+      "trackerBlockerId": "WP02-G2-B-FINAL-REPORT-REVIEW",
+      "recordedInTrackerAtUtc": "2026-07-26T16:29:45.8986082Z",
+      "reviewedReportBytes": 49255,
+      "reviewedReportSha256": "58ae6ed5742a98a9e9e954fc6251655098d267c52c725187efcf63dc3dd4bfb6",
+      "scope": [
+        "P2-WP-02",
+        "P2-REQ-009",
+        "P2-REQ-010",
+        "P2-REQ-011",
+        "P2-REQ-012",
+        "P2-REQ-013",
+        "P2-REQ-014",
+        "P2-TST-007",
+        "P2-TST-008",
+        "P2-TST-009",
+        "P2-AC-004",
+        "G2-B"
+      ],
+      "result": "accepted-for-gate-closure"
+    },
+    "platform": {
+      "os": "Microsoft Windows NT 10.0.26200.0",
+      "architecture": "AMD64",
+      "cmake": "4.1.2",
+      "generator": "Visual Studio 16 2019",
+      "generatorInstance": "D:/Program Files (x86)/Microsoft Visual Studio/2019/Community",
+      "generatorPlatform": "x64",
+      "generatorToolset": "host=x64",
+      "configuration": "Release",
+      "buildDirectory": "build",
+      "options": {
+        "tests": true,
+        "tools": false,
+        "fred2": true,
+        "qtFred": true
+      }
+    },
+    "commands": [
+      {
+        "ordinal": 1,
+        "purpose": "build-current-release-code",
+        "command": "cmake --build build --config Release --target code -j 2",
+        "exitCode": 0,
+        "durationMs": 67243,
+        "result": "pass",
+        "scope": "build-only"
+      },
+      {
+        "ordinal": 2,
+        "purpose": "build-current-release-lifecycle-target",
+        "command": "cmake --build build --config Release --target telemetry_lifecycle_callback_contract_tests -j 2",
+        "exitCode": 0,
+        "durationMs": 11689,
+        "result": "pass",
+        "scope": "targeted-build"
+      },
+      {
+        "ordinal": 3,
+        "purpose": "build-current-release-observation-target",
+        "command": "cmake --build build --config Release --target telemetry_phase2_observation_contract_tests -j 2",
+        "exitCode": 0,
+        "durationMs": 18787,
+        "result": "pass",
+        "scope": "targeted-build"
+      },
+      {
+        "ordinal": 4,
+        "purpose": "build-current-release-source-target-and-object-evidence",
+        "command": "cmake --build build --config Release --target telemetry_phase2_engine_integration_source_contract_tests -j 2",
+        "exitCode": 0,
+        "durationMs": 23150,
+        "result": "pass",
+        "scope": "targeted-build"
+      },
+      {
+        "ordinal": 5,
+        "purpose": "release-observation-contract",
+        "command": "& 'build/bin/Release/telemetry_phase2_observation_contract_tests.exe' '--gtest_color=no'",
+        "exitCode": 0,
+        "durationMs": 9578,
+        "gtestDurationMs": 9421,
+        "result": "pass",
+        "tests": {
+          "suites": 1,
+          "run": 69,
+          "passed": 69,
+          "failed": 0,
+          "skipped": 0
+        },
+        "observations": {
+          "phase2OwnedBytes": 61094832,
+          "ownedLimitBytes": 67108864,
+          "withinLimit": true
+        }
+      },
+      {
+        "ordinal": 6,
+        "purpose": "release-source-contract",
+        "command": "& 'build/bin/Release/telemetry_phase2_engine_integration_source_contract_tests.exe' '--gtest_color=no'",
+        "exitCode": 0,
+        "durationMs": 220,
+        "result": "pass",
+        "tests": {
+          "suites": 1,
+          "run": 80,
+          "passed": 80,
+          "failed": 0,
+          "skipped": 0
+        }
+      },
+      {
+        "ordinal": 7,
+        "purpose": "release-lifecycle-contract",
+        "command": "& 'build/bin/Release/telemetry_lifecycle_callback_contract_tests.exe' '--gtest_color=no'",
+        "exitCode": 0,
+        "durationMs": 138,
+        "result": "pass",
+        "tests": {
+          "suites": 1,
+          "run": 1,
+          "passed": 1,
+          "failed": 0,
+          "skipped": 0
+        }
+      },
+      {
+        "ordinal": 8,
+        "purpose": "build-current-release-unittests",
+        "command": "cmake --build build --config Release --target unittests",
+        "exitCode": 0,
+        "durationMs": 491700,
+        "result": "pass",
+        "scope": "build-only"
+      },
+      {
+        "ordinal": 9,
+        "purpose": "P2-TST-007-through-009-canonical-checkpoint",
+        "command": "& 'build/bin/Release/unittests.exe' '--gtest_filter=TelemetryPhase2GameplayAbContract.*:FinalB/SupportWorkContract.*:TelemetryNativeRuntimeIntegrationContract.ReviewerFinalTst008EligibilityMatrixRejectsBeforeOpenOrBind:TelemetryProtocolBusinessStateValidation.S12TST009FinalInjectsRecords15Through19And23PlusBothValidCapabilityPairs' '--gtest_color=no' '--gtest_brief=1'",
+        "exitCode": 0,
+        "durationMs": 254,
+        "gtestDurationMs": 163,
+        "result": "pass",
+        "tests": {
+          "suites": 4,
+          "run": 16,
+          "passed": 16,
+          "failed": 0,
+          "skipped": 0
+        }
+      },
+      {
+        "ordinal": 10,
+        "purpose": "release-broad-unit-suite",
+        "command": "& 'build/bin/Release/unittests.exe' '--gtest_color=no' '--gtest_brief=1'",
+        "exitCode": 0,
+        "durationMs": 9243,
+        "gtestDurationMs": 9156,
+        "result": "pass-with-declared-skips-and-disabled-tests",
+        "tests": {
+          "suites": 142,
+          "run": 1107,
+          "passed": 1103,
+          "failed": 0,
+          "skipped": 4,
+          "disabledNotRun": 2
+        }
+      },
+      {
+        "ordinal": 11,
+        "purpose": "build-performance-runner-without-execution",
+        "command": "cmake --build build --config Release --target telemetry_native_performance_runner",
+        "exitCode": 0,
+        "durationMs": 152800,
+        "result": "pass-build-only",
+        "runnerExecuted": false
+      },
+      {
+        "ordinal": 12,
+        "purpose": "build-reliability-harness-without-execution",
+        "command": "cmake --build build --config Release --target telemetry_phase1_reliability_harness",
+        "exitCode": 0,
+        "durationMs": 12580,
+        "result": "pass-build-only",
+        "harnessExecuted": false
+      }
+    ],
+    "results": {
+      "P2-TST-007": {
+        "status": "verified",
+        "result": "pass",
+        "gameplayAb": "1/1",
+        "finalBSupportWork": "13/13",
+        "combined": "14/14",
+        "evidenceOrdinal": 9
+      },
+      "P2-TST-008": {
+        "status": "verified",
+        "result": "pass",
+        "eligibilityMatrix": "1/1",
+        "rejectsBeforeOpenOrBind": true,
+        "evidenceOrdinal": 9
+      },
+      "P2-TST-009": {
+        "status": "verified",
+        "result": "pass",
+        "protocolBusinessState": "1/1",
+        "sourceContract": "80/80",
+        "builtObjectScan": "pass",
+        "evidenceOrdinals": [
+          4,
+          6,
+          9
+        ]
+      },
+      "P2-AC-004": {
+        "status": "verified",
+        "observationContract": "69/69",
+        "sourceContract": "80/80",
+        "lifecycleContract": "1/1",
+        "canonicalCheckpoint": "16/16",
+        "broad": "1103 pass + 4 declared skip out of 1107 run; 2 disabled not run",
+        "phase2OwnedBytes": 61094832,
+        "ownedLimitBytes": 67108864,
+        "evidenceOrdinals": [
+          5,
+          6,
+          7,
+          9,
+          10
+        ],
+        "note": "Execution evidence is complete and the final independent reviewer GO promotes this acceptance criterion to verified."
+      }
+    },
+    "traceability": {
+      "requirements": {
+        "P2-REQ-009": "verified",
+        "P2-REQ-010": "verified",
+        "P2-REQ-011": "verified",
+        "P2-REQ-012": "verified",
+        "P2-REQ-013": "verified",
+        "P2-REQ-014": "verified"
+      },
+      "decisions": {
+        "D2-009": "verified",
+        "D2-010": "partial-globally",
+        "D2-019": "partial-globally",
+        "D2-020": "partial-globally"
+      },
+      "predecessor": {
+        "gate": "G2-A",
+        "status": "closed",
+        "path": "../wp01-contract/g2-a-wire-profiles.json",
+        "sha256": "19c6679f26f0f38651e31533d090d2fc34865432e5905b8442ea3e0d1258cb68",
+        "hashVerifiedAtReportRefresh": true
+      },
+      "currentGate": {
+        "gate": "G2-B",
+        "status": "closed",
+        "reviewDisposition": "GO",
+        "closureRecorded": true,
+        "authorizesWp03": true,
+        "authorizesWp09": true,
+        "downstreamWorkStarted": false
+      }
+    },
+    "declaredExceptions": {
+      "skips": [
+        {
+          "source": "test_phase2_engine_integration_source_contract.cpp:401",
+          "count": 1,
+          "reason": "The current adapter-object dependency contract is explicitly MSVC-only."
+        },
+        {
+          "source": "test_phase2_engine_integration_source_contract.cpp:1982",
+          "count": 1,
+          "reason": "TST009 linker-visible object evidence is an explicit MSVC-only contract."
+        },
+        {
+          "source": "test_telemetry_native_runtime_loopback_contract.cpp:759",
+          "count": 1,
+          "reason": "Native IPv4 loopback requires FSO_TELEMETRY_RUN_NATIVE_LOOPBACK=1; the opt-in was absent."
+        },
+        {
+          "source": "test_telemetry_native_runtime_loopback_contract.cpp:770",
+          "count": 1,
+          "reason": "Native IPv6 loopback requires FSO_TELEMETRY_RUN_NATIVE_LOOPBACK=1; the opt-in was absent."
+        }
+      ],
+      "disabledNotRun": [
+        "TelemetryConfigDepthIsolationContract.DISABLED_DeepTruncatedContainerBombIsRejectedByPreflight",
+        "TelemetryProducerProfileDepthIsolationContract.DISABLED_DeepTruncatedContainerBombIsRejectedByPreflight"
+      ],
+      "expectedDiagnostics": "safe_strings ERANGE/EINVAL and parser/mod-table negative-test diagnostics were emitted after the brief summary; they are expected test stimuli and the broad process exited 0.",
+      "failedTests": []
+    },
+    "supersession": {
+      "historicalSupersededBlocksRetained": true,
+      "staleEvidenceNotPromoted": true,
+      "supersededAttemptsRetainedInProgressTracker": true,
+      "currentConclusiveEvidence": [
+        "release observation 69/69",
+        "release source 80/80",
+        "release lifecycle 1/1",
+        "canonical exact checkpoint 16/16",
+        "release broad 1107 run, 1103 pass, 4 declared skips, 2 disabled not run"
+      ],
+      "note": "The earlier 70-test source evidence, stale 62/62 and 73/73 runs, interrupted harness build, stack-overflow diagnostics, false lexical oracle, and pre-fix broad attempts remain historical, stale, or superseded. None is used as current gate proof."
+    },
+    "artifacts": [
+      {
+        "role": "release-code-library",
+        "path": "build/bin/Release/code.lib",
+        "bytes": 1236750528,
+        "mtimeUtc": "2026-07-26T13:30:10.8462137Z",
+        "sha256": "e1efc1de41d7e01e0116d07a78f05dd540562962419841ba34faa01ac02c61fb"
+      },
+      {
+        "role": "release-unit-test-binary",
+        "path": "build/bin/Release/unittests.exe",
+        "bytes": 25380352,
+        "mtimeUtc": "2026-07-26T15:55:41.2289850Z",
+        "sha256": "6d8ab9e34e458cde12e4c792ce6a708b6a9304933a53e003fc37ff241f40c9be"
+      },
+      {
+        "role": "release-observation-contract-binary",
+        "path": "build/bin/Release/telemetry_phase2_observation_contract_tests.exe",
+        "bytes": 947712,
+        "mtimeUtc": "2026-07-26T13:49:00.9710878Z",
+        "sha256": "300fda846649785e49fd36d3d6bcacdb1d3c424bda8358e769da7e3396d57ab0"
+      },
+      {
+        "role": "release-source-contract-binary",
+        "path": "build/bin/Release/telemetry_phase2_engine_integration_source_contract_tests.exe",
+        "bytes": 939520,
+        "mtimeUtc": "2026-07-26T13:53:26.1697672Z",
+        "sha256": "723c29676ac8347dbd83ccac8bd39d2b99ad3342a353e378882a98a39b69fcce"
+      },
+      {
+        "role": "release-lifecycle-contract-binary",
+        "path": "build/bin/Release/telemetry_lifecycle_callback_contract_tests.exe",
+        "bytes": 359936,
+        "mtimeUtc": "2026-07-26T13:48:29.2769410Z",
+        "sha256": "d3d0ef4ca441c3188f6c0bea2aba7b2806e2f4540b2098b9a0990d8582d50e2a"
+      },
+      {
+        "role": "release-performance-runner-build-only",
+        "path": "build/bin/Release/telemetry_native_performance_runner_p93.exe",
+        "bytes": 15713280,
+        "mtimeUtc": "2026-07-26T15:58:32.1716366Z",
+        "sha256": "0630eb9657125561ca5fd72537a5999ef456f504544d527331ae9d0d2cfcfb18"
+      },
+      {
+        "role": "release-reliability-harness-build-only",
+        "path": "build/bin/Release/telemetry_phase1_reliability_harness.exe",
+        "bytes": 15696896,
+        "mtimeUtc": "2026-07-26T16:01:54.0231486Z",
+        "sha256": "4b38b04bfc8b64eaad05f0b2a33d64bf182bb0b78732fde0ec724fece51ba7d5"
+      },
+      {
+        "role": "exact-msvc-engine-adapter-evidence-object",
+        "path": "build/test/src/telemetry_phase2_engine_adapter_evidence_object.dir/Release/engine_adapter.obj",
+        "bytes": 1189151,
+        "mtimeUtc": "2026-07-26T13:49:35.2115142Z",
+        "sha256": "dd73d508c4a44f65e224c9489ba05ad7231021d9746c82550266d2c2de522c94"
+      },
+      {
+        "role": "exact-msvc-engine-adapter-sha-sidecar",
+        "path": "build/test/src/telemetry_phase2_engine_adapter_evidence_object.dir/Release/engine_adapter.obj.sha256",
+        "bytes": 64,
+        "mtimeUtc": "2026-07-26T13:53:13.6982380Z",
+        "sha256": "e76df28384b862a57bc2f5e8042f96313cf3c6c50a675fbb642810ad96b00be3"
+      },
+      {
+        "role": "exact-msvc-engine-adapter-linkable-sidecar",
+        "path": "build/test/src/telemetry_phase2_engine_adapter_evidence_object.dir/Release/engine_adapter.obj.linkable.txt",
+        "bytes": 615583,
+        "mtimeUtc": "2026-07-26T13:53:13.8487697Z",
+        "sha256": "92cc9db1752b1b3af533d3bcac887d5822de37b3475e113534559d75467077b7"
+      }
+    ],
+    "sourceBindings": [
+      {
+        "path": "code/telemetry/engine_adapter.cpp",
+        "sha256": "1c8d8bcc08255fd269718eaa38e2fc154075231572d55aaffa19577491ce34c2"
+      },
+      {
+        "path": "code/telemetry/native_session_runtime.cpp",
+        "sha256": "c48d39ac2c6117a1b3fc4a248b26af9353967fe31b9e00d5314f31263c2aeedf"
+      },
+      {
+        "path": "code/telemetry/phase2_observation.cpp",
+        "sha256": "eef738834e359512e537665483954f09bef19d25a9489a4965c31075e617b3bd"
+      },
+      {
+        "path": "code/telemetry/phase2_observation.h",
+        "sha256": "d7793d488297d8064cc3698de9b6a96fd2b963303f23dea6497734aa24b3851f"
+      },
+      {
+        "path": "test/src/CMakeLists.txt",
+        "sha256": "649135473cf4ec853b8d10ae218929f676511e11f490c9133249bf20d0b5ec3c"
+      },
+      {
+        "path": "test/src/telemetry/producer/test_phase2_observation_contract.cpp",
+        "sha256": "7bd5250f5f480bdc457f0d6e8eb4fe6d2cae695443cd87502a58c3f9f9234a26"
+      },
+      {
+        "path": "test/src/telemetry/producer/test_phase2_engine_integration_source_contract.cpp",
+        "sha256": "6ebcdd02822604d3d6b3d57d4e21d2bab60c0b5e0c1cdb9c14ce4ae5dce6749b"
+      },
+      {
+        "path": "test/src/telemetry/producer/test_telemetry_native_runtime_integration_contract.cpp",
+        "sha256": "807273e91cece9f75d001863f698b3449b7990e3bb41a44e107dbbf3a4d7b2be"
+      }
+    ]
+  },
   "limitations": [
     "The bounded fs2_open launch did not exit naturally and is recorded as nonpass, non-gate-relevant evidence only.",
     "Release logging was disabled; no canonical runtime log was produced.",

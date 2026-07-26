@@ -139,11 +139,12 @@ SourceReadResult extract_production_static_authorities(const object& ship_object
 	const ship_info& ship_class,
 	Phase2ShipSource& output) noexcept
 {
-	output.raw_static_catalog.clear();
 	output.raw_static_references = {};
 	auto& input = output.static_authority_input;
-	input = {};
-	auto& catalog = output.raw_static_catalog;
+	reset_phase2_static_authority_input(input);
+	std::array<int, MaximumPhase2StaticWeapons> referenced_weapon_indices{};
+	std::uint32_t referenced_weapon_count = 0U;
+	const auto collected = [&]() noexcept -> SourceReadResult {
 	if (ship_class.model_num < 0 || ship_class.n_subsystems < 0 ||
 		ship_class.n_subsystems >
 			static_cast<int>(MaximumPhase2SubsystemsPerShip) ||
@@ -163,8 +164,6 @@ SourceReadResult extract_production_static_authorities(const object& ship_object
 		return {Phase2SourceReadStatus::UnsupportedEngineState};
 	}
 
-	std::array<int, MaximumPhase2StaticWeapons> referenced_weapon_indices{};
-	std::uint32_t referenced_weapon_count = 0U;
 	const auto capture_weapon = [&](int engine_index,
 									std::uint32_t& capture_key) noexcept {
 		if (engine_index < 0 ||
@@ -311,7 +310,7 @@ SourceReadResult extract_production_static_authorities(const object& ship_object
 	}
 	for (int tertiary = 0; tertiary < tertiary_count; ++tertiary) {
 		auto& target = input.banks[input.bank_count++];
-		target.num_slots = 0U;
+		target.num_slots = 1U;
 		target.bank_capture_key = input.bank_count;
 		target.family_source = 3U;
 		target.bank_index = static_cast<std::uint16_t>(tertiary);
@@ -426,54 +425,15 @@ SourceReadResult extract_production_static_authorities(const object& ship_object
 		}
 	}
 
-	if (ship_class.species >= 0 &&
-		ship_class.species < static_cast<int>(Species_info.size())) {
-		input.registries.species.capture_key = 1U;
-		if (!assign_bounded_engine_name(input.registries.species.name,
-				Species_info[ship_class.species].species_name,
-				NAME_LENGTH)) {
-			return {Phase2SourceReadStatus::SourceLimitExceeded};
-		}
-	}
-	const int first_weapon = referenced_weapon_count > 0U
-		? referenced_weapon_indices[0]
-		: -1;
-	if (first_weapon >= 0 &&
-		first_weapon < static_cast<int>(Weapon_info.size()) &&
-		Weapon_info[first_weapon].damage_type_idx >= 0 &&
-		Weapon_info[first_weapon].damage_type_idx <
-			static_cast<int>(Damage_types.size())) {
-		input.registries.weapon_damage_type.capture_key = 2U;
-		if (!assign_bounded_engine_name(
-				input.registries.weapon_damage_type.name,
-				Damage_types[Weapon_info[first_weapon].damage_type_idx].name,
-				NAME_LENGTH)) {
-			return {Phase2SourceReadStatus::SourceLimitExceeded};
-		}
-	}
-
-	auto& initial_catalog = catalog;
-	initial_catalog.clear();
-	auto& initial_class = initial_catalog.class_definitions[0];
-	initial_class = {};
-	initial_class.class_capture_key = 1U;
-	initial_class.effective_mass = input.ship_info.effective_mass;
-	initial_class.max_rear_velocity = input.ship_info.max_rear_velocity;
-	initial_class.center_of_mass = input.model.center_of_mass;
-	initial_class.subsystem_count = input.subsystem_count;
-	initial_class.subsystem_offset = 0U;
-	initial_class.bank_count = input.bank_count;
-	initial_class.bank_offset = 0U;
-	for (std::uint32_t index = 0U; index < input.subsystem_count; ++index)
-		initial_catalog.subsystem_storage[index] = input.subsystems[index];
-	for (std::uint32_t index = 0U; index < input.bank_count; ++index)
-		initial_catalog.bank_storage[index] = input.banks[index];
-	initial_catalog.class_count = 1U;
-	initial_catalog.aggregate_subsystem_count = input.subsystem_count;
-	auto& raw_class = catalog.class_definitions[0];
+	auto& raw_class = input.ship_info;
+	raw_class.class_capture_key = 1U;
+	raw_class.center_of_mass = input.model.center_of_mass;
+	raw_class.subsystem_count = input.subsystem_count;
+	raw_class.subsystem_offset = 0U;
+	raw_class.bank_count = input.bank_count;
+	raw_class.bank_offset = 0U;
 	if (!assign_bounded_engine_name(
 			raw_class.internal_name, ship_class.name, NAME_LENGTH)) {
-		catalog.clear();
 		return {Phase2SourceReadStatus::SourceLimitExceeded};
 	}
 	raw_class.model_mass = model->mass;
@@ -526,7 +486,6 @@ SourceReadResult extract_production_static_authorities(const object& ship_object
 	raw_class.countermeasure_uses_capacity = Countermeasures_use_capacity;
 	if (ship_class.cmeasure_max > 0) {
 		if (Weapon_info[ship_class.cmeasure_type].cmeasure_firewait < 0) {
-			catalog.clear();
 			return {Phase2SourceReadStatus::UnsupportedEngineState};
 		}
 		for (std::uint32_t index = 0U; index < referenced_weapon_count; ++index) {
@@ -549,17 +508,18 @@ SourceReadResult extract_production_static_authorities(const object& ship_object
 	raw_class.tertiary_bank_count =
 		static_cast<std::uint32_t>(tertiary_count);
 	raw_class.turret_bank_count = turret_bank_count;
-	catalog.weapon_count = referenced_weapon_count;
+	input.weapon_info.additional_count =
+		referenced_weapon_count == 0U ? 0U : referenced_weapon_count - 1U;
 	for (std::uint32_t index = 0U; index < referenced_weapon_count; ++index) {
-		auto& raw_weapon =
-			catalog.weapon_definitions[index];
+		auto& raw_weapon = index == 0U
+			? static_cast<Phase2RawWeaponDefinition&>(input.weapon_info)
+			: input.weapon_info.additional_definitions[index - 1U];
 		const auto& source = Weapon_info[referenced_weapon_indices[index]];
 		if (!fill_raw_weapon_definition(source, index + 1U, raw_weapon)) {
-			catalog.clear();
 			return {Phase2SourceReadStatus::SourceLimitExceeded};
 		}
 	}
-	catalog.auxiliary_count = 0U;
+	input.registries.additional_count = 0U;
 	const auto add_auxiliary =
 		[&](Phase2RawAuxiliaryRegistry registry,
 			std::string_view name,
@@ -570,9 +530,10 @@ SourceReadResult extract_production_static_authorities(const object& ship_object
 				return false;
 			}
 			for (std::uint32_t index = 0U;
-				 index < catalog.auxiliary_count;
+				 index < input.registries.additional_count;
 				 ++index) {
-				const auto& existing = catalog.auxiliary_entries[index];
+				const auto& existing =
+					input.registries.additional_entries[index];
 				if (existing.registry == registry &&
 					existing.firing_pattern_source_code == pattern_code &&
 					existing.name.view() == name) {
@@ -580,18 +541,18 @@ SourceReadResult extract_production_static_authorities(const object& ship_object
 					return true;
 				}
 			}
-			if (catalog.auxiliary_count >=
+			if (input.registries.additional_count >=
 				MaximumPhase2StaticAuxiliaryEntries) {
 				return false;
 			}
-			auto& entry =
-				catalog.auxiliary_entries[catalog.auxiliary_count++];
+			auto& entry = input.registries.additional_entries[
+				input.registries.additional_count++];
 			entry = {};
 			entry.registry = registry;
-			entry.capture_key = catalog.auxiliary_count;
+			entry.capture_key = input.registries.additional_count;
 			entry.firing_pattern_source_code = pattern_code;
 			if (!name.empty() && !entry.name.assign(name)) {
-				--catalog.auxiliary_count;
+				--input.registries.additional_count;
 				return false;
 			}
 			capture_key = entry.capture_key;
@@ -604,7 +565,6 @@ SourceReadResult extract_production_static_authorities(const object& ship_object
 				Species_info[ship_class.species].species_name,
 				0U,
 				raw_class.species_capture_key))) {
-		catalog.clear();
 		return {Phase2SourceReadStatus::UnsupportedEngineState};
 	}
 	if (ship_class.class_type < -1 ||
@@ -614,7 +574,6 @@ SourceReadResult extract_production_static_authorities(const object& ship_object
 				Ship_types[ship_class.class_type].name,
 				0U,
 				raw_class.ship_type_capture_key))) {
-		catalog.clear();
 		return {Phase2SourceReadStatus::UnsupportedEngineState};
 	}
 	if (ship_instance.team < 0 ||
@@ -623,7 +582,6 @@ SourceReadResult extract_production_static_authorities(const object& ship_object
 			Iff_info[ship_instance.team].iff_name,
 			0U,
 			raw_class.iff_capture_key)) {
-		catalog.clear();
 		return {Phase2SourceReadStatus::UnsupportedEngineState};
 	}
 	if (ship_instance.wingnum < -1 || ship_instance.wingnum >= MAX_WINGS ||
@@ -632,7 +590,6 @@ SourceReadResult extract_production_static_authorities(const object& ship_object
 				Wings[ship_instance.wingnum].name,
 				0U,
 				raw_class.wing_capture_key))) {
-		catalog.clear();
 		return {Phase2SourceReadStatus::UnsupportedEngineState};
 	}
 	if (ship_instance.armor_type_idx < -1 ||
@@ -642,7 +599,6 @@ SourceReadResult extract_production_static_authorities(const object& ship_object
 				Armor_types[ship_instance.armor_type_idx].GetNamePtr(),
 				0U,
 				raw_class.armor_capture_key))) {
-		catalog.clear();
 		return {Phase2SourceReadStatus::UnsupportedEngineState};
 	}
 	for (std::uint32_t index = 0U; index < input.subsystem_count; ++index) {
@@ -653,10 +609,7 @@ SourceReadResult extract_production_static_authorities(const object& ship_object
 				!add_auxiliary(Phase2RawAuxiliaryRegistry::Armor,
 					Armor_types[armor_index].GetNamePtr(),
 					0U,
-					catalog.subsystem_storage[
-						raw_class.subsystem_offset + index]
-						.armor_capture_key))) {
-			catalog.clear();
+					input.subsystems[index].armor_capture_key))) {
 			return {Phase2SourceReadStatus::UnsupportedEngineState};
 		}
 	}
@@ -669,9 +622,12 @@ SourceReadResult extract_production_static_authorities(const object& ship_object
 				!add_auxiliary(Phase2RawAuxiliaryRegistry::DamageType,
 					Damage_types[damage_index].name,
 					0U,
-					catalog.weapon_definitions[index]
+					(index == 0U
+						? static_cast<Phase2RawWeaponDefinition&>(
+							input.weapon_info)
+						: input.weapon_info
+							.additional_definitions[index - 1U])
 						.damage_type_capture_key))) {
-			catalog.clear();
 			return {Phase2SourceReadStatus::UnsupportedEngineState};
 		}
 	}
@@ -685,16 +641,13 @@ SourceReadResult extract_production_static_authorities(const object& ship_object
 			if (dynamic_index < 0 ||
 				static_cast<std::size_t>(dynamic_index) >=
 					ship_class.dyn_firing_patterns_allowed[bank].size()) {
-				catalog.clear();
 				return {Phase2SourceReadStatus::UnsupportedEngineState};
 			}
 			pattern =
 				ship_class.dyn_firing_patterns_allowed[bank][dynamic_index];
 		}
 		const auto pattern_code = static_cast<std::uint8_t>(pattern);
-		catalog.bank_storage[
-			catalog.class_definitions[0].bank_offset + bank]
-			.firing_pattern_source_code = pattern_code;
+		input.banks[bank].firing_pattern_source_code = pattern_code;
 		if (pattern != FiringPattern::STANDARD) {
 			std::uint32_t ignored_key = 0U;
 			if (pattern_code > 5U ||
@@ -702,7 +655,6 @@ SourceReadResult extract_production_static_authorities(const object& ship_object
 					{},
 					pattern_code,
 					ignored_key)) {
-				catalog.clear();
 				return {Phase2SourceReadStatus::UnsupportedEngineState};
 			}
 		}
@@ -715,15 +667,23 @@ SourceReadResult extract_production_static_authorities(const object& ship_object
 		output.raw_static_references.weapon_capture_keys[index] = index + 1U;
 	}
 	output.raw_static_references.auxiliary_count =
-		catalog.auxiliary_count;
+		input.registries.additional_count;
 	for (std::uint32_t index = 0U;
 		 index < output.raw_static_references.auxiliary_count;
 		 ++index) {
 		output.raw_static_references.auxiliary_capture_keys[index] =
-			catalog.auxiliary_entries[index].capture_key;
+			input.registries.additional_entries[index].capture_key;
 	}
+	return {Phase2SourceReadStatus::Valid};
+	}();
+	input.guards_valid =
+		collected.status == Phase2SourceReadStatus::Valid;
 	const auto mapped =
 		map_phase2_static_authorities(input, output.raw_static_catalog);
+	if (collected.status != Phase2SourceReadStatus::Valid) {
+		output.raw_static_references = {};
+		return collected;
+	}
 	if (mapped.status != Phase2SourceReadStatus::Valid) {
 		output.raw_static_catalog.clear();
 		output.raw_static_references = {};
@@ -1308,7 +1268,7 @@ SourceReadResult FsoEngineReadView::read_ship(
 	output.internal_name = std::string_view{Player_ship->ship_name, ship_name_size};
 	output.class_name = std::string_view{ship_class.name, class_name_size};
 	output.identity.presence = protocol::ShipIdentityPresenceFlagNone;
-	output.identity.class_source_key = static_cast<std::uint32_t>(Player_ship->ship_info_index);
+	output.identity.class_source_key.value = 1U;
 	output.lifecycle.presence = protocol::EntityLifecyclePresenceFlagNone;
 
 	if (Player_ship->flags[Ship::Ship_Flags::Exploded]) {

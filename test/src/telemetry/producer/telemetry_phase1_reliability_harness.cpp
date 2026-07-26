@@ -21,6 +21,7 @@
 #include <cstring>
 #include <fstream>
 #include <iostream>
+#include <memory>
 #include <vector>
 
 namespace {
@@ -340,7 +341,7 @@ int main(int argc,char** argv) {
 	if(duration_end==duration || *duration_end!='\0' || duration_seconds<60U || duration_seconds>3600U) return 2;
 	Backend backend; if(!valid_profile(profile,backend))return 2; Completion completion; FixedRandom ids_random,packet_random; detail::SessionIdRegistry registry; if(!registry.allocate_storage())return 3; detail::SessionIdAllocator ids(ids_random,registry);
 	telemetry::TelemetryConfig config; config.enabled=true; config.bind_addresses.clear(); config.bind_addresses.add(telemetry::NumericIpAddress::from_ipv4({127U,0U,0U,1U}));
-	detail::NativeSessionRuntime runtime(backend,completion); if(runtime.start({&config,0x1020304050607080ULL,&ids,&packet_random})!=detail::NativeSessionStartStatus::Started)return 3;
+	auto runtime=std::make_unique<detail::NativeSessionRuntime>(backend,completion); if(runtime->start({&config,0x1020304050607080ULL,&ids,&packet_random})!=detail::NativeSessionStartStatus::Started)return 3;
 	const auto endpoint=protocol::EndpointKey::from_ipv4({127U,0U,0U,2U},7808U); Backend::Packet hello{}; if(!make_hello(endpoint,hello))return 3; backend.rx.push_back(std::move(hello));
 	Engine engine; Peer peer; std::uint64_t now=1000000U, next_observation_us=60000000U; std::vector<MinuteObservation> observations; std::vector<std::uint64_t> minute_ticks;
 	const auto total_ticks=duration_seconds*30U;
@@ -349,11 +350,11 @@ int main(int argc,char** argv) {
 		backend.observe_bounded_impairment_window();
 		if(peer.snapshot) engine.position_x += .01F;
 		const auto started=std::chrono::steady_clock::now();
-		if(tick_index<32U ? !r2_tick(runtime,now) : !tick(runtime,engine,now)) { std::cerr<<"runtime tick failed at "<<tick_index<<"\n"; runtime.shutdown(); return 4; }
+		if(tick_index<32U ? !r2_tick(*runtime,now) : !tick(*runtime,engine,now)) { std::cerr<<"runtime tick failed at "<<tick_index<<"\n"; runtime->shutdown(); return 4; }
 		minute_ticks.push_back(static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now()-started).count()));
-		if(!peer.consume(backend,now)) { std::cerr<<"peer decode failed at "<<tick_index<<"\n"; runtime.shutdown(); return 4; }
-		if(!peer.retry_resync(backend,now)) { std::cerr<<"resync retry encode failed at "<<tick_index<<"\n"; runtime.shutdown(); return 4; }
-		const auto* slot=detail::NativeSessionRuntimeTestAccess::slot(runtime,0U);
+		if(!peer.consume(backend,now)) { std::cerr<<"peer decode failed at "<<tick_index<<"\n"; runtime->shutdown(); return 4; }
+		if(!peer.retry_resync(backend,now)) { std::cerr<<"resync retry encode failed at "<<tick_index<<"\n"; runtime->shutdown(); return 4; }
+		const auto* slot=detail::NativeSessionRuntimeTestAccess::slot(*runtime,0U);
 		if(slot != nullptr && slot->snapshot.has_active_baseline()) {
 			if(!peer.live_baseline_published) { peer.live_baseline_published=true; peer.initial_snapshot_id=slot->snapshot.active_snapshot_id(); peer.next_resync_us=now; }
 			if(peer.recovered_snapshot && peer.resync_sent && peer.initial_snapshot_id != 0U && slot->snapshot.active_snapshot_id()!=peer.initial_snapshot_id) {
@@ -366,36 +367,36 @@ int main(int argc,char** argv) {
 		if(peer.resync_sent && !peer.recovery_loss_armed) { backend.recovery_losses_remaining=1U; peer.recovery_loss_armed=true; }
 		if(now>=next_observation_us) {
 			std::sort(minute_ticks.begin(),minute_ticks.end()); const auto p99=minute_ticks.empty()?0U:minute_ticks[(minute_ticks.size()-1U)*99U/100U];
-			const auto usage=runtime.owned_usage(); MinuteObservation observation{}; observation.minute=observations.size()+1U; observation.client_count=runtime.active_sessions(); observation.baselines=(slot!=nullptr&&slot->snapshot.has_active_baseline())?1U:0U; observation.sockets=runtime.socket_count(); observation.cache_entries=usage.cache_entries; observation.preproof_accounts=usage.preproof_accounts; observation.reassembly_bytes=usage.reassembly_bytes; observation.reliable=usage.reliable_items; observation.queue_depth=usage.output_queued?1U:0U; observation.p99_tick_ns=p99; observations.push_back(observation); minute_ticks.clear(); next_observation_us+=60000000U;
+			const auto usage=runtime->owned_usage(); MinuteObservation observation{}; observation.minute=observations.size()+1U; observation.client_count=runtime->active_sessions(); observation.baselines=(slot!=nullptr&&slot->snapshot.has_active_baseline())?1U:0U; observation.sockets=runtime->socket_count(); observation.cache_entries=usage.cache_entries; observation.preproof_accounts=usage.preproof_accounts; observation.reassembly_bytes=usage.reassembly_bytes; observation.reliable=usage.reliable_items; observation.queue_depth=usage.output_queued?1U:0U; observation.p99_tick_ns=p99; observations.push_back(observation); minute_ticks.clear(); next_observation_us+=60000000U;
 		}
 		now += 33334U;
 	}
-	const auto* final_slot=detail::NativeSessionRuntimeTestAccess::slot(runtime,0U);
-	const bool final_live=runtime.active_sessions()==1U && final_slot!=nullptr && final_slot->snapshot.has_active_baseline();
+	const auto* final_slot=detail::NativeSessionRuntimeTestAccess::slot(*runtime,0U);
+	const bool final_live=runtime->active_sessions()==1U && final_slot!=nullptr && final_slot->snapshot.has_active_baseline();
 	const auto post_end_recovery_us = peer.first_live_post_impairment_us >= backend.bounded_impairment_end_us && backend.bounded_impairment_end_us != 0U ? peer.first_live_post_impairment_us-backend.bounded_impairment_end_us : 0U;
 	const bool recovered_within_ten_seconds_after_end = post_end_recovery_us != 0U && post_end_recovery_us<=10000000U;
 	LifecycleEvidence lifecycle{}; lifecycle.initial_session_id=peer.session_id; lifecycle.mission_requested=restart_mission; lifecycle.process_requested=restart_process;
 	if (restart_mission) {
 		lifecycle.mission_generation_before=1U; lifecycle.mission_generation_after=2U;
-		runtime.purge_all(detail::SessionCloseReason::MissionDiscontinuity);
+		runtime->purge_all(detail::SessionCloseReason::MissionDiscontinuity);
 		Peer mission_peer{};
-		lifecycle.mission_converged=converge_after_discontinuity(runtime,backend,engine,mission_peer,endpoint,now,2U) && mission_peer.session_id!=peer.session_id;
+		lifecycle.mission_converged=converge_after_discontinuity(*runtime,backend,engine,mission_peer,endpoint,now,2U) && mission_peer.session_id!=peer.session_id;
 		lifecycle.mission_session_id=mission_peer.session_id;
 	}
-	runtime.shutdown();
-	lifecycle.normal_shutdown_released=runtime.socket_count()==0U && runtime.owned_usage()==detail::SessionControllerOwnedUsage{};
+	runtime->shutdown();
+	lifecycle.normal_shutdown_released=runtime->socket_count()==0U && runtime->owned_usage()==detail::SessionControllerOwnedUsage{};
 	if (restart_process) {
 		Backend restarted_backend{}; Completion restarted_completion{}; FixedRandom restarted_ids_random{},restarted_packet_random{};
 		restarted_ids_random.value=0x1000U; restarted_packet_random.value=0x2000U;
 		detail::SessionIdRegistry restarted_registry; detail::SessionIdAllocator restarted_ids(restarted_ids_random,restarted_registry);
 		if (restarted_registry.allocate_storage()) {
-			detail::NativeSessionRuntime restarted_runtime(restarted_backend,restarted_completion);
-			if (restarted_runtime.start({&config,0x1020304050607080ULL,&restarted_ids,&restarted_packet_random})==detail::NativeSessionStartStatus::Started) {
+			auto restarted_runtime=std::make_unique<detail::NativeSessionRuntime>(restarted_backend,restarted_completion);
+			if (restarted_runtime->start({&config,0x1020304050607080ULL,&restarted_ids,&restarted_packet_random})==detail::NativeSessionStartStatus::Started) {
 				Peer process_peer{};
-				lifecycle.process_converged=converge_after_discontinuity(restarted_runtime,restarted_backend,engine,process_peer,endpoint,now,1U) && process_peer.session_id!=peer.session_id;
+				lifecycle.process_converged=converge_after_discontinuity(*restarted_runtime,restarted_backend,engine,process_peer,endpoint,now,1U) && process_peer.session_id!=peer.session_id;
 				lifecycle.process_session_id=process_peer.session_id;
-				restarted_runtime.shutdown();
-				lifecycle.process_shutdown_released=restarted_runtime.socket_count()==0U && restarted_runtime.owned_usage()==detail::SessionControllerOwnedUsage{};
+				restarted_runtime->shutdown();
+				lifecycle.process_shutdown_released=restarted_runtime->socket_count()==0U && restarted_runtime->owned_usage()==detail::SessionControllerOwnedUsage{};
 			}
 		}
 	}

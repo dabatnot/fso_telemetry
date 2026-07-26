@@ -27,8 +27,12 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <fstream>
+#include <iterator>
 #include <memory>
 #include <limits>
+#include <regex>
+#include <string>
 #include <thread>
 #include <type_traits>
 #include <utility>
@@ -378,6 +382,117 @@ struct NativeFixture {
 using NativePlayerAccess = detail::NativeSessionRuntimePlayerTestAccess;
 using NativePlayerProbe = detail::NativeSessionRuntimePlayerPublicProbe;
 
+TEST(TelemetryNativeRuntimeIntegrationContract, NativeFixtureSourceStorageOracleIsNonVacuous)
+{
+	std::ifstream input(__FILE__, std::ios::binary);
+	ASSERT_TRUE(input.is_open());
+	const std::string source{std::istreambuf_iterator<char>{input},
+		std::istreambuf_iterator<char>{}};
+	ASSERT_FALSE(source.empty());
+
+	const auto occurrence_count = [&source](const std::string& needle) {
+		std::size_t count = 0U;
+		for (auto offset = source.find(needle);
+			 offset != std::string::npos;
+			 offset = source.find(needle, offset + needle.size())) {
+			++count;
+		}
+		return count;
+	};
+	const auto fixture_definition =
+		std::string{"struct Native"} + "Fixture {";
+	const auto heap_construction =
+		std::string{"std::make_unique<NativeFixture>"} + "()";
+	const std::regex automatic_fixture{
+		R"((^|\n)[ \t]*NativeFixture[ \t]+[A-Za-z_][A-Za-z0-9_]*[ \t]*;)"};
+
+	EXPECT_EQ(1U, occurrence_count(fixture_definition));
+	EXPECT_EQ(0U,
+		static_cast<std::size_t>(std::distance(
+			std::sregex_iterator{source.begin(), source.end(), automatic_fixture},
+			std::sregex_iterator{})));
+	EXPECT_EQ(45U, occurrence_count(heap_construction));
+}
+
+TEST(TelemetryNativeRuntimeIntegrationContract, TestAndHarnessLargeRuntimeStorageOracleIsExactAndNonVacuous)
+{
+	const std::string this_file = __FILE__;
+	const auto separator = this_file.find_last_of("/\\");
+	ASSERT_NE(std::string::npos, separator);
+	const auto directory = this_file.substr(0U, separator + 1U);
+
+	const auto read_source = [&directory](const char* name) {
+		std::ifstream input(directory + name, std::ios::binary);
+		EXPECT_TRUE(input.is_open()) << name;
+		const std::string source{std::istreambuf_iterator<char>{input},
+			std::istreambuf_iterator<char>{}};
+		EXPECT_FALSE(source.empty()) << name;
+		return source;
+	};
+	const auto occurrence_count = [](const std::string& source, const std::string& needle) {
+		std::size_t count = 0U;
+		for (auto offset = source.find(needle);
+			 offset != std::string::npos;
+			 offset = source.find(needle, offset + needle.size())) {
+			++count;
+		}
+		return count;
+	};
+	const auto automatic_count = [](const std::string& source, const char* expression) {
+		const std::regex pattern{expression};
+		return static_cast<std::size_t>(std::distance(
+			std::sregex_iterator{source.begin(), source.end(), pattern},
+			std::sregex_iterator{}));
+	};
+
+	const auto adapter = read_source("test_telemetry_runtime_adapter_player_contract.cpp");
+	const auto performance = read_source("telemetry_native_performance_runner.cpp");
+	const auto reliability = read_source("telemetry_phase1_reliability_harness.cpp");
+	const auto loopback = read_source("test_telemetry_native_runtime_loopback_contract.cpp");
+	const auto allocations = read_source("test_telemetry_session_controller_allocations.cpp");
+
+	const auto native_fixture_heap =
+		std::string{"std::make_unique<Native"} + "Fixture>()";
+	const auto native_runtime_heap =
+		std::string{"std::make_unique<detail::Native"} + "SessionRuntime>";
+	const auto loopback_budget_heap =
+		std::string{"auto real_budget = std::make_unique<Server"} + "Fixture>";
+	const auto allocation_fixture_heap =
+		std::string{"std::make_unique<NativeAllocation"} + "Fixture>";
+	const auto unique_native_member =
+		std::string{"std::unique_ptr<detail::Native"} + "SessionRuntime> native;";
+	const auto optional_native_member =
+		std::string{"std::optional<detail::Native"} + "SessionRuntime> native;";
+
+	const auto adapter_sites = occurrence_count(adapter, native_fixture_heap);
+	const auto performance_sites = occurrence_count(performance, native_runtime_heap);
+	const auto reliability_sites = occurrence_count(reliability, native_runtime_heap);
+	const auto loopback_sites = occurrence_count(loopback, loopback_budget_heap);
+	const auto allocation_sites = occurrence_count(allocations, allocation_fixture_heap);
+
+	EXPECT_EQ(2U, adapter_sites);
+	EXPECT_EQ(0U, automatic_count(adapter,
+		R"((^|\n)[ \t]*NativeFixture[ \t]+[A-Za-z_][A-Za-z0-9_]*[ \t]*;)"));
+	EXPECT_EQ(1U, performance_sites);
+	EXPECT_EQ(0U, automatic_count(performance,
+		R"((^|\n)[ \t]*detail::NativeSessionRuntime[ \t]+runtime[ \t]*\()"));
+	EXPECT_EQ(2U, reliability_sites);
+	EXPECT_EQ(0U, automatic_count(reliability,
+		R"((^|\n)[ \t]*detail::NativeSessionRuntime[ \t]+(runtime|restarted_runtime)[ \t]*\()"));
+	EXPECT_EQ(1U, loopback_sites);
+	EXPECT_EQ(0U, automatic_count(loopback,
+		R"((^|\n)[ \t]*ServerFixture[ \t]+real_budget[ \t]*\()"));
+	EXPECT_EQ(1U, occurrence_count(loopback, unique_native_member));
+	EXPECT_EQ(0U, occurrence_count(loopback, optional_native_member));
+	EXPECT_EQ(4U, allocation_sites);
+	EXPECT_EQ(0U, automatic_count(allocations,
+		R"((^|\n)[ \t]*NativeAllocationFixture[ \t]+fixture[ \t]*(\(|;))"));
+	EXPECT_EQ(1U, occurrence_count(allocations, unique_native_member));
+	EXPECT_EQ(0U, occurrence_count(allocations, optional_native_member));
+	EXPECT_EQ(10U,
+		adapter_sites + performance_sites + reliability_sites + loopback_sites + allocation_sites);
+}
+
 constexpr std::uint8_t CaptureUnavailable = 0U;
 constexpr std::uint8_t CaptureInactive = 1U;
 constexpr std::uint8_t CaptureNotDue = 2U;
@@ -725,7 +840,11 @@ struct RuntimeCompositionServices final : detail::RuntimeStartupServices {
 			detail::calculate_wp04_startup_budget(detail::make_wp03_known_budget_request(2U)), 2U);
 	}
 
-	void capture_main_thread() noexcept override { captured = true; }
+	void capture_main_thread() noexcept override
+	{
+		detail::capture_phase2_main_thread_authority();
+		captured = true;
+	}
 	bool is_on_captured_main_thread() noexcept override
 	{
 		++thread_checks;
@@ -1000,60 +1119,60 @@ TEST(TelemetryNativeRuntimeIntegrationContract, NativeCompositionHeaderAndNoexce
 
 TEST(TelemetryP85PreallocationContract, ProvisionFailurePreventsBindAndAColdRuntimeCanRetry)
 {
-	NativeFixture fixture;
+	auto fixture = std::make_unique<NativeFixture>();
 	auto config = enabled_config(1U);
 
-	NativePlayerAccess::set_session_controller_provision_failure(fixture.runtime, true);
-	EXPECT_EQ(detail::NativeSessionStartStatus::AllocationFailure, fixture.start(config));
-	EXPECT_EQ(0U, fixture.backend.open_calls)
+	NativePlayerAccess::set_session_controller_provision_failure(fixture->runtime, true);
+	EXPECT_EQ(detail::NativeSessionStartStatus::AllocationFailure, fixture->start(config));
+	EXPECT_EQ(0U, fixture->backend.open_calls)
 		<< "SessionController preallocation must finish before the first socket open attempt.";
-	EXPECT_EQ(0U, fixture.runtime.socket_count());
-	EXPECT_EQ(0U, fixture.runtime.active_sessions());
+	EXPECT_EQ(0U, fixture->runtime.socket_count());
+	EXPECT_EQ(0U, fixture->runtime.active_sessions());
 
-	NativePlayerAccess::set_session_controller_provision_failure(fixture.runtime, false);
-	EXPECT_EQ(detail::NativeSessionStartStatus::Started, fixture.start(config));
-	EXPECT_GT(fixture.backend.open_calls, 0U)
+	NativePlayerAccess::set_session_controller_provision_failure(fixture->runtime, false);
+	EXPECT_EQ(detail::NativeSessionStartStatus::Started, fixture->start(config));
+	EXPECT_GT(fixture->backend.open_calls, 0U)
 		<< "A provisioning failure must leave the runtime cold and retryable once the allocation succeeds.";
-	EXPECT_GT(fixture.runtime.socket_count(), 0U);
-	EXPECT_EQ(0U, fixture.runtime.active_sessions());
+	EXPECT_GT(fixture->runtime.socket_count(), 0U);
+	EXPECT_EQ(0U, fixture->runtime.active_sessions());
 }
 
 TEST(TelemetryNativeRuntimeIntegrationContract, S8V4OwnedBudgetPlusOneFailsBeforeTransportBind)
 {
 	auto config = enabled_config(1U);
-	NativeFixture baseline;
+	auto baseline = std::make_unique<NativeFixture>();
 	ASSERT_EQ(detail::NativeSessionStartStatus::Started,
-		baseline.start_requested(config, telemetry::Phase2Profile::CoreGate));
+		baseline->start_requested(config, telemetry::Phase2Profile::CoreGate));
 	const auto startup_owned_bytes =
-		NativePlayerAccess::startup_owned_bytes(baseline.runtime);
+		NativePlayerAccess::startup_owned_bytes(baseline->runtime);
 	ASSERT_GT(startup_owned_bytes, 0U);
 	ASSERT_LE(startup_owned_bytes, detail::MaximumPhase2OwnedBytes);
 	std::cout << "[ PHASE2 STARTUP OWNED BYTES ] " << startup_owned_bytes << '\n';
 
-	NativeFixture fixture;
+	auto fixture = std::make_unique<NativeFixture>();
 	NativePlayerAccess::set_startup_owned_budget_adjustment(
-		fixture.runtime,
+		fixture->runtime,
 		detail::MaximumPhase2OwnedBytes - startup_owned_bytes + 1U);
 
 	EXPECT_EQ(detail::NativeSessionStartStatus::AllocationFailure,
-		fixture.start_requested(config, telemetry::Phase2Profile::CoreGate));
-	EXPECT_EQ(0U, fixture.backend.open_calls);
-	EXPECT_EQ(0U, fixture.runtime.socket_count());
-	EXPECT_EQ(0U, fixture.runtime.active_sessions());
+		fixture->start_requested(config, telemetry::Phase2Profile::CoreGate));
+	EXPECT_EQ(0U, fixture->backend.open_calls);
+	EXPECT_EQ(0U, fixture->runtime.socket_count());
+	EXPECT_EQ(0U, fixture->runtime.active_sessions());
 }
 
 TEST(TelemetryNativeRuntimeIntegrationContract,
 	ReviewerS9V5CompleteShipCannotStartBeforeOwnedWp03SelectionClosure)
 {
-	NativeFixture fixture;
+	auto fixture = std::make_unique<NativeFixture>();
 	auto config = enabled_config(1U);
 
 	EXPECT_EQ(detail::NativeSessionStartStatus::InvalidConfiguration,
-		fixture.start_requested(config, telemetry::Phase2Profile::CompleteShip));
-	EXPECT_EQ(0U, fixture.backend.open_calls)
+		fixture->start_requested(config, telemetry::Phase2Profile::CompleteShip));
+	EXPECT_EQ(0U, fixture->backend.open_calls)
 		<< "CompleteShip rejection must precede allocation and transport bind.";
-	EXPECT_EQ(0U, fixture.runtime.socket_count());
-	EXPECT_EQ(0U, fixture.runtime.active_sessions());
+	EXPECT_EQ(0U, fixture->runtime.socket_count());
+	EXPECT_EQ(0U, fixture->runtime.active_sessions());
 }
 
 TEST(TelemetryNativeRuntimeIntegrationContract,
@@ -1081,29 +1200,29 @@ TEST(TelemetryNativeRuntimeIntegrationContract,
 	rejected.push_back(headless);
 
 	for (const auto& eligibility : rejected) {
-		NativeFixture fixture;
+		auto fixture = std::make_unique<NativeFixture>();
 		EXPECT_EQ(detail::NativeSessionStartStatus::InvalidConfiguration,
-			fixture.start_with_eligibility(config, eligibility));
-		EXPECT_EQ(0U, fixture.backend.open_calls);
-		EXPECT_TRUE(fixture.backend.io_trace.empty());
+			fixture->start_with_eligibility(config, eligibility));
+		EXPECT_EQ(0U, fixture->backend.open_calls);
+		EXPECT_TRUE(fixture->backend.io_trace.empty());
 		EXPECT_EQ(0U,
-			NativePlayerAccess::startup_allocation_count(fixture.runtime));
-		EXPECT_EQ(0U, fixture.runtime.socket_count());
-		EXPECT_EQ(0U, fixture.runtime.active_sessions());
+			NativePlayerAccess::startup_allocation_count(fixture->runtime));
+		EXPECT_EQ(0U, fixture->runtime.socket_count());
+		EXPECT_EQ(0U, fixture->runtime.active_sessions());
 	}
 
-	NativeFixture solo;
+	auto solo = std::make_unique<NativeFixture>();
 	EXPECT_EQ(detail::NativeSessionStartStatus::Started,
-		solo.start_with_eligibility(config, {}));
-	EXPECT_GT(solo.backend.open_calls, 0U);
-	EXPECT_GT(NativePlayerAccess::startup_allocation_count(solo.runtime), 0U);
+		solo->start_with_eligibility(config, {}));
+	EXPECT_GT(solo->backend.open_calls, 0U);
+	EXPECT_GT(NativePlayerAccess::startup_allocation_count(solo->runtime), 0U);
 }
 
 TEST(TelemetryNativeRuntimeIntegrationContract, S9V4KeyframePreparationSeamForcesBothProvisionalFamilies)
 {
-	NativeFixture fixture;
+	auto fixture = std::make_unique<NativeFixture>();
 	const auto plan =
-		NativePlayerAccess::phase2_keyframe_test_seam(fixture.runtime);
+		NativePlayerAccess::phase2_keyframe_test_seam(fixture->runtime);
 	EXPECT_TRUE(plan.force_complete_keyframe);
 	EXPECT_TRUE(plan.capture_flight_controls);
 	EXPECT_TRUE(plan.capture_systems);
@@ -1208,23 +1327,23 @@ TEST(TelemetryP91MetricsLifecycleContract, AcceptedCallbackPublishesNonZeroDurat
 
 TEST(TelemetryP85SteadyStateAllocationContract, LiveCaptureKeyframeDeltaAndEgressAllocateNothing)
 {
-	NativeFixture fixture;
+	auto fixture = std::make_unique<NativeFixture>();
 	auto config = enabled_config(64U);
-	ASSERT_EQ(detail::NativeSessionStartStatus::Started, fixture.start(config));
-	auto* controller = NativePlayerAccess::controller(fixture.runtime);
+	ASSERT_EQ(detail::NativeSessionStartStatus::Started, fixture->start(config));
+	auto* controller = NativePlayerAccess::controller(fixture->runtime);
 	ASSERT_NE(nullptr, controller);
 	const auto endpoint = peer(92U);
 	activate_live_baseline_without_acknowledging_session_begin(*controller, endpoint, 0x92U);
 
 	// Warm-up is deliberately outside the observation window. The tracked path
 	// starts with an already-live slot and exercises the P8 mutation/egress work.
-	NativePlayerAccess::begin_steady_state_allocation_tracking(fixture.runtime);
-	NativePlayerAccess::force_steady_state_allocation_for_tests(fixture.runtime);
-	EXPECT_EQ(1U, NativePlayerAccess::steady_state_allocation_count(fixture.runtime))
+	NativePlayerAccess::begin_steady_state_allocation_tracking(fixture->runtime);
+	NativePlayerAccess::force_steady_state_allocation_for_tests(fixture->runtime);
+	EXPECT_EQ(1U, NativePlayerAccess::steady_state_allocation_count(fixture->runtime))
 		<< "The scoped counter must observe a forced runtime-owned allocation event.";
-	NativePlayerAccess::begin_steady_state_allocation_tracking(fixture.runtime);
+	NativePlayerAccess::begin_steady_state_allocation_tracking(fixture->runtime);
 	CountingEngineReadView view;
-	ASSERT_EQ(detail::NativeSessionTickStatus::Complete, capture_tick(fixture, view, 90'000U, true));
+	ASSERT_EQ(detail::NativeSessionTickStatus::Complete, capture_tick(*fixture, view, 90'000U, true));
 	for (const auto sample : std::array<float, 4U>{{10.0F, 14.0F, 10.0F, 14.0F}}) {
 		const auto now = 90'001U + static_cast<std::uint64_t>((sample == 10.0F ? 0U : 1U));
 		ASSERT_EQ(protocol::ProducerBaselineResult::Applied,
@@ -1233,9 +1352,9 @@ TEST(TelemetryP85SteadyStateAllocationContract, LiveCaptureKeyframeDeltaAndEgres
 		ASSERT_EQ(1U, controller->service_delta_egress(1U, now + 2U));
 		(void)pop_controller_packet(*controller);
 	}
-	EXPECT_EQ(0U, NativePlayerAccess::steady_state_allocation_count(fixture.runtime))
+	EXPECT_EQ(0U, NativePlayerAccess::steady_state_allocation_count(fixture->runtime))
 		<< "Capture and alternating 1/4 delta egresses must remain within startup-owned capacity.";
-	NativePlayerAccess::begin_steady_state_allocation_tracking(fixture.runtime);
+	NativePlayerAccess::begin_steady_state_allocation_tracking(fixture->runtime);
 	controller->service_periodic(2'100'000U);
 	while (controller->has_output()) {
 		(void)pop_controller_packet(*controller);
@@ -1263,7 +1382,7 @@ TEST(TelemetryP85SteadyStateAllocationContract, LiveCaptureKeyframeDeltaAndEgres
 			protocol::ProtocolMinorRange{protocol::VersionMinorV1_1, protocol::VersionMinorV1_1}, retransmission_view));
 	EXPECT_EQ(protocol::MessageType::FullSnapshot, retransmission_view.header.message_type);
 	EXPECT_NE(0U, static_cast<std::uint8_t>(retransmission_view.header.flags & protocol::MessageFlagRetransmission));
-	EXPECT_EQ(0U, NativePlayerAccess::steady_state_allocation_count(fixture.runtime))
+	EXPECT_EQ(0U, NativePlayerAccess::steady_state_allocation_count(fixture->runtime))
 		<< "Periodic keyframe egress and its RTO retransmission must use startup-owned storage.";
 }
 
@@ -1618,93 +1737,93 @@ TEST(TelemetryNativeRuntimeIntegrationContract, FourBehavioralInversionsLockLife
 	// 2. Timeout > REL: WELCOME proof creates a retained SESSION_BEGIN.  At the
 	// exact disconnect boundary, closure removes the slot/window before a due
 	// retry can reach the socket.
-	NativeFixture timeout;
+	auto timeout = std::make_unique<NativeFixture>();
 	auto broad = enabled_config(64U);
-	ASSERT_EQ(detail::NativeSessionStartStatus::Started, timeout.start(broad));
-	timeout.backend.receives.push_back(
+	ASSERT_EQ(detail::NativeSessionStartStatus::Started, timeout->start(broad));
+	timeout->backend.receives.push_back(
 		{detail::IoStatus::Complete, hello(protocol::VersionMinorV1_1, 110U, peer(4U))});
-	native_tick(timeout, {1'000U, 0U, false});
-	ASSERT_FALSE(timeout.backend.sent.empty());
-	const auto welcome = timeout.backend.sent.back();
-	timeout.backend.receives.push_back(
+	native_tick(*timeout, {1'000U, 0U, false});
+	ASSERT_FALSE(timeout->backend.sent.empty());
+	const auto welcome = timeout->backend.sent.back();
+	timeout->backend.receives.push_back(
 		{detail::IoStatus::Complete, ack_for(welcome, peer(4U), 111U)});
-	native_tick(timeout, {2'000U, 0U, false});
-	ASSERT_GT(timeout.runtime.owned_usage().reliable_items, 0U);
-	const auto sends_before_timeout = timeout.backend.send_calls;
-	native_tick(timeout, {2'000U + 10'000'000U, 0U, false});
-	EXPECT_EQ(sends_before_timeout, timeout.backend.send_calls);
-	EXPECT_EQ(detail::SessionControllerOwnedUsage{}, timeout.runtime.owned_usage());
+	native_tick(*timeout, {2'000U, 0U, false});
+	ASSERT_GT(timeout->runtime.owned_usage().reliable_items, 0U);
+	const auto sends_before_timeout = timeout->backend.send_calls;
+	native_tick(*timeout, {2'000U + 10'000'000U, 0U, false});
+	EXPECT_EQ(sends_before_timeout, timeout->backend.send_calls);
+	EXPECT_EQ(detail::SessionControllerOwnedUsage{}, timeout->runtime.owned_usage());
 
 	// 3. REL > periodic: client A is Ready with heartbeat due while client B has
 	// a SESSION_BEGIN retry due.  The next emitted datagram must be B's byte-
 	// identical reliable control, not A's heartbeat.
-	NativeFixture priority;
+	auto priority = std::make_unique<NativeFixture>();
 	auto two_clients = enabled_config(1U);
 	two_clients.max_clients = 2U;
-	ASSERT_EQ(detail::NativeSessionStartStatus::Started, priority.start(two_clients));
-	(void)establish_ready(priority, peer(5U), 120U, 20'000U, 120U);
-	const auto sent_before_second = priority.backend.sent.size();
-	priority.backend.receives.push_back(
+	ASSERT_EQ(detail::NativeSessionStartStatus::Started, priority->start(two_clients));
+	(void)establish_ready(*priority, peer(5U), 120U, 20'000U, 120U);
+	const auto sent_before_second = priority->backend.sent.size();
+	priority->backend.receives.push_back(
 		{detail::IoStatus::Complete, hello(protocol::VersionMinorV1_1, 121U, peer(6U))});
-	for (std::uint64_t tick = 0U; tick < 8U && priority.backend.sent.size() == sent_before_second; ++tick) {
-		native_tick(priority, {21'000U + tick, 0U, false});
+	for (std::uint64_t tick = 0U; tick < 8U && priority->backend.sent.size() == sent_before_second; ++tick) {
+		native_tick(*priority, {21'000U + tick, 0U, false});
 	}
-	ASSERT_GT(priority.backend.sent.size(), sent_before_second);
-	const auto second_welcome = priority.backend.sent[sent_before_second];
-	const auto sent_before_begin = priority.backend.sent.size();
-	priority.backend.receives.push_back(
+	ASSERT_GT(priority->backend.sent.size(), sent_before_second);
+	const auto second_welcome = priority->backend.sent[sent_before_second];
+	const auto sent_before_begin = priority->backend.sent.size();
+	priority->backend.receives.push_back(
 		{detail::IoStatus::Complete, ack_for(second_welcome, peer(6U), 122U)});
-	for (std::uint64_t tick = 0U; tick < 8U && priority.backend.sent.size() == sent_before_begin; ++tick) {
-		native_tick(priority, {22'000U + tick, 0U, false});
+	for (std::uint64_t tick = 0U; tick < 8U && priority->backend.sent.size() == sent_before_begin; ++tick) {
+		native_tick(*priority, {22'000U + tick, 0U, false});
 	}
-	ASSERT_GT(priority.backend.sent.size(), sent_before_begin);
-	ASSERT_EQ(protocol::MessageType::SessionBegin, sent_type(priority.backend, sent_before_begin));
+	ASSERT_GT(priority->backend.sent.size(), sent_before_begin);
+	ASSERT_EQ(protocol::MessageType::SessionBegin, sent_type(priority->backend, sent_before_begin));
 	const auto simultaneous_due = 1'020'100U;
-	const auto sent_before_due = priority.backend.sent.size();
-	for (std::uint64_t offset = 0U; offset < 4U && priority.backend.sent.size() == sent_before_due; ++offset) {
-		native_tick(priority, {simultaneous_due + offset, 0U, false});
+	const auto sent_before_due = priority->backend.sent.size();
+	for (std::uint64_t offset = 0U; offset < 4U && priority->backend.sent.size() == sent_before_due; ++offset) {
+		native_tick(*priority, {simultaneous_due + offset, 0U, false});
 	}
-	ASSERT_GT(priority.backend.sent.size(), sent_before_due);
+	ASSERT_GT(priority->backend.sent.size(), sent_before_due);
 	EXPECT_EQ(protocol::MessageType::SessionBegin,
-		sent_type(priority.backend, sent_before_due));
-	const auto sent_after_rel = priority.backend.sent.size();
-	for (std::uint64_t offset = 4U; offset < 8U && priority.backend.sent.size() == sent_after_rel; ++offset) {
-		native_tick(priority, {simultaneous_due + offset, 0U, false});
+		sent_type(priority->backend, sent_before_due));
+	const auto sent_after_rel = priority->backend.sent.size();
+	for (std::uint64_t offset = 4U; offset < 8U && priority->backend.sent.size() == sent_after_rel; ++offset) {
+		native_tick(*priority, {simultaneous_due + offset, 0U, false});
 	}
-	ASSERT_GT(priority.backend.sent.size(), sent_after_rel);
+	ASSERT_GT(priority->backend.sent.size(), sent_after_rel);
 	EXPECT_EQ(protocol::MessageType::Heartbeat,
-		sent_type(priority.backend, sent_after_rel))
+		sent_type(priority->backend, sent_after_rel))
 		<< "After the first due REL completes, the already-due heartbeat follows without waiting for another RTO.";
 
 	// 4. Periodic > I/O: after persistent alternation selects egress first and
 	// N=1, a due heartbeat consumes the sole syscall; an already queued HELLO
 	// remains untouched until a later tick.
-	NativeFixture periodic;
+	auto periodic = std::make_unique<NativeFixture>();
 	auto one = enabled_config(1U);
 	one.max_clients = 2U;
-	ASSERT_EQ(detail::NativeSessionStartStatus::Started, periodic.start(one));
-	(void)establish_ready(periodic, peer(7U), 130U, 30'000U, 130U);
-	periodic.backend.receives.push_back(
+	ASSERT_EQ(detail::NativeSessionStartStatus::Started, periodic->start(one));
+	(void)establish_ready(*periodic, peer(7U), 130U, 30'000U, 130U);
+	periodic->backend.receives.push_back(
 		{detail::IoStatus::Complete, hello(protocol::VersionMinorV1_1, 131U, peer(8U))});
-	const auto rx_before = periodic.backend.receive_script_index;
-	const auto sent_before_periodic = periodic.backend.sent.size();
+	const auto rx_before = periodic->backend.receive_script_index;
+	const auto sent_before_periodic = periodic->backend.sent.size();
 	// WELCOME proof is applied at 30'010.  The SESSION_BEGIN ACK consumed at
 	// 30'020 makes the session Ready but does not re-anchor the periodic clock.
 	constexpr std::uint64_t ExactPeriodicDueUs = 1'030'010U;
-	native_tick(periodic, {ExactPeriodicDueUs, 0U, false});
-	ASSERT_GT(periodic.backend.sent.size(), sent_before_periodic);
+	native_tick(*periodic, {ExactPeriodicDueUs, 0U, false});
+	ASSERT_GT(periodic->backend.sent.size(), sent_before_periodic);
 	EXPECT_EQ(protocol::MessageType::Heartbeat,
-		sent_type(periodic.backend, periodic.backend.sent.size() - 1U));
-	EXPECT_EQ(rx_before, periodic.backend.receive_script_index)
+		sent_type(periodic->backend, periodic->backend.sent.size() - 1U));
+	EXPECT_EQ(rx_before, periodic->backend.receive_script_index)
 		<< "Periodic scheduling precedes and consumes the N=1 I/O opportunity.";
 }
 
 TEST(TelemetryPhase1DeltaEgressContract, RuntimeQueuesDeltaOnlyAfterReliableAndHeartbeatTail)
 {
-	NativeFixture fixture;
+	auto fixture = std::make_unique<NativeFixture>();
 	auto config = enabled_config(1U);
-	ASSERT_EQ(detail::NativeSessionStartStatus::Started, fixture.start(config));
-	auto* controller = NativePlayerAccess::controller(fixture.runtime);
+	ASSERT_EQ(detail::NativeSessionStartStatus::Started, fixture->start(config));
+	auto* controller = NativePlayerAccess::controller(fixture->runtime);
 	ASSERT_NE(nullptr, controller);
 	const auto endpoint = peer(91U);
 	activate_live_baseline_without_acknowledging_session_begin(*controller, endpoint, 0x91U);
@@ -1713,19 +1832,19 @@ TEST(TelemetryPhase1DeltaEgressContract, RuntimeQueuesDeltaOnlyAfterReliableAndH
 		controller->replace_current_state(0U, phase1_state_image_at(9.0F, 5'000U)));
 	ASSERT_TRUE(controller->queue_cumulative_delta(0U, 5'001U));
 
-	const auto first = fixture.backend.sent.size();
-	for (std::uint64_t offset = 0U; offset < 8U && fixture.backend.sent.size() == first; ++offset) {
-		ASSERT_EQ(detail::NativeSessionTickStatus::Complete, native_tick(fixture, {1'002'000U + offset, 7U, true}));
+	const auto first = fixture->backend.sent.size();
+	for (std::uint64_t offset = 0U; offset < 8U && fixture->backend.sent.size() == first; ++offset) {
+		ASSERT_EQ(detail::NativeSessionTickStatus::Complete, native_tick(*fixture, {1'002'000U + offset, 7U, true}));
 	}
-	ASSERT_EQ(first + 1U, fixture.backend.sent.size());
-	EXPECT_EQ(protocol::MessageType::SessionBegin, sent_type(fixture.backend, first))
+	ASSERT_EQ(first + 1U, fixture->backend.sent.size());
+	EXPECT_EQ(protocol::MessageType::SessionBegin, sent_type(fixture->backend, first))
 		<< "A due reliable control retransmission must precede DELTA.";
 
-	for (std::uint64_t offset = 8U; offset < 16U && fixture.backend.sent.size() == first + 1U; ++offset) {
-		ASSERT_EQ(detail::NativeSessionTickStatus::Complete, native_tick(fixture, {1'002'000U + offset, 7U, true}));
+	for (std::uint64_t offset = 8U; offset < 16U && fixture->backend.sent.size() == first + 1U; ++offset) {
+		ASSERT_EQ(detail::NativeSessionTickStatus::Complete, native_tick(*fixture, {1'002'000U + offset, 7U, true}));
 	}
-	ASSERT_EQ(first + 2U, fixture.backend.sent.size());
-	EXPECT_EQ(protocol::MessageType::Heartbeat, sent_type(fixture.backend, first + 1U))
+	ASSERT_EQ(first + 2U, fixture->backend.sent.size());
+	EXPECT_EQ(protocol::MessageType::Heartbeat, sent_type(fixture->backend, first + 1U))
 		<< "DELTA remains tail traffic: a due heartbeat must precede a delta queued by the prior idle tail.";
 
 	// The superseded non-reliable delta may be discarded while yielding the
@@ -1735,10 +1854,10 @@ TEST(TelemetryPhase1DeltaEgressContract, RuntimeQueuesDeltaOnlyAfterReliableAndH
 
 TEST(TelemetryPhase1DeltaEgressContract, RealRuntimeEventuallyEmitsQueuedDeltaAfterPriorityWorkDrains)
 {
-	NativeFixture fixture;
+	auto fixture = std::make_unique<NativeFixture>();
 	auto config = enabled_config(64U);
-	ASSERT_EQ(detail::NativeSessionStartStatus::Started, fixture.start(config));
-	auto* controller = NativePlayerAccess::controller(fixture.runtime);
+	ASSERT_EQ(detail::NativeSessionStartStatus::Started, fixture->start(config));
+	auto* controller = NativePlayerAccess::controller(fixture->runtime);
 	ASSERT_NE(nullptr, controller);
 	const auto endpoint = peer(93U);
 	// This establishes the same live baseline used by the native allocation
@@ -1749,13 +1868,13 @@ TEST(TelemetryPhase1DeltaEgressContract, RealRuntimeEventuallyEmitsQueuedDeltaAf
 	ASSERT_EQ(protocol::ProducerBaselineResult::Applied,
 		controller->replace_current_state(0U, phase1_state_image_at(12.0F, 6'000U)));
 	ASSERT_TRUE(controller->queue_cumulative_delta(0U, 6'001U));
-	const auto sent_before = fixture.backend.sent.size();
+	const auto sent_before = fixture->backend.sent.size();
 	bool delta_emitted = false;
 	for (std::uint64_t offset = 0U; offset < 32U && !delta_emitted; ++offset) {
 		ASSERT_EQ(detail::NativeSessionTickStatus::Complete,
-			native_tick(fixture, {6'100U + offset, 7U, true}));
-		for (std::size_t index = sent_before; index < fixture.backend.sent.size(); ++index) {
-			delta_emitted = delta_emitted || sent_type(fixture.backend, index) == protocol::MessageType::Delta;
+			native_tick(*fixture, {6'100U + offset, 7U, true}));
+		for (std::size_t index = sent_before; index < fixture->backend.sent.size(); ++index) {
+			delta_emitted = delta_emitted || sent_type(fixture->backend, index) == protocol::MessageType::Delta;
 		}
 	}
 	EXPECT_TRUE(delta_emitted)
@@ -1765,98 +1884,98 @@ TEST(TelemetryPhase1DeltaEgressContract, RealRuntimeEventuallyEmitsQueuedDeltaAf
 TEST(TelemetryNativeRuntimeIntegrationContract, SharedBudgetAlternatesAcrossTicksAndWouldBlockStopsOnlyOneDirection)
 {
 	for (const auto invalid_budget : {0U, 257U}) {
-		NativeFixture invalid;
+		auto invalid = std::make_unique<NativeFixture>();
 		auto config = enabled_config(static_cast<std::uint16_t>(invalid_budget));
-		EXPECT_EQ(detail::NativeSessionStartStatus::InvalidConfiguration, invalid.start(config));
-		EXPECT_EQ(0U, invalid.backend.open_calls);
+		EXPECT_EQ(detail::NativeSessionStartStatus::InvalidConfiguration, invalid->start(config));
+		EXPECT_EQ(0U, invalid->backend.open_calls);
 	}
 
 	// With N=1 and both directions repeatedly made ready, the persistent first
 	// direction alternation is externally visible as R,S,R,S across four ticks.
-	NativeFixture alternating;
+	auto alternating = std::make_unique<NativeFixture>();
 	auto one = enabled_config(1U);
 	one.max_clients = 2U;
-	ASSERT_EQ(detail::NativeSessionStartStatus::Started, alternating.start(one));
-	alternating.backend.io_trace.clear();
-	alternating.backend.receives.push_back(
+	ASSERT_EQ(detail::NativeSessionStartStatus::Started, alternating->start(one));
+	alternating->backend.io_trace.clear();
+	alternating->backend.receives.push_back(
 		{detail::IoStatus::Complete, hello(protocol::VersionMinorV1_1, 20U, peer(2U))});
-	alternating.backend.receives.push_back(
+	alternating->backend.receives.push_back(
 		{detail::IoStatus::Complete, hello(protocol::VersionMinorV1_1, 21U, peer(3U))});
 	for (std::uint64_t tick = 0U; tick < 4U; ++tick) {
-		native_tick(alternating, {2'000U + tick, 0U, false});
+		native_tick(*alternating, {2'000U + tick, 0U, false});
 	}
-	EXPECT_EQ((std::vector<char>{'R', 'S', 'R', 'S'}), alternating.backend.io_trace);
+	EXPECT_EQ((std::vector<char>{'R', 'S', 'R', 'S'}), alternating->backend.io_trace);
 
 	// Preload a real WELCOME without any send attempt: three rejected Complete
 	// receives followed by the HELLO consume all N=4 units.  The next two ticks
 	// then prove TX-WouldBlock -> RX progress and RX-WouldBlock -> TX progress.
-	NativeFixture blocked;
+	auto blocked = std::make_unique<NativeFixture>();
 	auto four = enabled_config(4U);
 	four.max_clients = 2U;
-	ASSERT_EQ(detail::NativeSessionStartStatus::Started, blocked.start(four));
+	ASSERT_EQ(detail::NativeSessionStartStatus::Started, blocked->start(four));
 	for (std::uint8_t source = 20U; source < 23U; ++source) {
-		blocked.backend.receives.push_back({detail::IoStatus::Complete, Packet{{}, peer(source)}});
+		blocked->backend.receives.push_back({detail::IoStatus::Complete, Packet{{}, peer(source)}});
 	}
-	blocked.backend.receives.push_back(
+	blocked->backend.receives.push_back(
 		{detail::IoStatus::Complete, hello(protocol::VersionMinorV1_1, 30U, peer(4U))});
-	const auto setup_rx = blocked.backend.receive_calls;
-	const auto setup_tx = blocked.backend.send_calls;
-	native_tick(blocked, {2'100U, 0U, false});
-	EXPECT_EQ(4U, blocked.backend.receive_calls - setup_rx);
-	EXPECT_EQ(0U, blocked.backend.send_calls - setup_tx);
-	ASSERT_TRUE(blocked.runtime.owned_usage().output_queued);
+	const auto setup_rx = blocked->backend.receive_calls;
+	const auto setup_tx = blocked->backend.send_calls;
+	native_tick(*blocked, {2'100U, 0U, false});
+	EXPECT_EQ(4U, blocked->backend.receive_calls - setup_rx);
+	EXPECT_EQ(0U, blocked->backend.send_calls - setup_tx);
+	ASSERT_TRUE(blocked->runtime.owned_usage().output_queued);
 
-	blocked.backend.sends.push_back(detail::IoStatus::WouldBlock);
-	blocked.backend.receives.push_back({detail::IoStatus::Complete, Packet{{}, peer(23U)}});
-	blocked.backend.io_trace.clear();
-	const auto tx_block_rx = blocked.backend.receive_calls;
-	const auto tx_block_tx = blocked.backend.send_calls;
-	native_tick(blocked, {2'101U, 0U, false});
-	const auto tx_block_rx_delta = blocked.backend.receive_calls - tx_block_rx;
-	const auto tx_block_tx_delta = blocked.backend.send_calls - tx_block_tx;
-	ASSERT_FALSE(blocked.backend.io_trace.empty());
-	EXPECT_EQ('S', blocked.backend.io_trace.front());
+	blocked->backend.sends.push_back(detail::IoStatus::WouldBlock);
+	blocked->backend.receives.push_back({detail::IoStatus::Complete, Packet{{}, peer(23U)}});
+	blocked->backend.io_trace.clear();
+	const auto tx_block_rx = blocked->backend.receive_calls;
+	const auto tx_block_tx = blocked->backend.send_calls;
+	native_tick(*blocked, {2'101U, 0U, false});
+	const auto tx_block_rx_delta = blocked->backend.receive_calls - tx_block_rx;
+	const auto tx_block_tx_delta = blocked->backend.send_calls - tx_block_tx;
+	ASSERT_FALSE(blocked->backend.io_trace.empty());
+	EXPECT_EQ('S', blocked->backend.io_trace.front());
 	EXPECT_EQ(1U, tx_block_tx_delta);
 	EXPECT_GE(tx_block_rx_delta, 1U);
 	EXPECT_LE(tx_block_rx_delta + tx_block_tx_delta, 4U);
-	ASSERT_TRUE(blocked.runtime.owned_usage().output_queued);
+	ASSERT_TRUE(blocked->runtime.owned_usage().output_queued);
 
-	blocked.backend.io_trace.clear();
-	blocked.backend.receives.push_back({detail::IoStatus::WouldBlock, {}});
-	const auto rx_block_rx = blocked.backend.receive_calls;
-	const auto rx_block_tx = blocked.backend.send_calls;
-	native_tick(blocked, {2'102U, 0U, false});
-	const auto rx_block_rx_delta = blocked.backend.receive_calls - rx_block_rx;
-	const auto rx_block_tx_delta = blocked.backend.send_calls - rx_block_tx;
-	ASSERT_FALSE(blocked.backend.io_trace.empty());
-	EXPECT_EQ('R', blocked.backend.io_trace.front());
+	blocked->backend.io_trace.clear();
+	blocked->backend.receives.push_back({detail::IoStatus::WouldBlock, {}});
+	const auto rx_block_rx = blocked->backend.receive_calls;
+	const auto rx_block_tx = blocked->backend.send_calls;
+	native_tick(*blocked, {2'102U, 0U, false});
+	const auto rx_block_rx_delta = blocked->backend.receive_calls - rx_block_rx;
+	const auto rx_block_tx_delta = blocked->backend.send_calls - rx_block_tx;
+	ASSERT_FALSE(blocked->backend.io_trace.empty());
+	EXPECT_EQ('R', blocked->backend.io_trace.front());
 	EXPECT_EQ(1U, rx_block_rx_delta);
 	EXPECT_EQ(1U, rx_block_tx_delta);
 	EXPECT_LE(rx_block_rx_delta + rx_block_tx_delta, 4U);
-	EXPECT_FALSE(blocked.runtime.owned_usage().output_queued);
+	EXPECT_FALSE(blocked->runtime.owned_usage().output_queued);
 }
 
 TEST(TelemetryNativeRuntimeIntegrationContract, AllowlistAndVersionNegotiationComposeWithoutDurableRejectedState)
 {
-	NativeFixture accepted;
+	auto accepted = std::make_unique<NativeFixture>();
 	auto accepted_config = enabled_config();
-	ASSERT_EQ(detail::NativeSessionStartStatus::Started, accepted.start(accepted_config));
-	accepted.backend.receives.push_back(
+	ASSERT_EQ(detail::NativeSessionStartStatus::Started, accepted->start(accepted_config));
+	accepted->backend.receives.push_back(
 		{detail::IoStatus::Complete, hello(protocol::VersionMinorV1_1, 10U)});
-	native_tick(accepted, {3'000U, 0U, false});
-	ASSERT_EQ(1U, accepted.backend.sent.size());
-	EXPECT_EQ(protocol::MessageType::Welcome, sent_type(accepted.backend, 0U));
-	EXPECT_EQ(1U, accepted.runtime.active_sessions());
+	native_tick(*accepted, {3'000U, 0U, false});
+	ASSERT_EQ(1U, accepted->backend.sent.size());
+	EXPECT_EQ(protocol::MessageType::Welcome, sent_type(accepted->backend, 0U));
+	EXPECT_EQ(1U, accepted->runtime.active_sessions());
 
-	NativeFixture unsupported;
+	auto unsupported = std::make_unique<NativeFixture>();
 	auto unsupported_config = enabled_config();
-	ASSERT_EQ(detail::NativeSessionStartStatus::Started, unsupported.start(unsupported_config));
-	unsupported.backend.receives.push_back(
+	ASSERT_EQ(detail::NativeSessionStartStatus::Started, unsupported->start(unsupported_config));
+	unsupported->backend.receives.push_back(
 		{detail::IoStatus::Complete, hello(protocol::VersionMinorV1_0, 11U)});
-	native_tick(unsupported, {3'050U, 0U, false});
-	ASSERT_EQ(1U, unsupported.backend.sent.size());
+	native_tick(*unsupported, {3'050U, 0U, false});
+	ASSERT_EQ(1U, unsupported->backend.sent.size());
 	std::vector<std::uint8_t> storage;
-	const auto datagram = decode_sent(unsupported.backend, 0U, storage);
+	const auto datagram = decode_sent(unsupported->backend, 0U, storage);
 	ASSERT_EQ(protocol::VersionMinorV1_0, datagram.header.version_minor);
 	ASSERT_EQ(protocol::MessageType::Welcome, datagram.header.message_type);
 	EXPECT_EQ(0U, datagram.header.session_id);
@@ -1866,36 +1985,36 @@ TEST(TelemetryNativeRuntimeIntegrationContract, AllowlistAndVersionNegotiationCo
 	EXPECT_EQ(protocol::WelcomeStatus::UnsupportedVersion, welcome.status);
 	EXPECT_EQ(0U, welcome.selected_major);
 	EXPECT_EQ(0U, welcome.selected_minor);
-	const auto unsupported_usage = unsupported.runtime.owned_usage();
+	const auto unsupported_usage = unsupported->runtime.owned_usage();
 	EXPECT_EQ(0U, unsupported_usage.active_slots);
 	EXPECT_EQ(0U, unsupported_usage.reliable_items);
 	EXPECT_EQ(1U, unsupported_usage.cache_entries)
 		<< "The bounded rejection replay cache is not a durable client slot or heavy REL window.";
 
-	NativeFixture rejected;
+	auto rejected = std::make_unique<NativeFixture>();
 	auto config = enabled_config();
-	ASSERT_EQ(detail::NativeSessionStartStatus::Started, rejected.start(config));
-	const auto usage_before = rejected.runtime.owned_usage();
-	const auto id_random_before = rejected.ids_random.next;
-	const auto packet_random_before = rejected.packet_random.next;
-	rejected.backend.receives.push_back({detail::IoStatus::Complete,
+	ASSERT_EQ(detail::NativeSessionStartStatus::Started, rejected->start(config));
+	const auto usage_before = rejected->runtime.owned_usage();
+	const auto id_random_before = rejected->ids_random.next;
+	const auto packet_random_before = rejected->packet_random.next;
+	rejected->backend.receives.push_back({detail::IoStatus::Complete,
 		hello(protocol::VersionMinorV1_1, 99U, protocol::EndpointKey::from_ipv4({192U, 0U, 2U, 1U}, 43000U))});
-	native_tick(rejected, {3'100U, 0U, false});
-	EXPECT_TRUE(rejected.backend.sent.empty());
-	EXPECT_EQ(usage_before, rejected.runtime.owned_usage());
-	EXPECT_EQ(id_random_before, rejected.ids_random.next);
-	EXPECT_EQ(packet_random_before, rejected.packet_random.next);
+	native_tick(*rejected, {3'100U, 0U, false});
+	EXPECT_TRUE(rejected->backend.sent.empty());
+	EXPECT_EQ(usage_before, rejected->runtime.owned_usage());
+	EXPECT_EQ(id_random_before, rejected->ids_random.next);
+	EXPECT_EQ(packet_random_before, rejected->packet_random.next);
 }
 
 TEST(TelemetryP92NativeLoggingContract, RealWouldBlockIngressIsAggregatedAtTheR2Cadence)
 {
-	NativeFixture fixture;
+	auto fixture = std::make_unique<NativeFixture>();
 	auto config = enabled_config(1U);
-	ASSERT_EQ(detail::NativeSessionStartStatus::Started, fixture.start(config));
+	ASSERT_EQ(detail::NativeSessionStartStatus::Started, fixture->start(config));
 
-	fixture.backend.receives.push_back({detail::IoStatus::WouldBlock, {}});
-	ASSERT_EQ(detail::NativeSessionTickStatus::Complete, native_tick(fixture, {1'000'000U, 0U, false}));
-	const auto first = NativePlayerAccess::log_snapshot(fixture.runtime);
+	fixture->backend.receives.push_back({detail::IoStatus::WouldBlock, {}});
+	ASSERT_EQ(detail::NativeSessionTickStatus::Complete, native_tick(*fixture, {1'000'000U, 0U, false}));
+	const auto first = NativePlayerAccess::log_snapshot(fixture->runtime);
 	ASSERT_GE(first.count, 2U);
 	EXPECT_TRUE(std::any_of(first.records.begin(), first.records.begin() + first.count,
 		[](const detail::TelemetryLogRecord& record) {
@@ -1903,13 +2022,13 @@ TEST(TelemetryP92NativeLoggingContract, RealWouldBlockIngressIsAggregatedAtTheR2
 				record.drops[static_cast<std::size_t>(detail::TelemetryLogDrop::WouldBlock)] == 1U;
 		}));
 
-	fixture.backend.receives.push_back({detail::IoStatus::WouldBlock, {}});
-	ASSERT_EQ(detail::NativeSessionTickStatus::Complete, native_tick(fixture, {1'999'999U, 0U, false}));
-	EXPECT_EQ(first.count, NativePlayerAccess::log_snapshot(fixture.runtime).count)
+	fixture->backend.receives.push_back({detail::IoStatus::WouldBlock, {}});
+	ASSERT_EQ(detail::NativeSessionTickStatus::Complete, native_tick(*fixture, {1'999'999U, 0U, false}));
+	EXPECT_EQ(first.count, NativePlayerAccess::log_snapshot(fixture->runtime).count)
 		<< "The runtime must retain repeated drops until the next one-second aggregate window.";
 
-	ASSERT_EQ(detail::NativeSessionTickStatus::Complete, native_tick(fixture, {2'000'000U, 0U, false}));
-	const auto second = NativePlayerAccess::log_snapshot(fixture.runtime);
+	ASSERT_EQ(detail::NativeSessionTickStatus::Complete, native_tick(*fixture, {2'000'000U, 0U, false}));
+	const auto second = NativePlayerAccess::log_snapshot(fixture->runtime);
 	EXPECT_EQ(first.count + 1U, second.count);
 	EXPECT_EQ(detail::TelemetryLogEvent::DropSummary, second.records[second.count - 1U].event);
 	EXPECT_GT(second.records[second.count - 1U].drops[static_cast<std::size_t>(detail::TelemetryLogDrop::WouldBlock)], 0U);
@@ -1917,13 +2036,13 @@ TEST(TelemetryP92NativeLoggingContract, RealWouldBlockIngressIsAggregatedAtTheR2
 
 TEST(TelemetryP92NativeLoggingContract, RealSessionCloseSummarizesObservedBudgetAndRemainsSilentAfterShutdown)
 {
-	NativeFixture fixture;
+	auto fixture = std::make_unique<NativeFixture>();
 	auto config = enabled_config(64U);
-	ASSERT_EQ(detail::NativeSessionStartStatus::Started, fixture.start(config));
-	ASSERT_NE(0U, establish_ready(fixture, peer(71U), 710U, 10'000U, 710U));
+	ASSERT_EQ(detail::NativeSessionStartStatus::Started, fixture->start(config));
+	ASSERT_NE(0U, establish_ready(*fixture, peer(71U), 710U, 10'000U, 710U));
 
-	fixture.runtime.shutdown();
-	const auto closed = NativePlayerAccess::log_snapshot(fixture.runtime);
+	fixture->runtime.shutdown();
+	const auto closed = NativePlayerAccess::log_snapshot(fixture->runtime);
 	EXPECT_TRUE(std::any_of(closed.records.begin(), closed.records.begin() + closed.count,
 		[](const detail::TelemetryLogRecord& record) {
 			return record.event == detail::TelemetryLogEvent::BudgetHighWater &&
@@ -1940,27 +2059,27 @@ TEST(TelemetryP92NativeLoggingContract, RealSessionCloseSummarizesObservedBudget
 				record.budget == detail::TelemetryLogBudget::StateImage;
 		}));
 
-	EXPECT_EQ(detail::NativeSessionTickStatus::Unavailable, native_tick(fixture, {20'000U, 0U, false}));
-	EXPECT_EQ(closed.count, NativePlayerAccess::log_snapshot(fixture.runtime).count)
+	EXPECT_EQ(detail::NativeSessionTickStatus::Unavailable, native_tick(*fixture, {20'000U, 0U, false}));
+	EXPECT_EQ(closed.count, NativePlayerAccess::log_snapshot(fixture->runtime).count)
 		<< "A stopped runtime must not emit per-tick diagnostics after its terminal summary.";
 }
 
 TEST(TelemetryP93NativePerformanceContract, ExplicitObservationMeasuresActualTicksAndSteadyResources)
 {
-	NativeFixture fixture;
+	auto fixture = std::make_unique<NativeFixture>();
 	auto config = enabled_config(64U);
-	ASSERT_EQ(detail::NativeSessionStartStatus::Started, fixture.start(config));
+	ASSERT_EQ(detail::NativeSessionStartStatus::Started, fixture->start(config));
 	CountingEngineReadView view;
 
 	// The measurement seam is inert until explicitly armed after startup/warm-up.
-	const auto inert = NativePlayerAccess::last_performance_sample(fixture.runtime);
+	const auto inert = NativePlayerAccess::last_performance_sample(fixture->runtime);
 	EXPECT_EQ(0U, inert.tick_duration_ns);
 	EXPECT_EQ(0U, inert.collect_duration_ns);
 	EXPECT_EQ(0U, inert.diff_duration_ns);
 	EXPECT_EQ(0U, inert.network_duration_ns);
-	NativePlayerAccess::begin_performance_observation(fixture.runtime);
-	ASSERT_EQ(detail::NativeSessionTickStatus::Complete, capture_tick(fixture, view, 90'000U, true));
-	const auto first = NativePlayerAccess::last_performance_sample(fixture.runtime);
+	NativePlayerAccess::begin_performance_observation(fixture->runtime);
+	ASSERT_EQ(detail::NativeSessionTickStatus::Complete, capture_tick(*fixture, view, 90'000U, true));
+	const auto first = NativePlayerAccess::last_performance_sample(fixture->runtime);
 	EXPECT_GT(first.tick_duration_ns, 0U);
 	EXPECT_GT(first.collect_duration_ns, 0U);
 	EXPECT_GT(first.diff_duration_ns, 0U);
@@ -1969,9 +2088,9 @@ TEST(TelemetryP93NativePerformanceContract, ExplicitObservationMeasuresActualTic
 
 	// A real socket WouldBlock remains a measured network tick, but creates no
 	// allocation or unbounded queue/baseline state in the steady observation.
-	fixture.backend.receives.push_back({detail::IoStatus::WouldBlock, {}});
-	ASSERT_EQ(detail::NativeSessionTickStatus::Complete, capture_tick(fixture, view, 90'001U, true));
-	const auto steady = NativePlayerAccess::last_performance_sample(fixture.runtime);
+	fixture->backend.receives.push_back({detail::IoStatus::WouldBlock, {}});
+	ASSERT_EQ(detail::NativeSessionTickStatus::Complete, capture_tick(*fixture, view, 90'001U, true));
+	const auto steady = NativePlayerAccess::last_performance_sample(fixture->runtime);
 	EXPECT_GT(steady.tick_duration_ns, 0U);
 	EXPECT_GT(steady.network_duration_ns, 0U);
 	EXPECT_GT(steady.syscall_count, 0U);
@@ -1983,80 +2102,80 @@ TEST(TelemetryP93NativePerformanceContract, ExplicitObservationMeasuresActualTic
 TEST(TelemetryNativeRuntimeIntegrationContract, PermanentReceiveClosedOrErrorPurgesAllAndNeverReopens)
 {
 	for (const auto status : {detail::IoStatus::Closed, detail::IoStatus::Error}) {
-		NativeFixture fixture;
+		auto fixture = std::make_unique<NativeFixture>();
 		auto config = enabled_config(64U);
 		config.max_clients = 4U;
-		ASSERT_EQ(detail::NativeSessionStartStatus::Started, fixture.start(config));
-		(void)establish_ready(fixture, peer(10U), 200U, 40'000U, 200U);
-		(void)establish_ready(fixture, peer(11U), 201U, 41'000U, 210U);
-		fixture.backend.receives.push_back(
+		ASSERT_EQ(detail::NativeSessionStartStatus::Started, fixture->start(config));
+		(void)establish_ready(*fixture, peer(10U), 200U, 40'000U, 200U);
+		(void)establish_ready(*fixture, peer(11U), 201U, 41'000U, 210U);
+		fixture->backend.receives.push_back(
 			{detail::IoStatus::Complete, hello(protocol::VersionMinorV1_1, 202U, peer(12U))});
-		fixture.backend.sends.push_back(detail::IoStatus::WouldBlock);
-		native_tick(fixture, {42'000U, 0U, false});
-		const auto rich = fixture.runtime.owned_usage();
+		fixture->backend.sends.push_back(detail::IoStatus::WouldBlock);
+		native_tick(*fixture, {42'000U, 0U, false});
+		const auto rich = fixture->runtime.owned_usage();
 		ASSERT_GE(rich.active_slots, 3U);
 		ASSERT_GT(rich.cache_entries, 0U);
 		ASSERT_GT(rich.preproof_accounts, 0U);
 		ASSERT_GT(rich.reliable_items, 0U);
 		ASSERT_TRUE(rich.output_queued);
-		const auto closes_before = fixture.backend.closed.size();
-		fixture.backend.receives.push_back({status, {}});
+		const auto closes_before = fixture->backend.closed.size();
+		fixture->backend.receives.push_back({status, {}});
 		EXPECT_EQ(detail::NativeSessionTickStatus::PermanentTransportFailure,
-			native_tick(fixture, {42'001U, 0U, false}));
-		EXPECT_EQ(0U, fixture.runtime.socket_count());
-		EXPECT_EQ(detail::SessionControllerOwnedUsage{}, fixture.runtime.owned_usage());
-		EXPECT_EQ(closes_before + 1U, fixture.backend.closed.size());
-		const auto calls = fixture.backend.open_calls + fixture.backend.receive_calls + fixture.backend.send_calls;
-		native_tick(fixture, {42'002U, 0U, false});
-		native_tick(fixture, {42'003U, 0U, false});
-		EXPECT_EQ(calls, fixture.backend.open_calls + fixture.backend.receive_calls + fixture.backend.send_calls);
-		EXPECT_EQ(closes_before + 1U, fixture.backend.closed.size());
+			native_tick(*fixture, {42'001U, 0U, false}));
+		EXPECT_EQ(0U, fixture->runtime.socket_count());
+		EXPECT_EQ(detail::SessionControllerOwnedUsage{}, fixture->runtime.owned_usage());
+		EXPECT_EQ(closes_before + 1U, fixture->backend.closed.size());
+		const auto calls = fixture->backend.open_calls + fixture->backend.receive_calls + fixture->backend.send_calls;
+		native_tick(*fixture, {42'002U, 0U, false});
+		native_tick(*fixture, {42'003U, 0U, false});
+		EXPECT_EQ(calls, fixture->backend.open_calls + fixture->backend.receive_calls + fixture->backend.send_calls);
+		EXPECT_EQ(closes_before + 1U, fixture->backend.closed.size());
 	}
 }
 
 TEST(TelemetryNativeRuntimeIntegrationContract, PermanentSendClosedOrErrorCompletesOnceThenPurgesGlobally)
 {
 	for (const auto status : {detail::IoStatus::Closed, detail::IoStatus::Error}) {
-		NativeFixture fixture;
+		auto fixture = std::make_unique<NativeFixture>();
 		auto config = enabled_config(64U);
 		config.max_clients = 4U;
-		ASSERT_EQ(detail::NativeSessionStartStatus::Started, fixture.start(config));
-		(void)establish_ready(fixture, peer(13U), 210U, 50'000U, 220U);
-		(void)establish_ready(fixture, peer(14U), 211U, 51'000U, 230U);
-		fixture.backend.receives.push_back(
+		ASSERT_EQ(detail::NativeSessionStartStatus::Started, fixture->start(config));
+		(void)establish_ready(*fixture, peer(13U), 210U, 50'000U, 220U);
+		(void)establish_ready(*fixture, peer(14U), 211U, 51'000U, 230U);
+		fixture->backend.receives.push_back(
 			{detail::IoStatus::Complete, hello(protocol::VersionMinorV1_1, 212U, peer(15U))});
-		fixture.backend.sends.push_back(detail::IoStatus::WouldBlock);
-		native_tick(fixture, {52'000U, 0U, false});
-		const auto rich = fixture.runtime.owned_usage();
+		fixture->backend.sends.push_back(detail::IoStatus::WouldBlock);
+		native_tick(*fixture, {52'000U, 0U, false});
+		const auto rich = fixture->runtime.owned_usage();
 		ASSERT_GE(rich.active_slots, 3U);
 		ASSERT_GT(rich.cache_entries, 0U);
 		ASSERT_GT(rich.preproof_accounts, 0U);
 		ASSERT_GT(rich.reliable_items, 0U);
 		ASSERT_TRUE(rich.output_queued);
-		const auto sends_before = fixture.backend.send_calls;
-		const auto closes_before = fixture.backend.closed.size();
-		const auto completions_before = fixture.completion.calls;
-		fixture.backend.sends.push_back(status);
+		const auto sends_before = fixture->backend.send_calls;
+		const auto closes_before = fixture->backend.closed.size();
+		const auto completions_before = fixture->completion.calls;
+		fixture->backend.sends.push_back(status);
 		EXPECT_EQ(detail::NativeSessionTickStatus::PermanentTransportFailure,
-			native_tick(fixture, {52'001U, 0U, false}));
-		EXPECT_EQ(sends_before + 1U, fixture.backend.send_calls)
+			native_tick(*fixture, {52'001U, 0U, false}));
+		EXPECT_EQ(sends_before + 1U, fixture->backend.send_calls)
 			<< "The selected controller output is completed exactly once on fatal send.";
-		EXPECT_EQ(completions_before + 1U, fixture.completion.calls);
-		EXPECT_EQ(status, fixture.completion.last_status);
-		EXPECT_EQ(rich, fixture.completion.usage_before);
-		EXPECT_FALSE(fixture.completion.usage_after.output_queued);
-		EXPECT_EQ(rich.active_slots - 1U, fixture.completion.usage_after.active_slots);
-		EXPECT_GT(fixture.completion.usage_after.active_slots, 0U)
+		EXPECT_EQ(completions_before + 1U, fixture->completion.calls);
+		EXPECT_EQ(status, fixture->completion.last_status);
+		EXPECT_EQ(rich, fixture->completion.usage_before);
+		EXPECT_FALSE(fixture->completion.usage_after.output_queued);
+		EXPECT_EQ(rich.active_slots - 1U, fixture->completion.usage_after.active_slots);
+		EXPECT_GT(fixture->completion.usage_after.active_slots, 0U)
 			<< "The focused completion closes only its owner; global purge must happen afterwards.";
-		EXPECT_EQ(0U, fixture.runtime.socket_count());
-		EXPECT_EQ(detail::SessionControllerOwnedUsage{}, fixture.runtime.owned_usage());
-		EXPECT_EQ(closes_before + 1U, fixture.backend.closed.size());
-		native_tick(fixture, {52'002U, 0U, false});
-		native_tick(fixture, {52'003U, 0U, false});
-		EXPECT_EQ(sends_before + 1U, fixture.backend.send_calls);
-		EXPECT_EQ(completions_before + 1U, fixture.completion.calls);
-		EXPECT_EQ(closes_before + 1U, fixture.backend.closed.size());
-		EXPECT_EQ(1U, fixture.backend.open_calls);
+		EXPECT_EQ(0U, fixture->runtime.socket_count());
+		EXPECT_EQ(detail::SessionControllerOwnedUsage{}, fixture->runtime.owned_usage());
+		EXPECT_EQ(closes_before + 1U, fixture->backend.closed.size());
+		native_tick(*fixture, {52'002U, 0U, false});
+		native_tick(*fixture, {52'003U, 0U, false});
+		EXPECT_EQ(sends_before + 1U, fixture->backend.send_calls);
+		EXPECT_EQ(completions_before + 1U, fixture->completion.calls);
+		EXPECT_EQ(closes_before + 1U, fixture->backend.closed.size());
+		EXPECT_EQ(1U, fixture->backend.open_calls);
 	}
 }
 
@@ -2130,12 +2249,12 @@ TEST(TelemetryNativePlayerCaptureContract, ExactPublicContractDefaultsAndTestOnl
 	instantiate_exact_native_player_contract_asserts<detail::NativeSessionRuntime>();
 	REQUIRE_NATIVE_PLAYER_D3();
 	expect_default_current(NativePlayerProbe::declared_default_current());
-	NativeFixture fixture;
-	expect_default_current(NativePlayerProbe::current(fixture.runtime));
-	expect_zero_materialization(NativePlayerProbe::materialization(fixture.runtime));
-	EXPECT_EQ(CaptureUnavailable, NativePlayerProbe::last_status(fixture.runtime));
+	auto fixture = std::make_unique<NativeFixture>();
+	expect_default_current(NativePlayerProbe::current(fixture->runtime));
+	expect_zero_materialization(NativePlayerProbe::materialization(fixture->runtime));
+	EXPECT_EQ(CaptureUnavailable, NativePlayerProbe::last_status(fixture->runtime));
 	EXPECT_EQ(detail::NativeSessionTickStatus::Unavailable,
-		NativePlayerAccess::inject_collected_player_capture(fixture.runtime,
+		NativePlayerAccess::inject_collected_player_capture(fixture->runtime,
 			{detail::CaptureStatus::Valid, detail::CaptureReason::None},
 			observation(42U, 1U)));
 }
@@ -2145,212 +2264,212 @@ TEST(TelemetryNativePlayerCaptureContract, FlightRateStartBoundariesRejectBefore
 	REQUIRE_NATIVE_PLAYER_D3();
 	for (const auto rates : {std::pair<unsigned, unsigned>{0U, 1U},
 			 std::pair<unsigned, unsigned>{61U, 60U}}) {
-		NativeFixture fixture;
+		auto fixture = std::make_unique<NativeFixture>();
 		auto config = enabled_config();
 		config.flight_hz = static_cast<std::uint8_t>(rates.first);
-		EXPECT_EQ(detail::NativeSessionStartStatus::InvalidConfiguration, fixture.start(config));
-		EXPECT_EQ(0U, fixture.backend.open_calls);
-		EXPECT_EQ(0U, fixture.runtime.socket_count());
-		EXPECT_EQ(0U, fixture.runtime.active_sessions());
-		EXPECT_EQ(CaptureUnavailable, NativePlayerProbe::last_status(fixture.runtime));
-		expect_default_current(NativePlayerProbe::current(fixture.runtime));
-		expect_zero_materialization(NativePlayerProbe::materialization(fixture.runtime));
+		EXPECT_EQ(detail::NativeSessionStartStatus::InvalidConfiguration, fixture->start(config));
+		EXPECT_EQ(0U, fixture->backend.open_calls);
+		EXPECT_EQ(0U, fixture->runtime.socket_count());
+		EXPECT_EQ(0U, fixture->runtime.active_sessions());
+		EXPECT_EQ(CaptureUnavailable, NativePlayerProbe::last_status(fixture->runtime));
+		expect_default_current(NativePlayerProbe::current(fixture->runtime));
+		expect_zero_materialization(NativePlayerProbe::materialization(fixture->runtime));
 		config.flight_hz = static_cast<std::uint8_t>(rates.second);
-		ASSERT_EQ(detail::NativeSessionStartStatus::Started, fixture.start(config));
+		ASSERT_EQ(detail::NativeSessionStartStatus::Started, fixture->start(config));
 		CountingEngineReadView view;
-		EXPECT_EQ(detail::NativeSessionTickStatus::Complete, capture_tick(fixture, view, 123'456U));
+		EXPECT_EQ(detail::NativeSessionTickStatus::Complete, capture_tick(*fixture, view, 123'456U));
 		EXPECT_EQ(1U, view.read_calls);
-		EXPECT_EQ(CaptureValid, NativePlayerProbe::last_status(fixture.runtime));
+		EXPECT_EQ(CaptureValid, NativePlayerProbe::last_status(fixture->runtime));
 	}
 }
 
 TEST(TelemetryNativePlayerCaptureContract, TransportOpenFailureIsColdRetryableAndFirstCaptureIsImmediate)
 {
 	REQUIRE_NATIVE_PLAYER_D3();
-	NativeFixture fixture;
-	fixture.backend.open_statuses = {detail::SocketOpenStatus::SocketCreationFailed,
+	auto fixture = std::make_unique<NativeFixture>();
+	fixture->backend.open_statuses = {detail::SocketOpenStatus::SocketCreationFailed,
 		detail::SocketOpenStatus::Complete};
 	auto config = enabled_config();
-	EXPECT_EQ(detail::NativeSessionStartStatus::TransportUnavailable, fixture.start(config));
-	EXPECT_EQ(0U, fixture.runtime.socket_count());
-	EXPECT_EQ(0U, fixture.runtime.active_sessions());
-	EXPECT_EQ(CaptureUnavailable, NativePlayerProbe::last_status(fixture.runtime));
-	expect_default_current(NativePlayerProbe::current(fixture.runtime));
-	expect_zero_materialization(NativePlayerProbe::materialization(fixture.runtime));
-	ASSERT_EQ(detail::NativeSessionStartStatus::Started, fixture.start(config));
+	EXPECT_EQ(detail::NativeSessionStartStatus::TransportUnavailable, fixture->start(config));
+	EXPECT_EQ(0U, fixture->runtime.socket_count());
+	EXPECT_EQ(0U, fixture->runtime.active_sessions());
+	EXPECT_EQ(CaptureUnavailable, NativePlayerProbe::last_status(fixture->runtime));
+	expect_default_current(NativePlayerProbe::current(fixture->runtime));
+	expect_zero_materialization(NativePlayerProbe::materialization(fixture->runtime));
+	ASSERT_EQ(detail::NativeSessionStartStatus::Started, fixture->start(config));
 	CountingEngineReadView view;
-	EXPECT_EQ(detail::NativeSessionTickStatus::Complete, capture_tick(fixture, view, 777'777U));
+	EXPECT_EQ(detail::NativeSessionTickStatus::Complete, capture_tick(*fixture, view, 777'777U));
 	EXPECT_EQ(1U, view.read_calls);
-	EXPECT_EQ(CaptureValid, NativePlayerProbe::last_status(fixture.runtime));
+	EXPECT_EQ(CaptureValid, NativePlayerProbe::last_status(fixture->runtime));
 }
 
 TEST(TelemetryNativePlayerCaptureContract, AppliedAckPrecedesSameDueTickMaterialization)
 {
 	REQUIRE_NATIVE_PLAYER_D3();
-	NativeFixture fixture;
+	auto fixture = std::make_unique<NativeFixture>();
 	auto config = enabled_config(64U);
-	ASSERT_EQ(detail::NativeSessionStartStatus::Started, fixture.start(config));
+	ASSERT_EQ(detail::NativeSessionStartStatus::Started, fixture->start(config));
 	const auto endpoint = peer(21U);
-	fixture.backend.receives.push_back({detail::IoStatus::Complete, hello(protocol::VersionMinorV1_1, 901U, endpoint)});
-	native_tick(fixture, {10'000U, 1U, true});
-	ASSERT_FALSE(fixture.backend.sent.empty());
-	const auto welcome_index = fixture.backend.sent.size() - 1U;
-	fixture.backend.receives.push_back(
-		{detail::IoStatus::Complete, ack_for(fixture.backend.sent[welcome_index], endpoint, 902U)});
+	fixture->backend.receives.push_back({detail::IoStatus::Complete, hello(protocol::VersionMinorV1_1, 901U, endpoint)});
+	native_tick(*fixture, {10'000U, 1U, true});
+	ASSERT_FALSE(fixture->backend.sent.empty());
+	const auto welcome_index = fixture->backend.sent.size() - 1U;
+	fixture->backend.receives.push_back(
+		{detail::IoStatus::Complete, ack_for(fixture->backend.sent[welcome_index], endpoint, 902U)});
 	CountingEngineReadView view;
 	ASSERT_EQ(detail::NativeSessionTickStatus::Complete,
-		NativePlayerProbe::service_tick(fixture.runtime, {10'010U, 1U, true}, view));
+		NativePlayerProbe::service_tick(fixture->runtime, {10'010U, 1U, true}, view));
 	ASSERT_EQ(1U, view.read_calls);
-	ASSERT_GT(fixture.backend.sent.size(), welcome_index + 1U);
-	EXPECT_EQ(protocol::MessageType::SessionBegin, sent_type(fixture.backend, fixture.backend.sent.size() - 1U));
-	const auto* ready = slot(fixture);
+	ASSERT_GT(fixture->backend.sent.size(), welcome_index + 1U);
+	EXPECT_EQ(protocol::MessageType::SessionBegin, sent_type(fixture->backend, fixture->backend.sent.size() - 1U));
+	const auto* ready = slot(*fixture);
 	ASSERT_NE(nullptr, ready);
 	EXPECT_EQ(detail::ProducerSessionProgress::ReadyForState, ready->progress);
 	EXPECT_TRUE(ready->has_latest_player_sample);
 	EXPECT_EQ(1U, ready->latest_player_sample.entity_id);
-	expect_materialization(NativePlayerProbe::materialization(fixture.runtime), 1U, 0U, 1U, 0U, 0U, 0U, 0U);
-	const auto due_current = NativePlayerProbe::current(fixture.runtime);
+	expect_materialization(NativePlayerProbe::materialization(fixture->runtime), 1U, 0U, 1U, 0U, 0U, 0U, 0U);
+	const auto due_current = NativePlayerProbe::current(fixture->runtime);
 	const auto due_sample = ready->latest_player_sample;
 	view.clear_counts();
-	ASSERT_EQ(detail::NativeSessionTickStatus::Complete, capture_tick(fixture, view, 20'001U));
+	ASSERT_EQ(detail::NativeSessionTickStatus::Complete, capture_tick(*fixture, view, 20'001U));
 	EXPECT_EQ(0U, view.total_calls());
-	EXPECT_EQ(CaptureNotDue, NativePlayerProbe::last_status(fixture.runtime));
-	const auto not_due_current = NativePlayerProbe::current(fixture.runtime);
+	EXPECT_EQ(CaptureNotDue, NativePlayerProbe::last_status(fixture->runtime));
+	const auto not_due_current = NativePlayerProbe::current(fixture->runtime);
 	EXPECT_EQ(due_current.available, not_due_current.available);
 	EXPECT_EQ(due_current.result.status, not_due_current.result.status);
 	EXPECT_EQ(due_current.result.reason, not_due_current.result.reason);
 	expect_observation(not_due_current.observation, due_current.observation);
-	expect_zero_materialization(NativePlayerProbe::materialization(fixture.runtime));
-	ASSERT_NE(nullptr, slot(fixture));
-	ASSERT_TRUE(slot(fixture)->has_latest_player_sample);
-	expect_player_sample(slot(fixture)->latest_player_sample, due_sample);
+	expect_zero_materialization(NativePlayerProbe::materialization(fixture->runtime));
+	ASSERT_NE(nullptr, slot(*fixture));
+	ASSERT_TRUE(slot(*fixture)->has_latest_player_sample);
+	expect_player_sample(slot(*fixture)->latest_player_sample, due_sample);
 
-	NativeFixture not_due;
-	ASSERT_EQ(detail::NativeSessionStartStatus::Started, not_due.start(config));
+	auto not_due = std::make_unique<NativeFixture>();
+	ASSERT_EQ(detail::NativeSessionStartStatus::Started, not_due->start(config));
 	CountingEngineReadView arm;
-	ASSERT_EQ(detail::NativeSessionTickStatus::Complete, capture_tick(not_due, arm, 30'000U));
-	expect_zero_materialization(NativePlayerProbe::materialization(not_due.runtime));
+	ASSERT_EQ(detail::NativeSessionTickStatus::Complete, capture_tick(*not_due, arm, 30'000U));
+	expect_zero_materialization(NativePlayerProbe::materialization(not_due->runtime));
 	arm.clear_counts();
 	const auto not_due_endpoint = peer(22U);
-	not_due.backend.receives.push_back(
+	not_due->backend.receives.push_back(
 		{detail::IoStatus::Complete, hello(protocol::VersionMinorV1_1, 904U, not_due_endpoint)});
-	native_tick(not_due, {30'001U, 1U, true});
-	ASSERT_FALSE(not_due.backend.sent.empty());
-	const auto not_due_welcome = not_due.backend.sent.size() - 1U;
-	not_due.backend.receives.push_back(
-		{detail::IoStatus::Complete, ack_for(not_due.backend.sent[not_due_welcome], not_due_endpoint, 905U)});
+	native_tick(*not_due, {30'001U, 1U, true});
+	ASSERT_FALSE(not_due->backend.sent.empty());
+	const auto not_due_welcome = not_due->backend.sent.size() - 1U;
+	not_due->backend.receives.push_back(
+		{detail::IoStatus::Complete, ack_for(not_due->backend.sent[not_due_welcome], not_due_endpoint, 905U)});
 	EXPECT_EQ(detail::NativeSessionTickStatus::Complete,
-		NativePlayerProbe::service_tick(not_due.runtime, {30'002U, 1U, true}, arm));
+		NativePlayerProbe::service_tick(not_due->runtime, {30'002U, 1U, true}, arm));
 	ASSERT_EQ(1U, arm.read_calls)
 		<< "WP07 strict ReadyForState RED: the transition must force exactly one immediate capture even "
 			  "when the regular 30 Hz deadline is not due.";
 	EXPECT_EQ(std::this_thread::get_id(), arm.last_read_thread)
 		<< "The forced capture remains synchronous on the EngineUpdate/main thread.";
-	ASSERT_NE(nullptr, slot(not_due));
-	EXPECT_EQ(detail::ProducerSessionProgress::ReadyForState, slot(not_due)->progress);
-	EXPECT_EQ(CaptureValid, NativePlayerProbe::last_status(not_due.runtime));
-	const auto current_after_ack = NativePlayerProbe::current(not_due.runtime);
+	ASSERT_NE(nullptr, slot(*not_due));
+	EXPECT_EQ(detail::ProducerSessionProgress::ReadyForState, slot(*not_due)->progress);
+	EXPECT_EQ(CaptureValid, NativePlayerProbe::last_status(not_due->runtime));
+	const auto current_after_ack = NativePlayerProbe::current(not_due->runtime);
 	EXPECT_TRUE(current_after_ack.available);
 	EXPECT_EQ(30'002U, current_after_ack.observation.value.producer_sample_time_us);
-	EXPECT_TRUE(slot(not_due)->has_latest_player_sample);
-	EXPECT_EQ(30'002U, slot(not_due)->latest_player_sample.value.producer_sample_time_us);
-	expect_materialization(NativePlayerProbe::materialization(not_due.runtime), 1U, 0U, 1U, 0U, 0U, 0U, 0U);
+	EXPECT_TRUE(slot(*not_due)->has_latest_player_sample);
+	EXPECT_EQ(30'002U, slot(*not_due)->latest_player_sample.value.producer_sample_time_us);
+	expect_materialization(NativePlayerProbe::materialization(not_due->runtime), 1U, 0U, 1U, 0U, 0U, 0U, 0U);
 
-	const auto forced_sample = slot(not_due)->latest_player_sample;
+	const auto forced_sample = slot(*not_due)->latest_player_sample;
 	arm.clear_counts();
-	EXPECT_EQ(detail::NativeSessionTickStatus::Complete, capture_tick(not_due, arm, 30'003U));
+	EXPECT_EQ(detail::NativeSessionTickStatus::Complete, capture_tick(*not_due, arm, 30'003U));
 	EXPECT_EQ(0U, arm.total_calls()) << "ReadyForState is an edge trigger, not a capture loop.";
-	EXPECT_EQ(CaptureNotDue, NativePlayerProbe::last_status(not_due.runtime));
-	expect_zero_materialization(NativePlayerProbe::materialization(not_due.runtime));
-	ASSERT_NE(nullptr, slot(not_due));
-	ASSERT_TRUE(slot(not_due)->has_latest_player_sample);
-	expect_player_sample(slot(not_due)->latest_player_sample, forced_sample);
+	EXPECT_EQ(CaptureNotDue, NativePlayerProbe::last_status(not_due->runtime));
+	expect_zero_materialization(NativePlayerProbe::materialization(not_due->runtime));
+	ASSERT_NE(nullptr, slot(*not_due));
+	ASSERT_TRUE(slot(*not_due)->has_latest_player_sample);
+	expect_player_sample(slot(*not_due)->latest_player_sample, forced_sample);
 
 	arm.clear_counts();
-	EXPECT_EQ(detail::NativeSessionTickStatus::Complete, capture_tick(not_due, arm, 30'004U, false));
+	EXPECT_EQ(detail::NativeSessionTickStatus::Complete, capture_tick(*not_due, arm, 30'004U, false));
 	EXPECT_EQ(0U, arm.total_calls()) << "A ReadyForState edge never bypasses the out-of-mission no-op gate.";
-	EXPECT_EQ(CaptureInactive, NativePlayerProbe::last_status(not_due.runtime));
+	EXPECT_EQ(CaptureInactive, NativePlayerProbe::last_status(not_due->runtime));
 }
 
 TEST(TelemetryNativePlayerCaptureContract, MultipleReadyTransitionsInOneTickShareOneCapture)
 {
 	REQUIRE_NATIVE_PLAYER_D3();
-	NativeFixture fixture;
+	auto fixture = std::make_unique<NativeFixture>();
 	auto config = enabled_config(64U);
 	config.max_clients = 2U;
-	ASSERT_EQ(detail::NativeSessionStartStatus::Started, fixture.start(config));
+	ASSERT_EQ(detail::NativeSessionStartStatus::Started, fixture->start(config));
 	CountingEngineReadView view;
-	ASSERT_EQ(detail::NativeSessionTickStatus::Complete, capture_tick(fixture, view, 40'000U));
+	ASSERT_EQ(detail::NativeSessionTickStatus::Complete, capture_tick(*fixture, view, 40'000U));
 	view.clear_counts();
 
 	const auto first_endpoint = peer(31U);
 	const auto second_endpoint = peer(32U);
-	fixture.backend.receives.push_back(
+	fixture->backend.receives.push_back(
 		{detail::IoStatus::Complete, hello(protocol::VersionMinorV1_1, 931U, first_endpoint)});
-	fixture.backend.receives.push_back(
+	fixture->backend.receives.push_back(
 		{detail::IoStatus::Complete, hello(protocol::VersionMinorV1_1, 932U, second_endpoint)});
-	native_tick(fixture, {40'001U, 1U, true});
+	native_tick(*fixture, {40'001U, 1U, true});
 	std::vector<std::size_t> welcomes;
-	for (std::size_t index = 0U; index < fixture.backend.sent.size(); ++index) {
-		if (sent_type(fixture.backend, index) == protocol::MessageType::Welcome) welcomes.push_back(index);
+	for (std::size_t index = 0U; index < fixture->backend.sent.size(); ++index) {
+		if (sent_type(fixture->backend, index) == protocol::MessageType::Welcome) welcomes.push_back(index);
 	}
 	ASSERT_EQ(2U, welcomes.size());
-	fixture.backend.receives.push_back(
+	fixture->backend.receives.push_back(
 		{detail::IoStatus::Complete,
-			ack_for(fixture.backend.sent[welcomes[0]], fixture.backend.send_endpoints[welcomes[0]], 933U)});
-	fixture.backend.receives.push_back(
+			ack_for(fixture->backend.sent[welcomes[0]], fixture->backend.send_endpoints[welcomes[0]], 933U)});
+	fixture->backend.receives.push_back(
 		{detail::IoStatus::Complete,
-			ack_for(fixture.backend.sent[welcomes[1]], fixture.backend.send_endpoints[welcomes[1]], 934U)});
+			ack_for(fixture->backend.sent[welcomes[1]], fixture->backend.send_endpoints[welcomes[1]], 934U)});
 
 	ASSERT_EQ(detail::NativeSessionTickStatus::Complete,
-		NativePlayerProbe::service_tick(fixture.runtime, {40'020U, 1U, true}, view));
+		NativePlayerProbe::service_tick(fixture->runtime, {40'020U, 1U, true}, view));
 	EXPECT_EQ(1U, view.read_calls) << "All ReadyForState edges in one EngineUpdate share one canonical capture.";
-	ASSERT_NE(nullptr, slot(fixture, 0U));
-	ASSERT_NE(nullptr, slot(fixture, 1U));
-	EXPECT_EQ(detail::ProducerSessionProgress::ReadyForState, slot(fixture, 0U)->progress);
-	EXPECT_EQ(detail::ProducerSessionProgress::ReadyForState, slot(fixture, 1U)->progress);
-	EXPECT_TRUE(slot(fixture, 0U)->has_latest_player_sample);
-	EXPECT_TRUE(slot(fixture, 1U)->has_latest_player_sample);
-	expect_materialization(NativePlayerProbe::materialization(fixture.runtime), 2U, 0U, 2U, 0U, 0U, 0U, 0U);
+	ASSERT_NE(nullptr, slot(*fixture, 0U));
+	ASSERT_NE(nullptr, slot(*fixture, 1U));
+	EXPECT_EQ(detail::ProducerSessionProgress::ReadyForState, slot(*fixture, 0U)->progress);
+	EXPECT_EQ(detail::ProducerSessionProgress::ReadyForState, slot(*fixture, 1U)->progress);
+	EXPECT_TRUE(slot(*fixture, 0U)->has_latest_player_sample);
+	EXPECT_TRUE(slot(*fixture, 1U)->has_latest_player_sample);
+	expect_materialization(NativePlayerProbe::materialization(fixture->runtime), 2U, 0U, 2U, 0U, 0U, 0U, 0U);
 }
 
 TEST(TelemetryNativePlayerCaptureContract, EngineUpdateBuildsAndEgressesTheP8SnapshotWithinTheSharedBudget)
 {
 	REQUIRE_NATIVE_PLAYER_D3();
-	NativeFixture fixture;
+	auto fixture = std::make_unique<NativeFixture>();
 	auto config = enabled_config(1U);
-	ASSERT_EQ(detail::NativeSessionStartStatus::Started, fixture.start(config));
+	ASSERT_EQ(detail::NativeSessionStartStatus::Started, fixture->start(config));
 	const auto endpoint = peer(81U);
-	ASSERT_NE(0U, establish_ready(fixture, endpoint, 0xb81U, 80'000U, 1'800U, 7U, true));
+	ASSERT_NE(0U, establish_ready(*fixture, endpoint, 0xb81U, 80'000U, 1'800U, 7U, true));
 	CountingEngineReadView view;
-	const auto sent_before_capture = fixture.backend.sent.size();
+	const auto sent_before_capture = fixture->backend.sent.size();
 	ASSERT_EQ(detail::NativeSessionTickStatus::Complete,
-		capture_tick(fixture, view, 81'000U, true));
+		capture_tick(*fixture, view, 81'000U, true));
 	ASSERT_EQ(1U, view.read_calls) << "The D5/P8 image is sourced by exactly one main-thread EngineUpdate read.";
-	ASSERT_NE(nullptr, slot(fixture));
-	EXPECT_TRUE(slot(fixture)->snapshot.has_candidate())
+	ASSERT_NE(nullptr, slot(*fixture));
+	EXPECT_TRUE(slot(*fixture)->snapshot.has_candidate())
 		<< "A valid D5/P8.1 capture must start the controller-owned initial snapshot transaction.";
-	EXPECT_LE(fixture.backend.sent.size() - sent_before_capture, 1U)
+	EXPECT_LE(fixture->backend.sent.size() - sent_before_capture, 1U)
 		<< "max_datagrams_per_tick=1 forbids a capture tick from overspending egress budget.";
 
 	for (std::uint64_t now = 81'001U; now != 81'004U; ++now) {
-		const auto sent_before = fixture.backend.sent.size();
-		ASSERT_EQ(detail::NativeSessionTickStatus::Complete, capture_tick(fixture, view, now, true));
-		EXPECT_LE(fixture.backend.sent.size() - sent_before, 1U)
+		const auto sent_before = fixture->backend.sent.size();
+		ASSERT_EQ(detail::NativeSessionTickStatus::Complete, capture_tick(*fixture, view, now, true));
+		EXPECT_LE(fixture->backend.sent.size() - sent_before, 1U)
 			<< "Initial-snapshot egress must share the native per-tick send budget.";
 	}
 
-	std::size_t snapshot_index = fixture.backend.sent.size();
-	for (std::size_t index = sent_before_capture; index < fixture.backend.sent.size(); ++index) {
-		if (sent_type(fixture.backend, index) == protocol::MessageType::FullSnapshot) {
+	std::size_t snapshot_index = fixture->backend.sent.size();
+	for (std::size_t index = sent_before_capture; index < fixture->backend.sent.size(); ++index) {
+		if (sent_type(fixture->backend, index) == protocol::MessageType::FullSnapshot) {
 			snapshot_index = index;
 			break;
 		}
 	}
-	ASSERT_LT(snapshot_index, fixture.backend.sent.size())
+	ASSERT_LT(snapshot_index, fixture->backend.sent.size())
 		<< "EngineUpdate must drive the captured P8.1 image through begin_initial_snapshot and egress.";
 	std::vector<std::uint8_t> stable;
-	const auto snapshot = decode_sent(fixture.backend, snapshot_index, stable);
+	const auto snapshot = decode_sent(fixture->backend, snapshot_index, stable);
 	EXPECT_NE(0U, static_cast<std::uint8_t>(snapshot.header.flags & protocol::MessageFlagAckRequired));
 	EXPECT_NE(0U, static_cast<std::uint8_t>(snapshot.header.flags & protocol::MessageFlagKeyframe));
 	protocol::FullSnapshotPartPayload payload;
@@ -2362,64 +2481,64 @@ TEST(TelemetryNativePlayerCaptureContract, EngineUpdateBuildsAndEgressesTheP8Sna
 TEST(TelemetryNativePlayerCaptureContract, TerminalTransportFailureAfterReadyTransitionSuppressesCapture)
 {
 	REQUIRE_NATIVE_PLAYER_D3();
-	NativeFixture fixture;
+	auto fixture = std::make_unique<NativeFixture>();
 	auto config = enabled_config(64U);
-	ASSERT_EQ(detail::NativeSessionStartStatus::Started, fixture.start(config));
+	ASSERT_EQ(detail::NativeSessionStartStatus::Started, fixture->start(config));
 	CountingEngineReadView view;
-	ASSERT_EQ(detail::NativeSessionTickStatus::Complete, capture_tick(fixture, view, 50'000U));
+	ASSERT_EQ(detail::NativeSessionTickStatus::Complete, capture_tick(*fixture, view, 50'000U));
 	view.clear_counts();
 	const auto endpoint = peer(33U);
-	fixture.backend.receives.push_back(
+	fixture->backend.receives.push_back(
 		{detail::IoStatus::Complete, hello(protocol::VersionMinorV1_1, 941U, endpoint)});
-	native_tick(fixture, {50'001U, 0U, false});
-	ASSERT_FALSE(fixture.backend.sent.empty());
-	const auto welcome = fixture.backend.sent.size() - 1U;
-	fixture.backend.receives.push_back(
-		{detail::IoStatus::Complete, ack_for(fixture.backend.sent[welcome], endpoint, 942U)});
-	fixture.backend.receives.push_back({detail::IoStatus::Error, {}});
+	native_tick(*fixture, {50'001U, 0U, false});
+	ASSERT_FALSE(fixture->backend.sent.empty());
+	const auto welcome = fixture->backend.sent.size() - 1U;
+	fixture->backend.receives.push_back(
+		{detail::IoStatus::Complete, ack_for(fixture->backend.sent[welcome], endpoint, 942U)});
+	fixture->backend.receives.push_back({detail::IoStatus::Error, {}});
 
 	EXPECT_EQ(detail::NativeSessionTickStatus::PermanentTransportFailure,
-		capture_tick(fixture, view, 50'020U));
+		capture_tick(*fixture, view, 50'020U));
 	EXPECT_EQ(0U, view.total_calls()) << "A terminal transport result aborts the tick before engine capture.";
 }
 
 TEST(TelemetryNativePlayerCaptureContract, ReadyTransitionDuringInactiveMissionDoesNotCapture)
 {
 	REQUIRE_NATIVE_PLAYER_D3();
-	NativeFixture fixture;
+	auto fixture = std::make_unique<NativeFixture>();
 	auto config = enabled_config(64U);
-	ASSERT_EQ(detail::NativeSessionStartStatus::Started, fixture.start(config));
+	ASSERT_EQ(detail::NativeSessionStartStatus::Started, fixture->start(config));
 	CountingEngineReadView view;
-	ASSERT_EQ(detail::NativeSessionTickStatus::Complete, capture_tick(fixture, view, 60'000U));
+	ASSERT_EQ(detail::NativeSessionTickStatus::Complete, capture_tick(*fixture, view, 60'000U));
 	view.clear_counts();
 	const auto endpoint = peer(34U);
-	fixture.backend.receives.push_back(
+	fixture->backend.receives.push_back(
 		{detail::IoStatus::Complete, hello(protocol::VersionMinorV1_1, 951U, endpoint)});
-	native_tick(fixture, {60'001U, 0U, false});
-	ASSERT_FALSE(fixture.backend.sent.empty());
-	const auto welcome = fixture.backend.sent.size() - 1U;
-	fixture.backend.receives.push_back(
-		{detail::IoStatus::Complete, ack_for(fixture.backend.sent[welcome], endpoint, 952U)});
+	native_tick(*fixture, {60'001U, 0U, false});
+	ASSERT_FALSE(fixture->backend.sent.empty());
+	const auto welcome = fixture->backend.sent.size() - 1U;
+	fixture->backend.receives.push_back(
+		{detail::IoStatus::Complete, ack_for(fixture->backend.sent[welcome], endpoint, 952U)});
 
-	EXPECT_EQ(detail::NativeSessionTickStatus::Complete, capture_tick(fixture, view, 60'020U, false));
+	EXPECT_EQ(detail::NativeSessionTickStatus::Complete, capture_tick(*fixture, view, 60'020U, false));
 	EXPECT_EQ(0U, view.total_calls()) << "ReadyForState never bypasses the mission-active capture gate.";
-	ASSERT_NE(nullptr, slot(fixture));
-	EXPECT_EQ(detail::ProducerSessionProgress::ReadyForState, slot(fixture)->progress);
-	EXPECT_EQ(CaptureInactive, NativePlayerProbe::last_status(fixture.runtime));
-	expect_zero_materialization(NativePlayerProbe::materialization(fixture.runtime));
+	ASSERT_NE(nullptr, slot(*fixture));
+	EXPECT_EQ(detail::ProducerSessionProgress::ReadyForState, slot(*fixture)->progress);
+	EXPECT_EQ(CaptureInactive, NativePlayerProbe::last_status(fixture->runtime));
+	expect_zero_materialization(NativePlayerProbe::materialization(fixture->runtime));
 }
 
 TEST(TelemetryNativePlayerCaptureContract, OneSharedCaptureFansOutToReadyAndStaleSlots)
 {
 	REQUIRE_NATIVE_PLAYER_D3();
-	NativeFixture fixture;
+	auto fixture = std::make_unique<NativeFixture>();
 	auto config = enabled_config(64U);
 	config.max_clients = 2U;
-	ASSERT_EQ(detail::NativeSessionStartStatus::Started, fixture.start(config));
-	(void)establish_ready(fixture, peer(23U), 910U, 100'000U, 910U);
-	(void)establish_ready(fixture, peer(24U), 920U, 200'000U, 920U);
-	const auto* first = slot(fixture, 0U);
-	const auto* second = slot(fixture, 1U);
+	ASSERT_EQ(detail::NativeSessionStartStatus::Started, fixture->start(config));
+	(void)establish_ready(*fixture, peer(23U), 910U, 100'000U, 910U);
+	(void)establish_ready(*fixture, peer(24U), 920U, 200'000U, 920U);
+	const auto* first = slot(*fixture, 0U);
+	const auto* second = slot(*fixture, 1U);
 	ASSERT_NE(nullptr, first);
 	ASSERT_NE(nullptr, second);
 	ASSERT_LT(first->heartbeat.last_valid_network_activity_us,
@@ -2429,123 +2548,123 @@ TEST(TelemetryNativePlayerCaptureContract, OneSharedCaptureFansOutToReadyAndStal
 	const auto second_stale_due = second->heartbeat.last_valid_network_activity_us +
 		second->heartbeat.stale_timeout_us;
 	ASSERT_LT(first_stale_due, second_stale_due);
-	native_tick(fixture, {first_stale_due, 0U, true});
-	ASSERT_EQ(detail::ProducerSessionProgress::Stale, slot(fixture, 0U)->progress);
-	ASSERT_EQ(detail::ProducerSessionProgress::ReadyForState, slot(fixture, 1U)->progress);
+	native_tick(*fixture, {first_stale_due, 0U, true});
+	ASSERT_EQ(detail::ProducerSessionProgress::Stale, slot(*fixture, 0U)->progress);
+	ASSERT_EQ(detail::ProducerSessionProgress::ReadyForState, slot(*fixture, 1U)->progress);
 	CountingEngineReadView view;
 	ASSERT_EQ(detail::NativeSessionTickStatus::Complete,
-		capture_tick(fixture, view, first_stale_due));
+		capture_tick(*fixture, view, first_stale_due));
 	EXPECT_EQ(1U, view.in_mission_calls);
 	EXPECT_EQ(1U, view.read_calls);
-	expect_materialization(NativePlayerProbe::materialization(fixture.runtime), 2U, 0U, 2U, 0U, 0U, 0U, 0U);
+	expect_materialization(NativePlayerProbe::materialization(fixture->runtime), 2U, 0U, 2U, 0U, 0U, 0U, 0U);
 	for (std::size_t index = 0U; index < 2U; ++index) {
-		const auto* current_slot = slot(fixture, index);
+		const auto* current_slot = slot(*fixture, index);
 		ASSERT_NE(nullptr, current_slot);
 		EXPECT_TRUE(current_slot->has_latest_player_sample);
 		EXPECT_EQ(1U, current_slot->latest_player_sample.entity_id);
 		EXPECT_EQ(first_stale_due, current_slot->latest_player_sample.value.producer_sample_time_us);
 	}
 	view.input.position_world.x = 99.0f;
-	EXPECT_FLOAT_EQ(1.0f, slot(fixture, 0U)->latest_player_sample.value.position_world.x);
-	EXPECT_FLOAT_EQ(1.0f, slot(fixture, 1U)->latest_player_sample.value.position_world.x);
+	EXPECT_FLOAT_EQ(1.0f, slot(*fixture, 0U)->latest_player_sample.value.position_world.x);
+	EXPECT_FLOAT_EQ(1.0f, slot(*fixture, 1U)->latest_player_sample.value.position_world.x);
 }
 
 TEST(TelemetryNativePlayerCaptureContract, CadenceSkipsCatchUpAndAppliesExactlyOncePerDueTick)
 {
 	REQUIRE_NATIVE_PLAYER_D3();
-	NativeFixture fixture;
+	auto fixture = std::make_unique<NativeFixture>();
 	auto config = enabled_config();
 	config.flight_hz = 30U;
-	ASSERT_EQ(detail::NativeSessionStartStatus::Started, fixture.start(config));
-	(void)establish_ready(fixture, peer(25U), 930U, 1'000U, 930U);
+	ASSERT_EQ(detail::NativeSessionStartStatus::Started, fixture->start(config));
+	(void)establish_ready(*fixture, peer(25U), 930U, 1'000U, 930U);
 	CountingEngineReadView view;
 	const auto period = independent_period_us(config.flight_hz);
 	const std::uint64_t first = 50'000U;
-	ASSERT_EQ(detail::NativeSessionTickStatus::Complete, capture_tick(fixture, view, first));
+	ASSERT_EQ(detail::NativeSessionTickStatus::Complete, capture_tick(*fixture, view, first));
 	EXPECT_EQ(1U, view.read_calls);
-	expect_materialization(NativePlayerProbe::materialization(fixture.runtime), 1U, 0U, 1U, 0U, 0U, 0U, 0U);
-	(void)capture_tick(fixture, view, first + period - 1U);
+	expect_materialization(NativePlayerProbe::materialization(fixture->runtime), 1U, 0U, 1U, 0U, 0U, 0U, 0U);
+	(void)capture_tick(*fixture, view, first + period - 1U);
 	EXPECT_EQ(1U, view.read_calls);
 	const auto hitch = first + period * 10U;
-	(void)capture_tick(fixture, view, hitch);
+	(void)capture_tick(*fixture, view, hitch);
 	EXPECT_EQ(2U, view.read_calls);
-	expect_materialization(NativePlayerProbe::materialization(fixture.runtime), 1U, 1U, 0U, 0U, 0U, 0U, 0U);
-	(void)capture_tick(fixture, view, hitch);
-	(void)capture_tick(fixture, view, hitch + period - 1U);
+	expect_materialization(NativePlayerProbe::materialization(fixture->runtime), 1U, 1U, 0U, 0U, 0U, 0U, 0U);
+	(void)capture_tick(*fixture, view, hitch);
+	(void)capture_tick(*fixture, view, hitch + period - 1U);
 	EXPECT_EQ(2U, view.read_calls);
-	(void)capture_tick(fixture, view, hitch + period);
+	(void)capture_tick(*fixture, view, hitch + period);
 	EXPECT_EQ(3U, view.read_calls);
-	EXPECT_EQ(1U, slot(fixture)->latest_player_sample.entity_id);
+	EXPECT_EQ(1U, slot(*fixture)->latest_player_sample.entity_id);
 }
 
 TEST(TelemetryNativePlayerCaptureContract, InactiveClearsCurrentPlayerWithoutReadingAndReactivationAllocatesNewId)
 {
 	REQUIRE_NATIVE_PLAYER_D3();
-	NativeFixture fixture;
+	auto fixture = std::make_unique<NativeFixture>();
 	auto config = enabled_config();
-	ASSERT_EQ(detail::NativeSessionStartStatus::Started, fixture.start(config));
-	(void)establish_ready(fixture, peer(32U), 991U, 1'000U, 991U);
+	ASSERT_EQ(detail::NativeSessionStartStatus::Started, fixture->start(config));
+	(void)establish_ready(*fixture, peer(32U), 991U, 1'000U, 991U);
 	CountingEngineReadView view;
-	ASSERT_EQ(detail::NativeSessionTickStatus::Complete, capture_tick(fixture, view, 10'000U, true));
-	ASSERT_TRUE(slot(fixture)->has_latest_player_sample);
-	ASSERT_EQ(1U, slot(fixture)->latest_player_sample.entity_id);
+	ASSERT_EQ(detail::NativeSessionTickStatus::Complete, capture_tick(*fixture, view, 10'000U, true));
+	ASSERT_TRUE(slot(*fixture)->has_latest_player_sample);
+	ASSERT_EQ(1U, slot(*fixture)->latest_player_sample.entity_id);
 	view.clear_counts();
-	(void)capture_tick(fixture, view, 20'000U, false);
-	(void)capture_tick(fixture, view, 9'000'000U, false);
+	(void)capture_tick(*fixture, view, 20'000U, false);
+	(void)capture_tick(*fixture, view, 9'000'000U, false);
 	EXPECT_EQ(0U, view.total_calls());
-	EXPECT_EQ(CaptureInactive, NativePlayerProbe::last_status(fixture.runtime));
-	expect_default_current(NativePlayerProbe::current(fixture.runtime));
-	expect_zero_materialization(NativePlayerProbe::materialization(fixture.runtime));
-	ASSERT_FALSE(slot(fixture)->has_latest_player_sample);
-	EXPECT_EQ(1U, slot(fixture)->player_entity_ids.last_allocated_entity_id());
-	(void)capture_tick(fixture, view, 10'000'000U, true);
+	EXPECT_EQ(CaptureInactive, NativePlayerProbe::last_status(fixture->runtime));
+	expect_default_current(NativePlayerProbe::current(fixture->runtime));
+	expect_zero_materialization(NativePlayerProbe::materialization(fixture->runtime));
+	ASSERT_FALSE(slot(*fixture)->has_latest_player_sample);
+	EXPECT_EQ(1U, slot(*fixture)->player_entity_ids.last_allocated_entity_id());
+	(void)capture_tick(*fixture, view, 10'000'000U, true);
 	EXPECT_EQ(1U, view.read_calls);
-	EXPECT_EQ(CaptureValid, NativePlayerProbe::last_status(fixture.runtime));
-	ASSERT_TRUE(slot(fixture)->has_latest_player_sample);
-	EXPECT_EQ(2U, slot(fixture)->latest_player_sample.entity_id);
+	EXPECT_EQ(CaptureValid, NativePlayerProbe::last_status(fixture->runtime));
+	ASSERT_TRUE(slot(*fixture)->has_latest_player_sample);
+	EXPECT_EQ(2U, slot(*fixture)->latest_player_sample.entity_id);
 	const auto calls = view.total_calls();
-	(void)capture_tick(fixture, view, 10'000'000U + independent_period_us(config.flight_hz) - 1U, true);
+	(void)capture_tick(*fixture, view, 10'000'000U + independent_period_us(config.flight_hz) - 1U, true);
 	EXPECT_EQ(calls, view.total_calls());
-	EXPECT_EQ(CaptureNotDue, NativePlayerProbe::last_status(fixture.runtime));
+	EXPECT_EQ(CaptureNotDue, NativePlayerProbe::last_status(fixture->runtime));
 }
 
 TEST(TelemetryNativePlayerCaptureContract, LegalAbsenceAndInvalidSourceClearAndReappearanceGetsNewIds)
 {
 	REQUIRE_NATIVE_PLAYER_D3();
-	NativeFixture fixture;
+	auto fixture = std::make_unique<NativeFixture>();
 	auto config = enabled_config();
 	config.flight_hz = 60U;
-	ASSERT_EQ(detail::NativeSessionStartStatus::Started, fixture.start(config));
-	(void)establish_ready(fixture, peer(26U), 940U, 1'000U, 940U);
+	ASSERT_EQ(detail::NativeSessionStartStatus::Started, fixture->start(config));
+	(void)establish_ready(*fixture, peer(26U), 940U, 1'000U, 940U);
 	CountingEngineReadView view;
 	const auto period = independent_period_us(config.flight_hz);
 	std::uint64_t now = 100'000U;
-	(void)capture_tick(fixture, view, now);
-	ASSERT_EQ(1U, slot(fixture)->latest_player_sample.entity_id);
+	(void)capture_tick(*fixture, view, now);
+	ASSERT_EQ(1U, slot(*fixture)->latest_player_sample.entity_id);
 	view.player = false;
-	(void)capture_tick(fixture, view, now += period);
-	EXPECT_EQ(CaptureNoPlayer, NativePlayerProbe::last_status(fixture.runtime));
-	const auto no_player = NativePlayerProbe::current(fixture.runtime);
+	(void)capture_tick(*fixture, view, now += period);
+	EXPECT_EQ(CaptureNoPlayer, NativePlayerProbe::last_status(fixture->runtime));
+	const auto no_player = NativePlayerProbe::current(fixture->runtime);
 	EXPECT_TRUE(no_player.available);
 	EXPECT_EQ(detail::CaptureStatus::NoPlayer, no_player.result.status);
 	expect_observation(no_player.observation, {});
-	EXPECT_FALSE(slot(fixture)->has_latest_player_sample);
-	expect_materialization(NativePlayerProbe::materialization(fixture.runtime), 1U, 0U, 0U, 1U, 0U, 0U, 0U);
+	EXPECT_FALSE(slot(*fixture)->has_latest_player_sample);
+	expect_materialization(NativePlayerProbe::materialization(fixture->runtime), 1U, 0U, 0U, 1U, 0U, 0U, 0U);
 	view.player = true;
-	(void)capture_tick(fixture, view, now += period);
-	ASSERT_EQ(2U, slot(fixture)->latest_player_sample.entity_id);
+	(void)capture_tick(*fixture, view, now += period);
+	ASSERT_EQ(2U, slot(*fixture)->latest_player_sample.entity_id);
 	view.object_is_ship = false;
-	(void)capture_tick(fixture, view, now += period);
-	EXPECT_EQ(CaptureInvalidSource, NativePlayerProbe::last_status(fixture.runtime));
-	const auto invalid = NativePlayerProbe::current(fixture.runtime);
+	(void)capture_tick(*fixture, view, now += period);
+	EXPECT_EQ(CaptureInvalidSource, NativePlayerProbe::last_status(fixture->runtime));
+	const auto invalid = NativePlayerProbe::current(fixture->runtime);
 	EXPECT_TRUE(invalid.available);
 	EXPECT_EQ(detail::CaptureStatus::InvalidSource, invalid.result.status);
 	expect_observation(invalid.observation, {});
-	EXPECT_FALSE(slot(fixture)->has_latest_player_sample);
-	expect_materialization(NativePlayerProbe::materialization(fixture.runtime), 1U, 0U, 0U, 0U, 1U, 0U, 0U);
+	EXPECT_FALSE(slot(*fixture)->has_latest_player_sample);
+	expect_materialization(NativePlayerProbe::materialization(fixture->runtime), 1U, 0U, 0U, 0U, 1U, 0U, 0U);
 	view.object_is_ship = true;
-	(void)capture_tick(fixture, view, now += period);
-	EXPECT_EQ(3U, slot(fixture)->latest_player_sample.entity_id);
+	(void)capture_tick(*fixture, view, now += period);
+	EXPECT_EQ(3U, slot(*fixture)->latest_player_sample.entity_id);
 }
 
 TEST(TelemetryNativePlayerCaptureContract, ExhaustiveCaptureResultPairsAcceptOnlyClosedContract)
@@ -2555,10 +2674,10 @@ TEST(TelemetryNativePlayerCaptureContract, ExhaustiveCaptureResultPairsAcceptOnl
 		 ++status_value) {
 		for (std::uint8_t reason_value = 0U; reason_value <= static_cast<std::uint8_t>(detail::CaptureReason::Count);
 			 ++reason_value) {
-			NativeFixture fixture;
+			auto fixture = std::make_unique<NativeFixture>();
 			auto config = enabled_config();
-			ASSERT_EQ(detail::NativeSessionStartStatus::Started, fixture.start(config));
-			(void)establish_ready(fixture, peer(27U), 950U, 1'000U, 950U);
+			ASSERT_EQ(detail::NativeSessionStartStatus::Started, fixture->start(config));
+			(void)establish_ready(*fixture, peer(27U), 950U, 1'000U, 950U);
 			const auto valid = detail::CaptureResult{detail::CaptureStatus::Valid, detail::CaptureReason::None};
 			const auto seeded = observation(42U, 10U, 2.0f);
 			const auto status = static_cast<detail::CaptureStatus>(status_value);
@@ -2572,44 +2691,44 @@ TEST(TelemetryNativePlayerCaptureContract, ExhaustiveCaptureResultPairsAcceptOnl
 									  reason < detail::CaptureReason::Count;
 			if (!valid_pair) {
 				ASSERT_EQ(detail::NativeSessionTickStatus::Complete,
-					NativePlayerAccess::inject_collected_player_capture(fixture.runtime, valid, seeded));
+					NativePlayerAccess::inject_collected_player_capture(fixture->runtime, valid, seeded));
 			}
 			const detail::CaptureResult candidate{status, reason};
-			const auto result = NativePlayerAccess::inject_collected_player_capture(fixture.runtime,
+			const auto result = NativePlayerAccess::inject_collected_player_capture(fixture->runtime,
 				candidate,
 				observation(77U, 20U, 9.0f));
 			if (valid_pair || no_player_pair || invalid_pair) {
 				EXPECT_EQ(detail::NativeSessionTickStatus::Complete, result);
-				const auto current = NativePlayerProbe::current(fixture.runtime);
+				const auto current = NativePlayerProbe::current(fixture->runtime);
 				EXPECT_TRUE(current.available);
 				EXPECT_EQ(status, current.result.status);
 				EXPECT_EQ(reason, current.result.reason);
 				EXPECT_EQ(valid_pair       ? CaptureValid
 						  : no_player_pair ? CaptureNoPlayer
 										   : CaptureInvalidSource,
-					NativePlayerProbe::last_status(fixture.runtime));
+					NativePlayerProbe::last_status(fixture->runtime));
 				if (valid_pair) {
 					expect_observation(current.observation, observation(77U, 20U, 9.0f));
-					EXPECT_TRUE(slot(fixture)->has_latest_player_sample);
+					EXPECT_TRUE(slot(*fixture)->has_latest_player_sample);
 				} else {
 					expect_observation(current.observation, {});
-					EXPECT_FALSE(slot(fixture)->has_latest_player_sample);
+					EXPECT_FALSE(slot(*fixture)->has_latest_player_sample);
 				}
-				EXPECT_EQ(1U, fixture.runtime.socket_count());
+				EXPECT_EQ(1U, fixture->runtime.socket_count());
 			} else {
 				EXPECT_EQ(TickPermanentCaptureFailure, static_cast<std::uint8_t>(result));
-				EXPECT_EQ(CaptureInvariantFailure, NativePlayerProbe::last_status(fixture.runtime));
-				expect_default_current(NativePlayerProbe::current(fixture.runtime));
-				expect_zero_materialization(NativePlayerProbe::materialization(fixture.runtime));
-				EXPECT_EQ(0U, fixture.runtime.active_sessions());
-				EXPECT_EQ(0U, fixture.runtime.socket_count());
+				EXPECT_EQ(CaptureInvariantFailure, NativePlayerProbe::last_status(fixture->runtime));
+				expect_default_current(NativePlayerProbe::current(fixture->runtime));
+				expect_zero_materialization(NativePlayerProbe::materialization(fixture->runtime));
+				EXPECT_EQ(0U, fixture->runtime.active_sessions());
+				EXPECT_EQ(0U, fixture->runtime.socket_count());
 				EXPECT_EQ(detail::NativeSessionTickStatus::Unavailable,
-					NativePlayerAccess::inject_collected_player_capture(fixture.runtime, valid, seeded));
+					NativePlayerAccess::inject_collected_player_capture(fixture->runtime, valid, seeded));
 				CountingEngineReadView fault_view;
 				EXPECT_EQ(TickPermanentCaptureFailure,
-					static_cast<std::uint8_t>(capture_tick(fixture, fault_view, 30'000U)));
+					static_cast<std::uint8_t>(capture_tick(*fixture, fault_view, 30'000U)));
 				EXPECT_EQ(TickPermanentCaptureFailure,
-					static_cast<std::uint8_t>(native_tick(fixture, {30'001U, 0U, true})));
+					static_cast<std::uint8_t>(native_tick(*fixture, {30'001U, 0U, true})));
 				EXPECT_EQ(0U, fault_view.total_calls());
 			}
 		}
@@ -2619,107 +2738,107 @@ TEST(TelemetryNativePlayerCaptureContract, ExhaustiveCaptureResultPairsAcceptOnl
 TEST(TelemetryNativePlayerCaptureContract, ClockRegressionFailsClosedBeforeReadingAndStaysSticky)
 {
 	REQUIRE_NATIVE_PLAYER_D3();
-	NativeFixture fixture;
+	auto fixture = std::make_unique<NativeFixture>();
 	auto config = enabled_config();
-	ASSERT_EQ(detail::NativeSessionStartStatus::Started, fixture.start(config));
-	(void)establish_ready(fixture, peer(28U), 960U, 1'000U, 960U);
+	ASSERT_EQ(detail::NativeSessionStartStatus::Started, fixture->start(config));
+	(void)establish_ready(*fixture, peer(28U), 960U, 1'000U, 960U);
 	CountingEngineReadView view;
-	ASSERT_EQ(detail::NativeSessionTickStatus::Complete, capture_tick(fixture, view, 100'000U));
+	ASSERT_EQ(detail::NativeSessionTickStatus::Complete, capture_tick(*fixture, view, 100'000U));
 	view.clear_counts();
-	EXPECT_EQ(TickPermanentCaptureFailure, static_cast<std::uint8_t>(capture_tick(fixture, view, 99'999U)));
+	EXPECT_EQ(TickPermanentCaptureFailure, static_cast<std::uint8_t>(capture_tick(*fixture, view, 99'999U)));
 	EXPECT_EQ(0U, view.total_calls());
-	EXPECT_EQ(CaptureCadenceFailure, NativePlayerProbe::last_status(fixture.runtime));
-	EXPECT_EQ(0U, fixture.runtime.active_sessions());
-	EXPECT_EQ(0U, fixture.runtime.socket_count());
-	expect_default_current(NativePlayerProbe::current(fixture.runtime));
-	expect_zero_materialization(NativePlayerProbe::materialization(fixture.runtime));
-	EXPECT_EQ(TickPermanentCaptureFailure, static_cast<std::uint8_t>(capture_tick(fixture, view, 200'000U)));
+	EXPECT_EQ(CaptureCadenceFailure, NativePlayerProbe::last_status(fixture->runtime));
+	EXPECT_EQ(0U, fixture->runtime.active_sessions());
+	EXPECT_EQ(0U, fixture->runtime.socket_count());
+	expect_default_current(NativePlayerProbe::current(fixture->runtime));
+	expect_zero_materialization(NativePlayerProbe::materialization(fixture->runtime));
+	EXPECT_EQ(TickPermanentCaptureFailure, static_cast<std::uint8_t>(capture_tick(*fixture, view, 200'000U)));
 	EXPECT_EQ(0U, view.total_calls());
 }
 
 TEST(TelemetryNativePlayerCaptureContract, DeadlineOverflowFailsClosedBeforeReadingAndStaysSticky)
 {
 	REQUIRE_NATIVE_PLAYER_D3();
-	NativeFixture fixture;
+	auto fixture = std::make_unique<NativeFixture>();
 	auto config = enabled_config();
-	ASSERT_EQ(detail::NativeSessionStartStatus::Started, fixture.start(config));
+	ASSERT_EQ(detail::NativeSessionStartStatus::Started, fixture->start(config));
 	CountingEngineReadView view;
 	EXPECT_EQ(TickPermanentCaptureFailure,
-		static_cast<std::uint8_t>(capture_tick(fixture, view, std::numeric_limits<std::uint64_t>::max())));
+		static_cast<std::uint8_t>(capture_tick(*fixture, view, std::numeric_limits<std::uint64_t>::max())));
 	EXPECT_EQ(0U, view.total_calls());
-	EXPECT_EQ(CaptureCadenceFailure, NativePlayerProbe::last_status(fixture.runtime));
-	EXPECT_EQ(0U, fixture.runtime.socket_count());
-	expect_default_current(NativePlayerProbe::current(fixture.runtime));
-	expect_zero_materialization(NativePlayerProbe::materialization(fixture.runtime));
-	EXPECT_EQ(TickPermanentCaptureFailure, static_cast<std::uint8_t>(capture_tick(fixture, view, 1U)));
+	EXPECT_EQ(CaptureCadenceFailure, NativePlayerProbe::last_status(fixture->runtime));
+	EXPECT_EQ(0U, fixture->runtime.socket_count());
+	expect_default_current(NativePlayerProbe::current(fixture->runtime));
+	expect_zero_materialization(NativePlayerProbe::materialization(fixture->runtime));
+	EXPECT_EQ(TickPermanentCaptureFailure, static_cast<std::uint8_t>(capture_tick(*fixture, view, 1U)));
 	EXPECT_EQ(0U, view.total_calls());
 }
 
 TEST(TelemetryNativePlayerCaptureContract, EntityIdExhaustionClosesOnlyAffectedSlotAndTickCompletes)
 {
 	REQUIRE_NATIVE_PLAYER_D3();
-	NativeFixture fixture;
+	auto fixture = std::make_unique<NativeFixture>();
 	auto config = enabled_config();
 	config.max_clients = 2U;
-	ASSERT_EQ(detail::NativeSessionStartStatus::Started, fixture.start(config));
-	(void)establish_ready(fixture, peer(29U), 970U, 1'000U, 970U);
-	(void)establish_ready(fixture, peer(30U), 980U, 2'000U, 980U);
-	ASSERT_TRUE(NativePlayerAccess::seed_last_allocated_entity_id(fixture.runtime,
+	ASSERT_EQ(detail::NativeSessionStartStatus::Started, fixture->start(config));
+	(void)establish_ready(*fixture, peer(29U), 970U, 1'000U, 970U);
+	(void)establish_ready(*fixture, peer(30U), 980U, 2'000U, 980U);
+	ASSERT_TRUE(NativePlayerAccess::seed_last_allocated_entity_id(fixture->runtime,
 		0U,
 		std::numeric_limits<std::uint64_t>::max()));
 	CountingEngineReadView view;
-	EXPECT_EQ(detail::NativeSessionTickStatus::Complete, capture_tick(fixture, view, 100'000U));
+	EXPECT_EQ(detail::NativeSessionTickStatus::Complete, capture_tick(*fixture, view, 100'000U));
 	EXPECT_EQ(1U, view.read_calls);
-	expect_materialization(NativePlayerProbe::materialization(fixture.runtime), 2U, 0U, 1U, 0U, 0U, 0U, 1U);
-	EXPECT_EQ(1U, fixture.runtime.active_sessions());
-	EXPECT_EQ(detail::ProducerSessionProgress::Empty, slot(fixture, 0U)->progress);
-	EXPECT_EQ(detail::ProducerSessionProgress::ReadyForState, slot(fixture, 1U)->progress);
-	EXPECT_EQ(1U, slot(fixture, 1U)->latest_player_sample.entity_id);
-	EXPECT_EQ(1U, fixture.runtime.socket_count());
+	expect_materialization(NativePlayerProbe::materialization(fixture->runtime), 2U, 0U, 1U, 0U, 0U, 0U, 1U);
+	EXPECT_EQ(1U, fixture->runtime.active_sessions());
+	EXPECT_EQ(detail::ProducerSessionProgress::Empty, slot(*fixture, 0U)->progress);
+	EXPECT_EQ(detail::ProducerSessionProgress::ReadyForState, slot(*fixture, 1U)->progress);
+	EXPECT_EQ(1U, slot(*fixture, 1U)->latest_player_sample.entity_id);
+	EXPECT_EQ(1U, fixture->runtime.socket_count());
 }
 
 TEST(TelemetryNativePlayerCaptureContract, PurgeClearsAndRearmsAtIndependentExactBoundaries)
 {
 	REQUIRE_NATIVE_PLAYER_D3();
-	NativeFixture fixture;
+	auto fixture = std::make_unique<NativeFixture>();
 	auto config = enabled_config();
 	config.flight_hz = 30U;
-	ASSERT_EQ(detail::NativeSessionStartStatus::Started, fixture.start(config));
+	ASSERT_EQ(detail::NativeSessionStartStatus::Started, fixture->start(config));
 	CountingEngineReadView view;
-	(void)capture_tick(fixture, view, 10'000U);
-	fixture.runtime.purge_all(detail::SessionCloseReason::MissionDiscontinuity);
-	EXPECT_EQ(CaptureUnavailable, NativePlayerProbe::last_status(fixture.runtime));
-	expect_default_current(NativePlayerProbe::current(fixture.runtime));
-	expect_zero_materialization(NativePlayerProbe::materialization(fixture.runtime));
+	(void)capture_tick(*fixture, view, 10'000U);
+	fixture->runtime.purge_all(detail::SessionCloseReason::MissionDiscontinuity);
+	EXPECT_EQ(CaptureUnavailable, NativePlayerProbe::last_status(fixture->runtime));
+	expect_default_current(NativePlayerProbe::current(fixture->runtime));
+	expect_zero_materialization(NativePlayerProbe::materialization(fixture->runtime));
 	view.clear_counts();
 	const std::uint64_t t2 = 987'654U;
 	const auto period = independent_period_us(config.flight_hz);
-	(void)capture_tick(fixture, view, t2);
+	(void)capture_tick(*fixture, view, t2);
 	EXPECT_EQ(1U, view.read_calls);
-	(void)capture_tick(fixture, view, t2 + period - 1U);
+	(void)capture_tick(*fixture, view, t2 + period - 1U);
 	EXPECT_EQ(1U, view.read_calls);
-	EXPECT_EQ(CaptureNotDue, NativePlayerProbe::last_status(fixture.runtime));
-	(void)capture_tick(fixture, view, t2 + period);
+	EXPECT_EQ(CaptureNotDue, NativePlayerProbe::last_status(fixture->runtime));
+	(void)capture_tick(*fixture, view, t2 + period);
 	EXPECT_EQ(2U, view.read_calls);
 }
 
 TEST(TelemetryNativePlayerCaptureContract, ShutdownClearsAndAllCaptureSeamsStayUnavailable)
 {
 	REQUIRE_NATIVE_PLAYER_D3();
-	NativeFixture fixture;
+	auto fixture = std::make_unique<NativeFixture>();
 	auto config = enabled_config();
-	ASSERT_EQ(detail::NativeSessionStartStatus::Started, fixture.start(config));
+	ASSERT_EQ(detail::NativeSessionStartStatus::Started, fixture->start(config));
 	CountingEngineReadView view;
-	(void)capture_tick(fixture, view, 10'000U);
-	fixture.runtime.shutdown();
-	EXPECT_EQ(CaptureUnavailable, NativePlayerProbe::last_status(fixture.runtime));
-	expect_default_current(NativePlayerProbe::current(fixture.runtime));
-	expect_zero_materialization(NativePlayerProbe::materialization(fixture.runtime));
+	(void)capture_tick(*fixture, view, 10'000U);
+	fixture->runtime.shutdown();
+	EXPECT_EQ(CaptureUnavailable, NativePlayerProbe::last_status(fixture->runtime));
+	expect_default_current(NativePlayerProbe::current(fixture->runtime));
+	expect_zero_materialization(NativePlayerProbe::materialization(fixture->runtime));
 	view.clear_counts();
-	EXPECT_EQ(detail::NativeSessionTickStatus::Unavailable, capture_tick(fixture, view, 20'000U));
-	EXPECT_EQ(detail::NativeSessionTickStatus::Unavailable, native_tick(fixture, {20'001U, 0U, true}));
+	EXPECT_EQ(detail::NativeSessionTickStatus::Unavailable, capture_tick(*fixture, view, 20'000U));
+	EXPECT_EQ(detail::NativeSessionTickStatus::Unavailable, native_tick(*fixture, {20'001U, 0U, true}));
 	EXPECT_EQ(detail::NativeSessionTickStatus::Unavailable,
-		NativePlayerAccess::inject_collected_player_capture(fixture.runtime,
+		NativePlayerAccess::inject_collected_player_capture(fixture->runtime,
 			{detail::CaptureStatus::Valid, detail::CaptureReason::None},
 			observation(42U, 20'000U)));
 	EXPECT_EQ(0U, view.total_calls());
@@ -2728,26 +2847,26 @@ TEST(TelemetryNativePlayerCaptureContract, ShutdownClearsAndAllCaptureSeamsStayU
 TEST(TelemetryNativePlayerCaptureContract, R2OnlyTestSeamPreservesPlayerStateWhileR2Progresses)
 {
 	REQUIRE_NATIVE_PLAYER_D3();
-	NativeFixture fixture;
+	auto fixture = std::make_unique<NativeFixture>();
 	auto config = enabled_config();
 	config.max_clients = 2U;
-	ASSERT_EQ(detail::NativeSessionStartStatus::Started, fixture.start(config));
+	ASSERT_EQ(detail::NativeSessionStartStatus::Started, fixture->start(config));
 	const auto ready_endpoint = peer(31U);
-	const auto ready_session_id = establish_ready(fixture, ready_endpoint, 990U, 1'000U, 990U);
+	const auto ready_session_id = establish_ready(*fixture, ready_endpoint, 990U, 1'000U, 990U);
 	CountingEngineReadView view;
-	(void)capture_tick(fixture, view, 100'000U);
-	const auto status_before = NativePlayerProbe::last_status(fixture.runtime);
-	const auto current_before = NativePlayerProbe::current(fixture.runtime);
-	const auto materialization_before = NativePlayerProbe::materialization(fixture.runtime);
-	const auto sample_before = slot(fixture)->latest_player_sample;
+	(void)capture_tick(*fixture, view, 100'000U);
+	const auto status_before = NativePlayerProbe::last_status(fixture->runtime);
+	const auto current_before = NativePlayerProbe::current(fixture->runtime);
+	const auto materialization_before = NativePlayerProbe::materialization(fixture->runtime);
+	const auto sample_before = slot(*fixture)->latest_player_sample;
 	auto expect_preserved = [&] {
-		EXPECT_EQ(status_before, NativePlayerProbe::last_status(fixture.runtime));
-		const auto current_after = NativePlayerProbe::current(fixture.runtime);
+		EXPECT_EQ(status_before, NativePlayerProbe::last_status(fixture->runtime));
+		const auto current_after = NativePlayerProbe::current(fixture->runtime);
 		EXPECT_EQ(current_before.available, current_after.available);
 		EXPECT_EQ(current_before.result.status, current_after.result.status);
 		EXPECT_EQ(current_before.result.reason, current_after.result.reason);
 		expect_observation(current_after.observation, current_before.observation);
-		expect_materialization(NativePlayerProbe::materialization(fixture.runtime),
+		expect_materialization(NativePlayerProbe::materialization(fixture->runtime),
 			materialization_before.eligible_slots,
 			materialization_before.materialized_existing_slots,
 			materialization_before.materialized_new_slots,
@@ -2755,82 +2874,82 @@ TEST(TelemetryNativePlayerCaptureContract, R2OnlyTestSeamPreservesPlayerStateWhi
 			materialization_before.invalid_source_slots,
 			materialization_before.invalid_capture_slots,
 			materialization_before.closed_exhausted_slots);
-		ASSERT_NE(nullptr, slot(fixture));
-		ASSERT_TRUE(slot(fixture)->has_latest_player_sample);
-		expect_player_sample(slot(fixture)->latest_player_sample, sample_before);
+		ASSERT_NE(nullptr, slot(*fixture));
+		ASSERT_TRUE(slot(*fixture)->has_latest_player_sample);
+		expect_player_sample(slot(*fixture)->latest_player_sample, sample_before);
 	};
 	const auto period = independent_period_us(config.flight_hz);
-	const auto activity_before = slot(fixture)->heartbeat.last_valid_network_activity_us;
-	const auto clock_response_before = slot(fixture)->heartbeat.last_valid_clock_response_us;
+	const auto activity_before = slot(*fixture)->heartbeat.last_valid_network_activity_us;
+	const auto clock_response_before = slot(*fixture)->heartbeat.last_valid_clock_response_us;
 	const std::uint64_t heartbeat_tick = 100'001U;
-	fixture.backend.receives.push_back(
+	fixture->backend.receives.push_back(
 		{detail::IoStatus::Complete, heartbeat_request(ready_session_id, ready_endpoint, 991U, heartbeat_tick - 1U)});
-	const auto sends_before_heartbeat = fixture.backend.sent.size();
-	native_tick(fixture, {heartbeat_tick, 0U, true});
-	ASSERT_GT(fixture.backend.sent.size(), sends_before_heartbeat);
+	const auto sends_before_heartbeat = fixture->backend.sent.size();
+	native_tick(*fixture, {heartbeat_tick, 0U, true});
+	ASSERT_GT(fixture->backend.sent.size(), sends_before_heartbeat);
 	EXPECT_EQ(protocol::MessageType::Heartbeat,
-		sent_type(fixture.backend, fixture.backend.sent.size() - 1U));
-	ASSERT_NE(nullptr, slot(fixture));
-	EXPECT_LT(activity_before, slot(fixture)->heartbeat.last_valid_network_activity_us);
-	EXPECT_EQ(heartbeat_tick, slot(fixture)->heartbeat.last_valid_network_activity_us);
-	EXPECT_EQ(clock_response_before, slot(fixture)->heartbeat.last_valid_clock_response_us)
+		sent_type(fixture->backend, fixture->backend.sent.size() - 1U));
+	ASSERT_NE(nullptr, slot(*fixture));
+	EXPECT_LT(activity_before, slot(*fixture)->heartbeat.last_valid_network_activity_us);
+	EXPECT_EQ(heartbeat_tick, slot(*fixture)->heartbeat.last_valid_network_activity_us);
+	EXPECT_EQ(clock_response_before, slot(*fixture)->heartbeat.last_valid_clock_response_us)
 		<< "A valid client Request refreshes activity and queues Heartbeat Response; it is not a clock-response sample.";
 	expect_preserved();
 
 	const auto second_endpoint = peer(33U);
-	const auto sends_before_second_hello = fixture.backend.sent.size();
-	fixture.backend.receives.push_back(
+	const auto sends_before_second_hello = fixture->backend.sent.size();
+	fixture->backend.receives.push_back(
 		{detail::IoStatus::Complete, hello(protocol::VersionMinorV1_1, 992U, second_endpoint)});
-	native_tick(fixture, {heartbeat_tick + 1U, 0U, false});
+	native_tick(*fixture, {heartbeat_tick + 1U, 0U, false});
 	expect_preserved();
-	ASSERT_GT(fixture.backend.sent.size(), sends_before_second_hello);
-	const auto second_welcome = fixture.backend.sent.size() - 1U;
-	EXPECT_EQ(protocol::MessageType::Welcome, sent_type(fixture.backend, second_welcome));
-	ASSERT_NE(nullptr, slot(fixture, 1U));
-	EXPECT_EQ(detail::ProducerSessionProgress::AwaitWelcomeApplied, slot(fixture, 1U)->progress);
-	EXPECT_EQ(2U, fixture.runtime.active_sessions());
+	ASSERT_GT(fixture->backend.sent.size(), sends_before_second_hello);
+	const auto second_welcome = fixture->backend.sent.size() - 1U;
+	EXPECT_EQ(protocol::MessageType::Welcome, sent_type(fixture->backend, second_welcome));
+	ASSERT_NE(nullptr, slot(*fixture, 1U));
+	EXPECT_EQ(detail::ProducerSessionProgress::AwaitWelcomeApplied, slot(*fixture, 1U)->progress);
+	EXPECT_EQ(2U, fixture->runtime.active_sessions());
 
-	const auto sends_before_second_welcome_ack = fixture.backend.sent.size();
-	fixture.backend.receives.push_back(
-		{detail::IoStatus::Complete, ack_for(fixture.backend.sent[second_welcome], second_endpoint, 993U)});
-	const auto second_welcome_ack_script_index = fixture.backend.receives.size() - 1U;
-	native_tick(fixture, {heartbeat_tick + 2U, 0U, false});
+	const auto sends_before_second_welcome_ack = fixture->backend.sent.size();
+	fixture->backend.receives.push_back(
+		{detail::IoStatus::Complete, ack_for(fixture->backend.sent[second_welcome], second_endpoint, 993U)});
+	const auto second_welcome_ack_script_index = fixture->backend.receives.size() - 1U;
+	native_tick(*fixture, {heartbeat_tick + 2U, 0U, false});
 	expect_preserved();
-	EXPECT_GT(fixture.backend.receive_script_index, second_welcome_ack_script_index)
+	EXPECT_GT(fixture->backend.receive_script_index, second_welcome_ack_script_index)
 		<< "The R2-only test seam must ingest the real WELCOME ACK before later egress.";
-	ASSERT_NE(nullptr, slot(fixture, 1U));
-	EXPECT_EQ(detail::ProducerSessionProgress::ReadyForState, slot(fixture, 1U)->progress)
+	ASSERT_NE(nullptr, slot(*fixture, 1U));
+	EXPECT_EQ(detail::ProducerSessionProgress::ReadyForState, slot(*fixture, 1U)->progress)
 		<< "Applying the WELCOME proof is the observable R2 handshake transition.";
 	for (std::uint64_t offset = 0U;
-		offset < 8U && fixture.backend.sent.size() == sends_before_second_welcome_ack;
+		offset < 8U && fixture->backend.sent.size() == sends_before_second_welcome_ack;
 		++offset) {
-		native_tick(fixture, {heartbeat_tick + 3U + offset, 0U, false});
+		native_tick(*fixture, {heartbeat_tick + 3U + offset, 0U, false});
 		expect_preserved();
 	}
-	ASSERT_GT(fixture.backend.sent.size(), sends_before_second_welcome_ack);
+	ASSERT_GT(fixture->backend.sent.size(), sends_before_second_welcome_ack);
 	EXPECT_EQ(protocol::MessageType::SessionBegin,
-		sent_type(fixture.backend, fixture.backend.sent.size() - 1U));
-	ASSERT_NE(nullptr, slot(fixture, 1U));
-	EXPECT_EQ(detail::ProducerSessionProgress::ReadyForState, slot(fixture, 1U)->progress);
+		sent_type(fixture->backend, fixture->backend.sent.size() - 1U));
+	ASSERT_NE(nullptr, slot(*fixture, 1U));
+	EXPECT_EQ(detail::ProducerSessionProgress::ReadyForState, slot(*fixture, 1U)->progress);
 
-	native_tick(fixture, {100'000U + period * 2U, 0U, true});
+	native_tick(*fixture, {100'000U + period * 2U, 0U, true});
 	expect_preserved();
-	native_tick(fixture, {100'000U + period * 4U, 0U, true});
+	native_tick(*fixture, {100'000U + period * 4U, 0U, true});
 	expect_preserved();
 
-	const auto disconnect_due = slot(fixture)->heartbeat.last_valid_network_activity_us +
-		slot(fixture)->heartbeat.disconnect_timeout_us;
-	native_tick(fixture, {disconnect_due, 0U, true});
-	ASSERT_NE(nullptr, slot(fixture));
-	EXPECT_EQ(detail::ProducerSessionProgress::Empty, slot(fixture)->progress)
+	const auto disconnect_due = slot(*fixture)->heartbeat.last_valid_network_activity_us +
+		slot(*fixture)->heartbeat.disconnect_timeout_us;
+	native_tick(*fixture, {disconnect_due, 0U, true});
+	ASSERT_NE(nullptr, slot(*fixture));
+	EXPECT_EQ(detail::ProducerSessionProgress::Empty, slot(*fixture)->progress)
 		<< "Only the real R2 maintenance deadline may clear the preserved player slot.";
-	EXPECT_EQ(status_before, NativePlayerProbe::last_status(fixture.runtime));
-	const auto current_after_close = NativePlayerProbe::current(fixture.runtime);
+	EXPECT_EQ(status_before, NativePlayerProbe::last_status(fixture->runtime));
+	const auto current_after_close = NativePlayerProbe::current(fixture->runtime);
 	EXPECT_EQ(current_before.available, current_after_close.available);
 	EXPECT_EQ(current_before.result.status, current_after_close.result.status);
 	EXPECT_EQ(current_before.result.reason, current_after_close.result.reason);
 	expect_observation(current_after_close.observation, current_before.observation);
-	expect_materialization(NativePlayerProbe::materialization(fixture.runtime),
+	expect_materialization(NativePlayerProbe::materialization(fixture->runtime),
 		materialization_before.eligible_slots,
 		materialization_before.materialized_existing_slots,
 		materialization_before.materialized_new_slots,
@@ -2844,18 +2963,18 @@ TEST(TelemetryNativePlayerCaptureContract, ClosedAndErrorTransportFailuresAreSti
 {
 	REQUIRE_NATIVE_PLAYER_D3();
 	for (const auto io_status : {detail::IoStatus::Closed, detail::IoStatus::Error}) {
-		NativeFixture fixture;
+		auto fixture = std::make_unique<NativeFixture>();
 		auto config = enabled_config();
-		ASSERT_EQ(detail::NativeSessionStartStatus::Started, fixture.start(config));
-		fixture.backend.receives.push_back({io_status, {}});
+		ASSERT_EQ(detail::NativeSessionStartStatus::Started, fixture->start(config));
+		fixture->backend.receives.push_back({io_status, {}});
 		CountingEngineReadView view;
-		EXPECT_EQ(detail::NativeSessionTickStatus::PermanentTransportFailure, capture_tick(fixture, view, 100'000U));
+		EXPECT_EQ(detail::NativeSessionTickStatus::PermanentTransportFailure, capture_tick(*fixture, view, 100'000U));
 		EXPECT_EQ(0U, view.total_calls());
-		EXPECT_EQ(CaptureUnavailable, NativePlayerProbe::last_status(fixture.runtime));
-		expect_default_current(NativePlayerProbe::current(fixture.runtime));
-		expect_zero_materialization(NativePlayerProbe::materialization(fixture.runtime));
-		EXPECT_EQ(0U, fixture.runtime.socket_count());
-		EXPECT_EQ(detail::NativeSessionTickStatus::PermanentTransportFailure, capture_tick(fixture, view, 200'000U));
+		EXPECT_EQ(CaptureUnavailable, NativePlayerProbe::last_status(fixture->runtime));
+		expect_default_current(NativePlayerProbe::current(fixture->runtime));
+		expect_zero_materialization(NativePlayerProbe::materialization(fixture->runtime));
+		EXPECT_EQ(0U, fixture->runtime.socket_count());
+		EXPECT_EQ(detail::NativeSessionTickStatus::PermanentTransportFailure, capture_tick(*fixture, view, 200'000U));
 		EXPECT_EQ(0U, view.total_calls());
 	}
 }

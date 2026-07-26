@@ -3,45 +3,45 @@
   "phaseNumber": 2,
   "title": "Phase 2 — Vaisseau complet",
   "profile": "balanced",
-  "executionState": "paused",
-  "updatedAtUtc": "2026-07-26T08:38:19.0000000Z",
+  "executionState": "active",
+  "updatedAtUtc": "2026-07-26T16:29:45.8986082Z",
   "source": {
     "branch": "codex/phase2-pre-skill-checkpoint",
-    "head": "9cf93847a4d6054e9e28c5854af858bb054e4d53",
-    "trackedWorktree": "clean-at-checkpoint",
+    "head": "b5b059d20f86e079fce4fb1f39762d46183657bf",
+    "trackedWorktree": "dirty-B1-production-handoff",
     "contractDirectory": "documentation/analysis/specs/2-Vaisseau-complet"
   },
   "current": {
-    "workPackage": "P2-WP-02",
-    "slice": "B1 — migrate ShipIdentityObservation::class_source_key away from raw uint32_t engine identity",
-    "lastClosedGate": "G2-A",
-    "nextGate": "G2-B",
-    "summary": "WP02 is paused with G2-B reopened. B2 and B3 are corrected with targeted green diagnostics but await fresh broad evidence and rereview. B1 has one remaining red field. WP03 and WP09 are suspended."
+    "workPackage": "P2-WP-03",
+    "slice": "not started — G2-B sealed in tracker; no WP03 implementation slice or write has begun",
+    "lastClosedGate": "G2-B",
+    "nextGate": "G2-C",
+    "summary": "Final independent reviewer disposition is GO on the sole normative G2-B report at SHA-256 58ae6ed5742a98a9e9e954fc6251655098d267c52c725187efcf63dc3dd4bfb6. Tracker sealing promotes P2-WP-02, P2-REQ-009..014, P2-TST-007..009, and P2-AC-004 to verified and closes G2-B. Per the gate graph, P2-WP-03 and parallel P2-WP-09 are authorized and moved from suspended to pending; no WP03 slice or downstream write has started. The tracker is now stable and must not be modified during the separate report-sealing step."
   },
   "statusBuckets": {
     "workPackages": {
-      "pending": ["P2-WP-04", "P2-WP-05", "P2-WP-06", "P2-WP-07", "P2-WP-08", "P2-WP-10", "P2-WP-11", "P2-WP-12"],
+      "pending": ["P2-WP-03", "P2-WP-04", "P2-WP-05", "P2-WP-06", "P2-WP-07", "P2-WP-08", "P2-WP-09", "P2-WP-10", "P2-WP-11", "P2-WP-12"],
       "in_progress": [],
       "implemented": [],
-      "verified": ["P2-WP-01"],
-      "blocked": ["P2-WP-02"],
+      "verified": ["P2-WP-01", "P2-WP-02"],
+      "blocked": [],
       "deferred": [],
-      "suspended": ["P2-WP-03", "P2-WP-09"]
+      "suspended": []
     },
     "requirements": {
       "pending": ["P2-REQ-006", "P2-REQ-007", "P2-REQ-008", "P2-REQ-015", "P2-REQ-016", "P2-REQ-017", "P2-REQ-018", "P2-REQ-019", "P2-REQ-020", "P2-REQ-021", "P2-REQ-022", "P2-REQ-023", "P2-REQ-024", "P2-REQ-025", "P2-REQ-026", "P2-REQ-027", "P2-REQ-028", "P2-REQ-029", "P2-REQ-030", "P2-REQ-031", "P2-REQ-032", "P2-REQ-034", "P2-REQ-035", "P2-REQ-036", "P2-REQ-037", "P2-REQ-038", "P2-REQ-039", "P2-REQ-040", "P2-REQ-041", "P2-REQ-043", "P2-REQ-044", "P2-REQ-045", "P2-REQ-047", "P2-REQ-048", "P2-REQ-049"],
       "in_progress": [],
-      "implemented": ["P2-REQ-005", "P2-REQ-009", "P2-REQ-010", "P2-REQ-012", "P2-REQ-013", "P2-REQ-014", "P2-REQ-033", "P2-REQ-042", "P2-REQ-046", "P2-REQ-050"],
-      "verified": ["P2-REQ-001", "P2-REQ-002", "P2-REQ-003", "P2-REQ-004"],
-      "blocked": ["P2-REQ-011"],
+      "implemented": ["P2-REQ-005", "P2-REQ-033", "P2-REQ-042", "P2-REQ-046", "P2-REQ-050"],
+      "verified": ["P2-REQ-001", "P2-REQ-002", "P2-REQ-003", "P2-REQ-004", "P2-REQ-009", "P2-REQ-010", "P2-REQ-011", "P2-REQ-012", "P2-REQ-013", "P2-REQ-014"],
+      "blocked": [],
       "deferred": [],
       "suspended": []
     },
     "tests": {
       "pending": ["P2-TST-001", "P2-TST-002", "P2-TST-003", "P2-TST-004", "P2-TST-005", "P2-TST-006", "P2-TST-020", "P2-TST-021", "P2-TST-022", "P2-TST-023", "P2-TST-024", "P2-TST-025", "P2-TST-026", "P2-TST-027", "P2-TST-028", "P2-TST-029", "P2-TST-030", "P2-TST-031", "P2-TST-032", "P2-TST-033", "P2-TST-034", "P2-TST-035", "P2-TST-036", "P2-TST-037", "P2-TST-038", "P2-TST-039", "P2-TST-040", "P2-TST-041", "P2-TST-042", "P2-TST-043", "P2-TST-044", "P2-TST-045", "P2-TST-046", "P2-TST-047", "P2-TST-048", "P2-TST-049", "P2-TST-050", "P2-TST-051", "P2-TST-052", "P2-TST-053", "P2-TST-054", "P2-TST-055", "P2-TST-056", "P2-TST-057", "P2-TST-058", "P2-TST-059", "P2-TST-060", "P2-TST-061", "P2-TST-062", "P2-TST-063", "P2-TST-064", "P2-TST-065", "P2-TST-066", "P2-TST-067", "P2-TST-068", "P2-TST-069", "P2-TST-070"],
       "in_progress": [],
-      "implemented": ["P2-TST-007", "P2-TST-008", "P2-TST-009"],
-      "verified": ["P2-TST-010", "P2-TST-011", "P2-TST-012", "P2-TST-013", "P2-TST-014", "P2-TST-015", "P2-TST-016", "P2-TST-017", "P2-TST-018", "P2-TST-019"],
+      "implemented": [],
+      "verified": ["P2-TST-007", "P2-TST-008", "P2-TST-009", "P2-TST-010", "P2-TST-011", "P2-TST-012", "P2-TST-013", "P2-TST-014", "P2-TST-015", "P2-TST-016", "P2-TST-017", "P2-TST-018", "P2-TST-019"],
       "blocked": [],
       "deferred": [],
       "suspended": []
@@ -50,16 +50,16 @@
       "pending": ["P2-AC-003", "P2-AC-005", "P2-AC-006", "P2-AC-007", "P2-AC-008", "P2-AC-009", "P2-AC-010", "P2-AC-011", "P2-AC-012", "P2-AC-013", "P2-AC-014", "P2-AC-015"],
       "in_progress": [],
       "implemented": [],
-      "verified": ["P2-AC-001", "P2-AC-002"],
-      "blocked": ["P2-AC-004"],
+      "verified": ["P2-AC-001", "P2-AC-002", "P2-AC-004"],
+      "blocked": [],
       "deferred": [],
       "suspended": []
     },
     "gates": {
       "pending": ["G2-C", "G2-D", "G2-E", "G2-F", "G2-G"],
       "ready": [],
-      "closed": ["G2-A"],
-      "reopened": ["G2-B"],
+      "closed": ["G2-A", "G2-B"],
+      "reopened": [],
       "blocked": []
     }
   },
@@ -67,27 +67,211 @@
   "blockers": [
     {
       "id": "B1",
-      "state": "active",
-      "owner": "implementer",
-      "summary": "ShipIdentityObservation::class_source_key still exposes a raw uint32_t engine identity.",
+      "state": "closed",
+      "owner": "test_agent",
+      "summary": "ShipIdentityObservation::class_source_key is corrected in production and the dedicated B1 narrow reproducer passes 1/1.",
       "affects": ["P2-WP-02", "P2-REQ-011", "P2-AC-004", "G2-B"],
-      "nextProof": "Correct only class_source_key, build the dedicated production target, then rerun the B1 narrow reproducer."
+      "nextProof": "Retain the targeted proof and rerun B1 with B2/B3 before readiness review."
     },
     {
       "id": "B2",
-      "state": "resolved_unverified",
+      "state": "closed",
       "owner": "test_agent",
-      "summary": "Auxiliary-registry homonym policy is corrected and the targeted diagnostic passes.",
+      "summary": "The valid fixture now initializes identity.class_source_key from raw_static_references.class_capture_key and the grouped observation filter passes.",
       "affects": ["P2-WP-02", "P2-REQ-010", "P2-REQ-011", "P2-REQ-017", "P2-REQ-050", "G2-B"],
-      "nextProof": "Rerun B2 with B1/B3 after the final B1 production change, then include it in readiness rereview."
+      "nextProof": "Retain the fresh grouped 3/3 proof and include it in the readiness review."
     },
     {
       "id": "B3",
-      "state": "resolved_unverified",
+      "state": "closed",
       "owner": "test_agent",
-      "summary": "The common production mapper, hostile scalar handling, zero-slot bank rejection, and stack oracle are corrected with targeted green diagnostics.",
+      "summary": "The hostile reload-batch oracle is closed at 7/7, the corrected real-FSO fixture passes within full Debug observation 69/69, and grouped post-correction readiness is GO.",
       "affects": ["P2-WP-02", "P2-REQ-010", "P2-REQ-015", "P2-REQ-033", "P2-REQ-050", "G2-B"],
-      "nextProof": "Rerun B3 with B1/B2 after the final B1 production change, then include it in readiness rereview."
+      "nextProof": "Retain the grouped readiness GO and run only the authorized balanced WP02 Release checkpoint campaign before any gate decision."
+    },
+    {
+      "id": "B1-DEBUG-TARGET",
+      "state": "closed",
+      "owner": "test_agent",
+      "summary": "The dedicated Debug observation-contract target compiles phase2_observation.cpp directly and links only gtest_main; it builds successfully but does not exercise engine_adapter production code.",
+      "affects": ["P2-WP-02", "B1-proof", "P2-REQ-011", "P2-AC-004"],
+      "nextProof": "Retain the fresh dedicated-target build evidence alongside the passing B1 reproducer."
+    },
+    {
+      "id": "B3-MAPPER",
+      "state": "closed",
+      "owner": "implementer",
+      "summary": "The production mapper is now clear-first and exhaustive, consumes scratch input only, and preserves zero weapon references, but the new diagnostics have not rerun.",
+      "affects": ["P2-WP-02", "P2-REQ-010", "P2-REQ-015", "P2-REQ-033", "P2-REQ-050", "G2-B"],
+      "nextProof": "Retain the fresh 3/3 observation and 3/3 source diagnostic proofs for grouped re-readiness."
+    },
+    {
+      "id": "B3-FAIL-EMPTY",
+      "state": "closed",
+      "owner": "implementer",
+      "summary": "The production fail-empty path now clears rejected catalogues, but the prefilled-catalogue diagnostics have not rerun.",
+      "affects": ["P2-WP-02", "P2-REQ-010", "P2-REQ-015", "P2-REQ-033", "P2-REQ-050", "G2-B"],
+      "nextProof": "Retain the fresh 3/3 observation and 3/3 source diagnostic proofs for grouped re-readiness."
+    },
+    {
+      "id": "B3-FIXTURE",
+      "state": "closed",
+      "owner": "test_agent",
+      "summary": "The test-only input fixture now uses std::make_unique<Input>(), eliminating the intermediate stack-overflow crash; grouped observation passes 3/3.",
+      "affects": ["P2-WP-02", "P2-REQ-010", "P2-REQ-015", "P2-REQ-033", "P2-REQ-050", "G2-B"],
+      "nextProof": "Retain the green grouped observation proof and include the fixture correction in grouped re-readiness."
+    },
+    {
+      "id": "B3-PROD-SEAM-PROOF",
+      "state": "closed",
+      "owner": "test_agent",
+      "summary": "The observation target compiles phase2_observation.cpp directly and links only gtest_main; it does not compile engine_adapter production code, and grouped records lack an exact command and raw result.",
+      "affects": ["P2-WP-02", "P2-REQ-010", "P2-REQ-015", "P2-REQ-033", "P2-REQ-050", "G2-B"],
+      "nextProof": "Retain the readiness GO and include production-seam coverage in the authorized balanced checkpoint evidence review."
+    },
+    {
+      "id": "B3-STACK-RESET",
+      "state": "closed",
+      "owner": "implementer",
+      "summary": "A shared destruction-plus-placement-new helper now resets nine large members in place; production calls it once, input={} is absent, and no giant local or allocation is introduced.",
+      "affects": ["P2-WP-02", "P2-REQ-010", "P2-REQ-015", "P2-REQ-033", "P2-REQ-050", "G2-B"],
+      "nextProof": "Retain the fresh 1/1 stack-reset proof and include it in final disposition re-review."
+    },
+    {
+      "id": "B3-EXHAUSTIVE-ORACLE",
+      "state": "closed",
+      "owner": "test_agent",
+      "summary": "The functional exhaustive pure-mapper fixture passes 1/1 and exercises authorities plus transitive references field by field.",
+      "affects": ["P2-WP-02", "P2-REQ-010", "P2-REQ-015", "P2-REQ-033", "P2-REQ-050", "P2-AC-004", "G2-B"],
+      "nextProof": "Retain the fresh functional 1/1 proof and include it in the next grouped readiness review."
+    },
+    {
+      "id": "WP02-LIFECYCLE-TARGET",
+      "state": "closed",
+      "owner": "test_agent",
+      "summary": "The test-only Release lifecycle target compiles phase2_observation.cpp directly without linking code, preserves the seam, and passes its 1/1 suite.",
+      "affects": ["P2-WP-02", "P2-TST-007", "P2-AC-004", "G2-B"],
+      "nextProof": "Retain the fresh Release build and 1/1 lifecycle result; do not rerun lifecycle during the resumed checkpoint."
+    },
+    {
+      "id": "WP02-OBS-LEGACY-FIXTURES",
+      "state": "closed",
+      "owner": "test_agent",
+      "summary": "The valid real-FSO fixture now sets reloaded_per_batch=1, passes its isolated test, and the full Debug observation suite passes 69/69.",
+      "affects": ["P2-WP-02", "P2-TST-008", "P2-AC-004", "G2-B"],
+      "nextProof": "Retain the fresh isolated 1/1 and full Debug 69/69 proofs for the grouped targeted review."
+    },
+    {
+      "id": "B3-RELOAD-BATCH",
+      "state": "closed",
+      "owner": "implementer",
+      "summary": "Production no longer coerces reloaded_per_batch==0 to 1; the exact hostile-oracle fixture group passes 7/7 with fail-empty behavior.",
+      "affects": ["P2-WP-02", "P2-REQ-010", "P2-REQ-015", "P2-REQ-033", "P2-REQ-050", "P2-TST-008", "P2-AC-004", "G2-B"],
+      "nextProof": "Retain the fresh 7/7 hostile-oracle proof and include it in reviewer disposition."
+    },
+    {
+      "id": "WP02-SOURCE-ARTIFACT-EVIDENCE",
+      "state": "closed",
+      "owner": "test_agent",
+      "summary": "The durable post-build SHA and timestamp provenance match the exact adapter object; linkability validity is tracked separately by WP02-SOURCE-LINKABLE-VACUOUS.",
+      "affects": ["P2-WP-02", "P2-TST-009", "P2-AC-004", "G2-B"],
+      "nextProof": "Retain only the correct SHA and timestamp provenance as partial evidence while the linkability oracle is repaired."
+    },
+    {
+      "id": "WP02-SOURCE-LINKABLE-VACUOUS",
+      "state": "closed",
+      "owner": "test_agent",
+      "summary": "Reviewer confirms substantive MSVC evidence: 1,189,159-byte COFF object, 615,583-byte linkable dump, expected markers/counts, matching SHA, and an object distinct from production.",
+      "affects": ["P2-WP-02", "P2-TST-009", "P2-AC-004", "G2-B"],
+      "nextProof": "Retain the accepted substantive MSVC proof; non-MSVC compilation is tracked separately by WP02-SOURCE-NONMSVC-COMPILE."
+    },
+    {
+      "id": "WP02-SOURCE-NONMSVC-COMPILE",
+      "state": "closed",
+      "owner": "test_agent",
+      "summary": "Final focused reviewer accepts the B3-only MSVC guard and non-MSVC skip with oracle 1/1, combined group 3/3, and full source 80/80.",
+      "affects": ["P2-WP-02", "P2-TST-009", "P2-AC-004", "G2-B"],
+      "nextProof": "Retain the focused reviewer GO and resume only the ordered Release checkpoint at lifecycle."
+    },
+    {
+      "id": "WP02-TST-GROUP-STACK-OVERFLOW",
+      "state": "closed",
+      "owner": "implementer",
+      "summary": "Reviewer accepts the heap candidate, three in-place resets, and test-only heap fixture; exact TST008 passes 1/1 and code disposition is GO.",
+      "affects": ["P2-WP-02", "P2-TST-007", "P2-TST-008", "P2-TST-009", "P2-AC-004", "G2-B"],
+      "nextProof": "Retain CODE GO and complete the ordered Release refresh before the one broad checkpoint run."
+    },
+    {
+      "id": "WP02-SOURCE-UNIQUEPTR-LEXICAL-ORACLES",
+      "state": "closed",
+      "owner": "test_agent",
+      "summary": "Reviewer accepts the three corrected unique_ptr/move and ordering oracles with exact 3/3 and full source 80/80.",
+      "affects": ["P2-WP-02", "P2-TST-008", "P2-TST-009", "P2-AC-004", "G2-B"],
+      "nextProof": "Retain reviewer GO and run the exact Release 16-test group before any broad run."
+    },
+    {
+      "id": "WP02-NATIVE-FIXTURE-BATCH-REVIEW",
+      "state": "closed",
+      "owner": "review_agent",
+      "summary": "Independent reviewer disposition is GO for one tightly mechanical 41-fixture heap migration plus a non-vacuous no-auto-fixture and exact-total oracle.",
+      "affects": ["P2-WP-02", "P2-TST-008", "P2-AC-004", "G2-B"],
+      "nextProof": "Preserve scope and declaration order, use std::make_unique, -> member access, and dereference only for reference helpers; change no assertions or production code."
+    },
+    {
+      "id": "WP02-GLOBAL-MASSIVE-FIXTURE-BATCH-REVIEW",
+      "state": "closed",
+      "owner": "review_agent",
+      "summary": "Independent reviewer disposition is conditional GO for one global batch of exactly 10 automatic massive-fixture sites plus mandatory unique ownership for two inline optional<NativeSessionRuntime> roots.",
+      "affects": ["P2-WP-02", "P2-TST-008", "P2-AC-004", "G2-B"],
+      "nextProof": "Implement all ownership, noexcept allocation, reliability coexistence, ordering, and non-vacuous per-file/global-count oracle constraints before the ordered targeted cadence."
+    },
+    {
+      "id": "WP02-BROAD-STACK-OVERFLOW",
+      "state": "closed",
+      "owner": "implementer",
+      "summary": "Canonical exact 16 passes 16/16, then the one authorized broad Release suite passes 1,103 with four justified skips, zero failures, and two disabled tests not run.",
+      "affects": ["P2-WP-02", "P2-AC-004", "G2-B"],
+      "nextProof": "Retain fresh execution evidence and bind it into the regenerated G2-B report for final independent review."
+    },
+    {
+      "id": "WP02-ALLOCATION-DEFERRED-MASK",
+      "state": "closed",
+      "owner": "implementer",
+      "summary": "The stale line 866 oracle is corrected to Metrics-only 0x0080; the allocation target rebuilds and dedicated tests pass exact 8/8.",
+      "affects": ["P2-WP-02", "P2-TST-008", "P2-AC-004", "G2-B"],
+      "nextProof": "Retain the fresh allocation build and exact 8/8 proof."
+    },
+    {
+      "id": "WP02-ADAPTER-CAPTURE-FAILURE",
+      "state": "closed",
+      "owner": "implementer",
+      "summary": "Three test-only authority captures preserve the production gate, and the exact combined filter passes 28 with two expected opt-in Loopback skips.",
+      "affects": ["P2-WP-02", "P2-TST-008", "P2-AC-004", "G2-B"],
+      "nextProof": "Retain the clean diff-check, successful unittests rebuild, and exact combined 28 PASS plus two expected SKIP proof."
+    },
+    {
+      "id": "WP02-RELIABILITY-HARNESS-BUILD-CERTIFICATION",
+      "state": "closed",
+      "owner": "implementer",
+      "summary": "The exact reliability harness target build exits 0 after 12.580 seconds and produces a certified 15,696,896-byte artifact at 18:01:54 without execution.",
+      "affects": ["P2-WP-02", "P2-AC-004", "G2-B"],
+      "nextProof": "Retain the certified build-only evidence and do not execute the harness."
+    },
+    {
+      "id": "WP02-GLOBAL-BATCH-GROUPED-REVIEW",
+      "state": "closed",
+      "owner": "review_agent",
+      "summary": "Independent grouped reviewer disposition is GO with no blockers on heap migration, unique ownership, nothrow failure handling, non-vacuous oracles, and accumulated evidence.",
+      "affects": ["P2-WP-02", "P2-TST-008", "P2-AC-004", "G2-B"],
+      "nextProof": "Rerun exact 16; authorize one broad only if exact 16 is green."
+    },
+    {
+      "id": "WP02-G2-B-FINAL-REPORT-REVIEW",
+      "state": "closed",
+      "owner": "review_agent",
+      "summary": "Final independent reviewer disposition is GO on the complete G2-B evidence report with no remaining review blocker.",
+      "affects": ["P2-WP-02", "P2-REQ-009", "P2-REQ-010", "P2-REQ-011", "P2-REQ-012", "P2-REQ-013", "P2-REQ-014", "P2-TST-007", "P2-TST-008", "P2-TST-009", "P2-AC-004", "G2-B"],
+      "nextProof": "Seal the report in the separate report-only step without modifying this stable tracker."
     }
   ],
   "evidence": [
@@ -102,12 +286,21 @@
     },
     {
       "id": "G2-B-current-report",
-      "status": "stale",
+      "status": "fresh",
       "path": "test/telemetry/producer/phase2/reports/wp02-capture/g2-b-capture.json",
       "command": null,
-      "revision": "9cf93847a4d6054e9e28c5854af858bb054e4d53",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-WP02-g2-b-ready-for-review",
       "covers": ["G2-B", "P2-WP-02", "P2-TST-007", "P2-TST-008", "P2-TST-009", "P2-AC-004"],
-      "note": "The report records reopening but predates the latest B2/B3 corrections and cannot close G2-B."
+      "note": "Final independent reviewer disposition is GO on the sole normative G2-B report as reviewed at 49,255 bytes and SHA-256 58ae6ed5742a98a9e9e954fc6251655098d267c52c725187efcf63dc3dd4bfb6. Tracker-level gate sealing is complete. The report file itself remains untouched in this step and must be sealed separately without rewriting the stable tracker."
+    },
+    {
+      "id": "WP02-G2-B-final-independent-review-go",
+      "status": "fresh",
+      "path": "test/telemetry/producer/phase2/reports/wp02-capture/g2-b-capture.json",
+      "command": null,
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-WP02-g2-b-ready-for-review",
+      "covers": ["P2-WP-02", "P2-REQ-009", "P2-REQ-010", "P2-REQ-011", "P2-REQ-012", "P2-REQ-013", "P2-REQ-014", "P2-TST-007", "P2-TST-008", "P2-TST-009", "P2-AC-004", "G2-B"],
+      "note": "Final independent reviewer disposition is GO with no blocker on the review-ready report at SHA-256 58ae6ed5742a98a9e9e954fc6251655098d267c52c725187efcf63dc3dd4bfb6. This evidence authorizes tracker promotion and downstream WP03/WP09 availability according to the gate graph."
     },
     {
       "id": "WP02-prior-broad-suites",
@@ -117,19 +310,1153 @@
       "revision": "pre-checkpoint-worktree",
       "covers": ["P2-WP-02", "P2-TST-007", "P2-TST-008", "P2-TST-009"],
       "note": "Observation 62/62, source contract 73/73, and CTest 8/8 were invalidated by later production corrections."
+    },
+    {
+      "id": "WP02-B1-debug-code-build",
+      "status": "fresh",
+      "path": "build-phase1-physical/code/code.dir/Debug/code.tlog/code.lastbuildstate",
+      "command": "cmake --build build-phase1-physical --config Debug --target code -j 2",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-B1-production-handoff",
+      "covers": ["P2-WP-02", "P2-REQ-011"],
+      "note": "Build-only evidence: the initial wrapper timed out, but code.lib and code.lastbuildstate were regenerated after approximately 822 seconds. This supports compilation of the working-tree implementation only; it is not test, acceptance, or G2-B gate proof."
+    },
+    {
+      "id": "WP02-B1-narrow-reproducer",
+      "status": "superseded",
+      "path": null,
+      "command": "cmake --build build --config Debug --target telemetry_phase2_observation_contract_tests -j 2",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-B1-production-handoff",
+      "covers": ["P2-WP-02", "P2-REQ-011", "P2-AC-004"],
+      "note": "Incremental build exited 1 after 21.724 seconds with LNK2001 for flFrametime and LNK1120 for 79 unresolved externals because the dedicated target links monolithic code.lib. No test executed, so this record supplies no fresh B1 or gate proof."
+    },
+    {
+      "id": "WP02-B1-debug-target-build",
+      "status": "fresh",
+      "path": "build/bin/Debug/telemetry_phase2_observation_contract_tests.exe",
+      "command": "cmake --build build --config Debug --target telemetry_phase2_observation_contract_tests -j 2",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-B1-target-repair",
+      "covers": ["P2-WP-02", "P2-REQ-011"],
+      "note": "The repaired test-only target compiles phase2_observation.cpp directly and links only gtest_main. The exact build exited 0 after 60.604 seconds; it does not exercise engine_adapter production code and is not G2-B gate proof."
+    },
+    {
+      "id": "WP02-B1-narrow-reproducer-pass",
+      "status": "fresh",
+      "path": "build/bin/Debug/telemetry_phase2_observation_contract_tests.exe",
+      "command": "build/bin/Debug/telemetry_phase2_observation_contract_tests.exe --gtest_filter=TelemetryPhase2ObservationContract.Wp02ReviewB1EveryPublishedSourceKeyIsOpaqueAndCaptureLocal",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-B1-target-repair",
+      "covers": ["P2-WP-02", "P2-REQ-011", "P2-AC-004"],
+      "note": "The exact B1 narrow reproducer exited 0 after 140 ms with 1/1 PASS. It closes B1 only; WP02, P2-REQ-011, P2-AC-004, and G2-B remain unverified pending grouped and gate evidence."
+    },
+    {
+      "id": "WP02-grouped-source-build",
+      "status": "fresh",
+      "path": "build/bin/Debug/telemetry_phase2_engine_integration_source_contract_tests.exe",
+      "command": "cmake --build build --config Debug --target telemetry_phase2_engine_integration_source_contract_tests -j 2",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-B1-target-repair",
+      "covers": ["P2-WP-02", "P2-REQ-010", "P2-REQ-011"],
+      "note": "The exact Debug source-contract build exited 0 after 7.286 seconds. This is targeted build evidence only and does not prove G2-B."
+    },
+    {
+      "id": "WP02-grouped-observation-B1-B2-B3",
+      "status": "superseded",
+      "path": "build/bin/Debug/telemetry_phase2_observation_contract_tests.exe",
+      "command": null,
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-B1-target-repair",
+      "covers": ["P2-WP-02", "P2-REQ-010", "P2-REQ-011", "P2-AC-004"],
+      "note": "Superseded failed attempt: the grouped observation run exited 1 after 141 ms because the B2 valid fixture omitted the coherent identity.class_source_key. The later corrected-fixture rerun passes 3/3."
+    },
+    {
+      "id": "WP02-grouped-source-B3",
+      "status": "superseded",
+      "path": "build/bin/Debug/telemetry_phase2_engine_integration_source_contract_tests.exe",
+      "command": null,
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-B1-target-repair",
+      "covers": ["P2-WP-02", "P2-REQ-010", "P2-REQ-015", "P2-REQ-033", "P2-REQ-050"],
+      "note": "Superseded for B3 readiness: the 2/2 source subgroup used the invalidated oracle and supplied neither an exact test command nor raw result."
+    },
+    {
+      "id": "WP02-grouped-observation-build-after-B2-fixture",
+      "status": "fresh",
+      "path": "build/bin/Debug/telemetry_phase2_observation_contract_tests.exe",
+      "command": "cmake --build build --config Debug --target telemetry_phase2_observation_contract_tests -j 2",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-B2-fixture-correction",
+      "covers": ["P2-WP-02", "P2-REQ-010", "P2-REQ-011"],
+      "note": "The exact Debug observation-contract build exited 0 after 8.726 seconds. CMake compiles phase2_observation.cpp directly and links only gtest_main; the target does not exercise engine_adapter production code and is not G2-B gate proof."
+    },
+    {
+      "id": "WP02-grouped-observation-B1-B2-B3-pass",
+      "status": "fresh",
+      "path": "build/bin/Debug/telemetry_phase2_observation_contract_tests.exe",
+      "command": null,
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-B2-fixture-correction",
+      "covers": ["P2-WP-02", "P2-REQ-011", "P2-AC-004"],
+      "note": "The grouped run remains fresh only for its non-invalidated B1/B2 observations: it exited 0 after 849 ms with 3/3 reported and B2 completed in 748 ms. Its B3 result is superseded by the false oracle, and the absent exact command/raw result cannot supply production-seam or G2-B proof."
+    },
+    {
+      "id": "WP02-B3-red-observation-build",
+      "status": "fresh",
+      "path": "build/bin/Debug/telemetry_phase2_observation_contract_tests.exe",
+      "command": "cmake --build build --config Debug --target telemetry_phase2_observation_contract_tests -j 2",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-B3-red-tests",
+      "covers": ["P2-WP-02", "P2-REQ-010", "P2-REQ-015", "P2-REQ-033", "P2-REQ-050"],
+      "note": "The Debug observation target build exited 0 after 37.890 seconds. This is build evidence for the RED diagnostic binary only, not correctness or G2-B proof."
+    },
+    {
+      "id": "WP02-B3-red-source-build",
+      "status": "fresh",
+      "path": "build/bin/Debug/telemetry_phase2_engine_integration_source_contract_tests.exe",
+      "command": "cmake --build build --config Debug --target telemetry_phase2_engine_integration_source_contract_tests -j 2",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-B3-red-tests",
+      "covers": ["P2-WP-02", "P2-REQ-010", "P2-REQ-015", "P2-REQ-033", "P2-REQ-050"],
+      "note": "The Debug source target build exited 0 after 15.415 seconds. add_dependencies(code) produces a current code target, but the source test binary does not link code; this is not runtime production-seam or G2-B proof."
+    },
+    {
+      "id": "WP02-B3-red-observation-diagnostics",
+      "status": "superseded",
+      "path": "build/bin/Debug/telemetry_phase2_observation_contract_tests.exe",
+      "command": "& 'build/bin/Debug/telemetry_phase2_observation_contract_tests.exe' '--gtest_filter=TelemetryPhase2ObservationContract.Wp02ReviewB3ZeroReferencedWeaponsRemainEmptyWithoutGhostDefinition:TelemetryPhase2ObservationContract.Wp02ReviewB3EveryEarlyBankRejectionClearsPrefilledCatalog:TelemetryPhase2ObservationContract.Wp02ReviewB3RealFsoZeroSlotBankRejectsAndClearsPrefilledCatalog' '--gtest_color=no'",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-B3-red-tests",
+      "covers": ["P2-WP-02", "P2-REQ-010", "P2-REQ-015", "P2-REQ-033", "P2-REQ-050", "P2-AC-004"],
+      "note": "Superseded RED baseline: the exact observation batch exited 1 after 253 ms with 0/3 passing. The same batch passes after the scoped production correction."
+    },
+    {
+      "id": "WP02-B3-red-source-diagnostics",
+      "status": "superseded",
+      "path": "build/bin/Debug/telemetry_phase2_engine_integration_source_contract_tests.exe",
+      "command": "& 'build/bin/Debug/telemetry_phase2_engine_integration_source_contract_tests.exe' '--gtest_filter=TelemetryPhase2EngineIntegrationSourceContract.Wp02ReviewB3ProductionDoesNotPrefillOutputCatalogBeforePureMapper:TelemetryPhase2EngineIntegrationSourceContract.Wp02ReviewB3SharedMapperConsumesExhaustiveRawInputAndFreshOutput:TelemetryPhase2EngineIntegrationSourceContract.Wp02ReviewB3BuildDependencyProducesCurrentAdapterObjectWithoutLinkingCode' '--gtest_color=no'",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-B3-red-tests",
+      "covers": ["P2-WP-02", "P2-REQ-010", "P2-REQ-015", "P2-REQ-033", "P2-REQ-050"],
+      "note": "Superseded RED baseline: the exact source batch exited 1 after 181 ms with 1/3 passing. The same batch passes after the scoped production correction."
+    },
+    {
+      "id": "WP02-B3-production-debug-code-build",
+      "status": "fresh",
+      "path": "build/bin/Debug/code.lib",
+      "command": "cmake --build build --config Debug --target code -j 2",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-B3-production-fix",
+      "covers": ["P2-WP-02", "P2-REQ-010", "P2-REQ-015", "P2-REQ-033", "P2-REQ-050"],
+      "note": "Build-only evidence for the three-file production correction: the exact Debug code build exited 0 after 73.096 seconds, diff-check was green, and Source measured 19,954,632 bytes, below 64 MiB. This proves compilation and size only; it is not test, acceptance, or G2-B proof."
+    },
+    {
+      "id": "WP02-B3-green-observation-build-initial",
+      "status": "fresh",
+      "path": "build/bin/Debug/telemetry_phase2_observation_contract_tests.exe",
+      "command": "cmake --build build --config Debug --target telemetry_phase2_observation_contract_tests -j 2",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-B3-production-fix",
+      "covers": ["P2-WP-02", "P2-REQ-010", "P2-REQ-015", "P2-REQ-033", "P2-REQ-050"],
+      "note": "The initial Debug observation target build exited 0 after 8.962 seconds. This is targeted build evidence only."
+    },
+    {
+      "id": "WP02-B3-green-source-build",
+      "status": "fresh",
+      "path": "build/bin/Debug/telemetry_phase2_engine_integration_source_contract_tests.exe",
+      "command": "cmake --build build --config Debug --target telemetry_phase2_engine_integration_source_contract_tests -j 2",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-B3-production-fix",
+      "covers": ["P2-WP-02", "P2-REQ-010", "P2-REQ-015", "P2-REQ-033", "P2-REQ-050"],
+      "note": "The Debug source target build exited 0 after 10.409 seconds. This is targeted build evidence only."
+    },
+    {
+      "id": "WP02-B3-green-observation-diagnostics",
+      "status": "fresh",
+      "path": "build/bin/Debug/telemetry_phase2_observation_contract_tests.exe",
+      "command": "& 'build/bin/Debug/telemetry_phase2_observation_contract_tests.exe' '--gtest_filter=TelemetryPhase2ObservationContract.Wp02ReviewB3ZeroReferencedWeaponsRemainEmptyWithoutGhostDefinition:TelemetryPhase2ObservationContract.Wp02ReviewB3EveryEarlyBankRejectionClearsPrefilledCatalog:TelemetryPhase2ObservationContract.Wp02ReviewB3RealFsoZeroSlotBankRejectsAndClearsPrefilledCatalog' '--gtest_color=no'",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-B3-production-fix",
+      "covers": ["P2-WP-02", "P2-REQ-010", "P2-REQ-015", "P2-REQ-033", "P2-REQ-050", "P2-AC-004"],
+      "note": "The exact new B3 observation batch exited 0 after 229 ms with 3/3 PASS. This is targeted evidence for re-readiness, not G2-B gate proof."
+    },
+    {
+      "id": "WP02-B3-green-source-diagnostics",
+      "status": "superseded",
+      "path": "build/bin/Debug/telemetry_phase2_engine_integration_source_contract_tests.exe",
+      "command": "& 'build/bin/Debug/telemetry_phase2_engine_integration_source_contract_tests.exe' '--gtest_filter=TelemetryPhase2EngineIntegrationSourceContract.Wp02ReviewB3ProductionDoesNotPrefillOutputCatalogBeforePureMapper:TelemetryPhase2EngineIntegrationSourceContract.Wp02ReviewB3SharedMapperConsumesExhaustiveRawInputAndFreshOutput:TelemetryPhase2EngineIntegrationSourceContract.Wp02ReviewB3BuildDependencyProducesCurrentAdapterObjectWithoutLinkingCode' '--gtest_color=no'",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-B3-production-fix",
+      "covers": ["P2-WP-02", "P2-REQ-010", "P2-REQ-015", "P2-REQ-033", "P2-REQ-050"],
+      "note": "Superseded only as an exhaustivity claim: the 3/3 source batch is lexical and cannot prove functional field-by-field mapping. Its non-exhaustivity build-dependency and prefill observations remain historical partial results, not gate proof."
+    },
+    {
+      "id": "WP02-B3-original-observation-group-crash",
+      "status": "superseded",
+      "path": "build/bin/Debug/telemetry_phase2_observation_contract_tests.exe",
+      "command": "& 'build/bin/Debug/telemetry_phase2_observation_contract_tests.exe' '--gtest_filter=TelemetryPhase2ObservationContract.Wp02ReviewB1EveryPublishedSourceKeyIsOpaqueAndCaptureLocal:TelemetryPhase2ObservationContract.Wp02ReviewB2NamedRegistryHomonymsAreAmbiguousButEmptyPatternsAreNot:TelemetryPhase2ObservationContract.Wp02ReviewB3ProductionAndSeamMapperRejectSameHostilesFailEmpty' '--gtest_color=no'",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-B3-production-fix",
+      "covers": ["P2-WP-02", "P2-REQ-010", "P2-REQ-011", "P2-AC-004"],
+      "note": "Superseded test-only fixture failure: the first original grouped observation attempt crashed with 0xC00000FD after B1/B2 because *input={} created a temporary on the stack. No persistent log is claimed."
+    },
+    {
+      "id": "WP02-B3-observation-rebuild-after-fixture",
+      "status": "fresh",
+      "path": "build/bin/Debug/telemetry_phase2_observation_contract_tests.exe",
+      "command": "cmake --build build --config Debug --target telemetry_phase2_observation_contract_tests -j 2",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-B3-test-fixture-fix",
+      "covers": ["P2-WP-02", "P2-REQ-010", "P2-REQ-011"],
+      "note": "After replacing the test-only stack temporary with input=std::make_unique<Input>(), the Debug observation target rebuild exited 0 after 8.427 seconds."
+    },
+    {
+      "id": "WP02-B3-original-observation-group-pass",
+      "status": "fresh",
+      "path": "build/bin/Debug/telemetry_phase2_observation_contract_tests.exe",
+      "command": "& 'build/bin/Debug/telemetry_phase2_observation_contract_tests.exe' '--gtest_filter=TelemetryPhase2ObservationContract.Wp02ReviewB1EveryPublishedSourceKeyIsOpaqueAndCaptureLocal:TelemetryPhase2ObservationContract.Wp02ReviewB2NamedRegistryHomonymsAreAmbiguousButEmptyPatternsAreNot:TelemetryPhase2ObservationContract.Wp02ReviewB3ProductionAndSeamMapperRejectSameHostilesFailEmpty' '--gtest_color=no'",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-B3-test-fixture-fix",
+      "covers": ["P2-WP-02", "P2-REQ-010", "P2-REQ-011", "P2-REQ-015", "P2-REQ-033", "P2-REQ-050", "P2-AC-004"],
+      "note": "The exact original B1/B2/B3 observation group exited 0 after 956 ms with 3/3 PASS. This is targeted re-readiness evidence, not G2-B gate proof."
+    },
+    {
+      "id": "WP02-B3-original-source-group-pass",
+      "status": "superseded",
+      "path": "build/bin/Debug/telemetry_phase2_engine_integration_source_contract_tests.exe",
+      "command": "& 'build/bin/Debug/telemetry_phase2_engine_integration_source_contract_tests.exe' '--gtest_filter=TelemetryPhase2EngineIntegrationSourceContract.Wp02ReviewB3UsesOneExhaustiveMapperWithoutCatalogShapeBifurcation:TelemetryPhase2EngineIntegrationSourceContract.Wp02ReviewB3ProductionNeverPlacesFullStaticAuthorityInputOnStack' '--gtest_color=no'",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-B3-test-fixture-fix",
+      "covers": ["P2-WP-02", "P2-REQ-010", "P2-REQ-015", "P2-REQ-033", "P2-REQ-050"],
+      "note": "Superseded only as an exhaustivity claim: the original 2/2 source group is lexical and does not provide the required functional field-by-field oracle."
+    },
+    {
+      "id": "WP02-B3-stack-reset-debug-code-build",
+      "status": "fresh",
+      "path": "build/bin/Debug/code.lib",
+      "command": "cmake --build build --config Debug --target code -j 2",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-B3-stack-reset-fix",
+      "covers": ["P2-WP-02", "P2-REQ-010", "P2-REQ-015", "P2-REQ-033", "P2-REQ-050"],
+      "note": "Build-only evidence: the exact Debug code build exited 0 after 75.221 seconds and diff-check was green. It supports compilation of the in-place reset implementation only; it is not test, acceptance, or G2-B proof."
+    },
+    {
+      "id": "WP02-B3-functional-exhaustive-oracle-pass",
+      "status": "fresh",
+      "path": "build/bin/Debug/telemetry_phase2_observation_contract_tests.exe",
+      "command": "& 'build/bin/Debug/telemetry_phase2_observation_contract_tests.exe' '--gtest_filter=TelemetryPhase2ObservationContract.Wp02ReviewB3ExhaustivePureMapperPreservesAuthoritiesAndTransitiveReferences' '--gtest_color=no'",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-B3-stack-reset-fix",
+      "covers": ["P2-WP-02", "P2-REQ-010", "P2-REQ-015", "P2-REQ-033", "P2-REQ-050", "P2-AC-004"],
+      "note": "The exact functional exhaustive pure-mapper oracle exited 0 after 331 ms with 1/1 PASS. This is targeted evidence, not G2-B gate proof."
+    },
+    {
+      "id": "WP02-B3-final-observation-build",
+      "status": "fresh",
+      "path": "build/bin/Debug/telemetry_phase2_observation_contract_tests.exe",
+      "command": "cmake --build build --config Debug --target telemetry_phase2_observation_contract_tests -j 2",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-B3-final-inner-loop",
+      "covers": ["P2-WP-02", "P2-REQ-010", "P2-REQ-011", "P2-REQ-015", "P2-REQ-033", "P2-REQ-050"],
+      "note": "The final Debug observation target build exited 0 after 9.175 seconds. This is build evidence only."
+    },
+    {
+      "id": "WP02-B3-final-source-build",
+      "status": "fresh",
+      "path": "build/bin/Debug/telemetry_phase2_engine_integration_source_contract_tests.exe",
+      "command": "cmake --build build --config Debug --target telemetry_phase2_engine_integration_source_contract_tests -j 2",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-B3-final-inner-loop",
+      "covers": ["P2-WP-02", "P2-REQ-010", "P2-REQ-015", "P2-REQ-033", "P2-REQ-050"],
+      "note": "The final Debug source target build exited 0 after 12.262 seconds. This is build evidence only."
+    },
+    {
+      "id": "WP02-B3-final-stack-reset-pass",
+      "status": "fresh",
+      "path": "build/bin/Debug/telemetry_phase2_engine_integration_source_contract_tests.exe",
+      "command": "& 'build/bin/Debug/telemetry_phase2_engine_integration_source_contract_tests.exe' '--gtest_filter=TelemetryPhase2EngineIntegrationSourceContract.Wp02ReviewB3ProductionResetsOwnedAuthorityScratchInPlaceWithoutAggregateTemporary' '--gtest_color=no'",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-B3-final-inner-loop",
+      "covers": ["P2-WP-02", "P2-REQ-010", "P2-REQ-015", "P2-REQ-033", "P2-REQ-050"],
+      "note": "The exact narrow stack-reset source test exited 0 after 195 ms with 1/1 PASS. This closes B3-STACK-RESET at targeted scope only."
+    },
+    {
+      "id": "WP02-B3-final-new-observation-pass",
+      "status": "fresh",
+      "path": "build/bin/Debug/telemetry_phase2_observation_contract_tests.exe",
+      "command": "& 'build/bin/Debug/telemetry_phase2_observation_contract_tests.exe' '--gtest_filter=TelemetryPhase2ObservationContract.Wp02ReviewB3ZeroReferencedWeaponsRemainEmptyWithoutGhostDefinition:TelemetryPhase2ObservationContract.Wp02ReviewB3EveryEarlyBankRejectionClearsPrefilledCatalog:TelemetryPhase2ObservationContract.Wp02ReviewB3RealFsoZeroSlotBankRejectsAndClearsPrefilledCatalog' '--gtest_color=no'",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-B3-final-inner-loop",
+      "covers": ["P2-WP-02", "P2-REQ-010", "P2-REQ-015", "P2-REQ-033", "P2-REQ-050", "P2-AC-004"],
+      "note": "The exact new B3 observation batch exited 0 after 93 ms with 3/3 PASS."
+    },
+    {
+      "id": "WP02-B3-final-new-source-pass",
+      "status": "fresh",
+      "path": "build/bin/Debug/telemetry_phase2_engine_integration_source_contract_tests.exe",
+      "command": "& 'build/bin/Debug/telemetry_phase2_engine_integration_source_contract_tests.exe' '--gtest_filter=TelemetryPhase2EngineIntegrationSourceContract.Wp02ReviewB3ProductionDoesNotPrefillOutputCatalogBeforePureMapper:TelemetryPhase2EngineIntegrationSourceContract.Wp02ReviewB3SharedMapperConsumesExhaustiveRawInputAndFreshOutput:TelemetryPhase2EngineIntegrationSourceContract.Wp02ReviewB3BuildDependencyProducesCurrentAdapterObjectWithoutLinkingCode' '--gtest_color=no'",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-B3-final-inner-loop",
+      "covers": ["P2-WP-02", "P2-REQ-010", "P2-REQ-015", "P2-REQ-033", "P2-REQ-050"],
+      "note": "The exact new B3 source batch exited 0 after 116 ms with 3/3 PASS."
+    },
+    {
+      "id": "WP02-B3-final-original-observation-pass",
+      "status": "fresh",
+      "path": "build/bin/Debug/telemetry_phase2_observation_contract_tests.exe",
+      "command": "& 'build/bin/Debug/telemetry_phase2_observation_contract_tests.exe' '--gtest_filter=TelemetryPhase2ObservationContract.Wp02ReviewB1EveryPublishedSourceKeyIsOpaqueAndCaptureLocal:TelemetryPhase2ObservationContract.Wp02ReviewB2NamedRegistryHomonymsAreAmbiguousButEmptyPatternsAreNot:TelemetryPhase2ObservationContract.Wp02ReviewB3ProductionAndSeamMapperRejectSameHostilesFailEmpty' '--gtest_color=no'",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-B3-final-inner-loop",
+      "covers": ["P2-WP-02", "P2-REQ-010", "P2-REQ-011", "P2-REQ-015", "P2-REQ-033", "P2-REQ-050", "P2-AC-004"],
+      "note": "The exact original B1/B2/B3 observation group exited 0 after 934 ms with 3/3 PASS."
+    },
+    {
+      "id": "WP02-B3-final-original-source-pass",
+      "status": "fresh",
+      "path": "build/bin/Debug/telemetry_phase2_engine_integration_source_contract_tests.exe",
+      "command": "& 'build/bin/Debug/telemetry_phase2_engine_integration_source_contract_tests.exe' '--gtest_filter=TelemetryPhase2EngineIntegrationSourceContract.Wp02ReviewB3UsesOneExhaustiveMapperWithoutCatalogShapeBifurcation:TelemetryPhase2EngineIntegrationSourceContract.Wp02ReviewB3ProductionNeverPlacesFullStaticAuthorityInputOnStack' '--gtest_color=no'",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-B3-final-inner-loop",
+      "covers": ["P2-WP-02", "P2-REQ-010", "P2-REQ-015", "P2-REQ-033", "P2-REQ-050"],
+      "note": "The exact original B3 source group exited 0 after 72 ms with 2/2 PASS. Across the final uninterrupted inner loop, all six commands passed 13/13 with no edit or failure."
+    },
+    {
+      "id": "WP02-balanced-checkpoint-step1-attempt",
+      "status": "superseded",
+      "path": null,
+      "command": "cmake --build build --config Release --target code telemetry_phase2_observation_contract_tests telemetry_phase2_engine_integration_source_contract_tests telemetry_lifecycle_callback_contract_tests unittests -j 2",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-WP02-checkpoint-step1",
+      "covers": ["P2-WP-02", "P2-TST-007", "P2-AC-004"],
+      "note": "Superseded checkpoint attempt: the exact reviewer build exited 1 after 133.432 seconds. Its produced Release code, observation, and source artifacts are invalidated by the later B3-RELOAD-BATCH production change."
+    },
+    {
+      "id": "WP02-lifecycle-target-release-build",
+      "status": "stale",
+      "path": "build/bin/Release/telemetry_lifecycle_callback_contract_tests.exe",
+      "command": "cmake --build build --config Release --target telemetry_lifecycle_callback_contract_tests -j 2",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-WP02-lifecycle-target-fix",
+      "covers": ["P2-WP-02", "P2-TST-007", "P2-AC-004"],
+      "note": "The exact Release lifecycle build exited 0 after 48.195 seconds, but the artifact is stale after the later B3-RELOAD-BATCH production change and must be rebuilt only after reviewer authorization."
+    },
+    {
+      "id": "WP02-lifecycle-release-pass",
+      "status": "stale",
+      "path": "build/bin/Release/telemetry_lifecycle_callback_contract_tests.exe",
+      "command": "& 'build/bin/Release/telemetry_lifecycle_callback_contract_tests.exe' '--gtest_color=no'",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-WP02-lifecycle-target-fix",
+      "covers": ["P2-WP-02", "P2-TST-007", "P2-AC-004"],
+      "note": "The exact Release lifecycle suite exited 0 after 103 ms with 1/1 PASS, but its artifact is stale after the later B3-RELOAD-BATCH production change."
+    },
+    {
+      "id": "WP02-release-unittests-build",
+      "status": "stale",
+      "path": "build/bin/Release/unittests.exe",
+      "command": "cmake --build build --config Release --target unittests -j 2",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-WP02-checkpoint",
+      "covers": ["P2-WP-02"],
+      "note": "The exact Release unittests build exited 0 after 534.315 seconds, but the artifact is stale after the later B3-RELOAD-BATCH production change and provides no current checkpoint proof."
+    },
+    {
+      "id": "WP02-release-full-observation-attempt",
+      "status": "superseded",
+      "path": "build/bin/Release/telemetry_phase2_observation_contract_tests.exe",
+      "command": "& 'build/bin/Release/telemetry_phase2_observation_contract_tests.exe' '--gtest_color=no'",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-WP02-checkpoint",
+      "covers": ["P2-WP-02", "P2-TST-008", "P2-AC-004"],
+      "note": "Superseded checkpoint attempt: the exact full Release observation suite exited 1 after 7.221 seconds with 28/69 passing. Its binary is invalidated by subsequent fixture and B3-RELOAD-BATCH production changes."
+    },
+    {
+      "id": "WP02-observation-S8-narrow-initial-failure",
+      "status": "superseded",
+      "path": "build/bin/Debug/telemetry_phase2_observation_contract_tests.exe",
+      "command": "& 'build/bin/Debug/telemetry_phase2_observation_contract_tests.exe' '--gtest_filter=TelemetryPhase2ObservationContract.S8CopiesOwnedPreIdBlocksAndSurvivesSourcePoison' '--gtest_color=no'",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-WP02-fixture-migration",
+      "covers": ["P2-WP-02", "P2-TST-008", "P2-AC-004"],
+      "note": "Superseded narrow attempt: S8 failed with status 0x03 before its opaque key was corrected. No duration or persistent raw log was supplied."
+    },
+    {
+      "id": "WP02-observation-S8-narrow-pass",
+      "status": "fresh",
+      "path": "build/bin/Debug/telemetry_phase2_observation_contract_tests.exe",
+      "command": "& 'build/bin/Debug/telemetry_phase2_observation_contract_tests.exe' '--gtest_filter=TelemetryPhase2ObservationContract.S8CopiesOwnedPreIdBlocksAndSurvivesSourcePoison' '--gtest_color=no'",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-WP02-fixture-migration",
+      "covers": ["P2-WP-02", "P2-TST-008", "P2-AC-004"],
+      "note": "After correcting the S8 key, the exact narrow test exited 0 after 209 ms with 1/1 PASS. This is targeted fixture evidence, not gate proof."
+    },
+    {
+      "id": "WP02-debug-full-observation-fixture-migration-attempt",
+      "status": "superseded",
+      "path": "build/bin/Debug/telemetry_phase2_observation_contract_tests.exe",
+      "command": "& 'build/bin/Debug/telemetry_phase2_observation_contract_tests.exe' '--gtest_color=no'",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-WP02-fixture-migration",
+      "covers": ["P2-WP-02", "P2-TST-008", "P2-AC-004"],
+      "note": "Superseded Debug migration attempt: the exact full observation suite exited 1 after 20.686 seconds with 62/69 passing. The later full Debug run improves to 68/69."
+    },
+    {
+      "id": "WP02-debug-observation-fixture-batch-build-attempt",
+      "status": "superseded",
+      "path": "build/bin/Debug/telemetry_phase2_observation_contract_tests.exe",
+      "command": "cmake --build build --config Debug --target telemetry_phase2_observation_contract_tests -j 2",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-WP02-fixture-batch",
+      "covers": ["P2-WP-02", "P2-TST-008", "P2-AC-004"],
+      "note": "Superseded build attempt: the wrapper timed out after 5.073 seconds without a formal exit. A later formal Debug observation build succeeds."
+    },
+    {
+      "id": "WP02-debug-observation-seven-fixture-group-attempt",
+      "status": "superseded",
+      "path": "build/bin/Debug/telemetry_phase2_observation_contract_tests.exe",
+      "command": "& 'build/bin/Debug/telemetry_phase2_observation_contract_tests.exe' '--gtest_filter=TelemetryPhase2ObservationContract.S8RejectsInvalidKeysEnumsPresenceRelationsAndFloatsAtomically:TelemetryPhase2ObservationContract.ShipSourceCopiesIdentityLifecycleEnergyAndPropulsionWithoutDerivedRatios:TelemetryPhase2ObservationContract.LifecycleIdentityAndKnownMasksFailClosed:TelemetryPhase2ObservationContract.Wp02ReopenedCatalogDeepCopiesAndEveryPlusOneRollsBackAtomically:TelemetryPhase2ObservationContract.Wp02ReopenedMergeDeduplicatesOnlyByteIdenticalDescriptors:TelemetryPhase2ObservationContract.Wp02ReopenedRegistryHomonymsHaveTypedAmbiguityPolicy:TelemetryPhase2ObservationContract.Wp02ReopenedHostileStaticScalarMatrixFailsWithoutCoercion' '--gtest_color=no'",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-WP02-fixture-batch",
+      "covers": ["P2-WP-02", "P2-TST-008", "P2-AC-004"],
+      "note": "Superseded targeted group: the exact seven-test command exited 1 after 1.994 seconds with 5/7 passing. The corrected rerun passes 7/7."
+    },
+    {
+      "id": "WP02-B3-reload-batch-debug-code-build",
+      "status": "fresh",
+      "path": "build/bin/Debug/code.lib",
+      "command": "cmake --build build --config Debug --target code -j 2",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-B3-reload-batch-fix",
+      "covers": ["P2-WP-02", "P2-REQ-010", "P2-REQ-015", "P2-REQ-033", "P2-REQ-050"],
+      "note": "Build-only evidence: the exact Debug code build exited 0 after 56.634 seconds and diff-check was green. This supports compilation of the reload-batch correction only; it is not test, acceptance, Release checkpoint, or G2-B proof."
+    },
+    {
+      "id": "WP02-reload-batch-formal-debug-observation-build",
+      "status": "fresh",
+      "path": "build/bin/Debug/telemetry_phase2_observation_contract_tests.exe",
+      "command": "cmake --build build --config Debug --target telemetry_phase2_observation_contract_tests -j 2",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-B3-reload-batch-fix",
+      "covers": ["P2-WP-02", "P2-TST-008", "P2-AC-004"],
+      "note": "The formal Debug observation build exited 0 after 10.506 seconds. This is targeted build evidence only."
+    },
+    {
+      "id": "WP02-reload-batch-seven-fixture-group-pass",
+      "status": "fresh",
+      "path": "build/bin/Debug/telemetry_phase2_observation_contract_tests.exe",
+      "command": "& 'build/bin/Debug/telemetry_phase2_observation_contract_tests.exe' '--gtest_filter=TelemetryPhase2ObservationContract.S8RejectsInvalidKeysEnumsPresenceRelationsAndFloatsAtomically:TelemetryPhase2ObservationContract.ShipSourceCopiesIdentityLifecycleEnergyAndPropulsionWithoutDerivedRatios:TelemetryPhase2ObservationContract.LifecycleIdentityAndKnownMasksFailClosed:TelemetryPhase2ObservationContract.Wp02ReopenedCatalogDeepCopiesAndEveryPlusOneRollsBackAtomically:TelemetryPhase2ObservationContract.Wp02ReopenedMergeDeduplicatesOnlyByteIdenticalDescriptors:TelemetryPhase2ObservationContract.Wp02ReopenedRegistryHomonymsHaveTypedAmbiguityPolicy:TelemetryPhase2ObservationContract.Wp02ReopenedHostileStaticScalarMatrixFailsWithoutCoercion' '--gtest_color=no'",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-B3-reload-batch-fix",
+      "covers": ["P2-WP-02", "P2-TST-008", "P2-AC-004"],
+      "note": "The exact seven-test Debug group exited 0 after 2.376 seconds with 7/7 PASS. This closes B3-RELOAD-BATCH at targeted hostile-oracle scope, not G2-B."
+    },
+    {
+      "id": "WP02-reload-batch-full-debug-observation-attempt",
+      "status": "superseded",
+      "path": "build/bin/Debug/telemetry_phase2_observation_contract_tests.exe",
+      "command": "& 'build/bin/Debug/telemetry_phase2_observation_contract_tests.exe' '--gtest_color=no'",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-B3-reload-batch-fix",
+      "covers": ["P2-WP-02", "P2-TST-008", "P2-AC-004"],
+      "note": "Superseded full Debug observation run: the exact command exited 1 after 23.665 seconds with 68/69 passing. The corrected fixture rerun passes 69/69."
+    },
+    {
+      "id": "WP02-real-fso-fixture-debug-observation-build",
+      "status": "fresh",
+      "path": "build/bin/Debug/telemetry_phase2_observation_contract_tests.exe",
+      "command": "cmake --build build --config Debug --target telemetry_phase2_observation_contract_tests -j 2",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-WP02-real-fso-fixture-fix",
+      "covers": ["P2-WP-02", "P2-TST-008", "P2-AC-004"],
+      "note": "The exact Debug observation build exited 0 after 11.269 seconds and diff-check was green. This is targeted build evidence only."
+    },
+    {
+      "id": "WP02-real-fso-fixture-narrow-pass",
+      "status": "fresh",
+      "path": "build/bin/Debug/telemetry_phase2_observation_contract_tests.exe",
+      "command": "& 'build/bin/Debug/telemetry_phase2_observation_contract_tests.exe' '--gtest_filter=TelemetryPhase2ObservationContract.Wp02ReopenedRealFsoExtractorMapsEveryGuardedAuthority' '--gtest_color=no'",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-WP02-real-fso-fixture-fix",
+      "covers": ["P2-WP-02", "P2-TST-008", "P2-AC-004"],
+      "note": "The exact isolated real-FSO fixture test exited 0 after 174 ms with 1/1 PASS."
+    },
+    {
+      "id": "WP02-full-debug-observation-pass",
+      "status": "fresh",
+      "path": "build/bin/Debug/telemetry_phase2_observation_contract_tests.exe",
+      "command": "& 'build/bin/Debug/telemetry_phase2_observation_contract_tests.exe' '--gtest_color=no'",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-WP02-real-fso-fixture-fix",
+      "covers": ["P2-WP-02", "P2-TST-008", "P2-AC-004"],
+      "note": "The exact full Debug observation suite exited 0 after 23.047 seconds with 69/69 PASS. This is fresh targeted review evidence, not Release checkpoint or G2-B gate proof."
+    },
+    {
+      "id": "WP02-release-multitarget-build-attempt",
+      "status": "missing",
+      "path": null,
+      "command": "cmake --build build --config Release --target code telemetry_phase2_observation_contract_tests telemetry_phase2_engine_integration_source_contract_tests telemetry_lifecycle_callback_contract_tests unittests -j 2",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-WP02-release-checkpoint",
+      "covers": ["P2-WP-02", "P2-TST-007", "P2-TST-008", "P2-TST-009", "P2-AC-004"],
+      "note": "Inconclusive build attempt: the wrapper timed out after 5.051 seconds, the process completed after approximately 713.5 seconds, and its direct exit is unrecoverable. Observation, lifecycle, and unittests artifacts are newly produced; the source executable retained its 13:09 timestamp because that target was no-op/up-to-date. This is not gate proof."
+    },
+    {
+      "id": "WP02-release-full-observation-pass",
+      "status": "fresh",
+      "path": "build/bin/Release/telemetry_phase2_observation_contract_tests.exe",
+      "command": "& 'build/bin/Release/telemetry_phase2_observation_contract_tests.exe' '--gtest_color=no'",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-WP02-final-release-refresh",
+      "covers": ["P2-WP-02", "P2-TST-008", "P2-AC-004"],
+      "note": "The refreshed exact full Release observation suite exited 0 after 9.578 seconds process time and 9.421 seconds gtest time with 69/69 PASS and 61,094,832 owned bytes. This is fresh checkpoint evidence for observation only, not G2-B gate proof."
+    },
+    {
+      "id": "WP02-release-full-source-attempt",
+      "status": "superseded",
+      "path": "build/bin/Release/telemetry_phase2_engine_integration_source_contract_tests.exe",
+      "command": "& 'build/bin/Release/telemetry_phase2_engine_integration_source_contract_tests.exe' '--gtest_color=no'",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-WP02-release-checkpoint",
+      "covers": ["P2-WP-02", "P2-TST-009", "P2-AC-004"],
+      "note": "Superseded full Release source suite: the exact command exited 1 after 444 ms with 78/79 passing because SHA-256 and linkable-symbol evidence predated the exact adapter object. Durable post-build sidecars later resolve the failure."
+    },
+    {
+      "id": "WP02-release-lifecycle-step",
+      "status": "fresh",
+      "path": "build/bin/Release/telemetry_lifecycle_callback_contract_tests.exe",
+      "command": "& 'build/bin/Release/telemetry_lifecycle_callback_contract_tests.exe' '--gtest_color=no'",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-WP02-final-release-refresh",
+      "covers": ["P2-WP-02", "P2-TST-007", "P2-AC-004"],
+      "note": "The refreshed exact Release lifecycle suite exited 0 after 138 ms process time with 1/1 PASS. This is fresh checkpoint evidence for lifecycle only, not G2-B gate proof."
+    },
+    {
+      "id": "WP02-release-TST007-TST009-step",
+      "status": "stale",
+      "path": "build/bin/Release/unittests.exe",
+      "command": "$filter = 'TelemetryPhase2GameplayAbContract.*:FinalB/SupportWorkContract.*:TelemetryNativeRuntimeIntegrationContract.ReviewerFinalTst008EligibilityMatrixRejectsBeforeOpenOrBind:TelemetryProtocolBusinessStateValidation.S12TST009FinalInjectsRecords15Through19And23PlusBothValidCapabilityPairs'; $sw = [System.Diagnostics.Stopwatch]::StartNew(); & 'build/bin/Release/unittests.exe' \"--gtest_filter=$filter\" '--gtest_color=no' '--gtest_brief=1'; $exit = $LASTEXITCODE; $sw.Stop(); Write-Output (\"STEP5_FILTER_EXIT={0}\" -f $exit); Write-Output (\"STEP5_FILTER_DURATION_MS={0}\" -f $sw.ElapsedMilliseconds); exit $exit",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-WP02-release-checkpoint",
+      "covers": ["P2-WP-02", "P2-TST-007", "P2-TST-008", "P2-TST-009", "P2-AC-004"],
+      "note": "The exact Release TST007–009 filter exited 0 after 179 ms process time and 117 ms gtest time with 16/16 PASS across four suites, but it predates the final Release unittests rebuild and is stale until rerun."
+    },
+    {
+      "id": "WP02-release-broad-unittests-step",
+      "status": "fresh",
+      "path": "build/bin/Release/unittests.exe",
+      "command": "& 'build/bin/Release/unittests.exe' '--gtest_color=no' '--gtest_brief=1'",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-WP02-global-authority-fixture-fix",
+      "covers": ["P2-WP-02", "P2-AC-004"],
+      "note": "The one authorized final broad Release run exited 0 after 9.243 seconds process time and 9.156 seconds gtest time with 1,107 tests across 142 suites: 1,103 PASS, 4 justified SKIP, 0 FAIL, and 2 disabled tests not run. Skips are two MSVC-only source contracts at lines 401 and 1982 and two native loopback opt-in contracts at lines 759 and 770 because the environment opt-in is absent. Negative-test diagnostics are expected. This is fresh execution evidence pending report regeneration and final G2-B review."
+    },
+    {
+      "id": "WP02-broad-inventory-diagnostic",
+      "status": "fresh",
+      "path": "build/bin/Release/unittests.exe",
+      "command": "& 'build/bin/Release/unittests.exe' '--gtest_list_tests'",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-WP02-broad-isolation",
+      "covers": ["P2-WP-02", "P2-AC-004"],
+      "note": "Read-only inventory enumerated 1,107 tests across 144 suites. This is diagnostic inventory only; it is neither broad execution nor compliance proof."
+    },
+    {
+      "id": "WP02-broad-isolated-S8V4-stack-overflow",
+      "status": "superseded",
+      "path": "build/bin/Release/unittests.exe",
+      "command": "& 'build/bin/Release/unittests.exe' '--gtest_filter=TelemetryNativeRuntimeIntegrationContract.S8V4OwnedBudgetPlusOneFailsBeforeTransportBind' '--gtest_color=no' '--gtest_brief=1'",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-WP02-broad-isolation",
+      "covers": ["P2-WP-02", "P2-AC-004"],
+      "note": "Superseded RED result: the exact isolated test terminated after 59 ms with exit -1073741571 (0xC00000FD). The later two-local heap correction makes this exact test pass 1/1."
+    },
+    {
+      "id": "WP02-S8V4-two-local-heap-release-build",
+      "status": "superseded",
+      "path": "build/bin/Release/unittests.exe",
+      "command": "cmake --build build --config Release --target unittests -j 2",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-WP02-S8V4-two-local-heap",
+      "covers": ["P2-WP-02", "P2-TST-008", "P2-AC-004"],
+      "note": "Superseded build evidence: the Release unittests build exited 0 after 508.190 seconds with the exact S8V4 baseline/fixture heap correction. The later full NativeFixture batch rebuild replaces this artifact."
+    },
+    {
+      "id": "WP02-S8V4-two-local-heap-exact-pass",
+      "status": "superseded",
+      "path": "build/bin/Release/unittests.exe",
+      "command": "& 'build/bin/Release/unittests.exe' '--gtest_filter=TelemetryNativeRuntimeIntegrationContract.S8V4OwnedBudgetPlusOneFailsBeforeTransportBind' '--gtest_color=no' '--gtest_brief=1'",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-WP02-S8V4-two-local-heap",
+      "covers": ["P2-WP-02", "P2-TST-008", "P2-AC-004"],
+      "note": "Superseded targeted proof: exact corrected S8V4 exited 0 after 332 ms with 1/1 PASS and 61,098,488 owned bytes. The later full native-runtime suite replaces this evidence."
+    },
+    {
+      "id": "WP02-native-runtime-suite-structural-stack-overflow",
+      "status": "superseded",
+      "path": "build/bin/Release/unittests.exe",
+      "command": "& 'build/bin/Release/unittests.exe' '--gtest_filter=TelemetryNativeRuntimeIntegrationContract.*' '--gtest_color=no' '--gtest_brief=1'",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-WP02-S8V4-two-local-heap",
+      "covers": ["P2-WP-02", "P2-TST-008", "P2-AC-004"],
+      "note": "Superseded RED result: the targeted native-runtime suite terminated after 115 ms with exit -1073741571 (0xC00000FD). The completed batch migration later makes the suite pass 15/15."
+    },
+    {
+      "id": "WP02-NativeFixture-automatic-source-audit",
+      "status": "fresh",
+      "path": "test/src/telemetry/producer/test_telemetry_native_runtime_integration_contract.cpp",
+      "command": null,
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-WP02-S8V4-two-local-heap",
+      "covers": ["P2-WP-02", "P2-TST-008", "P2-AC-004"],
+      "note": "Read-only source audit records 41 remaining automatic NativeFixture declarations at the listed test locations. This supports structural remediation planning only and is not test or gate proof."
+    },
+    {
+      "id": "WP02-NativeFixture-batch-structural-review",
+      "status": "fresh",
+      "path": "test/src/telemetry/producer/test_telemetry_native_runtime_integration_contract.cpp",
+      "command": null,
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-WP02-S8V4-two-local-heap",
+      "covers": ["P2-WP-02", "P2-TST-008", "P2-AC-004"],
+      "note": "Independent reviewer disposition is GO for one batch converting exactly 41 automatic NativeFixture declarations to std::make_unique in the same scope and declaration order, changing member access to -> and using *fixture only for helpers requiring a reference. Assertions and production code must not change. The mandatory non-vacuous oracle must prove both zero automatic declarations and exactly 45 heap fixtures. This authorization is status metadata, not execution or gate proof."
+    },
+    {
+      "id": "WP02-NativeFixture-batch-source-audit",
+      "status": "fresh",
+      "path": "test/src/telemetry/producer/test_telemetry_native_runtime_integration_contract.cpp",
+      "command": null,
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-WP02-NativeFixture-batch",
+      "covers": ["P2-WP-02", "P2-TST-008", "P2-AC-004"],
+      "note": "Post-migration source audit reports exactly one NativeFixture definition, zero automatic declarations, exactly 45 std::make_unique<NativeFixture>() fixtures, zero residual fixture dot accesses, zero unresolved reference-helper calls, and clean diff-check. This is structural evidence, not runtime or gate proof."
+    },
+    {
+      "id": "WP02-NativeFixture-batch-release-unittests-build",
+      "status": "fresh",
+      "path": "build/bin/Release/unittests.exe",
+      "command": "cmake --build build --config Release --target unittests -j 2",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-WP02-NativeFixture-batch",
+      "covers": ["P2-WP-02", "P2-TST-008", "P2-AC-004"],
+      "note": "The one authorized post-migration Release unittests build exited 0 after 505.315 seconds. This is build evidence only."
+    },
+    {
+      "id": "WP02-NativeFixture-nonvacuous-oracle-pass",
+      "status": "fresh",
+      "path": "build/bin/Release/unittests.exe",
+      "command": "& 'build/bin/Release/unittests.exe' '--gtest_filter=TelemetryNativeRuntimeIntegrationContract.NativeFixtureSourceStorageOracleIsNonVacuous' '--gtest_color=no' '--gtest_brief=1'",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-WP02-NativeFixture-batch",
+      "covers": ["P2-WP-02", "P2-TST-008", "P2-AC-004"],
+      "note": "The mandatory non-vacuous source oracle exited 0 after 266 ms with 1/1 PASS, proving zero automatic declarations and exactly 45 heap fixtures."
+    },
+    {
+      "id": "WP02-NativeFixture-batch-native-suite-pass",
+      "status": "fresh",
+      "path": "build/bin/Release/unittests.exe",
+      "command": "& 'build/bin/Release/unittests.exe' '--gtest_filter=TelemetryNativeRuntimeIntegrationContract.*' '--gtest_color=no' '--gtest_brief=1'",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-WP02-NativeFixture-batch",
+      "covers": ["P2-WP-02", "P2-TST-008", "P2-AC-004"],
+      "note": "The post-migration native-runtime suite exited 0 after 678 ms with 15/15 PASS and 61,098,488 owned bytes. This closes the NativeFixture structural failure only, not the broad failure or G2-B."
+    },
+    {
+      "id": "WP02-broad-isolation-suites-91-97-pass",
+      "status": "fresh",
+      "path": "build/bin/Release/unittests.exe",
+      "command": null,
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-WP02-NativeFixture-batch",
+      "covers": ["P2-WP-02", "P2-AC-004"],
+      "note": "The targeted suites 91–97 partition exited 0 after 226 ms with 11/11 PASS. This is diagnostic isolation evidence only, not broad or gate proof."
+    },
+    {
+      "id": "WP02-broad-isolated-runtime-adapter-player-stack-overflow",
+      "status": "missing",
+      "path": "build/bin/Release/unittests.exe",
+      "command": "& 'build/bin/Release/unittests.exe' '--gtest_filter=TelemetryRuntimeAdapterPlayerContract.ProductionHelperBuildsLocalFsoViewAndCapturesRealGlobals' '--gtest_color=no' '--gtest_brief=1'",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-WP02-NativeFixture-batch",
+      "covers": ["P2-WP-02", "P2-AC-004"],
+      "note": "The exact isolated test terminated after 53 ms with exit -1073741571 (0xC00000FD). In test_telemetry_runtime_adapter_player_contract.cpp, real_globals_capture line 351 declares an automatic NativeFixture containing an inline approximately 15.2 MiB NativeSessionRuntime; callback_copy_lifetime line 362 exposes a second automatic fixture of the same type. This is an isolated failure, not compliance proof."
+    },
+    {
+      "id": "WP02-broad-isolation-separate-nonstack-assertion",
+      "status": "missing",
+      "path": "build/bin/Release/unittests.exe",
+      "command": null,
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-WP02-NativeFixture-batch",
+      "covers": ["P2-WP-02", "P2-AC-004"],
+      "note": "A separate targeted case reports an assertion failure at line 1520 and exits normally with code 1. It is explicitly not a stack overflow and must be revisited only after structural stack remediation."
+    },
+    {
+      "id": "WP02-global-massive-fixture-batch-review",
+      "status": "fresh",
+      "path": "test/src/telemetry/producer/test_telemetry_native_runtime_integration_contract.cpp",
+      "command": null,
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-WP02-NativeFixture-batch",
+      "covers": ["P2-WP-02", "P2-TST-008", "P2-AC-004"],
+      "note": "Independent reviewer disposition is conditional GO for exactly 10 automatic massive-fixture sites plus mandatory replacement of two inline optional<NativeSessionRuntime> roots with unique ownership. Preserve scopes, declaration order, lifetimes, reliability coexistence, allocation-probe owner creation before arm, and shutdown/purge/reset order. noexcept start_transport must use new(std::nothrow), map null to Unavailable, and count only after successful allocation. Non-vacuous source oracles must record exact counts per file and their global sum. This authorization is status metadata, not execution or gate proof."
+    },
+    {
+      "id": "WP02-global-massive-fixture-batch-prebuild-audit",
+      "status": "fresh",
+      "path": "test/src/telemetry/producer/test_telemetry_native_runtime_integration_contract.cpp",
+      "command": null,
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-WP02-global-massive-fixture-batch",
+      "covers": ["P2-WP-02", "P2-TST-008", "P2-AC-004"],
+      "note": "Prebuild non-vacuous source checks report exact per-file automatic-site counts [2,1,2,1,4], global sum 10, one inline unique_ptr root in loopback, one in allocation, and zero automatic, optional, has_value, residual-dot, unresolved-helper, or diff-check findings."
+    },
+    {
+      "id": "WP02-session-allocation-target-build-inferred",
+      "status": "fresh",
+      "path": "build/bin/Release/telemetry_session_controller_allocation_contract_tests.exe",
+      "command": "cmake --build build --config Release --target telemetry_session_controller_allocation_contract_tests -j 2",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-WP02-global-massive-fixture-batch",
+      "covers": ["P2-WP-02", "P2-TST-008", "P2-AC-004"],
+      "note": "The build process ended without a directly captured exit code. Successful completion is inferred from fresh object timestamp 17:03:25, fresh 16,092,672-byte executable timestamp 17:06:19, and fresh lastbuild timestamp 17:06:21. This is build evidence only."
+    },
+    {
+      "id": "WP02-session-allocation-target-stop-first",
+      "status": "superseded",
+      "path": "build/bin/Release/telemetry_session_controller_allocation_contract_tests.exe",
+      "command": "& 'build/bin/Release/telemetry_session_controller_allocation_contract_tests.exe' '--gtest_color=no' '--gtest_brief=1'",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-WP02-global-massive-fixture-batch",
+      "covers": ["P2-WP-02", "P2-TST-008", "P2-AC-004"],
+      "note": "Superseded RED result: the dedicated allocation tests exited 1 after 687 ms with 7/8 PASS because the stale oracle expected 0x00f0 instead of canonical Metrics-only 0x0080. The corrected rerun later passes 8/8."
+    },
+    {
+      "id": "WP02-allocation-deferred-mask-readonly-diagnosis",
+      "status": "fresh",
+      "path": "test/src/telemetry/producer/test_telemetry_session_controller_allocations.cpp",
+      "command": null,
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-WP02-global-massive-fixture-batch",
+      "covers": ["P2-WP-02", "P2-TST-008", "P2-AC-004"],
+      "note": "Read-only diagnosis shows the stale 0x00f0 expectation predates the migration. Unchanged startup-budget composition starts WP03 at 0x00ff, clears Transport bit 2 in WP04, then clears bits 0,1,3,4,5,6 in WP06, leaving Metrics bit 7 only at 0x0080. The canonical integration oracle at line 1530 expects 0x0080. History lineage notes commits 774101cd3 then 8a3fa6eb7. No production or ownership change is indicated."
+    },
+    {
+      "id": "WP02-allocation-deferred-mask-fix-build",
+      "status": "fresh",
+      "path": "build/bin/Release/telemetry_session_controller_allocation_contract_tests.exe",
+      "command": "cmake --build build --config Release --target telemetry_session_controller_allocation_contract_tests -j 2",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-WP02-global-massive-fixture-batch",
+      "covers": ["P2-WP-02", "P2-TST-008", "P2-AC-004"],
+      "note": "The allocation target rebuild after the one-line Metrics-only oracle correction exited 0 after 159.7 seconds."
+    },
+    {
+      "id": "WP02-allocation-deferred-mask-fix-pass",
+      "status": "fresh",
+      "path": "build/bin/Release/telemetry_session_controller_allocation_contract_tests.exe",
+      "command": "& 'build/bin/Release/telemetry_session_controller_allocation_contract_tests.exe' '--gtest_color=no' '--gtest_brief=1'",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-WP02-global-massive-fixture-batch",
+      "covers": ["P2-WP-02", "P2-TST-008", "P2-AC-004"],
+      "note": "The corrected dedicated allocation suite exited 0 after 143 ms with exact 8/8 PASS, closing WP02-ALLOCATION-DEFERRED-MASK."
+    },
+    {
+      "id": "WP02-global-batch-release-unittests-build-inferred",
+      "status": "fresh",
+      "path": "build/bin/Release/unittests.exe",
+      "command": "cmake --build build --config Release --target unittests -j 2",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-WP02-global-massive-fixture-batch",
+      "covers": ["P2-WP-02", "P2-TST-008", "P2-AC-004"],
+      "note": "The Release unittests build completed with success inferred from the fresh 25,379,840-byte executable and fresh lastbuild timestamp 17:39:30. A direct process exit was not captured. This is build evidence only."
+    },
+    {
+      "id": "WP02-global-batch-targeted-filter-list",
+      "status": "fresh",
+      "path": "build/bin/Release/unittests.exe",
+      "command": "$filter = 'TelemetryNativeRuntimeIntegrationContract.*:TelemetryRuntimeAdapterPlayerContract.*:TelemetryNativeRuntimeLoopbackContract.*'; & 'build/bin/Release/unittests.exe' \"--gtest_filter=$filter\" '--gtest_list_tests'",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-WP02-global-massive-fixture-batch",
+      "covers": ["P2-WP-02", "P2-TST-008", "P2-AC-004"],
+      "note": "The read-only filtered inventory enumerates 16 Native, 12 Adapter, and 2 Loopback tests, 30 total. This is diagnostic inventory only."
+    },
+    {
+      "id": "WP02-global-batch-targeted-combined-stop-first",
+      "status": "superseded",
+      "path": "build/bin/Release/unittests.exe",
+      "command": "$filter = 'TelemetryNativeRuntimeIntegrationContract.*:TelemetryRuntimeAdapterPlayerContract.*:TelemetryNativeRuntimeLoopbackContract.*'; & 'build/bin/Release/unittests.exe' \"--gtest_filter=$filter\" '--gtest_color=no' '--gtest_brief=1'",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-WP02-global-massive-fixture-batch",
+      "covers": ["P2-WP-02", "P2-TST-008", "P2-AC-004"],
+      "note": "Superseded RED result: the combined targeted run exited 1 with 20 PASS, 2 expected SKIP, and 8 Adapter FAIL. The later three-call test-only authority correction makes the same filter green."
+    },
+    {
+      "id": "WP02-adapter-main-thread-authority-readonly-diagnosis",
+      "status": "fresh",
+      "path": "test/src/telemetry/producer/test_telemetry_runtime_adapter_player_contract.cpp",
+      "command": null,
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-WP02-global-massive-fixture-batch",
+      "covers": ["P2-WP-02", "P2-TST-008", "P2-AC-004"],
+      "note": "Read-only diagnosis proves RuntimeAdapterPlayer service_tick returns PermanentCaptureFailure at the unconditional pre-gate when phase2_current_thread_is_main is false. Production telemetry.cpp captures authority, but the adapter and native-integration test doubles omit it, so strict globals and the mapper are never reached. Profile None disables Phase 2 runtime but intentionally does not bypass this gate. The migration only revealed the fixture omission; no production weakening is indicated."
+    },
+    {
+      "id": "WP02-adapter-authority-three-call-audit",
+      "status": "fresh",
+      "path": "test/src/telemetry/producer",
+      "command": null,
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-WP02-global-authority-fixture-fix",
+      "covers": ["P2-WP-02", "P2-TST-008", "P2-AC-004"],
+      "note": "Source audit confirms exactly three test-only capture_phase2_main_thread_authority additions, no production gate weakening, and clean diff-check."
+    },
+    {
+      "id": "WP02-adapter-authority-release-unittests-build",
+      "status": "fresh",
+      "path": "build/bin/Release/unittests.exe",
+      "command": "cmake --build build --config Release --target unittests -j 2",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-WP02-global-authority-fixture-fix",
+      "covers": ["P2-WP-02", "P2-TST-008", "P2-AC-004"],
+      "note": "The Release unittests rebuild exited 0 after 491.7 seconds."
+    },
+    {
+      "id": "WP02-adapter-authority-combined-filter-pass",
+      "status": "fresh",
+      "path": "build/bin/Release/unittests.exe",
+      "command": "$filter = 'TelemetryNativeRuntimeIntegrationContract.*:TelemetryRuntimeAdapterPlayerContract.*:TelemetryNativeRuntimeLoopbackContract.*'; & 'build/bin/Release/unittests.exe' \"--gtest_filter=$filter\" '--gtest_color=no' '--gtest_brief=1'",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-WP02-global-authority-fixture-fix",
+      "covers": ["P2-WP-02", "P2-TST-008", "P2-AC-004"],
+      "note": "The exact combined filter exited 0 after 1.198 seconds process time and 905 ms gtest time with 30 total: 28 PASS and the two expected opt-in Loopback SKIP. This closes WP02-ADAPTER-CAPTURE-FAILURE, not broad or G2-B."
+    },
+    {
+      "id": "WP02-performance-runner-build-only",
+      "status": "fresh",
+      "path": "build/bin/Release/telemetry_native_performance_runner_p93.exe",
+      "command": "cmake --build build --config Release --target telemetry_native_performance_runner -j 2",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-WP02-global-authority-fixture-fix",
+      "covers": ["P2-WP-02", "P2-AC-004"],
+      "note": "Build-only: the performance runner target exited 0 after 152.8 seconds and produced a fresh 15,713,280-byte artifact at 17:58:32. The runner was not executed."
+    },
+    {
+      "id": "WP02-reliability-harness-build-only-attempt",
+      "status": "superseded",
+      "path": "build/bin/Release/telemetry_phase1_reliability_harness.exe",
+      "command": "cmake --build build --config Release --target telemetry_phase1_reliability_harness -j 2",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-WP02-global-authority-fixture-fix",
+      "covers": ["P2-WP-02", "P2-AC-004"],
+      "note": "Superseded incomplete attempt: the build tool was interrupted without a result and left an uncertified 2,097,152-byte artifact at 17:59:29. The later exact target build certifies a complete artifact."
+    },
+    {
+      "id": "WP02-reliability-harness-exact-build-only",
+      "status": "fresh",
+      "path": "build/bin/Release/telemetry_phase1_reliability_harness.exe",
+      "command": "cmake --build build --config Release --target telemetry_phase1_reliability_harness -j 2",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-WP02-global-authority-fixture-fix",
+      "covers": ["P2-WP-02", "P2-AC-004"],
+      "note": "The exact reliability harness target build exited 0 after 12.580 seconds and produced a certified 15,696,896-byte artifact timestamped 18:01:54. Build-only: the harness was not executed."
+    },
+    {
+      "id": "WP02-global-batch-grouped-review-go",
+      "status": "fresh",
+      "path": "test/src/telemetry/producer/test_telemetry_native_runtime_integration_contract.cpp",
+      "command": null,
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-WP02-global-authority-fixture-fix",
+      "covers": ["P2-WP-02", "P2-TST-008", "P2-AC-004", "G2-B"],
+      "note": "Independent grouped reviewer disposition is GO with no blockers on the global heap migration, unique ownership, nothrow failure handling, non-vacuous oracles, and accumulated evidence. This authorizes exact 16, then one broad only if exact 16 is green; it does not close G2-B."
+    },
+    {
+      "id": "WP02-exact-group-obsolete-filter-cardinality-attempt",
+      "status": "missing",
+      "path": "build/bin/Release/unittests.exe",
+      "command": null,
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-WP02-global-authority-fixture-fix",
+      "covers": ["P2-WP-02", "P2-TST-007", "P2-TST-008", "P2-TST-009", "P2-AC-004"],
+      "note": "A wrong or obsolete filter selected only 14 tests across two suites and exited 0 with 14/14 PASS in 10 ms gtest and 90 ms process time. Mandatory cardinality 16 across four suites was not met. This is command/operator evidence only, not a code blocker, checkpoint proof, broad authorization, or G2-B proof. No broad ran."
+    },
+    {
+      "id": "WP02-TST-group-list-diagnostic",
+      "status": "fresh",
+      "path": "build/bin/Release/unittests.exe",
+      "command": "$filter = 'TelemetryPhase2GameplayAbContract.*:FinalB/SupportWorkContract.*:TelemetryNativeRuntimeIntegrationContract.ReviewerFinalTst008EligibilityMatrixRejectsBeforeOpenOrBind:TelemetryProtocolBusinessStateValidation.S12TST009FinalInjectsRecords15Through19And23PlusBothValidCapabilityPairs'; & 'build/bin/Release/unittests.exe' \"--gtest_filter=$filter\" '--gtest_list_tests'",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-WP02-release-checkpoint",
+      "covers": ["P2-WP-02", "P2-TST-007", "P2-TST-008", "P2-TST-009"],
+      "note": "The exact filtered list command exited 0 after 57 ms and enumerated 16 tests: one TST007, thirteen FinalB cases, one TST008, and one TST009. This is diagnostic inventory, not compliance proof."
+    },
+    {
+      "id": "WP02-TST007-split-pass",
+      "status": "stale",
+      "path": "build/bin/Release/unittests.exe",
+      "command": "& 'build/bin/Release/unittests.exe' '--gtest_filter=TelemetryPhase2GameplayAbContract.*' '--gtest_color=no' '--gtest_brief=1'",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-WP02-release-checkpoint",
+      "covers": ["P2-WP-02", "P2-TST-007", "P2-AC-004"],
+      "note": "The exact split TST007 command exited 0 after 79 ms with 1/1 PASS, but this unittests evidence is stale after the native_session_runtime.cpp production correction."
+    },
+    {
+      "id": "WP02-FinalB-split-pass",
+      "status": "stale",
+      "path": "build/bin/Release/unittests.exe",
+      "command": "& 'build/bin/Release/unittests.exe' '--gtest_filter=FinalB/SupportWorkContract.*' '--gtest_color=no' '--gtest_brief=1'",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-WP02-release-checkpoint",
+      "covers": ["P2-WP-02", "P2-TST-007", "P2-AC-004"],
+      "note": "The exact split FinalB command exited 0 after 74 ms with 13/13 PASS, but this unittests evidence is stale after the native_session_runtime.cpp production correction."
+    },
+    {
+      "id": "WP02-TST008-split-stack-overflow",
+      "status": "missing",
+      "path": "build/bin/Release/unittests.exe",
+      "command": "& 'build/bin/Release/unittests.exe' '--gtest_filter=TelemetryNativeRuntimeIntegrationContract.ReviewerFinalTst008EligibilityMatrixRejectsBeforeOpenOrBind' '--gtest_color=no' '--gtest_brief=1'",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-WP02-release-checkpoint",
+      "covers": ["P2-WP-02", "P2-TST-008", "P2-AC-004"],
+      "note": "The exact split TST008 command terminated after 56 ms with exit -1073741571 (0xC00000FD) and no summary. Lines 1083–1099 place the approximately 64 MiB nested observation buffer on a 1 MiB PE stack; this is not compliance proof."
+    },
+    {
+      "id": "WP02-TST009-split-step",
+      "status": "superseded",
+      "path": "build/bin/Release/unittests.exe",
+      "command": null,
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-WP02-release-checkpoint",
+      "covers": ["P2-WP-02", "P2-TST-009", "P2-AC-004"],
+      "note": "Superseded missing split step: TST009 later runs within the exact 16-test grouped filter, which passes 16/16."
+    },
+    {
+      "id": "WP02-TST008-heap-fixture-release-build-attempt",
+      "status": "missing",
+      "path": "build/bin/Release/unittests.exe",
+      "command": "cmake --build build --config Release --target unittests -j 2",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-WP02-TST008-heap-fixture",
+      "covers": ["P2-WP-02", "P2-TST-008", "P2-AC-004"],
+      "note": "Inconclusive build attempt: the wrapper timed out after 184.058 seconds, the process completed and relinked after approximately 475.8 seconds, but its direct exit is unavailable. Diff-check was green; this is not fresh build or gate proof."
+    },
+    {
+      "id": "WP02-TST008-heap-fixture-retest-attempt",
+      "status": "missing",
+      "path": "build/bin/Release/unittests.exe",
+      "command": "& 'build/bin/Release/unittests.exe' '--gtest_filter=TelemetryNativeRuntimeIntegrationContract.ReviewerFinalTst008EligibilityMatrixRejectsBeforeOpenOrBind' '--gtest_color=no' '--gtest_brief=1'",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-WP02-TST008-heap-fixture",
+      "covers": ["P2-WP-02", "P2-TST-008", "P2-AC-004"],
+      "note": "RED production reproducer: exact TST008 terminated after 190 ms with exit -1073741571 (0xC00000FD) and no summary after the valid but insufficient heap-fixture change. Read-only diagnosis locates the cause in NativeSessionRuntime::start local Phase2ObservationBuffer phase2_observation, which reserves at least 9,437,184 bytes before eligibility rejection."
+    },
+    {
+      "id": "WP02-source-evidence-initial-release-build",
+      "status": "fresh",
+      "path": "build/bin/Release/telemetry_phase2_engine_integration_source_contract_tests.exe",
+      "command": "cmake --build build --config Release --target telemetry_phase2_engine_integration_source_contract_tests -j 2",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-WP02-source-sidecar-fix",
+      "covers": ["P2-WP-02", "P2-TST-009", "P2-AC-004"],
+      "note": "The initial exact Release source build with durable sidecar generation exited 0 after 46.285 seconds. This is targeted build evidence only."
+    },
+    {
+      "id": "WP02-source-evidence-TST009-pass",
+      "status": "stale",
+      "path": "build/bin/Release/telemetry_phase2_engine_integration_source_contract_tests.exe",
+      "command": "& 'build/bin/Release/telemetry_phase2_engine_integration_source_contract_tests.exe' '--gtest_filter=TelemetryPhase2EngineIntegrationSourceContract.ReviewerFinalTst009ScansBuiltAdapterArtifactForSpecializedLeakage' '--gtest_color=no'",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-WP02-source-sidecar-fix",
+      "covers": ["P2-WP-02", "P2-TST-009", "P2-AC-004"],
+      "note": "Stale compliance claim: the exact TST009 source test exited 0 after 70 ms with 1/1 PASS, but reviewer inspection shows its linkability assertion accepts a vacuous sidecar."
+    },
+    {
+      "id": "WP02-source-evidence-intermediate-full-attempt",
+      "status": "superseded",
+      "path": "build/bin/Release/telemetry_phase2_engine_integration_source_contract_tests.exe",
+      "command": "& 'build/bin/Release/telemetry_phase2_engine_integration_source_contract_tests.exe' '--gtest_color=no'",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-WP02-source-sidecar-fix",
+      "covers": ["P2-WP-02", "P2-TST-009", "P2-AC-004"],
+      "note": "Superseded intermediate full source run: 78/79 passed because the oracle direct dependency had not yet been restored. No compliance or gate proof is claimed from this attempt."
+    },
+    {
+      "id": "WP02-source-evidence-final-release-rebuild",
+      "status": "fresh",
+      "path": "build/bin/Release/telemetry_phase2_engine_integration_source_contract_tests.exe",
+      "command": "cmake --build build --config Release --target telemetry_phase2_engine_integration_source_contract_tests -j 2",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-WP02-source-sidecar-fix",
+      "covers": ["P2-WP-02", "P2-TST-009", "P2-AC-004"],
+      "note": "After restoring the direct code dependency, the exact Release source rebuild exited 0 after 45.383 seconds. Diff-check was green; the 64-byte SHA-256 sidecar matches and both sidecars are newer than the exact adapter object."
+    },
+    {
+      "id": "WP02-source-evidence-B3-TST009-pass",
+      "status": "stale",
+      "path": "build/bin/Release/telemetry_phase2_engine_integration_source_contract_tests.exe",
+      "command": "& 'build/bin/Release/telemetry_phase2_engine_integration_source_contract_tests.exe' '--gtest_filter=TelemetryPhase2EngineIntegrationSourceContract.Wp02ReviewB3BuildDependencyProducesCurrentAdapterObjectWithoutLinkingCode:TelemetryPhase2EngineIntegrationSourceContract.ReviewerFinalTst009ScansBuiltAdapterArtifactForSpecializedLeakage' '--gtest_color=no'",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-WP02-source-sidecar-fix",
+      "covers": ["P2-WP-02", "P2-TST-009", "P2-AC-004"],
+      "note": "Stale compliance claim: the exact B3 plus TST009 group exited 0 after 80 ms with 2/2 PASS, but its TST009 linkability result is vacuous. The unrelated build-dependency observation remains partial historical context."
+    },
+    {
+      "id": "WP02-release-full-source-pass",
+      "status": "stale",
+      "path": "build/bin/Release/telemetry_phase2_engine_integration_source_contract_tests.exe",
+      "command": "& 'build/bin/Release/telemetry_phase2_engine_integration_source_contract_tests.exe' '--gtest_color=no'",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-WP02-source-sidecar-fix",
+      "covers": ["P2-WP-02", "P2-TST-009", "P2-AC-004"],
+      "note": "Stale compliance claim: the exact final full Release source suite exited 0 after 267 ms with 79/79 PASS, but reviewer inspection invalidates the vacuous TST009 linkability assertion. SHA and timestamp provenance remain correct partial evidence only."
+    },
+    {
+      "id": "WP02-linkability-red-release-source-build",
+      "status": "fresh",
+      "path": "build/bin/Release/telemetry_phase2_engine_integration_source_contract_tests.exe",
+      "command": "cmake --build build --config Release --target telemetry_phase2_engine_integration_source_contract_tests -j 2",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-WP02-linkability-red-oracle",
+      "covers": ["P2-WP-02", "P2-TST-009", "P2-AC-004"],
+      "note": "The exact Release source build with the strengthened oracle exited 0 after 23.707 seconds and diff-check was green. This is build evidence only."
+    },
+    {
+      "id": "WP02-linkability-red-TST009-diagnostic",
+      "status": "superseded",
+      "path": "build/bin/Release/telemetry_phase2_engine_integration_source_contract_tests.exe",
+      "command": "& 'build/bin/Release/telemetry_phase2_engine_integration_source_contract_tests.exe' '--gtest_filter=TelemetryPhase2EngineIntegrationSourceContract.ReviewerFinalTst009ScansBuiltAdapterArtifactForSpecializedLeakage' '--gtest_color=no'",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-WP02-linkability-red-oracle",
+      "covers": ["P2-WP-02", "P2-TST-009", "P2-AC-004"],
+      "note": "Superseded RED baseline: the strengthened TST009 test exited 1 after 168 ms with 0/1 passing before the dedicated inspectable evidence object was added."
+    },
+    {
+      "id": "WP02-linkability-green-release-source-build",
+      "status": "fresh",
+      "path": "build/bin/Release/telemetry_phase2_engine_integration_source_contract_tests.exe",
+      "command": "cmake --build build --config Release --target telemetry_phase2_engine_integration_source_contract_tests -j 2",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-WP02-linkable-evidence-fix",
+      "covers": ["P2-WP-02", "P2-TST-009", "P2-AC-004"],
+      "note": "The exact Release source build exited 0 after 66.344 seconds and diff-check was green. The MSVC evidence object inherits code compile properties, disables IPO and /GL, and atomically generates sidecars; non-MSVC explicitly skips without MSVC tools."
+    },
+    {
+      "id": "WP02-linkability-green-TST009-pass",
+      "status": "fresh",
+      "path": "build/bin/Release/telemetry_phase2_engine_integration_source_contract_tests.exe",
+      "command": "& 'build/bin/Release/telemetry_phase2_engine_integration_source_contract_tests.exe' '--gtest_filter=TelemetryPhase2EngineIntegrationSourceContract.ReviewerFinalTst009ScansBuiltAdapterArtifactForSpecializedLeakage' '--gtest_color=no'",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-WP02-linkable-evidence-fix",
+      "covers": ["P2-WP-02", "P2-TST-009", "P2-AC-004"],
+      "note": "The exact strengthened TST009 test exited 0 after 152 ms with 1/1 PASS. SHA matches the exact artifact, ANONYMOUS OBJECT is absent, and positive FsoEngineReadView plus mapper markers are present."
+    },
+    {
+      "id": "WP02-linkability-green-B3-TST009-pass",
+      "status": "fresh",
+      "path": "build/bin/Release/telemetry_phase2_engine_integration_source_contract_tests.exe",
+      "command": "& 'build/bin/Release/telemetry_phase2_engine_integration_source_contract_tests.exe' '--gtest_filter=TelemetryPhase2EngineIntegrationSourceContract.Wp02ReviewB3BuildDependencyProducesCurrentAdapterObjectWithoutLinkingCode:TelemetryPhase2EngineIntegrationSourceContract.ReviewerFinalTst009ScansBuiltAdapterArtifactForSpecializedLeakage' '--gtest_color=no'",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-WP02-linkable-evidence-fix",
+      "covers": ["P2-WP-02", "P2-TST-009", "P2-AC-004"],
+      "note": "The exact B3 plus strengthened TST009 group exited 0 after 37 ms with 2/2 PASS."
+    },
+    {
+      "id": "WP02-linkability-green-full-source-pass",
+      "status": "fresh",
+      "path": "build/bin/Release/telemetry_phase2_engine_integration_source_contract_tests.exe",
+      "command": "& 'build/bin/Release/telemetry_phase2_engine_integration_source_contract_tests.exe' '--gtest_color=no'",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-WP02-linkable-evidence-fix",
+      "covers": ["P2-WP-02", "P2-TST-009", "P2-AC-004"],
+      "note": "The exact full Release source suite exited 0 after 232 ms with 79/79 PASS. This is fresh candidate evidence pending focused reviewer disposition, not G2-B gate proof."
+    },
+    {
+      "id": "WP02-nonmsvc-guard-red-release-source-build",
+      "status": "fresh",
+      "path": "build/bin/Release/telemetry_phase2_engine_integration_source_contract_tests.exe",
+      "command": "cmake --build build --config Release --target telemetry_phase2_engine_integration_source_contract_tests -j 2",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-WP02-nonmsvc-guard-red",
+      "covers": ["P2-WP-02", "P2-TST-009", "P2-AC-004"],
+      "note": "The exact Release source build with the new non-MSVC guard oracle exited 0 after 24.532 seconds and diff-check was green. This is build evidence only."
+    },
+    {
+      "id": "WP02-nonmsvc-guard-red-diagnostic",
+      "status": "superseded",
+      "path": "build/bin/Release/telemetry_phase2_engine_integration_source_contract_tests.exe",
+      "command": "& 'build/bin/Release/telemetry_phase2_engine_integration_source_contract_tests.exe' '--gtest_filter=TelemetryPhase2EngineIntegrationSourceContract.Wp02SourceNonMsvcCompileGuardsEveryAdapterObjectTestReference' '--gtest_color=no'",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-WP02-nonmsvc-guard-red",
+      "covers": ["P2-WP-02", "P2-TST-009", "P2-AC-004"],
+      "note": "Superseded RED baseline: the exact non-MSVC guard oracle exited 1 after 117 ms with 0/1 passing before the B3-only guard and skip correction."
+    },
+    {
+      "id": "WP02-nonmsvc-guard-green-release-source-build",
+      "status": "fresh",
+      "path": "build/bin/Release/telemetry_phase2_engine_integration_source_contract_tests.exe",
+      "command": "cmake --build build --config Release --target telemetry_phase2_engine_integration_source_contract_tests -j 2",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-WP02-nonmsvc-guard-fix",
+      "covers": ["P2-WP-02", "P2-TST-009", "P2-AC-004"],
+      "note": "The exact Release source build exited 0 after 24.206 seconds and diff-check was green. This is targeted build evidence only."
+    },
+    {
+      "id": "WP02-nonmsvc-guard-green-oracle-pass",
+      "status": "fresh",
+      "path": "build/bin/Release/telemetry_phase2_engine_integration_source_contract_tests.exe",
+      "command": "& 'build/bin/Release/telemetry_phase2_engine_integration_source_contract_tests.exe' '--gtest_filter=TelemetryPhase2EngineIntegrationSourceContract.Wp02SourceNonMsvcCompileGuardsEveryAdapterObjectTestReference' '--gtest_color=no'",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-WP02-nonmsvc-guard-fix",
+      "covers": ["P2-WP-02", "P2-TST-009", "P2-AC-004"],
+      "note": "The exact non-MSVC guard oracle exited 0 after 168 ms with 1/1 PASS."
+    },
+    {
+      "id": "WP02-nonmsvc-guard-green-combined-pass",
+      "status": "fresh",
+      "path": "build/bin/Release/telemetry_phase2_engine_integration_source_contract_tests.exe",
+      "command": "& 'build/bin/Release/telemetry_phase2_engine_integration_source_contract_tests.exe' '--gtest_filter=TelemetryPhase2EngineIntegrationSourceContract.Wp02SourceNonMsvcCompileGuardsEveryAdapterObjectTestReference:TelemetryPhase2EngineIntegrationSourceContract.Wp02ReviewB3BuildDependencyProducesCurrentAdapterObjectWithoutLinkingCode:TelemetryPhase2EngineIntegrationSourceContract.ReviewerFinalTst009ScansBuiltAdapterArtifactForSpecializedLeakage' '--gtest_color=no'",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-WP02-nonmsvc-guard-fix",
+      "covers": ["P2-WP-02", "P2-TST-009", "P2-AC-004"],
+      "note": "The exact non-MSVC oracle plus B3 plus TST009 group exited 0 after 53 ms with 3/3 PASS."
+    },
+    {
+      "id": "WP02-nonmsvc-guard-green-full-source-pass",
+      "status": "stale",
+      "path": "build/bin/Release/telemetry_phase2_engine_integration_source_contract_tests.exe",
+      "command": "& 'build/bin/Release/telemetry_phase2_engine_integration_source_contract_tests.exe' '--gtest_color=no'",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-WP02-nonmsvc-guard-fix",
+      "covers": ["P2-WP-02", "P2-TST-009", "P2-AC-004"],
+      "note": "The exact full Release source suite exited 0 after 242 ms with 80/80 PASS, but the full-source evidence is stale after the native_session_runtime.cpp production correction."
+    },
+    {
+      "id": "WP02-TST008-production-fix-release-code-build",
+      "status": "stale",
+      "path": "build/bin/Release/code.lib",
+      "command": "cmake --build build --config Release --target code -j 2",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-WP02-TST008-production-fix",
+      "covers": ["P2-WP-02", "P2-TST-008", "P2-AC-004"],
+      "note": "Stale build-only evidence: the exact Release code build exited 0 after 45.419 seconds for the heap-candidate fix, but it predates the final in-place reset production change."
+    },
+    {
+      "id": "WP02-TST008-production-fix-release-unittests-build",
+      "status": "stale",
+      "path": "build/bin/Release/unittests.exe",
+      "command": "cmake --build build --config Release --target unittests -j 2",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-WP02-TST008-production-fix",
+      "covers": ["P2-WP-02", "P2-TST-008", "P2-AC-004"],
+      "note": "Stale build evidence: the exact Release unittests build exited 0 after 500.936 seconds but predates the final in-place reset production change."
+    },
+    {
+      "id": "WP02-TST008-production-fix-retest-attempt",
+      "status": "superseded",
+      "path": "build/bin/Release/unittests.exe",
+      "command": "& 'build/bin/Release/unittests.exe' '--gtest_filter=TelemetryNativeRuntimeIntegrationContract.ReviewerFinalTst008EligibilityMatrixRejectsBeforeOpenOrBind' '--gtest_color=no' '--gtest_brief=1'",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-WP02-TST008-production-fix",
+      "covers": ["P2-WP-02", "P2-TST-008", "P2-AC-004"],
+      "note": "Superseded RED production reproducer: exact TST008 terminated with 0xC00000FD before the final in-place reset fix. The corrected retest passes 1/1."
+    },
+    {
+      "id": "WP02-TST008-final-reset-release-code-build",
+      "status": "fresh",
+      "path": "build/bin/Release/code.lib",
+      "command": "cmake --build build --config Release --target code -j 2",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-WP02-TST008-final-reset-fix",
+      "covers": ["P2-WP-02", "P2-TST-008", "P2-AC-004"],
+      "note": "Build-only evidence: the exact Release code build exited 0 after 67.243 seconds and linked successfully. Diff-check was green, search found zero aggregate observation-buffer assignments, and the heap start fix remains intact; this is not test or G2-B proof."
+    },
+    {
+      "id": "WP02-TST008-final-reset-release-unittests-build",
+      "status": "fresh",
+      "path": "build/bin/Release/unittests.exe",
+      "command": "cmake --build build --config Release --target unittests -j 2",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-WP02-TST008-final-reset-fix",
+      "covers": ["P2-WP-02", "P2-TST-008", "P2-AC-004"],
+      "note": "The exact Release unittests build exited 0 after 512.518 seconds and linked successfully. This is fresh build evidence only."
+    },
+    {
+      "id": "WP02-TST008-final-reset-pass",
+      "status": "fresh",
+      "path": "build/bin/Release/unittests.exe",
+      "command": "& 'build/bin/Release/unittests.exe' '--gtest_filter=TelemetryNativeRuntimeIntegrationContract.ReviewerFinalTst008EligibilityMatrixRejectsBeforeOpenOrBind' '--gtest_color=no' '--gtest_brief=1'",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-WP02-TST008-final-reset-fix",
+      "covers": ["P2-WP-02", "P2-TST-008", "P2-AC-004"],
+      "note": "The exact TST008 test exited 0 with 1/1 PASS after 103 ms gtest time and 294 ms process time. Six rejected cases retain allocation count zero, solo allocation is positive, and rejects perform no open/bind."
+    },
+    {
+      "id": "WP02-refresh-lifecycle-release-build",
+      "status": "fresh",
+      "path": "build/bin/Release/telemetry_lifecycle_callback_contract_tests.exe",
+      "command": "cmake --build build --config Release --target telemetry_lifecycle_callback_contract_tests -j 2",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-WP02-final-release-refresh",
+      "covers": ["P2-WP-02", "P2-TST-007", "P2-AC-004"],
+      "note": "The exact refreshed Release lifecycle build exited 0 after 11.689 seconds. This is targeted build evidence only."
+    },
+    {
+      "id": "WP02-refresh-observation-release-build",
+      "status": "fresh",
+      "path": "build/bin/Release/telemetry_phase2_observation_contract_tests.exe",
+      "command": "cmake --build build --config Release --target telemetry_phase2_observation_contract_tests -j 2",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-WP02-final-release-refresh",
+      "covers": ["P2-WP-02", "P2-TST-008", "P2-AC-004"],
+      "note": "The exact refreshed Release observation build exited 0 after 18.787 seconds. This is targeted build evidence only."
+    },
+    {
+      "id": "WP02-refresh-source-release-build",
+      "status": "fresh",
+      "path": "build/bin/Release/telemetry_phase2_engine_integration_source_contract_tests.exe",
+      "command": "cmake --build build --config Release --target telemetry_phase2_engine_integration_source_contract_tests -j 2",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-WP02-final-release-refresh",
+      "covers": ["P2-WP-02", "P2-TST-008", "P2-TST-009", "P2-AC-004"],
+      "note": "The exact refreshed Release source build and evidence generation exited 0 after 18.976 seconds. This is targeted build evidence only."
+    },
+    {
+      "id": "WP02-refresh-full-source-attempt",
+      "status": "superseded",
+      "path": "build/bin/Release/telemetry_phase2_engine_integration_source_contract_tests.exe",
+      "command": "& 'build/bin/Release/telemetry_phase2_engine_integration_source_contract_tests.exe' '--gtest_color=no'",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-WP02-final-release-refresh",
+      "covers": ["P2-WP-02", "P2-TST-008", "P2-TST-009", "P2-AC-004"],
+      "note": "Superseded refreshed full source attempt: 77/80 passed before the three unique_ptr lexical oracles were corrected. The later full source rerun passes 80/80."
+    },
+    {
+      "id": "WP02-refresh-exact-group-step",
+      "status": "fresh",
+      "path": "build/bin/Release/unittests.exe",
+      "command": "$filter = 'TelemetryPhase2GameplayAbContract.*:FinalB/SupportWorkContract.*:TelemetryNativeRuntimeIntegrationContract.ReviewerFinalTst008EligibilityMatrixRejectsBeforeOpenOrBind:TelemetryProtocolBusinessStateValidation.S12TST009FinalInjectsRecords15Through19And23PlusBothValidCapabilityPairs'; $sw = [System.Diagnostics.Stopwatch]::StartNew(); & 'build/bin/Release/unittests.exe' \"--gtest_filter=$filter\" '--gtest_color=no' '--gtest_brief=1'; $exit = $LASTEXITCODE; $sw.Stop(); Write-Output (\"STEP5_FILTER_EXIT={0}\" -f $exit); Write-Output (\"STEP5_FILTER_DURATION_MS={0}\" -f $sw.ElapsedMilliseconds); exit $exit",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-WP02-NativeFixture-batch",
+      "covers": ["P2-WP-02", "P2-TST-007", "P2-TST-008", "P2-TST-009", "P2-AC-004"],
+      "note": "The canonical exact Release filter exited 0 after 254 ms process time and 163 ms gtest time with 16 tests across four suites: 16 PASS, 0 FAIL, and 0 SKIP. This is fresh TST007–009 checkpoint evidence pending G2-B report regeneration and final review."
+    },
+    {
+      "id": "WP02-source-oracle-fix-release-build",
+      "status": "fresh",
+      "path": "build/bin/Release/telemetry_phase2_engine_integration_source_contract_tests.exe",
+      "command": "cmake --build build --config Release --target telemetry_phase2_engine_integration_source_contract_tests -j 2",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-WP02-source-oracle-fix",
+      "covers": ["P2-WP-02", "P2-TST-008", "P2-TST-009", "P2-AC-004"],
+      "note": "The exact Release source build exited 0 after 23.150 seconds and diff-check was green. This is targeted build evidence only."
+    },
+    {
+      "id": "WP02-source-oracle-fix-three-test-pass",
+      "status": "fresh",
+      "path": "build/bin/Release/telemetry_phase2_engine_integration_source_contract_tests.exe",
+      "command": "& 'build/bin/Release/telemetry_phase2_engine_integration_source_contract_tests.exe' '--gtest_filter=TelemetryPhase2EngineIntegrationSourceContract.S11TST008RuntimeSelectsProfileBeforeDtoTransportAndWelcome:TelemetryPhase2EngineIntegrationSourceContract.S9RuntimeOwnsAndProvisionsPhase2BeforeReady:TelemetryPhase2EngineIntegrationSourceContract.ReviewerS8V4StartupOwnedBudgetIsMeasuredAndRejectedBeforeTransport' '--gtest_color=no'",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-WP02-source-oracle-fix",
+      "covers": ["P2-WP-02", "P2-TST-008", "P2-TST-009", "P2-AC-004"],
+      "note": "The exact corrected source-oracle group exited 0 after 89 ms with 3/3 PASS."
+    },
+    {
+      "id": "WP02-source-oracle-fix-full-source-pass",
+      "status": "fresh",
+      "path": "build/bin/Release/telemetry_phase2_engine_integration_source_contract_tests.exe",
+      "command": "& 'build/bin/Release/telemetry_phase2_engine_integration_source_contract_tests.exe' '--gtest_color=no'",
+      "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-WP02-source-oracle-fix",
+      "covers": ["P2-WP-02", "P2-TST-008", "P2-TST-009", "P2-AC-004"],
+      "note": "The exact full Release source suite exited 0 after 220 ms with 80/80 PASS. This is fresh checkpoint candidate evidence pending focused review, not G2-B gate proof."
     }
   ],
   "nextActions": [
-    "Resume under the updated skill with G2-B reopened and WP03/WP09 suspended.",
-    "Have the implementer correct only ShipIdentityObservation::class_source_key.",
-    "Build the dedicated production target and have the test agent run B1, then B1/B2/B3 together.",
-    "Run one batched readiness rereview before any broad Release evidence.",
-    "If readiness is green, run the WP02 checkpoint suites once, regenerate TST007/008/009 evidence, reconcile this tracker, and close G2-B only on fresh proof."
+    "Perform the separate report-only sealing step for test/telemetry/producer/phase2/reports/wp02-capture/g2-b-capture.json; do not modify this stable tracker during report sealing.",
+    "After report sealing is independently complete, begin a new authorized P2-WP-03 slice in a later handoff.",
+    "P2-WP-09 is authorized for parallel work but remains not started."
   ],
   "notes": [
-    "No writer or active build/test process existed at the pause checkpoint.",
+    "The resume audit found no tracked worktree changes; pre-existing untracked build and historical-report artifacts were left untouched.",
     "WP03 files are retained as provisional suspended work and must be reevaluated against the final WP02 authority.",
-    "Exact commands for the latest targeted binaries were not preserved and must be reestablished rather than invented.",
+    "Focused reviewer disposition is GO on the corrected unique_ptr source oracles and authorizes the exact Release 16-test group, then one broad run only if green; this is status metadata and does not close G2-B.",
+    "The structural NativeFixture reviewer GO preserves existing fresh lifecycle, observation, and source evidence; only the unittests remediation cadence advances.",
+    "The conditional global-batch reviewer GO is not broad authorization: performance and reliability artifacts are build-only, and broad remains missing.",
     "Large build directories and historical reliability reports remain visible and untracked by explicit user choice."
   ]
 }

@@ -312,14 +312,12 @@ struct Phase2RawStaticCatalog {
 
 struct Phase2StaticAuthorityInput {
 	bool guards_valid = false;
-	struct {
-		float effective_mass = 0.0F;
-		float max_rear_velocity = 0.0F;
+	struct ShipAuthority : Phase2RawClassDefinition {
 	} ship_info;
-	struct {
-		float mass = 0.0F;
-		float damage = 0.0F;
-		float fire_wait_seconds = 0.0F;
+	struct WeaponAuthorities : Phase2RawWeaponDefinition {
+		std::uint32_t additional_count = 0U;
+		std::array<Phase2RawWeaponDefinition,
+			MaximumPhase2StaticWeapons - 1U> additional_definitions{};
 	} weapon_info;
 	struct {
 		Phase2RawVec3 center_of_mass;
@@ -336,8 +334,14 @@ struct Phase2StaticAuthorityInput {
 	struct RegistryFacts {
 		Phase2RawAuxiliaryEntry species;
 		Phase2RawAuxiliaryEntry weapon_damage_type;
+		std::uint32_t additional_count = 0U;
+		std::array<Phase2RawAuxiliaryEntry,
+			MaximumPhase2StaticAuxiliaryEntries> additional_entries{};
 	} registries;
 };
+
+void reset_phase2_static_authority_input(
+	Phase2StaticAuthorityInput& input) noexcept;
 
 SourceReadResult map_phase2_static_authorities(
 	const Phase2StaticAuthorityInput& input,
@@ -356,7 +360,7 @@ struct ShipIdentityObservation {
 	OwnedPhase2String class_name;
 	std::uint64_t sample_time_us = 0U;
 	std::uint64_t presence = 0U;
-	std::uint32_t class_source_key = 0U;
+	Phase2CaptureLocalKey class_source_key;
 };
 
 enum class ShipLifecycleState : std::uint8_t {
@@ -782,6 +786,9 @@ class Phase2ObservationBuffer {
 	Phase2ObservationDto m_observation;
 	std::unique_ptr<Phase2ShipSource> m_source_scratch;
 };
+
+void reset_phase2_observation_buffer_in_place(
+	Phase2ObservationBuffer& buffer) noexcept;
 
 static_assert(sizeof(Phase2ObservationBuffer) +
 		MaximumPhase2ObservationShips * sizeof(ShipObservationDto) +

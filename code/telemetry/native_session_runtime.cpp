@@ -8,6 +8,8 @@
 
 #include <chrono>
 #include <limits>
+#include <memory>
+#include <new>
 #include <utility>
 
 namespace telemetry::detail {
@@ -170,18 +172,23 @@ NativeSessionStartStatus NativeSessionRuntime::start(const NativeSessionStartReq
 	const auto phase2_mode = selected_phase2_profile == Phase2Profile::None
 		? Phase2ProvisioningMode::ValidDisabled
 		: Phase2ProvisioningMode::ValidEnabled;
-	Phase2ObservationBuffer phase2_observation;
+	auto phase2_observation = std::unique_ptr<Phase2ObservationBuffer>(
+		new (std::nothrow) Phase2ObservationBuffer());
+	if (phase2_observation == nullptr) {
+		return NativeSessionStartStatus::AllocationFailure;
+	}
+	++m_startup_allocation_count;
 	if (phase2_mode == Phase2ProvisioningMode::ValidEnabled) {
 		++m_startup_allocation_count;
 	}
-	if (!phase2_observation.provision(phase2_mode)) {
+	if (!phase2_observation->provision(phase2_mode)) {
 		return NativeSessionStartStatus::AllocationFailure;
 	}
 	if (phase2_mode == Phase2ProvisioningMode::ValidEnabled &&
-		!phase2_observation.enter_ready()) {
+		!phase2_observation->enter_ready()) {
 		return NativeSessionStartStatus::AllocationFailure;
 	}
-	const auto phase2_owned_bytes = phase2_observation.owned_bytes();
+	const auto phase2_owned_bytes = phase2_observation->owned_bytes();
 	// Construct every mutable image backing before bind/Ready. A failure is
 	// retryable because no transport operation has started yet.
 	if (!provision_state_image_pools(request.config->max_clients)) {
@@ -225,7 +232,7 @@ NativeSessionStartStatus NativeSessionRuntime::start(const NativeSessionStartReq
 	m_producer_id = request.producer_id;
 	m_scheduler.reset();
 	m_capture_cadence = capture_cadence;
-	m_phase2_observation = std::move(phase2_observation);
+	m_phase2_observation = std::move(*phase2_observation);
 	m_startup_owned_bytes = startup_owned_bytes;
 	m_phase2_capture_plan = {};
 	m_selected_phase2_profile = selected_phase2_profile;
@@ -428,7 +435,7 @@ void NativeSessionRuntime::shutdown() noexcept
 	m_scheduler.reset();
 	m_capture_cadence.reset();
 	m_phase2_capture_plan = {};
-	m_phase2_observation = {};
+	reset_phase2_observation_buffer_in_place(m_phase2_observation);
 	m_selected_phase2_profile = Phase2Profile::None;
 	m_phase2_enabled = false;
 	m_phase2_keyframe_test_seam = false;
@@ -822,7 +829,7 @@ void NativeSessionRuntime::fail_transport() noexcept
 	m_scheduler.reset();
 	m_capture_cadence.stop();
 	m_phase2_capture_plan = {};
-	m_phase2_observation = {};
+	reset_phase2_observation_buffer_in_place(m_phase2_observation);
 	m_selected_phase2_profile = Phase2Profile::None;
 	m_phase2_enabled = false;
 	clear_player_capture();
@@ -842,7 +849,7 @@ void NativeSessionRuntime::fail_capture(NativePlayerCaptureStatus status) noexce
 	m_scheduler.reset();
 	m_capture_cadence.stop();
 	m_phase2_capture_plan = {};
-	m_phase2_observation = {};
+	reset_phase2_observation_buffer_in_place(m_phase2_observation);
 	m_selected_phase2_profile = Phase2Profile::None;
 	m_phase2_enabled = false;
 	clear_player_capture();

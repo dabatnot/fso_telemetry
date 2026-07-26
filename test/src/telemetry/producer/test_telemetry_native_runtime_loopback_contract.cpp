@@ -26,7 +26,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <memory>
-#include <optional>
+#include <new>
 #include <thread>
 
 namespace {
@@ -397,7 +397,8 @@ struct LoopbackRuntimeServices final : detail::RuntimeStartupServices {
 	detail::RuntimeTransportStatus start_transport() noexcept override
 	{
 		++start_transport_calls;
-		native.emplace(backend, completion);
+		native.reset(new (std::nothrow) detail::NativeSessionRuntime(backend, completion));
+		if (!native) return detail::RuntimeTransportStatus::Unavailable;
 		++native_constructions;
 		const detail::NativeSessionStartRequest request{&config,
 			0x1020304050607080ULL,
@@ -411,7 +412,7 @@ struct LoopbackRuntimeServices final : detail::RuntimeStartupServices {
 	detail::RuntimeTickStatus service_tick(const detail::RuntimeTickContext& context) noexcept override
 	{
 		last_tick = context;
-		if (!native.has_value()) return detail::RuntimeTickStatus::Unavailable;
+		if (!native) return detail::RuntimeTickStatus::Unavailable;
 		auto engine_view = detail::make_fso_engine_read_view();
 		return native->service_tick(
 			{context.now_us, context.mission_generation, context.mission_active}, engine_view) ==
@@ -422,17 +423,17 @@ struct LoopbackRuntimeServices final : detail::RuntimeStartupServices {
 	void stop_collection() noexcept override {}
 	void invalidate_mission_state_and_entities() noexcept override
 	{
-		if (native.has_value()) native->purge_all(detail::SessionCloseReason::MissionDiscontinuity);
+		if (native) native->purge_all(detail::SessionCloseReason::MissionDiscontinuity);
 	}
 	void cancel_replication() noexcept override {}
 	void close_sessions_and_stores() noexcept override
 	{
-		if (native.has_value()) native->purge_all(detail::SessionCloseReason::Shutdown);
+		if (native) native->purge_all(detail::SessionCloseReason::Shutdown);
 	}
 	void reset_mission_scope() noexcept override {}
 	void stop_transport() noexcept override
 	{
-		if (native.has_value()) {
+		if (native) {
 			native->shutdown();
 			sockets_after_stop = native->socket_count();
 		}
@@ -450,7 +451,7 @@ struct LoopbackRuntimeServices final : detail::RuntimeStartupServices {
 	detail::SessionIdAllocator ids;
 	telemetry::TelemetryConfig config;
 	detail::Wp03KnownBudgetSubtotal budget{};
-	std::optional<detail::NativeSessionRuntime> native;
+	std::unique_ptr<detail::NativeSessionRuntime> native;
 	detail::RuntimeTickContext last_tick{};
 	std::uint64_t now_us = 30'000U;
 	std::size_t start_transport_calls = 0U;
@@ -551,14 +552,14 @@ testing::AssertionResult exercise_native_runtime_loopback(protocol::IpAddressFam
 	std::uint16_t first_port)
 {
 	{
-		ServerFixture real_budget(family, first_port, false);
-		if (real_budget.services.budget.deferred_categories != 0x0080U) {
+		auto real_budget = std::make_unique<ServerFixture>(family, first_port, false);
+		if (real_budget->services.budget.deferred_categories != 0x0080U) {
 			return testing::AssertionFailure() << "real startup mask changed from 0x0080";
 		}
-		real_budget.start();
-		if (real_budget.runtime.state() != detail::RuntimeState::Faulted ||
-			real_budget.runtime.terminal_reason() != detail::RuntimeTerminalReason::BudgetFailure ||
-			real_budget.services.native_constructions != 0U || real_budget.services.backend.open_calls != 0U) {
+		real_budget->start();
+		if (real_budget->runtime.state() != detail::RuntimeState::Faulted ||
+			real_budget->runtime.terminal_reason() != detail::RuntimeTerminalReason::BudgetFailure ||
+			real_budget->services.native_constructions != 0U || real_budget->services.backend.open_calls != 0U) {
 			return testing::AssertionFailure()
 				<< "real incomplete budget crossed native construction or bind boundary";
 		}
@@ -587,7 +588,7 @@ testing::AssertionResult exercise_native_runtime_loopback(protocol::IpAddressFam
 	if (!server) {
 		return testing::AssertionFailure() << "server could not bind a probed ephemeral port in 16 attempts";
 	}
-	if (!server->services.native.has_value() || server->services.native->socket_count() != 1U ||
+	if (!server->services.native || server->services.native->socket_count() != 1U ||
 		server->services.backend.successful_opens != 1U) {
 		return testing::AssertionFailure() << "synthetic Runtime did not own exactly one native server socket";
 	}
@@ -659,7 +660,7 @@ testing::AssertionResult exercise_native_runtime_loopback(protocol::IpAddressFam
 		!pump_until_server_receive(*server, receives_before_begin_ack + 1U, pump)) {
 		return testing::AssertionFailure() << "bounded pump did not apply SESSION_BEGIN ACK";
 	}
-	if (!server->services.native.has_value() || server->services.native->active_sessions() != 1U) {
+	if (!static_cast<bool>(server->services.native) || server->services.native->active_sessions() != 1U) {
 		return testing::AssertionFailure() << "server did not retain exactly one active session";
 	}
 	// The allowlist is address/CIDR based, but a live FSTL session is bound to
@@ -680,7 +681,7 @@ testing::AssertionResult exercise_native_runtime_loopback(protocol::IpAddressFam
 			server_endpoint,
 			{begin_ack.bytes.data(), begin_ack.size}).status != detail::IoStatus::Complete ||
 		!pump_until_server_receive(*server, receives_before_wrong_port_ack + 1U, pump) ||
-		!server->services.native.has_value() || server->services.native->active_sessions() != 1U ||
+		!static_cast<bool>(server->services.native) || server->services.native->active_sessions() != 1U ||
 		server->services.backend.send_calls != sends_before_wrong_port_ack) {
 		return testing::AssertionFailure() << "wrong source port ACK changed the live session";
 	}
@@ -718,7 +719,7 @@ testing::AssertionResult exercise_native_runtime_loopback(protocol::IpAddressFam
 			server_endpoint,
 			{heartbeat_response.bytes.data(), heartbeat_response.size}).status != detail::IoStatus::Complete ||
 		!pump_until_server_receive(*server, receives_before_heartbeat + 1U, pump) ||
-		!server->services.native.has_value() || server->services.native->active_sessions() != 1U ||
+		!static_cast<bool>(server->services.native) || server->services.native->active_sessions() != 1U ||
 		server->services.backend.send_calls != sends_before_endpoint_change) {
 		return testing::AssertionFailure() << "endpoint-change HEARTBEAT response changed the live session";
 	}
@@ -730,11 +731,11 @@ testing::AssertionResult exercise_native_runtime_loopback(protocol::IpAddressFam
 		!pump_until_server_receive(*server, receives_before_expected_heartbeat + 1U, pump)) {
 		return testing::AssertionFailure() << "bounded pump did not apply HEARTBEAT response";
 	}
-	if (!server->services.native.has_value() || server->services.native->active_sessions() != 1U) {
+	if (!static_cast<bool>(server->services.native) || server->services.native->active_sessions() != 1U) {
 		return testing::AssertionFailure() << "HEARTBEAT response did not preserve the active session";
 	}
 	server->services.now_us = activity_before_heartbeat + 10'000'000U;
-	if (!pump_once(*server, pump) || !server->services.native.has_value() ||
+	if (!pump_once(*server, pump) || !static_cast<bool>(server->services.native) ||
 		server->services.native->active_sessions() != 1U) {
 		return testing::AssertionFailure()
 			<< "HEARTBEAT response was not accepted as activity beyond the prior disconnect boundary";

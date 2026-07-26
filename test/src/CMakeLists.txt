@@ -56,6 +56,7 @@ add_executable(telemetry_lifecycle_callback_contract_tests
 	telemetry/producer/telemetry_runtime_ready_adapter.cpp
 	${CMAKE_SOURCE_DIR}/code/telemetry/runtime.cpp
 	${CMAKE_SOURCE_DIR}/code/telemetry/telemetry.cpp
+	${CMAKE_SOURCE_DIR}/code/telemetry/phase2_observation.cpp
 	${CMAKE_SOURCE_DIR}/code/events/events.cpp
 )
 
@@ -224,6 +225,7 @@ add_test(NAME telemetry_phase2_business_state_tests
 
 add_executable(telemetry_phase2_observation_contract_tests
 	telemetry/producer/test_phase2_observation_contract.cpp
+	${CMAKE_SOURCE_DIR}/code/telemetry/phase2_observation.cpp
 )
 
 target_compile_features(telemetry_phase2_observation_contract_tests PRIVATE cxx_std_17)
@@ -234,7 +236,7 @@ target_include_directories(telemetry_phase2_observation_contract_tests PRIVATE
 	${GENERATED_SOURCE_DIR}
 	${GENERATED_SOURCE_DIR}/code
 )
-target_link_libraries(telemetry_phase2_observation_contract_tests PRIVATE gtest_main code)
+target_link_libraries(telemetry_phase2_observation_contract_tests PRIVATE gtest_main)
 
 set_target_properties(telemetry_phase2_observation_contract_tests PROPERTIES FOLDER "tests")
 
@@ -249,9 +251,68 @@ add_executable(telemetry_phase2_engine_integration_source_contract_tests
 target_compile_features(telemetry_phase2_engine_integration_source_contract_tests PRIVATE cxx_std_17)
 target_compile_definitions(telemetry_phase2_engine_integration_source_contract_tests PRIVATE
 	FSO_PHASE2_SOURCE_ROOT="${CMAKE_SOURCE_DIR}"
-	FSO_PHASE2_ENGINE_ADAPTER_OBJECT="${CMAKE_BINARY_DIR}/code/code.dir/$<CONFIG>/engine_adapter.obj"
 )
 target_link_libraries(telemetry_phase2_engine_integration_source_contract_tests PRIVATE gtest_main)
+
+add_dependencies(telemetry_phase2_engine_integration_source_contract_tests code)
+
+if(MSVC)
+	add_library(telemetry_phase2_engine_adapter_evidence_object OBJECT
+		${CMAKE_SOURCE_DIR}/code/telemetry/engine_adapter.cpp
+	)
+	target_compile_features(telemetry_phase2_engine_adapter_evidence_object PRIVATE
+		cxx_std_17
+		"$<TARGET_PROPERTY:code,COMPILE_FEATURES>"
+	)
+	target_include_directories(telemetry_phase2_engine_adapter_evidence_object PRIVATE
+		"$<TARGET_PROPERTY:code,INCLUDE_DIRECTORIES>"
+	)
+	target_compile_definitions(telemetry_phase2_engine_adapter_evidence_object PRIVATE
+		"$<TARGET_PROPERTY:code,COMPILE_DEFINITIONS>"
+	)
+	target_compile_options(telemetry_phase2_engine_adapter_evidence_object PRIVATE
+		"$<TARGET_PROPERTY:code,COMPILE_OPTIONS>"
+		/GL-
+	)
+	target_link_libraries(telemetry_phase2_engine_adapter_evidence_object PRIVATE
+		"$<TARGET_PROPERTY:code,LINK_LIBRARIES>"
+	)
+	set_target_properties(telemetry_phase2_engine_adapter_evidence_object PROPERTIES
+		INTERPROCEDURAL_OPTIMIZATION FALSE
+		FOLDER "tests"
+	)
+
+	set(PHASE2_ENGINE_ADAPTER_EVIDENCE_OBJECT
+		"$<TARGET_OBJECTS:telemetry_phase2_engine_adapter_evidence_object>")
+	target_compile_definitions(telemetry_phase2_engine_integration_source_contract_tests PRIVATE
+		FSO_PHASE2_MSVC_LINK_EVIDENCE=1
+		FSO_PHASE2_ENGINE_ADAPTER_OBJECT="${PHASE2_ENGINE_ADAPTER_EVIDENCE_OBJECT}"
+	)
+	add_custom_target(telemetry_phase2_engine_adapter_evidence
+		COMMAND "${CMAKE_COMMAND}"
+			"-DINPUT_FILE=${PHASE2_ENGINE_ADAPTER_EVIDENCE_OBJECT}"
+			"-DOUTPUT_FILE=${PHASE2_ENGINE_ADAPTER_EVIDENCE_OBJECT}.sha256"
+			-P "${CMAKE_CURRENT_SOURCE_DIR}/write_phase2_sha256_sidecar.cmake"
+		COMMAND "${CMAKE_COMMAND}" -E rm -f
+			"${PHASE2_ENGINE_ADAPTER_EVIDENCE_OBJECT}.linkable.txt.tmp"
+		COMMAND "${CMAKE_LINKER}" /DUMP /SYMBOLS /IMPORTS
+			"/OUT:${PHASE2_ENGINE_ADAPTER_EVIDENCE_OBJECT}.linkable.txt.tmp"
+			"${PHASE2_ENGINE_ADAPTER_EVIDENCE_OBJECT}"
+		COMMAND "${CMAKE_COMMAND}" -E rename
+			"${PHASE2_ENGINE_ADAPTER_EVIDENCE_OBJECT}.linkable.txt.tmp"
+			"${PHASE2_ENGINE_ADAPTER_EVIDENCE_OBJECT}.linkable.txt"
+		VERBATIM
+	)
+	add_dependencies(telemetry_phase2_engine_adapter_evidence
+		code
+		telemetry_phase2_engine_adapter_evidence_object)
+	add_dependencies(telemetry_phase2_engine_integration_source_contract_tests
+		telemetry_phase2_engine_adapter_evidence)
+else()
+	target_compile_definitions(telemetry_phase2_engine_integration_source_contract_tests PRIVATE
+		FSO_PHASE2_MSVC_LINK_EVIDENCE=0
+	)
+endif()
 
 set_target_properties(telemetry_phase2_engine_integration_source_contract_tests PROPERTIES FOLDER "tests")
 
