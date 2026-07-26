@@ -242,6 +242,7 @@ IF(FSO_BUILD_QTFRED)
 ENDIF()
 
 if(FSO_BUILD_TESTS)
+	enable_testing()
 	add_subdirectory(test)
 endif()
 

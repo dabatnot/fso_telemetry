@@ -22,6 +22,7 @@
 
 #include <gtest/gtest.h>
 
+#include <iostream>
 #include <algorithm>
 #include <array>
 #include <cstddef>
@@ -327,10 +328,49 @@ struct NativeFixture {
 		EXPECT_TRUE(registry.allocate_storage());
 	}
 
-	detail::NativeSessionStartStatus start(telemetry::TelemetryConfig& config)
+	detail::NativeSessionStartStatus start(telemetry::TelemetryConfig& config,
+		telemetry::Phase2Profile selected_phase2_profile =
+			telemetry::Phase2Profile::None)
 	{
 		detail::NativeSessionStartRequest request{
-			&config, 0x1020304050607080ULL, &ids, &packet_random, nullptr, &log};
+			&config,
+			0x1020304050607080ULL,
+			&ids,
+			&packet_random,
+			nullptr,
+			&log,
+			selected_phase2_profile};
+		return runtime.start(request);
+	}
+
+	detail::NativeSessionStartStatus start_requested(telemetry::TelemetryConfig& config,
+		telemetry::Phase2Profile requested_phase2_profile)
+	{
+		detail::NativeSessionStartRequest request{
+			&config,
+			0x1020304050607080ULL,
+			&ids,
+			&packet_random,
+			nullptr,
+			&log};
+		request.phase2_eligibility = {};
+		request.requested_phase2_profile = requested_phase2_profile;
+		return runtime.start(request);
+	}
+
+	detail::NativeSessionStartStatus start_with_eligibility(
+		telemetry::TelemetryConfig& config,
+		const telemetry::Phase2ProfileEligibility& eligibility)
+	{
+		detail::NativeSessionStartRequest request{
+			&config,
+			0x1020304050607080ULL,
+			&ids,
+			&packet_random,
+			nullptr,
+			&log};
+		request.phase2_eligibility = eligibility;
+		request.requested_phase2_profile = telemetry::Phase2Profile::CoreGate;
 		return runtime.start(request);
 	}
 };
@@ -976,6 +1016,97 @@ TEST(TelemetryP85PreallocationContract, ProvisionFailurePreventsBindAndAColdRunt
 		<< "A provisioning failure must leave the runtime cold and retryable once the allocation succeeds.";
 	EXPECT_GT(fixture.runtime.socket_count(), 0U);
 	EXPECT_EQ(0U, fixture.runtime.active_sessions());
+}
+
+TEST(TelemetryNativeRuntimeIntegrationContract, S8V4OwnedBudgetPlusOneFailsBeforeTransportBind)
+{
+	auto config = enabled_config(1U);
+	NativeFixture baseline;
+	ASSERT_EQ(detail::NativeSessionStartStatus::Started,
+		baseline.start_requested(config, telemetry::Phase2Profile::CoreGate));
+	const auto startup_owned_bytes =
+		NativePlayerAccess::startup_owned_bytes(baseline.runtime);
+	ASSERT_GT(startup_owned_bytes, 0U);
+	ASSERT_LE(startup_owned_bytes, detail::MaximumPhase2OwnedBytes);
+	std::cout << "[ PHASE2 STARTUP OWNED BYTES ] " << startup_owned_bytes << '\n';
+
+	NativeFixture fixture;
+	NativePlayerAccess::set_startup_owned_budget_adjustment(
+		fixture.runtime,
+		detail::MaximumPhase2OwnedBytes - startup_owned_bytes + 1U);
+
+	EXPECT_EQ(detail::NativeSessionStartStatus::AllocationFailure,
+		fixture.start_requested(config, telemetry::Phase2Profile::CoreGate));
+	EXPECT_EQ(0U, fixture.backend.open_calls);
+	EXPECT_EQ(0U, fixture.runtime.socket_count());
+	EXPECT_EQ(0U, fixture.runtime.active_sessions());
+}
+
+TEST(TelemetryNativeRuntimeIntegrationContract,
+	ReviewerS9V5CompleteShipCannotStartBeforeOwnedWp03SelectionClosure)
+{
+	NativeFixture fixture;
+	auto config = enabled_config(1U);
+
+	EXPECT_EQ(detail::NativeSessionStartStatus::InvalidConfiguration,
+		fixture.start_requested(config, telemetry::Phase2Profile::CompleteShip));
+	EXPECT_EQ(0U, fixture.backend.open_calls)
+		<< "CompleteShip rejection must precede allocation and transport bind.";
+	EXPECT_EQ(0U, fixture.runtime.socket_count());
+	EXPECT_EQ(0U, fixture.runtime.active_sessions());
+}
+
+TEST(TelemetryNativeRuntimeIntegrationContract,
+	ReviewerFinalTst008EligibilityMatrixRejectsBeforeOpenOrBind)
+{
+	auto config = enabled_config(1U);
+	std::vector<telemetry::Phase2ProfileEligibility> rejected;
+	auto multiplayer_client = telemetry::Phase2ProfileEligibility{};
+	multiplayer_client.authority_mode = protocol::AuthorityMode::MultiplayerClient;
+	rejected.push_back(multiplayer_client);
+	auto multiplayer_master = telemetry::Phase2ProfileEligibility{};
+	multiplayer_master.authority_mode = protocol::AuthorityMode::MultiplayerMaster;
+	rejected.push_back(multiplayer_master);
+	auto trusted = telemetry::Phase2ProfileEligibility{};
+	trusted.trusted_full_state = true;
+	rejected.push_back(trusted);
+	auto non_cockpit = telemetry::Phase2ProfileEligibility{};
+	non_cockpit.visibility_mode = protocol::VisibilityMode::TrustedFullState;
+	rejected.push_back(non_cockpit);
+	auto dedicated = telemetry::Phase2ProfileEligibility{};
+	dedicated.dedicated = true;
+	rejected.push_back(dedicated);
+	auto headless = telemetry::Phase2ProfileEligibility{};
+	headless.headless = true;
+	rejected.push_back(headless);
+
+	for (const auto& eligibility : rejected) {
+		NativeFixture fixture;
+		EXPECT_EQ(detail::NativeSessionStartStatus::InvalidConfiguration,
+			fixture.start_with_eligibility(config, eligibility));
+		EXPECT_EQ(0U, fixture.backend.open_calls);
+		EXPECT_TRUE(fixture.backend.io_trace.empty());
+		EXPECT_EQ(0U,
+			NativePlayerAccess::startup_allocation_count(fixture.runtime));
+		EXPECT_EQ(0U, fixture.runtime.socket_count());
+		EXPECT_EQ(0U, fixture.runtime.active_sessions());
+	}
+
+	NativeFixture solo;
+	EXPECT_EQ(detail::NativeSessionStartStatus::Started,
+		solo.start_with_eligibility(config, {}));
+	EXPECT_GT(solo.backend.open_calls, 0U);
+	EXPECT_GT(NativePlayerAccess::startup_allocation_count(solo.runtime), 0U);
+}
+
+TEST(TelemetryNativeRuntimeIntegrationContract, S9V4KeyframePreparationSeamForcesBothProvisionalFamilies)
+{
+	NativeFixture fixture;
+	const auto plan =
+		NativePlayerAccess::phase2_keyframe_test_seam(fixture.runtime);
+	EXPECT_TRUE(plan.force_complete_keyframe);
+	EXPECT_TRUE(plan.capture_flight_controls);
+	EXPECT_TRUE(plan.capture_systems);
 }
 
 TEST(TelemetryP91RuntimeMetricsContract, MetricsProvisionFailureFaultsBeforeBindAndSuccessfulRetryPublishesCallbacks)

@@ -23,6 +23,10 @@
 #include "sound/sound.h"
 #include "stats/scoring.h" // for scoring/stats
 
+namespace telemetry::detail {
+struct CargoAuthorityFact;
+}
+
 #define MAX_KEYED_TARGETS			8		// number of hot keys available to assign targets to
 
 // player image defines
@@ -269,7 +273,7 @@ void player_set_squad_bitmap(player *p, const char *fnamem, bool ismulti);
 // set squadron
 void player_set_squad(player *p, char *squad_name);
 
-bool player_inspect_cargo(float frametime, char *outstr);
+bool player_inspect_cargo(float frametime, char *outstr, telemetry::detail::CargoAuthorityFact& cargo_fact);
 
 extern int use_descent;						// player is using descent-style physics
 extern void toggle_player_object();		// toggles between descent-style ship and player ship

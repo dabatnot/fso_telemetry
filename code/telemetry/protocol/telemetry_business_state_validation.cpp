@@ -201,6 +201,17 @@ bool is_phase1_player_kinematics_profile(std::uint8_t protocol_minor, std::uint6
 	return protocol_minor == VersionMinorV1_1 && coverage == StateDomainCoverageBitPlayerKinematics;
 }
 
+bool is_phase2_complete_ship_profile(std::uint8_t protocol_minor, std::uint64_t coverage) noexcept
+{
+	constexpr auto complete_ship_coverage = StateDomainCoverageBitPlayerKinematics |
+		StateDomainCoverageBitCoreShip | StateDomainCoverageBitControlInputs | StateDomainCoverageBitWeapons |
+		StateDomainCoverageBitCargoDockSupport;
+	static_assert(complete_ship_coverage == 0x0583ULL, "The Phase 2 complete ship coverage is frozen");
+	return protocol_minor == VersionMinorV1_1 && coverage == complete_ship_coverage;
+}
+
+constexpr std::size_t MaximumPhase2CompleteShipCount = 64U;
+
 ValidationError parse_lifecycle(const StateAtom& atom, LifecycleFacts& facts) noexcept
 {
 	facts = LifecycleFacts{};
@@ -1115,6 +1126,8 @@ ValidationError BusinessStateImageValidator::validate(const StateImage& image) c
 	}
 	const bool phase1_player_kinematics =
 		is_phase1_player_kinematics_profile(m_context.protocol_minor, session.coverage);
+	const bool phase2_complete_ship =
+		is_phase2_complete_ship_profile(m_context.protocol_minor, session.coverage);
 	if (phase1_player_kinematics) {
 		if (m_context.required_manifest_id != 0U) {
 			return ValidationError::InvalidStateTransition;
@@ -1138,6 +1151,17 @@ ValidationError BusinessStateImageValidator::validate(const StateImage& image) c
 	} else if (m_context.protocol_minor == VersionMinorV1_1 &&
 		(session.coverage & StateDomainCoverageBitCoreShip) != 0U && m_context.required_manifest_id == 0U) {
 		return ValidationError::MissingManifest;
+	}
+	constexpr std::uint64_t SpecializedCommVideoCapabilities =
+		static_cast<std::uint64_t>(CapabilityCommViewLocalAssets) |
+		static_cast<std::uint64_t>(CapabilityCommViewAuthoritativeSource) |
+		static_cast<std::uint64_t>(CapabilityTargetVideoH264) |
+		static_cast<std::uint64_t>(CapabilityTargetVideoRemoteRender);
+	if (phase2_complete_ship &&
+		(session.capabilities & SpecializedCommVideoCapabilities) != 0U) {
+		// 0x0583 never negotiates COMM-view or target-video specialization.
+		// Reject isolated bits with the same oracle as a complete pair.
+		return ValidationError::CapabilityNotNegotiated;
 	}
 	if (validate_emittable_active_capabilities(session.capabilities) != ValidationError::None) {
 		return ValidationError::CapabilityNotNegotiated;
@@ -1274,11 +1298,16 @@ ValidationError BusinessStateImageValidator::validate(const StateImage& image) c
 		static_cast<std::size_t>(std::distance(atoms.begin(), lifecycle_begin));
 	const auto lifecycle_count = static_cast<std::size_t>(std::distance(lifecycle_begin, lifecycle_end));
 	std::vector<ParentChainVisit> parent_chain_visits;
+	std::size_t phase2_ship_count = 0U;
 	for (auto iterator = lifecycle_begin; iterator != lifecycle_end; ++iterator) {
 		const auto& atom = *iterator;
 		LifecycleFacts lifecycle;
 		if (const auto error = parse_lifecycle(atom, lifecycle); error != ValidationError::None) {
 			return error;
+		}
+		if (phase2_complete_ship && lifecycle.object_type == ObjectType::Ship &&
+			++phase2_ship_count > MaximumPhase2CompleteShipCount) {
+			return ValidationError::ResourceLimit;
 		}
 		if (session.visibility_mode == VisibilityMode::Cockpit && m_context.enforce_cockpit_entity_allowlist &&
 			!cockpit_entity_allowed(m_context, lifecycle.entity_id)) {
@@ -1312,6 +1341,11 @@ ValidationError BusinessStateImageValidator::validate(const StateImage& image) c
 			}
 			if ((session.coverage & StateDomainCoverageBitWeapons) != 0U &&
 				find_owner(atoms, RecordType::WeaponState, lifecycle.entity_id) == nullptr) {
+				return ValidationError::InvalidAbsence;
+			}
+			if (phase2_complete_ship &&
+				(find_owner(atoms, RecordType::DockingState, lifecycle.entity_id) == nullptr ||
+					find_owner(atoms, RecordType::SupportState, lifecycle.entity_id) == nullptr)) {
 				return ValidationError::InvalidAbsence;
 			}
 		} else if (lifecycle.object_type == ObjectType::Ship) {

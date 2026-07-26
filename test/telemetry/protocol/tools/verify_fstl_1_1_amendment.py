@@ -23,12 +23,17 @@ FROZEN_V10_ARTIFACT_COUNT = 438
 FROZEN_V10_ARTIFACT_TREE_SHA256 = "9baac6a20db33bcf350066ed533c5581b7117410899d7bc4a6dc24406e47856d"
 PLAYER_KINEMATICS = 0x400
 CORE_SHIP = 0x001
+CONTROL_INPUTS = 0x002
+WEAPONS = 0x080
+CARGO_DOCK_SUPPORT = 0x100
+COMPLETE_SHIP = PLAYER_KINEMATICS | CORE_SHIP | CONTROL_INPUTS | WEAPONS | CARGO_DOCK_SUPPORT
 SESSION_STATE = 1
 MISSION_STATE = 2
 ENTITY_LIFECYCLE = 5
 SHIP_IDENTITY = 6
 FLIGHT_STATE = 7
 CORE_RECORDS = {1, 2, 5, 6, 7, 9, 10, 11, 12, 13}
+COMPLETE_SHIP_RECORDS = CORE_RECORDS | {8, 14, 20, 21, 22}
 ERROR_IDS = {"None": 0, "DuplicateRecord": 29, "ReservedFlag": 36,
              "InvalidAbsence": 37, "MissingManifest": 41, "VisibilityViolation": 43,
              "InvalidStateTransition": 44}
@@ -217,6 +222,8 @@ def validate(decoded: dict[str, object], minor: int) -> str:
             if int.from_bytes(fly[0:8], "little") != player or int.from_bytes(fly[8:16], "little") != 0:
                 return "InvalidAbsence"
         return "None"
+    if coverage == COMPLETE_SHIP:
+        return "None" if decoded["manifest_id"] and set(by_type) == COMPLETE_SHIP_RECORDS else "MissingManifest"
     if coverage & CORE_SHIP:
         return "None" if decoded["manifest_id"] and CORE_RECORDS <= set(by_type) else "MissingManifest"
     return "INVALID_COVERAGE"
@@ -229,6 +236,32 @@ def cases() -> dict[str, tuple[bytes, int, str]]:
                      12: "energy_state", 13: "propulsion_state"}
     promotion += [(V1_VECTORS / "valid" / "records" / fixture_names[kind] / f"{fixture_names[kind]}.bin").read_bytes()
                   for kind in sorted(CORE_RECORDS - {1, 2, 5, 7})]
+    complete_fixture_names = {
+        6: "ship_identity", 8: "control_state", 9: "damage_state", 10: "shield_state",
+        11: "subsystem_state", 12: "energy_state", 13: "propulsion_state",
+        14: "weapon_state", 20: "cargo_scan_state", 21: "docking_state", 22: "support_state",
+    }
+    complete_fixtures = {
+        kind: (V1_VECTORS / "valid" / "records" / name / f"{name}.bin").read_bytes()
+        for kind, name in complete_fixture_names.items()
+    }
+    complete_ship = [
+        session_state(player, COMPLETE_SHIP),
+        mission_state(),
+        complete_fixtures[8],
+        complete_fixtures[20],
+        lifecycle(player, True),
+        complete_fixtures[6],
+        flight(player),
+        complete_fixtures[9],
+        complete_fixtures[10],
+        complete_fixtures[12],
+        complete_fixtures[13],
+        complete_fixtures[11],
+        complete_fixtures[14],
+        complete_fixtures[21],
+        complete_fixtures[22],
+    ]
     ship_identity = (V1_VECTORS / "valid" / "records" / "ship_identity" / "ship_identity.bin").read_bytes()
     base = [session_state(player, PLAYER_KINEMATICS), mission_state(), lifecycle(player), flight(player)]
     return {
@@ -244,6 +277,7 @@ def cases() -> dict[str, tuple[bytes, int, str]]:
         "minor-zero-reserved-bit": (snapshot([session_state(None, PLAYER_KINEMATICS), mission_state()]), 0, "ReservedFlag"),
         "phase2-promotion-incomplete": (snapshot([session_state(player, PLAYER_KINEMATICS | CORE_SHIP), mission_state(), lifecycle(player), flight(player)], 1), 1, "MissingManifest"),
         "phase2-promotion": (snapshot(promotion, 1), 1, "None"),
+        "phase2-complete-ship": (snapshot(complete_ship, 1), 1, "None"),
         "duplicate-flight-record": (snapshot(base + [flight(player)]), 1, "DuplicateRecord"),
         "observed-player-id-mismatch": (snapshot([session_state(player, PLAYER_KINEMATICS), mission_state(),
                                                    lifecycle(2), flight(2)]), 1, "InvalidAbsence"),
@@ -279,6 +313,41 @@ def delta_canonical(changed: bool, sequence: int, sample: int) -> bytes:
     return (json.dumps(template, indent=2, sort_keys=True) + "\n").encode()
 
 
+def phase2_complete_ship_canonical(binary: bytes) -> bytes:
+    template = json.loads((ROOT / "expected-v1.1/phase2-promotion.json").read_text(encoding="utf-8"))
+    promotion_records = {
+        item["recordType"]: item
+        for item in template["fields"]["records"]
+    }
+    fixture_names = {
+        8: "control_state",
+        14: "weapon_state",
+        20: "cargo_scan_state",
+        21: "docking_state",
+        22: "support_state",
+    }
+    source_records = dict(promotion_records)
+    for kind, name in fixture_names.items():
+        source_records[kind] = json.loads(
+            (ROOT / "expected" / "records" / f"{name}.json").read_text(encoding="utf-8")
+        )
+    decoded = parse_a(binary)
+    records = []
+    for kind, _payload in decoded["records"]:
+        item = json.loads(json.dumps(source_records[kind]))
+        item["schema"] = "FSTL-1.1"
+        if kind == SESSION_STATE:
+            item["fields"]["state_domain_coverage"] = str(COMPLETE_SHIP)
+        records.append(item)
+    fields = template["fields"]
+    fields["record_count"] = len(records)
+    fields["records"] = records
+    fields["required_manifest_id"] = decoded["manifest_id"]
+    fields["transaction_sha256"] = binary[12:44].hex()
+    fields["transaction_size"] = int.from_bytes(binary[8:12], "little")
+    return (json.dumps(template, indent=2, sort_keys=True) + "\n").encode()
+
+
 def generated() -> dict[str, bytes]:
     files: dict[str, bytes] = {}
     entries = []
@@ -292,7 +361,11 @@ def generated() -> dict[str, bytes]:
         if valid:
             canonical_path = f"expected-v1.1/{name}.json"
             metadata["expectedCanonicalJson"] = canonical_path
-            files[f"../{canonical_path}"] = (ROOT / canonical_path).read_bytes()
+            files[f"../{canonical_path}"] = (
+                phase2_complete_ship_canonical(binary)
+                if name == "phase2-complete-ship"
+                else (ROOT / canonical_path).read_bytes()
+            )
         files[f"{name}/{name}.bin"] = binary
         files[f"{name}/{name}.json"] = (json.dumps(metadata, indent=2, sort_keys=True) + "\n").encode()
     for name, (message_type, payload, encoded, minor, expected) in message_cases().items():

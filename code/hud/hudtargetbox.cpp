@@ -31,6 +31,7 @@
 #include "ship/ship.h"
 #include "ship/subsysdamage.h"
 #include "species_defs/species_defs.h"
+#include "telemetry/phase2_observation.h"
 #include "weapon/emp.h"
 #include "weapon/weapon.h"
 
@@ -1947,7 +1948,9 @@ void hud_cargo_scan_update(object *targetp, float frametime)
 	// update cargo inspection status
 	Cargo_string[0] = 0;
 	if ( targetp->type == OBJ_SHIP ) {
-		Target_display_cargo = player_inspect_cargo(frametime, Cargo_string);
+		telemetry::CargoAuthorityFact cargo_fact;
+		Target_display_cargo = player_inspect_cargo(frametime, Cargo_string, cargo_fact);
+		telemetry::OnCargoAuthority(cargo_fact);
 		if ( Target_display_cargo ) {
 			if ( Player->cargo_inspect_time > 0 ) {
 				hud_targetbox_start_flash(TBOX_FLASH_CARGO);

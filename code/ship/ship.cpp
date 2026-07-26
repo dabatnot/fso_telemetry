@@ -10,6 +10,7 @@
 
 #include <csetjmp>
 #include <algorithm>
+#include <cmath>
 
 #include "ai/aibig.h"
 #include "ai/aigoals.h"
@@ -85,8 +86,10 @@
 #include "ship/shipcontrails.h"
 #include "ship/shipfx.h"
 #include "ship/shiphit.h"
+#include "ship/support_work.h"
 #include "ship/subsysdamage.h"
 #include "species_defs/species_defs.h"
+#include "telemetry/phase2_observation.h"
 #include "tracing/Monitor.h"
 #include "tracing/tracing.h"
 #include "utils/Random.h"
@@ -9292,6 +9295,25 @@ void ship_cleanup(int shipnum, int cleanup_mode)
 
 	ship *shipp = &Ships[shipnum];
 	object *objp = &Objects[shipp->objnum];
+	telemetry::ShipCleanupMode telemetry_cleanup_mode = telemetry::ShipCleanupMode::Count;
+	switch (cleanup_mode) {
+	case SHIP_DESTROYED:
+		telemetry_cleanup_mode = telemetry::ShipCleanupMode::Destroyed;
+		break;
+	case SHIP_DEPARTED:
+	case SHIP_DEPARTED_WARP:
+	case SHIP_DEPARTED_BAY:
+	case SHIP_DEPARTED_REDALERT:
+		telemetry_cleanup_mode = telemetry::ShipCleanupMode::Departed;
+		break;
+	case SHIP_DESTROYED_REDALERT:
+	case SHIP_VANISHED:
+		telemetry_cleanup_mode = telemetry::ShipCleanupMode::Vanished;
+		break;
+	default:
+		break;
+	}
+	telemetry::OnShipCleanup(static_cast<std::uint32_t>(objp->signature), telemetry_cleanup_mode);
 	const char *jumpnode_name = nullptr;
 
 	// this should never happen
@@ -16311,6 +16333,287 @@ static int get_mission_rearm_pool_for_weapon(int weapon_class, int team)
 	return The_mission.support_ships.rearm_weapon_pool[team][weapon_class];
 }
 
+namespace telemetry::detail {
+
+SupportWorkStatus evaluate_support_work(
+	const SupportWorkInput& input, SupportWorkEvaluation& output) noexcept
+{
+	output = {};
+	const auto finite_nonnegative = [](float value) noexcept {
+		return std::isfinite(value) && value >= 0.0F;
+	};
+	const auto valid_rate = [](float value) noexcept {
+		return std::isfinite(value) && value >= 0.0F && value <= 1.0F;
+	};
+	if (!std::isfinite(input.max_hull_repair_val) ||
+		input.max_hull_repair_val < 0.0F ||
+		input.max_hull_repair_val > 100.0F ||
+		!std::isfinite(input.max_subsys_repair_val) ||
+		input.max_subsys_repair_val < 0.0F ||
+		input.max_subsys_repair_val > 100.0F ||
+		!valid_rate(input.sup_hull_repair_rate) ||
+		!valid_rate(input.sup_shield_repair_rate) ||
+		!valid_rate(input.sup_subsys_repair_rate) ||
+		!finite_nonnegative(input.hull_current) ||
+		!finite_nonnegative(input.hull_maximum) ||
+		input.hull_current > input.hull_maximum ||
+		!finite_nonnegative(input.shield_current) ||
+		!finite_nonnegative(input.shield_maximum) ||
+		input.shield_current > input.shield_maximum ||
+		!finite_nonnegative(input.subsystem_repair_work) ||
+		!finite_nonnegative(input.weapon_energy_current) ||
+		!finite_nonnegative(input.weapon_energy_maximum) ||
+		input.weapon_energy_current > input.weapon_energy_maximum ||
+		input.rearm_component_count > input.rearm_components.size() ||
+		input.countermeasure_current < 0 ||
+		input.countermeasure_maximum < 0 ||
+		input.countermeasure_current > input.countermeasure_maximum ||
+		input.countermeasure_rearm_pool < -1) {
+		return SupportWorkStatus::UnsupportedEngineState;
+	}
+
+	output.support_repairs_hull_authorized = input.support_repairs_hull;
+	output.mission_rearm_disallowed =
+		!input.support_rearm_allowed || input.mission_disallow_rearm;
+	output.max_hull_repair_fraction = input.max_hull_repair_val * 0.01F;
+	output.max_subsystem_repair_fraction =
+		input.max_subsys_repair_val * 0.01F;
+	const auto hull_target =
+		input.hull_maximum * output.max_hull_repair_fraction;
+	output.hull_repair_work = input.support_repairs_hull
+		? std::max(hull_target - input.hull_current, 0.0F)
+		: 0.0F;
+	output.shield_repair_work =
+		std::max(input.shield_maximum - input.shield_current, 0.0F);
+	output.subsystem_repair_work = input.subsystem_repair_work;
+	output.weapon_energy_rearm_work =
+		std::max(input.weapon_energy_maximum - input.weapon_energy_current, 0.0F);
+
+	bool ammunition_authorized = false;
+	bool ammunition_blocked_by_weapon = false;
+	for (std::size_t index = 0U; index < input.rearm_component_count; ++index) {
+		const auto& component = input.rearm_components[index];
+		if (component.current < 0 || component.maximum < 0 ||
+			component.current > component.maximum ||
+			component.rearm_pool < -1) {
+			return SupportWorkStatus::UnsupportedEngineState;
+		}
+		if (component.ammoless) {
+			continue;
+		}
+		const auto deficit = static_cast<std::uint64_t>(
+			component.maximum - component.current);
+		if (component.weapon_info_disallow_rearm) {
+			ammunition_blocked_by_weapon =
+				ammunition_blocked_by_weapon || deficit != 0U;
+			continue;
+		}
+		output.ammunition_rearm_work += deficit;
+		ammunition_authorized =
+			ammunition_authorized ||
+			(deficit != 0U && component.rearm_pool != 0);
+	}
+	output.weapon_rearm_disallowed =
+		ammunition_blocked_by_weapon &&
+		output.ammunition_rearm_work == 0U;
+
+	output.countermeasure_capacity =
+		static_cast<std::uint64_t>(input.countermeasure_maximum);
+	output.countermeasure_rearm_work =
+		static_cast<std::uint64_t>(
+			input.countermeasure_maximum - input.countermeasure_current);
+	output.countermeasure_rearm_pool = input.countermeasure_rearm_pool;
+	output.hull_repair_applicable =
+		input.support_repairs_hull && input.sup_hull_repair_rate > 0.0F &&
+		output.hull_repair_work > 0.0F;
+	output.shield_repair_applicable =
+		input.sup_shield_repair_rate > 0.0F &&
+		output.shield_repair_work > 0.0F;
+	output.subsystem_repair_applicable =
+		input.sup_subsys_repair_rate > 0.0F &&
+		output.subsystem_repair_work > 0.0F;
+	output.weapon_energy_rearm_applicable =
+		!output.mission_rearm_disallowed &&
+		output.weapon_energy_rearm_work > 0.0F;
+	output.ammunition_rearm_applicable =
+		!output.mission_rearm_disallowed && ammunition_authorized;
+	output.countermeasure_rearm_applicable =
+		output.countermeasure_rearm_work > 0U;
+	return SupportWorkStatus::Valid;
+}
+
+SupportWorkStatus evaluate_support_work(
+	object* repaired_object, SupportWorkEvaluation& output) noexcept
+{
+	output = {};
+	if (repaired_object == nullptr || repaired_object->type != OBJ_SHIP ||
+		repaired_object->instance < 0 || repaired_object->instance >= MAX_SHIPS) {
+		return SupportWorkStatus::UnsupportedEngineState;
+	}
+	auto& repaired_ship = Ships[repaired_object->instance];
+	if (repaired_ship.ship_info_index < 0 ||
+		repaired_ship.ship_info_index >= static_cast<int>(Ship_info.size())) {
+		return SupportWorkStatus::UnsupportedEngineState;
+	}
+	const auto& repaired_class = Ship_info[repaired_ship.ship_info_index];
+	const auto& weapons = repaired_ship.weapons;
+	SupportWorkInput input;
+	// Support_rearm is the mission/gameplay authority, not an inferred phase.
+	input.support_rearm_allowed = true;
+	input.mission_disallow_rearm = The_mission.support_ships.disallow_rearm;
+	input.support_repairs_hull =
+		The_mission.flags[Mission::Mission_Flags::Support_repairs_hull];
+	input.max_hull_repair_val =
+		The_mission.support_ships.max_hull_repair_val;
+	input.max_subsys_repair_val =
+		The_mission.support_ships.max_subsys_repair_val;
+	input.sup_hull_repair_rate = repaired_class.sup_hull_repair_rate;
+	input.sup_shield_repair_rate = repaired_class.sup_shield_repair_rate;
+	input.sup_subsys_repair_rate = repaired_class.sup_subsys_repair_rate;
+	input.hull_current = repaired_object->hull_strength;
+	input.hull_maximum = repaired_ship.ship_max_hull_strength;
+	input.shield_current = repaired_object->flags[Object::Object_Flags::No_shields]
+		? 0.0F
+		: shield_get_strength(repaired_object);
+	input.shield_maximum = repaired_object->flags[Object::Object_Flags::No_shields]
+		? 0.0F
+		: shield_get_max_strength(&repaired_ship);
+	input.weapon_energy_current = repaired_ship.weapon_energy;
+	input.weapon_energy_maximum = repaired_class.max_weapon_reserve;
+
+	if (!std::isfinite(input.max_subsys_repair_val) ||
+		input.max_subsys_repair_val < 0.0F ||
+		input.max_subsys_repair_val > 100.0F) {
+		return SupportWorkStatus::UnsupportedEngineState;
+	}
+	for (auto* subsystem = GET_FIRST(&repaired_ship.subsys_list);
+		 subsystem != END_OF_LIST(&repaired_ship.subsys_list);
+		 subsystem = GET_NEXT(subsystem)) {
+		const auto target =
+			subsystem->max_hits * input.max_subsys_repair_val * 0.01F;
+		input.subsystem_repair_work +=
+			std::max(target - subsystem->current_hits, 0.0F);
+	}
+
+	const auto append_component =
+		[&input](int current,
+			int maximum,
+			int weapon_class,
+			bool ammoless,
+			int team) noexcept {
+			if (input.rearm_component_count >=
+				input.rearm_components.size()) {
+				return false;
+			}
+			auto& component =
+				input.rearm_components[input.rearm_component_count++];
+			component.current = current;
+			component.maximum = maximum;
+			component.ammoless = ammoless;
+			if (weapon_class >= 0 &&
+				weapon_class < static_cast<int>(Weapon_info.size())) {
+				component.weapon_info_disallow_rearm =
+					Weapon_info[weapon_class].disallow_rearm;
+				component.rearm_pool =
+					get_mission_rearm_pool_for_weapon(weapon_class, team);
+			} else if (!ammoless) {
+				return false;
+			}
+			return true;
+		};
+	for (int bank = 0; bank < weapons.num_primary_banks; ++bank) {
+		const auto weapon_class = weapons.primary_bank_weapons[bank];
+		if (weapon_class < 0 ||
+			weapon_class >= static_cast<int>(Weapon_info.size()) ||
+			!append_component(weapons.primary_bank_ammo[bank],
+				weapons.primary_bank_start_ammo[bank],
+				weapon_class,
+				!Weapon_info[weapon_class].wi_flags[Weapon::Info_Flags::Ballistic],
+				repaired_ship.team)) {
+			return SupportWorkStatus::UnsupportedEngineState;
+		}
+	}
+	for (int bank = 0; bank < weapons.num_secondary_banks; ++bank) {
+		const auto weapon_class = weapons.secondary_bank_weapons[bank];
+		if (weapon_class < 0 ||
+			weapon_class >= static_cast<int>(Weapon_info.size()) ||
+			!append_component(weapons.secondary_bank_ammo[bank],
+				weapons.secondary_bank_start_ammo[bank],
+				weapon_class,
+				Weapon_info[weapon_class].wi_flags[
+					Weapon::Info_Flags::SecondaryNoAmmo],
+				repaired_ship.team)) {
+			return SupportWorkStatus::UnsupportedEngineState;
+		}
+	}
+	if (weapons.num_tertiary_banks > 0 &&
+		!append_component(weapons.tertiary_bank_ammo,
+			weapons.tertiary_bank_start_ammo,
+			-1,
+			false,
+			repaired_ship.team)) {
+		return SupportWorkStatus::UnsupportedEngineState;
+	}
+	for (auto* subsystem = GET_FIRST(&repaired_ship.subsys_list);
+		 subsystem != END_OF_LIST(&repaired_ship.subsys_list);
+		 subsystem = GET_NEXT(subsystem)) {
+		const auto& turret = subsystem->weapons;
+		for (int bank = 0; bank < turret.num_primary_banks; ++bank) {
+			const auto weapon_class = turret.primary_bank_weapons[bank];
+			if (weapon_class < 0 ||
+				weapon_class >= static_cast<int>(Weapon_info.size()) ||
+				!append_component(turret.primary_bank_ammo[bank],
+					turret.primary_bank_capacity[bank],
+					weapon_class,
+					!Weapon_info[weapon_class].wi_flags[
+						Weapon::Info_Flags::Ballistic],
+					repaired_ship.team)) {
+				return SupportWorkStatus::UnsupportedEngineState;
+			}
+		}
+		for (int bank = 0; bank < turret.num_secondary_banks; ++bank) {
+			const auto weapon_class = turret.secondary_bank_weapons[bank];
+			if (weapon_class < 0 ||
+				weapon_class >= static_cast<int>(Weapon_info.size()) ||
+				!append_component(turret.secondary_bank_ammo[bank],
+					turret.secondary_bank_capacity[bank],
+					weapon_class,
+					Weapon_info[weapon_class].wi_flags[
+						Weapon::Info_Flags::SecondaryNoAmmo],
+					repaired_ship.team)) {
+				return SupportWorkStatus::UnsupportedEngineState;
+			}
+		}
+	}
+
+	if (repaired_class.cmeasure_type >= 0) {
+		if (repaired_class.cmeasure_type >=
+			static_cast<int>(Weapon_info.size())) {
+			return SupportWorkStatus::UnsupportedEngineState;
+		}
+		input.countermeasure_current = repaired_ship.cmeasure_count;
+		if (Countermeasures_use_capacity) {
+			const auto cargo_size =
+				Weapon_info[repaired_class.cmeasure_type].cargo_size;
+			if (!std::isfinite(cargo_size) || cargo_size <= 0.0F) {
+				return SupportWorkStatus::UnsupportedEngineState;
+			}
+			input.countermeasure_maximum =
+				fl2i(repaired_class.cmeasure_max / cargo_size);
+		} else {
+			input.countermeasure_maximum = repaired_class.cmeasure_max;
+		}
+		input.countermeasure_weapon_info_disallow_rearm =
+			Weapon_info[repaired_class.cmeasure_type].disallow_rearm;
+		input.countermeasure_rearm_pool =
+			get_mission_rearm_pool_for_weapon(
+				repaired_class.cmeasure_type, repaired_ship.team);
+	}
+	return evaluate_support_work(input, output);
+}
+
+} // namespace telemetry::detail
+
 static bool weapon_allowed_for_current_game_type(int weapon_flags)
 {
 	if (MULTI_DOGFIGHT) {
@@ -16440,6 +16743,10 @@ int ship_do_rearm_frame( object *objp, float frametime )
 	swp = &shipp->weapons;
 	sip = &Ship_info[shipp->ship_info_index];
 	aip = &Ai_info[shipp->ai_index];
+	telemetry::detail::SupportWorkEvaluation observed_support_work;
+	const auto support_work_valid =
+		telemetry::detail::evaluate_support_work(objp, observed_support_work) ==
+		telemetry::detail::SupportWorkStatus::Valid;
 
 	// AL 10-31-97: Add missing primary weapons to the ship.  This is required since designers
 	//              want to have ships that start with no primaries, but can get them through
@@ -16461,15 +16768,20 @@ int ship_do_rearm_frame( object *objp, float frametime )
 	}
 
 	// AL 1-16-98: Replenish countermeasures
-	if (Countermeasures_use_capacity) {
+	if (support_work_valid &&
+		observed_support_work.countermeasure_rearm_applicable) {
+		shipp->cmeasure_count =
+			static_cast<int>(observed_support_work.countermeasure_capacity);
+	} else if (!support_work_valid && Countermeasures_use_capacity) {
 		float cm_cargo_size = Weapon_info[sip->cmeasure_type].cargo_size;
 		shipp->cmeasure_count = fl2i(sip->cmeasure_max / cm_cargo_size);
-	} else {
+	} else if (!support_work_valid) {
 		shipp->cmeasure_count = sip->cmeasure_max;
 	}
 
 	// Do shield repair here
-	if ( !(objp->flags[Object::Object_Flags::No_shields]) )
+	if ( !(objp->flags[Object::Object_Flags::No_shields]) &&
+		(!support_work_valid || observed_support_work.shield_repair_work > 0.0F) )
 	{
 		shield_str = shield_get_strength(objp);
 		max_shield_str = shield_get_max_strength(shipp);
@@ -16491,11 +16803,16 @@ int ship_do_rearm_frame( object *objp, float frametime )
 
 	//	AL 11-24-97: remove increase to hull integrity
 	//	Comments removed by PhReAk; Note that this is toggled on/off with a mission flag
-	if (The_mission.flags[Mission::Mission_Flags::Support_repairs_hull])
+	if (support_work_valid
+			? observed_support_work.hull_repair_applicable
+			: The_mission.flags[Mission::Mission_Flags::Support_repairs_hull])
 	{
 		//Figure out how much of the ship's hull we can repair
 		//Don't "reverse-repair" the hull if it's already above the max repair threshold
-		max_hull_repair = shipp->ship_max_hull_strength * (The_mission.support_ships.max_hull_repair_val * 0.01f);
+		max_hull_repair = shipp->ship_max_hull_strength *
+			(support_work_valid
+				? observed_support_work.max_hull_repair_fraction
+				: The_mission.support_ships.max_hull_repair_val * 0.01f);
 		if (objp->hull_strength < max_hull_repair)
 		{
 			objp->hull_strength += shipp->ship_max_hull_strength * frametime * sip->sup_hull_repair_rate;
@@ -16512,9 +16829,14 @@ int ship_do_rearm_frame( object *objp, float frametime )
 	ssp = GET_FIRST(&shipp->subsys_list);
 	while ( ssp != END_OF_LIST( &shipp->subsys_list ) ) {
 		//Figure out how much we *can* repair the current subsystem -C
-		max_subsys_repair = ssp->max_hits * (The_mission.support_ships.max_subsys_repair_val * 0.01f);
+		max_subsys_repair = ssp->max_hits *
+			(support_work_valid
+				? observed_support_work.max_subsystem_repair_fraction
+				: The_mission.support_ships.max_subsys_repair_val * 0.01f);
 
-		if ( ssp->current_hits < max_subsys_repair && repair_allocated > 0 ) {
+		if ((!support_work_valid ||
+				observed_support_work.subsystem_repair_applicable) &&
+			ssp->current_hits < max_subsys_repair && repair_allocated > 0) {
 			subsys_all_ok = false;
 			subsys_type = ssp->system_info->type;
 
@@ -16560,13 +16882,19 @@ int ship_do_rearm_frame( object *objp, float frametime )
 
 	// Skip rearming entirely if the mission disallows it, but still count the banks as full so that the "rearm
 	// complete" state can be reached.
-	if (The_mission.support_ships.disallow_rearm) {
+	const auto weapon_rearm_gate_closed =
+		support_work_valid
+		? observed_support_work.mission_rearm_disallowed ||
+			(observed_support_work.weapon_rearm_disallowed &&
+			 !observed_support_work.ammunition_rearm_applicable)
+		: The_mission.support_ships.disallow_rearm;
+	if (weapon_rearm_gate_closed) {
 		banks_full = swp->num_secondary_banks;
 		primary_banks_full = swp->num_primary_banks;
 	}
 	if ( subsys_all_ok )
 	{
-		if (!The_mission.support_ships.disallow_rearm) {
+		if (!weapon_rearm_gate_closed) {
 			for (i = 0; i < swp->num_secondary_banks; i++) {
 				// Actual loading of missiles is preceded by a sound effect which is the missile
 				// loading equipment moving into place
@@ -16757,7 +17085,11 @@ int ship_do_rearm_frame( object *objp, float frametime )
 	}
 
 	bool hull_ok = false;
-	if (!(The_mission.flags[Mission::Mission_Flags::Support_repairs_hull])) {
+	const auto support_repairs_hull =
+		support_work_valid
+		? observed_support_work.support_repairs_hull_authorized
+		: The_mission.flags[Mission::Mission_Flags::Support_repairs_hull];
+	if (!support_repairs_hull) {
 		hull_ok = true;
 	} else {
 		if (objp->hull_strength >= max_hull_repair)
@@ -16767,7 +17099,8 @@ int ship_do_rearm_frame( object *objp, float frametime )
 	}
 
 	// return 1 if at end of subsystem list, hull damage at 0, and shields full and all secondary banks full.
-	if ( (subsys_all_ok && shields_full && (The_mission.flags[Mission::Mission_Flags::Support_repairs_hull]) && hull_ok ) || (subsys_all_ok && shields_full && !(The_mission.flags[Mission::Mission_Flags::Support_repairs_hull]) ) )
+	if ( (subsys_all_ok && shields_full && support_repairs_hull && hull_ok ) ||
+		(subsys_all_ok && shields_full && !support_repairs_hull) )
 	{
 		if ( objp == Player_obj ) {
 			player_stop_repair_sound();

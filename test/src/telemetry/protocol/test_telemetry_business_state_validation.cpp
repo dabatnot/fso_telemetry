@@ -1,9 +1,16 @@
 #include "telemetry/protocol/telemetry_business_state_validation.h"
 
 #include "telemetry/protocol/packet_writer.h"
+#include "telemetry/protocol/telemetry_business_records.h"
+#include "telemetry/protocol/telemetry_sha256.h"
+#include "telemetry/protocol/telemetry_state_messages.h"
+#include "telemetry/protocol/telemetry_specialized_views.h"
+#include "telemetry/protocol/telemetry_transaction.h"
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -19,6 +26,12 @@ template <typename Container>
 MutableByteView mutable_byte_view(Container& bytes)
 {
 	return MutableByteView{bytes.data(), bytes.size()};
+}
+
+template <typename Container>
+ByteView byte_view(const Container& bytes)
+{
+	return ByteView{bytes.data(), bytes.size()};
 }
 
 std::vector<std::uint8_t> session_payload(VisibilityMode visibility = VisibilityMode::Cockpit,
@@ -251,6 +264,171 @@ std::vector<std::uint8_t> subsystem_payload(std::uint64_t entity_id, std::uint32
 	append_f32(bytes, 0.0F);
 	append_u32(bytes, 0U);
 	return bytes;
+}
+
+std::vector<std::uint8_t> control_payload(std::uint64_t entity_id)
+{
+	std::vector<std::uint8_t> bytes;
+	append_u64(bytes, entity_id);
+	append_u64(bytes, 0U);
+	append_u64(bytes, 100U);
+	for (unsigned int index = 0; index < 6U; ++index) {
+		append_f32(bytes, 0.0F);
+	}
+	append_u8(bytes, static_cast<std::uint8_t>(ControlMode::Ship));
+	append_u32(bytes, 0U);
+	return bytes;
+}
+
+std::vector<std::uint8_t> weapon_payload(std::uint64_t entity_id)
+{
+	std::vector<std::uint8_t> bytes;
+	append_u64(bytes, entity_id);
+	append_u64(bytes, 0U);
+	append_u64(bytes, 100U);
+	append_u16(bytes, 0U);
+	append_u16(bytes, 0U);
+	append_u16(bytes, 0U);
+	append_u16(bytes, 0U);
+	append_u32(bytes, 0U);
+	append_u32(bytes, 0U);
+	append_u32(bytes, 0U);
+	append_u32(bytes, 0U);
+	append_u16(bytes, 0U);
+	append_u16(bytes, 0U);
+	return bytes;
+}
+
+std::vector<std::uint8_t> cargo_none_payload(std::uint64_t entity_id)
+{
+	std::vector<std::uint8_t> bytes;
+	append_u64(bytes, entity_id);
+	append_u64(bytes, 0U);
+	append_u64(bytes, 100U);
+	append_u8(bytes, static_cast<std::uint8_t>(ScanPhase::NotScannable));
+	append_u8(bytes, static_cast<std::uint8_t>(DisclosureState::Hidden));
+	return bytes;
+}
+
+std::vector<std::uint8_t> docking_none_payload(std::uint64_t entity_id)
+{
+	std::vector<std::uint8_t> bytes;
+	append_u64(bytes, entity_id);
+	append_u64(bytes, 0U);
+	append_u64(bytes, 100U);
+	append_u8(bytes, static_cast<std::uint8_t>(DockingPhase::None));
+	append_u64(bytes, 0U);
+	append_u16(bytes, 0U);
+	return bytes;
+}
+
+std::vector<std::uint8_t> support_none_payload(std::uint64_t entity_id)
+{
+	std::vector<std::uint8_t> bytes;
+	append_u64(bytes, entity_id);
+	append_u64(bytes, 0U);
+	append_u64(bytes, 100U);
+	append_u8(bytes, static_cast<std::uint8_t>(SupportPhase::None));
+	append_u8(bytes, 0U);
+	append_u8(bytes, 0U);
+	append_u8(bytes, 0U);
+	append_u8(bytes, 0U);
+	return bytes;
+}
+
+std::vector<std::uint8_t> navigation_none_payload(std::uint64_t entity_id)
+{
+	std::vector<std::uint8_t> bytes;
+	append_u64(bytes, entity_id);
+	append_u64(bytes, NavigationStatePresenceFlagNone);
+	append_u64(bytes, 100U);
+	append_u8(bytes, static_cast<std::uint8_t>(AutopilotState::Disengaged));
+	append_u16(bytes, 0U);
+	return bytes;
+}
+
+std::vector<std::uint8_t> inactive_comm_state_payload()
+{
+	CommViewStatePayload payload;
+	std::vector<std::uint8_t> bytes(CommViewStatePayloadSize);
+	std::size_t written = 0U;
+	EXPECT_EQ(ValidationError::None,
+		encode_comm_view_state_payload(payload, mutable_byte_view(bytes), written));
+	EXPECT_EQ(bytes.size(), written);
+	return bytes;
+}
+
+std::vector<std::uint8_t> class_manifest_with_subsystem_payload()
+{
+	std::vector<std::uint8_t> bytes;
+	append_u32(bytes, 1U);
+	append_u32(bytes, 1U);
+	append_u64(bytes, ClassManifestPresenceFlagSubsystems);
+	append_string(bytes, "ship");
+	append_u32(bytes, 0U);
+	append_u32(bytes, 0U);
+	append_f32(bytes, 1.0F);
+	append_vec3(bytes);
+	append_u16(bytes, 1U);
+	std::vector<std::uint8_t> subsystem;
+	append_u16(subsystem, 0U);
+	append_u32(subsystem, 7U);
+	append_u16(subsystem, 0U);
+	append_u8(subsystem, static_cast<std::uint8_t>(SubsystemType::Engine));
+	append_u8(subsystem, 0U);
+	append_string(subsystem, "engine");
+	for (unsigned int index = 0U; index < 5U; ++index) {
+		append_f32(subsystem, 0.0F);
+	}
+	append_u32(subsystem, 0U);
+	append_vlist_item(bytes, subsystem);
+	return bytes;
+}
+
+std::vector<std::uint8_t> weapon_manifest_payload()
+{
+	std::vector<std::uint8_t> bytes;
+	append_u32(bytes, 1U);
+	append_u32(bytes, 1U);
+	append_u64(bytes, WeaponManifestPresenceFlagNone);
+	append_string(bytes, "weapon");
+	append_u8(bytes, static_cast<std::uint8_t>(WeaponSubtype::Unknown));
+	append_u64(bytes, 0U);
+	append_f32(bytes, 0.0F);
+	append_f32(bytes, 0.0F);
+	append_f32(bytes, 0.0F);
+	append_u64(bytes, 0U);
+	append_f32(bytes, 0.0F);
+	return bytes;
+}
+
+std::vector<std::uint8_t> record_envelope(RecordType type, const std::vector<std::uint8_t>& payload)
+{
+	std::vector<std::uint8_t> bytes;
+	append_u16(bytes, static_cast<std::uint16_t>(type));
+	append_u8(bytes, 1U);
+	append_u8(bytes, RecordFlagNone);
+	append_u16(bytes, static_cast<std::uint16_t>(payload.size()));
+	bytes.insert(bytes.end(), payload.begin(), payload.end());
+	return bytes;
+}
+
+TransactionPart manifest_transaction_part(const ManifestPartPayload& payload, std::uint32_t message_id)
+{
+	TransactionPart part;
+	part.session_id = 42U;
+	part.message_type = MessageType::Manifest;
+	part.transaction_id = payload.manifest_id;
+	part.message_id = message_id;
+	part.part_index = payload.part_index;
+	part.part_count = payload.part_count;
+	part.transaction_size = payload.transaction_size;
+	part.transaction_sha256 = payload.transaction_sha256;
+	part.producer_sample_time_us = payload.producer_sample_time_us;
+	part.kind_or_flags = static_cast<std::uint16_t>(payload.manifest_kind);
+	part.record_count = payload.record_count;
+	part.records = payload.records;
+	return part;
 }
 
 std::vector<std::uint8_t> lock_payload(std::uint64_t entity_id,
@@ -521,6 +699,412 @@ StateImage make_phase1_image(std::uint64_t coverage = StateDomainCoverageBitPlay
 	StateImage image;
 	EXPECT_EQ(StateImageResult::Created, StateImage::create(std::move(atoms), image));
 	return image;
+}
+
+StateImage make_phase2_core_image(RecordType omitted = RecordType::Invalid)
+{
+	constexpr std::uint64_t coverage =
+		StateDomainCoverageBitPlayerKinematics | StateDomainCoverageBitCoreShip;
+	std::vector<StateAtom> atoms;
+	auto add = [&](RecordType type, std::vector<std::uint8_t> payload, std::size_t key_size,
+				   StateRecordLifecycle lifecycle = StateRecordLifecycle::UpsertOnly) {
+		if (type != omitted) {
+			atoms.push_back(atom(type, std::move(payload), key_size, lifecycle));
+		}
+	};
+	add(RecordType::SessionState, session_payload(VisibilityMode::Cockpit, 1U, coverage, 1U), 0U);
+	add(RecordType::MissionState, mission_payload(), 0U);
+	add(RecordType::EntityLifecycle,
+		lifecycle_payload(1U,
+			ObjectType::Ship,
+			EntityLifecyclePresenceFlagClassReference,
+			0U,
+			1U),
+		8U,
+		StateRecordLifecycle::ExplicitCreateDelete);
+	add(RecordType::ShipIdentity, ship_identity_payload(1U, 1U), 8U);
+	add(RecordType::FlightState, flight_payload(1U), 8U);
+	add(RecordType::DamageState, damage_payload(1U), 8U);
+	add(RecordType::ShieldState, shield_payload(1U), 8U);
+	add(RecordType::EnergyState, energy_payload(1U), 8U);
+	add(RecordType::PropulsionState, propulsion_payload(1U), 8U);
+	add(RecordType::SubsystemState, subsystem_payload(1U, 7U), 12U);
+	return image_from_atoms(std::move(atoms));
+}
+
+StateImage make_phase2_complete_image(std::size_t ship_count = 1U,
+	RecordType omitted = RecordType::Invalid)
+{
+	constexpr std::uint64_t coverage = StateDomainCoverageBitPlayerKinematics |
+		StateDomainCoverageBitCoreShip | StateDomainCoverageBitControlInputs |
+		StateDomainCoverageBitWeapons | StateDomainCoverageBitCargoDockSupport;
+	std::vector<StateAtom> atoms;
+	auto add = [&](RecordType type, std::vector<std::uint8_t> payload, std::size_t key_size,
+				   StateRecordLifecycle lifecycle = StateRecordLifecycle::UpsertOnly) {
+		if (type != omitted) {
+			atoms.push_back(atom(type, std::move(payload), key_size, lifecycle));
+		}
+	};
+	add(RecordType::SessionState, session_payload(VisibilityMode::Cockpit, 1U, coverage, 1U), 0U);
+	add(RecordType::MissionState, mission_payload(), 0U);
+	add(RecordType::ControlState, control_payload(1U), 8U);
+	add(RecordType::CargoScanState, cargo_none_payload(1U), 8U);
+	for (std::uint64_t entity_id = 1U; entity_id <= ship_count; ++entity_id) {
+		add(RecordType::EntityLifecycle,
+			lifecycle_payload(entity_id,
+				ObjectType::Ship,
+				EntityLifecyclePresenceFlagClassReference,
+				0U,
+				1U),
+			8U,
+			StateRecordLifecycle::ExplicitCreateDelete);
+		add(RecordType::ShipIdentity, ship_identity_payload(entity_id, 1U), 8U);
+		add(RecordType::FlightState, flight_payload(entity_id), 8U);
+		add(RecordType::DamageState, damage_payload(entity_id), 8U);
+		add(RecordType::ShieldState, shield_payload(entity_id), 8U);
+		add(RecordType::EnergyState, energy_payload(entity_id), 8U);
+		add(RecordType::PropulsionState, propulsion_payload(entity_id), 8U);
+		add(RecordType::SubsystemState, subsystem_payload(entity_id, 7U), 12U);
+		add(RecordType::WeaponState, weapon_payload(entity_id), 8U);
+		add(RecordType::DockingState, docking_none_payload(entity_id), 8U);
+		add(RecordType::SupportState, support_none_payload(entity_id), 8U);
+	}
+	return image_from_atoms(std::move(atoms));
+}
+
+StateImage make_phase2_complete_image_with_capabilities(std::uint64_t capabilities)
+{
+	auto atoms = make_phase2_complete_image().records();
+	auto session = std::find_if(atoms.begin(), atoms.end(), [](const StateAtom& atom) {
+		return atom.key.record_type == static_cast<std::uint16_t>(RecordType::SessionState);
+	});
+	EXPECT_NE(atoms.end(), session);
+	if (session != atoms.end() && session->value.size() >= 40U) {
+		for (unsigned int byte = 0U; byte < 8U; ++byte) {
+			session->value[32U + byte] =
+				static_cast<std::uint8_t>(capabilities >> (byte * 8U));
+		}
+	}
+	return image_from_atoms(std::move(atoms));
+}
+
+BusinessStateValidationContext phase2_complete_context()
+{
+	static constexpr std::uint32_t SubsystemIds[]{7U};
+	static constexpr BusinessClassCatalogEntry ClassCatalog[]{{1U, SubsystemIds, 1U}};
+	auto context = valid_context();
+	context.protocol_minor = VersionMinorV1_1;
+	context.required_manifest_id = 1U;
+	context.weapon_manifest_installed = true;
+	context.class_catalog = ClassCatalog;
+	context.class_catalog_count = 1U;
+	return context;
+}
+
+TEST(TelemetryProtocolBusinessStateValidation, CompleteShipK1HasExactlyFourPlusTenKPlusNRecords)
+{
+	const auto image = make_phase2_complete_image();
+	constexpr std::size_t ShipCount = 1U;
+	constexpr std::size_t SubsystemCount = ShipCount;
+	ASSERT_EQ(4U + 10U * ShipCount + SubsystemCount, image.records().size());
+	auto context = phase2_complete_context();
+	BusinessStateImageValidator validator(context);
+	EXPECT_EQ(ValidationError::None, validator.validate(image));
+}
+
+TEST(TelemetryProtocolBusinessStateValidation, CompleteShipK1RejectsMandatoryRecordAndManifestOmissions)
+{
+	constexpr std::array<RecordType, 5> OmittedRecords{{
+		RecordType::ControlState,
+		RecordType::WeaponState,
+		RecordType::CargoScanState,
+		RecordType::DockingState,
+		RecordType::SupportState,
+	}};
+	auto context = phase2_complete_context();
+	BusinessStateImageValidator validator(context);
+	for (const auto omitted : OmittedRecords) {
+		SCOPED_TRACE(static_cast<std::uint16_t>(omitted));
+		EXPECT_EQ(ValidationError::InvalidAbsence,
+			validator.validate(make_phase2_complete_image(1U, omitted)));
+	}
+
+	const auto complete = make_phase2_complete_image();
+	auto missing_class_manifest = phase2_complete_context();
+	missing_class_manifest.class_manifest_installed = false;
+	BusinessStateImageValidator missing_class_validator(missing_class_manifest);
+	EXPECT_EQ(ValidationError::MissingManifest, missing_class_validator.validate(complete));
+
+	auto missing_weapon_manifest = phase2_complete_context();
+	missing_weapon_manifest.weapon_manifest_installed = false;
+	BusinessStateImageValidator missing_weapon_validator(missing_weapon_manifest);
+	EXPECT_EQ(ValidationError::MissingManifest, missing_weapon_validator.validate(complete));
+}
+
+TEST(TelemetryProtocolBusinessStateValidation, CompleteShipWaitsForAtomicClassAndWeaponManifestTransaction)
+{
+	const auto class_record =
+		record_envelope(RecordType::ClassManifest, class_manifest_with_subsystem_payload());
+	const auto weapon_record = record_envelope(RecordType::WeaponManifest, weapon_manifest_payload());
+	std::vector<std::uint8_t> transaction_region = class_record;
+	transaction_region.insert(transaction_region.end(), weapon_record.begin(), weapon_record.end());
+	Sha256Digest digest{};
+	ASSERT_TRUE(sha256(byte_view(transaction_region), digest));
+
+	auto make_part = [&](std::uint16_t part_index, const std::vector<std::uint8_t>& records) {
+		ManifestPartPayload payload;
+		payload.manifest_id = 1U;
+		payload.part_index = part_index;
+		payload.part_count = 2U;
+		payload.transaction_size = static_cast<std::uint32_t>(transaction_region.size());
+		payload.transaction_sha256 = digest;
+		payload.producer_sample_time_us = 100U;
+		payload.manifest_kind = ManifestKind::FullRequired;
+		payload.record_count = 1U;
+		payload.records = byte_view(records);
+		std::vector<std::uint8_t> encoded(ManifestPartPayloadPrefixSize + records.size());
+		std::size_t written = 0U;
+		EXPECT_EQ(ValidationError::None,
+			encode_manifest_part_payload(payload, mutable_byte_view(encoded), written));
+		EXPECT_EQ(encoded.size(), written);
+		ManifestPartPayload decoded;
+		EXPECT_EQ(ValidationError::None, decode_manifest_part_payload(byte_view(encoded), decoded));
+		return std::make_pair(std::move(encoded), decoded);
+	};
+
+	auto class_part = make_part(0U, class_record);
+	auto weapon_part = make_part(1U, weapon_record);
+	TelemetryTransactionAssembler assembler;
+	CompletedTransaction completed;
+	EXPECT_EQ(TransactionAssemblyResult::Accepted,
+		assembler.ingest(manifest_transaction_part(class_part.second, 10U), 0U, completed));
+	EXPECT_TRUE(completed.parts.empty());
+
+	const auto image = make_phase2_complete_image();
+	auto unavailable = phase2_complete_context();
+	unavailable.class_manifest_installed = false;
+	unavailable.weapon_manifest_installed = false;
+	BusinessStateImageValidator unavailable_validator(unavailable);
+	EXPECT_EQ(ValidationError::MissingManifest, unavailable_validator.validate(image));
+
+	ASSERT_EQ(TransactionAssemblyResult::Completed,
+		assembler.ingest(manifest_transaction_part(weapon_part.second, 11U), 1U, completed));
+	ASSERT_EQ(2U, completed.parts.size());
+	for (const auto& part : completed.parts) {
+		RecordEnvelopeIterator iterator(part.records_view(), part.record_count, RecordFlagPolicy::RequireNone);
+		RecordEnvelopeView envelope;
+		bool has_value = false;
+		ASSERT_EQ(ValidationError::None, iterator.next(envelope, has_value));
+		ASSERT_TRUE(has_value);
+		BusinessRecordMetadata metadata;
+		EXPECT_EQ(ValidationError::None,
+			validate_business_record(
+				envelope, BusinessRecordContainer::Manifest, VersionMinorV1_1, metadata));
+		EXPECT_EQ(ValidationError::None, iterator.next(envelope, has_value));
+		EXPECT_FALSE(has_value);
+	}
+
+	auto installed = phase2_complete_context();
+	BusinessStateImageValidator installed_validator(installed);
+	EXPECT_EQ(ValidationError::None, installed_validator.validate(image));
+}
+
+TEST(TelemetryProtocolBusinessStateValidation, CoreGateRejectsEveryMandatoryCoreRecordOmission)
+{
+	constexpr std::array<std::pair<RecordType, ValidationError>, 8> OmittedRecords{{
+		{RecordType::EntityLifecycle, ValidationError::UnknownEntity},
+		{RecordType::ShipIdentity, ValidationError::InvalidAbsence},
+		{RecordType::FlightState, ValidationError::InvalidAbsence},
+		{RecordType::DamageState, ValidationError::InvalidAbsence},
+		{RecordType::ShieldState, ValidationError::InvalidAbsence},
+		{RecordType::EnergyState, ValidationError::InvalidAbsence},
+		{RecordType::PropulsionState, ValidationError::InvalidAbsence},
+		{RecordType::SubsystemState, ValidationError::InvalidAbsence},
+	}};
+	const std::uint32_t subsystem_ids[] = {7U};
+	const BusinessClassCatalogEntry classes[] = {{1U, subsystem_ids, 1U}};
+	auto context = valid_context();
+	context.protocol_minor = VersionMinorV1_1;
+	context.required_manifest_id = 1U;
+	context.class_catalog = classes;
+	context.class_catalog_count = 1U;
+	BusinessStateImageValidator validator(context);
+	ASSERT_EQ(ValidationError::None, validator.validate(make_phase2_core_image()));
+	for (const auto omitted : OmittedRecords) {
+		SCOPED_TRACE(static_cast<std::uint16_t>(omitted.first));
+		EXPECT_EQ(omitted.second,
+			validator.validate(make_phase2_core_image(omitted.first)));
+	}
+
+	auto missing_manifest = context;
+	missing_manifest.class_manifest_installed = false;
+	BusinessStateImageValidator missing_manifest_validator(missing_manifest);
+	EXPECT_EQ(ValidationError::MissingManifest,
+		missing_manifest_validator.validate(make_phase2_core_image()));
+}
+
+TEST(TelemetryProtocolBusinessStateValidation, Phase2RecordsCannotAppearWithoutTheirDomains)
+{
+	const std::uint32_t subsystem_ids[] = {7U};
+	const BusinessClassCatalogEntry classes[] = {{1U, subsystem_ids, 1U}};
+	auto context = valid_context();
+	context.protocol_minor = VersionMinorV1_1;
+	context.required_manifest_id = 1U;
+	context.weapon_manifest_installed = true;
+	context.class_catalog = classes;
+	context.class_catalog_count = 1U;
+	BusinessStateImageValidator validator(context);
+
+	const std::array<std::pair<RecordType, std::vector<std::uint8_t>>, 3> records{{
+		{RecordType::ControlState, control_payload(1U)},
+		{RecordType::WeaponState, weapon_payload(1U)},
+		{RecordType::SupportState, support_none_payload(1U)},
+	}};
+	for (const auto& record : records) {
+		auto image = make_phase2_core_image();
+		auto atoms = image.records();
+		atoms.push_back(atom(record.first, record.second, 8U));
+		SCOPED_TRACE(static_cast<std::uint16_t>(record.first));
+		EXPECT_EQ(ValidationError::InvalidAbsence,
+			validator.validate(image_from_atoms(std::move(atoms))));
+	}
+}
+
+TEST(TelemetryProtocolBusinessStateValidation, CompleteShipRejectsSpecializedRecordsAndCapabilities)
+{
+	auto context = phase2_complete_context();
+	BusinessStateImageValidator validator(context);
+	const std::array<std::pair<RecordType, std::vector<std::uint8_t>>, 6> forbidden{{
+		{RecordType::LockState, lock_payload(1U)},
+		{RecordType::TargetState, target_payload(1U, 0U)},
+		{RecordType::RadarState, radar_payload(1U)},
+		{RecordType::RadarContacts,
+			radar_contact_payload(1U, 2U, ObjectType::Weapon, ContactFlagBomb)},
+		{RecordType::ThreatState, threat_payload(1U)},
+		{RecordType::NavigationState, navigation_none_payload(1U)},
+	}};
+	for (const auto& record : forbidden) {
+		auto atoms = make_phase2_complete_image().records();
+		const auto key_size = record.first == RecordType::RadarContacts ? 16U : 8U;
+		atoms.push_back(atom(record.first,
+			record.second,
+			key_size,
+			record.first == RecordType::RadarContacts ? StateRecordLifecycle::ExplicitCreateDelete
+													 : StateRecordLifecycle::UpsertOnly));
+		SCOPED_TRACE(static_cast<std::uint16_t>(record.first));
+		EXPECT_EQ(ValidationError::InvalidAbsence,
+			validator.validate(image_from_atoms(std::move(atoms))));
+	}
+
+	auto comm_atoms = make_phase2_complete_image().records();
+	comm_atoms.push_back(atom(RecordType::CommViewState, inactive_comm_state_payload(), 0U));
+	EXPECT_EQ(ValidationError::CapabilityNotNegotiated,
+		validator.validate(image_from_atoms(std::move(comm_atoms))));
+}
+
+TEST(TelemetryProtocolBusinessStateValidation,
+	S12TST009FinalInjectsRecords15Through19And23PlusBothValidCapabilityPairs)
+{
+	static_assert(static_cast<std::uint16_t>(RecordType::LockState) == 15U);
+	static_assert(static_cast<std::uint16_t>(RecordType::TargetState) == 16U);
+	static_assert(static_cast<std::uint16_t>(RecordType::RadarState) == 17U);
+	static_assert(static_cast<std::uint16_t>(RecordType::RadarContacts) == 18U);
+	static_assert(static_cast<std::uint16_t>(RecordType::ThreatState) == 19U);
+	static_assert(static_cast<std::uint16_t>(RecordType::NavigationState) == 23U);
+
+	auto context = phase2_complete_context();
+	BusinessStateImageValidator validator(context);
+	const std::array<std::pair<RecordType, std::vector<std::uint8_t>>, 6> specialized_records{{
+		{RecordType::LockState, lock_payload(1U)},
+		{RecordType::TargetState, target_payload(1U, 0U)},
+		{RecordType::RadarState, radar_payload(1U)},
+		{RecordType::RadarContacts,
+			radar_contact_payload(1U, 2U, ObjectType::Weapon, ContactFlagBomb)},
+		{RecordType::ThreatState, threat_payload(1U)},
+		{RecordType::NavigationState, navigation_none_payload(1U)},
+	}};
+	for (const auto& record : specialized_records) {
+		auto atoms = make_phase2_complete_image().records();
+		const auto contacts = record.first == RecordType::RadarContacts;
+		atoms.push_back(atom(record.first,
+			record.second,
+			contacts ? 16U : 8U,
+			contacts ? StateRecordLifecycle::ExplicitCreateDelete
+					 : StateRecordLifecycle::UpsertOnly));
+		SCOPED_TRACE(static_cast<std::uint16_t>(record.first));
+		EXPECT_EQ(ValidationError::InvalidAbsence,
+			validator.validate(image_from_atoms(std::move(atoms))));
+	}
+
+	auto comm_atoms = make_phase2_complete_image().records();
+	comm_atoms.push_back(atom(RecordType::CommViewState, inactive_comm_state_payload(), 0U));
+	EXPECT_EQ(ValidationError::CapabilityNotNegotiated,
+		validator.validate(image_from_atoms(std::move(comm_atoms))));
+
+	constexpr std::uint64_t VideoPair =
+		static_cast<std::uint64_t>(CapabilityTargetVideoH264) |
+		static_cast<std::uint64_t>(CapabilityTargetVideoRemoteRender);
+	constexpr std::uint64_t CommViewPair =
+		static_cast<std::uint64_t>(CapabilityCommViewLocalAssets) |
+		static_cast<std::uint64_t>(CapabilityCommViewAuthoritativeSource);
+	EXPECT_EQ(ValidationError::CapabilityNotNegotiated,
+		validator.validate(make_phase2_complete_image_with_capabilities(VideoPair)));
+	EXPECT_EQ(ValidationError::CapabilityNotNegotiated,
+		validator.validate(make_phase2_complete_image_with_capabilities(CommViewPair)));
+}
+
+TEST(TelemetryProtocolBusinessStateValidation, CompleteShipAcceptsK2AndK64ButRejectsK65)
+{
+	auto context = phase2_complete_context();
+	BusinessStateImageValidator validator(context);
+	for (const std::size_t ship_count : {2U, 64U}) {
+		const auto image = make_phase2_complete_image(ship_count);
+		const auto subsystem_count = ship_count;
+		SCOPED_TRACE(ship_count);
+		EXPECT_EQ(4U + 10U * ship_count + subsystem_count, image.records().size());
+		EXPECT_EQ(ValidationError::None, validator.validate(image));
+	}
+
+	const auto over_limit = make_phase2_complete_image(65U);
+	EXPECT_EQ(ValidationError::ResourceLimit, validator.validate(over_limit));
+}
+
+TEST(TelemetryProtocolBusinessStateValidation, CompleteShipCoverageCannotChangeByDelta)
+{
+	const auto baseline = make_phase1_image(StateDomainCoverageBitPlayerKinematics);
+	const auto promoted = make_phase2_complete_image();
+	auto baseline_context = valid_context();
+	baseline_context.protocol_minor = VersionMinorV1_1;
+	baseline_context.required_manifest_id = 0U;
+	BusinessStateImageValidator baseline_validator(baseline_context);
+	ASSERT_EQ(ValidationError::None, baseline_validator.validate(baseline));
+
+	auto phase2_context = phase2_complete_context();
+	BusinessStateImageValidator phase2_validator(phase2_context);
+	ASSERT_EQ(ValidationError::None, phase2_validator.validate(promoted));
+	EXPECT_EQ(ValidationError::InvalidStateTransition,
+		phase2_validator.validate_delta_transition(baseline, promoted));
+}
+
+TEST(TelemetryProtocolBusinessStateValidation, GenericCargoDomainDoesNotRequirePerShipDockingOrSupport)
+{
+	constexpr std::uint64_t generic_coverage =
+		StateDomainCoverageBitCoreShip | StateDomainCoverageBitCargoDockSupport;
+	std::vector<StateAtom> atoms;
+	atoms.push_back(atom(RecordType::SessionState,
+		session_payload(VisibilityMode::Cockpit, 1U, generic_coverage, 1U),
+		0U));
+	atoms.push_back(atom(RecordType::MissionState, mission_payload(), 0U));
+	append_ship_atoms(atoms, 1U, 1U);
+	atoms.push_back(atom(RecordType::CargoScanState, cargo_none_payload(1U), 8U));
+	const auto image = image_from_atoms(std::move(atoms));
+
+	const BusinessClassCatalogEntry classes[] = {{1U, nullptr, 0U}};
+	auto context = valid_context();
+	context.class_catalog = classes;
+	context.class_catalog_count = 1U;
+	BusinessStateImageValidator validator(context);
+	EXPECT_EQ(ValidationError::None, validator.validate(image));
 }
 
 TEST(TelemetryProtocolBusinessStateValidation, Fstl11PlayerKinematicsRequiresCockpitEvenWhenTrustedFullStateIsAuthorized)

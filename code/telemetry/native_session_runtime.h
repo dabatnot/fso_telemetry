@@ -5,6 +5,8 @@
 #include "telemetry/datagram_scheduler.h"
 #include "telemetry/metrics.h"
 #include "telemetry/phase1_state_image.h"
+#include "telemetry/phase2_observation.h"
+#include "telemetry/phase2_profile_gate.h"
 #include "telemetry/session_controller.h"
 #include "telemetry/transport.h"
 
@@ -58,12 +60,26 @@ struct NativeSessionStartRequest {
 	RandomSource* packet_sequences = nullptr;
 	TelemetryMetrics* metrics = nullptr;
 	TelemetryStructuredLog* log = nullptr;
+	// Deprecated compatibility input. NativeSessionRuntime::start never trusts
+	// this as a prevalidated selection; it derives selection from the facts and
+	// requested profile below.
+	Phase2Profile selected_phase2_profile = Phase2Profile::None;
+	Phase2ProfileEligibility phase2_eligibility{};
+	Phase2Profile requested_phase2_profile = Phase2Profile::None;
+	const Phase2ObservationSelection* phase2_selection = nullptr;
 };
 
 struct NativeSessionTickContext {
 	std::uint64_t now_us = 0U;
 	std::uint32_t mission_generation = 0U;
 	bool mission_active = false;
+};
+
+struct Phase2CapturePlan {
+	bool capture_flight_controls = false;
+	bool capture_systems = false;
+	bool force_complete_keyframe = false;
+	std::uint64_t producer_sample_time_us = 0U;
 };
 
 // Bounded, test-only benchmark observation copied from the actual native
@@ -114,7 +130,8 @@ class NativeSessionRuntime final : private DatagramIoWork {
 
 	NativeSessionStartStatus start(const NativeSessionStartRequest& request) noexcept;
 	NativeSessionTickStatus service_tick(const NativeSessionTickContext& context,
-		const EngineReadView& engine_view) noexcept;
+		const EngineReadView& engine_view,
+		const Phase2EngineReadView* phase2_view = nullptr) noexcept;
 	void stop_collection() noexcept;
 	void purge_all(SessionCloseReason reason) noexcept;
 	void shutdown() noexcept;
@@ -150,6 +167,7 @@ class NativeSessionRuntime final : private DatagramIoWork {
 	void clear_player_capture() noexcept;
 	void fail_transport() noexcept;
 	void fail_capture(NativePlayerCaptureStatus status) noexcept;
+	void prepare_phase2_keyframe(Phase2CapturePlan& plan) noexcept;
 	bool provision_state_image_pools(std::size_t client_count) noexcept;
 	void release_state_image_pools() noexcept;
 	void refresh_metrics_session_scope() noexcept;
@@ -164,6 +182,11 @@ class NativeSessionRuntime final : private DatagramIoWork {
 	SessionController m_controller;
 	DatagramTickScheduler m_scheduler;
 	Capture30Hz m_capture_cadence;
+	Phase2ObservationBuffer m_phase2_observation;
+	Phase2CapturePlan m_phase2_capture_plan{};
+	Phase2Profile m_selected_phase2_profile = Phase2Profile::None;
+	bool m_phase2_enabled = false;
+	bool m_phase2_keyframe_test_seam = false;
 	CurrentPlayerCapture m_current_player_capture;
 	SessionPlayerMaterializationResult m_last_player_materialization;
 	NativeSessionTickContext m_tick_context{};
@@ -176,6 +199,9 @@ class NativeSessionRuntime final : private DatagramIoWork {
 	// Test-only failpoint, reached before controller provisioning and bind. It
 	// is deliberately inert in normal runtime operation.
 	bool m_fail_session_controller_provision = false;
+	std::size_t m_startup_owned_budget_test_adjustment = 0U;
+	std::size_t m_startup_owned_bytes = 0U;
+	std::uint64_t m_startup_allocation_count = 0U;
 	std::size_t m_state_image_pool_backing_bytes = 0U;
 	// Retained only by the production-owned friend seam to prove that the
 	// scoped observer sees a real runtime allocation event.

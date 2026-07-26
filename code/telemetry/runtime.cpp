@@ -1,4 +1,5 @@
 #include "telemetry/runtime.h"
+#include "telemetry/phase2_observation.h"
 
 #include "gamesequence/gamesequence.h"
 
@@ -355,6 +356,7 @@ void Runtime::apply_pending_lifecycle() noexcept
 	if (needs_mission_purge) {
 		// A replacement load is a real discontinuity too: close the previous
 		// mission before incrementing/publishing the next generation.
+		reset_phase2_mission_observation_state();
 		if (m_mission_generation != 0U) {
 			m_services.emit_mission_left(m_mission_generation);
 		}

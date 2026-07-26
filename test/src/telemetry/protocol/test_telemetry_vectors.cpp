@@ -171,6 +171,13 @@ json_t* canonical_v11_record(CanonicalReader& region) {
 		put(fields,"orientation_local_to_world",orientation); put(fields,"physics_mode_flags",ji(physics)); put(fields,"position_world",position);
 		put(fields,"radius",jr(radius)); put(fields,"rotational_velocity_local",rotational); put(fields,"velocity_world",velocity);
 		if (presence&1U) put(fields,"desired_velocity_world",vector_json(reader,3));
+	} else if (type == 8U) {
+		name="CONTROL_STATE"; entity_prefix(); const auto pitch=reader.f32(); const auto heading=reader.f32();
+		const auto bank=reader.f32(); const auto forward=reader.f32(); const auto sideways=reader.f32();
+		const auto vertical=reader.f32(); const auto mode=reader.u8(); const auto control_flags=reader.u32();
+		put(fields,"bank",jr(bank)); put(fields,"control_flags",ji(control_flags)); put(fields,"control_mode",ji(mode));
+		put(fields,"forward",jr(forward)); put(fields,"heading",jr(heading)); put(fields,"pitch",jr(pitch));
+		put(fields,"sideways",jr(sideways)); put(fields,"vertical",jr(vertical));
 	} else if (type == 9U) {
 		name="DAMAGE_STATE"; entity_prefix(); const auto hull=reader.f32(); const auto maximum=reader.f32(); const auto protection=reader.u16();
 		put(fields,"dynamic_max_hull",jr(maximum)); put(fields,"hull_strength",jr(hull)); put(fields,"protection_flags",ji(protection));
@@ -191,6 +198,32 @@ json_t* canonical_v11_record(CanonicalReader& region) {
 	} else if (type == 13U) {
 		name="PROPULSION_STATE"; entity_prefix(); const auto propulsion=reader.u16(); const auto reserved=reader.u16();
 		put(fields,"propulsion_flags",ji(propulsion)); put(fields,"reserved",ji(reserved));
+	} else if (type == 14U) {
+		name="WEAPON_STATE"; entity_prefix(); const auto primary_count=reader.u16(); const auto secondary_count=reader.u16();
+		const auto tertiary_count=reader.u16(); const auto reserved=reader.u16(); const auto current_primary=reader.u32();
+		const auto current_secondary=reader.u32(); const auto current_tertiary=reader.u32(); const auto weapon_flags=reader.u32();
+		const auto encoded_primary_count=reader.u16(); auto* primary_banks=json_array();
+		for (std::uint16_t index=0;index<encoded_primary_count;++index) ADD_FAILURE() << "non-minimal primary bank";
+		const auto encoded_secondary_count=reader.u16(); auto* secondary_banks=json_array();
+		for (std::uint16_t index=0;index<encoded_secondary_count;++index) ADD_FAILURE() << "non-minimal secondary bank";
+		put(fields,"current_primary_bank_id",ji(current_primary)); put(fields,"current_secondary_bank_id",ji(current_secondary));
+		put(fields,"current_tertiary_bank_id",ji(current_tertiary)); put(fields,"primary_bank_count",ji(primary_count));
+		put(fields,"primary_banks",primary_banks); put(fields,"reserved",ji(reserved));
+		put(fields,"secondary_bank_count",ji(secondary_count)); put(fields,"secondary_banks",secondary_banks);
+		put(fields,"tertiary_bank_count",ji(tertiary_count)); put(fields,"weapon_flags",ji(weapon_flags));
+	} else if (type == 20U) {
+		name="CARGO_SCAN_STATE"; entity_prefix(); const auto phase=reader.u8(); const auto disclosure=reader.u8();
+		put(fields,"disclosure",ji(disclosure)); put(fields,"scan_phase",ji(phase));
+	} else if (type == 21U) {
+		name="DOCKING_STATE"; entity_prefix(); const auto phase=reader.u8(); const auto leader=reader.u64();
+		const auto count=reader.u16(); auto* relations=json_array();
+		for (std::uint16_t index=0;index<count;++index) ADD_FAILURE() << "non-minimal docking relation";
+		put(fields,"group_leader_entity_id",js(leader)); put(fields,"phase",ji(phase)); put(fields,"relations",relations);
+	} else if (type == 22U) {
+		name="SUPPORT_STATE"; entity_prefix(); const auto phase=reader.u8(); const auto support_flags=reader.u8();
+		const auto reserved=hex_string(reader.bytes(3));
+		put(fields,"phase",ji(phase)); put(fields,"reserved",json_string(reserved.c_str()));
+		put(fields,"support_flags",ji(support_flags));
 	} else { ADD_FAILURE() << "unhandled FSTL 1.1 record type " << type; }
 	EXPECT_EQ(0U, reader.remaining());
 	auto* record=json_object(); put(record,"fields",fields); put(record,"kind",json_string("record")); put(record,"recordFlags",ji(flags));
@@ -267,6 +300,7 @@ ValidationError validate_v11_snapshot_asset(const std::string& name, std::uint8_
 	context.protocol_minor = minor;
 	context.required_manifest_id = payload.required_manifest_id;
 	context.class_manifest_installed = payload.required_manifest_id != 0U;
+	context.weapon_manifest_installed = context.class_manifest_installed && name == "phase2-complete-ship";
 	const std::uint32_t subsystem_id = 2U;
 	const BusinessClassCatalogEntry class_catalog{1U, &subsystem_id, 1U};
 	if (context.class_manifest_installed) {
@@ -1027,6 +1061,7 @@ TEST(TelemetryProtocolVectors, Fstl11SnapshotsCrossTheProductionDecoder) {
 	EXPECT_EQ(ValidationError::InvalidAbsence, validate_v11_snapshot_asset("missing-mission"));
 	EXPECT_EQ(ValidationError::MissingManifest, validate_v11_snapshot_asset("phase2-promotion-incomplete"));
 	EXPECT_EQ(ValidationError::None, validate_v11_snapshot_asset("phase2-promotion"));
+	EXPECT_EQ(ValidationError::None, validate_v11_snapshot_asset("phase2-complete-ship"));
 	const std::array<std::pair<const char*, ValidationError>, 12> invalid{{
 		{"missing-mission", ValidationError::InvalidAbsence},
 		{"missing-lifecycle", ValidationError::InvalidAbsence},
@@ -1170,10 +1205,11 @@ TEST(TelemetryProtocolVectors, Fstl11NegotiationAndDeltaCorpusCrossesTheProducti
 
 TEST(TelemetryProtocolVectors, EveryValidFstl11VectorMatchesTheFixedCanonicalJsonInCpp) {
 	struct Case { const char* name; MessageType type; bool datagram; };
-	const std::array<Case, 9> cases{{
+	const std::array<Case, 10> cases{{
 		{"minimal-no-player", MessageType::FullSnapshot, false},
 		{"minimal-with-player", MessageType::FullSnapshot, false},
 		{"phase2-promotion", MessageType::FullSnapshot, false},
+		{"phase2-complete-ship", MessageType::FullSnapshot, false},
 		{"hello-minor-one-only", MessageType::Hello, true},
 		{"hello-minor-zero-only", MessageType::Hello, true},
 		{"welcome-accepted-minor-one", MessageType::Welcome, true},

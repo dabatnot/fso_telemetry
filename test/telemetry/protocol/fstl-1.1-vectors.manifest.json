@@ -25,6 +25,10 @@
       "sha256": "72774523c495e9ad92d752e01b695d0bad770501922161b0c8652e3a38ffb9fa"
     },
     {
+      "path": "expected-v1.1/phase2-complete-ship.json",
+      "sha256": "fb254052eac3bcd6e8659600ce2db7553c1ee4de03420a333aca1cfea63478c0"
+    },
+    {
       "path": "expected-v1.1/phase2-promotion.json",
       "sha256": "34983b6b3edff7b5fea93b017abbc65d9aa22941052804907b877828a42ab8e3"
     },
@@ -171,6 +175,14 @@
     {
       "path": "vectors-v1.1/observed-player-id-mismatch/observed-player-id-mismatch.json",
       "sha256": "4bc7af47e5d6dd7cfa11445bccb8f4d5f38dbd8a87995863b848c2c84546253f"
+    },
+    {
+      "path": "vectors-v1.1/phase2-complete-ship/phase2-complete-ship.bin",
+      "sha256": "3b06cc65dd7ba8bc13609be325d9408f81cced38aa404cf037d322aa75226c2b"
+    },
+    {
+      "path": "vectors-v1.1/phase2-complete-ship/phase2-complete-ship.json",
+      "sha256": "cf147f625df0969885c429399de15c3b70b6a2d9c480719422ed49afc280efc3"
     },
     {
       "path": "vectors-v1.1/phase2-promotion-incomplete/phase2-promotion-incomplete.bin",

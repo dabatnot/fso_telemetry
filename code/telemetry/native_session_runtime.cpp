@@ -119,6 +119,26 @@ NativeSessionStartStatus NativeSessionRuntime::start(const NativeSessionStartReq
 		request.packet_sequences == nullptr) {
 		return NativeSessionStartStatus::InvalidConfiguration;
 	}
+	Phase2Profile selected_phase2_profile = Phase2Profile::None;
+	if (request.selected_phase2_profile != Phase2Profile::None) {
+		// A caller cannot bypass the runtime gate by supplying a supposedly
+		// prevalidated profile.
+		return NativeSessionStartStatus::InvalidConfiguration;
+	}
+	if (request.requested_phase2_profile != Phase2Profile::None &&
+		select_phase2_profile(request.phase2_eligibility,
+			request.requested_phase2_profile,
+			selected_phase2_profile) != Phase2ProfileError::None) {
+		// This rejection precedes controller/DTO allocation, bind and WELCOME.
+		return NativeSessionStartStatus::InvalidConfiguration;
+	}
+	if (selected_phase2_profile == Phase2Profile::CompleteShip) {
+		// WP03 has not yet supplied the runtime-owned, immutable closure
+		// selection contract. Reject before cadence/controller allocation or
+		// transport open instead of silently capturing only the player.
+		return NativeSessionStartStatus::InvalidConfiguration;
+	}
+	m_startup_allocation_count = 0U;
 	Capture30Hz capture_cadence;
 	if (!capture_cadence.configure(request.config->flight_hz)) {
 		return NativeSessionStartStatus::InvalidConfiguration;
@@ -134,6 +154,7 @@ NativeSessionStartStatus NativeSessionRuntime::start(const NativeSessionStartReq
 		return NativeSessionStartStatus::AllocationFailure;
 	}
 	SessionController controller;
+	++m_startup_allocation_count;
 	const auto configured = SessionController::configure(controller_config,
 		*request.session_ids,
 		*request.packet_sequences,
@@ -146,9 +167,39 @@ NativeSessionStartStatus NativeSessionRuntime::start(const NativeSessionStartReq
 	if (configured == SessionControllerConfigureResult::AllocationFailure) {
 		return NativeSessionStartStatus::AllocationFailure;
 	}
+	const auto phase2_mode = selected_phase2_profile == Phase2Profile::None
+		? Phase2ProvisioningMode::ValidDisabled
+		: Phase2ProvisioningMode::ValidEnabled;
+	Phase2ObservationBuffer phase2_observation;
+	if (phase2_mode == Phase2ProvisioningMode::ValidEnabled) {
+		++m_startup_allocation_count;
+	}
+	if (!phase2_observation.provision(phase2_mode)) {
+		return NativeSessionStartStatus::AllocationFailure;
+	}
+	if (phase2_mode == Phase2ProvisioningMode::ValidEnabled &&
+		!phase2_observation.enter_ready()) {
+		return NativeSessionStartStatus::AllocationFailure;
+	}
+	const auto phase2_owned_bytes = phase2_observation.owned_bytes();
 	// Construct every mutable image backing before bind/Ready. A failure is
 	// retryable because no transport operation has started yet.
 	if (!provision_state_image_pools(request.config->max_clients)) {
+		return NativeSessionStartStatus::AllocationFailure;
+	}
+	++m_startup_allocation_count;
+	constexpr std::size_t SharedStartupOwnedBudgetBytes = 64U * 1024U * 1024U;
+	if (phase2_owned_bytes > SharedStartupOwnedBudgetBytes ||
+		m_state_image_pool_backing_bytes >
+			SharedStartupOwnedBudgetBytes - phase2_owned_bytes) {
+		release_state_image_pools();
+		return NativeSessionStartStatus::AllocationFailure;
+	}
+	const auto startup_owned_bytes =
+		phase2_owned_bytes + m_state_image_pool_backing_bytes;
+	if (m_startup_owned_budget_test_adjustment >
+		SharedStartupOwnedBudgetBytes - startup_owned_bytes) {
+		release_state_image_pools();
 		return NativeSessionStartStatus::AllocationFailure;
 	}
 
@@ -174,6 +225,11 @@ NativeSessionStartStatus NativeSessionRuntime::start(const NativeSessionStartReq
 	m_producer_id = request.producer_id;
 	m_scheduler.reset();
 	m_capture_cadence = capture_cadence;
+	m_phase2_observation = std::move(phase2_observation);
+	m_startup_owned_bytes = startup_owned_bytes;
+	m_phase2_capture_plan = {};
+	m_selected_phase2_profile = selected_phase2_profile;
+	m_phase2_enabled = selected_phase2_profile != Phase2Profile::None;
 	clear_player_capture();
 	m_fault_status = NativeSessionTickStatus::Unavailable;
 	m_state = State::Started;
@@ -187,8 +243,15 @@ NativeSessionStartStatus NativeSessionRuntime::start(const NativeSessionStartReq
 }
 
 NativeSessionTickStatus NativeSessionRuntime::service_tick(const NativeSessionTickContext& context,
-	const EngineReadView& engine_view) noexcept
+	const EngineReadView& engine_view,
+	const Phase2EngineReadView* phase2_view) noexcept
 {
+	if (m_phase2_enabled && phase2_view != nullptr &&
+		!phase2_view->current_thread_is_main()) {
+		m_phase2_observation.reset_observation_and_clear_phase2();
+		fail_capture(NativePlayerCaptureStatus::CaptureInvariantFailure);
+		return NativeSessionTickStatus::PermanentCaptureFailure;
+	}
 	const auto measure_performance = m_performance_observation_active;
 	const auto tick_started = measure_performance ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
 	if (measure_performance) m_last_performance_sample = {};
@@ -200,6 +263,8 @@ NativeSessionTickStatus NativeSessionRuntime::service_tick(const NativeSessionTi
 	const auto cadence = m_capture_cadence.poll(context.now_us, context.mission_active);
 	switch (cadence.status) {
 	case CaptureCadenceStatus::Inactive:
+		m_phase2_capture_plan = {};
+		m_phase2_observation.reset_observation_and_clear_phase2();
 		m_controller.clear_player_observations();
 		clear_player_capture();
 		m_last_player_capture_status = NativePlayerCaptureStatus::Inactive;
@@ -210,6 +275,7 @@ NativeSessionTickStatus NativeSessionRuntime::service_tick(const NativeSessionTi
 		return NativeSessionTickStatus::Complete;
 	case CaptureCadenceStatus::NotDue:
 		if (!m_capture_after_ready_transition) {
+			m_phase2_capture_plan = {};
 			m_last_player_materialization = {};
 			m_last_player_capture_status = NativePlayerCaptureStatus::NotDue;
 			if (measure_performance) {
@@ -227,6 +293,50 @@ NativeSessionTickStatus NativeSessionRuntime::service_tick(const NativeSessionTi
 	case CaptureCadenceStatus::Count:
 		fail_capture(NativePlayerCaptureStatus::CadenceFailure);
 		return NativeSessionTickStatus::PermanentCaptureFailure;
+	}
+
+	const auto flight_controls_cadence =
+		cadence.status == CaptureCadenceStatus::Due ||
+		m_capture_after_ready_transition;
+	// Provisional WP02 co-scheduling only. WP09 owns the final independent
+	// systems rate, but the plan keeps its decision separate now.
+	const auto systems_cadence =
+		cadence.status == CaptureCadenceStatus::Due;
+	m_phase2_capture_plan.capture_flight_controls =
+		m_phase2_enabled && flight_controls_cadence;
+	m_phase2_capture_plan.capture_systems =
+		m_phase2_enabled && systems_cadence;
+	m_phase2_capture_plan.force_complete_keyframe = m_capture_after_ready_transition;
+	m_phase2_capture_plan.producer_sample_time_us = context.now_us;
+	if (m_phase2_capture_plan.force_complete_keyframe) {
+		prepare_phase2_keyframe(m_phase2_capture_plan);
+	}
+	if (m_phase2_enabled && phase2_view != nullptr &&
+		(m_phase2_capture_plan.capture_flight_controls ||
+			m_phase2_capture_plan.capture_systems)) {
+		const auto projection =
+			m_selected_phase2_profile == Phase2Profile::CoreGate
+			? Phase2ObservationProjection::CoreGate
+			: Phase2ObservationProjection::CompleteShip;
+		const auto phase2_capture = collect_phase2_observation(
+			m_phase2_observation,
+			*phase2_view,
+			m_phase2_capture_plan.producer_sample_time_us,
+			projection);
+		switch (phase2_capture.status) {
+		case Phase2CaptureStatus::Valid:
+		case Phase2CaptureStatus::NoPlayer:
+			break;
+		case Phase2CaptureStatus::InvalidSource:
+		case Phase2CaptureStatus::SourceLimitExceeded:
+		case Phase2CaptureStatus::UnsupportedEngineState:
+		default:
+			m_phase2_observation.reset_observation_and_clear_phase2();
+			m_controller.clear_player_observations();
+			clear_player_capture();
+			fail_capture(NativePlayerCaptureStatus::CaptureInvariantFailure);
+			return NativeSessionTickStatus::PermanentCaptureFailure;
+		}
 	}
 
 	const auto capture_started = measure_performance ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
@@ -251,12 +361,25 @@ NativeSessionTickStatus NativeSessionRuntime::service_tick(const NativeSessionTi
 	return status;
 }
 
+void NativeSessionRuntime::prepare_phase2_keyframe(Phase2CapturePlan& plan) noexcept
+{
+	if (!m_phase2_enabled) {
+		return;
+	}
+	plan.force_complete_keyframe = true;
+	plan.capture_flight_controls = true;
+	plan.capture_systems = true;
+	m_phase2_keyframe_test_seam = true;
+}
+
 void NativeSessionRuntime::stop_collection() noexcept
 {
 	if (m_controller_ready) {
 		m_controller.clear_player_observations();
 	}
 	m_capture_cadence.stop();
+	m_phase2_capture_plan = {};
+	m_phase2_observation.reset_observation_and_clear_phase2();
 	clear_player_capture();
 	m_last_player_capture_status = NativePlayerCaptureStatus::Inactive;
 }
@@ -287,6 +410,8 @@ void NativeSessionRuntime::purge_all(SessionCloseReason reason) noexcept
 	m_metrics_session_active = {};
 	m_session_started_at_us = {};
 	m_capture_cadence.stop();
+	m_phase2_capture_plan = {};
+	m_phase2_observation.reset_observation_and_clear_phase2();
 	clear_player_capture();
 }
 
@@ -302,6 +427,13 @@ void NativeSessionRuntime::shutdown() noexcept
 	}
 	m_scheduler.reset();
 	m_capture_cadence.reset();
+	m_phase2_capture_plan = {};
+	m_phase2_observation = {};
+	m_selected_phase2_profile = Phase2Profile::None;
+	m_phase2_enabled = false;
+	m_phase2_keyframe_test_seam = false;
+	m_startup_owned_bytes = 0U;
+	m_startup_allocation_count = 0U;
 	clear_player_capture();
 	release_state_image_pools();
 	m_state = State::Stopped;
@@ -689,6 +821,10 @@ void NativeSessionRuntime::fail_transport() noexcept
 	m_transport.close();
 	m_scheduler.reset();
 	m_capture_cadence.stop();
+	m_phase2_capture_plan = {};
+	m_phase2_observation = {};
+	m_selected_phase2_profile = Phase2Profile::None;
+	m_phase2_enabled = false;
 	clear_player_capture();
 	release_state_image_pools();
 	m_producer_id = 0U;
@@ -705,6 +841,10 @@ void NativeSessionRuntime::fail_capture(NativePlayerCaptureStatus status) noexce
 	m_transport.close();
 	m_scheduler.reset();
 	m_capture_cadence.stop();
+	m_phase2_capture_plan = {};
+	m_phase2_observation = {};
+	m_selected_phase2_profile = Phase2Profile::None;
+	m_phase2_enabled = false;
 	clear_player_capture();
 	release_state_image_pools();
 	m_last_player_capture_status = status;
@@ -729,6 +869,35 @@ void NativeSessionRuntimeTestAccess::set_session_controller_provision_failure(Na
 	bool fail) noexcept
 {
 	runtime.m_fail_session_controller_provision = fail;
+}
+
+void NativeSessionRuntimeTestAccess::set_startup_owned_budget_adjustment(
+	NativeSessionRuntime& runtime, std::size_t additional_bytes) noexcept
+{
+	runtime.m_startup_owned_budget_test_adjustment = additional_bytes;
+}
+
+std::size_t NativeSessionRuntimeTestAccess::startup_owned_bytes(
+	const NativeSessionRuntime& runtime) noexcept
+{
+	return runtime.m_startup_owned_bytes;
+}
+
+std::uint64_t NativeSessionRuntimeTestAccess::startup_allocation_count(
+	const NativeSessionRuntime& runtime) noexcept
+{
+	return runtime.m_startup_allocation_count;
+}
+
+Phase2CapturePlan NativeSessionRuntimeTestAccess::phase2_keyframe_test_seam(
+	NativeSessionRuntime& runtime) noexcept
+{
+	Phase2CapturePlan plan;
+	const auto was_enabled = runtime.m_phase2_enabled;
+	runtime.m_phase2_enabled = true;
+	runtime.prepare_phase2_keyframe(plan);
+	runtime.m_phase2_enabled = was_enabled;
+	return plan;
 }
 
 void NativeSessionRuntimeTestAccess::begin_steady_state_allocation_tracking(NativeSessionRuntime& runtime) noexcept

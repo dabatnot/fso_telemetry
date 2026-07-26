@@ -3,7 +3,10 @@
 
 #include "cmdline/cmdline.h"
 #include "globalincs/pstypes.h"
+#include "globalincs/systemvars.h"
+#include "graphics/2d.h"
 #include "io/timer.h"
+#include "network/multi.h"
 #include "telemetry/config.h"
 #include "telemetry/engine_adapter.h"
 #include "telemetry/logging.h"
@@ -15,6 +18,26 @@
 
 namespace telemetry::detail {
 namespace {
+
+Phase2ProfileEligibility current_phase2_profile_eligibility(
+	const TelemetryConfig& config) noexcept
+{
+	Phase2ProfileEligibility eligibility;
+	if ((Game_mode & GM_MULTIPLAYER) == 0) {
+		eligibility.authority_mode = protocol::AuthorityMode::Solo;
+	} else if (Net_player != nullptr &&
+		(Net_player->flags & NETINFO_FLAG_AM_MASTER) != 0) {
+		eligibility.authority_mode = protocol::AuthorityMode::MultiplayerMaster;
+	} else {
+		eligibility.authority_mode = protocol::AuthorityMode::MultiplayerClient;
+	}
+	eligibility.visibility_mode = protocol::VisibilityMode::Cockpit;
+	eligibility.trusted_full_state = config.trusted_full_state;
+	eligibility.dedicated =
+		Is_standalone || (Game_mode & GM_STANDALONE_SERVER) != 0;
+	eligibility.headless = gr_screen.mode == GR_STUB;
+	return eligibility;
+}
 
 RuntimeTickStatus map_native_tick_status(NativeSessionTickStatus status) noexcept
 {
@@ -253,7 +276,10 @@ class NativeRuntimeStartupServices final : public RuntimeStartupServices {
 			&m_session_ids,
 			&m_random,
 			&m_metrics,
-			&m_log};
+			&m_log,
+			Phase2Profile::None,
+			current_phase2_profile_eligibility(m_effective_config),
+			Phase2Profile::None};
 		if (native->start(request) != NativeSessionStartStatus::Started) {
 			return RuntimeTransportStatus::Unavailable;
 		}
@@ -447,8 +473,17 @@ RuntimeTickStatus RuntimeAdapterPlayerTestAccess::service_tick(NativeSessionRunt
 		return RuntimeTickStatus::Unavailable;
 	}
 	const auto view = make_fso_engine_read_view();
+	// Phase2ObservationBuffer builds its bounded CoreGate selection from the
+	// authoritative player_root; no global mission population enters that selection.
+	const auto* phase2_view = static_cast<const Phase2EngineReadView*>(&view);
+	if (!phase2_view->current_thread_is_main()) {
+		return RuntimeTickStatus::PermanentCaptureFailure;
+	}
 	return map_native_tick_status(
-		runtime->service_tick({context.now_us, context.mission_generation, context.mission_active}, view));
+		runtime->service_tick(
+			{context.now_us, context.mission_generation, context.mission_active},
+			view,
+			phase2_view));
 }
 
 RuntimeTickStatus RuntimeAdapterPlayerTestAccess::map_tick_status(NativeSessionTickStatus status) noexcept

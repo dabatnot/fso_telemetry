@@ -18,6 +18,14 @@ class NativeSessionRuntimeTestAccess final {
 	static const SessionControllerSlot* slot(const NativeSessionRuntime& runtime, std::size_t index) noexcept;
 	static SessionController* controller(NativeSessionRuntime& runtime) noexcept;
 	static void set_session_controller_provision_failure(NativeSessionRuntime& runtime, bool fail) noexcept;
+	static void set_startup_owned_budget_adjustment(
+		NativeSessionRuntime& runtime, std::size_t additional_bytes) noexcept;
+	static std::size_t startup_owned_bytes(
+		const NativeSessionRuntime& runtime) noexcept;
+	static std::uint64_t startup_allocation_count(
+		const NativeSessionRuntime& runtime) noexcept;
+	static Phase2CapturePlan phase2_keyframe_test_seam(
+		NativeSessionRuntime& runtime) noexcept;
 	static void begin_steady_state_allocation_tracking(NativeSessionRuntime& runtime) noexcept;
 	static std::uint64_t steady_state_allocation_count(const NativeSessionRuntime& runtime) noexcept;
 	static void force_steady_state_allocation_for_tests(NativeSessionRuntime& runtime) noexcept;

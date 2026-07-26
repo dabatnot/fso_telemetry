@@ -1,6 +1,7 @@
 #include "telemetry/telemetry.h"
 
 #include "events/events.h"
+#include "telemetry/phase2_observation.h"
 #include "telemetry/runtime_adapter.h"
 
 #if defined(FSO_TELEMETRY_TEST_SEAMS)
@@ -51,6 +52,7 @@ void on_engine_shutdown() noexcept
 	++callback_invocation_counts[EngineShutdownIndex];
 #endif
 
+	telemetry::detail::reset_phase2_mission_observation_state();
 	if (telemetry_callbacks_ready && telemetry_runtime != nullptr) {
 		telemetry_runtime->on_engine_shutdown();
 	}
@@ -62,6 +64,7 @@ void on_game_mission_load(const char*) noexcept
 	++callback_invocation_counts[GameMissionLoadIndex];
 #endif
 
+	telemetry::detail::reset_phase2_mission_observation_state();
 	if (telemetry_callbacks_ready && telemetry_runtime != nullptr) {
 		telemetry_runtime->on_game_mission_load();
 	}
@@ -103,6 +106,7 @@ void initialize() noexcept
 	telemetry_initialized = true;
 	auto& runtime = shared_runtime();
 	runtime.capture_main_thread();
+	detail::capture_phase2_main_thread_authority();
 
 	try {
 #if defined(FSO_TELEMETRY_TEST_SEAMS)

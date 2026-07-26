@@ -38,7 +38,13 @@
 #include "playerman/player.h"
 #include "ship/ship.h"
 #include "ship/shipfx.h"
+#include "telemetry/phase2_observation.h"
+#include "telemetry/protocol/telemetry_protocol_constants.h"
 #include "weapon/weapon.h"
+
+#include <cstdio>
+#include <limits>
+#include <string_view>
 
 #ifndef NDEBUG
 #include "io/key.h"
@@ -1060,6 +1066,9 @@ void copy_control_info(control_info *dest_ci, control_info *src_ci, int control_
 
 void read_player_controls(object *objp, float frametime)
 {
+	telemetry::OnControlTarget(game_is_photo_mode_active()
+			? telemetry::ControlTargetAuthority::Camera
+			: telemetry::ControlTargetAuthority::Ship);
 	// Photo mode controls the camera, not the player ship
 	if (game_is_photo_mode_active()) {
 		return;
@@ -1651,7 +1660,69 @@ int player_process_pending_praise()
 	return 1;
 }
 
-bool player_inspect_cap_subsys_cargo(float frametime, char *outstr);
+namespace {
+
+void initialize_cargo_authority(telemetry::detail::CargoAuthorityFact& cargo_fact) noexcept
+{
+	cargo_fact = {};
+	cargo_fact.player_signature = Player_obj != nullptr && Player_obj->signature > 0
+		? static_cast<std::uint32_t>(Player_obj->signature)
+		: 0U;
+	cargo_fact.phase = telemetry::detail::CargoScanPhaseObservation::NotScannable;
+}
+
+bool set_cargo_timing(telemetry::detail::CargoAuthorityFact& cargo_fact, int scan_time_ms) noexcept
+{
+	if (scan_time_ms <= 0 || Player_ship == nullptr || Player_ship->ship_info_index < 0 ||
+		Player_ship->ship_info_index >= static_cast<int>(Ship_info.size())) {
+		return false;
+	}
+	const auto required_us = static_cast<double>(scan_time_ms) *
+		static_cast<double>(Ship_info[Player_ship->ship_info_index].scanning_time_multiplier) * 1000.0;
+	if (!std::isfinite(required_us) || required_us <= 0.0 ||
+		required_us > static_cast<double>(std::numeric_limits<std::uint64_t>::max())) {
+		return false;
+	}
+	cargo_fact.elapsed_us = Player != nullptr && Player->cargo_inspect_time > 0
+		? static_cast<std::uint64_t>(Player->cargo_inspect_time) * 1000U
+		: 0U;
+	cargo_fact.required_us = static_cast<std::uint64_t>(required_us);
+	cargo_fact.presence |= telemetry::protocol::CargoScanStatePresenceFlagTiming |
+		telemetry::protocol::CargoScanStatePresenceFlagValidity;
+	cargo_fact.phase = telemetry::detail::CargoScanPhaseObservation::Idle;
+	return true;
+}
+
+bool assign_raw_cargo_text(telemetry::detail::CargoAuthorityFact& cargo_fact,
+	const char* cargo_title,
+	int cargo_index) noexcept
+{
+	if (cargo_index < 0 || cargo_index >= Num_cargo) {
+		cargo_fact.source_valid = false;
+		return false;
+	}
+	const char* cargo_name = cargo_index == 0 ? "none" : Cargo_names[cargo_index];
+	if (cargo_name[0] == '#') {
+		++cargo_name;
+	}
+	char text[telemetry::detail::MaximumPhase2InternalNameBytes + 1U]{};
+	const auto written = cargo_title != nullptr && cargo_title[0] != '\0' && cargo_title[0] != '#'
+		? std::snprintf(text, sizeof(text), "%s: %s", cargo_title, cargo_name)
+		: std::snprintf(text, sizeof(text), "%s", cargo_name);
+	if (written < 0 || static_cast<std::size_t>(written) >= sizeof(text) ||
+		!cargo_fact.cargo_text.assign(
+			std::string_view{text, static_cast<std::size_t>(written)})) {
+		cargo_fact.source_valid = false;
+		return false;
+	}
+	cargo_fact.presence |= telemetry::protocol::CargoScanStatePresenceFlagCargoText;
+	return true;
+}
+
+} // namespace
+
+bool player_inspect_cap_subsys_cargo(
+	float frametime, char *outstr, telemetry::detail::CargoAuthorityFact& cargo_fact);
 
 /**
  * See if the player should be inspecting cargo, and update progress.
@@ -1661,13 +1732,15 @@ bool player_inspect_cap_subsys_cargo(float frametime, char *outstr);
  *
  * @return true if player should display outstr on HUD; false if don't display cargo on HUD
  */
-bool player_inspect_cargo(float frametime, char *outstr)
+bool player_inspect_cargo(
+	float frametime, char *outstr, telemetry::detail::CargoAuthorityFact& cargo_fact)
 {
 	object		*cargo_objp;
 	ship		*cargo_sp;
 	ship_info	*cargo_sip;
 
 	outstr[0] = 0;
+	initialize_cargo_authority(cargo_fact);
 
 	if ( Player_ai->target_objnum < 0 || Player_ship->flags[Ship::Ship_Flags::Cannot_perform_scan_hide_cargo] ) {
 		return false;
@@ -1677,19 +1750,31 @@ bool player_inspect_cargo(float frametime, char *outstr)
 	Assert(cargo_objp->type == OBJ_SHIP);
 	cargo_sp = &Ships[cargo_objp->instance];
 	cargo_sip = &Ship_info[cargo_sp->ship_info_index];
+	cargo_fact.target_signature = cargo_objp->signature > 0
+		? static_cast<std::uint32_t>(cargo_objp->signature)
+		: 0U;
 
 	if (Use_new_scanning_behavior) {
 		// If this flag is active, no matter the ship class, we do subsystem scanning
 		if (cargo_sp->flags[Ship::Ship_Flags::Toggle_subsystem_scanning]) {
-			return player_inspect_cap_subsys_cargo(frametime, outstr);
+			auto* subsys = Player_ai->targeted_subsys;
+			if (subsys != nullptr && subsys->flags[Ship::Subsystem_Flags::Cargo_revealed]) {
+				cargo_fact.phase = telemetry::detail::CargoScanPhaseObservation::Completed;
+			}
+			return player_inspect_cap_subsys_cargo(frametime, outstr, cargo_fact);
 		}
 	} else {
 		// Goober5000 - possibly swap cargo scan behavior
 		int scan_subsys = cargo_sip->is_huge_ship();
 		if (cargo_sp->flags[Ship::Ship_Flags::Toggle_subsystem_scanning])
 			scan_subsys = !scan_subsys;
-		if (scan_subsys)
-			return player_inspect_cap_subsys_cargo(frametime, outstr);
+		if (scan_subsys) {
+			auto* subsys = Player_ai->targeted_subsys;
+			if (subsys != nullptr && subsys->flags[Ship::Subsystem_Flags::Cargo_revealed]) {
+				cargo_fact.phase = telemetry::detail::CargoScanPhaseObservation::Completed;
+			}
+			return player_inspect_cap_subsys_cargo(frametime, outstr, cargo_fact);
+		}
 	}
 
 	if (Use_new_scanning_behavior) {
@@ -1714,9 +1799,23 @@ bool player_inspect_cargo(float frametime, char *outstr)
 	} else if (!(cargo_sp->flags[Ship::Ship_Flags::Scannable])) {
 		reveal_cargo = true;
 	}
+	const auto cargo_timing_valid = set_cargo_timing(cargo_fact, cargo_sip->scan_time);
+	if (!cargo_timing_valid) {
+		cargo_fact.source_valid = false;
+	}
+	cargo_fact.target_signature = cargo_objp->signature > 0
+		? static_cast<std::uint32_t>(cargo_objp->signature)
+		: 0U;
+	cargo_fact.presence |= telemetry::protocol::CargoScanStatePresenceFlagTarget;
 
 	// if cargo is already revealed
 	if ( cargo_sp->flags[Ship::Ship_Flags::Cargo_revealed] ) {
+		cargo_fact.phase = telemetry::detail::CargoScanPhaseObservation::Completed;
+		if (reveal_cargo) {
+			assign_raw_cargo_text(cargo_fact,
+				cargo_sp->cargo_title,
+				cargo_sp->cargo1 & CARGO_INDEX_MASK);
+		}
 		if (reveal_cargo) {
 			auto cargo_name = (cargo_sp->cargo1 & CARGO_INDEX_MASK) == 0
 				? XSTR("Nothing", 1674)
@@ -1742,6 +1841,7 @@ bool player_inspect_cargo(float frametime, char *outstr)
 		// always bash cargo_inspect_time to 0 since AI ships can reveal cargo that we
 		// are in the process of scanning
 		Player->cargo_inspect_time = 0;
+		cargo_fact.elapsed_us = 0U;
 
 		return true;
 	}
@@ -1754,6 +1854,7 @@ bool player_inspect_cargo(float frametime, char *outstr)
 		scan_dist *= player_sip->scanning_range_multiplier;
 
 		if ( Player_ai->current_target_distance < scan_dist ) {
+			cargo_fact.validity_flags |= telemetry::protocol::ScanValidityFlagInRange;
 			vec3d vec_to_cargo;
 
 			// check if player is facing cargo, do not proceed with inspection if not
@@ -1776,13 +1877,20 @@ bool player_inspect_cargo(float frametime, char *outstr)
 
 				hud_targetbox_end_flash(TBOX_FLASH_CARGO);
 				Player->cargo_inspect_time = 0;
+				cargo_fact.elapsed_us = 0U;
 				return true;
 			}
 
+			cargo_fact.validity_flags |= telemetry::protocol::ScanValidityFlagInAngle |
+				telemetry::protocol::ScanValidityFlagLineOfSight;
 			// player is facing the cargo, and within range, so proceed with inspection
 			if ( hud_sensors_ok(Player_ship, 0) ) {
 				Player->cargo_inspect_time += (int)std::lround(frametime*1000);
+				cargo_fact.phase = telemetry::detail::CargoScanPhaseObservation::Scanning;
 			}
+			cargo_fact.elapsed_us = Player->cargo_inspect_time > 0
+				? static_cast<std::uint64_t>(Player->cargo_inspect_time) * 1000U
+				: 0U;
 
 			if (reveal_cargo) {
 				if (cargo_sp->cargo_title[0] != '\0') {
@@ -1802,9 +1910,16 @@ bool player_inspect_cargo(float frametime, char *outstr)
 			scan_time *= player_sip->scanning_time_multiplier;
 
 			if ( Player->cargo_inspect_time > scan_time ) {
+				cargo_fact.phase = telemetry::detail::CargoScanPhaseObservation::Completed;
+				if (reveal_cargo) {
+					assign_raw_cargo_text(cargo_fact,
+						cargo_sp->cargo_title,
+						cargo_sp->cargo1 & CARGO_INDEX_MASK);
+				}
 				ship_do_cargo_revealed( cargo_sp );
 				snd_play( gamesnd_get_game_sound(GameSounds::CARGO_REVEAL), 0.0f );
 				Player->cargo_inspect_time = 0;
+				cargo_fact.elapsed_us = 0U;
 			}
 
 			return true;
@@ -1833,7 +1948,8 @@ bool player_inspect_cargo(float frametime, char *outstr)
 /**
  * @return 1 if player should display outstr on HUD; 0 if don't display cargo on HUD
  */
-bool player_inspect_cap_subsys_cargo(float frametime, char *outstr)
+bool player_inspect_cap_subsys_cargo(
+	float frametime, char *outstr, telemetry::detail::CargoAuthorityFact& cargo_fact)
 {
 	object		*cargo_objp;
 	ship		*cargo_sp;
@@ -1851,6 +1967,9 @@ bool player_inspect_cap_subsys_cargo(float frametime, char *outstr)
 	Assert(cargo_objp->type == OBJ_SHIP);
 	cargo_sp = &Ships[cargo_objp->instance];
 	cargo_sip = &Ship_info[cargo_sp->ship_info_index];
+	cargo_fact.target_signature = cargo_objp->signature > 0
+		? static_cast<std::uint32_t>(cargo_objp->signature)
+		: 0U;
 
 	// If we're using the new scanning behavior then we have to check that the ship is actually scannable first
 	if (Use_new_scanning_behavior && !(cargo_sp->flags[Ship::Ship_Flags::Scannable])) {
@@ -1870,9 +1989,46 @@ bool player_inspect_cap_subsys_cargo(float frametime, char *outstr)
 	} else if (!(cargo_sp->flags[Ship::Ship_Flags::Scannable])) {
 		reveal_cargo = true;
 	}
+	bool subsystem_key_found = false;
+	// ship_info stores this container as a validated pointer/count pair rather than
+	// exposing cargo_sip->subsystems.size(); validate both halves before telemetry use.
+	if (cargo_sip->n_subsystems < 0 ||
+		(cargo_sip->n_subsystems > 0 && cargo_sip->subsystems == nullptr) ||
+		cargo_sip->n_subsystems >
+			static_cast<int>(telemetry::detail::MaximumPhase2SubsystemsPerShip)) {
+		cargo_fact.source_valid = false;
+	} else {
+		for (int index = 0; index < cargo_sip->n_subsystems; ++index) {
+			if (subsys->system_info == &cargo_sip->subsystems[index]) {
+				cargo_fact.target_subsystem_source_key = static_cast<std::uint32_t>(index);
+				subsystem_key_found = true;
+				break;
+			}
+		}
+	}
+	if (subsystem_key_found == false) {
+		cargo_fact.source_valid = false;
+	}
+	const auto scan_time_ms =
+		subsys->system_info->scan_time > 0 ? subsys->system_info->scan_time : cargo_sip->scan_time;
+	const auto cargo_timing_valid = set_cargo_timing(cargo_fact, scan_time_ms);
+	if (!cargo_timing_valid) {
+		cargo_fact.source_valid = false;
+	}
+	cargo_fact.target_signature = cargo_objp->signature > 0
+		? static_cast<std::uint32_t>(cargo_objp->signature)
+		: 0U;
+	cargo_fact.presence |= telemetry::protocol::CargoScanStatePresenceFlagTarget |
+		telemetry::protocol::CargoScanStatePresenceFlagSubsystem;
 
 	// if cargo is already revealed
 	if (subsys->flags[Ship::Subsystem_Flags::Cargo_revealed]) {
+		cargo_fact.phase = telemetry::detail::CargoScanPhaseObservation::Completed;
+		if (reveal_cargo) {
+			assign_raw_cargo_text(cargo_fact,
+				subsys->subsys_cargo_title,
+				subsys->subsys_cargo_name & CARGO_INDEX_MASK);
+		}
 		if (reveal_cargo) {
 			auto cargo_name = (subsys->subsys_cargo_name & CARGO_INDEX_MASK) == 0
 				? XSTR("Nothing", 1674)
@@ -1897,6 +2053,7 @@ bool player_inspect_cap_subsys_cargo(float frametime, char *outstr)
 		// always bash cargo_inspect_time to 0 since AI ships can reveal cargo that we
 		// are in the process of scanning
 		Player->cargo_inspect_time = 0;
+		cargo_fact.elapsed_us = 0U;
 
 		return true;
 	}
@@ -1922,12 +2079,19 @@ bool player_inspect_cap_subsys_cargo(float frametime, char *outstr)
 		scan_dist *= player_sip->scanning_range_multiplier;
 
 		if ( Player_ai->current_target_distance < scan_dist ) {
+			cargo_fact.validity_flags |= telemetry::protocol::ScanValidityFlagInRange;
 			vec3d vec_to_cargo;
 
 			// check if player is facing cargo, do not proceed with inspection if not
 			vm_vec_normalized_dir(&vec_to_cargo, &subsys_pos, &Player_obj->pos);
 			float dot = vm_vec_dot(&vec_to_cargo, &Player_obj->orient.vec.fvec);
 			subsys_in_view = hud_targetbox_subsystem_in_view(cargo_objp, &x, &y);
+			if (dot >= CARGO_MIN_DOT_TO_REVEAL) {
+				cargo_fact.validity_flags |= telemetry::protocol::ScanValidityFlagInAngle;
+			}
+			if (subsys_in_view) {
+				cargo_fact.validity_flags |= telemetry::protocol::ScanValidityFlagLineOfSight;
+			}
 
 			if ( (dot < CARGO_MIN_DOT_TO_REVEAL) || (!subsys_in_view) ) {
 				if (reveal_cargo) {
@@ -1946,13 +2110,18 @@ bool player_inspect_cap_subsys_cargo(float frametime, char *outstr)
 
 				hud_targetbox_end_flash(TBOX_FLASH_CARGO);
 				Player->cargo_inspect_time = 0;
+				cargo_fact.elapsed_us = 0U;
 				return true;
 			}
 
 			// player is facing the cargo, and within range, so proceed with inspection
 			if ( hud_sensors_ok(Player_ship, 0) ) {
 				Player->cargo_inspect_time += (int)std::lround(frametime*1000);
+				cargo_fact.phase = telemetry::detail::CargoScanPhaseObservation::Scanning;
 			}
+			cargo_fact.elapsed_us = Player->cargo_inspect_time > 0
+				? static_cast<std::uint64_t>(Player->cargo_inspect_time) * 1000U
+				: 0U;
 
 			if (reveal_cargo) {
 				if (subsys->subsys_cargo_title[0] != '\0') {
@@ -1976,9 +2145,16 @@ bool player_inspect_cap_subsys_cargo(float frametime, char *outstr)
 			scan_time *= player_sip->scanning_time_multiplier;
 
 			if ( Player->cargo_inspect_time > scan_time ) {
+				cargo_fact.phase = telemetry::detail::CargoScanPhaseObservation::Completed;
+				if (reveal_cargo) {
+					assign_raw_cargo_text(cargo_fact,
+						subsys->subsys_cargo_title,
+						subsys->subsys_cargo_name & CARGO_INDEX_MASK);
+				}
 				ship_do_cap_subsys_cargo_revealed( cargo_sp, subsys, 0);
 				snd_play( gamesnd_get_game_sound(GameSounds::CARGO_REVEAL), 0.0f );
 				Player->cargo_inspect_time = 0;
+				cargo_fact.elapsed_us = 0U;
 			}
 
 			return true;

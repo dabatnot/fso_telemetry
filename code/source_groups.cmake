@@ -1610,6 +1610,7 @@ add_file_folder("Ship"
 	ship/shield.cpp
 	ship/ship.cpp
 	ship/ship.h
+	ship/support_work.h
 	ship/shipcontrails.cpp
 	ship/shipcontrails.h
 	ship/shipfx.cpp
@@ -1739,6 +1740,17 @@ add_file_folder("Telemetry"
 	telemetry/phase1_snapshot_egress.h
 	telemetry/phase1_state_image.cpp
 	telemetry/phase1_state_image.h
+	telemetry/phase2_closure.cpp
+	telemetry/phase2_closure.h
+	telemetry/phase2_manifest_builder.cpp
+	telemetry/phase2_manifest_builder.h
+	telemetry/phase2_observation.cpp
+	telemetry/phase2_observation.h
+	telemetry/phase2_gameplay_ab_test_seam.h
+	telemetry/phase2_profile_gate.cpp
+	telemetry/phase2_profile_gate.h
+	telemetry/phase2_session_transition.cpp
+	telemetry/phase2_session_transition.h
 	telemetry/runtime.cpp
 	telemetry/runtime.h
 	telemetry/runtime_adapter.cpp

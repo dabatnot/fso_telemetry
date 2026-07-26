@@ -135,8 +135,30 @@ class FstlConsoleClientContractTest(unittest.TestCase):
             cwd=REPO, text=True, capture_output=True, check=False,
         )
         self.assertEqual(0, result.returncode, result.stderr + result.stdout)
-        self.assertIn("21 FSTL 1.1 corpus cases cross-decoded", result.stdout)
+        self.assertIn("22 FSTL 1.1 corpus cases cross-decoded", result.stdout)
         self.assertIn("CRC and simulated cross-endian checks passed", result.stdout)
+
+    def test_phase1_independent_reader_keeps_decoding_known_v1_phase2_records(self) -> None:
+        payload = v11_payload("phase2-promotion", ".bin")
+        decoded = reference.decode_message(6, 0, payload, {})
+        records = decoded["fields"]["records"]
+        self.assertEqual(
+            [
+                "SESSION_STATE",
+                "MISSION_STATE",
+                "ENTITY_LIFECYCLE",
+                "FLIGHT_STATE",
+                "SHIP_IDENTITY",
+                "DAMAGE_STATE",
+                "SHIELD_STATE",
+                "SUBSYSTEM_STATE",
+                "ENERGY_STATE",
+                "PROPULSION_STATE",
+            ],
+            [record["recordName"] for record in records],
+        )
+        self.assertTrue(all(1 <= int(record["recordType"]) <= 24 for record in records))
+        self.assertEqual("None", reference.fstl11_snapshot_result(decoded, 1))
 
     def test_replay_never_publishes_snapshot_before_handshake(self) -> None:
         snapshot = packet(6, v11_payload("minimal-with-player", ".bin"),

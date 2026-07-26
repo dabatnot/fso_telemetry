@@ -132,6 +132,8 @@ add_file_folder("Telemetry\\\\Producer"
 	telemetry/producer/test_telemetry_logging_contract.cpp
 	telemetry/producer/test_telemetry_metrics_contract.cpp
 	telemetry/producer/test_telemetry_native_runtime_integration_contract.cpp
+	telemetry/producer/test_phase2_engine_integration_source_contract.cpp
+	telemetry/producer/test_support_work_contract.cpp
 	telemetry/producer/test_telemetry_runtime_adapter_player_contract.cpp
 	telemetry/producer/test_telemetry_native_runtime_loopback_contract.cpp
 	telemetry/producer/test_telemetry_player_observation_slot_contract.cpp

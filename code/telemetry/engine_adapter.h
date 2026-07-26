@@ -1,8 +1,16 @@
 #pragma once
 
+#include "ship/support_work.h"
+#include "telemetry/phase2_observation.h"
+
 #include <cstdint>
 
 namespace telemetry::detail {
+
+SupportWorkStatus evaluate_support_work(
+	const SupportWorkInput& input, SupportWorkEvaluation& output) noexcept;
+SupportWorkStatus evaluate_support_work(
+	object* repaired_object, SupportWorkEvaluation& output) noexcept;
 
 struct CaptureVec3f {
 	float x = 0.0f;
@@ -104,6 +112,10 @@ struct EnginePlayerKinematicsRead {
 	EnginePhysicsFlagInput physics{};
 };
 
+#if defined(FSO_TELEMETRY_TEST_SEAMS)
+using Phase2StaticExtractorTestInput = Phase2StaticAuthorityInput;
+#endif
+
 QuaternionConversionStatus convert_fso_orientation_to_local_to_world(
 	const CaptureOrientationBasis& input, CaptureQuaternionf& output) noexcept;
 std::uint32_t map_player_physics_mode_flags(const EnginePhysicsFlagInput& input) noexcept;
@@ -122,19 +134,102 @@ class EngineReadView {
 	virtual void read_player_kinematics(EnginePlayerKinematicsRead& output) const noexcept = 0;
 };
 
-class FsoEngineReadView final : public EngineReadView {
+#if defined(FSO_TELEMETRY_TEST_SEAMS)
+class FsoStaticAuthorityTestReadView final
+	: public EngineReadView,
+	  public Phase2EngineReadView {
   public:
-	FsoEngineReadView() noexcept = default;
+	FsoStaticAuthorityTestReadView() noexcept = default;
+	bool current_thread_is_main() const noexcept override { return false; }
+	bool in_mission() const noexcept override { return false; }
+	bool player_exists() const noexcept override { return false; }
+	bool player_object_exists() const noexcept override { return false; }
+	bool player_ship_exists() const noexcept override { return false; }
+	bool player_source_is_consistent() const noexcept override { return false; }
+	SourceReadResult read_player_root_key(
+		EngineEntityKey& output) const noexcept override
+	{
+		output = {};
+		return {Phase2SourceReadStatus::InvalidSource};
+	}
+	SourceReadResult read_discovery_node(
+		EngineEntityKey, Phase2DiscoveryNode& output) const noexcept override
+	{
+		output = {};
+		return {Phase2SourceReadStatus::InvalidSource};
+	}
+	SourceReadResult resolve_capture_local_key(
+		Phase2CaptureLocalKey, EngineEntityKey& output) const noexcept override
+	{
+		output = {};
+		return {Phase2SourceReadStatus::InvalidSource};
+	}
+	SourceReadResult read_ship(
+		EngineEntityKey, Phase2ShipSource& output) const noexcept override
+	{
+		output = {};
+		return {Phase2SourceReadStatus::InvalidSource};
+	}
+	bool read_player_controls(
+		PlayerControlObservation& output) const noexcept override
+	{
+		output = {};
+		return false;
+	}
+	bool read_player_cargo_scan(
+		PlayerCargoScanObservation& output) const noexcept override
+	{
+		output = {};
+		return false;
+	}
+	SourceReadResult extract_static_authorities_for_test(
+		const Phase2StaticExtractorTestInput& input,
+		Phase2ObservationDto& output) const noexcept
+	{
+		return map_phase2_static_authorities(
+			input, output.raw_static_catalog);
+	}
+	bool player_object_is_ship() const noexcept override { return false; }
+	bool player_object_ship_instance_in_range() const noexcept override
+	{
+		return false;
+	}
+	bool player_object_matches_player() const noexcept override { return false; }
+	bool player_ship_matches_object() const noexcept override { return false; }
+	void read_player_kinematics(
+		EnginePlayerKinematicsRead& output) const noexcept override
+	{
+		output = {};
+	}
+};
+
+using FsoEngineReadView = FsoStaticAuthorityTestReadView;
+#else
+class FsoEngineReadView final : public EngineReadView, public Phase2EngineReadView {
+  public:
+	FsoEngineReadView() noexcept;
+	bool current_thread_is_main() const noexcept override;
 	bool in_mission() const noexcept override;
 	bool player_exists() const noexcept override;
 	bool player_object_exists() const noexcept override;
 	bool player_ship_exists() const noexcept override;
+	bool player_source_is_consistent() const noexcept override;
+	SourceReadResult read_player_root_key(EngineEntityKey& output) const noexcept override;
+	SourceReadResult read_discovery_node(
+		EngineEntityKey key, Phase2DiscoveryNode& output) const noexcept override;
+	SourceReadResult resolve_capture_local_key(
+		Phase2CaptureLocalKey key, EngineEntityKey& output) const noexcept override;
+	SourceReadResult read_ship(
+		EngineEntityKey key, Phase2ShipSource& output) const noexcept override;
+	bool read_player_controls(PlayerControlObservation& output) const noexcept override;
+	bool read_player_cargo_scan(PlayerCargoScanObservation& output) const noexcept override;
 	bool player_object_is_ship() const noexcept override;
 	bool player_object_ship_instance_in_range() const noexcept override;
 	bool player_object_matches_player() const noexcept override;
 	bool player_ship_matches_object() const noexcept override;
 	void read_player_kinematics(EnginePlayerKinematicsRead& output) const noexcept override;
 };
+#endif
 
 FsoEngineReadView make_fso_engine_read_view() noexcept;
 CaptureResult collect_player_kinematics(const EngineReadView& view,

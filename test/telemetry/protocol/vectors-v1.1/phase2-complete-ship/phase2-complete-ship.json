@@ -1,0 +1,16 @@
+{
+  "expectedCanonicalJson": "expected-v1.1/phase2-complete-ship.json",
+  "expectedValidationError": 0,
+  "expectedValidationErrorName": "None",
+  "headerVersion": "1.1",
+  "inputFiles": [
+    "phase2-complete-ship.bin"
+  ],
+  "kind": "message-payload",
+  "messageType": 6,
+  "name": "phase2-complete-ship",
+  "notes": "FSTL 1.1 phase2-complete-ship",
+  "schema": "FSTL-1.1",
+  "valid": true,
+  "versionMinor": 1
+}
