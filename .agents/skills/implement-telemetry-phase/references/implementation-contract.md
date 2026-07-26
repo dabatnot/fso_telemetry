@@ -79,12 +79,15 @@ For every `P<N>-WP-nn` work package (or legacy Phase 0 `P0.x` lot):
 3. Identify existing and proposed paths from document 02.
 4. Add a failing test or deterministic fixture for the behavior when practical.
 5. Implement the minimum complete behavior.
-6. Run package-local tests and inspect the diff.
+6. Run the dedicated Debug target and package-local tests; inspect the diff.
 7. Exercise error, cleanup, disabled, and overload paths.
-8. Run the gate-level suite.
-9. Record exact evidence for each acceptance criterion.
+8. Perform an independent readiness review before expensive evidence.
+9. Run the Release and gate-level suite once the WP is readiness-approved.
+10. Record exact evidence for each acceptance criterion and reconcile the phase progress tracker.
 
 Do not combine unrelated work packages merely to reduce file count. Do not refactor neighboring systems unless required to expose the minimal seam defined by the spec.
+
+Do not use a monolithic Release/LTO build, full suite, hash manifest, or certification campaign as the normal edit-test loop. Those are checkpoint or certification proofs. A narrow high-risk oracle remains immediate.
 
 When the codebase offers multiple viable seams, prefer the one that:
 
@@ -125,6 +128,8 @@ Invalid evidence includes:
 - generated vectors validated only by their generator;
 - an unrun command listed as though it passed;
 - an unchecked assumption that a dependency or encoder exists.
+
+`documentation/analysis/progress/phase-<N>.json` is status metadata, not evidence. A gate report and its raw proof remain authoritative. Mark tracker evidence stale whenever later production/test changes invalidate it.
 
 Do not persist evidence as an extra file inside `documentation/analysis/specs/<N>-*/`. If persistent evidence is required, use the artifact location specified by document 07 or request approval for a separate evidence location.
 

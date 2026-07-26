@@ -1,6 +1,6 @@
 ---
 name: prepare-telemetry-phase-spec
-description: Produce exhaustive, implementation-ready specifications for a numbered phase of the FS2Open telemetry roadmap in documentation/analysis/04-implementation-roadmap.md. Use when the user asks in French or English to "préparer la spécification de la phase N", "rédiger les specs de la phase N", specify, detail, plan, or document telemetry roadmap phases 1–7, or explicitly refresh Phase 0. Read every analysis source and prior phase contract, create a documentation/analysis/specs/N-phase-title directory with the same eight-document structure and quality bar as Phase 0, resolve cross-document ambiguities, and validate structure, links, traceability, and Markdown quality.
+description: Produce exhaustive, implementation-ready specifications for a numbered FS2Open telemetry roadmap phase. Use when the user asks to prepare, write, refresh, detail, plan, or document telemetry roadmap phases 0–7. Read every analysis source and prior phase contract, create the canonical eight-document structure, resolve cross-document ambiguities, define fast inner-loop versus work-package checkpoint versus phase-certification evidence, require dedicated build/test targets where practical, and validate structure, links, traceability, cadence, and Markdown quality.
 ---
 
 # Prepare a telemetry phase specification
@@ -17,6 +17,8 @@ Read [references/document-structure-and-quality.md](references/document-structur
 2. Extract the exact heading and deliverables for the requested phase from the roadmap. Do not infer the phase from memory.
 3. Name the output folder `documentation/analysis/specs/<N>-<slug>/`, where `<slug>` is the roadmap title after `Phase N —`, transliterated to portable ASCII and joined with hyphens. Preserve the title's capitalization pattern; for example, Phase 1 becomes `1-Squelette-et-premier-flux`.
 4. If the target folder already exists, treat the task as an update: inventory it first, preserve valid content, and avoid destructive replacement.
+
+When updating a legacy specification, preserve its product contract. Add execution-cadence metadata without silently changing wire, behavior, acceptance thresholds, or phase scope.
 
 Ask the user only if the requested number does not identify one roadmap phase or if a missing architectural decision would materially change the product. Otherwise make the most conservative decision consistent with prior contracts and record it in document 07.
 
@@ -47,6 +49,8 @@ Before drafting, classify every target-phase statement into:
 - resource limits, performance budgets, backpressure, and observability;
 - validation order, errors, security controls, and negative behavior;
 - tests, evidence, work packages, risks, and exit criteria.
+- proof cadence for each test and criterion: `inner-loop`, `wp-checkpoint`, or `phase-certification`;
+- dedicated fast build/test targets, readiness-review timing, and explicit escalation triggers.
 
 Create stable requirement IDs such as `P1-REQ-001` and decision IDs such as `D1-001`. Maintain a source-to-requirement map while drafting. Resolve contradictions explicitly; never hide one by choosing different wording in separate documents.
 
@@ -72,6 +76,16 @@ Write in French unless the user requests another language. Use normative `DOIT`,
 
 Link inherited behavior instead of copying it incompletely. When a role is not implemented in the target phase, state the inherited contract, explain why no new behavior is introduced, and identify the later phase that owns it; never leave an empty document.
 
+In document 06, classify every named test or campaign by proof cadence. In document 07, give every `P<N>-WP-nn` section an execution block containing:
+
+- internal slices and a dedicated `inner-loop` target/filtered oracle;
+- the `readiness-review` entry condition;
+- `wp-checkpoint` Release/integration evidence;
+- `phase-certification` evidence, including an explicit `none at this WP` when not assigned;
+- risk escalations and the progress-tracker mapping.
+
+Do not assign monolithic Release/LTO or whole-suite commands to `inner-loop`. Require a proposed dedicated target when the repository lacks one.
+
 Do not add production code, build changes, hooks, commits, or generated binaries unless the user separately asks for implementation. The specification may define proposed paths and APIs, clearly marked as future deliverables.
 
 ## 5. Audit semantics before mechanical validation
@@ -83,8 +97,10 @@ Perform a separate cross-document audit after the first complete draft:
 3. Verify component ownership, thread boundaries, shutdown order, error propagation, and bounded-resource behavior.
 4. Walk nominal, late-join, loss, duplication, reorder, timeout, restart, mission-change, disabled, and partial-capability scenarios as applicable.
 5. Ensure every acceptance criterion is measurable and linked to a fixture, test, metric, review, or reproducible observation.
-6. Remove `TODO`, `TBD`, placeholders, vague "as needed" behavior, and claims that unimplemented artifacts already exist.
-7. Confirm document 07 contains complete traceability to every top-level analysis source and all inherited phase specs.
+6. Verify expensive evidence belongs to one explicit checkpoint or certification gate and that every WP has a fast feedback path.
+7. Verify readiness review occurs before Release evidence binding and downstream authorization requires the final gate report.
+8. Remove `TODO`, `TBD`, placeholders, vague "as needed" behavior, and claims that unimplemented artifacts already exist.
+9. Confirm document 07 contains complete traceability to every top-level analysis source and all inherited phase specs.
 
 Fix every contradiction found, then repeat the audit on the changed passages.
 
@@ -97,7 +113,8 @@ From the repository root, run:
   -PhaseNumber <N> `
   -PhaseDirectory 'documentation/analysis/specs/<N>-<slug>' `
   -AnalysisDirectory 'documentation/analysis' `
-  -RoadmapPath 'documentation/analysis/04-implementation-roadmap.md'
+  -RoadmapPath 'documentation/analysis/04-implementation-roadmap.md' `
+  -RequireExecutionCadence
 ```
 
 Resolve `<skill-directory>` relative to this `SKILL.md`. Fix all reported errors. The script checks structure, strict UTF-8, Markdown fences, local links and anchors, stale markers, required sections, and source traceability. It does not replace the semantic audit.
@@ -110,6 +127,7 @@ Report:
 - the eight documents created or updated;
 - the principal decisions and inherited contracts;
 - validation results and any deliberately deferred implementation artifacts;
+- the inner-loop, checkpoint, and certification strategy;
 - unresolved blockers, if any.
 
 Do not declare the phase complete merely because its specification exists. Distinguish the documentation delivery from the code, tests, measurements, reviews, and other evidence required by its exit gate.

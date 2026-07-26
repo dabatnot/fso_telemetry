@@ -1,6 +1,6 @@
 ---
 name: implement-telemetry-phase
-description: Implement a numbered FS2Open telemetry roadmap phase from the exhaustive eight-document specification under documentation/analysis/specs with mandatory independent subagents for contract tracking, production implementation, testing, and review. Use when the user asks to "implémenter la phase N", "commencer l'implémentation de la phase N", build, code, execute, or complete a telemetry phase or one of its work packages. Validate and read the phase contract and all prior contracts, inventory requirement and acceptance IDs, implement code/tests/build integration in dependency order, preserve Phase 0 wire compatibility and phase boundaries, verify every claim with independent evidence, and report incomplete or blocked gates without silently changing the specification.
+description: Implement or resume a numbered FS2Open telemetry roadmap phase from the exhaustive eight-document specification under documentation/analysis/specs with mandatory independent roles for contract tracking, production implementation, testing, and review. Use when the user asks to implement, continue, resume, pause, execute, or complete a telemetry phase or work package. Run a fast targeted inner loop, batch role handoffs, persist machine-validated progress, preserve Phase 0 wire compatibility and phase boundaries, and reserve broad Release evidence and certification campaigns for explicit work-package checkpoints and gates.
 ---
 
 # Implement a telemetry phase
@@ -9,18 +9,29 @@ Implement the requested phase from its specification. Treat the eight documents 
 
 Read [references/implementation-contract.md](references/implementation-contract.md) completely before changing files. Use [scripts/inspect_phase_contract.ps1](scripts/inspect_phase_contract.ps1) to inventory the contract.
 
-## 0. Select an execution profile
+## 0. Select a profile and cadence
 
-Use `balanced` unless the user explicitly requests certification, gate closure, release evidence, or a final phase-complete claim. State the selected profile in the first progress update.
+Use `balanced` unless the user explicitly requests certification/release evidence, a final phase-complete claim, or a gate whose contract assigns certification-only campaigns. An ordinary intermediate WP gate remains `balanced`. State the selected profile in the first progress update.
 
-| Profile | Use for | Required cadence |
+| Profile | Use for | Required proof |
 |---|---|---|
-| `balanced` (default) | normal implementation of a work package | TDD and targeted tests for each internal slice; one independent review, Release build, broad CI, and tracker reconciliation when the work package is cohesive. |
-| `certification` | final phase closure, explicit gate closure, protocol/security changes, or user-requested release evidence | full evidence sequence, all required variants, long-running campaigns, and final audit. |
+| `balanced` (default) | normal implementation/correction and ordinary intermediate WP gates | Fast Debug inner loops; one batched readiness review; Release, affected integration, one broad suite, and tracker reconciliation only when the parent work package is cohesive. |
+| `certification` | final phase closure, user-requested release evidence, public boundary changes, or gates assigned long campaigns | full evidence sequence, all required variants, long-running campaigns, and final audit. |
 
-Always use `certification` for a Phase 0 wire/schema/vector change, hostile-input security boundary, cross-thread ownership change, or a required fuzz/soak/performance gate. A `balanced` run may not claim those gates closed.
+Always use `certification` for an actual Phase 0 wire/schema/vector change, a changed trust/security boundary, a changed cross-thread ownership boundary, or a gate that explicitly requires fuzz/soak/performance/platform proof. A defect fix inside an unchanged boundary remains `balanced` with the narrow high-risk oracle plus its normal WP checkpoint. A `balanced` run may close an ordinary intermediate gate but may not claim final phase completion or a certification-only gate.
 
 An internal slice is not a work package merely because it adds a helper, test file, or lifecycle seam. Keep a single compliance matrix and group dependency-coupled internal slices under their parent `P<N>-WP-nn`.
+
+Use these four cadences. Read [references/execution-cadence.md](references/execution-cadence.md) before choosing commands:
+
+| Cadence | Trigger | Maximum normal scope |
+|---|---|---|
+| `inner-loop` | every implementation slice | dedicated Debug build, narrow contract tests, changed-file checks |
+| `readiness-review` | once a cohesive parent WP is code/test complete | independent review before expensive evidence |
+| `wp-checkpoint` | readiness review has no blocking finding | changed-target Release, affected integration, one broad suite, progress reconciliation |
+| `phase-certification` | final/certification-only gate or assigned campaign | exact contract evidence, variants, hashes, fuzz/performance/soak as applicable |
+
+In `balanced`, do not run a full Release/LTO build, whole-suite CI, artifact hashing, sidecar generation, engine launch, or gate-report rewrite during `inner-loop`. A high-risk finding expands the narrow proof needed for that risk; it does not automatically authorize the entire certification sequence.
 
 ## 1. Resolve and validate the phase contract
 
@@ -40,6 +51,7 @@ An internal slice is not a work package merely because it adds a helper, test fi
 
 5. Read all eight target-phase documents completely. Read Phase 0 and every lower completed phase completely before implementation.
 6. Read the target roadmap section and shared testing, observability, risk, and ordering sections.
+7. Initialize or validate `documentation/analysis/progress/phase-<N>.json` with the bundled progress scripts. Treat it as status, never as proof.
 
 Do not implement from a roadmap summary when the phase specification is absent or mechanically invalid. Ask the user to prepare or repair it with `$prepare-telemetry-phase-spec` first.
 
@@ -80,9 +92,9 @@ Respect these orchestration rules:
 4. Return findings to the owning role: production fixes to the implementer, test fixes to the test agent, and mapping/evidence corrections to the tracker. Never let a reviewer repair the work it reviewed.
 5. If agent capacity is limited, schedule roles sequentially without collapsing them. If independent subagents are unavailable, stop before implementation and report the phase blocked by the required segregation of duties.
 
-In `balanced`, keep the same four agents for the entire phase and reuse them in their fixed roles. Do not require a fresh multi-agent ceremony for every internal slice.
+In `balanced`, keep the same four agents for the entire phase and reuse them in their fixed roles. Batch dependency-coupled internal slices. Do not require a fresh multi-agent ceremony, reviewer pass, tracker reconciliation, or evidence manifest for every helper or small slice.
 
-## 4. Build the compliance matrix and plan
+## 4. Build the compliance matrix, progress tracker, and plan
 
 Create a working matrix containing every:
 
@@ -96,6 +108,16 @@ For each row, record the owning code path, test or other proof, dependencies, an
 
 Have the contract tracker translate document 07's dependency graph into the task plan. Have the coordinator assign the smallest dependency-complete parent work package; use internal slices only to sequence its dependencies. Do not start a later phase merely because its seam is nearby.
 
+Persist the user-visible summary in `documentation/analysis/progress/phase-<N>.json` according to [references/progress-schema.md](references/progress-schema.md). Use:
+
+```powershell
+& '<skill-directory>\scripts\initialize_phase_progress.ps1' -PhaseNumber <N>
+& '<skill-directory>\scripts\validate_phase_progress.ps1' -PhaseNumber <N>
+& '<skill-directory>\scripts\show_phase_progress.ps1' -PhaseNumber <N>
+```
+
+Update the tracker after a meaningful batched handoff, at readiness review, at every WP checkpoint, on gate reopen/closure, and before a pause. Do not update it after every command. A `verified` row requires fresh evidence; stale evidence moves the row back to `implemented` or `blocked`.
+
 ## 5. Implement by gate
 
 For each parent work package:
@@ -107,10 +129,11 @@ For each parent work package:
 5. Validate untrusted sizes, counts, offsets, enums, UTF-8, arithmetic, quotas, and session context before allocation or mutation.
 6. Preserve disabled-mode and failure-mode behavior. Optional communication or video capabilities must not break canonical telemetry.
 7. Keep buffers, queues, caches, retransmission windows, logs, and metric cardinality bounded.
-8. Return control to the test agent. For every internal slice, run the narrow Debug/contract checks and preserve the oracle. Route production failures back to the implementer and test defects back to the test agent.
-9. At the parent work-package checkpoint, run the required integration checks and have the reviewer independently inspect the contract slice, focused production/test diffs, and raw evidence. Route every finding to its owning role, then repeat targeted testing and one re-review after fixes.
-10. In `balanced`, a further review loop is required only for a wire/schema, security, lifecycle, concurrency, data-loss, or demonstrably false-oracle finding. Record other improvements for the parent work-package audit instead of growing an internal slice indefinitely.
-11. Have the tracker reconcile every matrix row at the checkpoint. Mark a row `verified` only after its specified independent proof succeeds and no blocking review finding remains.
+8. Return control to the test agent. For every internal slice, run only the narrow Debug/contract checks and preserve the oracle. Route production failures back to the implementer and test defects back to the test agent.
+9. When the parent work package is cohesive, have the reviewer perform one batched readiness review of the contract slice, focused production/test diffs, and targeted results before any expensive Release or evidence campaign. Route all findings together.
+10. After readiness findings are fixed and narrow tests are green, run the WP-checkpoint Release and integration evidence. Have the reviewer inspect only the changed disposition and fresh evidence, then reconcile the tracker.
+11. In `balanced`, a further review loop is required only for a wire/schema, security, lifecycle, concurrency, data-loss, visibility, identity-leak, or demonstrably false-oracle finding. Record other improvements for the parent work-package audit instead of growing an internal slice indefinitely.
+12. Have the tracker reconcile every matrix row at the checkpoint. Mark a row `verified` only after its specified independent proof succeeds and no blocking review finding remains.
 
 Never change a Phase 0 field layout, numeric registry, timeout, reliability rule, baseline semantic, capability, or visibility guarantee as an incidental implementation fix. A required wire change is a specification/versioning blocker.
 
@@ -118,9 +141,11 @@ Never change a Phase 0 field layout, numeric registry, timeout, reliability rule
 
 Run checks in proportion to the profile and change risk. Do not substitute an unrun required final proof with a shorter run.
 
-For every internal slice, run formatter/static checks on changed files, the narrow Debug tests, and `git diff --check`.
+For every internal slice, run formatter/static checks on changed files, the dedicated Debug target, the narrow contract tests, and `git diff --check`. Prefer a dedicated target that does not relink the monolithic `unittests` or engine binary. If no narrow target exists, add or repair the test-only target as part of the WP instead of repeatedly paying a broad link.
 
 At a `balanced` parent work-package checkpoint, run the changed-target Release build, unit/contract tests, directly affected integration/lifecycle harnesses, and one broad CI workflow if available. Run a full local suite only when the work package changes shared protocol, runtime, build integration, or a test harness used broadly.
+
+Run at most one broad Release/full-suite attempt per readiness-approved checkpoint unless it reveals a real defect. After a defect, rerun the narrow reproducer first and repeat only the broad proof invalidated by the fix. Do not retain every inconclusive attempt in the final gate report; retain raw logs if required and record the final conclusive command plus a concise supersession note.
 
 In `certification`, and only then when applicable, run the complete sequence below:
 
@@ -135,6 +160,8 @@ In `certification`, and only then when applicable, run the complete sequence bel
 9. `git diff --check`, focused diff review, and final `git status --short`.
 
 Use the repository's documented build and test commands. Keep test execution and evidence ownership with the test agent or a distinct named specialist. Do not claim a test, platform, variant, soak duration, performance threshold, sanitizer, or manual review that was not actually executed.
+
+Do not generate per-file hashes or claim a gate closed while production/test files remain unstable. Bind final gate evidence once, after readiness approval and a stable revision or explicitly recorded worktree fingerprint. Git mutations still require explicit user authorization.
 
 Do not dispatch remote CI for every internal slice. Dispatch it at parent work-package checkpoints, after a wire/security change, and at final certification. Do not block an independent next internal slice on a still-running non-blocking CI job when targeted local evidence is green; record the pending result and stop immediately if it fails.
 
@@ -158,6 +185,8 @@ Do not add a ninth Markdown document inside the phase specification folder; that
 
 Do not check document 07 completion boxes automatically. Close a gate only when all its code, tests, measurements, and required reviews exist; user/reviewer approval remains external evidence.
 
+Do not authorize the next work package from an intermediate reviewer opinion. Require both the final gate report and the progress tracker to say `closed`. If a gate reopens, immediately mark downstream work `suspended`, mark its evidence stale, and stop new downstream writes.
+
 Do not let the coordinator, tracker, test agent, implementer, or reviewer attest to a responsibility owned by another role. Close a gate only from the combined tracker matrix, test evidence, and independent review result.
 
 ## 8. Deliver
@@ -171,5 +200,7 @@ Lead with the implementation outcome. Include:
 - remaining acceptance criteria, gates, or external reviews;
 - any spec conflict or repository drift discovered;
 - the current phase status: complete only if every required proof exists, otherwise partially implemented or blocked.
+
+Also include the compact output of `show_phase_progress.ps1`. On a pause request, finish only the current atomic write or short command, stop new work, collect fixed-role handoffs, update and validate the tracker, report running processes and stale evidence, then stop.
 
 Do not stage, commit, push, or open a pull request unless the user explicitly requests it.

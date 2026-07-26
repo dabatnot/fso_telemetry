@@ -1,4 +1,4 @@
 interface:
-  display_name: "SpÃ©cifier une phase tÃ©lÃ©mÃ©trie"
-  short_description: "Produit les specs dÃ©taillÃ©es dâ€™une phase tÃ©lÃ©mÃ©trie"
-  default_prompt: "Utilise $prepare-telemetry-phase-spec pour prÃ©parer la spÃ©cification de la phase 1."
+  display_name: "Spécifier une phase télémétrie"
+  short_description: "Spécifie les phases avec preuves cadencées"
+  default_prompt: "Utilise $prepare-telemetry-phase-spec pour préparer une spécification exhaustive avec cibles rapides, checkpoints et preuves de certification."

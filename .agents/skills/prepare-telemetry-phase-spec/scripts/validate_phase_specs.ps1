@@ -9,7 +9,9 @@ param(
 
     [string]$AnalysisDirectory = 'documentation/analysis',
 
-    [string]$RoadmapPath = 'documentation/analysis/04-implementation-roadmap.md'
+    [string]$RoadmapPath = 'documentation/analysis/04-implementation-roadmap.md',
+
+    [switch]$RequireExecutionCadence
 )
 
 Set-StrictMode -Version 2.0
@@ -269,6 +271,13 @@ if ($doc06.Count -eq 1 -and $textsByPath.ContainsKey($doc06[0].FullName)) {
     if ($doc06Search -notmatch '(?i)Tests?' -or $doc06Search -notmatch '(?i)(Securite|Validation)') {
         Add-ValidationError "$($doc06[0].Name): must cover tests and validation/security."
     }
+    if ($RequireExecutionCadence) {
+        foreach ($cadence in @('inner-loop', 'wp-checkpoint', 'phase-certification')) {
+            if ($doc06Search -notmatch [regex]::Escape($cadence)) {
+                Add-ValidationError "$($doc06[0].Name): missing proof cadence '$cadence'."
+            }
+        }
+    }
 }
 
 $doc07 = @($markdownFiles | Where-Object { $_.Name -match '^07-.+\.md$' })
@@ -282,6 +291,35 @@ if ($doc07.Count -eq 1 -and $textsByPath.ContainsKey($doc07[0].FullName)) {
     }
     if ($doc07Text -match '(?m)^[ \t]*-[ \t]+\[[xX]\]') {
         Add-ValidationError "$($doc07[0].Name): completion checklist contains checked items before evidence exists."
+    }
+    if ($RequireExecutionCadence) {
+        foreach ($term in @('inner-loop', 'readiness-review', 'wp-checkpoint', 'phase-certification', 'progress')) {
+            if ($doc07Search -notmatch [regex]::Escape($term)) {
+                Add-ValidationError "$($doc07[0].Name): missing execution term '$term'."
+            }
+        }
+
+        $wpHeadingPattern = '(?m)^###[ \t]+`?(?<id>P' + $PhaseNumber + '-WP-[0-9]{2})`?.*$'
+        $wpHeadings = @([regex]::Matches($doc07Text, $wpHeadingPattern))
+        if ($wpHeadings.Count -eq 0) {
+            Add-ValidationError "$($doc07[0].Name): no P$PhaseNumber-WP-nn headings found for cadence validation."
+        }
+        for ($wpIndex = 0; $wpIndex -lt $wpHeadings.Count; $wpIndex++) {
+            $start = $wpHeadings[$wpIndex].Index
+            $end = if ($wpIndex + 1 -lt $wpHeadings.Count) {
+                $wpHeadings[$wpIndex + 1].Index
+            }
+            else {
+                $doc07Text.Length
+            }
+            $section = ConvertTo-SearchForm $doc07Text.Substring($start, $end - $start)
+            $wpId = $wpHeadings[$wpIndex].Groups['id'].Value
+            foreach ($term in @('inner-loop', 'readiness-review', 'wp-checkpoint', 'phase-certification')) {
+                if ($section -notmatch [regex]::Escape($term)) {
+                    Add-ValidationError "$($doc07[0].Name): $wpId is missing '$term' handling."
+                }
+            }
+        }
     }
 }
 
@@ -305,4 +343,8 @@ Write-Output "Directory: $phaseRoot"
 Write-Output "Documents: $($markdownFiles.Count)"
 Write-Output "Lines: $lineCount"
 Write-Output "Analysis sources traced: $($analysisSources.Count)"
-Write-Output 'Checks: structure, UTF-8, headings, fences, links, anchors, placeholders, traceability, required sections.'
+$checks = 'structure, UTF-8, headings, fences, links, anchors, placeholders, traceability, required sections'
+if ($RequireExecutionCadence) {
+    $checks += ', execution cadence'
+}
+Write-Output "Checks: $checks."

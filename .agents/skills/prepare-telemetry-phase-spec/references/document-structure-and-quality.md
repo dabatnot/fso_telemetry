@@ -118,6 +118,7 @@ Include:
 - threat model appropriate to the phase;
 - unit, integration, contract, negative, lifecycle, loss/reorder, property, fuzz, performance, build, and packaging tests as applicable;
 - deterministic fixtures, harnesses, seeds, and expected results;
+- proof cadence for every test/campaign: `inner-loop`, `wp-checkpoint`, or `phase-certification`;
 - trace from each requirement to at least one proof;
 - cross-platform and disabled-mode checks.
 
@@ -135,6 +136,9 @@ Include:
 - detailed mapping of the target roadmap bullets and shared test/observability/risk sections;
 - risk register with detection, response, and blocking gate;
 - evidence list and unchecked completion checklist.
+- for every WP, internal slices, dedicated fast target, readiness-review condition, checkpoint proof, certification assignment, risk escalation, and progress-tracker mapping.
+
+The final evidence standard stays exhaustive. The cadence classification only controls when evidence runs. Never place monolithic Release/LTO, full-suite, fuzz, performance, or soak work in `inner-loop`.
 
 ## 3. Required depth
 
@@ -148,6 +152,8 @@ An implementation team must not have to invent any of the following:
 - validation order, error result, or partial-application behavior;
 - capability fallback, disabled behavior, or safe network default;
 - metric definition, test oracle, or exit threshold.
+- fast target and narrow oracle for ordinary implementation feedback;
+- readiness-review boundary and the exact checkpoint/certification owner of every expensive proof.
 
 Use tables for exact mappings, Mermaid only when relationships are materially clearer, and pseudocode only for deterministic algorithms. Avoid decorative diagrams.
 
@@ -190,5 +196,8 @@ Before delivery, require all of the following:
 - strict UTF-8, balanced code fences, and no trailing whitespace;
 - nominal and failure lifecycle walkthroughs converge and free bounded resources;
 - all acceptance criteria are measurable;
+- every test and campaign has exactly one minimum proof cadence;
+- every WP defines `inner-loop`, `readiness-review`, `wp-checkpoint`, and `phase-certification` handling;
+- downstream authorization requires a final gate report rather than an intermediate review opinion;
 - document 07's checklist remains unchecked until real artifacts and evidence exist;
 - the final response distinguishes delivered specifications from unfinished implementation.

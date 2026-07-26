@@ -1,0 +1,135 @@
+{
+  "schema": "fs2open.telemetry.phase-progress.v1",
+  "phaseNumber": 2,
+  "title": "Phase 2 — Vaisseau complet",
+  "profile": "balanced",
+  "executionState": "paused",
+  "updatedAtUtc": "2026-07-26T08:38:19.0000000Z",
+  "source": {
+    "branch": "codex/phase2-pre-skill-checkpoint",
+    "head": "9cf93847a4d6054e9e28c5854af858bb054e4d53",
+    "trackedWorktree": "clean-at-checkpoint",
+    "contractDirectory": "documentation/analysis/specs/2-Vaisseau-complet"
+  },
+  "current": {
+    "workPackage": "P2-WP-02",
+    "slice": "B1 — migrate ShipIdentityObservation::class_source_key away from raw uint32_t engine identity",
+    "lastClosedGate": "G2-A",
+    "nextGate": "G2-B",
+    "summary": "WP02 is paused with G2-B reopened. B2 and B3 are corrected with targeted green diagnostics but await fresh broad evidence and rereview. B1 has one remaining red field. WP03 and WP09 are suspended."
+  },
+  "statusBuckets": {
+    "workPackages": {
+      "pending": ["P2-WP-04", "P2-WP-05", "P2-WP-06", "P2-WP-07", "P2-WP-08", "P2-WP-10", "P2-WP-11", "P2-WP-12"],
+      "in_progress": [],
+      "implemented": [],
+      "verified": ["P2-WP-01"],
+      "blocked": ["P2-WP-02"],
+      "deferred": [],
+      "suspended": ["P2-WP-03", "P2-WP-09"]
+    },
+    "requirements": {
+      "pending": ["P2-REQ-006", "P2-REQ-007", "P2-REQ-008", "P2-REQ-015", "P2-REQ-016", "P2-REQ-017", "P2-REQ-018", "P2-REQ-019", "P2-REQ-020", "P2-REQ-021", "P2-REQ-022", "P2-REQ-023", "P2-REQ-024", "P2-REQ-025", "P2-REQ-026", "P2-REQ-027", "P2-REQ-028", "P2-REQ-029", "P2-REQ-030", "P2-REQ-031", "P2-REQ-032", "P2-REQ-034", "P2-REQ-035", "P2-REQ-036", "P2-REQ-037", "P2-REQ-038", "P2-REQ-039", "P2-REQ-040", "P2-REQ-041", "P2-REQ-043", "P2-REQ-044", "P2-REQ-045", "P2-REQ-047", "P2-REQ-048", "P2-REQ-049"],
+      "in_progress": [],
+      "implemented": ["P2-REQ-005", "P2-REQ-009", "P2-REQ-010", "P2-REQ-012", "P2-REQ-013", "P2-REQ-014", "P2-REQ-033", "P2-REQ-042", "P2-REQ-046", "P2-REQ-050"],
+      "verified": ["P2-REQ-001", "P2-REQ-002", "P2-REQ-003", "P2-REQ-004"],
+      "blocked": ["P2-REQ-011"],
+      "deferred": [],
+      "suspended": []
+    },
+    "tests": {
+      "pending": ["P2-TST-001", "P2-TST-002", "P2-TST-003", "P2-TST-004", "P2-TST-005", "P2-TST-006", "P2-TST-020", "P2-TST-021", "P2-TST-022", "P2-TST-023", "P2-TST-024", "P2-TST-025", "P2-TST-026", "P2-TST-027", "P2-TST-028", "P2-TST-029", "P2-TST-030", "P2-TST-031", "P2-TST-032", "P2-TST-033", "P2-TST-034", "P2-TST-035", "P2-TST-036", "P2-TST-037", "P2-TST-038", "P2-TST-039", "P2-TST-040", "P2-TST-041", "P2-TST-042", "P2-TST-043", "P2-TST-044", "P2-TST-045", "P2-TST-046", "P2-TST-047", "P2-TST-048", "P2-TST-049", "P2-TST-050", "P2-TST-051", "P2-TST-052", "P2-TST-053", "P2-TST-054", "P2-TST-055", "P2-TST-056", "P2-TST-057", "P2-TST-058", "P2-TST-059", "P2-TST-060", "P2-TST-061", "P2-TST-062", "P2-TST-063", "P2-TST-064", "P2-TST-065", "P2-TST-066", "P2-TST-067", "P2-TST-068", "P2-TST-069", "P2-TST-070"],
+      "in_progress": [],
+      "implemented": ["P2-TST-007", "P2-TST-008", "P2-TST-009"],
+      "verified": ["P2-TST-010", "P2-TST-011", "P2-TST-012", "P2-TST-013", "P2-TST-014", "P2-TST-015", "P2-TST-016", "P2-TST-017", "P2-TST-018", "P2-TST-019"],
+      "blocked": [],
+      "deferred": [],
+      "suspended": []
+    },
+    "acceptanceCriteria": {
+      "pending": ["P2-AC-003", "P2-AC-005", "P2-AC-006", "P2-AC-007", "P2-AC-008", "P2-AC-009", "P2-AC-010", "P2-AC-011", "P2-AC-012", "P2-AC-013", "P2-AC-014", "P2-AC-015"],
+      "in_progress": [],
+      "implemented": [],
+      "verified": ["P2-AC-001", "P2-AC-002"],
+      "blocked": ["P2-AC-004"],
+      "deferred": [],
+      "suspended": []
+    },
+    "gates": {
+      "pending": ["G2-C", "G2-D", "G2-E", "G2-F", "G2-G"],
+      "ready": [],
+      "closed": ["G2-A"],
+      "reopened": ["G2-B"],
+      "blocked": []
+    }
+  },
+  "decisionIds": ["D2-001", "D2-002", "D2-003", "D2-004", "D2-005", "D2-006", "D2-007", "D2-008", "D2-009", "D2-010", "D2-011", "D2-012", "D2-013", "D2-014", "D2-015", "D2-016", "D2-017", "D2-018", "D2-019", "D2-020"],
+  "blockers": [
+    {
+      "id": "B1",
+      "state": "active",
+      "owner": "implementer",
+      "summary": "ShipIdentityObservation::class_source_key still exposes a raw uint32_t engine identity.",
+      "affects": ["P2-WP-02", "P2-REQ-011", "P2-AC-004", "G2-B"],
+      "nextProof": "Correct only class_source_key, build the dedicated production target, then rerun the B1 narrow reproducer."
+    },
+    {
+      "id": "B2",
+      "state": "resolved_unverified",
+      "owner": "test_agent",
+      "summary": "Auxiliary-registry homonym policy is corrected and the targeted diagnostic passes.",
+      "affects": ["P2-WP-02", "P2-REQ-010", "P2-REQ-011", "P2-REQ-017", "P2-REQ-050", "G2-B"],
+      "nextProof": "Rerun B2 with B1/B3 after the final B1 production change, then include it in readiness rereview."
+    },
+    {
+      "id": "B3",
+      "state": "resolved_unverified",
+      "owner": "test_agent",
+      "summary": "The common production mapper, hostile scalar handling, zero-slot bank rejection, and stack oracle are corrected with targeted green diagnostics.",
+      "affects": ["P2-WP-02", "P2-REQ-010", "P2-REQ-015", "P2-REQ-033", "P2-REQ-050", "G2-B"],
+      "nextProof": "Rerun B3 with B1/B2 after the final B1 production change, then include it in readiness rereview."
+    }
+  ],
+  "evidence": [
+    {
+      "id": "G2-A-report",
+      "status": "fresh",
+      "path": "test/telemetry/producer/phase2/reports/wp01-contract/g2-a-wire-profiles.json",
+      "command": null,
+      "revision": "c1538381271dec4771a51be8241fe108203ce8e4",
+      "covers": ["G2-A", "P2-WP-01", "P2-REQ-001", "P2-REQ-002", "P2-REQ-003", "P2-REQ-004", "P2-TST-010", "P2-TST-011", "P2-TST-012", "P2-TST-013", "P2-TST-014", "P2-TST-015", "P2-TST-016", "P2-TST-017", "P2-TST-018", "P2-TST-019", "P2-AC-001", "P2-AC-002"],
+      "note": "Closed predecessor gate retained from the pause checkpoint."
+    },
+    {
+      "id": "G2-B-current-report",
+      "status": "stale",
+      "path": "test/telemetry/producer/phase2/reports/wp02-capture/g2-b-capture.json",
+      "command": null,
+      "revision": "9cf93847a4d6054e9e28c5854af858bb054e4d53",
+      "covers": ["G2-B", "P2-WP-02", "P2-TST-007", "P2-TST-008", "P2-TST-009", "P2-AC-004"],
+      "note": "The report records reopening but predates the latest B2/B3 corrections and cannot close G2-B."
+    },
+    {
+      "id": "WP02-prior-broad-suites",
+      "status": "stale",
+      "path": null,
+      "command": null,
+      "revision": "pre-checkpoint-worktree",
+      "covers": ["P2-WP-02", "P2-TST-007", "P2-TST-008", "P2-TST-009"],
+      "note": "Observation 62/62, source contract 73/73, and CTest 8/8 were invalidated by later production corrections."
+    }
+  ],
+  "nextActions": [
+    "Resume under the updated skill with G2-B reopened and WP03/WP09 suspended.",
+    "Have the implementer correct only ShipIdentityObservation::class_source_key.",
+    "Build the dedicated production target and have the test agent run B1, then B1/B2/B3 together.",
+    "Run one batched readiness rereview before any broad Release evidence.",
+    "If readiness is green, run the WP02 checkpoint suites once, regenerate TST007/008/009 evidence, reconcile this tracker, and close G2-B only on fresh proof."
+  ],
+  "notes": [
+    "No writer or active build/test process existed at the pause checkpoint.",
+    "WP03 files are retained as provisional suspended work and must be reevaluated against the final WP02 authority.",
+    "Exact commands for the latest targeted binaries were not preserved and must be reestablished rather than invented.",
+    "Large build directories and historical reliability reports remain visible and untracked by explicit user choice."
+  ]
+}

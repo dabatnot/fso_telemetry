@@ -1,4 +1,4 @@
 interface:
-  display_name: "ImplÃ©menter une phase tÃ©lÃ©mÃ©trie"
-  short_description: "ImplÃ©mentation multi-agent conforme aux specs"
-  default_prompt: "Utilise $implement-telemetry-phase pour implÃ©menter la phase 1 avec des sous-agents indÃ©pendants pour le suivi, le code, les tests et la revue."
+  display_name: "Implémenter une phase télémétrie"
+  short_description: "Implémente vite avec preuves et suivi persistants"
+  default_prompt: "Utilise $implement-telemetry-phase pour implémenter ou reprendre une phase avec une boucle rapide, des checkpoints vérifiés et un suivi persistant."
