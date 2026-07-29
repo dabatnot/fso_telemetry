@@ -1,22 +1,45 @@
 {
-  "schema": "fs2open.telemetry.phase-progress.v1",
+  "schema": "fs2open.telemetry.phase-progress.v2",
   "phaseNumber": 2,
   "title": "Phase 2 — Vaisseau complet",
+  "workflowContractVersion": 2,
   "profile": "certification",
   "executionState": "paused",
-  "updatedAtUtc": "2026-07-29T07:21:36.9616223Z",
+  "updatedAtUtc": "2026-07-29T09:30:13.0176313Z",
   "source": {
     "branch": "codex/phase2-pre-skill-checkpoint",
-    "head": "6f845a864e9f9f6100790893c190877114e89027",
-    "trackedWorktree": "dirty-WP11-paused-loss-11-of-12",
+    "head": "7881c5997820feff1c57ac785f56363a7d8c92ff",
+    "trackedWorktree": "workflow-v2-migration-after-functional-checkpoint",
     "contractDirectory": "documentation/analysis/specs/2-Vaisseau-complet"
   },
   "current": {
     "workPackage": "P2-WP-11",
+    "gate": "G2-F",
+    "activity": "paused-before-bounded-loss-harness-correction",
+    "nextAction": "Apply the bounded harness-only correlated heartbeat correction, build only telemetry_phase2_loss_harness, then run the short core-gate-20-burst reproducer.",
+    "startedAtUtc": null,
+    "lastHeartbeatAtUtc": "2026-07-29T09:30:13.0176313Z",
     "slice": "paused — WP11 LOSS campaign completed 11/12; core-gate-20-burst remains red on a category-2 harness-proof defect and G2-F remains open",
     "lastClosedGate": "G2-E",
     "nextGate": "G2-F",
-    "summary": "WP11 is paused after the exact P2-LOSS-GATE campaign completed with 11/12 passing runs. The sole failure is core-gate-20-burst: semantic convergence completed in 133336 us, but the harness did not prove a correlated producer-to-client response during each bidirectional blackout. This is one category-2 required-proof blocker, not a production or specification finding. No build, test, Python runner, or telemetry harness process remains active. G2-F stays pending and WP12 is not authorized."
+    "summary": "WP11 remains paused at G2-F after migration to workflow v2. The former 11/12 LOSS campaign remains diagnostic for semantic convergence, while correlated blackout-response proof is invalidated for all cells. The sole active blocker is a required-proof harness defect in core-gate-20-burst, not a demonstrated production defect. WP12 is not authorized."
+  },
+  "campaign": {
+    "id": "P2-LOSS-HARNESS-QUALIFICATION",
+    "state": "paused",
+    "completed": 0,
+    "total": 2,
+    "unit": "scenario",
+    "startedAtUtc": null,
+    "updatedAtUtc": "2026-07-29T09:30:13.0176313Z",
+    "estimatedRemainingMinutes": 20
+  },
+  "budget": {
+    "limitMinutes": 180,
+    "plannedMinutes": 175,
+    "consumedMinutes": 0,
+    "remainingMinutes": 180,
+    "exceptionDecisionId": null
   },
   "statusBuckets": {
     "workPackages": {
@@ -276,10 +299,13 @@
     {
       "id": "WP11-LOSS-BIDIRECTIONAL-BLACKOUT-PROOF",
       "state": "active",
+      "category": "required-proof-defect",
       "owner": "test_agent",
       "summary": "Category 2 required-proof defect: core-gate-20-burst converges semantically in 133336 us, but blackout coverage currently proves only scheduled client-to-producer activity rather than a bounded correlated producer-to-client response in each bidirectional blackout. This violates the exact P2-LOSS-GATE proof required by P2-REQ-040 and P2-AC-009; no production defect or specification conflict is established.",
       "affects": ["P2-WP-11", "P2-REQ-040", "P2-REQ-048", "P2-AC-009", "G2-F"],
-      "nextProof": "Apply one bounded harness-only correction using correlated, spaced heartbeat probes with observed producer-to-client responses; rebuild telemetry_phase2_loss_harness, run the exact core-gate-20-burst smoke, then rerun all 12 LOSS cases because the harness hash and decision streams change."
+      "nextProof": "Apply one bounded harness-only correction using correlated, spaced heartbeat probes with observed producer-to-client responses; rebuild telemetry_phase2_loss_harness and run the short core-gate-20-burst reproducer.",
+      "nextAction": "Apply one bounded harness-only correction using correlated, spaced heartbeat probes with observed producer-to-client responses; rebuild telemetry_phase2_loss_harness and run the short core-gate-20-burst reproducer.",
+      "consecutiveFailures": 1
     }
   ],
   "evidence": [
@@ -1995,18 +2021,58 @@
     },
     {
       "id": "WP11-loss-campaign-11-of-12",
-      "status": "fresh",
+      "status": "diagnostic",
       "path": "test/telemetry/producer/phase2/reports/wp11-loss-gate/campaign-manifest.json",
       "command": null,
       "revision": "6f845a864e9f9f6100790893c190877114e89027+dirty-WP11-loss-harness-9bde9d3ef9f0118b64c6c4a09f816c04d157dceffedd4bebf4bfc5cc83829f6f",
-      "covers": ["P2-WP-11", "P2-REQ-040", "P2-REQ-048", "P2-AC-007", "P2-AC-008", "P2-AC-009"],
-      "note": "Latest exact LOSS diagnostic, manifest SHA-256 19e18cba81ff2af1df17a79e8a034195d7fcd3a5ab27b31076adef766ad8ddd2: campaign status failed, 11/12 runs passed, and only core-gate-20-burst failed with harness exit code 4. The manifest binds Release harness SHA-256 9bde9d3ef9f0118b64c6c4a09f816c04d157dceffedd4bebf4bfc5cc83829f6f. This partial evidence does not verify any covered row or close G2-F; the next harness correction will make all 12 run artifacts stale."
+      "covers": ["P2-WP-11", "P2-AC-007", "P2-AC-008"],
+      "reuseKey": "P2-EV-LOSS-SEMANTIC-HISTORY",
+      "invalidationScope": ["harness:blackout-correlation", "configuration:legacy-600-second-matrix"],
+      "note": "Historical diagnostic, manifest SHA-256 19e18cba81ff2af1df17a79e8a034195d7fcd3a5ab27b31076adef766ad8ddd2: 11/12 runs passed semantic convergence and only core-gate-20-burst failed the correlation oracle. It may inform P2-AC-007/008 diagnostics but cannot verify P2-REQ-040, P2-AC-009, WP11, or G2-F."
+    },
+    {
+      "id": "WP11-blackout-correlation-proof-v2",
+      "kind": "gate-certification",
+      "state": "missing",
+      "path": null,
+      "command": null,
+      "observedAtUtc": null,
+      "requirements": ["P2-REQ-040", "P2-REQ-048"],
+      "acceptanceCriteria": ["P2-AC-009"],
+      "gate": "G2-F",
+      "reuseKey": "P2-EV-LOSS-SMOKE",
+      "invalidationScope": ["production", "test-oracle", "harness", "build", "configuration"],
+      "fingerprint": {
+        "sourceHash": null,
+        "testHash": null,
+        "harnessHash": null,
+        "buildHash": null,
+        "configurationHash": null,
+        "commandHash": null
+      },
+      "note": "Workflow-v2 migration intentionally invalidates only correlated blackout-response proof. Produce it after the bounded harness correction and independent qualification."
     }
   ],
   "nextActions": [
-    "Resume P2-WP-11 with one bounded harness-only correction for correlated bidirectional-blackout proof, rebuild only telemetry_phase2_loss_harness, and run the exact core-gate-20-burst smoke.",
-    "If the smoke passes, rerun the complete 12-case P2-LOSS-GATE because the corrected harness hash and deterministic decision streams invalidate all prior LOSS runs.",
-    "Keep G2-F pending; only after fresh 12/12 LOSS, performance/allocation, five-soak evidence, readiness disposition, tracker reconciliation, and the normative proof manifest may WP12 be authorized."
+    "Resume P2-WP-11 with one bounded harness-only correction for correlated bidirectional-blackout proof, rebuild only telemetry_phase2_loss_harness, and run the short core-gate-20-burst reproducer.",
+    "After a negative-oracle check and two qualified smokes, run the compact 12-smoke plus four-representative LOSS certification; stop at the first failure.",
+    "Reuse fresh WP09 security/fuzz and WP10 oracle evidence. Run one coordinated performance comparison and one composite soak, then close G2-F by independent review before authorizing WP12."
+  ],
+  "decisionHistory": [
+    {
+      "atUtc": "2026-07-29T09:30:13.0176313Z",
+      "kind": "migration",
+      "subject": "workflow-v2",
+      "decision": "preserve-product-contract-and-reduce-proof",
+      "reason": "WP01-WP10 and G2-A..G2-E remain verified. Historical LOSS results remain diagnostic, correlated blackout proof is invalidated, and the remaining certification is capped at 180 minutes."
+    },
+    {
+      "atUtc": "2026-07-29T09:30:13.0176313Z",
+      "kind": "pause",
+      "subject": "P2-WP-11/G2-F",
+      "decision": "resume-at-targeted-harness-reproducer",
+      "reason": "No build, test, runner, or harness process is active; WP12 remains unauthorized."
+    }
   ],
   "notes": [
     "The skill-only commit 6f845a864 remains the current HEAD. P2-WP-09 is verified and G2-E is closed on the exact required Clang, native loopback, harness, hostile-corpus and final fuzz evidence.",
@@ -2021,6 +2087,7 @@
     "The two native loopback opt-in tests were replayed under their explicit environment and passed within the 18/18 Release runtime selection; no loopback follow-up remains.",
     "Large build directories and historical reliability reports remain visible and untracked by explicit user choice.",
     "Pause handoff 2026-07-29: no build, test, Python runner, or telemetry harness process is active. The test-agent handoff reports no scheduler correction recorded and resumes at the bounded correlated blackout harness fix; the reviewer handoff confirms the root cause is scheduled-only coverage rather than an observed correlated producer response.",
-    "No pre-campaign WP11 attempt is retained as tracker evidence: current harness edits supersede those targeted diagnostics. The 11 current passing LOSS runs remain partial only until the required harness correction, which will invalidate their harness hash and decision streams."
+    "No pre-campaign WP11 attempt is retained as tracker evidence. The 11 former passing LOSS runs remain diagnostic for semantic properties only; the v2 correlation proof is a separate missing evidence row.",
+    "Workflow v2 preserves the product contract and uses dependency-scoped invalidation. Report-only changes do not stale WP09 or WP10 evidence."
   ]
 }

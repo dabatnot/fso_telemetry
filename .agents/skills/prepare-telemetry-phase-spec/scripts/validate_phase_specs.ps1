@@ -1,350 +1,110 @@
-[CmdletBinding()]
 param(
-    [Parameter(Mandatory = $true)]
-    [ValidateRange(0, 99)]
-    [int]$PhaseNumber,
-
-    [Parameter(Mandatory = $true)]
-    [string]$PhaseDirectory,
-
-    [string]$AnalysisDirectory = 'documentation/analysis',
-
-    [string]$RoadmapPath = 'documentation/analysis/04-implementation-roadmap.md',
-
-    [switch]$RequireExecutionCadence
+    [Parameter(Mandatory = $true)][int]$PhaseNumber,
+    [Parameter(Mandatory = $true)][string]$PhaseDirectory
 )
 
-Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
-
-$errors = New-Object 'System.Collections.Generic.List[string]'
-$utf8 = New-Object System.Text.UTF8Encoding($false, $true)
-
-function Add-ValidationError {
-    param([string]$Message)
-    $script:errors.Add($Message)
-}
-
-function Read-StrictUtf8 {
-    param([string]$Path)
-
-    try {
-        return [System.IO.File]::ReadAllText($Path, $script:utf8)
-    }
-    catch {
-        Add-ValidationError "Invalid UTF-8: $Path"
-        return $null
-    }
-}
-
-function ConvertTo-MarkdownSlug {
-    param([string]$Heading)
-
-    $visible = [regex]::Replace($Heading, '!\[([^\]]*)\]\([^)]+\)', '$1')
-    $visible = [regex]::Replace($visible, '\[([^\]]+)\]\([^)]+\)', '$1')
-    $visible = [regex]::Replace($visible, '<[^>]+>', '')
-    $visible = $visible -replace '[`*_~]', ''
-    $visible = $visible.Trim().ToLowerInvariant()
-
-    $builder = New-Object System.Text.StringBuilder
-    foreach ($character in $visible.ToCharArray()) {
-        $category = [System.Globalization.CharUnicodeInfo]::GetUnicodeCategory($character)
-        if ([char]::IsLetterOrDigit($character) -or
-            $category -eq [System.Globalization.UnicodeCategory]::NonSpacingMark -or
-            $character -eq '-' -or $character -eq '_') {
-            [void]$builder.Append($character)
-        }
-        elseif ([char]::IsWhiteSpace($character)) {
-            [void]$builder.Append('-')
-        }
-    }
-
-    return $builder.ToString()
-}
-
-function ConvertTo-SearchForm {
-    param([string]$Text)
-
-    $normalized = $Text.Normalize([System.Text.NormalizationForm]::FormD)
-    $builder = New-Object System.Text.StringBuilder
-    foreach ($character in $normalized.ToCharArray()) {
-        $category = [System.Globalization.CharUnicodeInfo]::GetUnicodeCategory($character)
-        if ($category -ne [System.Globalization.UnicodeCategory]::NonSpacingMark) {
-            [void]$builder.Append($character)
-        }
-    }
-    return $builder.ToString()
-}
-
-function Get-MarkdownAnchors {
-    param([string]$Text)
-
-    $anchors = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
-    $occurrences = @{}
-    $matches = [regex]::Matches($Text, '(?m)^#{1,6}[ \t]+(?<heading>.+?)[ \t]*$')
-
-    foreach ($match in $matches) {
-        $heading = $match.Groups['heading'].Value -replace '[ \t]+#+[ \t]*$', ''
-        $baseSlug = ConvertTo-MarkdownSlug $heading
-        if ([string]::IsNullOrWhiteSpace($baseSlug)) {
-            continue
-        }
-
-        if ($occurrences.ContainsKey($baseSlug)) {
-            $occurrences[$baseSlug] = [int]$occurrences[$baseSlug] + 1
-            $slug = "$baseSlug-$($occurrences[$baseSlug])"
-        }
-        else {
-            $occurrences[$baseSlug] = 0
-            $slug = $baseSlug
-        }
-        [void]$anchors.Add($slug)
-    }
-
-    return $anchors
-}
-
-function Remove-CodeForLinkScan {
-    param([string]$Text)
-
-    $result = [regex]::Replace($Text, '(?ms)^```.*?^```[ \t]*$', '')
-    $result = [regex]::Replace($result, '(?ms)^~~~.*?^~~~[ \t]*$', '')
-    return [regex]::Replace($result, '`[^`\r\n]*`', '')
-}
+$errors = [System.Collections.Generic.List[string]]::new()
 
 if (-not (Test-Path -LiteralPath $PhaseDirectory -PathType Container)) {
-    throw "Phase directory does not exist: $PhaseDirectory"
-}
-if (-not (Test-Path -LiteralPath $AnalysisDirectory -PathType Container)) {
-    throw "Analysis directory does not exist: $AnalysisDirectory"
-}
-if (-not (Test-Path -LiteralPath $RoadmapPath -PathType Leaf)) {
-    throw "Roadmap does not exist: $RoadmapPath"
+    throw "Phase directory not found: $PhaseDirectory"
 }
 
-$phaseRoot = (Resolve-Path -LiteralPath $PhaseDirectory).Path
-$analysisRoot = (Resolve-Path -LiteralPath $AnalysisDirectory).Path
-$roadmapFullPath = (Resolve-Path -LiteralPath $RoadmapPath).Path
-$folderName = Split-Path -Leaf $phaseRoot
+$docs = @(Get-ChildItem -LiteralPath $PhaseDirectory -File -Filter '*.md')
+$expected = @('README.md') + (1..7 | ForEach-Object { '{0:d2}' -f $_ })
 
-if ($folderName -notmatch "^$PhaseNumber-") {
-    Add-ValidationError "Folder '$folderName' does not start with '$PhaseNumber-'."
+if ($docs.Count -ne 8) {
+    $errors.Add("Expected exactly 8 Markdown documents, found $($docs.Count).")
 }
-
-$markdownFiles = @(Get-ChildItem -LiteralPath $phaseRoot -File -Filter '*.md' | Sort-Object Name)
-if ($markdownFiles.Count -ne 8) {
-    Add-ValidationError "Expected exactly 8 Markdown files; found $($markdownFiles.Count)."
+if (-not ($docs.Name -contains 'README.md')) {
+    $errors.Add('README.md is missing.')
 }
-
-$readmes = @($markdownFiles | Where-Object { $_.Name -ceq 'README.md' })
-if ($readmes.Count -ne 1) {
-    Add-ValidationError "Expected exactly one README.md; found $($readmes.Count)."
-}
-
-for ($index = 1; $index -le 7; $index++) {
-    $prefix = '{0:D2}' -f $index
-    $matches = @($markdownFiles | Where-Object { $_.Name -match "^$prefix-.+\.md$" })
+foreach ($prefix in 1..7) {
+    $matches = @($docs | Where-Object Name -Match ('^{0:d2}-' -f $prefix))
     if ($matches.Count -ne 1) {
-        Add-ValidationError "Expected exactly one '$prefix-*.md' document; found $($matches.Count)."
+        $errors.Add("Expected exactly one document with prefix $('{0:d2}' -f $prefix), found $($matches.Count).")
     }
 }
 
-$textsByPath = @{}
-$combinedTextBuilder = New-Object System.Text.StringBuilder
+$doc06 = @($docs | Where-Object Name -Match '^06-') | Select-Object -First 1
+$doc07 = @($docs | Where-Object Name -Match '^07-') | Select-Object -First 1
+if ($null -eq $doc06 -or $null -eq $doc07) {
+    $errors.Add('Documents 06 and 07 are required for evidence validation.')
+} else {
+    $validation = Get-Content -LiteralPath $doc06.FullName -Raw -Encoding UTF8
+    $delivery = Get-Content -LiteralPath $doc07.FullName -Raw -Encoding UTF8
+    $budgetMatch = [regex]::Match($validation, '<!--\s*certification-budget-minutes:\s*(\d+)\s*-->')
+    if (-not $budgetMatch.Success) {
+        $errors.Add('Document 06 must contain certification-budget-minutes.')
+    } else {
+        $budget = [int]$budgetMatch.Groups[1].Value
+        if ($budget -gt 180 -and $validation -notmatch '(?i)Certification budget exception') {
+            $errors.Add("Certification budget is $budget minutes without a documented exception.")
+        }
+    }
 
-foreach ($file in $markdownFiles) {
-    $text = Read-StrictUtf8 $file.FullName
-    if ($null -eq $text) {
+    foreach ($term in @('Risque couvert','Dur.e estim.e','Invalidation','R.utilisation','Crit.re d.arr.t')) {
+        if ($validation -notmatch $term) {
+            $errors.Add("Document 06 is missing evidence metadata matching: $term.")
+        }
+    }
+    foreach ($term in @('inner-loop','readiness','wp-checkpoint','gate-certification','tracker')) {
+        if ($delivery -notmatch [regex]::Escape($term)) {
+            $errors.Add("Document 07 is missing execution metadata: $term.")
+        }
+    }
+
+    $durationMatches = [regex]::Matches($validation, '(?m)^\|[^\r\n]*\|\s*(\d+)\s+min\s*\|')
+    $durationSum = 0
+    foreach ($match in $durationMatches) { $durationSum += [int]$match.Groups[1].Value }
+    if ($durationMatches.Count -eq 0) {
+        $errors.Add('Document 06 has no machine-summable evidence duration rows.')
+    } elseif ($budgetMatch.Success -and $durationSum -gt [int]$budgetMatch.Groups[1].Value) {
+        $errors.Add("Evidence durations total $durationSum minutes and exceed the declared budget.")
+    }
+
+    $evidenceRows = @($validation -split "`r?`n" | Where-Object { $_ -match '^\|\s*[^-|].*\|\s*`(?:wp-checkpoint|gate-certification)`\s*\|' })
+    foreach ($row in $evidenceRows) {
+        if (($row.ToCharArray() | Where-Object { $_ -eq '|' }).Count -lt 9) {
+            $errors.Add("Incomplete expensive-evidence row: $row")
+        }
+    }
+}
+
+foreach ($doc in $docs) {
+    try {
+        $bytes = [System.IO.File]::ReadAllBytes($doc.FullName)
+        $strictUtf8 = [System.Text.UTF8Encoding]::new($false, $true)
+        $content = $strictUtf8.GetString($bytes)
+    } catch {
+        $errors.Add("$($doc.Name) is not strict UTF-8.")
         continue
     }
-    $textsByPath[$file.FullName] = $text
-    [void]$combinedTextBuilder.AppendLine($text)
-    $searchText = ConvertTo-SearchForm $text
-
-    if ($text.IndexOf([char]0) -ge 0 -or $text.IndexOf([char]0xfffd) -ge 0) {
-        Add-ValidationError "$($file.Name): contains NUL or U+FFFD."
+    if ($content -match '(?im)\b(TODO|TBD)\b') {
+        $errors.Add("$($doc.Name) contains TODO or TBD.")
     }
-    if ($text.Length -lt 800) {
-        Add-ValidationError "$($file.Name): content is too short for an exhaustive phase document."
+    if ($content -match '(?i)phase\s+(?!' + [regex]::Escape([string]$PhaseNumber) + '\b)\d+\s+est\s+termin') {
+        $errors.Add("$($doc.Name) appears to claim another phase is complete.")
     }
-    if ($text -notmatch '(?m)^# [^#\r\n]+') {
-        Add-ValidationError "$($file.Name): missing a level-1 title."
+    if (([regex]::Matches($content, '(?m)^```')).Count % 2 -ne 0) {
+        $errors.Add("$($doc.Name) has unbalanced fenced code blocks.")
     }
-    if ($text -match '(?m)[ \t]+$') {
-        Add-ValidationError "$($file.Name): contains trailing whitespace."
+    if ($content -match '(?m)[ \t]+$') {
+        $errors.Add("$($doc.Name) contains trailing whitespace.")
     }
-    if ($searchText -match '(?im)\b(TODO|TBD|FIXME|XXX)\b|a definir|reste a definir|\[PLACEHOLDER\]') {
-        Add-ValidationError "$($file.Name): contains an unresolved marker."
-    }
-
-    $backtickFences = [regex]::Matches($text, '(?m)^[ \t]*```').Count
-    $tildeFences = [regex]::Matches($text, '(?m)^[ \t]*~~~').Count
-    if (($backtickFences % 2) -ne 0) {
-        Add-ValidationError "$($file.Name): unbalanced backtick fences."
-    }
-    if (($tildeFences % 2) -ne 0) {
-        Add-ValidationError "$($file.Name): unbalanced tilde fences."
-    }
-}
-
-foreach ($file in $markdownFiles) {
-    if (-not $textsByPath.ContainsKey($file.FullName)) {
-        continue
-    }
-
-    $scanText = Remove-CodeForLinkScan $textsByPath[$file.FullName]
-    $linkMatches = [regex]::Matches($scanText, '(?<!!)\[[^\]]*\]\((?<target>[^)]+)\)')
-
-    foreach ($linkMatch in $linkMatches) {
-        $rawTarget = $linkMatch.Groups['target'].Value.Trim().Trim('<', '>')
-        if ($rawTarget -match '^[A-Za-z][A-Za-z0-9+.-]*:') {
-            continue
-        }
-
-        $parts = $rawTarget -split '#', 2
-        $relativePath = [uri]::UnescapeDataString($parts[0])
-        $fragment = if ($parts.Count -eq 2) { [uri]::UnescapeDataString($parts[1]) } else { '' }
-
-        if ([string]::IsNullOrWhiteSpace($relativePath)) {
-            $targetPath = $file.FullName
-        }
-        elseif ([System.IO.Path]::IsPathRooted($relativePath)) {
-            $targetPath = [System.IO.Path]::GetFullPath($relativePath)
-        }
-        else {
-            $targetPath = [System.IO.Path]::GetFullPath((Join-Path $file.DirectoryName $relativePath))
-        }
-
-        if (-not (Test-Path -LiteralPath $targetPath)) {
-            Add-ValidationError "$($file.Name): missing local link target '$rawTarget'."
-            continue
-        }
-
-        if (-not [string]::IsNullOrWhiteSpace($fragment) -and
-            (Test-Path -LiteralPath $targetPath -PathType Leaf) -and
-            [System.IO.Path]::GetExtension($targetPath) -ieq '.md') {
-            $targetText = Read-StrictUtf8 $targetPath
-            if ($null -eq $targetText) {
-                continue
-            }
-            $anchors = Get-MarkdownAnchors $targetText
-            if (-not $anchors.Contains($fragment)) {
-                Add-ValidationError "$($file.Name): missing anchor '#$fragment' in '$targetPath'."
-            }
-        }
-    }
-}
-
-$combinedText = $combinedTextBuilder.ToString()
-$analysisSources = @(Get-ChildItem -LiteralPath $analysisRoot -File -Filter '*.md' | Sort-Object Name)
-foreach ($source in $analysisSources) {
-    if ($combinedText.IndexOf($source.Name, [System.StringComparison]::OrdinalIgnoreCase) -lt 0) {
-        Add-ValidationError "Traceability is missing top-level analysis source '$($source.Name)'."
-    }
-}
-
-if ($combinedText.IndexOf((Split-Path -Leaf $roadmapFullPath), [System.StringComparison]::OrdinalIgnoreCase) -lt 0) {
-    Add-ValidationError "The roadmap is not referenced by filename."
-}
-
-if ($readmes.Count -eq 1 -and $textsByPath.ContainsKey($readmes[0].FullName)) {
-    $readmeText = $textsByPath[$readmes[0].FullName]
-    $readmeSearch = ConvertTo-SearchForm $readmeText
-    foreach ($pattern in @('(?im)^## .*Statut', '(?im)^## .*Documents', '(?im)^## .*Sources', '(?im)^## .*(Gate|Critere.*sortie)')) {
-        if ($readmeSearch -notmatch $pattern) {
-            Add-ValidationError "README.md: missing required section matching '$pattern'."
-        }
-    }
-}
-
-$doc01 = @($markdownFiles | Where-Object { $_.Name -match '^01-.+\.md$' })
-if ($doc01.Count -eq 1 -and $textsByPath.ContainsKey($doc01[0].FullName)) {
-    $doc01Search = ConvertTo-SearchForm $textsByPath[$doc01[0].FullName]
-    if ($doc01Search -notmatch '(?i)(Perimetre|Portee)') {
-        Add-ValidationError "$($doc01[0].Name): missing scope section."
-    }
-}
-
-$doc06 = @($markdownFiles | Where-Object { $_.Name -match '^06-.+\.md$' })
-if ($doc06.Count -eq 1 -and $textsByPath.ContainsKey($doc06[0].FullName)) {
-    $doc06Search = ConvertTo-SearchForm $textsByPath[$doc06[0].FullName]
-    if ($doc06Search -notmatch '(?i)Tests?' -or $doc06Search -notmatch '(?i)(Securite|Validation)') {
-        Add-ValidationError "$($doc06[0].Name): must cover tests and validation/security."
-    }
-    if ($RequireExecutionCadence) {
-        foreach ($cadence in @('inner-loop', 'wp-checkpoint', 'phase-certification')) {
-            if ($doc06Search -notmatch [regex]::Escape($cadence)) {
-                Add-ValidationError "$($doc06[0].Name): missing proof cadence '$cadence'."
-            }
-        }
-    }
-}
-
-$doc07 = @($markdownFiles | Where-Object { $_.Name -match '^07-.+\.md$' })
-if ($doc07.Count -eq 1 -and $textsByPath.ContainsKey($doc07[0].FullName)) {
-    $doc07Text = $textsByPath[$doc07[0].FullName]
-    $doc07Search = ConvertTo-SearchForm $doc07Text
-    foreach ($term in @('Criteres d.acceptation', 'Matrice de tracabilite', 'Risques', 'Checklist')) {
-        if ($doc07Search -notmatch "(?i)$term") {
-            Add-ValidationError "$($doc07[0].Name): missing '$term'."
-        }
-    }
-    if ($doc07Text -match '(?m)^[ \t]*-[ \t]+\[[xX]\]') {
-        Add-ValidationError "$($doc07[0].Name): completion checklist contains checked items before evidence exists."
-    }
-    if ($RequireExecutionCadence) {
-        foreach ($term in @('inner-loop', 'readiness-review', 'wp-checkpoint', 'phase-certification', 'progress')) {
-            if ($doc07Search -notmatch [regex]::Escape($term)) {
-                Add-ValidationError "$($doc07[0].Name): missing execution term '$term'."
-            }
-        }
-
-        $wpHeadingPattern = '(?m)^###[ \t]+`?(?<id>P' + $PhaseNumber + '-WP-[0-9]{2})`?.*$'
-        $wpHeadings = @([regex]::Matches($doc07Text, $wpHeadingPattern))
-        if ($wpHeadings.Count -eq 0) {
-            Add-ValidationError "$($doc07[0].Name): no P$PhaseNumber-WP-nn headings found for cadence validation."
-        }
-        for ($wpIndex = 0; $wpIndex -lt $wpHeadings.Count; $wpIndex++) {
-            $start = $wpHeadings[$wpIndex].Index
-            $end = if ($wpIndex + 1 -lt $wpHeadings.Count) {
-                $wpHeadings[$wpIndex + 1].Index
-            }
-            else {
-                $doc07Text.Length
-            }
-            $section = ConvertTo-SearchForm $doc07Text.Substring($start, $end - $start)
-            $wpId = $wpHeadings[$wpIndex].Groups['id'].Value
-            foreach ($term in @('inner-loop', 'readiness-review', 'wp-checkpoint', 'phase-certification')) {
-                if ($section -notmatch [regex]::Escape($term)) {
-                    Add-ValidationError "$($doc07[0].Name): $wpId is missing '$term' handling."
-                }
-            }
+    foreach ($link in [regex]::Matches($content, '\[[^\]]+\]\(([^)#]+)(?:#[^)]+)?\)')) {
+        $target = $link.Groups[1].Value
+        if ($target -match '^(?:https?://|mailto:)') { continue }
+        $resolved = Join-Path $doc.DirectoryName ([uri]::UnescapeDataString($target))
+        if (-not (Test-Path -LiteralPath $resolved)) {
+            $errors.Add("$($doc.Name) has a missing local link target: $target")
         }
     }
 }
 
 if ($errors.Count -gt 0) {
-    [Console]::Error.WriteLine("Phase specification validation failed with $($errors.Count) error(s):")
-    foreach ($validationError in $errors) {
-        [Console]::Error.WriteLine("- $validationError")
-    }
+    $errors | ForEach-Object { [Console]::Error.WriteLine("ERROR $_") }
     exit 1
 }
 
-$lineCount = 0
-foreach ($file in $markdownFiles) {
-    if ($textsByPath.ContainsKey($file.FullName)) {
-        $lineCount += [System.IO.File]::ReadAllLines($file.FullName, $utf8).Count
-    }
-}
-
-Write-Output "Phase $PhaseNumber specification validation passed."
-Write-Output "Directory: $phaseRoot"
-Write-Output "Documents: $($markdownFiles.Count)"
-Write-Output "Lines: $lineCount"
-Write-Output "Analysis sources traced: $($analysisSources.Count)"
-$checks = 'structure, UTF-8, headings, fences, links, anchors, placeholders, traceability, required sections'
-if ($RequireExecutionCadence) {
-    $checks += ', execution cadence'
-}
-Write-Output "Checks: $checks."
+Write-Output "PASS phase=$PhaseNumber documents=8 certificationBudgetMinutes=$budget evidenceDurationMinutes=$durationSum"

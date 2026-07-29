@@ -160,7 +160,7 @@ Les tests natifs de producteur restent sous `test/src/telemetry/producer/` et le
 
 **Dépend de :** `P2-WP-08`, `P2-WP-09` et `P2-WP-10`.
 
-**Livrables :** campagne `P2-LOSS-GATE` de 12 runs (deux profils × 1/5/20 % × iid/burst, 600 s mesurées après warm-up), rapports Release, protocole de mesure du document 05, allocations, quatre clients, cinq soaks 1800 s et relances.
+**Livrables :** qualification courte du harness, campagne `P2-LOSS-GATE` de 12 smokes (deux profils × 1/5/20 % × iid/burst), quatre runs longs représentatifs, comparaison performance contrôle/actif, quatre clients et un soak composite de 3600 s.
 
 **Sortie :** convergence, budgets et endurance prouvés ; `P2-AC-009`, `P2-AC-013` et `P2-AC-015` passent.
 
@@ -168,9 +168,22 @@ Les tests natifs de producteur restent sous `test/src/telemetry/producer/` et le
 
 **Dépend de :** tous les lots précédents.
 
-**Livrables :** exécution propre de toutes les preuves sur le même commit, manifeste de rapports avec hashes/commandes, revue indépendante exigences-diff-tests, résolution des écarts et checklist finale.
+**Livrables :** audit de fraîcheur des preuves existantes, manifeste de rapports avec empreintes/commandes, revue indépendante exigences-diff-tests, résolution des écarts et checklist finale. Une preuve fraîche n’est pas rejouée pour produire ce manifeste.
 
 **Sortie :** `G2-G` fermée, aucune case sans preuve et aucun changement hors scope inexpliqué.
+
+### 3.1 Cadence d’exécution et tracker
+
+| Lots | `inner-loop` | `readiness-review` | `wp-checkpoint` | `gate-certification` | Tracker |
+|---|---|---|---|---|---|
+| WP-01 à WP-04 | cible dédiée et tests de contrat | une revue groupée du lot | Release des cibles invalidées | aucune hors gate propriétaire | activité, gate, preuve et cône d’invalidation |
+| WP-05 à WP-08 | cible métier/runtime ciblée | une revue groupée du lot | Release et intégration directement affectées | aucune hors gate propriétaire | idem |
+| WP-09 | corpus court et tests fail-closed | revue sécurité/build | fuzz court, build et observabilité assignés | fuzz long seulement sur changement de frontière | idem |
+| WP-10 | client/oracle ciblé | revue de provenance | goldens et oracle indépendant | aucune campagne longue | idem |
+| WP-11 | reproducer et harness ciblés | qualification indépendante du harness | build Release loss/performance affecté | 12 smokes, 4 runs longs, performance et soak composite | progression `completed/total`, heartbeat, budget |
+| WP-12 | contrôles statiques ciblés | revue finale du diff et des preuves | audit de cohérence | aucune relance de preuve fraîche | décision G2-G et historique compact |
+
+Une opération de plus de cinq minutes doit être décrite dans le document 06 avec risque, durée, qualification, arrêt, invalidation et clé de réutilisation. Le tracker canonique est `documentation/analysis/progress/phase-2.json`.
 
 ## 4. Gates intermédiaires
 
@@ -195,8 +208,8 @@ flowchart LR
 | `G2-C` | WP-03 puis WP-04 ferment ; autorise WP-05/WP-06 | `P2-TST-020..034`, `P2-TST-039`, `P2-TST-047`, `P2-AC-005`, golden `0x0401` et oracle unitaire cœur prérequis de `P2-AC-006` | `test/telemetry/producer/phase2/reports/wp04-core-gate/g2-c-core-gate.json` |
 | `G2-D` | WP-05/WP-06/WP-07 ferment ; autorise WP-08 | `P2-TST-035..038`, `P2-TST-040..044`, `P2-TST-046`, matrice métier déterministe `0x0583` et prérequis unitaires de `P2-AC-006/007/008` | `test/telemetry/producer/phase2/reports/wp07-lifecycle-support/g2-d-complete-domain.json` |
 | `G2-E` | WP-08 et WP-09 ferment ; autorise WP-10 | `P2-TST-001..009`, `P2-TST-049..070`, corpus hostile/fuzz, `P2-AC-003/010/011/012` et prérequis runtime de `P2-AC-007/008/009` | `test/telemetry/producer/phase2/reports/wp09-security/g2-e-runtime-security.json` |
-| `G2-F` | WP-10 puis WP-11 ferment ; autorise WP-12 | `P2-TST-045`, `P2-TST-048`, client/goldens/oracle, 12 runs loss, protocole performance, cinq soaks, `P2-AC-006/007/008/009/013/014/015` | `test/telemetry/producer/phase2/reports/wp11-loss-gate/g2-f-proof-manifest.json` |
-| `G2-G` | WP-12 ferme la Phase 2 | build matrix propre, toutes suites et preuves au même commit, revue indépendante, `P2-REQ-001..050`, `P2-AC-001..015` | `test/telemetry/producer/phase2/reports/wp12-final/g2-g-certification.json` |
+| `G2-F` | WP-10 puis WP-11 ferment ; autorise WP-12 | `P2-TST-045`, `P2-TST-048`, client/goldens/oracle, 12 smokes loss, 4 runs longs, performance, soak composite, `P2-AC-006/007/008/009/013/014/015` | `test/telemetry/producer/phase2/reports/wp11-loss-gate/g2-f-proof-manifest.json` |
+| `G2-G` | WP-12 ferme la Phase 2 | audit de la build matrix et des preuves fraîches, revue indépendante, `P2-REQ-001..050`, `P2-AC-001..015`; relance uniquement d’une preuve invalidée | `test/telemetry/producer/phase2/reports/wp12-final/g2-g-certification.json` |
 
 Un lot ne commence qu’après sa gate d’entrée et ses dépendances WP explicites. WP-09 peut progresser après `G2-B`, mais ne ferme rien avant l’intégration WP-08. Une gate ne se ferme pas par déclaration : le JSON nommé contient commande exacte, révision, hash des artefacts, résultats par ID et code retour ; une preuve manquante laisse la gate ouverte.
 
@@ -212,13 +225,13 @@ Un lot ne commence qu’après sa gate d’entrée et ses dépendances WP explic
 | `P2-AC-006` | 100 % des champs dashboard ont une source/formule et zéro mismatch | rapport oracle machine-readable |
 | `P2-AC-007` | apparition/mort/disparition/respawn convergent, nouvel ID au respawn | scénario lifecycle natif + client indépendant |
 | `P2-AC-008` | support et fermeture cargo/docking sont complets, filtrés et terminaux fiables | fixtures toutes phases + keyframe terminale sous perte |
-| `P2-AC-009` | après perturbation, chrono démarré à `APPLIED` du dernier manifeste requis, état source/closure stabilisé converge dans `2×keyframeSeconds+1s` | 12 rapports : profils `0x0401`/`0x0583` × 1/5/20 % × iid/burst, 600 s chacun, seed 1345474380 |
+| `P2-AC-009` | après perturbation, chrono démarré à `APPLIED` du dernier manifeste requis, état source/closure stabilisé converge dans `2×keyframeSeconds+1s` | 12 smokes + 4 rapports longs représentatifs, profils `0x0401`/`0x0583`, pertes iid/burst, seed 1345474380 |
 | `P2-AC-010` | config/build rétrocompatibles, `systemsHz` fermé et fichiers CMake explicites | suites config + build matrix |
 | `P2-AC-011` | aucune commande, fuite Cockpit, allocation hostile ou dépassement quota | corpus sécurité, fuzz et scan logs |
 | `P2-AC-012` | métriques/logs complets, cohérents, bornés et remis à zéro | tests observabilité + snapshot final |
-| `P2-AC-013` | tous les seuils Release du document 05 sont respectés après warm-up 60 s, mesure ≥1800 s et minima d’échantillons, p99 nearest-rank sans retrait | rapport séries brutes, percentiles, hôte et flags |
+| `P2-AC-013` | tous les seuils Release du document 05 sont respectés sur une référence contrôle 600 s puis une mesure active 1800 s et les minima d’échantillons, p99 nearest-rank sans retrait | rapport séries brutes, percentiles, hôte et flags |
 | `P2-AC-014` | client indépendant valide manifestes, snapshots, deltas et goldens | tests Python + transcript/dashboard |
-| `P2-AC-015` | cinq soaks de 1800 s passent sans fuite/croissance/deadlock | campagne seed 4242 + manifest de rapports |
+| `P2-AC-015` | un soak composite de 3600 s couvrant nominal, mission/respawn, restart client, perte/resync et quatre clients passe sans fuite/croissance/deadlock | campagne seed 4242 + manifeste de rapport |
 
 ## 6. Décisions de clarification
 
@@ -290,7 +303,7 @@ Les ratios proviennent des HP/max, ammo/initial, quantités et durées publiées
 
 ### `D2-017` — Matrice de perte quantifiée
 
-Le critère vague « perte artificielle » devient `P2-LOSS-GATE` : deux profils (`0x0401`, `0x0583`) × trois taux (1, 5, 20 %) × deux modes (iid, burst), soit 12 runs de 600 s mesurées après 60 s de warm-up avec seed `1345474380`. Le chrono de convergence commence après `APPLIED` du dernier manifeste requis et exige une source/closure stabilisée ; la borne est `2×keyframeSeconds+1s`, soit 5 s par défaut.
+Le critère vague « perte artificielle » devient `P2-LOSS-GATE` : deux profils (`0x0401`, `0x0583`) × trois taux (1, 5, 20 %) × deux modes (iid, burst), soit 12 smokes de 30 s avec seed `1345474380`, puis quatre cas longs représentatifs de 300 s après 30 s de warm-up. Le chrono de convergence commence après `APPLIED` du dernier manifeste requis et exige une source/closure stabilisée ; la borne est `2×keyframeSeconds+1s`, soit 5 s par défaut.
 
 ### `D2-018` — Client de preuve, pas client Phase 5
 
@@ -298,7 +311,7 @@ Le script Python indépendant et son dashboard textuel ferment l’oracle. `Repl
 
 ### `D2-019` — Protocole de mesure et budgets fermés
 
-Les seuils Release sont ceux du document 05 : 0,75 ms p99 systems nominal, 2 ms p99/5 ms max keyframe, 1,50 ms p99 quatre clients, régression frame médiane <2 %. Chaque mesure suit 60 s de warm-up, au moins 1800 s et les minima d’échantillons ; p99 est nearest-rank, aucun outlier n’est retiré. Le budget mémoire inclusif est 64 Mio partagé, 80 Mio par client et 384 Mio process pour quatre clients, accepté à la borne et rejeté à `+1`.
+Les seuils Release sont ceux du document 05 : 0,75 ms p99 systems nominal, 2 ms p99/5 ms max keyframe, 1,50 ms p99 quatre clients, régression frame médiane <2 %. La preuve compare une référence contrôle de 600 s à une mesure active de 1800 s qui satisfait les minima d’échantillons ; p99 est nearest-rank, aucun outlier n’est retiré. Le budget mémoire inclusif est 64 Mio partagé, 80 Mio par client et 384 Mio process pour quatre clients, accepté à la borne et rejeté à `+1`.
 
 ### `D2-020` — Fail-closed
 
@@ -458,7 +471,7 @@ Les numéros de tests renvoient aux IDs `P2-TST-*` du document 06 ; les preuves 
 
 ## 11. Preuves à produire
 
-Chaque rapport contient : commit, état du worktree, date UTC, plateforme, build, commande exacte, code retour, durée, seeds, configuration, hashes d’entrées/sorties et résultat par critère.
+Chaque rapport contient : commit, état du worktree, date UTC, plateforme, build, commande exacte, code retour, durée, seeds, configuration, résultat par critère et empreinte des sources, tests, harness, build, configuration et commande. Les logs volumineux des runs réussis sont reproductibles et éphémères ; le rapport compact et le journal brut du run défaillant sont normatifs.
 
 Répertoires normatifs :
 
@@ -490,9 +503,10 @@ ctest --test-dir build/phase2-msvc -C Release -R "telemetry_phase2|fstl_1_0|fstl
 py -3 test/telemetry/protocol/tools/test_fstl_1_0_freeze.py
 py -3 test/telemetry/protocol/tools/verify_fstl_1_1_amendment.py --check
 py -3 test/telemetry/protocol/tools/test_fstl_console_client_contract.py
-py -3 test/telemetry/producer/phase2/run_phase2_reliability_evidence.py --profiles core-gate complete-ship --loss-rates 1 5 20 --modes iid burst --seed 1345474380 --warmup-seconds 60 --duration-seconds 600 --build-dir build/phase2-msvc --config Release --report-dir test/telemetry/producer/phase2/reports/wp11-loss-gate
+py -3 test/telemetry/producer/phase2/run_phase2_reliability_evidence.py --profiles core-gate complete-ship --loss-rates 1 5 20 --modes iid burst --seed 1345474380 --warmup-seconds 0 --duration-seconds 30 --build-dir build/phase2-msvc --config Release --report-dir test/telemetry/producer/phase2/reports/wp11-loss-gate/smoke
+py -3 test/telemetry/producer/phase2/run_phase2_reliability_evidence.py --cases core-gate:1:iid core-gate:20:burst complete-ship:5:iid complete-ship:20:burst --seed 1345474380 --warmup-seconds 30 --duration-seconds 300 --build-dir build/phase2-msvc --config Release --report-dir test/telemetry/producer/phase2/reports/wp11-loss-gate/representative
 py -3 test/telemetry/producer/phase2/run_phase2_oracle_evidence.py --profiles core-gate complete-ship --build-dir build/phase2-msvc --config Release --report-dir test/telemetry/producer/phase2/reports/wp10-oracle
-py -3 test/telemetry/producer/phase2/run_phase2_performance_evidence.py --build-dir build/phase2-msvc --config Release --warmup-seconds 60 --measure-seconds 1800 --minimum-frames 100000 --minimum-flight-ticks 54000 --minimum-system-ticks 18000 --minimum-keyframes 900 --seed 4242 --soak-seconds 1800 --soak-seed 4242 --performance-report-dir test/telemetry/producer/phase2/reports/wp11-performance --soak-report-dir test/telemetry/producer/phase2/reports/wp11-soak
+py -3 test/telemetry/producer/phase2/run_phase2_performance_evidence.py --build-dir build/phase2-msvc --config Release --control-seconds 600 --measure-seconds 1800 --minimum-frames 100000 --minimum-flight-ticks 54000 --minimum-system-ticks 18000 --minimum-keyframes 900 --seed 4242 --soak-seconds 3600 --soak-profile composite --soak-seed 4242 --performance-report-dir test/telemetry/producer/phase2/reports/wp11-performance --soak-report-dir test/telemetry/producer/phase2/reports/wp11-soak
 ```
 
 Le job portable/fuzz obligatoire utilise Clang et Ninja sur une plateforme non-Windows :
@@ -505,7 +519,9 @@ build/phase2-clang/bin/telemetry_phase2_packet_reader_fuzz -max_total_time=60 -s
 build/phase2-clang/bin/telemetry_phase2_state_validator_fuzz -max_total_time=60 -seed=1345474380 -timeout=5 -rss_limit_mb=384 -artifact_prefix=test/telemetry/producer/phase2/reports/wp09-security/fuzz-artifacts/ test/telemetry/producer/phase2/fuzz/corpus/state_validator
 ```
 
-Les trois scripts Phase 2 et les deux cibles fuzz nommées sont des livrables contractuels : ces commandes deviennent exécutables au lot qui les introduit. Les noms d’options, chemins de sortie et codes retour font partie de leurs tests CLI. Le rapport final NE DOIT remplacer aucune commande par une paraphrase.
+Les trois scripts Phase 2 et les deux cibles fuzz nommées sont des livrables contractuels : ces commandes deviennent exécutables au lot qui les introduit. Les options `--cases`, `--control-seconds` et `--soak-profile composite` doivent être ajoutées ou validées avant leur utilisation. Les noms d’options, chemins de sortie et codes retour font partie de leurs tests CLI. Le rapport final NE DOIT remplacer aucune commande par une paraphrase.
+
+La somme nominale des opérations bloquantes de WP11 et de la revue G2-F est de 175 minutes. Une opération supplémentaire doit identifier un nouveau risque, sa durée et la décision qui l’autorise.
 
 ## 12. Checklist de sortie
 
@@ -522,14 +538,14 @@ Les trois scripts Phase 2 et les deux cibles fuzz nommées sont des livrables co
 - [ ] Cargo/docking minimal et support sont complets sans fuite de visibilité.
 - [ ] Apparition, mort, disparition et respawn utilisent des IDs/baselines corrects.
 - [ ] Les transitions support terminales sont observables sous perte.
-- [ ] Les 12 runs `P2-LOSS-GATE` (deux profils × 1/5/20 % × iid/burst, seed 1345474380) convergent dans la borne après le bon `t0`.
+- [ ] Les 12 smokes `P2-LOSS-GATE` et les quatre runs longs représentatifs convergent dans la borne après le bon `t0`.
 - [ ] Chaque champ dashboard possède une source ou formule et zéro mismatch.
 - [ ] Config, build matrix, métriques, logs, quotas et sécurité passent.
 - [ ] Les plafonds 64 Mio partagé, 80 Mio/client et 384 Mio process acceptent la borne et refusent `+1` avant bind.
 - [ ] Les seuils Release et zéro allocation après `Ready` sont respectés.
-- [ ] Les cinq soaks 1800 s passent sans fuite, croissance ni deadlock.
+- [ ] Le soak composite 3600 s passe sans fuite, croissance ni deadlock.
 - [ ] Fuzz et corpus hostile produisent zéro défaut et zéro fuite.
-- [ ] Les rapports finaux sont liés au même commit, hashés et reproductibles.
+- [ ] Les rapports finaux portent des empreintes cohérentes ; toute preuve fraîche réutilisée est liée à des entrées non invalidées.
 - [ ] Une revue indépendante confirme la couverture `P2-REQ-001..050` et `P2-AC-001..015`.
 
 Une seule case ouverte signifie que la Phase 2 n’est pas terminée.

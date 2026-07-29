@@ -1,133 +1,137 @@
 ---
 name: prepare-telemetry-phase-spec
-description: Produce exhaustive, implementation-ready specifications for a numbered FS2Open telemetry roadmap phase. Use when the user asks to prepare, write, refresh, detail, plan, or document telemetry roadmap phases 0–7. Read every analysis source and prior phase contract, create the canonical eight-document structure, resolve cross-document ambiguities, define fast inner-loop versus work-package checkpoint versus phase-certification evidence, require dedicated build/test targets where practical, and validate structure, links, traceability, cadence, and Markdown quality.
+description: Prepare, rewrite, or migrate an implementation-ready specification for any numbered FS2Open telemetry roadmap phase. Use when the user asks to specify, plan, refresh, or reduce the proof burden of a telemetry phase. Preserve the product and wire contracts, keep exactly eight canonical documents, assign evidence by risk, require explicit cost and invalidation metadata for expensive proof, and cap certification at three hours unless a documented exception is approved.
 ---
 
 # Prepare a telemetry phase specification
 
-Produce a documentation specification, not an implementation. Preserve the frozen protocol and all earlier phase contracts unless the user explicitly requests a versioned change.
+Produce a product contract that is strict about observable behavior and economical about proving it. Do not implement production code.
 
-Read [references/document-structure-and-quality.md](references/document-structure-and-quality.md) completely before drafting. Use the bundled validator after writing.
+Read [references/evidence-policy.md](references/evidence-policy.md) before changing a phase specification. Run the bundled validator after editing.
 
-## 1. Resolve the target
+## 1. Establish the contract boundary
 
-1. Locate the repository root and verify these paths exist:
-   - `documentation/analysis/04-implementation-roadmap.md`
-   - `documentation/analysis/specs/0-Contrat-de-protocole/`
-2. Extract the exact heading and deliverables for the requested phase from the roadmap. Do not infer the phase from memory.
-3. Name the output folder `documentation/analysis/specs/<N>-<slug>/`, where `<slug>` is the roadmap title after `Phase N —`, transliterated to portable ASCII and joined with hyphens. Preserve the title's capitalization pattern; for example, Phase 1 becomes `1-Squelette-et-premier-flux`.
-4. If the target folder already exists, treat the task as an update: inventory it first, preserve valid content, and avoid destructive replacement.
+1. Locate the repository root, roadmap, Phase 0 protocol contract, target phase, and all lower completed phases.
+2. Read the eight target documents, the target roadmap section, and the directly inherited contracts completely.
+3. Inspect the named code and test seams. Mark future artifacts as proposed.
+4. Inventory the existing requirements, decisions, acceptance criteria, work packages, gates, and evidence.
+5. Preserve functional requirements, acceptance thresholds, phase boundaries, and wire compatibility unless the user explicitly authorizes a product-contract change.
 
-When updating a legacy specification, preserve its product contract. Add execution-cadence metadata without silently changing wire, behavior, acceptance thresholds, or phase scope.
+When migrating an existing phase, change the execution and evidence contract only. Do not regenerate the product specification or renumber stable IDs.
 
-Ask the user only if the requested number does not identify one roadmap phase or if a missing architectural decision would materially change the product. Otherwise make the most conservative decision consistent with prior contracts and record it in document 07.
+## 2. Keep the canonical structure
 
-## 2. Build the evidence base
-
-Before writing:
-
-1. Read repository instructions such as `AGENTS.md` when present and inspect `git status --short` without altering Git state.
-2. Inventory `documentation/analysis` with `rg --files`.
-3. Read every top-level Markdown file in `documentation/analysis` completely, including the global test plan, observability, risks, and recommended order in the roadmap.
-4. Read every document of Phase 0 completely. It is the normative wire contract and the quality exemplar.
-5. Read every completed specification for phases lower than the target. Later phases extend those contracts; they do not silently redefine them.
-6. Inspect the current repository code, CMake files, APIs, and integration seams named by the target phase. Use repository evidence for paths and symbols, and label proposed artifacts as proposed rather than existing.
-7. Search for all target-phase concepts across analysis, prior specs, and relevant code. Follow direct references until requirements, ownership, lifecycle, failure behavior, and tests are understood.
-
-Do not browse the web unless the user requests it or a current external fact is necessary. Prefer the repository and its own documentation.
-
-## 3. Create a requirement and decision inventory
-
-Before drafting, classify every target-phase statement into:
-
-- scope, exclusions, actors, authority, and trust boundary;
-- inherited contracts and new guarantees;
-- components, public interfaces, ownership, threading, and data flow;
-- lifecycle, state machines, ordering, idempotence, retries, and cleanup;
-- data fields, IDs, units, ranges, absence, cardinality, and source-of-truth;
-- configuration, safe defaults, capabilities, compatibility, and fallbacks;
-- resource limits, performance budgets, backpressure, and observability;
-- validation order, errors, security controls, and negative behavior;
-- tests, evidence, work packages, risks, and exit criteria.
-- proof cadence for each test and criterion: `inner-loop`, `wp-checkpoint`, or `phase-certification`;
-- dedicated fast build/test targets, readiness-review timing, and explicit escalation triggers.
-
-Create stable requirement IDs such as `P1-REQ-001` and decision IDs such as `D1-001`. Maintain a source-to-requirement map while drafting. Resolve contradictions explicitly; never hide one by choosing different wording in separate documents.
-
-## 4. Produce the eight-document structure
-
-Create exactly:
+Require exactly:
 
 ```text
-<N>-<phase-title>/
-├── README.md
-├── 01-<scope-role>.md
-├── 02-<architecture-role>.md
-├── 03-<flow-role>.md
-├── 04-<data-role>.md
-├── 05-<integration-role>.md
-├── 06-validation-securite-et-conformite.md
-└── 07-livraison-et-tracabilite.md
+README.md
+01-*.md
+02-*.md
+03-*.md
+04-*.md
+05-*.md
+06-validation-securite-et-conformite.md
+07-livraison-et-tracabilite.md
 ```
 
-Use the canonical filenames from the reference unless a phase-specific filename is materially clearer. Keep exactly one file for each prefix `01` through `07`; preserve the role and ordering even when adapting a filename.
+Write in French unless requested otherwise. Use normative `DOIT`, `NE DOIT PAS`, `DEVRAIT`, `NE DEVRAIT PAS`, and `PEUT`.
 
-Write in French unless the user requests another language. Use normative `DOIT`, `NE DOIT PAS`, `DEVRAIT`, `NE DEVRAIT PAS`, and `PEUT`. Define every default, limit, timeout, state, error, identifier, unit, optional field, cleanup rule, and acceptance threshold that an implementer would otherwise have to guess.
+Maintain traceability:
 
-Link inherited behavior instead of copying it incompletely. When a role is not implemented in the target phase, state the inherited contract, explain why no new behavior is introduced, and identify the later phase that owns it; never leave an empty document.
+```text
+roadmap/source -> requirement -> acceptance criterion -> work package -> gate -> evidence
+```
 
-In document 06, classify every named test or campaign by proof cadence. In document 07, give every `P<N>-WP-nn` section an execution block containing:
+Do not create a ninth phase document.
 
-- internal slices and a dedicated `inner-loop` target/filtered oracle;
-- the `readiness-review` entry condition;
-- `wp-checkpoint` Release/integration evidence;
-- `phase-certification` evidence, including an explicit `none at this WP` when not assigned;
-- risk escalations and the progress-tracker mapping.
+## 3. Design proof from risk
 
-Do not assign monolithic Release/LTO or whole-suite commands to `inner-loop`. Require a proposed dedicated target when the repository lacks one.
+Classify each criterion as `low`, `medium`, `high`, or `critical`.
 
-Do not add production code, build changes, hooks, commits, or generated binaries unless the user separately asks for implementation. The specification may define proposed paths and APIs, clearly marked as future deliverables.
+- `low`: local deterministic unit or static proof.
+- `medium`: focused integration or lifecycle proof.
+- `high`: representative matrix, hostile input, concurrency, or bounded endurance proof.
+- `critical`: public wire compatibility, trust boundary, security, corruption, or irreversible-state proof.
 
-## 5. Audit semantics before mechanical validation
+Assign one of three cadences:
 
-Perform a separate cross-document audit after the first complete draft:
+- `inner-loop`: seconds to a few minutes, author-owned and diagnostic;
+- `wp-checkpoint`: focused Release/integration proof after readiness;
+- `gate-certification`: independent evidence required to close a high-risk gate.
 
-1. Map every roadmap bullet and every relevant analysis requirement to a section, explicit exclusion, inherited contract, or future-phase boundary.
-2. Compare all repeated names, IDs, fields, units, bounds, defaults, timeouts, priorities, and state transitions across the eight documents and earlier phases.
-3. Verify component ownership, thread boundaries, shutdown order, error propagation, and bounded-resource behavior.
-4. Walk nominal, late-join, loss, duplication, reorder, timeout, restart, mission-change, disabled, and partial-capability scenarios as applicable.
-5. Ensure every acceptance criterion is measurable and linked to a fixture, test, metric, review, or reproducible observation.
-6. Verify expensive evidence belongs to one explicit checkpoint or certification gate and that every WP has a fast feedback path.
-7. Verify readiness review occurs before Release evidence binding and downstream authorization requires the final gate report.
-8. Remove `TODO`, `TBD`, placeholders, vague "as needed" behavior, and claims that unimplemented artifacts already exist.
-9. Confirm document 07 contains complete traceability to every top-level analysis source and all inherited phase specs.
+For every operation expected to exceed five minutes, record:
 
-Fix every contradiction found, then repeat the audit on the changed passages.
+- risk and contract rows covered;
+- command or reproducible procedure;
+- estimated wall time;
+- qualification prerequisite;
+- stopping rule;
+- source/test/harness/configuration dependencies;
+- invalidation rule;
+- evidence-reuse key;
+- owner and gate.
 
-## 6. Run the bundled validator
+Reject an expensive operation that lacks any field above, duplicates fresher evidence, or has no unique risk.
 
-From the repository root, run:
+## 4. Bound certification
+
+Add this machine-readable marker to document 06:
+
+```text
+<!-- certification-budget-minutes: 180 -->
+```
+
+The default phase-certification budget is 180 minutes including builds, campaigns, and independent review. A larger value requires a nearby `Certification budget exception` section containing the risk, alternatives rejected, expected duration, and user decision.
+
+Prefer:
+
+- short coverage over every cheap matrix cell;
+- long runs on representative boundary cases;
+- one composite soak instead of several overlapping soaks;
+- one control/active performance comparison;
+- reuse of fresh security, fuzz, protocol, and platform evidence.
+
+Do not use certification as a debugging loop. Require harness and oracle qualification with short deterministic cases before a long campaign.
+
+## 5. Define work packages and gates
+
+For every work package, define:
+
+- owned requirements and acceptance criteria;
+- dependency-complete scope and explicit exclusions;
+- fast inner-loop command;
+- readiness condition;
+- checkpoint evidence;
+- gate-certification evidence, or `none`;
+- risk escalation trigger;
+- evidence invalidation cone;
+- tracker mapping.
+
+A gate must make one new acceptance decision. Merge or remove a gate that only repeats prior proof.
+
+Require independent test evidence and review at gate readiness/closure. Do not require independent handoffs for every implementation edit.
+
+## 6. Audit and validate
+
+Before running the validator:
+
+1. Walk nominal, disabled, failure, restart, mission-change, loss, reorder, timeout, overload, and cleanup paths when applicable.
+2. Verify repeated IDs, constants, units, timeouts, states, ownership, and thread boundaries.
+3. Confirm every acceptance criterion has measurable proof.
+4. Confirm every expensive proof has one owning risk and no redundant gate.
+5. Sum the certification budget and keep it within the marker.
+6. Remove placeholders and ambiguous proof language.
+
+Run:
 
 ```powershell
 & '<skill-directory>\scripts\validate_phase_specs.ps1' `
   -PhaseNumber <N> `
-  -PhaseDirectory 'documentation/analysis/specs/<N>-<slug>' `
-  -AnalysisDirectory 'documentation/analysis' `
-  -RoadmapPath 'documentation/analysis/04-implementation-roadmap.md' `
-  -RequireExecutionCadence
+  -PhaseDirectory 'documentation/analysis/specs/<N>-<slug>'
 ```
 
-Resolve `<skill-directory>` relative to this `SKILL.md`. Fix all reported errors. The script checks structure, strict UTF-8, Markdown fences, local links and anchors, stale markers, required sections, and source traceability. It does not replace the semantic audit.
+Fix all errors. Mechanical validation does not replace the semantic audit.
 
 ## 7. Deliver
 
-Report:
-
-- the absolute link to the phase `README.md`;
-- the eight documents created or updated;
-- the principal decisions and inherited contracts;
-- validation results and any deliberately deferred implementation artifacts;
-- the inner-loop, checkpoint, and certification strategy;
-- unresolved blockers, if any.
-
-Do not declare the phase complete merely because its specification exists. Distinguish the documentation delivery from the code, tests, measurements, reviews, and other evidence required by its exit gate.
+Report the preserved product boundary, changed execution contract, gate count, long campaigns, total certification budget, reuse rules, validator result, and unresolved conflicts. Do not claim implementation completion.

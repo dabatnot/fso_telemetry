@@ -1,4 +1,4 @@
 interface:
-  display_name: "Implémenter une phase télémétrie"
-  short_description: "Implémente vite avec preuves et suivi persistants"
-  default_prompt: "Utilise $implement-telemetry-phase pour implémenter ou reprendre une phase avec une boucle rapide, des checkpoints vérifiés et un suivi persistant."
+  display_name: "Implement Telemetry Phase"
+  short_description: "Deliver telemetry phases with bounded proof"
+  default_prompt: "Use $implement-telemetry-phase to implement or resume a telemetry phase efficiently."

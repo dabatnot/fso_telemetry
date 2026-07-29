@@ -1,5 +1,7 @@
 # 06 — Validation, sécurité et conformité
 
+<!-- certification-budget-minutes: 180 -->
+
 ## 1. Objet
 
 Ce document définit les tests, oracles, scénarios réseau, contrôles de sécurité et preuves nécessaires pour fermer la Phase 2. Une compilation réussie ou une démonstration visuelle ne suffit pas.
@@ -41,6 +43,23 @@ Une erreur arrête le pipeline et produit exactement une raison primaire. Aucun 
 Le client de preuve étend `test/telemetry/protocol/tools/fstl_console_client.py`. Il NE DOIT importer ni appeler le codec C++ du producteur. Il lit le schéma/goldens, valide transactions et couverture, maintient manifeste/baseline, puis affiche l’état Phase 2.
 
 Le décodeur doit reconnaître au minimum les records 1–14, 20–22 et `EVENTS` type 28, les manifests 3/4, les cinq kinds lifecycle `1 ENTITY_APPEARED`, `17 SHIP_DISABLED`, `18 SHIP_DYING_STARTED`, `19 ENTITY_DESTROYED`, `3 ENTITY_DISAPPEARED`, ainsi que les mutations de delta. Un type inconnu suit strictement la politique FSTL, sans heuristique.
+
+### 3.3 Cadence, risque et budget
+
+La boucle `inner-loop` utilise uniquement une cible dédiée et un oracle déterministe court. Le `wp-checkpoint` lie les preuves Release directement invalidées. La `gate-certification` est réservée aux risques qui ne peuvent pas être fermés par ces preuves courtes.
+
+Toute opération de plus de cinq minutes DOIT déclarer son risque, sa durée estimée, sa qualification, son critère d’arrêt, son cône d’invalidation et sa clé de réutilisation. Une campagne de certification NE DOIT PAS servir au diagnostic : au premier échec, elle s’arrête au profit d’un reproducer court.
+
+| Preuve | Risque couvert | Cadence | Durée estimée | Qualification | Critère d’arrêt | Invalidation | Réutilisation |
+|---|---|---|---:|---|---|---|---|
+| build Release ciblé + qualifications WP11 | harness ou binaire non représentatif | `wp-checkpoint` | 20 min | tests contractuels et deux scénarios courts | premier build/test rouge | sources, tests, harness, CMake | `P2-EV-WP11-READY` |
+| 12 smokes de perte | cellule de matrice non exercée | `gate-certification` | 10 min | `core-gate-20-burst` et `complete-ship-20-burst` verts en court | premier scénario rouge | runtime, harness, oracle, profils, seed | `P2-EV-LOSS-SMOKE` |
+| 4 scénarios de perte représentatifs | convergence aux frontières de risque | `gate-certification` | 25 min | matrice smoke 12/12 verte | premier scénario rouge ou borne dépassée | mêmes dépendances que le smoke | `P2-EV-LOSS-LONG` |
+| performance contrôle/actif | hitch, allocation ou p99 hors budget | `gate-certification` | 40 min | runner court, compteurs et percentiles qualifiés | premier seuil dépassé | runtime, runner, flags, hôte | `P2-EV-PERF` |
+| soak composite | fuite, deadlock ou défaut de lifecycle tardif | `gate-certification` | 60 min | scénario composite court vert | fuite, croissance, deadlock ou état final faux | runtime, harness, configuration composite | `P2-EV-SOAK` |
+| audit et revue de gate | preuve incohérente ou périmètre dépassé | `gate-certification` | 20 min | preuves précédentes conclusive | preuve absente ou empreinte stale | rapports, tracker, diff | `P2-EV-G2F-AUDIT` |
+
+Le budget nominal est donc de 175 minutes, marge comprise dans le plafond de 180 minutes. Une preuve WP09 ou WP10 reste réutilisable tant que son empreinte de production, test, harness, build et configuration n’est pas invalidée.
 
 ## 4. Oracles et tolérances
 
@@ -217,14 +236,21 @@ Les tests property-based vérifient :
 
 ### 7.1 Matrice `P2-LOSS-GATE`
 
-Le harness utilise la seed correcte `1345474380` (`0x50324F4C`) et des streams PRNG séparés nommés par `(profile,rate,mode,direction)`. Pour chacun des profils `CoreGate/0x0401` et `CompleteShip/0x0583`, il exécute séparément six runs de 600 secondes **après** 60 secondes de warm-up : taux `1 %`, `5 %`, `20 %`, chacun en mode `iid` puis `burst`.
+Le harness utilise la seed correcte `1345474380` (`0x50324F4C`) et des streams PRNG séparés nommés par `(profile,rate,mode,direction)`. Pour chacun des profils `CoreGate/0x0401` et `CompleteShip/0x0583`, il exécute un smoke déterministe de 30 secondes pour les taux `1 %`, `5 %`, `20 %`, chacun en mode `iid` puis `burst`, soit douze cellules.
+
+Après qualification de la matrice courte, quatre cas représentatifs sont exécutés pendant 300 secondes après 30 secondes de warm-up :
+
+1. `CoreGate`, 1 %, `iid` ;
+2. `CoreGate`, 20 %, `burst` ;
+3. `CompleteShip`, 5 %, `iid` ;
+4. `CompleteShip`, 20 %, `burst`.
 
 - `iid` : chaque datagramme est perdu par Bernoulli au taux du run ;
 - `burst` : chaque bloc directionnel de 100 datagrammes perd un segment contigu de longueur 1, 5 ou 20, dont le départ modulo 100 vient du stream seedé ;
-- pour les deux modes : duplication 2 %, jitter uniforme `[0,100] ms`, réordonnement borné à 8 datagrammes et deux blackouts complets de 500 ms à t=120 s et t=360 s ;
+- pour les deux modes : duplication 2 %, jitter uniforme `[0,100] ms`, réordonnement borné à 8 datagrammes et deux blackouts complets de 500 ms placés à 40 % et 75 % de la durée mesurée ;
 - les directions producteur→client et client→producteur ont des streams indépendants ; aucune corruption silencieuse, les tests CRC étant séparés.
 
-Le script modifie au moins une valeur de chaque bloc couvert par le profil pendant les perturbations. `CompleteShip` déclenche en plus changement de banque, transition support, changement topologique et respawn avec éventuel manifeste N+1. Les critères vidéo Phase 7 ne s’appliquent pas. Chaque run conserve ses décisions de drop exactes afin d’être rejoué bit-à-bit.
+Le script modifie au moins une valeur de chaque bloc couvert par le profil pendant les perturbations. `CompleteShip` déclenche en plus changement de banque, transition support, changement topologique et respawn avec éventuel manifeste N+1. Les critères vidéo Phase 7 ne s’appliquent pas. Chaque run conserve son rapport et son empreinte ; seul le journal de décisions d’un échec doit être conservé pour rejeu bit-à-bit.
 
 ### 7.2 Critères de réussite
 
@@ -239,11 +265,11 @@ Avec le défaut `keyframeSeconds=2` :
 - zéro crash, deadlock, allocation non bornée ou commande simulation ;
 - le rapport contient temps de convergence par bloc, maximum global, paquets injectés et hashes finaux.
 
-Les douze runs sont bloquants et chacun applique la formule générale `2 × keyframeSeconds + 1 s`, soit 3 à 11 secondes dans le domaine configuré. Un résultat agrégé ne masque jamais un run en échec.
+Les douze smokes et les quatre runs représentatifs sont bloquants et chacun applique la formule générale `2 × keyframeSeconds + 1 s`, soit 3 à 11 secondes dans le domaine configuré. Un résultat agrégé ne masque jamais un run en échec.
 
-### 7.3 Stress non bloquant
+### 7.3 Qualification et arrêt
 
-En plus de la matrice, un profil de 20 % perte iid, duplication 5 %, jitter 250 ms, reorder 32 et blackouts de 2 s est exécuté 600 s par profil. Il prouve sécurité, bornes et convergence éventuelle après le même `t0`; son seuil est rapporté mais ne remplace aucun des douze runs.
+Avant la matrice, le testeur qualifie l’oracle sur deux scénarios courts, dont `core-gate-20-burst`, et démontre qu’un rapport volontairement incomplet est refusé. Toute campagne s’arrête au premier run rouge. Le reproducer ciblé devient alors la seule opération autorisée jusqu’à correction et revue de son cône d’invalidation.
 
 ## 8. Fuzzing et corpus hostile
 
@@ -291,17 +317,11 @@ Les tests recherchent aussi pointeurs plausibles, `objnum`, `instance`, index n�
 
 ### 10.1 Performance
 
-Les scénarios et seuils de [05-integration-configuration-et-observabilite.md](05-integration-configuration-et-observabilite.md) sont exécutés en Release. Le rapport inclut tous les échantillons et high-water. Un seul dépassement de max keyframe, une allocation après `Ready` ou un p99 au-dessus du seuil laisse la gate ouverte.
+Les scénarios et seuils de [05-integration-configuration-et-observabilite.md](05-integration-configuration-et-observabilite.md) sont exécutés en Release. Une référence contrôle de 600 secondes est suivie d’une mesure active de 1800 secondes, suffisante pour les minima de 100 000 frames, 54 000 ticks flight, 18 000 ticks systems et 900 keyframes. Le rapport inclut tous les échantillons et high-water. Un seul dépassement de max keyframe, une allocation après `Ready` ou un p99 au-dessus du seuil laisse la gate ouverte.
 
 ### 10.2 Endurance
 
-Le soak final dure 1800 secondes par scénario avec la seed de base unique 4242. Chaque scénario dérive un sous-flux déterministe distinct depuis la paire `(4242, nom_canonique_du_scénario)` ; aucune liste implicite de cinq seeds n’existe :
-
-1. session nominale avec changements continus de tous les blocs ;
-2. trois sorties/entrées mission et respawns ;
-3. trois arrêts/restarts du client ;
-4. profil `P2-LOSS-GATE` avec resync ;
-5. quatre clients dont un lent.
+Le soak final est un scénario composite unique de 3600 secondes avec la seed 4242. Il combine une session nominale avec changements continus de tous les blocs, trois sorties/entrées mission et respawns, trois arrêts/restarts du client, des segments `P2-LOSS-GATE` avec resync et quatre clients dont un lent. Les transitions sont planifiées de façon déterministe et consignées dans le rapport.
 
 Critères : zéro fuite détectée, zéro croissance steady-state, zéro deadlock, sockets/slots/gauges à zéro après purge, IDs non réutilisés, état final exact et shutdown borné. Les rapports Phase 1 ne sont pas réutilisés comme preuve Phase 2, mais servent de baseline.
 
