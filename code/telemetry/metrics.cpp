@@ -23,6 +23,20 @@ void TelemetryMetrics::reset_mission() noexcept
 {
 	m_snapshot.mission_counters = {};
 	m_snapshot.mission_histograms = {};
+	m_snapshot.mission_phase2_capture_duration = {};
+	m_snapshot.mission_phase2_capture_failures = {};
+	m_snapshot.mission_phase2_closure_results = {};
+	m_snapshot.mission_phase2_lifecycle_events = {};
+	m_snapshot.mission_phase2_support_transitions = {};
+	m_snapshot.mission_phase2_support_coalesced = {};
+	m_snapshot.mission_phase2_source_limits = {};
+	m_snapshot.mission_phase2_image_duration = {};
+	m_snapshot.phase2_closure_classes = 0U;
+	m_snapshot.phase2_closure_ships = 0U;
+	m_snapshot.phase2_closure_weapons = 0U;
+	m_snapshot.phase2_closure_subsystems = 0U;
+	m_snapshot.phase2_ring_depth = {};
+	m_snapshot.phase2_ring_high_water = {};
 	m_snapshot.current_player_entity_id = 0U;
 }
 
@@ -124,6 +138,258 @@ void TelemetryMetrics::record_runtime_fault(TelemetryRuntimeFaultReason reason) 
 	if (!m_snapshot.provisioned) return;
 	const auto index = static_cast<std::size_t>(reason);
 	if (index < m_snapshot.runtime_faults.size()) saturating_add(m_snapshot.runtime_faults[index], 1U);
+}
+
+void TelemetryMetrics::record_phase2_profile_rejection(
+	TelemetryPhase2ProfileRejection reason) noexcept
+{
+	if (!m_snapshot.provisioned) return;
+	const auto index = static_cast<std::size_t>(reason);
+	if (index < m_snapshot.phase2_profile_rejections.size())
+		saturating_add(m_snapshot.phase2_profile_rejections[index], 1U);
+}
+
+void TelemetryMetrics::set_phase2_profile(
+	std::size_t slot, TelemetryPhase2Profile profile) noexcept
+{
+	if (!m_snapshot.provisioned || !valid_slot(slot) ||
+		static_cast<std::size_t>(profile) >=
+			static_cast<std::size_t>(TelemetryPhase2Profile::Count))
+		return;
+	m_snapshot.sessions[slot].phase2_profile = profile;
+}
+
+void TelemetryMetrics::observe_phase2_capture(
+	TelemetryPhase2Block block, std::uint64_t duration_us) noexcept
+{
+	if (!m_snapshot.provisioned) return;
+	const auto index = static_cast<std::size_t>(block);
+	if (index >= m_snapshot.phase2_capture_duration.size()) return;
+	observe(m_snapshot.phase2_capture_duration[index], duration_us);
+	observe(m_snapshot.mission_phase2_capture_duration[index],
+		duration_us);
+}
+
+void TelemetryMetrics::record_phase2_capture_failure(
+	TelemetryPhase2Block block,
+	TelemetryPhase2CaptureFailure reason) noexcept
+{
+	if (!m_snapshot.provisioned) return;
+	const auto block_index = static_cast<std::size_t>(block);
+	const auto reason_index = static_cast<std::size_t>(reason);
+	if (block_index >= m_snapshot.phase2_capture_failures.size() ||
+		reason_index >=
+			m_snapshot.phase2_capture_failures[block_index].size())
+		return;
+	saturating_add(
+		m_snapshot.phase2_capture_failures[block_index][reason_index],
+		1U);
+	saturating_add(
+		m_snapshot.mission_phase2_capture_failures
+			[block_index][reason_index],
+		1U);
+}
+
+void TelemetryMetrics::record_phase2_closure(
+	TelemetryPhase2ClosureResult result) noexcept
+{
+	if (!m_snapshot.provisioned) return;
+	const auto index = static_cast<std::size_t>(result);
+	if (index < m_snapshot.phase2_closure_results.size()) {
+		saturating_add(m_snapshot.phase2_closure_results[index], 1U);
+		saturating_add(
+			m_snapshot.mission_phase2_closure_results[index], 1U);
+	}
+}
+
+void TelemetryMetrics::set_phase2_closure(std::uint64_t classes,
+	std::uint64_t ships, std::uint64_t weapons,
+	std::uint64_t subsystems) noexcept
+{
+	if (!m_snapshot.provisioned) return;
+	m_snapshot.phase2_closure_classes = classes;
+	m_snapshot.phase2_closure_ships = ships > 64U ? 64U : ships;
+	m_snapshot.phase2_closure_weapons = weapons;
+	m_snapshot.phase2_closure_subsystems =
+		subsystems > 4096U ? 4096U : subsystems;
+}
+
+void TelemetryMetrics::record_phase2_manifest(std::size_t slot,
+	TelemetryPhase2ManifestResult result, std::uint64_t bytes,
+	std::uint64_t parts, std::uint64_t duration_us) noexcept
+{
+	if (!m_snapshot.provisioned || !valid_slot(slot)) return;
+	const auto index = static_cast<std::size_t>(result);
+	if (index < m_snapshot.phase2_manifest_results.size()) {
+		saturating_add(m_snapshot.phase2_manifest_results[index], 1U);
+		saturating_add(
+			m_snapshot.sessions[slot].phase2_manifest_builds[index],
+			1U);
+	}
+	auto& session = m_snapshot.sessions[slot];
+	session.phase2_manifest_bytes = bytes;
+	session.phase2_manifest_parts = parts > 64U ? 64U : parts;
+	observe(m_snapshot.phase2_manifest_duration, duration_us);
+	observe(session.phase2_manifest_duration, duration_us);
+}
+
+void TelemetryMetrics::observe_phase2_image(
+	std::uint64_t duration_us) noexcept
+{
+	if (!m_snapshot.provisioned) return;
+	observe(m_snapshot.phase2_image_duration, duration_us);
+	observe(m_snapshot.mission_phase2_image_duration, duration_us);
+}
+
+void TelemetryMetrics::record_phase2_lifecycle(
+	TelemetryPhase2LifecycleKind kind) noexcept
+{
+	if (!m_snapshot.provisioned) return;
+	const auto index = static_cast<std::size_t>(kind);
+	if (index >= m_snapshot.phase2_lifecycle_events.size()) return;
+	saturating_add(m_snapshot.phase2_lifecycle_events[index], 1U);
+	saturating_add(
+		m_snapshot.mission_phase2_lifecycle_events[index], 1U);
+}
+
+void TelemetryMetrics::record_phase2_support(
+	TelemetryPhase2SupportKind kind) noexcept
+{
+	if (!m_snapshot.provisioned) return;
+	const auto index = static_cast<std::size_t>(kind);
+	if (index >= m_snapshot.phase2_support_transitions.size()) return;
+	saturating_add(m_snapshot.phase2_support_transitions[index], 1U);
+	saturating_add(
+		m_snapshot.mission_phase2_support_transitions[index], 1U);
+}
+
+void TelemetryMetrics::record_phase2_support_coalesced(std::size_t slot,
+	TelemetryPhase2SupportCoalescedKind kind) noexcept
+{
+	if (!m_snapshot.provisioned || !valid_slot(slot)) return;
+	const auto index = static_cast<std::size_t>(kind);
+	if (index >= m_snapshot.phase2_support_coalesced.size()) return;
+	saturating_add(m_snapshot.phase2_support_coalesced[index], 1U);
+	saturating_add(
+		m_snapshot.mission_phase2_support_coalesced[index], 1U);
+}
+
+void TelemetryMetrics::set_phase2_ring(
+	TelemetryPhase2Ring ring, std::uint64_t depth) noexcept
+{
+	if (!m_snapshot.provisioned) return;
+	const auto index = static_cast<std::size_t>(ring);
+	if (index >= m_snapshot.phase2_ring_depth.size()) return;
+	const auto bounded = depth > 64U ? 64U : depth;
+	m_snapshot.phase2_ring_depth[index] = bounded;
+	auto& high = m_snapshot.phase2_ring_high_water[index];
+	if (bounded > high) high = bounded;
+}
+
+void TelemetryMetrics::record_phase2_ring_overflow(
+	TelemetryPhase2Ring ring) noexcept
+{
+	if (!m_snapshot.provisioned) return;
+	const auto index = static_cast<std::size_t>(ring);
+	if (index < m_snapshot.phase2_ring_overflows.size())
+		saturating_add(m_snapshot.phase2_ring_overflows[index], 1U);
+}
+
+void TelemetryMetrics::set_phase2_support_latches(
+	std::size_t slot, std::uint64_t count) noexcept
+{
+	if (!m_snapshot.provisioned || !valid_slot(slot)) return;
+	auto& session = m_snapshot.sessions[slot];
+	session.phase2_support_latches = count > 64U ? 64U : count;
+	if (session.phase2_support_latches >
+		session.phase2_support_latches_high_water)
+		session.phase2_support_latches_high_water =
+			session.phase2_support_latches;
+}
+
+void TelemetryMetrics::record_phase2_forced_keyframe(std::size_t slot,
+	TelemetryPhase2KeyframeReason reason) noexcept
+{
+	if (!m_snapshot.provisioned || !valid_slot(slot)) return;
+	const auto index = static_cast<std::size_t>(reason);
+	if (index >= m_snapshot.phase2_forced_keyframes.size()) return;
+	saturating_add(m_snapshot.phase2_forced_keyframes[index], 1U);
+	saturating_add(
+		m_snapshot.sessions[slot].phase2_forced_keyframes[index], 1U);
+}
+
+void TelemetryMetrics::set_phase2_sample_age(std::size_t slot,
+	TelemetryPhase2Block block, std::uint64_t age_us) noexcept
+{
+	if (!m_snapshot.provisioned || !valid_slot(slot)) return;
+	const auto index = static_cast<std::size_t>(block);
+	if (index < m_snapshot.sessions[slot].phase2_sample_age_us.size())
+		m_snapshot.sessions[slot].phase2_sample_age_us[index] = age_us;
+}
+
+void TelemetryMetrics::set_phase2_manifest_generations(
+	std::size_t slot, std::uint64_t generations) noexcept
+{
+	if (!m_snapshot.provisioned || !valid_slot(slot)) return;
+	m_snapshot.sessions[slot].phase2_manifest_generations =
+		generations > 2U ? 2U : generations;
+}
+
+void TelemetryMetrics::record_phase2_manifest_rebuild_coalesced(
+	std::size_t slot) noexcept
+{
+	if (!m_snapshot.provisioned || !valid_slot(slot)) return;
+	saturating_add(
+		m_snapshot.sessions[slot]
+			.phase2_manifest_rebuild_coalesced, 1U);
+	saturating_add(
+		m_snapshot.phase2_manifest_rebuild_coalesced, 1U);
+}
+
+void TelemetryMetrics::record_phase2_source_limit(
+	TelemetryPhase2SourceLimit limit) noexcept
+{
+	if (!m_snapshot.provisioned) return;
+	const auto index = static_cast<std::size_t>(limit);
+	if (index < m_snapshot.phase2_source_limits.size()) {
+		saturating_add(m_snapshot.phase2_source_limits[index], 1U);
+		saturating_add(
+			m_snapshot.mission_phase2_source_limits[index], 1U);
+	}
+}
+
+void TelemetryMetrics::record_phase2_allocation_after_ready(
+	TelemetryPhase2AllocationKind kind) noexcept
+{
+	if (!m_snapshot.provisioned) return;
+	const auto index = static_cast<std::size_t>(kind);
+	if (index < m_snapshot.phase2_allocations_after_ready.size())
+		saturating_add(m_snapshot.phase2_allocations_after_ready[index], 1U);
+}
+
+void TelemetryMetrics::set_phase2_memory(
+	TelemetryPhase2MemoryScope scope, std::uint64_t bytes) noexcept
+{
+	if (!m_snapshot.provisioned) return;
+	const auto index = static_cast<std::size_t>(scope);
+	if (index >= m_snapshot.phase2_memory_bytes.size()) return;
+	m_snapshot.phase2_memory_bytes[index] = bytes;
+	auto& high_water = m_snapshot.phase2_memory_high_water[index];
+	if (bytes > high_water) high_water = bytes;
+}
+
+void TelemetryMetrics::set_phase2_session_state(std::size_t slot,
+	std::uint64_t image_records, std::uint64_t image_bytes,
+	std::uint64_t dirty_atoms,
+	std::uint64_t manifest_generations) noexcept
+{
+	if (!m_snapshot.provisioned || !valid_slot(slot)) return;
+	auto& session = m_snapshot.sessions[slot];
+	session.phase2_image_records = image_records;
+	session.phase2_image_bytes = image_bytes;
+	session.phase2_dirty_atoms = dirty_atoms;
+	session.phase2_manifest_generations =
+		manifest_generations > 2U ? 2U : manifest_generations;
 }
 
 void TelemetryMetrics::record_callback(TelemetryCallbackKind kind, std::uint64_t duration_us) noexcept

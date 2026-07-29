@@ -26,8 +26,10 @@ struct Phase2ManifestLimits {
 	static constexpr std::uint32_t MaxAuxiliaryEntries = 256;
 };
 
-enum class AuxiliaryRegistry : std::uint8_t { Species, ShipType, Iff, Wing, Armor, DamageType };
-enum class WeaponFamily : std::uint8_t { Primary, Secondary, Tertiary, Turret };
+enum class AuxiliaryRegistry : std::uint8_t {
+	Species, ShipType, Iff, Wing, Armor, DamageType, Pattern
+};
+using protocol::WeaponFamily;
 
 struct Phase2Vec3 { float x = 0, y = 0, z = 0; };
 struct Phase2SubsystemSource {
@@ -45,6 +47,7 @@ struct Phase2BankSource {
 	std::uint16_t bank_index = 0;
 	std::uint16_t owner_subsystem_canonical_index=UINT16_MAX;
 	std::uint32_t weapon_source_key = 0;
+	std::uint8_t firing_pattern_source_code = 0U;
 	bool consumes_ammunition=false;
 	float capacity = 0;
 	std::array<Phase2Vec3, Phase2ManifestLimits::MaxFirePoints> fire_points{};
@@ -111,6 +114,7 @@ struct Phase2ManifestSource {
 	std::uint32_t auxiliary_entry_count=0;
 	Phase2ManifestMetadata metadata{};
 	std::uint32_t player_instance_signature=0, engine_index=0, manifest_generation=0;
+	protocol::Sha256Digest topology_fingerprint{};
 };
 
 struct Phase2OwnedName {
@@ -128,7 +132,7 @@ struct Phase2OwnedName {
 	friend bool operator==(std::string_view a,const Phase2OwnedName& b) noexcept { return b==a; }
 };
 struct Phase2SubsystemRecord {
-	std::uint32_t subsystem_id=0, canonical_index=0, armor_id=0;
+	std::uint32_t source_key=0, subsystem_id=0, canonical_index=0, armor_id=0;
 };
 struct Phase2BankRecord {
 	std::uint32_t bank_id=0, weapon_class_id=0;
@@ -138,6 +142,8 @@ struct Phase2BankRecord {
 	std::uint16_t canonical_index=0, source_index=0;
 	float capacity=0;
 	std::uint32_t fire_point_count=0;
+	std::uint32_t pattern_id=0;
+	bool consumes_ammunition=false;
 };
 template <typename T> struct Phase2RecordView {
 	T* data=nullptr;
@@ -150,12 +156,13 @@ template <typename T> struct Phase2RecordView {
 	const T* end() const noexcept { return data+capacity; }
 };
 struct Phase2ClassRecord {
-	std::uint32_t class_id=0, species_id=0, ship_type_id=0, iff_id=0, wing_id=0, armor_id=0, damage_type_id=0;
+	std::uint32_t source_key=0, class_id=0, species_id=0, ship_type_id=0, iff_id=0, wing_id=0, armor_id=0, damage_type_id=0;
 	Phase2OwnedName name;
 	float mass=0;
 	std::array<float,3> inertia{}, half_angles_rad{};
 	std::uint32_t countermeasure_weapon_class_id=0, countermeasure_initial_count=0;
 	std::uint64_t countermeasure_firewait_us=0;
+	bool countermeasure_installed=false;
 	Phase2RecordView<Phase2SubsystemRecord> subsystems;
 	std::uint32_t subsystem_count=0;
 	Phase2RecordView<Phase2BankRecord> banks;
@@ -163,7 +170,15 @@ struct Phase2ClassRecord {
 	bool has_wing() const noexcept { return wing_id != 0; }
 	bool has_armor() const noexcept { return armor_id != 0; }
 };
-struct Phase2WeaponRecord { std::uint32_t weapon_class_id=0, damage_type_id=0; Phase2OwnedName name; };
+struct Phase2WeaponRecord {
+	std::uint32_t source_key=0, weapon_class_id=0, damage_type_id=0;
+	std::uint64_t class_flags=0;
+	Phase2OwnedName name;
+};
+struct Phase2AuxiliaryRecord {
+	AuxiliaryRegistry registry=AuxiliaryRegistry::Species;
+	std::uint32_t source_key=0, public_id=0;
+};
 struct Phase2ManifestCandidate {
 	protocol::ManifestKind kind=protocol::ManifestKind::FullRequired;
 	std::uint32_t manifest_id=0, encoded_size=0, aggregate_subsystem_count=0;
@@ -173,6 +188,8 @@ struct Phase2ManifestCandidate {
 	std::array<Phase2WeaponRecord,Phase2ManifestLimits::MaxWeapons> weapon_records{};
 	std::array<Phase2SubsystemRecord,Phase2ManifestLimits::MaxAggregateSubsystems> subsystem_records{};
 	std::array<Phase2BankRecord,Phase2ManifestLimits::MaxClasses*Phase2ManifestLimits::MaxBanksPerClass> bank_records{};
+	std::array<Phase2AuxiliaryRecord,Phase2ManifestLimits::MaxAuxiliaryEntries> auxiliary_records{};
+	std::uint32_t auxiliary_record_count=0;
 	std::array<protocol::ManifestPartPayload, protocol::MaxTransactionParts> parts{};
 	std::uint16_t part_count=0;
 	protocol::ByteView encoded_bytes;

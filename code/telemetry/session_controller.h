@@ -6,6 +6,8 @@
 #include "telemetry/phase1_delta_egress.h"
 #include "telemetry/phase1_snapshot_egress.h"
 #include "telemetry/phase1_snapshot_slot.h"
+#include "telemetry/phase2_runtime.h"
+#include "telemetry/phase2_session_transition.h"
 #include "telemetry/protocol/telemetry_rate_limiter.h"
 #include "telemetry/protocol/telemetry_clock.h"
 #include "telemetry/protocol/telemetry_counters.h"
@@ -57,12 +59,24 @@ enum class SessionIngressStage : std::uint8_t {
 	Payload,
 	SessionMutation,
 };
-enum class ProducerSessionProgress : std::uint8_t { Empty = 0, AwaitWelcomeApplied, ReadyForState, Stale };
+enum class ProducerSessionProgress : std::uint8_t {
+	Empty = 0,
+	AwaitWelcomeApplied,
+	ReadyForState,
+	Stale,
+	FaultedSession
+};
 enum class SessionCloseReason : std::uint8_t { ProtocolError = 0, Timeout, MissionDiscontinuity, TransportError, Shutdown };
 
 struct SessionIngressResult {
 	SessionIngressDisposition disposition = SessionIngressDisposition::Dropped;
 	SessionIngressDropReason drop_reason = SessionIngressDropReason::None;
+	protocol::ProducerResyncResult phase2_resync_result =
+		protocol::ProducerResyncResult::NoChange;
+	std::size_t phase2_resync_slot = 0U;
+	bool has_phase2_resync = false;
+	std::size_t phase2_manifest_applied_slot = 0U;
+	bool has_phase2_manifest_applied = false;
 };
 
 class SessionControllerObserver {
@@ -77,6 +91,9 @@ struct SessionControllerConfig {
 	std::uint16_t mission_heartbeat_ms = 500U;
 	std::uint16_t idle_heartbeat_ms = 1000U;
 	std::uint8_t keyframe_seconds = 2U;
+	std::size_t delta_payload_capacity =
+		Phase1DeltaScratchBytes;
+	Phase2Profile phase2_profile = Phase2Profile::None;
 	protocol::TelemetryOperationalConfig security;
 };
 
@@ -128,6 +145,13 @@ struct SessionControllerSlot {
 	std::uint32_t next_snapshot_id = 1U;
 	std::uint64_t next_keyframe_due_us = 0U;
 	bool keyframe_due = false;
+	std::uint32_t required_manifest_id = 0U;
+	bool required_manifest_applied = true;
+	Phase2RuntimeSlot phase2_runtime;
+	std::array<std::uint8_t, protocol::MaxDatagramSize>
+		fault_session_end_bytes{};
+	std::size_t fault_session_end_size = 0U;
+	bool fault_session_end_pending = false;
 };
 
 struct SessionPlayerMaterializationResult {
@@ -138,6 +162,16 @@ struct SessionPlayerMaterializationResult {
 	std::size_t invalid_source_slots = 0U;
 	std::size_t invalid_capture_slots = 0U;
 	std::size_t closed_exhausted_slots = 0U;
+};
+
+struct Phase2GlobalFanoutResult {
+	static constexpr std::size_t Capacity = 4U;
+	std::array<bool, Capacity> targeted{};
+	std::array<Phase2RuntimeSnapshotCause, Capacity> cause_before{};
+	std::array<Phase2RuntimeSnapshotCause, Capacity> cause_after{};
+	std::array<std::array<std::uint8_t, 3U>, Capacity>
+		support_coalesced{};
+	std::size_t targeted_count = 0U;
 };
 
 enum class PreproofLedgerResult : std::uint8_t {
@@ -236,6 +270,45 @@ class SessionController final {
 	bool begin_initial_snapshot(std::size_t slot_index,
 		const protocol::StateImage& image,
 		std::uint64_t now_us) noexcept;
+	bool set_required_manifest(std::size_t slot_index,
+		std::uint32_t manifest_id, bool applied) noexcept;
+	Phase2RuntimeResult reconcile_phase2_closure(std::size_t slot_index,
+		const Phase2CaptureLocalKey* signatures, std::size_t count,
+		Phase2Wp05SubjectBinding* bindings,
+		std::size_t binding_capacity) noexcept;
+	Phase2RuntimeResult observe_phase2_lifecycle(std::size_t slot_index,
+		const Phase2ObservationDto& observation,
+		const Phase2Wp05SubjectBinding* bindings,
+		std::size_t binding_count) noexcept;
+	bool set_phase2_block_samples(std::size_t slot_index,
+		const std::array<std::uint64_t,
+			Phase2RuntimeSlot::BlockCount>& samples) noexcept;
+	Phase2RuntimeResult stage_phase2_manifest(std::size_t slot_index,
+		std::uint32_t manifest_id,
+		const protocol::Sha256Digest& catalog_fingerprint,
+		const protocol::Sha256Digest& topology_fingerprint) noexcept;
+	Phase2RuntimeResult stage_phase2_manifest(
+		std::size_t slot_index,
+		const Phase2ManifestCandidate& manifest,
+		std::uint64_t now_us) noexcept;
+	Phase2RuntimeResult apply_phase2_manifest(std::size_t slot_index,
+		std::uint32_t manifest_id) noexcept;
+	std::size_t service_phase2_manifest_egress(
+		std::size_t slot_index,
+		std::uint64_t now_us) noexcept;
+	Phase2ProfileMutationResult
+	reject_phase2_profile_mutation_for_slot(
+		std::size_t slot_index,
+		Phase2ProfileMutationSource source) noexcept;
+	Phase2Wp07EpisodeLatches* phase2_support_latches(
+		std::size_t slot_index) noexcept;
+	Phase2RuntimeResult apply_phase2_global_events_transaction(
+		const Phase2Wp07GlobalEventBatch& batch,
+		Phase2GlobalFanoutResult& result) noexcept;
+	bool begin_phase2_snapshot(std::size_t slot_index,
+		const protocol::StateImage& image,
+		Phase2RuntimeSnapshotCause cause,
+		std::uint64_t now_us) noexcept;
 	std::size_t service_initial_snapshot_egress(std::size_t datagram_budget, std::uint64_t now_us) noexcept;
 	protocol::ProducerBaselineResult replace_current_state(std::size_t slot_index,
 		const protocol::StateImage& image) noexcept;
@@ -299,6 +372,15 @@ class SessionController final {
 		std::uint64_t now_us) noexcept;
 	void preempt_queued_delta() noexcept;
 	bool begin_replacement_snapshot(std::size_t slot_index, std::uint16_t snapshot_flags, std::uint64_t now_us) noexcept;
+	bool begin_scheduled_snapshot(std::size_t slot_index,
+		std::uint16_t snapshot_flags,
+		std::uint64_t now_us) noexcept;
+	void rollback_snapshot_candidate(
+		std::size_t slot_index) noexcept;
+	void discard_exposed_output_for_slot(
+		std::size_t slot_index) noexcept;
+	bool queue_pending_fault_session_end(
+		std::size_t slot_index) noexcept;
 	bool queue_resync_validated_ack(std::size_t slot_index,
 		const protocol::DatagramView& request,
 		std::uint64_t now_us) noexcept;

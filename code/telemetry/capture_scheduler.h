@@ -22,6 +22,7 @@ struct CaptureCadenceResult {
 class Capture30Hz final {
   public:
 	bool configure(std::uint32_t flight_hz) noexcept;
+	bool configure(std::uint32_t rate_hz, std::uint32_t maximum_hz) noexcept;
 	CaptureCadenceResult poll(std::uint64_t now_us, bool active) noexcept;
 	void stop() noexcept;
 	void reset() noexcept;

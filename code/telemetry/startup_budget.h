@@ -30,6 +30,10 @@ extern const std::size_t Wp06DeltaScratchHeapBytesPerClient;
 constexpr std::size_t Wp06ReliableRetentionBytesPerClient =
 	sizeof(protocol::PreallocatedReliableControlWindow);
 
+constexpr std::size_t Phase2SharedOwnedCapBytes = 64U * 1024U * 1024U;
+constexpr std::size_t Phase2ClientOwnedCapBytes = 80U * 1024U * 1024U;
+constexpr std::size_t Phase2ProcessOwnedCapBytes = 384U * 1024U * 1024U;
+
 enum class StartupBudgetError : std::uint8_t {
 	None = 0,
 	InvalidClientCount,
@@ -103,6 +107,20 @@ struct Wp06OwnedCapacity {
 	std::size_t delta_scratch_heap_bytes = 0U;
 };
 
+struct Phase2OwnedBudgetRequest {
+	std::size_t shared_owned_bytes = 0U;
+	std::size_t client_owned_bytes = 0U;
+	std::size_t max_clients = 0U;
+};
+
+struct Phase2OwnedBudget {
+	StartupBudgetError error = StartupBudgetError::None;
+	std::size_t shared_owned_bytes = 0U;
+	std::size_t client_owned_bytes = 0U;
+	std::size_t clients_owned_bytes = 0U;
+	std::size_t process_owned_bytes = 0U;
+};
+
 bool checked_add_size(std::size_t left, std::size_t right, std::size_t& output) noexcept;
 bool checked_multiply_size(std::size_t left, std::size_t right, std::size_t& output) noexcept;
 bool checked_add_metric_u64(std::uint64_t left, std::uint64_t right, std::uint64_t& output) noexcept;
@@ -128,6 +146,10 @@ Wp03KnownBudgetSubtotal calculate_wp09_startup_budget(const Wp03KnownBudgetSubto
 	const TelemetryMetrics& metrics) noexcept;
 bool wp09_budget_matches_metrics(const Wp03KnownBudgetSubtotal& budget,
 	const TelemetryMetrics& metrics) noexcept;
+Phase2OwnedBudget calculate_phase2_owned_budget(
+	const Phase2OwnedBudgetRequest& request) noexcept;
+bool phase2_owned_scope_within_cap(TelemetryPhase2MemoryScope scope,
+	std::size_t owned_bytes) noexcept;
 bool startup_budget_category_is_deferred(const Wp03KnownBudgetSubtotal& subtotal,
 	DeferredStartupBudgetCategory category) noexcept;
 

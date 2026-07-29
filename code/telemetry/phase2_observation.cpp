@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <cmath>
 #include <cstring>
 #include <limits>
@@ -17,8 +18,33 @@ namespace {
 
 std::atomic<Phase2SeamTestDouble*> Phase2TestDouble{nullptr};
 Phase2SeamHandoffSnapshot Phase2Handoff;
+Phase2Wp07CleanupRing Phase2CleanupRing;
+Phase2Wp07SupportTerminalRing Phase2SupportTerminalRing;
+bool Phase2Wp07SeamFailedClosed = false;
+struct SupportEpisodeEntry {
+	std::uint32_t assisted_signature = 0U;
+	std::uint32_t sequence = 0U;
+	bool active = false;
+};
+std::array<SupportEpisodeEntry, Phase2Wp07SupportTerminalRing::Capacity>
+	Phase2SupportEpisodes{};
 std::thread::id Phase2MainThread;
 bool Phase2MainThreadCaptured = false;
+
+void add_capture_duration(Phase2CaptureDiagnostics& diagnostics,
+	Phase2CaptureBlock block,
+	std::uint64_t duration_ns) noexcept
+{
+	const auto index = static_cast<std::size_t>(block);
+	diagnostics.attempted_mask |= static_cast<std::uint8_t>(1U << index);
+	const auto previous = diagnostics.duration_ns[index];
+	if (duration_ns > std::numeric_limits<std::uint64_t>::max() - previous) {
+		diagnostics.duration_ns[index] = std::numeric_limits<std::uint64_t>::max();
+		diagnostics.duration_overflow = true;
+	} else {
+		diagnostics.duration_ns[index] = previous + duration_ns;
+	}
+}
 
 void reset_observation(Phase2ObservationDto& output) noexcept
 {
@@ -392,8 +418,11 @@ bool semantic_equal(const Phase2RawClassDefinition& left,
 bool merge_raw_static_catalog(Phase2RawStaticCatalog& destination,
 	const Phase2RawStaticCatalog& source,
 	Phase2RawStaticReferences& references,
+	std::array<std::uint32_t, MaximumPhase2StaticAuxiliaryEntries>&
+		auxiliary_key_map,
 	Phase2ObservationDto::RawStaticDiagnostic& diagnostic) noexcept
 {
+	auxiliary_key_map.fill(0U);
 	if (source.class_count == 0U && source.weapon_count == 0U &&
 		source.auxiliary_count == 0U &&
 		references.class_capture_key == 0U &&
@@ -581,6 +610,7 @@ bool merge_raw_static_catalog(Phase2RawStaticCatalog& destination,
 			target_key = target.capture_key;
 		}
 		aux_map[source_index] = target_key;
+		auxiliary_key_map[source_index] = target_key;
 	}
 	const auto remap_aux = [&](std::uint32_t source_key) noexcept {
 		if (source_key == 0U) return 0U;
@@ -929,8 +959,15 @@ bool canonicalize_ship_blocks(ShipObservationDto& ship) noexcept
 	}
 
 	if (!canonicalize_bounded(ship.damage.hull_maximum, 0.0F, 1.0e12F, ship.damage.hull_maximum) ||
-		!canonicalize_bounded(
-			ship.damage.hull_current, 0.0F, ship.damage.hull_maximum, ship.damage.hull_current) ||
+		!std::isfinite(ship.damage.hull_current)) {
+		return false;
+	}
+	const auto hull_current = ship.damage.hull_current;
+	ship.damage.hull_current = 0.0F;
+	if (hull_current > 0.0F) {
+		ship.damage.hull_current = hull_current;
+	}
+	if (ship.damage.hull_current > ship.damage.hull_maximum ||
 		!canonicalize_bounded(
 			ship.damage.guardian_threshold, 0.0F, ship.damage.hull_maximum, ship.damage.guardian_threshold)) {
 		return false;
@@ -979,11 +1016,29 @@ bool canonicalize_ship_blocks(ShipObservationDto& ship) noexcept
 		ship.energy.engine_recharge_index > 12U) {
 		return false;
 	}
-	if (!ship.energy.ets_available &&
+	if (ship.energy.ets_mode == protocol::EtsMode::Absent && !ship.energy.ets_available &&
 		(ship.energy.shield_recharge_index != 0U || ship.energy.weapon_recharge_index != 0U ||
 			ship.energy.engine_recharge_index != 0U)) {
 		return false;
 	}
+	if (ship.energy.ets_available) ship.energy.ets_mode = protocol::EtsMode::Available;
+	if (static_cast<std::uint8_t>(ship.energy.ets_mode) >
+			static_cast<std::uint8_t>(protocol::EtsMode::Locked) ||
+		!canonicalize_bounded(ship.energy.shield_regeneration_rate, 0.0F, 1.0e12F,
+			ship.energy.shield_regeneration_rate) ||
+		!canonicalize_bounded(ship.energy.weapon_regeneration_rate, 0.0F, 1.0e12F,
+			ship.energy.weapon_regeneration_rate) ||
+		!canonicalize_bounded(ship.energy.deferred_weapon_transfer, -1.0e12F, 1.0e12F,
+			ship.energy.deferred_weapon_transfer) ||
+		!canonicalize_bounded(ship.energy.deferred_shield_transfer, -1.0e12F, 1.0e12F,
+			ship.energy.deferred_shield_transfer) ||
+		!canonicalize_bounded(ship.energy.power_output, 0.0F, 1.0e12F,
+			ship.energy.power_output) ||
+		!canonicalize_bounded(ship.energy.engine_integrity_current, 0.0F, 1.0e12F,
+			ship.energy.engine_integrity_current) ||
+		!canonicalize_bounded(ship.energy.engine_integrity_maximum, 0.0F, 1.0e12F,
+			ship.energy.engine_integrity_maximum) ||
+		ship.energy.engine_integrity_current > ship.energy.engine_integrity_maximum) return false;
 
 	if (!canonicalize_bounded(
 			ship.propulsion.afterburner_capacity, 0.0F, 1.0e12F, ship.propulsion.afterburner_capacity) ||
@@ -995,6 +1050,15 @@ bool canonicalize_ship_blocks(ShipObservationDto& ship) noexcept
 			ship.propulsion.burn_rate, 0.0F, 1.0e12F, ship.propulsion.burn_rate) ||
 		!canonicalize_bounded(
 			ship.propulsion.recovery_rate, 0.0F, 1.0e12F, ship.propulsion.recovery_rate) ||
+		!canonicalize_bounded(ship.propulsion.minimum_to_engage, 0.0F,
+			ship.propulsion.afterburner_capacity, ship.propulsion.minimum_to_engage) ||
+		!canonicalize_bounded(ship.propulsion.fuel_at_last_engagement, 0.0F,
+			ship.propulsion.afterburner_capacity, ship.propulsion.fuel_at_last_engagement) ||
+		!canonicalize_bounded(ship.propulsion.forward_acceleration_time_constant, 0.0F, 3600.0F,
+			ship.propulsion.forward_acceleration_time_constant) ||
+		!canonicalize_array(ship.propulsion.afterburner_max_velocity, 0.0F, 1.0e9F) ||
+		!canonicalize_bounded(ship.propulsion.engine_wash_intensity, 0.0F, 1.0e12F,
+			ship.propulsion.engine_wash_intensity) ||
 		ship.propulsion.cooldown_remaining_us > 86'400'000'000ULL ||
 		ship.propulsion.time_since_last_stop_us > 86'400'000'000ULL) {
 		return false;
@@ -1038,10 +1102,25 @@ bool canonicalize_ship_blocks(ShipObservationDto& ship) noexcept
 
 	if (ship.weapons.primary_bank_count > MaximumPhase2WeaponBanksPerFamily ||
 		ship.weapons.secondary_bank_count > MaximumPhase2WeaponBanksPerFamily ||
+		ship.weapons.tertiary_bank_count > MaximumPhase2WeaponBanksPerFamily ||
+		(ship.weapons.raw_weapon_flags &
+			~static_cast<std::uint64_t>(
+				protocol::KnownWeaponGlobalFlags)) != 0U ||
 		ship.weapons.countermeasure_count >
 			ship.weapons.countermeasure_maximum ||
+		ship.weapons.countermeasure_cooldown_remaining_us >
+			3'600'000'000ULL ||
+		ship.weapons.remote_detonation_remaining_us >
+			3'600'000'000ULL ||
+		ship.weapons.tertiary_cooldown_remaining_us >
+			3'600'000'000ULL ||
+		ship.weapons.tertiary_rearm_remaining_us >
+			3'600'000'000ULL ||
+		!std::isfinite(ship.weapons.per_burst_rotation) ||
 		ship.subsystems.count > MaximumPhase2SubsystemsPerShip ||
 		ship.docking.relation_count > MaximumPhase2DockRelationsPerShip ||
+		static_cast<std::uint8_t>(ship.docking.phase) >
+			static_cast<std::uint8_t>(protocol::DockingPhase::Undocking) ||
 		static_cast<std::uint8_t>(ship.support.phase) >=
 			static_cast<std::uint8_t>(ShipSupportPhase::Count) ||
 		!canonicalize_bounded(ship.support.repair_progress,
@@ -1062,7 +1141,18 @@ bool canonicalize_ship_blocks(ShipObservationDto& ship) noexcept
 			bank.weapon_class_source_key.value <=
 				static_cast<std::uint32_t>(std::numeric_limits<int>::max()) &&
 			bank.ammunition_current <= bank.ammunition_initial &&
-			bank.cooldown_remaining_us <= 86'400'000'000ULL;
+			bank.cooldown_remaining_us <= 3'600'000'000ULL &&
+			bank.rearm_remaining_us <= 3'600'000'000ULL &&
+			bank.fof_cooldown_remaining_us <= 3'600'000'000ULL &&
+			bank.primary_slot >= -1 && bank.primary_slot <= 255 &&
+			bank.secondary_slot >= -1 && bank.secondary_slot <= 255 &&
+			bank.primary_fire_point <= 255U &&
+			bank.simultaneous_slots >= 1U &&
+			bank.simultaneous_slots <= 256U &&
+			bank.firing_pattern_source_code <= 5U &&
+			bank.burst_counter >= 0 &&
+			bank.burst_counter <=
+				std::numeric_limits<std::uint16_t>::max();
 	};
 	for (std::size_t index = 0U; index < ship.weapons.primary_bank_count; ++index) {
 		if (!validate_bank(ship.weapons.primary_banks[index], ShipWeaponBankFamily::Primary)) {
@@ -1073,6 +1163,33 @@ bool canonicalize_ship_blocks(ShipObservationDto& ship) noexcept
 		if (!validate_bank(ship.weapons.secondary_banks[index], ShipWeaponBankFamily::Secondary)) {
 			return false;
 		}
+	}
+	const auto has_countermeasure =
+		(ship.weapons.presence &
+			protocol::WeaponStatePresenceFlagCountermeasure) != 0U;
+	if ((has_countermeasure &&
+			ship.weapons.countermeasure_class_source_key.value == 0U) ||
+		(!has_countermeasure &&
+			(ship.weapons.countermeasure_count != 0U ||
+			 ship.weapons.countermeasure_maximum != 0U ||
+			 ship.weapons.countermeasure_cooldown_remaining_us != 0U))) {
+		return false;
+	}
+	if (!has_countermeasure) {
+		ship.weapons.countermeasure_class_source_key = {};
+	}
+	if ((ship.weapons.tertiary_bank_count == 0U &&
+			ship.weapons.current_tertiary_bank != -1) ||
+		(ship.weapons.tertiary_bank_count > 0U &&
+			(ship.weapons.current_tertiary_bank < 0 ||
+			 ship.weapons.current_tertiary_bank >=
+				ship.weapons.tertiary_bank_count ||
+			 ship.weapons.tertiary_ammunition_current < 0 ||
+			 ship.weapons.tertiary_ammunition_initial < 0 ||
+			 ship.weapons.tertiary_ammunition_capacity < 0 ||
+			 ship.weapons.tertiary_ammunition_current >
+				ship.weapons.tertiary_ammunition_initial))) {
+		return false;
 	}
 	const auto has_support =
 		(ship.support.presence & protocol::SupportStatePresenceFlagSupportEntity) != 0U;
@@ -1173,26 +1290,46 @@ bool canonicalize_ship_blocks(ShipObservationDto& ship) noexcept
 			return false;
 		}
 		if (!subsystem.turret.has_value()) {
+			if ((subsystem.presence &
+					protocol::SubsystemStatePresenceFlagTurret) != 0U) {
+				return false;
+			}
 			continue;
 		}
 		auto& turret = *subsystem.turret;
 		if (subsystem.kind != ShipSubsystemKind::Turret ||
+			(subsystem.presence &
+				protocol::SubsystemStatePresenceFlagTurret) == 0U ||
 			turret.turret_primary_bank_count > MaximumPhase2PhysicalPrimaryBanks ||
 			turret.turret_secondary_bank_count > MaximumPhase2PhysicalSecondaryBanks ||
+			turret.turret_firing_point_count > 64U ||
+			(turret.turret_firing_point_count != 0U &&
+				turret.turret_next_fire_pos < 0) ||
 			turret.turret_next_fire_remaining_us > 86'400'000'000ULL ||
+			turret.turret_animation_remaining_us > 86'400'000'000ULL ||
 			!canonicalize_array(
-				turret.turret_current_direction_local, -1.0F, 1.0F) ||
-			!canonicalize_bounded(
-				turret.turret_rof_scaler, 0.0F, 1.0e6F, turret.turret_rof_scaler)) {
+				turret.turret_current_direction_local, -1.0F, 1.0F)) {
+			return false;
+		}
+		if (turret.turret_rof_scaler < 0.0F) {
+			turret.turret_rof_scaler = 1.0F;
+		} else if (turret.turret_rof_scaler == 0.0F) {
+			turret.turret_rof_scaler = static_cast<float>(
+				std::max<std::uint16_t>(
+					turret.turret_firing_point_count, 1U));
+		}
+		if (!canonicalize_bounded(
+				turret.turret_rof_scaler,
+				0.0F,
+				1024.0F,
+				turret.turret_rof_scaler) ||
+			turret.turret_animation < 0 ||
+			turret.turret_animation > 2) {
 			return false;
 		}
 		for (std::size_t bank = 0U; bank < turret.turret_primary_bank_count; ++bank) {
 			const auto& facts = turret.turret_primary_banks[bank];
 			if (turret.turret_primary_bank_weapon_source_keys[bank].value == 0U ||
-				facts.turret_ammunition_current < 0 ||
-				facts.turret_ammunition_capacity < 0 ||
-				facts.turret_ammunition_current >
-					facts.turret_ammunition_capacity ||
 				facts.turret_cooldown_remaining_us > 86'400'000'000ULL) {
 				return false;
 			}
@@ -1200,10 +1337,6 @@ bool canonicalize_ship_blocks(ShipObservationDto& ship) noexcept
 		for (std::size_t bank = 0U; bank < turret.turret_secondary_bank_count; ++bank) {
 			const auto& facts = turret.turret_secondary_banks[bank];
 			if (turret.turret_secondary_bank_weapon_source_keys[bank].value == 0U ||
-				facts.turret_ammunition_current < 0 ||
-				facts.turret_ammunition_capacity < 0 ||
-				facts.turret_ammunition_current >
-					facts.turret_ammunition_capacity ||
 				facts.turret_cooldown_remaining_us > 86'400'000'000ULL) {
 				return false;
 			}
@@ -1233,6 +1366,11 @@ bool canonicalize_player_controls(PlayerControlObservation& controls) noexcept
 		!canonicalize_bounded(
 			controls.flight_cursor_sensitivity, 0.0F, 1.0F, controls.flight_cursor_sensitivity) ||
 		!canonicalize_bounded(
+			controls.flight_cursor_deadzone_extent,
+			0.0F,
+			3.1415927F,
+			controls.flight_cursor_deadzone_extent) ||
+		!canonicalize_bounded(
 			controls.effective_aim_extent, 0.000001F, 3.1415927F, controls.effective_aim_extent)) {
 		return false;
 	}
@@ -1243,6 +1381,15 @@ bool canonicalize_player_controls(PlayerControlObservation& controls) noexcept
 	if ((controls.presence & protocol::ControlStatePresenceFlagRequestCounters) == 0U &&
 		(controls.fire_primary_count != 0U || controls.fire_secondary_count != 0U ||
 			controls.fire_countermeasure_count != 0U)) {
+		return false;
+	}
+	const auto has_cursor =
+		(controls.presence &
+			protocol::ControlStatePresenceFlagFlightCursor) != 0U;
+	if (has_cursor != controls.flight_cursor_active ||
+		(has_cursor &&
+			controls.flight_cursor_deadzone_extent >
+				controls.effective_aim_extent)) {
 		return false;
 	}
 	return true;
@@ -1511,39 +1658,6 @@ SourceReadResult map_phase2_static_authorities(
 	return {Phase2SourceReadStatus::Valid};
 }
 
-bool OwnedPhase2String::assign(std::string_view value) noexcept
-{
-	if (value.size() > MaximumPhase2InternalNameBytes) {
-		return false;
-	}
-	if (!value.empty()) {
-		std::memcpy(m_bytes.data(), value.data(), value.size());
-	}
-	m_size = static_cast<std::uint16_t>(value.size());
-	m_bytes[m_size] = '\0';
-	return true;
-}
-
-std::size_t OwnedPhase2String::size() const noexcept
-{
-	return m_size;
-}
-
-bool OwnedPhase2String::empty() const noexcept
-{
-	return m_size == 0U;
-}
-
-const char* OwnedPhase2String::data() const noexcept
-{
-	return m_bytes.data();
-}
-
-std::string_view OwnedPhase2String::view() const noexcept
-{
-	return {m_bytes.data(), m_size};
-}
-
 Phase2RawStaticCatalog::Phase2RawStaticCatalog() noexcept {}
 
 Phase2RawStaticCatalog::Phase2RawStaticCatalog(
@@ -1656,7 +1770,8 @@ static Phase2CaptureResult collect_phase2_observation_with_scratch(
 	std::uint64_t producer_sample_time_us,
 	Phase2ObservationDto& output,
 	Phase2ShipSource& source_ship,
-	Phase2ObservationProjection projection) noexcept
+	Phase2ObservationProjection projection,
+	Phase2CaptureDiagnostics* diagnostics = nullptr) noexcept
 {
 	reset_observation(output);
 	if (!source.current_thread_is_main()) {
@@ -1694,31 +1809,50 @@ static Phase2CaptureResult collect_phase2_observation_with_scratch(
 		return capture_failure(output, status, Phase2CaptureReason::ShipReadFailure);
 	}
 
-	Phase2DiscoveryNode player_discovery{};
-	const auto player_discovery_result =
-		source.read_discovery_node(player_root, player_discovery);
-	const auto player_discovery_keys =
-		player_discovery_result.status == Phase2SourceReadStatus::Valid
-		? validate_discovery_keys(player_discovery)
-		: player_discovery_result.status;
-	if (player_discovery_keys != Phase2SourceReadStatus::Valid) {
-		return capture_failure(output,
-			player_discovery_keys == Phase2SourceReadStatus::SourceLimitExceeded
-				? Phase2CaptureStatus::SourceLimitExceeded
-				: Phase2CaptureStatus::UnsupportedEngineState,
-			Phase2CaptureReason::ShipReadFailure);
+	Phase2CaptureLocalKey player_capture_key{
+		player_root.object_signature};
+	if (projection != Phase2ObservationProjection::CoreGate) {
+		Phase2DiscoveryNode player_discovery{};
+		const auto player_discovery_result =
+			source.read_discovery_node(player_root, player_discovery);
+		const auto player_discovery_keys =
+			player_discovery_result.status ==
+					Phase2SourceReadStatus::Valid
+			? validate_discovery_keys(player_discovery)
+			: player_discovery_result.status;
+		if (player_discovery_keys !=
+			Phase2SourceReadStatus::Valid) {
+			return capture_failure(output,
+				player_discovery_keys ==
+						Phase2SourceReadStatus::
+							SourceLimitExceeded
+					? Phase2CaptureStatus::
+						SourceLimitExceeded
+					: Phase2CaptureStatus::
+						UnsupportedEngineState,
+				Phase2CaptureReason::ShipReadFailure);
+		}
+		player_capture_key = player_discovery.capture_key;
 	}
 	auto effective_selection = selection;
 	if (effective_selection.count == 0U) {
 		effective_selection.count = 1U;
-		effective_selection.ship_keys[0] = player_discovery.capture_key;
+		effective_selection.ship_keys[0] = player_capture_key;
+	}
+	if (projection == Phase2ObservationProjection::CoreGate &&
+		(effective_selection.count != 1U ||
+		 effective_selection.ship_keys[0].value !=
+			 player_capture_key.value)) {
+		return capture_failure(output,
+			Phase2CaptureStatus::InvalidSource,
+			Phase2CaptureReason::ShipReadFailure);
 	}
 	if (effective_selection.count > MaximumPhase2ObservationShips) {
 		return capture_failure(
 			output, Phase2CaptureStatus::SourceLimitExceeded, Phase2CaptureReason::InvalidClosureCardinality);
 	}
 	if (effective_selection.ship_keys[0].value !=
-		player_discovery.capture_key.value) {
+		player_capture_key.value) {
 		return capture_failure(
 			output, Phase2CaptureStatus::InvalidSource, Phase2CaptureReason::ShipReadFailure);
 	}
@@ -1773,6 +1907,12 @@ static Phase2CaptureResult collect_phase2_observation_with_scratch(
 				Phase2CaptureReason::ShipReadFailure);
 		}
 	}
+	if (diagnostics != nullptr) {
+		diagnostics->source_count = effective_selection.count;
+		for (std::size_t index = 0U; index < effective_selection.count; ++index)
+			diagnostics->source_signatures[index] =
+				engine_keys[index].object_signature;
+	}
 
 	try {
 		Phase2SourceReadResult first_discovery_failure{
@@ -1782,7 +1922,19 @@ static Phase2CaptureResult collect_phase2_observation_with_scratch(
 			source_ship.~Phase2ShipSource();
 			new (&source_ship) Phase2ShipSource;
 			const auto source_result =
-				source.read_ship(engine_keys[index], source_ship);
+				projection == Phase2ObservationProjection::CoreGate
+				? diagnostics != nullptr
+					? source.read_core_gate_ship_diagnosed(
+						engine_keys[index], source_ship,
+						*diagnostics)
+					: source.read_core_gate_ship(
+						engine_keys[index], source_ship)
+				: diagnostics != nullptr
+					? source.read_ship_diagnosed(
+						engine_keys[index], source_ship,
+						*diagnostics)
+					: source.read_ship(
+						engine_keys[index], source_ship);
 			if (source_result.status != Phase2SourceReadStatus::Valid) {
 				const auto status =
 					source_result.status == Phase2SourceReadStatus::SourceLimitExceeded
@@ -1807,9 +1959,12 @@ static Phase2CaptureResult collect_phase2_observation_with_scratch(
 				return capture_failure(output,Phase2CaptureStatus::SourceLimitExceeded,
 					Phase2CaptureReason::UnsupportedShipBlock);
 			}
+			std::array<std::uint32_t, MaximumPhase2StaticAuxiliaryEntries>
+				auxiliary_key_map{};
 			if (!merge_raw_static_catalog(output.raw_static_catalog,
 					source_ship.raw_static_catalog,
 					source_ship.raw_static_references,
+					auxiliary_key_map,
 					output.raw_static_diagnostic)) {
 				const auto merge_status =
 					output.raw_static_diagnostic.reason ==
@@ -1823,7 +1978,7 @@ static Phase2CaptureResult collect_phase2_observation_with_scratch(
 			auto& ship = output.ships.back();
 			ship.capture_key = {
 				static_cast<std::uint32_t>(index + 1U)};
-			ship.identity.presence = source_ship.identity.presence;
+			ship.identity = source_ship.identity;
 			ship.identity.class_source_key.value =
 				source_ship.raw_static_references.class_capture_key;
 			ship.lifecycle = source_ship.lifecycle;
@@ -1837,6 +1992,34 @@ static Phase2CaptureResult collect_phase2_observation_with_scratch(
 			ship.docking = source_ship.docking;
 			ship.subsystems = source_ship.subsystems;
 			ship.raw_static_references=source_ship.raw_static_references;
+			const auto remap_auxiliary_key =
+				[&](Phase2CaptureLocalKey& key) noexcept {
+					if (key.value == 0U) return true;
+					for (std::uint32_t auxiliary = 0U;
+						 auxiliary <
+							 source_ship.raw_static_catalog.auxiliary_count;
+						 ++auxiliary) {
+						if (source_ship.raw_static_catalog
+								.auxiliary_entries[auxiliary]
+								.capture_key != key.value) {
+							continue;
+						}
+						key.value = auxiliary_key_map[auxiliary];
+						return key.value != 0U;
+					}
+					return false;
+				};
+			for (std::size_t subsystem = 0U;
+				 subsystem < ship.subsystems.count;
+				 ++subsystem) {
+				if (!remap_auxiliary_key(
+						ship.subsystems.values[subsystem]
+							.armor_source_key)) {
+					return capture_failure(output,
+						Phase2CaptureStatus::UnsupportedEngineState,
+						Phase2CaptureReason::UnsupportedShipBlock);
+				}
+			}
 			if (ship.support.support_capture_key.value != 0U) {
 				ship.support.support_capture_key =
 					remap_capture_local(
@@ -2019,9 +2202,49 @@ static Phase2CaptureResult collect_phase2_observation_with_scratch(
 			output, Phase2CaptureStatus::SourceLimitExceeded, Phase2CaptureReason::AllocationFailure);
 	}
 
+	if (projection == Phase2ObservationProjection::CoreGate) {
+		output.capture.status = Phase2CaptureStatus::Valid;
+		if (diagnostics != nullptr)
+			diagnostics->primary_failed_block =
+				Phase2CaptureBlock::Count;
+		output.capture.reason = Phase2CaptureReason::None;
+		output.player_key = {1U};
+		output.producer_sample_time_us = producer_sample_time_us;
+		output.player_controls = {};
+		output.player_cargo_scan = {};
+		return output.capture;
+	}
+
 	PlayerControlObservation controls;
 	PlayerCargoScanObservation cargo;
-	if (!source.read_player_controls(controls) || !source.read_player_cargo_scan(cargo)) {
+	const auto control_started = std::chrono::steady_clock::now();
+	const auto controls_valid = source.read_player_controls(controls);
+	if (diagnostics != nullptr) {
+		const auto elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(
+			std::chrono::steady_clock::now() - control_started).count();
+		add_capture_duration(*diagnostics, Phase2CaptureBlock::Control,
+			elapsed > 0 ? static_cast<std::uint64_t>(elapsed) : 0U);
+	}
+	if (!controls_valid) {
+		if (diagnostics != nullptr)
+			diagnostics->primary_failed_block = Phase2CaptureBlock::Control;
+		return capture_failure(output,
+			Phase2CaptureStatus::UnsupportedEngineState,
+			Phase2CaptureReason::UnsupportedShipBlock);
+	}
+	const auto cargo_started = std::chrono::steady_clock::now();
+	const auto cargo_valid = source.read_player_cargo_scan(cargo);
+	if (diagnostics != nullptr) {
+		const auto elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(
+			std::chrono::steady_clock::now() - cargo_started).count();
+		add_capture_duration(*diagnostics,
+			Phase2CaptureBlock::SupportCargoDocking,
+			elapsed > 0 ? static_cast<std::uint64_t>(elapsed) : 0U);
+	}
+	if (!cargo_valid) {
+		if (diagnostics != nullptr)
+			diagnostics->primary_failed_block =
+				Phase2CaptureBlock::SupportCargoDocking;
 		return capture_failure(output,
 			Phase2CaptureStatus::UnsupportedEngineState,
 			Phase2CaptureReason::UnsupportedShipBlock);
@@ -2044,12 +2267,95 @@ static Phase2CaptureResult collect_phase2_observation_with_scratch(
 	}
 
 	output.capture.status = Phase2CaptureStatus::Valid;
+	if (diagnostics != nullptr)
+		diagnostics->primary_failed_block = Phase2CaptureBlock::Count;
 	output.capture.reason = Phase2CaptureReason::None;
 	output.player_key = {1U};
 	output.producer_sample_time_us = producer_sample_time_us;
 	output.player_controls = controls;
 	output.player_cargo_scan = cargo;
 	return output.capture;
+}
+
+static Phase2CaptureResult build_phase2_selection(
+	const Phase2EngineReadView& source,
+	Phase2ObservationProjection projection,
+	Phase2ObservationSelection& selection,
+	Phase2ObservationDto& output) noexcept
+{
+	selection = {};
+	if (projection != Phase2ObservationProjection::CompleteShip)
+		return {Phase2CaptureStatus::Valid, Phase2CaptureReason::None};
+	const auto source_failure = [&](Phase2SourceReadStatus status) noexcept {
+		return capture_failure(output,
+			status == Phase2SourceReadStatus::SourceLimitExceeded
+				? Phase2CaptureStatus::SourceLimitExceeded
+				: status == Phase2SourceReadStatus::UnsupportedEngineState
+				? Phase2CaptureStatus::UnsupportedEngineState
+				: Phase2CaptureStatus::InvalidSource,
+			Phase2CaptureReason::ShipReadFailure);
+	};
+	EngineEntityKey root{};
+	const auto root_result = source.read_player_root_key(root);
+	if (root_result.status != Phase2SourceReadStatus::Valid)
+		return source_failure(root_result.status);
+	Phase2DiscoveryNode root_node{};
+	const auto root_result_discovery = source.read_discovery_node(root, root_node);
+	const auto root_keys = root_result_discovery.status ==
+			Phase2SourceReadStatus::Valid
+		? validate_discovery_keys(root_node) : root_result_discovery.status;
+	if (root_keys != Phase2SourceReadStatus::Valid)
+		return source_failure(root_keys);
+	selection.ship_keys[selection.count++] = root_node.capture_key;
+	for (std::size_t cursor = 0U; cursor < selection.count; ++cursor) {
+		EngineEntityKey engine_key{};
+		if (cursor == 0U) engine_key = root;
+		else {
+			const auto resolved = source.resolve_capture_local_key(
+				selection.ship_keys[cursor], engine_key);
+			if (resolved.status != Phase2SourceReadStatus::Valid)
+				return source_failure(resolved.status);
+		}
+		Phase2DiscoveryNode node{};
+		const auto read = source.read_discovery_node(engine_key, node);
+		if (read.status != Phase2SourceReadStatus::Valid)
+			return source_failure(read.status);
+		const auto keys = validate_discovery_keys(node);
+		if (keys != Phase2SourceReadStatus::Valid ||
+			node.capture_key.value != selection.ship_keys[cursor].value)
+			return source_failure(keys == Phase2SourceReadStatus::Valid
+				? Phase2SourceReadStatus::UnsupportedEngineState : keys);
+		std::array<Phase2CaptureLocalKey,
+			MaximumPhase2DockRelationsPerShip + 2U> related{};
+		std::size_t related_count = 0U;
+		related[related_count++] = node.support_capture_key;
+		related[related_count++] = node.group_leader_capture_key;
+		if (node.direct_docking_count > MaximumPhase2DockRelationsPerShip)
+			return capture_failure(output,
+				Phase2CaptureStatus::SourceLimitExceeded,
+				Phase2CaptureReason::InvalidClosureCardinality);
+		for (std::size_t index = 0U; index < node.direct_docking_count; ++index)
+			related[related_count++] = node.direct_docking_capture_keys[index];
+		for (std::size_t index = 0U; index < related_count; ++index) {
+			if (related[index].value == 0U) continue;
+			bool present = false;
+			for (std::size_t existing = 0U; existing < selection.count; ++existing)
+				present = present ||
+					selection.ship_keys[existing].value == related[index].value;
+			if (present) continue;
+			if (selection.count >= MaximumPhase2ObservationShips)
+				return capture_failure(output,
+					Phase2CaptureStatus::SourceLimitExceeded,
+					Phase2CaptureReason::InvalidClosureCardinality);
+			EngineEntityKey resolved{};
+			const auto resolve = source.resolve_capture_local_key(
+				related[index], resolved);
+			if (resolve.status != Phase2SourceReadStatus::Valid)
+				return source_failure(resolve.status);
+			selection.ship_keys[selection.count++] = related[index];
+		}
+	}
+	return {Phase2CaptureStatus::Valid, Phase2CaptureReason::None};
 }
 
 Phase2CaptureResult collect_phase2_observation(const Phase2EngineReadView& source,
@@ -2261,6 +2567,7 @@ Phase2CaptureResult Phase2ObservationBuffer::capture(const Phase2EngineReadView&
 	std::uint64_t producer_sample_time_us,
 	Phase2ObservationProjection projection) noexcept
 {
+	m_capture_diagnostics = {};
 	if (m_state != Phase2ObservationBufferState::Ready) {
 		return capture_failure(
 			m_observation, Phase2CaptureStatus::InvalidSource, Phase2CaptureReason::BufferNotReady);
@@ -2271,28 +2578,37 @@ Phase2CaptureResult Phase2ObservationBuffer::capture(const Phase2EngineReadView&
 		return capture_failure(
 			m_observation, Phase2CaptureStatus::InvalidSource, Phase2CaptureReason::BufferNotReady);
 	}
-	const Phase2ObservationSelection selection;
+	const auto finalize = [&](Phase2CaptureResult result) noexcept {
+		if (result.status == Phase2CaptureStatus::InvalidSource ||
+			result.status == Phase2CaptureStatus::UnsupportedEngineState ||
+			result.status == Phase2CaptureStatus::SourceLimitExceeded) {
+			if (result.reason != Phase2CaptureReason::NotInMission)
+				m_state = Phase2ObservationBufferState::FailedClosed;
+		}
+		if (result.status == Phase2CaptureStatus::Valid)
+			m_accepted_capture_map = m_capture_diagnostics;
+		return result;
+	};
+	Phase2ObservationSelection selection;
+	const auto selection_result = build_phase2_selection(
+		source, projection, selection, m_observation);
+	if (selection_result.status != Phase2CaptureStatus::Valid)
+		return finalize(selection_result);
 	const auto core_result = collect_phase2_observation_with_scratch(
 		source,
 		selection,
 		producer_sample_time_us,
 		m_observation,
 		*m_source_scratch,
-		projection);
+		projection,
+		&m_capture_diagnostics);
 	const auto result =
 		projection == Phase2ObservationProjection::CompleteShip &&
 			core_result.status == Phase2CaptureStatus::Valid &&
 			m_observation.discovery_capture.status != Phase2CaptureStatus::Valid
 		? m_observation.discovery_capture
 		: core_result;
-	if (result.status == Phase2CaptureStatus::InvalidSource ||
-		result.status == Phase2CaptureStatus::UnsupportedEngineState ||
-		result.status == Phase2CaptureStatus::SourceLimitExceeded) {
-		if (result.reason != Phase2CaptureReason::NotInMission) {
-			m_state = Phase2ObservationBufferState::FailedClosed;
-		}
-	}
-	return result;
+	return finalize(result);
 }
 
 Phase2CaptureResult collect_phase2_observation(Phase2ObservationBuffer& buffer,
@@ -2335,6 +2651,8 @@ Phase2ObservationDto& Phase2ObservationBuffer::observation() noexcept
 
 void Phase2ObservationBuffer::reset_observation_and_clear_phase2() noexcept
 {
+	m_capture_diagnostics = {};
+	m_accepted_capture_map = {};
 	reset_observation(m_observation);
 }
 
@@ -2384,11 +2702,19 @@ void set_phase2_seam_test_double_internal(Phase2SeamTestDouble* test_double) noe
 void reset_phase2_seam_handoff() noexcept
 {
 	Phase2Handoff = {};
+	Phase2CleanupRing.reset();
+	Phase2SupportTerminalRing.reset();
+	Phase2SupportEpisodes = {};
+	Phase2Wp07SeamFailedClosed = false;
 }
 
 void reset_phase2_mission_observation_state() noexcept
 {
 	Phase2Handoff = {};
+	Phase2CleanupRing.reset();
+	Phase2SupportTerminalRing.reset();
+	Phase2SupportEpisodes = {};
+	Phase2Wp07SeamFailedClosed = false;
 	Phase2Handoff.has_control_target = true;
 	Phase2Handoff.control_target = ControlTargetAuthority::Ship;
 }
@@ -2396,6 +2722,19 @@ void reset_phase2_mission_observation_state() noexcept
 Phase2SeamHandoffSnapshot phase2_seam_handoff_snapshot() noexcept
 {
 	return Phase2Handoff;
+}
+
+SupportTransitionFact phase2_latest_support_terminal(
+	std::uint32_t assisted_signature) noexcept
+{
+	return Phase2SupportTerminalRing.latest(assisted_signature);
+}
+
+bool phase2_wp07_seam_overflowed() noexcept
+{
+	return Phase2CleanupRing.overflowed() ||
+		Phase2SupportTerminalRing.overflowed() ||
+		Phase2Wp07SeamFailedClosed;
 }
 
 void capture_phase2_main_thread_authority() noexcept
@@ -2409,6 +2748,464 @@ bool phase2_current_thread_is_main() noexcept
 	return Phase2MainThreadCaptured && std::this_thread::get_id() == Phase2MainThread;
 }
 
+bool Phase2Wp07CleanupRing::record(
+	const ShipCleanupFact& fact, std::uint64_t sample_time) noexcept
+{
+	if (fact.object_signature == 0U ||
+		static_cast<std::uint8_t>(fact.mode) >=
+			static_cast<std::uint8_t>(ShipCleanupMode::Count) ||
+		m_size >= Capacity) {
+		if (m_size >= Capacity) m_overflowed = true;
+		return false;
+	}
+	auto& value = m_values[m_size++];
+	value.object_signature = fact.object_signature;
+	value.mode = fact.mode;
+	value.sample_time = sample_time;
+	value.event_order = ++m_order;
+	value.purge_order = ++m_order;
+	value.replacement_entity_id = ++m_replacement;
+	value.event_ready = true;
+	value.fence_ready = true;
+	value.new_entity_id_request = true;
+	return true;
+}
+
+Phase2Wp07CleanupIntent Phase2Wp07CleanupRing::latest() const noexcept
+{
+	return m_size == 0U ? Phase2Wp07CleanupIntent{} : m_values[m_size - 1U];
+}
+
+Phase2Wp07CleanupIntent Phase2Wp07CleanupRing::at(
+	std::size_t index) const noexcept
+{
+	return index < m_size ? m_values[index] :
+		Phase2Wp07CleanupIntent{};
+}
+
+bool Phase2Wp07CleanupRing::commit_drain(std::size_t count) noexcept
+{
+	if (count > m_size) return false;
+	for (std::size_t index = count; index < m_size; ++index)
+		m_values[index - count] = m_values[index];
+	for (std::size_t index = m_size - count; index < m_size; ++index)
+		m_values[index] = {};
+	m_size -= count;
+	return true;
+}
+
+void Phase2Wp07CleanupRing::reset() noexcept
+{
+	m_values = {};
+	m_size = 0U;
+	m_order = 0U;
+	m_replacement = 0U;
+	m_overflowed = false;
+}
+
+bool Phase2Wp07SupportTerminalRing::record_transition(
+	const SupportTransitionFact& fact) noexcept
+{
+	if (static_cast<std::uint8_t>(fact.reason) >=
+			static_cast<std::uint8_t>(SupportTransitionReason::Count) ||
+		fact.assisted_signature == 0U ||
+		fact.episode_sequence == 0U || m_size >= Capacity) {
+		if (m_size >= Capacity) m_overflowed = true;
+		return false;
+	}
+	m_values[m_size++] = fact;
+	return true;
+}
+
+bool Phase2Wp07SupportTerminalRing::record_terminal(
+	const SupportTransitionFact& fact) noexcept
+{
+	const auto terminal =
+		fact.reason == SupportTransitionReason::Broken ||
+		fact.reason == SupportTransitionReason::End ||
+		fact.reason == SupportTransitionReason::Abort ||
+		fact.reason == SupportTransitionReason::Killed ||
+		fact.reason == SupportTransitionReason::Complete;
+	return terminal && record_transition(fact);
+}
+
+SupportTransitionFact Phase2Wp07SupportTerminalRing::at(
+	std::size_t index) const noexcept
+{
+	return index < m_size ? m_values[index] :
+		SupportTransitionFact{};
+}
+
+SupportTransitionFact Phase2Wp07SupportTerminalRing::latest(
+	std::uint32_t assisted_signature) const noexcept
+{
+	for (auto index = m_size; index > 0U; --index) {
+		if (m_values[index - 1U].assisted_signature == assisted_signature)
+			return m_values[index - 1U];
+	}
+	for (auto index = m_drained_count; index > 0U; --index) {
+		if (m_drained_latest[index - 1U].assisted_signature ==
+			assisted_signature)
+			return m_drained_latest[index - 1U];
+	}
+	return {};
+}
+
+bool Phase2Wp07SupportTerminalRing::commit_drain(
+	std::size_t count) noexcept
+{
+	if (count > m_size) return false;
+	for (std::size_t source = 0U; source < count; ++source) {
+		const auto& fact = m_values[source];
+		std::size_t destination = m_drained_count;
+		for (std::size_t index = 0U;
+			 index < m_drained_count; ++index)
+			if (m_drained_latest[index].assisted_signature ==
+				fact.assisted_signature) {
+				destination = index;
+				break;
+			}
+		if (destination == m_drained_count) {
+			if (m_drained_count >= Capacity) continue;
+			++m_drained_count;
+		}
+		m_drained_latest[destination] = fact;
+	}
+	for (std::size_t index = count; index < m_size; ++index)
+		m_values[index - count] = m_values[index];
+	for (std::size_t index = m_size - count; index < m_size; ++index)
+		m_values[index] = {};
+	m_size -= count;
+	return true;
+}
+
+void Phase2Wp07SupportTerminalRing::reset() noexcept
+{
+	m_values = {};
+	m_drained_latest = {};
+	m_drained_count = 0U;
+	m_size = 0U;
+	m_overflowed = false;
+}
+
+bool Phase2Wp07EpisodeLatches::latch(
+	std::size_t session_slot, const SupportTransitionFact& fact) noexcept
+{
+	if (session_slot >= SessionCapacity ||
+		fact.assisted_signature == 0U ||
+		fact.episode_sequence == 0U) return false;
+	auto& session = m_sessions[session_slot];
+	session.active = true;
+	Entry* free = nullptr;
+	for (auto& entry : session.entries) {
+		if (!entry.active) {
+			if (free == nullptr) free = &entry;
+			continue;
+		}
+		if (entry.fact.assisted_signature != fact.assisted_signature)
+			continue;
+		if (entry.fact.episode_sequence > fact.episode_sequence)
+			return true;
+		if (entry.fact.episode_sequence == fact.episode_sequence &&
+			entry.fact.reason == SupportTransitionReason::Complete &&
+			fact.reason == SupportTransitionReason::End)
+			return true;
+		entry.fact = fact;
+		return true;
+	}
+	if (free == nullptr) return false;
+	free->active = true;
+	free->fact = fact;
+	return true;
+}
+
+bool Phase2Wp07EpisodeLatches::activate_session(
+	std::size_t session_slot) noexcept
+{
+	if (session_slot >= SessionCapacity) return false;
+	m_sessions[session_slot].active = true;
+	return true;
+}
+
+bool Phase2Wp07EpisodeLatches::deactivate_session(
+	std::size_t session_slot) noexcept
+{
+	if (session_slot >= SessionCapacity) return false;
+	m_sessions[session_slot] = {};
+	return true;
+}
+
+bool Phase2Wp07EpisodeLatches::session_active(
+	std::size_t session_slot) const noexcept
+{
+	return session_slot < SessionCapacity &&
+		m_sessions[session_slot].active;
+}
+
+bool Phase2Wp07EpisodeLatches::on_applied(
+	std::size_t slot, std::uint32_t episode_sequence) noexcept
+{
+	if (slot >= SessionCapacity) return false;
+	Entry* match = nullptr;
+	for (auto& entry : m_sessions[slot].entries) {
+		if (!entry.active ||
+			entry.fact.episode_sequence != episode_sequence) continue;
+		if (match != nullptr) return false;
+		match = &entry;
+	}
+	if (match == nullptr) return false;
+	*match = {};
+	return true;
+}
+
+bool Phase2Wp07EpisodeLatches::on_applied(
+	std::size_t session_slot,
+	std::uint32_t assisted_signature,
+	std::uint32_t episode_sequence) noexcept
+{
+	if (session_slot >= SessionCapacity || assisted_signature == 0U ||
+		episode_sequence == 0U) return false;
+	for (auto& entry : m_sessions[session_slot].entries) {
+		if (entry.active &&
+			entry.fact.assisted_signature == assisted_signature &&
+			entry.fact.episode_sequence == episode_sequence) {
+			entry = {};
+			return true;
+		}
+	}
+	return false;
+}
+
+bool Phase2Wp07EpisodeLatches::pending(std::size_t slot) const noexcept
+{
+	if (slot >= SessionCapacity) return false;
+	for (const auto& entry : m_sessions[slot].entries)
+		if (entry.active) return true;
+	return false;
+}
+
+std::size_t Phase2Wp07EpisodeLatches::size(
+	std::size_t slot) const noexcept
+{
+	if (slot >= SessionCapacity) return 0U;
+	std::size_t count = 0U;
+	for (const auto& entry : m_sessions[slot].entries)
+		if (entry.active) ++count;
+	return count;
+}
+
+bool Phase2Wp07EpisodeLatches::pending(
+	std::size_t session_slot,
+	std::uint32_t assisted_signature) const noexcept
+{
+	return value(session_slot, assisted_signature).assisted_signature != 0U;
+}
+
+SupportTransitionFact Phase2Wp07EpisodeLatches::value(
+	std::size_t slot) const noexcept
+{
+	if (slot >= SessionCapacity) return {};
+	SupportTransitionFact result{};
+	for (const auto& entry : m_sessions[slot].entries)
+		if (entry.active &&
+			(result.assisted_signature == 0U ||
+			 entry.fact.episode_sequence > result.episode_sequence ||
+			 (entry.fact.episode_sequence == result.episode_sequence &&
+			  entry.fact.sample_time > result.sample_time)))
+			result = entry.fact;
+	return result;
+}
+
+SupportTransitionFact Phase2Wp07EpisodeLatches::value(
+	std::size_t session_slot,
+	std::uint32_t assisted_signature) const noexcept
+{
+	if (session_slot >= SessionCapacity || assisted_signature == 0U)
+		return {};
+	for (const auto& entry : m_sessions[session_slot].entries)
+		if (entry.active &&
+			entry.fact.assisted_signature == assisted_signature)
+			return entry.fact;
+	return {};
+}
+
+void Phase2Wp07EpisodeLatches::reset() noexcept
+{
+	m_sessions = {};
+}
+
+Phase2Wp07DrainStatus prepare_phase2_global_events(
+	const Phase2CaptureDiagnostics& accepted_map,
+	Phase2Wp07GlobalEventBatch& batch) noexcept
+{
+	batch = {};
+	if (Phase2CleanupRing.overflowed() ||
+		Phase2SupportTerminalRing.overflowed() ||
+		Phase2Wp07SeamFailedClosed)
+		return Phase2Wp07DrainStatus::RingOverflow;
+	if (accepted_map.source_count > accepted_map.source_signatures.size())
+		return Phase2Wp07DrainStatus::InvalidInput;
+	batch.cleanup_ring_count = Phase2CleanupRing.size();
+	batch.support_ring_count = Phase2SupportTerminalRing.size();
+	for (std::size_t index = 0U; index < batch.cleanup_ring_count; ++index) {
+		auto intent = Phase2CleanupRing.at(index);
+		std::uint32_t local_key = 0U;
+		for (std::size_t source = 0U;
+			 source < accepted_map.source_count; ++source)
+			if (accepted_map.source_signatures[source] ==
+				intent.object_signature)
+				local_key = static_cast<std::uint32_t>(source + 1U);
+		if (local_key == 0U) continue;
+		intent.object_signature = local_key;
+		if (batch.cleanup.count >= batch.cleanup.intents.size())
+			return Phase2Wp07DrainStatus::TableOverflow;
+		batch.cleanup.intents[batch.cleanup.count++] = intent;
+	}
+	for (std::size_t index = 0U; index < batch.support_ring_count; ++index) {
+		auto fact = Phase2SupportTerminalRing.at(index);
+		std::uint32_t assisted = 0U;
+		std::uint32_t support = 0U;
+		for (std::size_t source = 0U;
+			 source < accepted_map.source_count; ++source) {
+			if (accepted_map.source_signatures[source] ==
+				fact.assisted_signature)
+				assisted = static_cast<std::uint32_t>(source + 1U);
+			if (accepted_map.source_signatures[source] ==
+				fact.support_signature)
+				support = static_cast<std::uint32_t>(source + 1U);
+		}
+		if (assisted == 0U) continue;
+		fact.assisted_signature = assisted;
+		fact.support_signature = support;
+		if (batch.support_count >= batch.support.size())
+			return Phase2Wp07DrainStatus::TableOverflow;
+		batch.support[batch.support_count++] = fact;
+	}
+	return batch.cleanup_ring_count == 0U &&
+		batch.support_ring_count == 0U
+		? Phase2Wp07DrainStatus::NoFacts
+		: Phase2Wp07DrainStatus::Drained;
+}
+
+bool commit_phase2_global_events(
+	const Phase2Wp07GlobalEventBatch& batch) noexcept
+{
+	if (batch.cleanup_ring_count > Phase2CleanupRing.size() ||
+		batch.support_ring_count > Phase2SupportTerminalRing.size())
+		return false;
+	auto cleanup = Phase2CleanupRing;
+	auto support = Phase2SupportTerminalRing;
+	if (!cleanup.commit_drain(batch.cleanup_ring_count) ||
+		!support.commit_drain(batch.support_ring_count))
+		return false;
+	Phase2CleanupRing = cleanup;
+	Phase2SupportTerminalRing = support;
+	return true;
+}
+
+std::size_t phase2_cleanup_ring_depth() noexcept
+{
+	return Phase2CleanupRing.size();
+}
+
+std::size_t phase2_support_ring_depth() noexcept
+{
+	return Phase2SupportTerminalRing.size();
+}
+
+bool phase2_cleanup_ring_overflowed() noexcept
+{
+	return Phase2CleanupRing.overflowed();
+}
+
+bool phase2_support_ring_overflowed() noexcept
+{
+	return Phase2SupportTerminalRing.overflowed();
+}
+
+Phase2Wp07DrainStatus drain_support_terminals_once(
+	Phase2Wp07SupportTerminalRing& ring,
+	Phase2Wp07EpisodeLatches& latches) noexcept
+{
+	if (ring.overflowed())
+		return Phase2Wp07DrainStatus::RingOverflow;
+	if (ring.size() == 0U)
+		return Phase2Wp07DrainStatus::NoFacts;
+	auto candidate = latches;
+	bool active_session = false;
+	for (std::size_t session = 0U;
+		 session < Phase2Wp07EpisodeLatches::SessionCapacity; ++session) {
+		if (!candidate.session_active(session)) continue;
+		active_session = true;
+		for (std::size_t fact = 0U; fact < ring.size(); ++fact)
+			if (!candidate.latch(session, ring.at(fact)))
+				return Phase2Wp07DrainStatus::TableOverflow;
+	}
+	if (!active_session)
+		return Phase2Wp07DrainStatus::InvalidInput;
+	auto drained = ring;
+	if (!drained.commit_drain(drained.size()))
+		return Phase2Wp07DrainStatus::InvalidInput;
+	latches = candidate;
+	ring = drained;
+	return Phase2Wp07DrainStatus::Drained;
+}
+
+Phase2Wp07DrainStatus drain_cleanup_once(
+	Phase2Wp07CleanupRing& ring,
+	const std::uint32_t* closure_signatures,
+	std::size_t closure_count,
+	Phase2Wp07CleanupBatch& batch) noexcept
+{
+	if (ring.overflowed())
+		return Phase2Wp07DrainStatus::RingOverflow;
+	if (closure_count > Phase2Wp07CleanupRing::Capacity ||
+		(closure_count != 0U && closure_signatures == nullptr))
+		return Phase2Wp07DrainStatus::InvalidInput;
+	for (std::size_t index = 0U; index < closure_count; ++index) {
+		if (closure_signatures[index] == 0U)
+			return Phase2Wp07DrainStatus::InvalidInput;
+		for (std::size_t previous = 0U; previous < index; ++previous)
+			if (closure_signatures[previous] == closure_signatures[index])
+				return Phase2Wp07DrainStatus::InvalidInput;
+	}
+	if (ring.size() == 0U) {
+		batch = {};
+		return Phase2Wp07DrainStatus::NoFacts;
+	}
+	Phase2Wp07CleanupBatch candidate{};
+	for (std::size_t fact = 0U; fact < ring.size(); ++fact) {
+		const auto intent = ring.at(fact);
+		if (intent.object_signature == 0U ||
+			static_cast<std::uint8_t>(intent.mode) >=
+				static_cast<std::uint8_t>(ShipCleanupMode::Count) ||
+			!intent.event_ready || !intent.fence_ready ||
+			!intent.new_entity_id_request ||
+			intent.event_order >= intent.purge_order ||
+			intent.replacement_entity_id == 0U)
+			return Phase2Wp07DrainStatus::InvalidInput;
+		bool in_closure = false;
+		for (std::size_t index = 0U; index < closure_count; ++index)
+			in_closure = in_closure ||
+				closure_signatures[index] == intent.object_signature;
+		if (!in_closure) continue;
+		for (std::size_t existing = 0U;
+			 existing < candidate.count; ++existing)
+			if (candidate.intents[existing].object_signature ==
+				intent.object_signature)
+				return Phase2Wp07DrainStatus::InvalidInput;
+		if (candidate.count >= candidate.intents.size())
+			return Phase2Wp07DrainStatus::TableOverflow;
+		candidate.intents[candidate.count++] = intent;
+	}
+	auto drained = ring;
+	if (!drained.commit_drain(drained.size()))
+		return Phase2Wp07DrainStatus::InvalidInput;
+	batch = candidate;
+	ring = drained;
+	return Phase2Wp07DrainStatus::Drained;
+}
+
 } // namespace telemetry::detail
 
 namespace telemetry {
@@ -2416,10 +3213,14 @@ namespace telemetry {
 void OnShipCleanup(std::uint32_t object_signature, ShipCleanupMode mode) noexcept
 {
 	if (static_cast<std::uint8_t>(mode) >= static_cast<std::uint8_t>(ShipCleanupMode::Count)) {
+		detail::Phase2Wp07SeamFailedClosed = true;
 		return;
 	}
 	detail::Phase2Handoff.has_ship_cleanup = true;
 	detail::Phase2Handoff.ship_cleanup = {object_signature, mode};
+	if (!detail::Phase2CleanupRing.record(
+			{object_signature, mode}, 0U))
+		detail::Phase2Wp07SeamFailedClosed = true;
 	if (auto* test_double = detail::phase2_seam_test_double()) {
 		test_double->on_ship_cleanup(detail::ShipCleanupFact{object_signature, mode});
 	}
@@ -2432,14 +3233,54 @@ void OnSupportTransition(std::uint32_t assisted_signature,
 	std::uint64_t sample_time) noexcept
 {
 	if (static_cast<std::uint8_t>(reason) >= static_cast<std::uint8_t>(SupportTransitionReason::Count)) {
+		detail::Phase2Wp07SeamFailedClosed = true;
 		return;
 	}
+	if (assisted_signature == 0U) return;
+	auto* episode = static_cast<detail::SupportEpisodeEntry*>(nullptr);
+	for (auto& candidate : detail::Phase2SupportEpisodes) {
+		if (candidate.assisted_signature == assisted_signature) {
+			episode = &candidate;
+			break;
+		}
+		if (episode == nullptr && candidate.assisted_signature == 0U)
+			episode = &candidate;
+	}
+	if (episode == nullptr) {
+		detail::Phase2Wp07SeamFailedClosed = true;
+		return;
+	}
+	if (episode->assisted_signature == 0U)
+		episode->assisted_signature = assisted_signature;
+	const auto opening = reason == SupportTransitionReason::Queue ||
+		reason == SupportTransitionReason::OnWay ||
+		reason == SupportTransitionReason::Begin;
+	if (opening && !episode->active) {
+		++episode->sequence;
+		if (episode->sequence == 0U) ++episode->sequence;
+		episode->active = true;
+	}
+	const auto terminal = reason == SupportTransitionReason::Broken ||
+		reason == SupportTransitionReason::End ||
+		reason == SupportTransitionReason::Abort ||
+		reason == SupportTransitionReason::Killed ||
+		reason == SupportTransitionReason::Complete;
+	const auto resolved_sequence =
+		episode_sequence != 0U ? episode_sequence : episode->sequence;
 	detail::Phase2Handoff.has_support_transition = true;
 	detail::Phase2Handoff.support_transition =
-		{assisted_signature, support_signature, episode_sequence, reason, sample_time};
+		{assisted_signature, support_signature, resolved_sequence, reason, sample_time};
+	if (resolved_sequence != 0U) {
+		if (!detail::Phase2SupportTerminalRing.record_transition(
+				detail::Phase2Handoff.support_transition))
+			detail::Phase2Wp07SeamFailedClosed = true;
+	}
+	if (terminal && resolved_sequence != 0U) {
+		episode->active = false;
+	}
 	if (auto* test_double = detail::phase2_seam_test_double()) {
 		test_double->on_support_transition(
-			detail::SupportTransitionFact{assisted_signature, support_signature, episode_sequence, reason, sample_time});
+			detail::SupportTransitionFact{assisted_signature, support_signature, resolved_sequence, reason, sample_time});
 	}
 }
 

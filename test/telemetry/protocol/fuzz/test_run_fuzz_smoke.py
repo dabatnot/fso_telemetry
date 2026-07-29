@@ -74,6 +74,12 @@ raise SystemExit(exit_code)
             "1800",
             "--seed",
             "4242",
+            "--sanitizer",
+            "fuzzer",
+            "--sanitizer",
+            "address",
+            "--sanitizer",
+            "undefined",
             "--evidence-dir",
             str(self.root / "evidence"),
         )
@@ -83,10 +89,28 @@ raise SystemExit(exit_code)
     def test_default_and_single_target_selection(self) -> None:
         default_args = self.arguments()
         self.assertEqual(2000, default_args.runs)
+        self.assertIsNone(default_args.max_len)
         self.assertEqual(runner.TARGETS, runner.selected_targets(default_args))
 
         selected_args = self.arguments("--target", "fuzz_records")
         self.assertEqual(("fuzz_records",), runner.selected_targets(selected_args))
+
+    def test_max_len_is_omitted_unless_explicitly_requested(self) -> None:
+        corpus = self.root / "corpus"
+        artifacts = self.root / "artifacts"
+
+        default_command = runner.build_command(
+            self.arguments(), self.root / "fuzzer", corpus, artifacts
+        )
+        self.assertFalse(any(argument.startswith("-max_len=") for argument in default_command))
+
+        explicit_command = runner.build_command(
+            self.arguments("--max-len", "4096"),
+            self.root / "fuzzer",
+            corpus,
+            artifacts,
+        )
+        self.assertIn("-max_len=4096", explicit_command)
 
     def test_tree_manifest_is_stable_and_content_sensitive(self) -> None:
         first = self.root / "first"
@@ -145,6 +169,9 @@ raise SystemExit(exit_code)
         self.assertEqual(1800, report["timing"]["requestedMaxTotalTimeSeconds"])
         self.assertGreaterEqual(report["timing"]["elapsedSeconds"], 0)
         self.assertEqual(4242, report["configuration"]["seed"])
+        self.assertEqual(
+            ["fuzzer", "address", "undefined"], report["configuration"]["sanitizers"]
+        )
         self.assertIn("detect_leaks=1", report["configuration"]["environment"]["ASAN_OPTIONS"])
         self.assertEqual(1, report["corpus"]["initial"]["fileCount"])
         self.assertEqual(1, report["corpus"]["final"]["fileCount"])

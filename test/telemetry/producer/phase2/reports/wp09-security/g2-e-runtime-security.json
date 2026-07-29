@@ -1,0 +1,298 @@
+{
+  "schema": "fs2open.telemetry.phase2.g2-e-runtime-security.v1",
+  "phaseNumber": 2,
+  "workPackages": [
+    "P2-WP-08",
+    "P2-WP-09"
+  ],
+  "gate": "G2-E",
+  "profile": "certification",
+  "cadence": "final-gate-checkpoint",
+  "status": "closed",
+  "sealedAtUtc": "2026-07-27T14:45:24.3750104Z",
+  "source": {
+    "branch": "codex/phase2-pre-skill-checkpoint",
+    "head": "6f845a864e9f9f6100790893c190877114e89027",
+    "worktree": "dirty-WP09-G2-E-certification-checkpoint",
+    "windowsBuildDirectory": "build",
+    "clangBuildDirectory": "/mnt/d/david/Documents/Dev/fsotelemetry/fs2open.github.com/build-phase2-clang",
+    "timezone": "Europe/Paris"
+  },
+  "roles": {
+    "coordinator": "/root",
+    "contractTracker": "/root/contract_tracker",
+    "implementer": "/root/implementer",
+    "testOwner": "/root/test_agent",
+    "reviewer": "/root/reviewer"
+  },
+  "dependencies": {
+    "P2-WP-02": "verified",
+    "P2-WP-08": "verified",
+    "P2-WP-09": "verified",
+    "G2-B": "closed",
+    "G2-D": "closed",
+    "G2-E": "closed",
+    "nextAuthorizedWorkPackage": "P2-WP-10",
+    "nextGate": "G2-F"
+  },
+  "contractCoverage": {
+    "verifiedWorkPackages": [
+      "P2-WP-08",
+      "P2-WP-09"
+    ],
+    "verifiedRequirements": [
+      "P2-REQ-006",
+      "P2-REQ-007",
+      "P2-REQ-008",
+      "P2-REQ-041",
+      "P2-REQ-042",
+      "P2-REQ-043",
+      "P2-REQ-044"
+    ],
+    "implementedRequirementsPendingLaterOwnership": {
+      "P2-REQ-045": "WP09 runtime prerequisite is verified; final reference-machine p99 proof remains WP11 ownership.",
+      "P2-REQ-046": "WP09 quota and bound enforcement is verified; final permanent-allocation and endurance proof remains WP11 ownership.",
+      "P2-REQ-049": "WP09 declarations are explicit; later work packages still own their own source and test declarations.",
+      "P2-REQ-050": "WP09 security and validation paths are fail-closed; later work packages still own additional negative paths."
+    },
+    "verifiedTests": [
+      "P2-TST-001",
+      "P2-TST-002",
+      "P2-TST-003",
+      "P2-TST-004",
+      "P2-TST-005",
+      "P2-TST-006",
+      "P2-TST-007",
+      "P2-TST-008",
+      "P2-TST-009",
+      "P2-TST-049",
+      "P2-TST-050",
+      "P2-TST-051",
+      "P2-TST-052",
+      "P2-TST-053",
+      "P2-TST-054",
+      "P2-TST-055",
+      "P2-TST-056",
+      "P2-TST-057",
+      "P2-TST-058",
+      "P2-TST-059",
+      "P2-TST-060",
+      "P2-TST-061",
+      "P2-TST-062",
+      "P2-TST-063",
+      "P2-TST-064",
+      "P2-TST-065",
+      "P2-TST-066",
+      "P2-TST-067",
+      "P2-TST-068",
+      "P2-TST-069",
+      "P2-TST-070"
+    ],
+    "acceptance": {
+      "P2-AC-003": "verified",
+      "P2-AC-007": "runtime prerequisite verified; independent-client and loss ownership remains WP10/WP11",
+      "P2-AC-008": "runtime prerequisite verified; independent-client and loss ownership remains WP10/WP11",
+      "P2-AC-009": "runtime prerequisite verified; extended loss campaign remains WP11",
+      "P2-AC-010": "verified",
+      "P2-AC-011": "verified",
+      "P2-AC-012": "verified"
+    }
+  },
+  "checkpointCriteria": {
+    "clangFiveTargetBuild": "pass",
+    "clangContractSelection": "15/15-pass",
+    "nativeReleaseRuntimeAndLoopback": "18/18-pass-0-skip-0-fail",
+    "runnerHarness": "5/5-pass",
+    "packetReaderFuzz": "pass-no-artifact",
+    "stateValidatorFuzz": "pass-no-artifact",
+    "sanitizers": "fuzzer-address-undefined",
+    "msvcReleaseEvidence": "retained-valid",
+    "review": "GO",
+    "diffCheck": "pass",
+    "G2-E": "closed"
+  },
+  "commands": [
+    {
+      "id": "clang-five-target-build",
+      "command": "env PATH=/home/david/.local/phase2-toolchain/root/usr/bin:/home/david/.local/phase2-toolchain/root/usr/lib/llvm-14/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin LD_LIBRARY_PATH=/home/david/.local/phase2-toolchain/root/usr/lib/x86_64-linux-gnu:/home/david/.local/phase2-toolchain/root/usr/lib PKG_CONFIG_PATH=/home/david/.local/phase2-toolchain/root/usr/lib/x86_64-linux-gnu/pkgconfig:/home/david/.local/phase2-toolchain/root/usr/lib/pkgconfig:/home/david/.local/phase2-toolchain/root/usr/share/pkgconfig CPATH=/home/david/.local/phase2-toolchain/root/usr/include LIBRARY_PATH=/home/david/.local/phase2-toolchain/root/usr/lib/x86_64-linux-gnu CMAKE_PREFIX_PATH=/home/david/.local/phase2-toolchain/root/usr cmake --build /mnt/d/david/Documents/Dev/fsotelemetry/fs2open.github.com/build-phase2-clang --target telemetry_phase2_unit_tests telemetry_phase2_protocol_tests telemetry_phase2_integration_tests telemetry_phase2_packet_reader_fuzz telemetry_phase2_state_validator_fuzz --parallel 2",
+      "exitCode": 0,
+      "durationSeconds": 27.0,
+      "result": "pass",
+      "note": "Final incremental resumption linked 3/3 remaining outputs."
+    },
+    {
+      "id": "clang-contract-selection",
+      "command": "env PATH=/home/david/.local/phase2-toolchain/root/usr/bin:/home/david/.local/phase2-toolchain/root/usr/lib/llvm-14/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin LD_LIBRARY_PATH=/home/david/.local/phase2-toolchain/root/usr/lib/x86_64-linux-gnu:/home/david/.local/phase2-toolchain/root/usr/lib/x86_64-linux-gnu/pulseaudio:/mnt/d/david/Documents/Dev/fsotelemetry/fs2open.github.com/build-phase2-clang/lib/prebuilt/ffmpeg/lib:/mnt/d/david/Documents/Dev/fsotelemetry/fs2open.github.com/build-phase2-clang/lib/prebuilt/openal/lib:/mnt/d/david/Documents/Dev/fsotelemetry/fs2open.github.com/build-phase2-clang/lib/prebuilt/sdl2/lib ctest --test-dir /mnt/d/david/Documents/Dev/fsotelemetry/fs2open.github.com/build-phase2-clang -R 'telemetry_phase2|fstl_1_0|fstl_1_1' --output-on-failure",
+      "exitCode": 0,
+      "durationSeconds": 39.75,
+      "wrapperDurationSeconds": 41.487,
+      "result": "15/15-pass"
+    },
+    {
+      "id": "native-release-runtime-and-loopback",
+      "cwd": "build/bin/Release",
+      "command": "$env:FSO_TELEMETRY_RUN_NATIVE_LOOPBACK='1'; .\\unittests.exe --gtest_filter='TelemetryNativeRuntimeLoopbackContract.*:TelemetryNativeRuntimeIntegrationContract.*'",
+      "exitCode": 0,
+      "durationMilliseconds": 671,
+      "wrapperDurationMilliseconds": 790,
+      "result": "18/18-pass-0-skip-0-fail",
+      "environmentCleanup": "FSO_TELEMETRY_RUN_NATIVE_LOOPBACK removed after execution"
+    },
+    {
+      "id": "fuzz-runner-harness",
+      "command": "python test/telemetry/protocol/fuzz/test_run_fuzz_smoke.py",
+      "exitCode": 0,
+      "durationSeconds": 0.563,
+      "result": "5/5-pass"
+    },
+    {
+      "id": "packet-reader-fuzz-final",
+      "command": "build-phase2-clang/bin/telemetry_phase2_packet_reader_fuzz test/telemetry/producer/phase2/reports/wp09-security/fuzz-artifacts/packet-final/telemetry_phase2_packet_reader_fuzz/working-corpus -timeout=5 -rss_limit_mb=384 -print_final_stats=1 -use_value_profile=1 -artifact_prefix=build-phase2-clang/telemetry-phase2-fuzz-artifacts-packet-final/telemetry_phase2_packet_reader_fuzz/ -max_total_time=60 -seed=1345474380 -dict=test/telemetry/protocol/fuzz/fstl.dict",
+      "exitCode": 0,
+      "result": "pass"
+    },
+    {
+      "id": "state-validator-fuzz-final",
+      "command": "build-phase2-clang/bin/telemetry_phase2_state_validator_fuzz test/telemetry/producer/phase2/reports/wp09-security/fuzz-artifacts/validator-final/telemetry_phase2_state_validator_fuzz/working-corpus -timeout=5 -rss_limit_mb=384 -print_final_stats=1 -use_value_profile=1 -artifact_prefix=build-phase2-clang/telemetry-phase2-fuzz-artifacts-validator-final/telemetry_phase2_state_validator_fuzz/ -max_total_time=60 -seed=1345474380 -dict=test/telemetry/protocol/fuzz/fstl.dict",
+      "exitCode": 0,
+      "result": "pass"
+    },
+    {
+      "id": "diff-check",
+      "command": "git diff --check",
+      "exitCode": 0,
+      "result": "pass"
+    }
+  ],
+  "fuzzEvidence": [
+    {
+      "target": "telemetry_phase2_packet_reader_fuzz",
+      "report": {
+        "path": "test/telemetry/producer/phase2/reports/wp09-security/fuzz-artifacts/packet-final/telemetry_phase2_packet_reader_fuzz/report.json",
+        "sha256": "da644ff5644a141808b6b47d9e37423040a61c5543c002164fd15fc664ee4b92"
+      },
+      "status": "passed",
+      "executedUnits": 3648285,
+      "peakRssMiB": 203,
+      "artifactCount": 0,
+      "maxInputLength": null,
+      "sanitizers": [
+        "fuzzer",
+        "address",
+        "undefined"
+      ],
+      "binarySha256": "ca0145e70c3b6eae228801fa9b83366afd3ef1cbd2a9a377640671987c029565",
+      "runLogSha256": "156bc7a287dbc7ac37a8098d5e63fb9984cd65b4cd2a8f1eda93e7b3519c153f",
+      "initialCorpusTreeSha256": "d6661c6145e0b158568cf7208a379f7116c4d64fbdd5bf511eca06e29748dce3",
+      "finalCorpusTreeSha256": "9a7e3ffff259519431770e2085e3e7dbd04d2bca4029c4830a8f17692a1a5170"
+    },
+    {
+      "target": "telemetry_phase2_state_validator_fuzz",
+      "report": {
+        "path": "test/telemetry/producer/phase2/reports/wp09-security/fuzz-artifacts/validator-final/telemetry_phase2_state_validator_fuzz/report.json",
+        "sha256": "c5798c3033ee67b38d0edf5ac0d49f16937245da19e86484d950a26bc8de748b"
+      },
+      "status": "passed",
+      "executedUnits": 9970474,
+      "peakRssMiB": 224,
+      "artifactCount": 0,
+      "maxInputLength": null,
+      "sanitizers": [
+        "fuzzer",
+        "address",
+        "undefined"
+      ],
+      "binarySha256": "e72d335a29160712fb7790ab956cd593da8d0f1fc27bb257a165e3bbd16506b6",
+      "runLogSha256": "916234682e9e955e6009bbf36c8afb3788b69f1033f1bdaec858f03d8f4277a5",
+      "initialCorpusTreeSha256": "68339992eb42ba09f16184a0efa4a794ac74d59e0f47be5705c38993df3ce9c2",
+      "finalCorpusTreeSha256": "90c9f2b835aa4c9b9df88d747ac742dae05b6ec1a279e8e85cc27856c48eb2ad"
+    }
+  ],
+  "retainedMsvcReleaseEvidence": {
+    "status": "valid",
+    "reason": "The source, test, CMake, configuration and generated inputs of the prior conclusive MSVC Release proofs were not invalidated outside the WP09 dependency cone.",
+    "nativeRuntimeBinary": {
+      "path": "build/bin/Release/unittests.exe",
+      "bytes": 25532416,
+      "sha256": "360f8ac2ba87b994ff9d6c5113f7fadc5a533066854c2448b1954b2ba1db0395",
+      "mtimeUtc": "2026-07-27T11:56:34.4588618Z"
+    }
+  },
+  "sourceBindings": [
+    {
+      "path": "code/telemetry/config.cpp",
+      "sha256": "fa7d72a592f84a93ff7687a9e22f25bba5a34d6bc2e268d2de25c32560e6bed9"
+    },
+    {
+      "path": "code/telemetry/capture_scheduler.cpp",
+      "sha256": "a0231e8d10ad68b778691ae3d4371787bd97daf67a924026505c38b9845dc924"
+    },
+    {
+      "path": "code/telemetry/logging.cpp",
+      "sha256": "1399b347383f83529001e9b351e584867fc2614fc298d1cb3311faf3cd079fcf"
+    },
+    {
+      "path": "code/telemetry/metrics.cpp",
+      "sha256": "856a8ffbddd63f384b758d75867edf3067c83ed93bf160d9f6ee812c1c593e24"
+    },
+    {
+      "path": "code/telemetry/startup_budget.cpp",
+      "sha256": "52277100c9abccc814e4d85a131fb670fdfcc8a81881e7af1f719240e2124cf4"
+    },
+    {
+      "path": "code/telemetry/session_controller.cpp",
+      "sha256": "41893c26c8c0f872a5002353ba54f1b8ac5bb2e9d8a58eedd24fe304748006ae"
+    },
+    {
+      "path": "code/telemetry/native_session_runtime.cpp",
+      "sha256": "378dab553e3df8c371f94ee798352ed4bf2b8b61d96a9dfc2a21538478d0d6d1"
+    },
+    {
+      "path": "code/source_groups.cmake",
+      "sha256": "950d0894da336e8736b1ad9d9e920b4cf9ade43bc12629db8ddee3ba75824ec1"
+    },
+    {
+      "path": "test/src/CMakeLists.txt",
+      "sha256": "1fb4db29c4d0178d236136bbe019aa2c2a96b531e44bd924a6610c64dd854dd8"
+    },
+    {
+      "path": "test/src/telemetry/producer/phase2_wp09_contract_tests.cpp",
+      "sha256": "33d2339dac4c3ee54174a26e522db42ee9096572dacf92c6080db1befd1394c4"
+    },
+    {
+      "path": "test/telemetry/protocol/fuzz/run_fuzz_smoke.py",
+      "sha256": "78f444fe6e13a2d39e960b5fc061a2085089b79d7df9a24355c72673314cb484"
+    },
+    {
+      "path": "test/telemetry/protocol/fuzz/telemetry_phase2_packet_reader_fuzz.cpp",
+      "sha256": "ad49e66647a78cf7760ed523d4670a12c0b1bbf6d8a840db02116fab7530d027"
+    },
+    {
+      "path": "test/telemetry/protocol/fuzz/telemetry_phase2_state_validator_fuzz.cpp",
+      "sha256": "5a76a9ed38cf3c1decd234d1c778ba112ee6ff4de4aa4358027c71b4056e0fa5"
+    }
+  ],
+  "review": {
+    "reviewer": "/root/reviewer",
+    "disposition": "GO",
+    "findings": [],
+    "summary": "The final packet-reader report closes the last finding. Both fuzz reports are conclusive and G2-E can be sealed."
+  },
+  "blockers": [],
+  "worktreeBinding": {
+    "preTrackerAndReportStatusLines": 81319,
+    "preTrackerAndReportStatusSha256": "a095c60408c25aa9ea2beee95cfb554c17f29161d45049cc695c5ad8d34f0b43",
+    "focusedTrackedWp09DiffSha256": "68a5da00775c7a26983e64714d5781250fbd0eed71bd3325d2ee4bf0439ee9d2",
+    "untrackedFilesDisposition": "visible-and-untouched"
+  },
+  "tracker": {
+    "path": "documentation/analysis/progress/phase-2.json",
+    "sha256": "ce48fe9b31be20fe015d59b7840d53bfd746fad592eeccc12dba9f1893a7f060",
+    "validation": "passed"
+  },
+  "next": {
+    "workPackage": "P2-WP-10",
+    "profile": "balanced",
+    "gate": "G2-F"
+  }
+}

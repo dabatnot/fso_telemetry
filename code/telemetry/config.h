@@ -84,6 +84,7 @@ struct TelemetryConfig {
 	bool trusted_full_state = false;
 	std::uint8_t max_clients = 1;
 	std::uint8_t flight_hz = 30;
+	std::uint8_t systems_hz = 10;
 	std::uint8_t keyframe_seconds = 2;
 	std::uint16_t mission_heartbeat_ms = 500;
 	std::uint16_t idle_heartbeat_ms = 1000;

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "telemetry/protocol/telemetry_protocol_constants.h"
+
 #include <array>
 #include <cstddef>
 #include <cstring>
@@ -103,11 +105,18 @@ struct Phase2ObservationSelection {
 
 class OwnedPhase2String {
   public:
-	bool assign(std::string_view value) noexcept;
-	std::size_t size() const noexcept;
-	bool empty() const noexcept;
-	const char* data() const noexcept;
-	std::string_view view() const noexcept;
+	bool assign(std::string_view value) noexcept
+	{
+		if (value.size() > MaximumPhase2InternalNameBytes) return false;
+		if (!value.empty()) std::memcpy(m_bytes.data(), value.data(), value.size());
+		m_size = static_cast<std::uint16_t>(value.size());
+		m_bytes[m_size] = '\0';
+		return true;
+	}
+	std::size_t size() const noexcept { return m_size; }
+	bool empty() const noexcept { return m_size == 0U; }
+	const char* data() const noexcept { return m_bytes.data(); }
+	std::string_view view() const noexcept { return {m_bytes.data(), m_size}; }
 
 	friend bool operator==(const OwnedPhase2String& left, std::string_view right) noexcept
 	{
@@ -358,9 +367,14 @@ struct Phase2RawStaticReferences {
 struct ShipIdentityObservation {
 	OwnedPhase2String internal_name;
 	OwnedPhase2String class_name;
+	OwnedPhase2String display_name;
+	OwnedPhase2String callsign;
+	OwnedPhase2String wing_name;
 	std::uint64_t sample_time_us = 0U;
 	std::uint64_t presence = 0U;
 	Phase2CaptureLocalKey class_source_key;
+	std::uint16_t role_flags = 0U;
+	std::uint16_t wing_position = 0U;
 };
 
 enum class ShipLifecycleState : std::uint8_t {
@@ -397,6 +411,7 @@ struct ShipFlightObservation {
 struct ShipDamageObservation {
 	std::uint64_t sample_time_us = 0U;
 	std::uint64_t presence = 0U;
+	std::uint16_t protection_flags = 0U;
 	float hull_current = 0.0F;
 	float hull_maximum = 0.0F;
 	float guardian_threshold = 0.0F;
@@ -424,6 +439,14 @@ struct ShipEnergyObservation {
 	std::uint8_t weapon_recharge_index = 0U;
 	std::uint8_t engine_recharge_index = 0U;
 	bool ets_available = false;
+	protocol::EtsMode ets_mode = protocol::EtsMode::Absent;
+	float shield_regeneration_rate = 0.0F;
+	float weapon_regeneration_rate = 0.0F;
+	float deferred_weapon_transfer = 0.0F;
+	float deferred_shield_transfer = 0.0F;
+	float power_output = 0.0F;
+	float engine_integrity_current = 0.0F;
+	float engine_integrity_maximum = 0.0F;
 };
 
 struct ShipPropulsionObservation {
@@ -436,6 +459,11 @@ struct ShipPropulsionObservation {
 	float recovery_rate = 0.0F;
 	std::uint64_t cooldown_remaining_us = 0U;
 	std::uint64_t time_since_last_stop_us = 0U;
+	float minimum_to_engage = 0.0F;
+	float fuel_at_last_engagement = 0.0F;
+	float forward_acceleration_time_constant = 0.0F;
+	std::array<float, 3U> afterburner_max_velocity{};
+	float engine_wash_intensity = 0.0F;
 };
 
 enum class ShipWeaponBankFamily : std::uint8_t {
@@ -455,7 +483,15 @@ struct ShipWeaponBankObservation {
 	std::uint64_t cooldown_remaining_us = 0U;
 	std::int32_t primary_slot = -1;
 	std::int32_t secondary_slot = -1;
+	std::uint16_t primary_fire_point = 0U;
+	std::uint16_t simultaneous_slots = 1U;
+	std::uint16_t pattern_id = 0U;
+	std::uint8_t firing_pattern_source_code = 0U;
+	std::uint64_t rearm_remaining_us = 0U;
 	std::int32_t burst_counter = 0;
+	std::uint32_t burst_seed = 0U;
+	std::uint16_t substitution_pattern_index = 0U;
+	std::uint64_t fof_cooldown_remaining_us = 0U;
 	std::int32_t weapon_animation = 0;
 };
 
@@ -466,22 +502,39 @@ struct ShipWeaponsObservation {
 	std::uint8_t secondary_bank_count = 0U;
 	std::int32_t current_primary_bank = -1;
 	std::int32_t current_secondary_bank = -1;
+	std::int32_t previous_primary_bank = -1;
+	std::int32_t previous_secondary_bank = -1;
+	std::int32_t targeting_laser_bank = -1;
+	bool targeting_laser_active = false;
+	std::uint16_t swarm_remaining = 0U;
+	std::int32_t swarm_secondary_bank = -1;
+	std::uint32_t remote_detonaters_active = 0U;
+	std::uint64_t remote_detonation_remaining_us = 0U;
+	bool per_burst_rotation_active = false;
+	float per_burst_rotation = 0.0F;
 	std::uint64_t raw_weapon_flags = 0U;
+	std::uint8_t tertiary_bank_count = 0U;
+	std::int32_t current_tertiary_bank = -1;
 	std::int32_t tertiary_bank = -1;
 	std::int32_t tertiary_ammunition_current = 0;
+	std::int32_t tertiary_ammunition_initial = 0;
 	std::int32_t tertiary_ammunition_capacity = 0;
 	std::uint64_t tertiary_cooldown_remaining_us = 0U;
+	std::uint64_t tertiary_rearm_remaining_us = 0U;
 	std::array<ShipWeaponBankObservation, MaximumPhase2WeaponBanksPerFamily> primary_banks{};
 	std::array<ShipWeaponBankObservation, MaximumPhase2WeaponBanksPerFamily> secondary_banks{};
 	std::uint16_t countermeasure_count = 0U;
 	std::uint16_t countermeasure_maximum = 0U;
 	Phase2CaptureLocalKey countermeasure_class_source_key;
+	bool countermeasures_enabled = true;
+	std::uint64_t countermeasure_cooldown_remaining_us = 0U;
 };
 
 enum class ShipSupportPhase : std::uint8_t {
 	None = 0,
 	Queued,
 	OnWay,
+	Docking,
 	Repairing,
 	Rearming,
 	Aborted,
@@ -533,6 +586,7 @@ struct ShipDockRelationObservation {
 struct ShipDockingObservation {
 	std::uint64_t sample_time_us = 0U;
 	std::uint64_t presence = 0U;
+	protocol::DockingPhase phase = protocol::DockingPhase::None;
 	std::uint8_t relation_count = 0U;
 	bool dock_leader = false;
 	std::array<ShipDockRelationObservation, MaximumPhase2DockRelationsPerShip> relations{};
@@ -540,6 +594,7 @@ struct ShipDockingObservation {
 
 enum class ShipSubsystemKind : std::uint8_t {
 	Generic = 0,
+	Other,
 	Engine,
 	Weapon,
 	Turret,
@@ -573,6 +628,7 @@ struct ShipTurretObservation {
 	std::uint16_t turret_firing_point_count = 0U;
 	float turret_rof_scaler = 1.0F;
 	std::int32_t turret_animation = 0;
+	std::uint64_t turret_animation_remaining_us = 0U;
 	bool turret_beam_free = false;
 	bool turret_locked = false;
 };
@@ -645,6 +701,7 @@ struct PlayerControlObservation {
 	float flight_cursor_heading = 0.0F;
 	float flight_cursor_sensitivity = 0.0F;
 	float effective_aim_extent = 0.000001F;
+	float flight_cursor_deadzone_extent = 1.0F;
 	bool afterburner_requested = false;
 };
 
@@ -713,6 +770,29 @@ struct Phase2ShipSource {
 	Phase2StaticAuthorityInput static_authority_input;
 };
 
+enum class Phase2CaptureBlock : std::uint8_t {
+	Identity = 0,
+	Flight,
+	Control,
+	DamageShield,
+	EnergyPropulsion,
+	Weapons,
+	Subsystems,
+	SupportCargoDocking,
+	Count,
+};
+
+struct Phase2CaptureDiagnostics {
+	std::array<std::uint64_t,
+		static_cast<std::size_t>(Phase2CaptureBlock::Count)> duration_ns{};
+	std::uint8_t attempted_mask = 0U;
+	std::array<std::uint32_t, MaximumPhase2ObservationShips>
+		source_signatures{};
+	std::size_t source_count = 0U;
+	bool duration_overflow = false;
+	Phase2CaptureBlock primary_failed_block = Phase2CaptureBlock::Count;
+};
+
 class Phase2EngineReadView {
   public:
 	virtual ~Phase2EngineReadView() = default;
@@ -738,6 +818,28 @@ class Phase2EngineReadView {
 	}
 	virtual SourceReadResult read_ship(
 		EngineEntityKey key, Phase2ShipSource& output) const noexcept = 0;
+	// CoreGate owns only the validated player root and the CORE_SHIP blocks.
+	// The default fails closed without delegating to the broader read_ship()
+	// seam, so an implementation cannot accidentally make extension
+	// discovery/support/docking/cargo/weapon authorities a CoreGate
+	// materializability prerequisite.
+	virtual SourceReadResult read_core_gate_ship(
+		EngineEntityKey, Phase2ShipSource&) const noexcept
+	{
+		return {Phase2SourceReadStatus::UnsupportedEngineState};
+	}
+	virtual SourceReadResult read_ship_diagnosed(EngineEntityKey key,
+		Phase2ShipSource& output,
+		Phase2CaptureDiagnostics& diagnostics) const noexcept
+	{
+		return read_ship(key, output);
+	}
+	virtual SourceReadResult read_core_gate_ship_diagnosed(
+		EngineEntityKey key, Phase2ShipSource& output,
+		Phase2CaptureDiagnostics&) const noexcept
+	{
+		return read_core_gate_ship(key, output);
+	}
 	virtual bool read_player_controls(PlayerControlObservation& output) const noexcept = 0;
 	virtual bool read_player_cargo_scan(PlayerCargoScanObservation& output) const noexcept = 0;
 };
@@ -779,12 +881,20 @@ class Phase2ObservationBuffer {
 	std::size_t owned_bytes() const noexcept;
 	const Phase2ObservationDto& observation() const noexcept;
 	Phase2ObservationDto& observation() noexcept;
+	const Phase2CaptureDiagnostics& capture_diagnostics() const noexcept {
+		return m_capture_diagnostics;
+	}
+	const Phase2CaptureDiagnostics& accepted_capture_map() const noexcept {
+		return m_accepted_capture_map;
+	}
 	void reset_observation_and_clear_phase2() noexcept;
 
   private:
 	Phase2ObservationBufferState m_state = Phase2ObservationBufferState::Unprovisioned;
 	Phase2ObservationDto m_observation;
 	std::unique_ptr<Phase2ShipSource> m_source_scratch;
+	Phase2CaptureDiagnostics m_capture_diagnostics{};
+	Phase2CaptureDiagnostics m_accepted_capture_map{};
 };
 
 void reset_phase2_observation_buffer_in_place(
@@ -858,6 +968,134 @@ struct SupportTransitionFact {
 	std::uint64_t sample_time = 0U;
 };
 
+struct Phase2Wp07CleanupIntent {
+	ShipCleanupMode mode = ShipCleanupMode::Destroyed;
+	std::uint32_t object_signature = 0U;
+	std::uint64_t sample_time = 0U;
+	std::uint64_t event_order = 0U;
+	std::uint64_t purge_order = 0U;
+	std::uint64_t replacement_entity_id = 0U;
+	bool event_ready = false;
+	bool fence_ready = false;
+	bool new_entity_id_request = false;
+};
+
+enum class Phase2Wp07DrainStatus : std::uint8_t {
+	Drained = 0,
+	NoFacts,
+	InvalidInput,
+	RingOverflow,
+	TableOverflow,
+	Count,
+};
+
+class Phase2Wp07CleanupRing {
+  public:
+	static constexpr std::size_t Capacity = 64U;
+	bool record(const ShipCleanupFact& fact, std::uint64_t sample_time) noexcept;
+	Phase2Wp07CleanupIntent latest() const noexcept;
+	Phase2Wp07CleanupIntent at(std::size_t index) const noexcept;
+	std::size_t size() const noexcept { return m_size; }
+	bool overflowed() const noexcept { return m_overflowed; }
+	bool commit_drain(std::size_t count) noexcept;
+	void reset() noexcept;
+
+  private:
+	std::array<Phase2Wp07CleanupIntent, Capacity> m_values{};
+	std::size_t m_size = 0U;
+	std::uint64_t m_order = 0U;
+	std::uint64_t m_replacement = 0U;
+	bool m_overflowed = false;
+};
+
+class Phase2Wp07SupportTerminalRing {
+  public:
+	static constexpr std::size_t Capacity = 64U;
+	bool record_transition(const SupportTransitionFact& fact) noexcept;
+	bool record_terminal(const SupportTransitionFact& fact) noexcept;
+	SupportTransitionFact latest(std::uint32_t assisted_signature) const noexcept;
+	SupportTransitionFact at(std::size_t index) const noexcept;
+	std::size_t size() const noexcept { return m_size; }
+	bool overflowed() const noexcept { return m_overflowed; }
+	bool commit_drain(std::size_t count) noexcept;
+	void reset() noexcept;
+
+  private:
+	std::array<SupportTransitionFact, Capacity> m_values{};
+	std::array<SupportTransitionFact, Capacity> m_drained_latest{};
+	std::size_t m_drained_count = 0U;
+	std::size_t m_size = 0U;
+	bool m_overflowed = false;
+};
+
+class Phase2Wp07EpisodeLatches {
+  public:
+	static constexpr std::size_t SessionCapacity = 64U;
+	static constexpr std::size_t EntriesPerSession = 64U;
+	static constexpr std::size_t Capacity = EntriesPerSession;
+	bool activate_session(std::size_t session_slot) noexcept;
+	bool deactivate_session(std::size_t session_slot) noexcept;
+	bool session_active(std::size_t session_slot) const noexcept;
+	bool latch(std::size_t session_slot, const SupportTransitionFact& fact) noexcept;
+	bool on_applied(std::size_t slot, std::uint32_t episode_sequence) noexcept;
+	bool on_applied(std::size_t session_slot,
+		std::uint32_t assisted_signature,
+		std::uint32_t episode_sequence) noexcept;
+	bool pending(std::size_t slot) const noexcept;
+	std::size_t size(std::size_t slot) const noexcept;
+	bool pending(std::size_t session_slot,
+		std::uint32_t assisted_signature) const noexcept;
+	SupportTransitionFact value(std::size_t slot) const noexcept;
+	SupportTransitionFact value(std::size_t session_slot,
+		std::uint32_t assisted_signature) const noexcept;
+	void reset() noexcept;
+
+  private:
+	struct Entry {
+		bool active = false;
+		SupportTransitionFact fact{};
+	};
+	struct Session {
+		bool active = false;
+		std::array<Entry, EntriesPerSession> entries{};
+	};
+	std::array<Session, SessionCapacity> m_sessions{};
+};
+
+struct Phase2Wp07CleanupBatch {
+	std::array<Phase2Wp07CleanupIntent,
+		Phase2Wp07CleanupRing::Capacity> intents{};
+	std::size_t count = 0U;
+};
+
+struct Phase2Wp07GlobalEventBatch {
+	Phase2Wp07CleanupBatch cleanup{};
+	std::array<SupportTransitionFact,
+		Phase2Wp07SupportTerminalRing::Capacity> support{};
+	std::size_t support_count = 0U;
+	std::size_t cleanup_ring_count = 0U;
+	std::size_t support_ring_count = 0U;
+};
+
+Phase2Wp07DrainStatus prepare_phase2_global_events(
+	const Phase2CaptureDiagnostics& accepted_map,
+	Phase2Wp07GlobalEventBatch& batch) noexcept;
+bool commit_phase2_global_events(
+	const Phase2Wp07GlobalEventBatch& batch) noexcept;
+std::size_t phase2_cleanup_ring_depth() noexcept;
+std::size_t phase2_support_ring_depth() noexcept;
+bool phase2_cleanup_ring_overflowed() noexcept;
+bool phase2_support_ring_overflowed() noexcept;
+
+Phase2Wp07DrainStatus drain_support_terminals_once(
+	Phase2Wp07SupportTerminalRing& ring,
+	Phase2Wp07EpisodeLatches& latches) noexcept;
+Phase2Wp07DrainStatus drain_cleanup_once(
+	Phase2Wp07CleanupRing& ring,
+	const std::uint32_t* closure_signatures,
+	std::size_t closure_count,
+	Phase2Wp07CleanupBatch& batch) noexcept;
+
 struct CargoAuthorityFact {
 	std::uint32_t player_signature = 0U;
 	std::uint32_t target_signature = 0U;
@@ -885,6 +1123,9 @@ struct Phase2SeamHandoffSnapshot {
 void reset_phase2_seam_handoff() noexcept;
 void reset_phase2_mission_observation_state() noexcept;
 Phase2SeamHandoffSnapshot phase2_seam_handoff_snapshot() noexcept;
+SupportTransitionFact phase2_latest_support_terminal(
+	std::uint32_t assisted_signature) noexcept;
+bool phase2_wp07_seam_overflowed() noexcept;
 void capture_phase2_main_thread_authority() noexcept;
 bool phase2_current_thread_is_main() noexcept;
 

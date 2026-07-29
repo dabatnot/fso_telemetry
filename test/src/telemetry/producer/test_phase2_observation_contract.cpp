@@ -539,9 +539,9 @@ DEFINE_WP02_FORBIDDEN_DTO_AUTHORITY(has_wp02_docking_remote_signature,
 DEFINE_WP02_FORBIDDEN_DTO_AUTHORITY(has_wp02_cargo_target_signature,
 	std::declval<Observation&>().player_cargo_scan.target_object_signature);
 DEFINE_WP02_FORBIDDEN_DTO_AUTHORITY(has_wp02_ship_source_object_index,
-	std::declval<Phase2ShipSource&>().object_index);
+	std::declval<Observation&>().object_index);
 DEFINE_WP02_FORBIDDEN_DTO_AUTHORITY(has_wp02_ship_source_object_signature,
-	std::declval<Phase2ShipSource&>().object_signature);
+	std::declval<Observation&>().object_signature);
 
 #undef DEFINE_WP02_FORBIDDEN_DTO_AUTHORITY
 
@@ -721,6 +721,7 @@ class FakePhase2EngineReadView final : public Phase2EngineReadView {
 	// authorized closure and must not derive it from global mission population.
 	std::size_t global_ship_count = 1U;
 	mutable std::size_t read_calls = 0U;
+	mutable std::size_t core_gate_read_calls = 0U;
 	mutable std::size_t root_read_calls = 0U;
 	mutable std::size_t discovery_read_calls = 0U;
 	mutable std::size_t control_read_calls = 0U;
@@ -742,6 +743,9 @@ class FakePhase2EngineReadView final : public Phase2EngineReadView {
 		make_minimal_valid_phase2_ship_source();
 	std::array<Phase2ShipSource*, MaximumPhase2ObservationShips>
 		block_source_by_ship{};
+	std::array<std::uint64_t,
+		static_cast<std::size_t>(Phase2CaptureBlock::Count)>
+		diagnosed_duration_ns{};
 	PlayerControlObservation control_source;
 	PlayerCargoScanObservation cargo_source;
 
@@ -838,6 +842,53 @@ class FakePhase2EngineReadView final : public Phase2EngineReadView {
 			clear_phase2_s8_relations(output);
 		}
 		return {Phase2SourceReadStatus::Valid};
+	}
+	SourceReadResult read_core_gate_ship(
+		EngineEntityKey key, Phase2ShipSource& output) const noexcept override
+	{
+		++core_gate_read_calls;
+		if (key.object_signature == 0U) {
+			return {Phase2SourceReadStatus::InvalidSource};
+		}
+		const auto index = static_cast<std::size_t>(
+			key.object_signature - 1U);
+		if (index >= ship_count || index == failing_read_index) {
+			return {Phase2SourceReadStatus::InvalidSource};
+		}
+		const auto* selected_source =
+			block_source_by_ship[index] != nullptr
+			? block_source_by_ship[index]
+			: block_source.get();
+		output.internal_name = internal_name;
+		output.identity = selected_source->identity;
+		output.lifecycle = selected_source->lifecycle;
+		output.flight = selected_source->flight;
+		output.damage = selected_source->damage;
+		output.shields = selected_source->shields;
+		output.energy = selected_source->energy;
+		output.propulsion = selected_source->propulsion;
+		copy_wp02_static_catalog(*selected_source, output);
+		return {Phase2SourceReadStatus::Valid};
+	}
+	SourceReadResult read_ship_diagnosed(EngineEntityKey key,
+		Phase2ShipSource& output,
+		Phase2CaptureDiagnostics& diagnostics) const noexcept override
+	{
+		const auto result = read_ship(key, output);
+		if (result.status != Phase2SourceReadStatus::Valid) return result;
+		for (std::size_t block = 0U;
+			 block < diagnosed_duration_ns.size(); ++block) {
+			if (block == static_cast<std::size_t>(
+					Phase2CaptureBlock::Control) ||
+				block == static_cast<std::size_t>(
+					Phase2CaptureBlock::SupportCargoDocking))
+				continue;
+			diagnostics.attempted_mask |=
+				static_cast<std::uint8_t>(1U << block);
+			diagnostics.duration_ns[block] +=
+				diagnosed_duration_ns[block];
+		}
+		return result;
 	}
 	bool read_player_controls(PlayerControlObservation& output) const noexcept override
 	{
@@ -948,6 +999,72 @@ static_assert(noexcept(telemetry::OnSupportTransition(
 	1U, 2U, 3U, SupportTransitionReason::Complete, 4U)));
 static_assert(noexcept(telemetry::OnControlTarget(ControlTargetAuthority::Ship)));
 static_assert(noexcept(telemetry::OnCargoAuthority(CargoAuthorityFact{})));
+
+TEST(TelemetryPhase2ObservationContract,
+	Phase2CaptureDiagnosticsCoverEightAttemptedBlocksAndAggregateEachShipOnce)
+{
+	auto source = std::make_unique<FakePhase2EngineReadView>();
+	for (std::size_t block = 0U;
+		 block < source->diagnosed_duration_ns.size(); ++block)
+		source->diagnosed_duration_ns[block] =
+			static_cast<std::uint64_t>((block + 1U) * 1'000U);
+
+	auto buffer = std::make_unique<Phase2ObservationBuffer>();
+	ASSERT_TRUE(buffer->provision(Phase2ProvisioningMode::ValidEnabled));
+	ASSERT_TRUE(buffer->enter_ready());
+	ASSERT_EQ(Phase2CaptureStatus::Valid,
+		buffer->capture(*source, 1'000U,
+			Phase2ObservationProjection::CompleteShip).status);
+	const auto one = buffer->capture_diagnostics();
+	EXPECT_EQ(0xffU, one.attempted_mask);
+	EXPECT_EQ(1U, one.source_count);
+	EXPECT_EQ(1U, source->control_read_calls);
+	EXPECT_EQ(1U, source->cargo_read_calls);
+	for (const auto block : {
+			 Phase2CaptureBlock::Identity,
+			 Phase2CaptureBlock::Flight,
+			 Phase2CaptureBlock::DamageShield,
+			 Phase2CaptureBlock::EnergyPropulsion,
+			 Phase2CaptureBlock::Weapons,
+			 Phase2CaptureBlock::Subsystems}) {
+		const auto offset = static_cast<std::size_t>(block);
+		EXPECT_EQ(source->diagnosed_duration_ns[offset],
+			one.duration_ns[offset]);
+	}
+	EXPECT_FALSE(one.duration_overflow);
+
+	source->ship_count = 2U;
+	source->use_discovery_node_sources = true;
+	auto& player = source->discovery_node_sources[0];
+	player.capture_key = {1U};
+	player.support_capture_key = {2U};
+	auto& support = source->discovery_node_sources[1];
+	support.capture_key = {2U};
+	support.group_leader_capture_key = {1U};
+	ASSERT_EQ(Phase2CaptureStatus::Valid,
+		buffer->capture(*source, 2'000U,
+			Phase2ObservationProjection::CompleteShip).status);
+	const auto two = buffer->capture_diagnostics();
+	EXPECT_EQ(0xffU, two.attempted_mask);
+	EXPECT_EQ(2U, two.source_count);
+	EXPECT_EQ(2U, source->control_read_calls)
+		<< "Control is attempted once per capture, not once per ship.";
+	EXPECT_EQ(2U, source->cargo_read_calls)
+		<< "Cargo/support authority is attempted once per capture.";
+	for (const auto block : {
+			 Phase2CaptureBlock::Identity,
+			 Phase2CaptureBlock::Flight,
+			 Phase2CaptureBlock::DamageShield,
+			 Phase2CaptureBlock::EnergyPropulsion,
+			 Phase2CaptureBlock::Weapons,
+			 Phase2CaptureBlock::Subsystems}) {
+		const auto offset = static_cast<std::size_t>(block);
+		EXPECT_EQ(2U * source->diagnosed_duration_ns[offset],
+			two.duration_ns[offset])
+			<< "Each diagnosed ship contributes exactly once.";
+	}
+	EXPECT_FALSE(two.duration_overflow);
+}
 
 template <typename Source>
 void initialize_s8_ship_blocks(Source& blocks, bool maximum)
@@ -2090,6 +2207,18 @@ TEST(TelemetryPhase2ObservationContract, RootReadsOccurExactlyOnceAndFailuresAre
 	EXPECT_EQ(1U, source.read_calls);
 	EXPECT_EQ(1U, source.control_read_calls);
 	EXPECT_EQ(0U, source.cargo_read_calls);
+	{
+		auto diagnosed = std::make_unique<Phase2ObservationBuffer>();
+		ASSERT_TRUE(diagnosed->provision(
+			Phase2ProvisioningMode::ValidEnabled));
+		ASSERT_TRUE(diagnosed->enter_ready());
+		result = diagnosed->capture(source, 101U,
+			Phase2ObservationProjection::CompleteShip);
+		EXPECT_EQ(Phase2CaptureStatus::UnsupportedEngineState,
+			result.status);
+		EXPECT_EQ(Phase2CaptureBlock::Control,
+			diagnosed->capture_diagnostics().primary_failed_block);
+	}
 
 	source = {};
 	source.cargo_read_succeeds = false;
@@ -2099,6 +2228,18 @@ TEST(TelemetryPhase2ObservationContract, RootReadsOccurExactlyOnceAndFailuresAre
 	EXPECT_EQ(1U, source.read_calls);
 	EXPECT_EQ(1U, source.control_read_calls);
 	EXPECT_EQ(1U, source.cargo_read_calls);
+	{
+		auto diagnosed = std::make_unique<Phase2ObservationBuffer>();
+		ASSERT_TRUE(diagnosed->provision(
+			Phase2ProvisioningMode::ValidEnabled));
+		ASSERT_TRUE(diagnosed->enter_ready());
+		result = diagnosed->capture(source, 102U,
+			Phase2ObservationProjection::CompleteShip);
+		EXPECT_EQ(Phase2CaptureStatus::UnsupportedEngineState,
+			result.status);
+		EXPECT_EQ(Phase2CaptureBlock::SupportCargoDocking,
+			diagnosed->capture_diagnostics().primary_failed_block);
+	}
 
 	source = {};
 	source.failing_read_index = 0U;
@@ -2562,32 +2703,31 @@ TEST(TelemetryPhase2ObservationContract, ReviewerS8V4ActualOwnedBudgetFitsShared
 		"Phase 2 maximum owned storage must share the frozen 64 MiB startup cap.";
 }
 
-TEST(TelemetryPhase2ObservationContract, ReviewerS8V4DiscoveryFailureFailsEveryProjectionAtomically)
+TEST(TelemetryPhase2ObservationContract,
+	ReviewerS8V4CoreGateIgnoresExtensionAuthoritiesWhileCompleteShipFailsClosed)
 {
 	FakePhase2EngineReadView source;
 	source.discovery_status = Phase2SourceReadStatus::UnsupportedEngineState;
+	source.controls_read_succeeds = false;
+	source.cargo_read_succeeds = false;
 
 	auto core_storage = std::make_unique<Phase2ObservationBuffer>();
 	auto& core = *core_storage;
 	ASSERT_TRUE(core.provision(Phase2ProvisioningMode::ValidEnabled));
 	ASSERT_TRUE(core.enter_ready());
-	EXPECT_EQ(Phase2CaptureStatus::UnsupportedEngineState,
+	EXPECT_EQ(Phase2CaptureStatus::Valid,
 		core.capture(source, 100U, Phase2ObservationProjection::CoreGate).status);
-	EXPECT_EQ(1U, source.discovery_read_calls);
-	EXPECT_EQ(Phase2ObservationBufferState::FailedClosed, core.state());
-
-	auto extension_storage = std::make_unique<Phase2ObservationBuffer>();
-	auto& extension = *extension_storage;
-	ASSERT_TRUE(extension.provision(Phase2ProvisioningMode::ValidEnabled));
-	ASSERT_TRUE(extension.enter_ready());
-	EXPECT_EQ(Phase2CaptureStatus::UnsupportedEngineState,
-		extension.capture(
-			source, 101U, Phase2ObservationProjection::DiscoveryExtension).status);
-	EXPECT_EQ(Phase2SourceReadStatus::Valid,
-		extension.observation().discovery_status);
-	EXPECT_EQ(Phase2CaptureStatus::InvalidSource,
-		extension.observation().discovery_capture.status);
-	EXPECT_EQ(Phase2ObservationBufferState::FailedClosed, extension.state());
+	ASSERT_EQ(1U, core.observation().ships.size());
+	EXPECT_EQ(1U, core.observation().player_key.value);
+	EXPECT_EQ(1U, source.root_read_calls);
+	EXPECT_EQ(1U, source.core_gate_read_calls);
+	EXPECT_EQ(0U, source.discovery_read_calls);
+	EXPECT_EQ(0U, source.read_calls)
+		<< "CoreGate must not consult the CompleteShip ship seam that owns "
+		   "weapon, support, and docking authorities.";
+	EXPECT_EQ(0U, source.control_read_calls);
+	EXPECT_EQ(0U, source.cargo_read_calls);
+	EXPECT_EQ(Phase2ObservationBufferState::Ready, core.state());
 
 	auto complete_storage = std::make_unique<Phase2ObservationBuffer>();
 	auto& complete = *complete_storage;
@@ -2595,7 +2735,11 @@ TEST(TelemetryPhase2ObservationContract, ReviewerS8V4DiscoveryFailureFailsEveryP
 	ASSERT_TRUE(complete.enter_ready());
 	EXPECT_EQ(Phase2CaptureStatus::UnsupportedEngineState,
 		complete.capture(
-			source, 102U, Phase2ObservationProjection::CompleteShip).status);
+			source, 101U, Phase2ObservationProjection::CompleteShip).status);
+	EXPECT_EQ(1U, source.discovery_read_calls);
+	EXPECT_EQ(0U, source.read_calls)
+		<< "The injected discovery error must fail before CompleteShip reads "
+		   "its broader ship authorities.";
 	EXPECT_EQ(Phase2ObservationBufferState::FailedClosed, complete.state());
 }
 

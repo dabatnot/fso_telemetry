@@ -2,63 +2,63 @@
   "schema": "fs2open.telemetry.phase-progress.v1",
   "phaseNumber": 2,
   "title": "Phase 2 — Vaisseau complet",
-  "profile": "balanced",
-  "executionState": "active",
-  "updatedAtUtc": "2026-07-26T16:29:45.8986082Z",
+  "profile": "certification",
+  "executionState": "paused",
+  "updatedAtUtc": "2026-07-29T07:21:36.9616223Z",
   "source": {
     "branch": "codex/phase2-pre-skill-checkpoint",
-    "head": "b5b059d20f86e079fce4fb1f39762d46183657bf",
-    "trackedWorktree": "dirty-B1-production-handoff",
+    "head": "6f845a864e9f9f6100790893c190877114e89027",
+    "trackedWorktree": "dirty-WP11-paused-loss-11-of-12",
     "contractDirectory": "documentation/analysis/specs/2-Vaisseau-complet"
   },
   "current": {
-    "workPackage": "P2-WP-03",
-    "slice": "not started — G2-B sealed in tracker; no WP03 implementation slice or write has begun",
-    "lastClosedGate": "G2-B",
-    "nextGate": "G2-C",
-    "summary": "Final independent reviewer disposition is GO on the sole normative G2-B report at SHA-256 58ae6ed5742a98a9e9e954fc6251655098d267c52c725187efcf63dc3dd4bfb6. Tracker sealing promotes P2-WP-02, P2-REQ-009..014, P2-TST-007..009, and P2-AC-004 to verified and closes G2-B. Per the gate graph, P2-WP-03 and parallel P2-WP-09 are authorized and moved from suspended to pending; no WP03 slice or downstream write has started. The tracker is now stable and must not be modified during the separate report-sealing step."
+    "workPackage": "P2-WP-11",
+    "slice": "paused — WP11 LOSS campaign completed 11/12; core-gate-20-burst remains red on a category-2 harness-proof defect and G2-F remains open",
+    "lastClosedGate": "G2-E",
+    "nextGate": "G2-F",
+    "summary": "WP11 is paused after the exact P2-LOSS-GATE campaign completed with 11/12 passing runs. The sole failure is core-gate-20-burst: semantic convergence completed in 133336 us, but the harness did not prove a correlated producer-to-client response during each bidirectional blackout. This is one category-2 required-proof blocker, not a production or specification finding. No build, test, Python runner, or telemetry harness process remains active. G2-F stays pending and WP12 is not authorized."
   },
   "statusBuckets": {
     "workPackages": {
-      "pending": ["P2-WP-03", "P2-WP-04", "P2-WP-05", "P2-WP-06", "P2-WP-07", "P2-WP-08", "P2-WP-09", "P2-WP-10", "P2-WP-11", "P2-WP-12"],
-      "in_progress": [],
+      "pending": ["P2-WP-12"],
+      "in_progress": ["P2-WP-11"],
       "implemented": [],
-      "verified": ["P2-WP-01", "P2-WP-02"],
+      "verified": ["P2-WP-01", "P2-WP-02", "P2-WP-03", "P2-WP-04", "P2-WP-05", "P2-WP-06", "P2-WP-07", "P2-WP-08", "P2-WP-09", "P2-WP-10"],
       "blocked": [],
       "deferred": [],
       "suspended": []
     },
     "requirements": {
-      "pending": ["P2-REQ-006", "P2-REQ-007", "P2-REQ-008", "P2-REQ-015", "P2-REQ-016", "P2-REQ-017", "P2-REQ-018", "P2-REQ-019", "P2-REQ-020", "P2-REQ-021", "P2-REQ-022", "P2-REQ-023", "P2-REQ-024", "P2-REQ-025", "P2-REQ-026", "P2-REQ-027", "P2-REQ-028", "P2-REQ-029", "P2-REQ-030", "P2-REQ-031", "P2-REQ-032", "P2-REQ-034", "P2-REQ-035", "P2-REQ-036", "P2-REQ-037", "P2-REQ-038", "P2-REQ-039", "P2-REQ-040", "P2-REQ-041", "P2-REQ-043", "P2-REQ-044", "P2-REQ-045", "P2-REQ-047", "P2-REQ-048", "P2-REQ-049"],
+      "pending": [],
       "in_progress": [],
-      "implemented": ["P2-REQ-005", "P2-REQ-033", "P2-REQ-042", "P2-REQ-046", "P2-REQ-050"],
-      "verified": ["P2-REQ-001", "P2-REQ-002", "P2-REQ-003", "P2-REQ-004", "P2-REQ-009", "P2-REQ-010", "P2-REQ-011", "P2-REQ-012", "P2-REQ-013", "P2-REQ-014"],
+      "implemented": ["P2-REQ-040", "P2-REQ-045", "P2-REQ-046", "P2-REQ-048", "P2-REQ-049", "P2-REQ-050"],
+      "verified": ["P2-REQ-001", "P2-REQ-002", "P2-REQ-003", "P2-REQ-004", "P2-REQ-005", "P2-REQ-006", "P2-REQ-007", "P2-REQ-008", "P2-REQ-009", "P2-REQ-010", "P2-REQ-011", "P2-REQ-012", "P2-REQ-013", "P2-REQ-014", "P2-REQ-015", "P2-REQ-016", "P2-REQ-017", "P2-REQ-018", "P2-REQ-019", "P2-REQ-020", "P2-REQ-021", "P2-REQ-022", "P2-REQ-023", "P2-REQ-024", "P2-REQ-025", "P2-REQ-026", "P2-REQ-027", "P2-REQ-028", "P2-REQ-029", "P2-REQ-030", "P2-REQ-031", "P2-REQ-032", "P2-REQ-033", "P2-REQ-034", "P2-REQ-035", "P2-REQ-036", "P2-REQ-037", "P2-REQ-038", "P2-REQ-039", "P2-REQ-041", "P2-REQ-042", "P2-REQ-043", "P2-REQ-044", "P2-REQ-047"],
       "blocked": [],
       "deferred": [],
       "suspended": []
     },
     "tests": {
-      "pending": ["P2-TST-001", "P2-TST-002", "P2-TST-003", "P2-TST-004", "P2-TST-005", "P2-TST-006", "P2-TST-020", "P2-TST-021", "P2-TST-022", "P2-TST-023", "P2-TST-024", "P2-TST-025", "P2-TST-026", "P2-TST-027", "P2-TST-028", "P2-TST-029", "P2-TST-030", "P2-TST-031", "P2-TST-032", "P2-TST-033", "P2-TST-034", "P2-TST-035", "P2-TST-036", "P2-TST-037", "P2-TST-038", "P2-TST-039", "P2-TST-040", "P2-TST-041", "P2-TST-042", "P2-TST-043", "P2-TST-044", "P2-TST-045", "P2-TST-046", "P2-TST-047", "P2-TST-048", "P2-TST-049", "P2-TST-050", "P2-TST-051", "P2-TST-052", "P2-TST-053", "P2-TST-054", "P2-TST-055", "P2-TST-056", "P2-TST-057", "P2-TST-058", "P2-TST-059", "P2-TST-060", "P2-TST-061", "P2-TST-062", "P2-TST-063", "P2-TST-064", "P2-TST-065", "P2-TST-066", "P2-TST-067", "P2-TST-068", "P2-TST-069", "P2-TST-070"],
+      "pending": [],
       "in_progress": [],
       "implemented": [],
-      "verified": ["P2-TST-007", "P2-TST-008", "P2-TST-009", "P2-TST-010", "P2-TST-011", "P2-TST-012", "P2-TST-013", "P2-TST-014", "P2-TST-015", "P2-TST-016", "P2-TST-017", "P2-TST-018", "P2-TST-019"],
+      "verified": ["P2-TST-001", "P2-TST-002", "P2-TST-003", "P2-TST-004", "P2-TST-005", "P2-TST-006", "P2-TST-007", "P2-TST-008", "P2-TST-009", "P2-TST-010", "P2-TST-011", "P2-TST-012", "P2-TST-013", "P2-TST-014", "P2-TST-015", "P2-TST-016", "P2-TST-017", "P2-TST-018", "P2-TST-019", "P2-TST-020", "P2-TST-021", "P2-TST-022", "P2-TST-023", "P2-TST-024", "P2-TST-025", "P2-TST-026", "P2-TST-027", "P2-TST-028", "P2-TST-029", "P2-TST-030", "P2-TST-031", "P2-TST-032", "P2-TST-033", "P2-TST-034", "P2-TST-035", "P2-TST-036", "P2-TST-037", "P2-TST-038", "P2-TST-039", "P2-TST-040", "P2-TST-041", "P2-TST-042", "P2-TST-043", "P2-TST-044", "P2-TST-045", "P2-TST-046", "P2-TST-047", "P2-TST-048", "P2-TST-049", "P2-TST-050", "P2-TST-051", "P2-TST-052", "P2-TST-053", "P2-TST-054", "P2-TST-055", "P2-TST-056", "P2-TST-057", "P2-TST-058", "P2-TST-059", "P2-TST-060", "P2-TST-061", "P2-TST-062", "P2-TST-063", "P2-TST-064", "P2-TST-065", "P2-TST-066", "P2-TST-067", "P2-TST-068", "P2-TST-069", "P2-TST-070"],
       "blocked": [],
       "deferred": [],
       "suspended": []
     },
     "acceptanceCriteria": {
-      "pending": ["P2-AC-003", "P2-AC-005", "P2-AC-006", "P2-AC-007", "P2-AC-008", "P2-AC-009", "P2-AC-010", "P2-AC-011", "P2-AC-012", "P2-AC-013", "P2-AC-014", "P2-AC-015"],
+      "pending": ["P2-AC-013", "P2-AC-015"],
       "in_progress": [],
-      "implemented": [],
-      "verified": ["P2-AC-001", "P2-AC-002", "P2-AC-004"],
+      "implemented": ["P2-AC-007", "P2-AC-008", "P2-AC-009"],
+      "verified": ["P2-AC-001", "P2-AC-002", "P2-AC-003", "P2-AC-004", "P2-AC-005", "P2-AC-006", "P2-AC-010", "P2-AC-011", "P2-AC-012", "P2-AC-014"],
       "blocked": [],
       "deferred": [],
       "suspended": []
     },
     "gates": {
-      "pending": ["G2-C", "G2-D", "G2-E", "G2-F", "G2-G"],
+      "pending": ["G2-F", "G2-G"],
       "ready": [],
-      "closed": ["G2-A", "G2-B"],
+      "closed": ["G2-A", "G2-B", "G2-C", "G2-D", "G2-E"],
       "reopened": [],
       "blocked": []
     }
@@ -271,7 +271,15 @@
       "owner": "review_agent",
       "summary": "Final independent reviewer disposition is GO on the complete G2-B evidence report with no remaining review blocker.",
       "affects": ["P2-WP-02", "P2-REQ-009", "P2-REQ-010", "P2-REQ-011", "P2-REQ-012", "P2-REQ-013", "P2-REQ-014", "P2-TST-007", "P2-TST-008", "P2-TST-009", "P2-AC-004", "G2-B"],
-      "nextProof": "Seal the report in the separate report-only step without modifying this stable tracker."
+      "nextProof": "G2-B is already sealed and requires no further action; retain the closed report as dependency evidence."
+    },
+    {
+      "id": "WP11-LOSS-BIDIRECTIONAL-BLACKOUT-PROOF",
+      "state": "active",
+      "owner": "test_agent",
+      "summary": "Category 2 required-proof defect: core-gate-20-burst converges semantically in 133336 us, but blackout coverage currently proves only scheduled client-to-producer activity rather than a bounded correlated producer-to-client response in each bidirectional blackout. This violates the exact P2-LOSS-GATE proof required by P2-REQ-040 and P2-AC-009; no production defect or specification conflict is established.",
+      "affects": ["P2-WP-11", "P2-REQ-040", "P2-REQ-048", "P2-AC-009", "G2-F"],
+      "nextProof": "Apply one bounded harness-only correction using correlated, spaced heartbeat probes with observed producer-to-client responses; rebuild telemetry_phase2_loss_harness, run the exact core-gate-20-burst smoke, then rerun all 12 LOSS cases because the harness hash and decision streams change."
     }
   ],
   "evidence": [
@@ -291,7 +299,7 @@
       "command": null,
       "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-WP02-g2-b-ready-for-review",
       "covers": ["G2-B", "P2-WP-02", "P2-TST-007", "P2-TST-008", "P2-TST-009", "P2-AC-004"],
-      "note": "Final independent reviewer disposition is GO on the sole normative G2-B report as reviewed at 49,255 bytes and SHA-256 58ae6ed5742a98a9e9e954fc6251655098d267c52c725187efcf63dc3dd4bfb6. Tracker-level gate sealing is complete. The report file itself remains untouched in this step and must be sealed separately without rewriting the stable tracker."
+      "note": "Final independent reviewer disposition is GO on the sole normative G2-B report. The report is already sealed and closed; no further report-only action remains."
     },
     {
       "id": "WP02-G2-B-final-independent-review-go",
@@ -1444,19 +1452,575 @@
       "revision": "b5b059d20f86e079fce4fb1f39762d46183657bf+dirty-WP02-source-oracle-fix",
       "covers": ["P2-WP-02", "P2-TST-008", "P2-TST-009", "P2-AC-004"],
       "note": "The exact full Release source suite exited 0 after 220 ms with 80/80 PASS. This is fresh checkpoint candidate evidence pending focused review, not G2-B gate proof."
+    },
+    {
+      "id": "WP03-balanced-debug-contract",
+      "status": "fresh",
+      "path": null,
+      "command": "ctest --test-dir build -C Debug --output-on-failure -R '^telemetry_phase2_(closure|manifest|manifest_codec)_tests$'",
+      "revision": "6f845a864e9f9f6100790893c190877114e89027+dirty-WP03-balanced-checkpoint",
+      "covers": ["P2-WP-03", "P2-REQ-015", "P2-REQ-016", "P2-REQ-017", "P2-REQ-018", "P2-REQ-019", "P2-REQ-020", "P2-TST-020", "P2-TST-021", "P2-TST-022", "P2-TST-023", "P2-TST-024", "P2-TST-025", "P2-TST-026", "P2-TST-027", "P2-TST-028", "P2-TST-029", "P2-TST-039", "P2-TST-047", "P2-AC-005"],
+      "note": "Exact Debug checkpoint command passed 3/3 in 342.43 seconds: closure 0.04 s, manifest 19.95 s, manifest codec 322.35 s."
+    },
+    {
+      "id": "WP03-focused-final-rereview-go",
+      "status": "fresh",
+      "path": null,
+      "command": null,
+      "revision": "6f845a864e9f9f6100790893c190877114e89027+dirty-WP03-balanced-checkpoint",
+      "covers": ["P2-WP-03", "P2-REQ-015", "P2-REQ-016", "P2-REQ-017", "P2-REQ-018", "P2-REQ-019", "P2-REQ-020", "P2-TST-020", "P2-TST-021", "P2-TST-022", "P2-TST-023", "P2-TST-024", "P2-TST-025", "P2-TST-026", "P2-TST-027", "P2-TST-028", "P2-TST-029", "P2-TST-039", "P2-TST-047", "P2-AC-005"],
+      "note": "Fixed-role reviewer /root/reviewer returned explicit GO after the focused final rereview with zero remaining finding."
+    },
+    {
+      "id": "WP03-balanced-release-build",
+      "status": "fresh",
+      "path": "build/bin/Release/telemetry_phase2_manifest_tests.exe",
+      "command": "cmake --build build --config Release --target telemetry_phase2_closure_tests telemetry_phase2_manifest_tests telemetry_phase2_manifest_codec_tests -j 2",
+      "revision": "6f845a864e9f9f6100790893c190877114e89027+dirty-WP03-balanced-checkpoint",
+      "covers": ["P2-WP-03", "P2-REQ-049", "P2-AC-005"],
+      "note": "The three changed Release targets built successfully in 35.2 seconds."
+    },
+    {
+      "id": "WP03-balanced-release-contract",
+      "status": "fresh",
+      "path": "build/bin/Release/telemetry_phase2_manifest_tests.exe",
+      "command": "ctest --test-dir build -C Release --output-on-failure -R '^telemetry_phase2_(closure|manifest|manifest_codec)_tests$'",
+      "revision": "6f845a864e9f9f6100790893c190877114e89027+dirty-WP03-balanced-checkpoint",
+      "covers": ["P2-WP-03", "P2-REQ-015", "P2-REQ-016", "P2-REQ-017", "P2-REQ-018", "P2-REQ-019", "P2-REQ-020", "P2-TST-020", "P2-TST-021", "P2-TST-022", "P2-TST-023", "P2-TST-024", "P2-TST-025", "P2-TST-026", "P2-TST-027", "P2-TST-028", "P2-TST-029", "P2-TST-039", "P2-TST-047", "P2-AC-005"],
+      "note": "Exact Release checkpoint command passed 3/3 in 8.43 seconds: closure 0.13 s, manifest 1.88 s, manifest codec 6.28 s."
+    },
+    {
+      "id": "WP03-balanced-diff-check",
+      "status": "fresh",
+      "path": null,
+      "command": "git diff --check",
+      "revision": "6f845a864e9f9f6100790893c190877114e89027+dirty-WP03-balanced-checkpoint",
+      "covers": ["P2-WP-03"],
+      "note": "Changed-file diff check passed in 0.6 seconds."
+    },
+    {
+      "id": "WP03-stable-worktree-binding",
+      "status": "fresh",
+      "path": "test/telemetry/producer/phase2/reports/wp03-manifest/wp03-manifest-checkpoint.json",
+      "command": null,
+      "revision": "6f845a864e9f9f6100790893c190877114e89027+dirty-WP03-balanced-checkpoint",
+      "covers": ["P2-WP-03", "P2-AC-005"],
+      "note": "The report-only seal records the stable tracker hash and the focused WP03 source/test/CMake hashes. Before tracker/report writes, the full status had 98 lines with SHA-256 d7afd6dcbccd900611cbea7c79116aaa0eb5f6e77b5e2d9ce8528934b1956141; the focused diff SHA-256 was c16ef80f2b7288ae371377b993af492b2348bf929b02da46f3d09151cadaed07. The pre-existing untracked files remain visible and untouched."
+    },
+    {
+      "id": "G2-C-release-build",
+      "status": "fresh",
+      "path": "build/bin/Release/telemetry_phase2_core_state_tests.exe",
+      "command": "cmake --build build --config Release --target telemetry_phase2_core_state_tests telemetry_phase2_observation_contract_tests telemetry_phase2_closure_tests telemetry_phase2_manifest_tests telemetry_phase2_manifest_codec_tests telemetry_phase2_engine_adapter_evidence_object -j 2",
+      "revision": "6f845a864e9f9f6100790893c190877114e89027+dirty-WP04-G2-C-balanced-checkpoint",
+      "covers": ["P2-WP-04", "P2-REQ-021", "P2-REQ-022", "P2-REQ-023", "P2-REQ-024", "P2-REQ-026", "P2-REQ-027", "P2-REQ-033", "P2-REQ-049", "G2-C"],
+      "note": "The exact incremental Release command built all six changed or dependency-relevant targets successfully in 9.5 seconds."
+    },
+    {
+      "id": "G2-C-release-contract",
+      "status": "fresh",
+      "path": "build/bin/Release/telemetry_phase2_core_state_tests.exe",
+      "command": "ctest --test-dir build -C Release --output-on-failure -R '^telemetry_phase2_(core_state|observation_contract|closure|manifest|manifest_codec)_tests$'",
+      "revision": "6f845a864e9f9f6100790893c190877114e89027+dirty-WP04-G2-C-balanced-checkpoint",
+      "covers": ["P2-WP-03", "P2-WP-04", "P2-REQ-015", "P2-REQ-016", "P2-REQ-017", "P2-REQ-018", "P2-REQ-019", "P2-REQ-021", "P2-REQ-022", "P2-REQ-023", "P2-REQ-024", "P2-REQ-026", "P2-REQ-027", "P2-REQ-033", "P2-TST-020", "P2-TST-021", "P2-TST-022", "P2-TST-023", "P2-TST-024", "P2-TST-025", "P2-TST-026", "P2-TST-027", "P2-TST-028", "P2-TST-029", "P2-TST-030", "P2-TST-031", "P2-TST-032", "P2-TST-033", "P2-TST-034", "P2-TST-039", "P2-TST-047", "P2-AC-005", "P2-AC-006", "G2-C"],
+      "note": "The exact Release CTest command passed 5/5 in 16.38 seconds: observation 8.38 s, closure 0.03 s, manifest 1.47 s, manifest codec 6.21 s, and core state 0.17 s."
+    },
+    {
+      "id": "G2-C-final-review-go",
+      "status": "fresh",
+      "path": null,
+      "command": null,
+      "revision": "6f845a864e9f9f6100790893c190877114e89027+dirty-WP04-G2-C-balanced-checkpoint",
+      "covers": ["P2-WP-03", "P2-WP-04", "P2-TST-020", "P2-TST-021", "P2-TST-022", "P2-TST-023", "P2-TST-024", "P2-TST-025", "P2-TST-026", "P2-TST-027", "P2-TST-028", "P2-TST-029", "P2-TST-030", "P2-TST-031", "P2-TST-032", "P2-TST-033", "P2-TST-034", "P2-TST-039", "P2-TST-047", "P2-AC-005", "P2-AC-006", "G2-C"],
+      "note": "The fixed-role reviewer returned final GO with zero remaining finding and accepted the fresh Release evidence for G2-C closure."
+    },
+    {
+      "id": "G2-C-diff-check",
+      "status": "fresh",
+      "path": null,
+      "command": "git diff --check",
+      "revision": "6f845a864e9f9f6100790893c190877114e89027+dirty-WP04-G2-C-balanced-checkpoint",
+      "covers": ["P2-WP-04", "G2-C"],
+      "note": "git diff --check exited 0 in 0.262 seconds. LF-to-CRLF warnings were nonblocking diagnostics only."
+    },
+    {
+      "id": "G2-C-stable-worktree-binding",
+      "status": "fresh",
+      "path": null,
+      "command": null,
+      "revision": "6f845a864e9f9f6100790893c190877114e89027+dirty-WP04-G2-C-balanced-checkpoint",
+      "covers": ["P2-WP-03", "P2-WP-04", "P2-AC-005", "P2-AC-006", "G2-C"],
+      "note": "The report-only seal records the stable tracker hash and focused WP03/WP04 source, test, CMake, and Release artifact hashes. Before tracker/report writes the full status had 107 lines with SHA-256 e6cbef4e6e2e43f4f857869fe35071ac54f2f664b2035fc509820b1cccbe68d8; the focused diff SHA-256 was a3b68d4c30a070259a4be1be133500a174983191cad7c261bf9ef70561876ad2. Pre-existing untracked files remain visible and untouched."
+    },
+    {
+      "id": "WP05-balanced-release-build",
+      "status": "fresh",
+      "path": "build/bin/Release/telemetry_phase2_control_turret_tests.exe",
+      "command": "cmake --build build --config Release --target telemetry_phase2_control_turret_tests telemetry_phase2_core_state_tests telemetry_phase2_observation_contract_tests telemetry_phase2_engine_adapter_evidence_object -j 2",
+      "revision": "6f845a864e9f9f6100790893c190877114e89027+dirty-WP05-balanced-checkpoint",
+      "covers": ["P2-WP-05", "P2-REQ-025", "P2-REQ-027", "P2-REQ-028", "P2-TST-034", "P2-TST-035", "P2-TST-040"],
+      "note": "The exact Release build exited 0 after 46.2 seconds for the four changed or dependency-relevant targets. No unittests relink was requested or performed."
+    },
+    {
+      "id": "WP05-balanced-release-contract",
+      "status": "fresh",
+      "path": "build/bin/Release/telemetry_phase2_control_turret_tests.exe",
+      "command": "ctest --test-dir build -C Release --output-on-failure -R '^telemetry_phase2_(observation_contract|core_state|control_turret|engine_integration_source_contract)_tests$'",
+      "revision": "6f845a864e9f9f6100790893c190877114e89027+dirty-WP05-balanced-checkpoint",
+      "covers": ["P2-WP-05", "P2-REQ-025", "P2-REQ-027", "P2-REQ-028", "P2-TST-034", "P2-TST-035", "P2-TST-040"],
+      "note": "The three executable contract suites were conclusive and green in the initial four-target campaign: observation contract 8.48 s, core state 0.27 s, and control/turret 0.24 s. The source-contract stale-sidecar diagnostic was superseded by the exact sidecar refresh and final 1/1 pass retained separately."
+    },
+    {
+      "id": "WP05-adapter-sidecar-refresh",
+      "status": "fresh",
+      "path": "build/test/src/telemetry_phase2_engine_adapter_evidence_object.dir/Release/engine_adapter.obj",
+      "command": "cmake --build build --config Release --target telemetry_phase2_engine_adapter_evidence -j 2",
+      "revision": "6f845a864e9f9f6100790893c190877114e89027+dirty-WP05-balanced-checkpoint",
+      "covers": ["P2-WP-05", "P2-REQ-025", "P2-REQ-028"],
+      "note": "The exact Release evidence-sidecar target exited 0 after 63.2 seconds and refreshed the source-contract inputs without relinking unittests."
+    },
+    {
+      "id": "WP05-final-source-contract",
+      "status": "fresh",
+      "path": "build/bin/Release/telemetry_phase2_engine_integration_source_contract_tests.exe",
+      "command": "ctest --test-dir build -C Release --output-on-failure -R '^telemetry_phase2_engine_integration_source_contract_tests$'",
+      "revision": "6f845a864e9f9f6100790893c190877114e89027+dirty-WP05-balanced-checkpoint",
+      "covers": ["P2-WP-05", "P2-REQ-025", "P2-REQ-028", "P2-TST-035", "P2-TST-040"],
+      "note": "After the exact sidecar refresh, the final Release source-contract command exited 0 with 1/1 pass in 0.29 seconds."
+    },
+    {
+      "id": "WP05-final-review-go",
+      "status": "fresh",
+      "path": null,
+      "command": null,
+      "revision": "6f845a864e9f9f6100790893c190877114e89027+dirty-WP05-balanced-checkpoint",
+      "covers": ["P2-WP-05", "P2-REQ-025", "P2-REQ-027", "P2-REQ-028", "P2-TST-034", "P2-TST-035", "P2-TST-040"],
+      "note": "The fixed-role reviewer returned GO with zero remaining finding and accepted the grouped readiness, consolidated correction, targeted reread, and balanced Release checkpoint evidence."
+    },
+    {
+      "id": "WP05-diff-check",
+      "status": "fresh",
+      "path": null,
+      "command": "git diff --check",
+      "revision": "6f845a864e9f9f6100790893c190877114e89027+dirty-WP05-balanced-checkpoint",
+      "covers": ["P2-WP-05"],
+      "note": "git diff --check exited 0 in 0.236 seconds."
+    },
+    {
+      "id": "WP06-balanced-release-build",
+      "status": "fresh",
+      "path": "build/bin/Release/telemetry_phase2_weapon_state_tests.exe",
+      "command": "cmake --build build --config Release --target telemetry_phase2_weapon_state_tests telemetry_phase2_core_state_tests telemetry_phase2_control_turret_tests telemetry_phase2_observation_contract_tests telemetry_phase2_manifest_tests telemetry_phase2_manifest_codec_tests telemetry_phase2_engine_adapter_evidence -j 2",
+      "revision": "6f845a864e9f9f6100790893c190877114e89027+dirty-WP06-balanced-checkpoint",
+      "covers": ["P2-WP-06", "P2-REQ-015", "P2-REQ-016", "P2-REQ-017", "P2-REQ-018", "P2-REQ-019", "P2-REQ-025", "P2-REQ-027", "P2-REQ-028", "P2-REQ-029", "P2-REQ-033", "P2-REQ-049", "P2-TST-034", "P2-TST-035", "P2-TST-036", "P2-TST-037", "P2-TST-038", "P2-TST-040"],
+      "note": "The exact Release build exited 0 after 169.7 seconds for all seven changed or dependency-relevant targets. The engine-adapter evidence sidecars were refreshed and unittests was not relinked."
+    },
+    {
+      "id": "WP06-balanced-release-contract",
+      "status": "fresh",
+      "path": "build/bin/Release/telemetry_phase2_weapon_state_tests.exe",
+      "command": "ctest --test-dir build -C Release --output-on-failure -R '^telemetry_phase2_(weapon_state|core_state|control_turret|observation_contract|manifest|manifest_codec|engine_integration_source_contract)_tests$'",
+      "revision": "6f845a864e9f9f6100790893c190877114e89027+dirty-WP06-balanced-checkpoint",
+      "covers": ["P2-WP-03", "P2-WP-04", "P2-WP-05", "P2-WP-06", "P2-REQ-015", "P2-REQ-016", "P2-REQ-017", "P2-REQ-018", "P2-REQ-019", "P2-REQ-025", "P2-REQ-027", "P2-REQ-028", "P2-REQ-029", "P2-REQ-033", "P2-TST-020", "P2-TST-021", "P2-TST-022", "P2-TST-023", "P2-TST-024", "P2-TST-025", "P2-TST-026", "P2-TST-027", "P2-TST-028", "P2-TST-029", "P2-TST-034", "P2-TST-035", "P2-TST-036", "P2-TST-037", "P2-TST-038", "P2-TST-039", "P2-TST-040", "P2-TST-047", "P2-AC-005", "P2-AC-006"],
+      "note": "The exact Release CTest command exited 0 with 7/7 pass in 21.82 seconds: observation 10.79 s, source contract 0.30 s, manifest 1.84 s, manifest codec 7.05 s, core state 0.28 s, control/turret 0.40 s, and weapon state 0.21 s."
+    },
+    {
+      "id": "WP06-final-review-go",
+      "status": "fresh",
+      "path": null,
+      "command": null,
+      "revision": "6f845a864e9f9f6100790893c190877114e89027+dirty-WP06-balanced-checkpoint",
+      "covers": ["P2-WP-06", "P2-REQ-029", "P2-TST-036", "P2-TST-037", "P2-TST-038"],
+      "note": "The fixed-role reviewer returned GO with zero remaining finding and accepted the grouped readiness, consolidated correction, targeted reread, and balanced Release checkpoint evidence."
+    },
+    {
+      "id": "WP06-diff-check",
+      "status": "fresh",
+      "path": null,
+      "command": "git diff --check",
+      "revision": "6f845a864e9f9f6100790893c190877114e89027+dirty-WP06-balanced-checkpoint",
+      "covers": ["P2-WP-06"],
+      "note": "git diff --check exited 0 in 0.318 seconds."
+    },
+    {
+      "id": "WP07-balanced-release-build",
+      "status": "superseded",
+      "path": "build/bin/Release/telemetry_phase2_lifecycle_support_tests.exe",
+      "command": "cmake --build build --config Release --target telemetry_phase2_lifecycle_support_tests telemetry_phase2_core_state_tests telemetry_phase2_control_turret_tests telemetry_phase2_weapon_state_tests telemetry_phase2_observation_contract_tests telemetry_phase2_engine_adapter_evidence telemetry_phase2_closure_tests -j 2",
+      "revision": "6f845a864e9f9f6100790893c190877114e89027+dirty-WP07-G2-D-balanced-checkpoint",
+      "covers": ["P2-WP-07", "P2-REQ-020", "P2-REQ-030", "P2-REQ-031", "P2-REQ-034", "P2-REQ-035", "P2-REQ-039", "P2-REQ-049", "P2-REQ-050", "G2-D"],
+      "note": "The exact seven-target Release build exited 0 after 96.3 seconds. It refreshed every WP07-modified or dependency-relevant dedicated target and the engine-adapter evidence sidecars."
+    },
+    {
+      "id": "G2-D-release-contract",
+      "status": "superseded",
+      "path": "build/bin/Release/telemetry_phase2_lifecycle_support_tests.exe",
+      "command": "ctest --test-dir build -C Release -R '^(telemetry_phase2_lifecycle_support_tests|telemetry_phase2_core_state_tests|telemetry_phase2_control_turret_tests|telemetry_phase2_weapon_state_tests|telemetry_phase2_observation_contract_tests|telemetry_phase2_engine_integration_source_contract_tests|telemetry_phase2_closure_tests)$' --output-on-failure",
+      "revision": "6f845a864e9f9f6100790893c190877114e89027+dirty-WP07-G2-D-balanced-checkpoint",
+      "covers": ["P2-WP-05", "P2-WP-06", "P2-WP-07", "P2-REQ-020", "P2-REQ-030", "P2-REQ-031", "P2-REQ-034", "P2-REQ-035", "P2-REQ-039", "P2-TST-035", "P2-TST-036", "P2-TST-037", "P2-TST-038", "P2-TST-040", "P2-TST-041", "P2-TST-042", "P2-TST-043", "P2-TST-044", "P2-TST-046", "P2-AC-006", "P2-AC-007", "P2-AC-008", "G2-D"],
+      "note": "The exact Release checkpoint exited 1 after 12.50 seconds with 6/7 suites green: observation 10.70 s, closure 0.06 s, core 0.27 s, control/turret 0.27 s, weapon 0.21 s, and lifecycle/support 0.61 s. Source-contract was 78/80 in 0.35 s only because the legacy lexical checks ReviewerS8SupportCopiesRawAuthorityWithoutInventedProgress and ReviewerS8V3RawFactsAreExhaustiveWithoutInventedSupportPhase reject the contract-required ShipSupportPhase::Repairing token. This is category-3 adjacent harness debt outside the WP07 dependency cone, not a blocker or failed required proof."
+    },
+    {
+      "id": "G2-D-cargo-support-oracle",
+      "status": "superseded",
+      "path": "build/bin/Release/unittests.exe",
+      "command": "./build/bin/Release/unittests.exe '--gtest_filter=TelemetryPhase2GameplayAbContract.CargoAuthorityThresholdsResetsAndHooksAreExactOffOnOff:FinalB/SupportWorkContract.ExactBranchesAndSharedOracle/*'",
+      "revision": "6f845a864e9f9f6100790893c190877114e89027+dirty-WP07-G2-D-balanced-checkpoint",
+      "covers": ["P2-WP-07", "P2-REQ-030", "P2-REQ-031", "P2-TST-041", "P2-TST-043", "P2-AC-008", "G2-D"],
+      "note": "The exact retained Release filter exited 0 after 27 ms with 14/14 pass: the real hud_cargo_scan_update off/on/off authority oracle plus all 13 FinalB support-work branches."
+    },
+    {
+      "id": "G2-D-final-review-go",
+      "status": "superseded",
+      "path": null,
+      "command": null,
+      "revision": "6f845a864e9f9f6100790893c190877114e89027+dirty-WP07-G2-D-balanced-checkpoint",
+      "covers": ["P2-WP-07", "P2-REQ-020", "P2-REQ-030", "P2-REQ-031", "P2-REQ-034", "P2-REQ-035", "P2-REQ-039", "P2-TST-041", "P2-TST-042", "P2-TST-043", "P2-TST-044", "P2-TST-046", "P2-AC-006", "P2-AC-007", "P2-AC-008", "G2-D"],
+      "note": "Fixed-role reviewer /root/reviewer returned GO: finding 5 is closed; TST041 exercises the real hud_cargo_scan_update seam, TST043 covers the target plus 13 helper cases, and TST046 exercises the real OnShipCleanup fail-close path. No contractual finding or direct regression remains."
+    },
+    {
+      "id": "G2-D-diff-check",
+      "status": "superseded",
+      "path": null,
+      "command": "git diff --check",
+      "revision": "6f845a864e9f9f6100790893c190877114e89027+dirty-WP07-G2-D-balanced-checkpoint",
+      "covers": ["P2-WP-07", "G2-D"],
+      "note": "git diff --check exited 0."
+    },
+    {
+      "id": "G2-D-stable-worktree-binding",
+      "status": "superseded",
+      "path": null,
+      "command": null,
+      "revision": "6f845a864e9f9f6100790893c190877114e89027+dirty-WP07-G2-D-balanced-checkpoint",
+      "covers": ["P2-WP-05", "P2-WP-06", "P2-WP-07", "P2-AC-006", "P2-AC-007", "P2-AC-008", "G2-D"],
+      "note": "The report-only seal records the stable tracker hash plus focused source, test, CMake, Release artifact and engine-adapter sidecar hashes. Before tracker/report writes the full status had 117 lines with SHA-256 0da30beb16a29b31c489dbdda19a2b52f9dd83eae84e013aba3ba723e8b41061; the focused tracked diff SHA-256 was dcc3906f09ceb12ed912d1023185ce6ed841d99ae3b07971e69e2fff7f171889. All pre-existing untracked files remain visible and untouched."
+    },
+    {
+      "id": "WP08-debug-targeted-contract",
+      "status": "superseded",
+      "path": "build/bin/Debug/telemetry_phase2_runtime_tests.exe",
+      "command": "cmake --build build --config Debug --target telemetry_phase2_replication_tests telemetry_phase2_runtime_tests -j 2 && ctest --test-dir build -C Debug -R \"^(telemetry_phase2_replication_tests|telemetry_phase2_runtime_tests)$\" --output-on-failure",
+      "revision": "6f845a864e9f9f6100790893c190877114e89027+dirty-WP08-balanced-checkpoint",
+      "covers": ["P2-WP-08", "P2-REQ-005", "P2-REQ-035", "P2-REQ-036", "P2-REQ-037", "P2-REQ-038", "P2-REQ-039", "P2-TST-018", "P2-TST-050", "P2-TST-051", "P2-TST-052", "P2-TST-053", "P2-TST-054", "P2-TST-055", "P2-TST-056", "P2-TST-057", "P2-TST-058", "P2-TST-059", "P2-AC-003"],
+      "note": "The exact Debug two-target build exited 0. The exact Debug CTest command exited 0 with 2/2 suites and 12/12 GTest cases: replication 8/8 and runtime 4/4, including two fresh P2-TST-018 runtime scenarios."
+    },
+    {
+      "id": "WP08-release-build-timeout-diagnostic",
+      "status": "superseded",
+      "path": null,
+      "command": "cmake --build build --config Release --target telemetry_phase2_replication_tests telemetry_phase2_runtime_tests telemetry_session_controller_allocation_contract_tests unittests -j 2",
+      "revision": "6f845a864e9f9f6100790893c190877114e89027+dirty-WP08-balanced-checkpoint",
+      "covers": ["P2-WP-08"],
+      "note": "The initial wrapper exited 124 after 604.0 seconds during LTO while the underlying build continued and produced all four requested executables. This diagnostic is superseded by the final exact no-op build and is not closure evidence."
+    },
+    {
+      "id": "WP08-release-dedicated-contract",
+      "status": "superseded",
+      "path": "build/bin/Release/telemetry_phase2_runtime_tests.exe",
+      "command": "ctest --test-dir build -C Release -R \"^(telemetry_phase2_replication_tests|telemetry_phase2_runtime_tests|telemetry_session_controller_allocation_contract_tests)$\" --output-on-failure",
+      "revision": "6f845a864e9f9f6100790893c190877114e89027+dirty-WP08-balanced-checkpoint",
+      "covers": ["P2-WP-08", "P2-REQ-005", "P2-REQ-035", "P2-REQ-036", "P2-REQ-037", "P2-REQ-038", "P2-REQ-039", "P2-TST-050", "P2-TST-051", "P2-TST-052", "P2-TST-053", "P2-TST-054", "P2-TST-055", "P2-TST-056", "P2-TST-057", "P2-TST-058", "P2-TST-059", "P2-AC-003"],
+      "note": "The exact Release CTest command exited 0 with 2/2 registered suites in 0.25 seconds: replication 0.07 s and runtime 0.08 s. The allocation target was absent from the CTest registry and was not executed; its P2-TST-049/P2-REQ-046 ownership remains with WP09 and does not block WP08."
+    },
+    {
+      "id": "WP08-release-filtered-runtime",
+      "status": "superseded",
+      "path": "build/bin/Release/unittests.exe",
+      "command": "build/bin/Release/unittests.exe '--gtest_filter=TelemetryPhase1SnapshotSlotContract.*:TelemetryPhase1DeltaContract.*:TelemetryPhase1SnapshotEgressContract.*:TelemetryNativeRuntimeIntegrationContract.*:TelemetryNativeRuntimeLoopbackContract.*:TelemetryNativePlayerCaptureContract.*'",
+      "revision": "6f845a864e9f9f6100790893c190877114e89027+dirty-WP08-balanced-checkpoint",
+      "covers": ["P2-WP-08", "P2-REQ-005", "P2-REQ-035", "P2-REQ-036", "P2-REQ-037", "P2-REQ-038", "P2-REQ-039", "P2-TST-018", "P2-TST-050", "P2-TST-051", "P2-TST-052", "P2-TST-053", "P2-TST-054", "P2-TST-055", "P2-TST-056", "P2-TST-057", "P2-TST-058", "P2-TST-059", "P2-AC-003", "P2-AC-007", "P2-AC-008", "P2-AC-009"],
+      "note": "The exact filtered Release command exited 0 after 4.093 seconds with 52 cases across six suites: 50 pass, two documented loopback opt-in skips, and zero failure. Breakdown: integration 16, player capture 20, snapshot slot 4, delta 7, snapshot egress 3, loopback 2 skipped. Loopback opt-in remains a nonblocking WP09/WP11 replay item."
+    },
+    {
+      "id": "WP08-final-release-noop-build",
+      "status": "superseded",
+      "path": "build/bin/Release/telemetry_phase2_runtime_tests.exe",
+      "command": "cmake --build build --config Release --target telemetry_phase2_replication_tests telemetry_phase2_runtime_tests telemetry_session_controller_allocation_contract_tests unittests -j 2",
+      "revision": "6f845a864e9f9f6100790893c190877114e89027+dirty-WP08-balanced-checkpoint",
+      "covers": ["P2-WP-08", "P2-REQ-005", "P2-REQ-035", "P2-REQ-036", "P2-REQ-037", "P2-REQ-038", "P2-REQ-039", "P2-TST-018", "P2-TST-050", "P2-TST-051", "P2-TST-052", "P2-TST-053", "P2-TST-054", "P2-TST-055", "P2-TST-056", "P2-TST-057", "P2-TST-058", "P2-TST-059", "P2-AC-003"],
+      "note": "The exact final four-target Release build exited 0 after 24.7 seconds with no compile or link. Artifact hashes and mtimes were unchanged: replication 1598d4abfc11dbbd6c590dfb41361f50471bbd158faa458bd8ea7c257221807b at 2026-07-27T05:37:17.8642614Z; runtime 2b157feb0cac7716e93de9d5dc5d3cb6835437b345ec37033334b04374258aae at 2026-07-27T05:37:31.3592070Z; allocation 011a9193897a03209757d6029072bb0254518cdfdf46b4ea4c7f1fe7a646317 at 2026-07-27T05:41:08.2555408Z; unittests 36cd3a7a4b9836d1628113dcea7502a9ac000430a53c599c4feaf666c3b000ed at 2026-07-27T05:49:39.2657231Z."
+    },
+    {
+      "id": "WP08-final-review-go",
+      "status": "superseded",
+      "path": null,
+      "command": null,
+      "revision": "6f845a864e9f9f6100790893c190877114e89027+dirty-WP08-balanced-checkpoint",
+      "covers": ["P2-WP-08", "P2-REQ-005", "P2-REQ-035", "P2-REQ-036", "P2-REQ-037", "P2-REQ-038", "P2-REQ-039", "P2-TST-018", "P2-TST-050", "P2-TST-051", "P2-TST-052", "P2-TST-053", "P2-TST-054", "P2-TST-055", "P2-TST-056", "P2-TST-057", "P2-TST-058", "P2-TST-059", "P2-AC-003"],
+      "note": "Fixed-role reviewer /root/reviewer returned GO: typed MANIFEST candidate; WP03 parts/fragments transaction ACK Applied; final Released part applies; required_manifest_applied gates snapshots; slot mutations purge or fault; SESSION_END SessionClosing ACK Applied is preallocated; unrelated output is preserved; same-slot state is replaced; payload, flags, isolation, purge and stable retry are covered. No contractual finding remains."
+    },
+    {
+      "id": "WP08-diff-check",
+      "status": "superseded",
+      "path": null,
+      "command": "git diff --check",
+      "revision": "6f845a864e9f9f6100790893c190877114e89027+dirty-WP08-balanced-checkpoint",
+      "covers": ["P2-WP-08"],
+      "note": "git diff --check exited 0."
+    },
+    {
+      "id": "WP08-stable-worktree-binding",
+      "status": "superseded",
+      "path": null,
+      "command": null,
+      "revision": "6f845a864e9f9f6100790893c190877114e89027+dirty-WP08-balanced-checkpoint",
+      "covers": ["P2-WP-08", "P2-AC-003", "P2-AC-007", "P2-AC-008", "P2-AC-009"],
+      "note": "Before tracker/report writes, full git status had 132 lines with SHA-256 47f6fae1b49a35974103f21f1898e58496dee381c1e639e8001f46c6011fc25d; the focused tracked WP08 diff SHA-256 was 33def5ce80afc4a347f47d473ca7f06c29b1b639d035f56dea0fdf1d43645ff6. The sealed report records hashes for all WP08 sources, tests, CMake inputs and four Release artifacts. All pre-existing untracked files remain visible and untouched."
+    },
+    {
+      "id": "G2-D-WP08-corrective-release-build",
+      "status": "fresh",
+      "path": "build/bin/Release/telemetry_phase2_lifecycle_support_tests.exe",
+      "command": "cmake --build build --config Release --parallel 2 --target telemetry_phase2_lifecycle_support_tests telemetry_phase2_core_state_tests telemetry_phase2_control_turret_tests telemetry_phase2_weapon_state_tests telemetry_phase2_observation_contract_tests telemetry_phase2_engine_adapter_evidence telemetry_phase2_replication_tests telemetry_phase2_runtime_tests telemetry_phase2_wp09_contract_tests telemetry_phase2_packet_reader_fuzz telemetry_phase2_state_validator_fuzz unittests",
+      "revision": "6f845a864e9f9f6100790893c190877114e89027+dirty-G2-D-WP08-corrective-balanced-checkpoint",
+      "covers": ["P2-WP-07", "P2-WP-08", "P2-REQ-005", "P2-REQ-020", "P2-REQ-030", "P2-REQ-031", "P2-REQ-034", "P2-REQ-035", "P2-REQ-036", "P2-REQ-037", "P2-REQ-038", "P2-REQ-039", "P2-REQ-049", "P2-REQ-050", "P2-AC-003", "P2-AC-006", "P2-AC-007", "P2-AC-008", "P2-AC-009", "G2-D"],
+      "note": "The exact consolidated twelve-target Release build exited 0 after 714.684 seconds and refreshed every corrective complete-domain, runtime, observability, corpus-replay and engine-adapter evidence target without an additional broad build."
+    },
+    {
+      "id": "G2-D-WP08-initial-release-diagnostic",
+      "status": "superseded",
+      "path": null,
+      "command": "ctest -C Release --output-on-failure -R '^(telemetry_phase2_lifecycle_support_tests|telemetry_phase2_core_state_tests|telemetry_phase2_control_turret_tests|telemetry_phase2_weapon_state_tests|telemetry_phase2_observation_contract_tests|telemetry_phase2_engine_integration_source_contract_tests|telemetry_phase2_replication_tests|telemetry_phase2_runtime_tests|telemetry_phase2_wp09_contract_tests|telemetry_phase2_packet_reader_corpus_replay|telemetry_phase2_state_validator_corpus_replay)$'",
+      "revision": "6f845a864e9f9f6100790893c190877114e89027+dirty-G2-D-WP08-corrective-balanced-checkpoint",
+      "covers": ["P2-WP-07", "P2-WP-08", "G2-D"],
+      "note": "The initial Release composition exited 8 after 12.99 seconds with 10/11 suites passing; only the source-contract oracle was red. Its assertions were corrected and this diagnostic is superseded by the fresh 80/80 standalone source-contract result plus the ten unchanged fresh suite results."
+    },
+    {
+      "id": "G2-D-WP08-final-release-composition",
+      "status": "fresh",
+      "path": "build/bin/Release/telemetry_phase2_lifecycle_support_tests.exe",
+      "command": "ctest -C Release --output-on-failure -R '^(telemetry_phase2_lifecycle_support_tests|telemetry_phase2_core_state_tests|telemetry_phase2_control_turret_tests|telemetry_phase2_weapon_state_tests|telemetry_phase2_observation_contract_tests|telemetry_phase2_replication_tests|telemetry_phase2_runtime_tests|telemetry_phase2_wp09_contract_tests|telemetry_phase2_packet_reader_corpus_replay|telemetry_phase2_state_validator_corpus_replay)$'",
+      "revision": "6f845a864e9f9f6100790893c190877114e89027+dirty-G2-D-WP08-corrective-balanced-checkpoint",
+      "covers": ["P2-WP-05", "P2-WP-06", "P2-WP-07", "P2-WP-08", "P2-REQ-005", "P2-REQ-020", "P2-REQ-030", "P2-REQ-031", "P2-REQ-034", "P2-REQ-035", "P2-REQ-036", "P2-REQ-037", "P2-REQ-038", "P2-REQ-039", "P2-TST-018", "P2-TST-035", "P2-TST-036", "P2-TST-037", "P2-TST-038", "P2-TST-040", "P2-TST-041", "P2-TST-042", "P2-TST-043", "P2-TST-044", "P2-TST-046", "P2-TST-050", "P2-TST-051", "P2-TST-052", "P2-TST-053", "P2-TST-054", "P2-TST-055", "P2-TST-056", "P2-TST-057", "P2-TST-058", "P2-TST-059", "P2-AC-003", "P2-AC-006", "P2-AC-007", "P2-AC-008", "P2-AC-009", "G2-D"],
+      "note": "Final conclusive composition retains ten fresh unchanged PASS results from the exact Release run: observation 10.00 s, core 0.25 s, control/turret 0.30 s, weapon 0.20 s, lifecycle/support 0.72 s, replication 0.11 s, runtime 0.19 s, WP09 contract 0.16 s, packet corpus replay 0.13 s and state-validator corpus replay 0.14 s. The separately rebuilt source-contract suite is retained in the next fresh record."
+    },
+    {
+      "id": "G2-D-WP08-final-source-contract",
+      "status": "fresh",
+      "path": "build/bin/Release/telemetry_phase2_engine_integration_source_contract_tests.exe",
+      "command": "ctest -C Release --output-on-failure -R '^telemetry_phase2_engine_integration_source_contract_tests$'",
+      "revision": "6f845a864e9f9f6100790893c190877114e89027+dirty-G2-D-WP08-corrective-balanced-checkpoint",
+      "covers": ["P2-WP-07", "P2-REQ-020", "P2-REQ-030", "P2-REQ-031", "P2-REQ-034", "P2-TST-041", "P2-TST-042", "P2-TST-043", "P2-TST-044", "P2-TST-046", "P2-AC-006", "P2-AC-007", "P2-AC-008", "G2-D"],
+      "note": "After the source-oracle correction and exact target relink, the standalone Release CTest exited 0 with 80/80 pass in 0.503 seconds. Artifact SHA-256 is 88300cc78c767e0beddc8132370f1302493af44a9d5eebea5f6ff595aa2894f6 with mtime 2026-07-27T11:48:58.4024763Z."
+    },
+    {
+      "id": "G2-D-WP08-final-unittests-filter",
+      "status": "fresh",
+      "path": "build/bin/Release/unittests.exe",
+      "command": ".\\build\\bin\\Release\\unittests.exe '--gtest_filter=TelemetryPhase2GameplayAbContract.CargoAuthorityThresholdsResetsAndHooksAreExactOffOnOff:FinalB/SupportWorkContract.ExactBranchesAndSharedOracle/*:TelemetryPhase1SnapshotSlotContract.*:TelemetryPhase1DeltaContract.*:TelemetryPhase1SnapshotEgressContract.*:TelemetryNativeRuntimeIntegrationContract.*:TelemetryNativeRuntimeLoopbackContract.*:TelemetryNativePlayerCaptureContract.*'",
+      "revision": "6f845a864e9f9f6100790893c190877114e89027+dirty-G2-D-WP08-corrective-balanced-checkpoint",
+      "covers": ["P2-WP-07", "P2-WP-08", "P2-REQ-005", "P2-REQ-030", "P2-REQ-031", "P2-REQ-035", "P2-REQ-036", "P2-REQ-037", "P2-REQ-038", "P2-REQ-039", "P2-TST-018", "P2-TST-041", "P2-TST-043", "P2-TST-050", "P2-TST-051", "P2-TST-052", "P2-TST-053", "P2-TST-054", "P2-TST-055", "P2-TST-056", "P2-TST-057", "P2-TST-058", "P2-TST-059", "P2-AC-003", "P2-AC-007", "P2-AC-008", "P2-AC-009", "G2-D"],
+      "note": "The exact combined Release filter exited 0 after 3.235 seconds with 66 tests across eight suites: 64 pass, two documented native loopback opt-in skips, and zero failure. The skips remain nonblocking WP09/WP11 follow-up and are not a WP07/WP08 blocker. Artifact SHA-256 is 360f8ac2ba87b994ff9d6c5113f7fadc5a533066854c2448b1954b2ba1db0395 with mtime 2026-07-27T11:56:34.4588618Z."
+    },
+    {
+      "id": "G2-D-WP08-corrective-review-go",
+      "status": "fresh",
+      "path": null,
+      "command": null,
+      "revision": "6f845a864e9f9f6100790893c190877114e89027+dirty-G2-D-WP08-corrective-balanced-checkpoint",
+      "covers": ["P2-WP-07", "P2-WP-08", "P2-REQ-005", "P2-REQ-020", "P2-REQ-030", "P2-REQ-031", "P2-REQ-034", "P2-REQ-035", "P2-REQ-036", "P2-REQ-037", "P2-REQ-038", "P2-REQ-039", "P2-TST-018", "P2-TST-035", "P2-TST-036", "P2-TST-037", "P2-TST-038", "P2-TST-040", "P2-TST-041", "P2-TST-042", "P2-TST-043", "P2-TST-044", "P2-TST-046", "P2-TST-050", "P2-TST-051", "P2-TST-052", "P2-TST-053", "P2-TST-054", "P2-TST-055", "P2-TST-056", "P2-TST-057", "P2-TST-058", "P2-TST-059", "P2-AC-003", "P2-AC-006", "P2-AC-007", "P2-AC-008", "P2-AC-009", "G2-D"],
+      "note": "The fixed-role reviewer returned GO on the authorized corrective batch and final evidence composition with no remaining contractually blocking finding."
+    },
+    {
+      "id": "G2-D-WP08-corrective-diff-check",
+      "status": "fresh",
+      "path": null,
+      "command": "git diff --check",
+      "revision": "6f845a864e9f9f6100790893c190877114e89027+dirty-G2-D-WP08-corrective-balanced-checkpoint",
+      "covers": ["P2-WP-07", "P2-WP-08", "G2-D"],
+      "note": "git diff --check exited 0."
+    },
+    {
+      "id": "G2-D-WP08-corrective-stable-binding",
+      "status": "fresh",
+      "path": null,
+      "command": null,
+      "revision": "6f845a864e9f9f6100790893c190877114e89027+dirty-G2-D-WP08-corrective-balanced-checkpoint",
+      "covers": ["P2-WP-07", "P2-WP-08", "P2-AC-003", "P2-AC-006", "P2-AC-007", "P2-AC-008", "P2-AC-009", "G2-D"],
+      "note": "Before tracker/report writes, full git status had 156 lines with SHA-256 aecaf046af174b9327593cd9e34d511991f10aa4be02bf155931ee39b38dded1; the focused corrective tracked diff SHA-256 was ab0a347f54586c9573df76ea18e8cd424deafe080d8b400fed7c3a463b8b5722. The normative report supersedes SHA-256 2ec557c35b48943f3ce46f48d4885a61a6baf9415bea66f93dccaa9f45a9bb1e and binds the final source, test, CMake and artifact hashes. All pre-existing untracked files remain visible."
+    },
+    {
+      "id": "G2-E-clang-five-target-build",
+      "status": "fresh",
+      "path": null,
+      "command": "env PATH=/home/david/.local/phase2-toolchain/root/usr/bin:/home/david/.local/phase2-toolchain/root/usr/lib/llvm-14/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin LD_LIBRARY_PATH=/home/david/.local/phase2-toolchain/root/usr/lib/x86_64-linux-gnu:/home/david/.local/phase2-toolchain/root/usr/lib PKG_CONFIG_PATH=/home/david/.local/phase2-toolchain/root/usr/lib/x86_64-linux-gnu/pkgconfig:/home/david/.local/phase2-toolchain/root/usr/lib/pkgconfig:/home/david/.local/phase2-toolchain/root/usr/share/pkgconfig CPATH=/home/david/.local/phase2-toolchain/root/usr/include LIBRARY_PATH=/home/david/.local/phase2-toolchain/root/usr/lib/x86_64-linux-gnu CMAKE_PREFIX_PATH=/home/david/.local/phase2-toolchain/root/usr cmake --build /mnt/d/david/Documents/Dev/fsotelemetry/fs2open.github.com/build-phase2-clang --target telemetry_phase2_unit_tests telemetry_phase2_protocol_tests telemetry_phase2_integration_tests telemetry_phase2_packet_reader_fuzz telemetry_phase2_state_validator_fuzz --parallel 2",
+      "revision": "6f845a864e9f9f6100790893c190877114e89027+dirty-WP09-G2-E-certification-checkpoint",
+      "covers": ["P2-WP-09", "P2-REQ-006", "P2-REQ-007", "P2-REQ-008", "P2-REQ-041", "P2-REQ-042", "P2-REQ-043", "P2-REQ-044", "P2-REQ-045", "P2-REQ-046", "P2-REQ-049", "P2-REQ-050", "G2-E"],
+      "note": "The exact Clang five-target build passed; the final incremental resumption linked 3/3 remaining outputs in 27.0 seconds."
+    },
+    {
+      "id": "G2-E-clang-contract",
+      "status": "fresh",
+      "path": null,
+      "command": "env PATH=/home/david/.local/phase2-toolchain/root/usr/bin:/home/david/.local/phase2-toolchain/root/usr/lib/llvm-14/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin LD_LIBRARY_PATH=/home/david/.local/phase2-toolchain/root/usr/lib/x86_64-linux-gnu:/home/david/.local/phase2-toolchain/root/usr/lib/x86_64-linux-gnu/pulseaudio:/mnt/d/david/Documents/Dev/fsotelemetry/fs2open.github.com/build-phase2-clang/lib/prebuilt/ffmpeg/lib:/mnt/d/david/Documents/Dev/fsotelemetry/fs2open.github.com/build-phase2-clang/lib/prebuilt/openal/lib:/mnt/d/david/Documents/Dev/fsotelemetry/fs2open.github.com/build-phase2-clang/lib/prebuilt/sdl2/lib ctest --test-dir /mnt/d/david/Documents/Dev/fsotelemetry/fs2open.github.com/build-phase2-clang -R 'telemetry_phase2|fstl_1_0|fstl_1_1' --output-on-failure",
+      "revision": "6f845a864e9f9f6100790893c190877114e89027+dirty-WP09-G2-E-certification-checkpoint",
+      "covers": ["P2-WP-08", "P2-WP-09", "P2-TST-001", "P2-TST-002", "P2-TST-003", "P2-TST-004", "P2-TST-005", "P2-TST-006", "P2-TST-007", "P2-TST-008", "P2-TST-009", "P2-TST-049", "P2-TST-050", "P2-TST-051", "P2-TST-052", "P2-TST-053", "P2-TST-054", "P2-TST-055", "P2-TST-056", "P2-TST-057", "P2-TST-058", "P2-TST-059", "P2-TST-060", "P2-TST-061", "P2-TST-062", "P2-TST-063", "P2-TST-064", "P2-TST-065", "P2-TST-066", "P2-TST-067", "P2-TST-068", "P2-TST-069", "P2-TST-070", "P2-AC-003", "P2-AC-010", "P2-AC-011", "P2-AC-012", "G2-E"],
+      "note": "The exact Clang CTest selection exited 0 with 15/15 PASS in 39.75 seconds."
+    },
+    {
+      "id": "G2-E-release-native-loopback",
+      "status": "fresh",
+      "path": "build/bin/Release/unittests.exe",
+      "command": "$env:FSO_TELEMETRY_RUN_NATIVE_LOOPBACK='1'; .\\unittests.exe --gtest_filter='TelemetryNativeRuntimeLoopbackContract.*:TelemetryNativeRuntimeIntegrationContract.*'",
+      "revision": "6f845a864e9f9f6100790893c190877114e89027+dirty-WP09-G2-E-certification-checkpoint",
+      "covers": ["P2-WP-08", "P2-WP-09", "P2-AC-007", "P2-AC-008", "P2-AC-009", "G2-E"],
+      "note": "From cwd build/bin/Release, the exact native runtime/loopback command exited 0 with 18/18 PASS, zero skip and zero failure in 671 ms gtest / 790 ms wrapper. Binary SHA-256 360f8ac2ba87b994ff9d6c5113f7fadc5a533066854c2448b1954b2ba1db0395, 25,532,416 bytes, mtime 2026-07-27T11:56:34.4588618Z; the environment variable was removed after execution."
+    },
+    {
+      "id": "G2-E-fuzz-runner-harness",
+      "status": "fresh",
+      "path": "test/telemetry/protocol/fuzz/test_run_fuzz_smoke.py",
+      "command": "python test/telemetry/protocol/fuzz/test_run_fuzz_smoke.py",
+      "revision": "6f845a864e9f9f6100790893c190877114e89027+dirty-WP09-G2-E-certification-checkpoint",
+      "covers": ["P2-WP-09", "P2-TST-060", "P2-TST-061", "P2-TST-062", "P2-TST-063", "P2-TST-064", "P2-TST-065", "P2-TST-066", "P2-TST-067", "P2-TST-068", "P2-TST-069", "P2-TST-070", "P2-AC-011", "P2-AC-012", "G2-E"],
+      "note": "The runner evidence harness exited 0 with 5/5 PASS in 0.563 seconds."
+    },
+    {
+      "id": "G2-E-packet-reader-fuzz-final",
+      "status": "fresh",
+      "path": "test/telemetry/producer/phase2/reports/wp09-security/fuzz-artifacts/packet-final/telemetry_phase2_packet_reader_fuzz/report.json",
+      "command": "build-phase2-clang/bin/telemetry_phase2_packet_reader_fuzz test/telemetry/producer/phase2/reports/wp09-security/fuzz-artifacts/packet-final/telemetry_phase2_packet_reader_fuzz/working-corpus -timeout=5 -rss_limit_mb=384 -print_final_stats=1 -use_value_profile=1 -artifact_prefix=build-phase2-clang/telemetry-phase2-fuzz-artifacts-packet-final/telemetry_phase2_packet_reader_fuzz/ -max_total_time=60 -seed=1345474380 -dict=test/telemetry/protocol/fuzz/fstl.dict",
+      "revision": "6f845a864e9f9f6100790893c190877114e89027+dirty-WP09-G2-E-certification-checkpoint",
+      "covers": ["P2-WP-09", "P2-REQ-042", "P2-REQ-046", "P2-REQ-050", "P2-TST-060", "P2-TST-061", "P2-TST-062", "P2-TST-063", "P2-TST-064", "P2-TST-065", "P2-AC-011", "P2-AC-012", "G2-E"],
+      "note": "Final report SHA-256 da644ff5644a141808b6b47d9e37423040a61c5543c002164fd15fc664ee4b92: PASS, 3,648,285 executed units, 203 MiB peak RSS, zero artifact, no max-input cap, exact fuzzer/address/undefined sanitizers, binary SHA-256 ca0145e70c3b6eae228801fa9b83366afd3ef1cbd2a9a377640671987c029565."
+    },
+    {
+      "id": "G2-E-state-validator-fuzz-final",
+      "status": "fresh",
+      "path": "test/telemetry/producer/phase2/reports/wp09-security/fuzz-artifacts/validator-final/telemetry_phase2_state_validator_fuzz/report.json",
+      "command": "build-phase2-clang/bin/telemetry_phase2_state_validator_fuzz test/telemetry/producer/phase2/reports/wp09-security/fuzz-artifacts/validator-final/telemetry_phase2_state_validator_fuzz/working-corpus -timeout=5 -rss_limit_mb=384 -print_final_stats=1 -use_value_profile=1 -artifact_prefix=build-phase2-clang/telemetry-phase2-fuzz-artifacts-validator-final/telemetry_phase2_state_validator_fuzz/ -max_total_time=60 -seed=1345474380 -dict=test/telemetry/protocol/fuzz/fstl.dict",
+      "revision": "6f845a864e9f9f6100790893c190877114e89027+dirty-WP09-G2-E-certification-checkpoint",
+      "covers": ["P2-WP-09", "P2-REQ-042", "P2-REQ-046", "P2-REQ-050", "P2-TST-066", "P2-TST-067", "P2-TST-068", "P2-TST-069", "P2-TST-070", "P2-AC-011", "P2-AC-012", "G2-E"],
+      "note": "Final report SHA-256 c5798c3033ee67b38d0edf5ac0d49f16937245da19e86484d950a26bc8de748b: PASS, 9,970,474 executed units, 224 MiB peak RSS, zero artifact, no max-input cap, exact fuzzer/address/undefined sanitizers, binary SHA-256 e72d335a29160712fb7790ab956cd593da8d0f1fc27bb257a165e3bbd16506b6."
+    },
+    {
+      "id": "G2-E-final-review-go",
+      "status": "fresh",
+      "path": null,
+      "command": null,
+      "revision": "6f845a864e9f9f6100790893c190877114e89027+dirty-WP09-G2-E-certification-checkpoint",
+      "covers": ["P2-WP-09", "P2-AC-010", "P2-AC-011", "P2-AC-012", "G2-E"],
+      "note": "The fixed-role reviewer returned GO with no remaining contractually blocking finding and accepted both final fuzz reports."
+    },
+    {
+      "id": "G2-E-diff-check",
+      "status": "fresh",
+      "path": null,
+      "command": "git diff --check",
+      "revision": "6f845a864e9f9f6100790893c190877114e89027+dirty-WP09-G2-E-certification-checkpoint",
+      "covers": ["P2-WP-09", "G2-E"],
+      "note": "git diff --check exited 0."
+    },
+    {
+      "id": "G2-E-stable-worktree-binding",
+      "status": "fresh",
+      "path": null,
+      "command": null,
+      "revision": "6f845a864e9f9f6100790893c190877114e89027+dirty-WP09-G2-E-certification-checkpoint",
+      "covers": ["P2-WP-08", "P2-WP-09", "P2-AC-003", "P2-AC-007", "P2-AC-008", "P2-AC-009", "P2-AC-010", "P2-AC-011", "P2-AC-012", "G2-E"],
+      "note": "Before tracker/report writes, full git status had 81,319 lines with SHA-256 a095c60408c25aa9ea2beee95cfb554c17f29161d45049cc695c5ad8d34f0b43; the focused tracked WP09 diff SHA-256 was 68a5da00775c7a26983e64714d5781250fbd0eed71bd3325d2ee4bf0439ee9d2. All pre-existing untracked files remain visible and untouched."
+    },
+    {
+      "id": "WP10-balanced-release-build",
+      "status": "fresh",
+      "path": "build/phase2-msvc/bin/Release/telemetry_phase2_oracle_harness.exe",
+      "command": "cmake --build build/phase2-msvc --config Release --parallel 2 --target telemetry_phase2_oracle_harness",
+      "revision": "6f845a864e9f9f6100790893c190877114e89027+dirty-WP10-balanced-checkpoint",
+      "covers": ["P2-WP-10", "P2-REQ-032", "P2-REQ-047", "P2-REQ-048", "P2-REQ-049", "P2-REQ-050", "P2-AC-006", "P2-AC-014"],
+      "note": "The exact Release target build exited 0 in 1.957 seconds. Binary SHA-256 a71c09ab9cb6e4011a9e36b2882249a6d53c4d5cd0aaa7be4f9e892d0c81382d."
+    },
+    {
+      "id": "WP10-balanced-release-smoke",
+      "status": "fresh",
+      "path": "build/phase2-msvc/bin/Release/telemetry_phase2_oracle_harness.exe",
+      "command": "ctest --test-dir build/phase2-msvc -C Release -R '^telemetry_phase2_oracle_harness_smoke$' --output-on-failure",
+      "revision": "6f845a864e9f9f6100790893c190877114e89027+dirty-WP10-balanced-checkpoint",
+      "covers": ["P2-WP-10", "P2-REQ-047", "P2-TST-045", "P2-TST-048", "P2-AC-006", "P2-AC-014"],
+      "note": "The exact registered Release smoke exited 0 with 1/1 PASS in 0.152 seconds."
+    },
+    {
+      "id": "WP10-independent-console-contract",
+      "status": "fresh",
+      "path": "test/telemetry/protocol/tools/test_fstl_console_client_contract.py",
+      "command": "py -3 test/telemetry/protocol/tools/test_fstl_console_client_contract.py",
+      "revision": "6f845a864e9f9f6100790893c190877114e89027+dirty-WP10-balanced-checkpoint",
+      "covers": ["P2-WP-10", "P2-REQ-032", "P2-REQ-047", "P2-REQ-048", "P2-TST-045", "P2-TST-048", "P2-AC-006", "P2-AC-014"],
+      "note": "The exact independent console-client contract exited 0 with 18/18 PASS in 25.860 seconds."
+    },
+    {
+      "id": "WP10-oracle-evidence-report",
+      "status": "fresh",
+      "path": "test/telemetry/producer/phase2/reports/wp10-oracle/phase2-oracle-evidence.json",
+      "command": "py -3 test/telemetry/producer/phase2/run_phase2_oracle_evidence.py --profiles core-gate complete-ship --build-dir build/phase2-msvc --config Release --report-dir test/telemetry/producer/phase2/reports/wp10-oracle",
+      "revision": "6f845a864e9f9f6100790893c190877114e89027+dirty-WP10-balanced-checkpoint",
+      "covers": ["P2-WP-10", "P2-REQ-032", "P2-REQ-047", "P2-REQ-048", "P2-TST-045", "P2-TST-048", "P2-AC-006", "P2-AC-007", "P2-AC-014"],
+      "note": "Sealed report SHA-256 4aee20179f886cf9eb305c9df9f4fc8f736b881fc54ed5f8701c6814f33a4037 has status passed. CoreGate is 147/147 and CompleteShip is 195/195; both have 100 percent raw coverage, zero mismatch, zero missing provenance, zero uncovered formula, converged true and hash-chain verification true."
+    },
+    {
+      "id": "WP10-oracle-capture-manifest",
+      "status": "fresh",
+      "path": "test/telemetry/producer/phase2/reports/wp10-oracle/captures/capture-manifest.json",
+      "command": "build/phase2-msvc/bin/Release/telemetry_phase2_oracle_harness.exe --profiles core-gate complete-ship --output-dir test/telemetry/producer/phase2/reports/wp10-oracle/captures",
+      "revision": "6f845a864e9f9f6100790893c190877114e89027+dirty-WP10-balanced-checkpoint",
+      "covers": ["P2-WP-10", "P2-REQ-047", "P2-REQ-048", "P2-AC-006", "P2-AC-014"],
+      "note": "Capture manifest SHA-256 6be8384437c270ca481e4f4d320f8160cb081b1c4b5e8f863e07c3fb6037194d binds the two conclusive profile captures."
+    },
+    {
+      "id": "WP10-final-review-go",
+      "status": "fresh",
+      "path": null,
+      "command": null,
+      "revision": "6f845a864e9f9f6100790893c190877114e89027+dirty-WP10-balanced-checkpoint",
+      "covers": ["P2-WP-10", "P2-REQ-032", "P2-REQ-047", "P2-REQ-048", "P2-TST-045", "P2-TST-048", "P2-AC-006", "P2-AC-014"],
+      "note": "The fixed-role reviewer returned GO with no remaining contractually blocking finding."
+    },
+    {
+      "id": "WP10-diff-check",
+      "status": "fresh",
+      "path": null,
+      "command": "git diff --check",
+      "revision": "6f845a864e9f9f6100790893c190877114e89027+dirty-WP10-balanced-checkpoint",
+      "covers": ["P2-WP-10"],
+      "note": "git diff --check exited 0."
+    },
+    {
+      "id": "WP10-stable-worktree-binding",
+      "status": "fresh",
+      "path": null,
+      "command": null,
+      "revision": "6f845a864e9f9f6100790893c190877114e89027+dirty-WP10-balanced-checkpoint",
+      "covers": ["P2-WP-10", "P2-AC-006", "P2-AC-007", "P2-AC-014"],
+      "note": "Before tracker writes, full git status had 81,340 lines with SHA-256 e38b186748a6027e0efac2bd55878222c2826cdcbdd8c59334b59c0e8611f336; the focused WP10 source/test/CMake binding SHA-256 was 116eeca5e93d04ae6ced4c37224a8d8e38b23961d501e81678a7218365b44367. All pre-existing untracked files remain visible and untouched."
+    },
+    {
+      "id": "WP11-loss-campaign-11-of-12",
+      "status": "fresh",
+      "path": "test/telemetry/producer/phase2/reports/wp11-loss-gate/campaign-manifest.json",
+      "command": null,
+      "revision": "6f845a864e9f9f6100790893c190877114e89027+dirty-WP11-loss-harness-9bde9d3ef9f0118b64c6c4a09f816c04d157dceffedd4bebf4bfc5cc83829f6f",
+      "covers": ["P2-WP-11", "P2-REQ-040", "P2-REQ-048", "P2-AC-007", "P2-AC-008", "P2-AC-009"],
+      "note": "Latest exact LOSS diagnostic, manifest SHA-256 19e18cba81ff2af1df17a79e8a034195d7fcd3a5ab27b31076adef766ad8ddd2: campaign status failed, 11/12 runs passed, and only core-gate-20-burst failed with harness exit code 4. The manifest binds Release harness SHA-256 9bde9d3ef9f0118b64c6c4a09f816c04d157dceffedd4bebf4bfc5cc83829f6f. This partial evidence does not verify any covered row or close G2-F; the next harness correction will make all 12 run artifacts stale."
     }
   ],
   "nextActions": [
-    "Perform the separate report-only sealing step for test/telemetry/producer/phase2/reports/wp02-capture/g2-b-capture.json; do not modify this stable tracker during report sealing.",
-    "After report sealing is independently complete, begin a new authorized P2-WP-03 slice in a later handoff.",
-    "P2-WP-09 is authorized for parallel work but remains not started."
+    "Resume P2-WP-11 with one bounded harness-only correction for correlated bidirectional-blackout proof, rebuild only telemetry_phase2_loss_harness, and run the exact core-gate-20-burst smoke.",
+    "If the smoke passes, rerun the complete 12-case P2-LOSS-GATE because the corrected harness hash and deterministic decision streams invalidate all prior LOSS runs.",
+    "Keep G2-F pending; only after fresh 12/12 LOSS, performance/allocation, five-soak evidence, readiness disposition, tracker reconciliation, and the normative proof manifest may WP12 be authorized."
   ],
   "notes": [
-    "The resume audit found no tracked worktree changes; pre-existing untracked build and historical-report artifacts were left untouched.",
-    "WP03 files are retained as provisional suspended work and must be reevaluated against the final WP02 authority.",
-    "Focused reviewer disposition is GO on the corrected unique_ptr source oracles and authorizes the exact Release 16-test group, then one broad run only if green; this is status metadata and does not close G2-B.",
-    "The structural NativeFixture reviewer GO preserves existing fresh lifecycle, observation, and source evidence; only the unittests remediation cadence advances.",
-    "The conditional global-batch reviewer GO is not broad authorization: performance and reliability artifacts are build-only, and broad remains missing.",
-    "Large build directories and historical reliability reports remain visible and untracked by explicit user choice."
+    "The skill-only commit 6f845a864 remains the current HEAD. P2-WP-09 is verified and G2-E is closed on the exact required Clang, native loopback, harness, hostile-corpus and final fuzz evidence.",
+    "WP03 reused the retained provisional files only after reevaluation against the closed WP02 authority and completed one balanced implementation/review/correction/checkpoint budget.",
+    "P2-REQ-020 remains verified by the complete-domain fixed-point materialization for every referenced ship. P2-REQ-035 and P2-REQ-039 are now verified by WP08 runtime baseline/delta/keyframe integration.",
+    "P2-REQ-045, P2-REQ-046 and P2-REQ-048 remain implemented rather than globally verified because WP11 owns the final performance, permanent-allocation, loss and endurance proof. P2-REQ-049 and P2-REQ-050 remain implemented because later work packages still own additional explicit declarations and fail-closed paths.",
+    "WP10 supplies the conclusive independent-client prerequisite for P2-AC-007. P2-AC-007, P2-AC-008 and P2-AC-009 remain implemented because WP11 still owns the blocking lifecycle/loss campaign evidence.",
+    "The user-approved D2-014 clarification is recorded without a new decision ID: NEXT_FIRE_POINT is absent at count 0, present with modulo at 1..64, and count >64 rejects the sample transactionally without truncation; P2-TST-040 covers 0/1/64/65.",
+    "No WP10 blocker is active; the fixed-role reviewer returned GO. G2-F remains pending WP11 and is not closed by this reconciliation.",
+    "The former category-3 lexical source-contract diagnostic is superseded: the corrected Release source-contract suite now passes 80/80.",
+    "P2-TST-049 is verified by the WP09 allocation-contract evidence. P2-REQ-046 remains implemented until WP11 supplies the final permanent-allocation and soak proof.",
+    "The two native loopback opt-in tests were replayed under their explicit environment and passed within the 18/18 Release runtime selection; no loopback follow-up remains.",
+    "Large build directories and historical reliability reports remain visible and untracked by explicit user choice.",
+    "Pause handoff 2026-07-29: no build, test, Python runner, or telemetry harness process is active. The test-agent handoff reports no scheduler correction recorded and resumes at the bounded correlated blackout harness fix; the reviewer handoff confirms the root cause is scheduled-only coverage rather than an observed correlated producer response.",
+    "No pre-campaign WP11 attempt is retained as tracker evidence: current harness edits supersede those targeted diagnostics. The 11 current passing LOSS runs remain partial only until the required harness correction, which will invalidate their harness hash and decision streams."
   ]
 }

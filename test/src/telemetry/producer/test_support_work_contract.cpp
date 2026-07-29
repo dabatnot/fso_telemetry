@@ -16,6 +16,8 @@
 
 #include <gtest/gtest.h>
 
+#include <array>
+#include <cmath>
 #include <cstring>
 #include <limits>
 #include <tuple>
@@ -435,6 +437,269 @@ TEST_F(TelemetryPhase2GameplayAbContract,
 	EXPECT_EQ(SupportTransitionReason::End, recorder.last_support_reason);
 	EXPECT_TRUE(context.list_registered);
 	EXPECT_TRUE(context.list_unregistered);
+}
+
+TEST_F(TelemetryPhase2GameplayAbContract,
+	CargoAuthorityThresholdsResetsAndHooksAreExactOffOnOff)
+{
+	struct Outcome {
+		int strict_range_reset = -1;
+		int boundary_progress = -1;
+		int sensors_preserved = -1;
+		int angle_reset = -1;
+		int changed_target_progress = -1;
+		int completion_final = -1;
+		bool completed = false;
+		std::array<CargoAuthorityFact, 6U> facts{};
+	};
+	struct Context {
+		ControlHookCounter* recorder = nullptr;
+		int player_ship_index = MAX_SHIPS - 3;
+		int player_object_index = MAX_OBJECTS - 3;
+		int target_ship_index = MAX_SHIPS - 4;
+		int target_object_index = MAX_OBJECTS - 4;
+		int ship_info_index = 0;
+		std::size_t invocation = 0U;
+		player test_player;
+		std::array<Outcome, 3U> outcomes{};
+	};
+	ControlHookCounter recorder;
+	Context context{&recorder};
+	const auto invoke = [](void* opaque) noexcept {
+		auto& state = *static_cast<Context*>(opaque);
+		ASSERT_LT(state.invocation, state.outcomes.size());
+		auto& outcome = state.outcomes[state.invocation++];
+		reset_phase2_seam_handoff();
+
+		auto& player_ship = Ships[state.player_ship_index];
+		auto& player_object = Objects[state.player_object_index];
+		auto& player_ai = Ai_info[state.player_ship_index];
+		auto& target_ship = Ships[state.target_ship_index];
+		auto& target_object = Objects[state.target_object_index];
+		player_ship.clear();
+		list_init(&player_ship.subsys_list);
+		player_ship.weapons.clear();
+		player_ship.objnum = state.player_object_index;
+		player_ship.ai_index = state.player_ship_index;
+		player_ship.ship_info_index = state.ship_info_index;
+		player_object.clear();
+		player_object.type = OBJ_SHIP;
+		player_object.instance = state.player_ship_index;
+		player_object.signature = 43001;
+		player_object.orient = vmd_identity_matrix;
+		player_ai = ai_info{};
+		player_ai.shipnum = state.player_ship_index;
+		player_ai.target_objnum = state.target_object_index;
+
+		target_ship.clear();
+		list_init(&target_ship.subsys_list);
+		target_ship.weapons.clear();
+		target_ship.objnum = state.target_object_index;
+		target_ship.ai_index = state.target_ship_index;
+		target_ship.ship_info_index = state.ship_info_index;
+		target_ship.flags.set(Ship::Ship_Flags::Scannable);
+		target_object.clear();
+		target_object.type = OBJ_SHIP;
+		target_object.instance = state.target_ship_index;
+		target_object.signature = 43002;
+		target_object.radius = 10.0F;
+		target_object.orient = vmd_identity_matrix;
+		Ai_info[state.target_ship_index] = ai_info{};
+		Ai_info[state.target_ship_index].shipnum = state.target_ship_index;
+
+		state.test_player.cargo_inspect_time = 77;
+		Player = &state.test_player;
+		Player_obj = &player_object;
+		Player_ship = &player_ship;
+		Player_ai = &player_ai;
+
+		// The gameplay predicate is strict: distance == scan range is outside.
+		player_ai.current_target_distance = 100.0F;
+		target_object.pos.xyz.z = 50.0F;
+		hud_cargo_scan_update(&target_object, 0.10F);
+		outcome.strict_range_reset = Player->cargo_inspect_time;
+		outcome.facts[0] = phase2_seam_handoff_snapshot().cargo_authority;
+
+		// The angular predicate accepts the stable float point just above its
+		// inclusive CARGO_MIN_DOT_TO_REVEAL boundary.
+		Player->cargo_inspect_time = 0;
+		player_ai.current_target_distance = 99.0F;
+		constexpr auto boundary_dot = 0.951F;
+		target_object.pos.xyz.x =
+			50.0F * std::sqrt(1.0F -
+				boundary_dot * boundary_dot);
+		target_object.pos.xyz.z = 50.0F * boundary_dot;
+		hud_cargo_scan_update(&target_object, 0.10F);
+		outcome.boundary_progress = Player->cargo_inspect_time;
+		outcome.facts[1] = phase2_seam_handoff_snapshot().cargo_authority;
+
+		// Failed sensors preserve existing progress but never advance it.
+		player_ship.subsys_info[SUBSYSTEM_SENSORS].aggregate_max_hits = 1.0F;
+		player_ship.subsys_info[SUBSYSTEM_SENSORS].aggregate_current_hits = 0.0F;
+		hud_cargo_scan_update(&target_object, 0.10F);
+		outcome.sensors_preserved = Player->cargo_inspect_time;
+		outcome.facts[2] = phase2_seam_handoff_snapshot().cargo_authority;
+		player_ship.subsys_info[SUBSYSTEM_SENSORS] = {};
+
+		// Loss of the angle/LOS predicate resets accumulated progress.
+		Player->cargo_inspect_time = 100;
+		target_object.pos.xyz.x = 50.0F;
+		target_object.pos.xyz.z = 0.0F;
+		hud_cargo_scan_update(&target_object, 0.10F);
+		outcome.angle_reset = Player->cargo_inspect_time;
+		outcome.facts[3] = phase2_seam_handoff_snapshot().cargo_authority;
+
+		// Target selection owns the reset; the authority reports the new target.
+		Player->cargo_inspect_time = 0;
+		target_object.signature = 43003;
+		target_object.pos.xyz.x = 0.0F;
+		target_object.pos.xyz.z = 50.0F;
+		hud_cargo_scan_update(&target_object, 0.10F);
+		outcome.changed_target_progress = Player->cargo_inspect_time;
+		outcome.facts[4] = phase2_seam_handoff_snapshot().cargo_authority;
+
+		// Completion is strictly greater than required, then gameplay resets.
+		Player->cargo_inspect_time = 500;
+		hud_cargo_scan_update(&target_object, 0.001F);
+		outcome.completion_final = Player->cargo_inspect_time;
+		outcome.completed =
+			target_ship.flags[Ship::Ship_Flags::Cargo_revealed];
+		outcome.facts[5] = phase2_seam_handoff_snapshot().cargo_authority;
+
+		Player = nullptr;
+		Player_obj = nullptr;
+		Player_ship = nullptr;
+		Player_ai = nullptr;
+	};
+	const auto capture = [](void* opaque) noexcept {
+		const auto& state = *static_cast<Context*>(opaque);
+		const auto& outcome = state.outcomes[state.invocation - 1U];
+		GameplayAbSnapshot snapshot;
+		snapshot.gameplay_return = outcome.changed_target_progress;
+		snapshot.gameplay_mutations =
+			static_cast<std::uint64_t>(outcome.angle_reset);
+		snapshot.cargo_advance_count =
+			static_cast<std::uint64_t>(outcome.boundary_progress);
+		snapshot.cargo_reset_count =
+			static_cast<std::uint64_t>(outcome.strict_range_reset);
+		snapshot.cargo_reveal_count = outcome.completed;
+		snapshot.hud_side_effect_count =
+			static_cast<std::uint64_t>(outcome.sensors_preserved);
+		snapshot.socket_count = outcome.facts.size();
+		return snapshot;
+	};
+
+	const auto prior_player = Player;
+	const auto prior_player_obj = Player_obj;
+	const auto prior_player_ship = Player_ship;
+	const auto prior_player_ai = Player_ai;
+	const auto prior_skill = Game_skill_level;
+	const auto prior_scanning = Use_new_scanning_behavior;
+	const auto prior_sound_count = Snds.size();
+	const auto prior_num_cargo = Num_cargo;
+	const auto prior_cargo_name_zero = Cargo_names[0];
+	char prior_cargo_name_buffer_zero[NAME_LENGTH]{};
+	std::memcpy(prior_cargo_name_buffer_zero,
+		Cargo_names_buf[0], sizeof(prior_cargo_name_buffer_zero));
+	const auto created_ship_info = Ship_info.empty();
+	if (created_ship_info) Ship_info.emplace_back();
+	auto& ship_class = Ship_info[0];
+	const auto prior_scan_time = ship_class.scan_time;
+	const auto prior_range = ship_class.scan_range_normal;
+	const auto prior_time_multiplier = ship_class.scanning_time_multiplier;
+	const auto prior_range_multiplier = ship_class.scanning_range_multiplier;
+	ship_class.scan_time = 500;
+	ship_class.scan_range_normal = 100.0F;
+	ship_class.scanning_time_multiplier = 1.0F;
+	ship_class.scanning_range_multiplier = 1.0F;
+	Game_skill_level = 1;
+	Use_new_scanning_behavior = false;
+	Cargo_names[0] = Cargo_names_buf[0];
+	strcpy_s(Cargo_names[0], NAME_LENGTH, "Nothing");
+	Num_cargo = 1;
+	if (Snds.size() <= static_cast<std::size_t>(GameSounds::CARGO_REVEAL))
+		Snds.resize(static_cast<std::size_t>(GameSounds::CARGO_REVEAL) + 1U);
+
+	const auto run =
+		run_phase2_gameplay_ab(invoke, capture, &context, &recorder);
+
+	Player = prior_player;
+	Player_obj = prior_player_obj;
+	Player_ship = prior_player_ship;
+	Player_ai = prior_player_ai;
+	Game_skill_level = prior_skill;
+	Use_new_scanning_behavior = prior_scanning;
+	Snds.resize(prior_sound_count);
+	Num_cargo = prior_num_cargo;
+	std::memcpy(Cargo_names_buf[0],
+		prior_cargo_name_buffer_zero,
+		sizeof(prior_cargo_name_buffer_zero));
+	Cargo_names[0] = prior_cargo_name_zero;
+	ship_class.scan_time = prior_scan_time;
+	ship_class.scan_range_normal = prior_range;
+	ship_class.scanning_time_multiplier = prior_time_multiplier;
+	ship_class.scanning_range_multiplier = prior_range_multiplier;
+	Objects[context.player_object_index].clear();
+	Ships[context.player_ship_index].clear();
+	Ai_info[context.player_ship_index] = ai_info{};
+	Objects[context.target_object_index].clear();
+	Ships[context.target_ship_index].clear();
+	Ai_info[context.target_ship_index] = ai_info{};
+	if (created_ship_info) Ship_info.pop_back();
+	reset_phase2_seam_handoff();
+
+	EXPECT_EQ(run.snapshots[0].gameplay_return,
+		run.snapshots[1].gameplay_return);
+	EXPECT_EQ(run.snapshots[0].gameplay_return,
+		run.snapshots[2].gameplay_return);
+	EXPECT_EQ(run.snapshots[0].gameplay_mutations,
+		run.snapshots[1].gameplay_mutations);
+	EXPECT_EQ(run.snapshots[0].cargo_advance_count,
+		run.snapshots[1].cargo_advance_count);
+	EXPECT_EQ(run.snapshots[0].cargo_reset_count,
+		run.snapshots[1].cargo_reset_count);
+	EXPECT_EQ(run.snapshots[0].cargo_reveal_count,
+		run.snapshots[1].cargo_reveal_count);
+	EXPECT_EQ(run.snapshots[0].hud_side_effect_count,
+		run.snapshots[1].hud_side_effect_count);
+	EXPECT_EQ(run.snapshots[0].gameplay_mutations,
+		run.snapshots[2].gameplay_mutations);
+	EXPECT_EQ(run.snapshots[0].cargo_advance_count,
+		run.snapshots[2].cargo_advance_count);
+	EXPECT_EQ(run.snapshots[0].cargo_reset_count,
+		run.snapshots[2].cargo_reset_count);
+	EXPECT_EQ(run.snapshots[0].cargo_reveal_count,
+		run.snapshots[2].cargo_reveal_count);
+	EXPECT_EQ(run.snapshots[0].hud_side_effect_count,
+		run.snapshots[2].hud_side_effect_count);
+	EXPECT_EQ(6U, run.snapshots[1].hook_calls);
+	EXPECT_EQ(6U, recorder.cargo_calls);
+
+	const auto& outcome = context.outcomes[1];
+	EXPECT_EQ(77, outcome.strict_range_reset);
+	EXPECT_EQ(100, outcome.boundary_progress);
+	EXPECT_EQ(100, outcome.sensors_preserved);
+	EXPECT_EQ(0, outcome.angle_reset);
+	EXPECT_EQ(100, outcome.changed_target_progress);
+	EXPECT_TRUE(outcome.completed);
+	EXPECT_EQ(0, outcome.completion_final);
+	EXPECT_EQ(telemetry::protocol::ScanValidityFlagNone,
+		outcome.facts[0].validity_flags);
+	EXPECT_EQ(77'000U, outcome.facts[0].elapsed_us);
+	EXPECT_EQ(telemetry::protocol::KnownScanValidityFlags,
+		outcome.facts[1].validity_flags);
+	EXPECT_EQ(CargoScanPhaseObservation::Scanning, outcome.facts[1].phase);
+	EXPECT_EQ(100'000U, outcome.facts[1].elapsed_us);
+	EXPECT_EQ(telemetry::protocol::KnownScanValidityFlags,
+		outcome.facts[2].validity_flags);
+	EXPECT_EQ(CargoScanPhaseObservation::Idle, outcome.facts[2].phase);
+	EXPECT_EQ(100'000U, outcome.facts[2].elapsed_us);
+	EXPECT_EQ(telemetry::protocol::ScanValidityFlagInRange,
+		outcome.facts[3].validity_flags);
+	EXPECT_EQ(0U, outcome.facts[3].elapsed_us);
+	EXPECT_EQ(43003U, outcome.facts[4].target_signature);
+	EXPECT_EQ(CargoScanPhaseObservation::Completed, outcome.facts[5].phase);
+	EXPECT_EQ(0U, outcome.facts[5].elapsed_us);
 }
 
 enum class SupportCase {

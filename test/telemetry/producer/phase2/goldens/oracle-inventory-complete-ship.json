@@ -1,0 +1,1750 @@
+[
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.CARGO_SCAN_STATE/entity_id=1.disclosure",
+    "source": "wire:CARGO_SCAN_STATE:v1",
+    "value": 0
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.CARGO_SCAN_STATE/entity_id=1.entity_id",
+    "source": "wire:CARGO_SCAN_STATE:v1",
+    "value": "1"
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.CARGO_SCAN_STATE/entity_id=1.presence",
+    "source": "wire:CARGO_SCAN_STATE:v1",
+    "value": "0"
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.CARGO_SCAN_STATE/entity_id=1.producer_sample_time_us",
+    "source": "wire:CARGO_SCAN_STATE:v1",
+    "value": "1000000"
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.CARGO_SCAN_STATE/entity_id=1.scan_phase",
+    "source": "wire:CARGO_SCAN_STATE:v1",
+    "value": 1
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.CONTROL_STATE/entity_id=1.bank",
+    "source": "wire:CONTROL_STATE:v1",
+    "value": 0.0
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.CONTROL_STATE/entity_id=1.control_flags",
+    "source": "wire:CONTROL_STATE:v1",
+    "value": 0
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.CONTROL_STATE/entity_id=1.control_mode",
+    "source": "wire:CONTROL_STATE:v1",
+    "value": 1
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.CONTROL_STATE/entity_id=1.entity_id",
+    "source": "wire:CONTROL_STATE:v1",
+    "value": "1"
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.CONTROL_STATE/entity_id=1.forward",
+    "source": "wire:CONTROL_STATE:v1",
+    "value": 0.0
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.CONTROL_STATE/entity_id=1.heading",
+    "source": "wire:CONTROL_STATE:v1",
+    "value": 0.0
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.CONTROL_STATE/entity_id=1.pitch",
+    "source": "wire:CONTROL_STATE:v1",
+    "value": 0.0
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.CONTROL_STATE/entity_id=1.presence",
+    "source": "wire:CONTROL_STATE:v1",
+    "value": "0"
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.CONTROL_STATE/entity_id=1.producer_sample_time_us",
+    "source": "wire:CONTROL_STATE:v1",
+    "value": "1000000"
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.CONTROL_STATE/entity_id=1.sideways",
+    "source": "wire:CONTROL_STATE:v1",
+    "value": 0.0
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.CONTROL_STATE/entity_id=1.vertical",
+    "source": "wire:CONTROL_STATE:v1",
+    "value": 0.0
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.DAMAGE_STATE/entity_id=1.dynamic_max_hull",
+    "source": "wire:DAMAGE_STATE:v1",
+    "value": 100.0
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.DAMAGE_STATE/entity_id=1.entity_id",
+    "source": "wire:DAMAGE_STATE:v1",
+    "value": "1"
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.DAMAGE_STATE/entity_id=1.hull_strength",
+    "source": "wire:DAMAGE_STATE:v1",
+    "value": 50.0
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.DAMAGE_STATE/entity_id=1.presence",
+    "source": "wire:DAMAGE_STATE:v1",
+    "value": "0"
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.DAMAGE_STATE/entity_id=1.producer_sample_time_us",
+    "source": "wire:DAMAGE_STATE:v1",
+    "value": "1000000"
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.DAMAGE_STATE/entity_id=1.protection_flags",
+    "source": "wire:DAMAGE_STATE:v1",
+    "value": 0
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.DOCKING_STATE/entity_id=1.entity_id",
+    "source": "wire:DOCKING_STATE:v1",
+    "value": "1"
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.DOCKING_STATE/entity_id=1.group_leader_entity_id",
+    "source": "wire:DOCKING_STATE:v1",
+    "value": "0"
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.DOCKING_STATE/entity_id=1.phase",
+    "source": "wire:DOCKING_STATE:v1",
+    "value": 0
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.DOCKING_STATE/entity_id=1.presence",
+    "source": "wire:DOCKING_STATE:v1",
+    "value": "0"
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.DOCKING_STATE/entity_id=1.producer_sample_time_us",
+    "source": "wire:DOCKING_STATE:v1",
+    "value": "1000000"
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.ENERGY_STATE/entity_id=1.entity_id",
+    "source": "wire:ENERGY_STATE:v1",
+    "value": "1"
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.ENERGY_STATE/entity_id=1.ets_engines_index",
+    "source": "wire:ENERGY_STATE:v1",
+    "value": 0
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.ENERGY_STATE/entity_id=1.ets_mode",
+    "source": "wire:ENERGY_STATE:v1",
+    "value": 0
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.ENERGY_STATE/entity_id=1.ets_shields_index",
+    "source": "wire:ENERGY_STATE:v1",
+    "value": 0
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.ENERGY_STATE/entity_id=1.ets_weapons_index",
+    "source": "wire:ENERGY_STATE:v1",
+    "value": 0
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.ENERGY_STATE/entity_id=1.presence",
+    "source": "wire:ENERGY_STATE:v1",
+    "value": "0"
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.ENERGY_STATE/entity_id=1.producer_sample_time_us",
+    "source": "wire:ENERGY_STATE:v1",
+    "value": "1000000"
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.ENERGY_STATE/entity_id=1.reserved",
+    "source": "wire:ENERGY_STATE:v1",
+    "value": 0
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.ENTITY_LIFECYCLE/class_id=1/entity_id=1.class_id",
+    "source": "wire:ENTITY_LIFECYCLE:v1",
+    "value": 1
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.ENTITY_LIFECYCLE/class_id=1/entity_id=1.entity_id",
+    "source": "wire:ENTITY_LIFECYCLE:v1",
+    "value": "1"
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.ENTITY_LIFECYCLE/class_id=1/entity_id=1.lifecycle_flags",
+    "source": "wire:ENTITY_LIFECYCLE:v1",
+    "value": 0
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.ENTITY_LIFECYCLE/class_id=1/entity_id=1.lifecycle_phase",
+    "source": "wire:ENTITY_LIFECYCLE:v1",
+    "value": 1
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.ENTITY_LIFECYCLE/class_id=1/entity_id=1.object_type",
+    "source": "wire:ENTITY_LIFECYCLE:v1",
+    "value": 1
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.ENTITY_LIFECYCLE/class_id=1/entity_id=1.presence",
+    "source": "wire:ENTITY_LIFECYCLE:v1",
+    "value": "4"
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.ENTITY_LIFECYCLE/class_id=1/entity_id=1.producer_sample_time_us",
+    "source": "wire:ENTITY_LIFECYCLE:v1",
+    "value": "1000000"
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.FLIGHT_STATE/entity_id=1.entity_id",
+    "source": "wire:FLIGHT_STATE:v1",
+    "value": "1"
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.FLIGHT_STATE/entity_id=1.orientation_local_to_world[0]",
+    "source": "wire:FLIGHT_STATE:v1",
+    "value": 1.0
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.FLIGHT_STATE/entity_id=1.orientation_local_to_world[1]",
+    "source": "wire:FLIGHT_STATE:v1",
+    "value": 0.0
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.FLIGHT_STATE/entity_id=1.orientation_local_to_world[2]",
+    "source": "wire:FLIGHT_STATE:v1",
+    "value": 0.0
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.FLIGHT_STATE/entity_id=1.orientation_local_to_world[3]",
+    "source": "wire:FLIGHT_STATE:v1",
+    "value": 0.0
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.FLIGHT_STATE/entity_id=1.physics_mode_flags",
+    "source": "wire:FLIGHT_STATE:v1",
+    "value": 0
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.FLIGHT_STATE/entity_id=1.position_world[0]",
+    "source": "wire:FLIGHT_STATE:v1",
+    "value": 0.0
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.FLIGHT_STATE/entity_id=1.position_world[1]",
+    "source": "wire:FLIGHT_STATE:v1",
+    "value": 0.0
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.FLIGHT_STATE/entity_id=1.position_world[2]",
+    "source": "wire:FLIGHT_STATE:v1",
+    "value": 0.0
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.FLIGHT_STATE/entity_id=1.presence",
+    "source": "wire:FLIGHT_STATE:v1",
+    "value": "0"
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.FLIGHT_STATE/entity_id=1.producer_sample_time_us",
+    "source": "wire:FLIGHT_STATE:v1",
+    "value": "1000000"
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.FLIGHT_STATE/entity_id=1.radius",
+    "source": "wire:FLIGHT_STATE:v1",
+    "value": 0.0
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.FLIGHT_STATE/entity_id=1.rotational_velocity_local[0]",
+    "source": "wire:FLIGHT_STATE:v1",
+    "value": 0.0
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.FLIGHT_STATE/entity_id=1.rotational_velocity_local[1]",
+    "source": "wire:FLIGHT_STATE:v1",
+    "value": 0.0
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.FLIGHT_STATE/entity_id=1.rotational_velocity_local[2]",
+    "source": "wire:FLIGHT_STATE:v1",
+    "value": 0.0
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.FLIGHT_STATE/entity_id=1.velocity_world[0]",
+    "source": "wire:FLIGHT_STATE:v1",
+    "value": 0.0
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.FLIGHT_STATE/entity_id=1.velocity_world[1]",
+    "source": "wire:FLIGHT_STATE:v1",
+    "value": 0.0
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.FLIGHT_STATE/entity_id=1.velocity_world[2]",
+    "source": "wire:FLIGHT_STATE:v1",
+    "value": 0.0
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.MISSION_STATE.mission_generation",
+    "source": "wire:MISSION_STATE:v1",
+    "value": 1
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.MISSION_STATE.paused",
+    "source": "wire:MISSION_STATE:v1",
+    "value": 0
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.MISSION_STATE.phase",
+    "source": "wire:MISSION_STATE:v1",
+    "value": 0
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.MISSION_STATE.presence",
+    "source": "wire:MISSION_STATE:v1",
+    "value": "0"
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.MISSION_STATE.producer_sample_time_us",
+    "source": "wire:MISSION_STATE:v1",
+    "value": "1000000"
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.MISSION_STATE.reserved",
+    "source": "wire:MISSION_STATE:v1",
+    "value": 0
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.MISSION_STATE.time_compression",
+    "source": "wire:MISSION_STATE:v1",
+    "value": 1.0
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.PROPULSION_STATE/entity_id=1.entity_id",
+    "source": "wire:PROPULSION_STATE:v1",
+    "value": "1"
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.PROPULSION_STATE/entity_id=1.presence",
+    "source": "wire:PROPULSION_STATE:v1",
+    "value": "0"
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.PROPULSION_STATE/entity_id=1.producer_sample_time_us",
+    "source": "wire:PROPULSION_STATE:v1",
+    "value": "1000000"
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.PROPULSION_STATE/entity_id=1.propulsion_flags",
+    "source": "wire:PROPULSION_STATE:v1",
+    "value": 0
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.PROPULSION_STATE/entity_id=1.reserved",
+    "source": "wire:PROPULSION_STATE:v1",
+    "value": 0
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.SESSION_STATE.authority_mode",
+    "source": "wire:SESSION_STATE:v1",
+    "value": 0
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.SESSION_STATE.event_coverage_exact",
+    "source": "wire:SESSION_STATE:v1",
+    "value": "0"
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.SESSION_STATE.event_coverage_state_derived",
+    "source": "wire:SESSION_STATE:v1",
+    "value": "0"
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.SESSION_STATE.negotiated_capabilities",
+    "source": "wire:SESSION_STATE:v1",
+    "value": "0"
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.SESSION_STATE.negotiated_capability_generation",
+    "source": "wire:SESSION_STATE:v1",
+    "value": 1
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.SESSION_STATE.observed_player_entity_id",
+    "source": "wire:SESSION_STATE:v1",
+    "value": "1"
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.SESSION_STATE.presence",
+    "source": "wire:SESSION_STATE:v1",
+    "value": "1"
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.SESSION_STATE.producer_id",
+    "source": "wire:SESSION_STATE:v1",
+    "value": "72623859790382856"
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.SESSION_STATE.producer_sample_time_us",
+    "source": "wire:SESSION_STATE:v1",
+    "value": "1000000"
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.SESSION_STATE.reserved",
+    "source": "wire:SESSION_STATE:v1",
+    "value": 0
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.SESSION_STATE.session_phase",
+    "source": "wire:SESSION_STATE:v1",
+    "value": 2
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.SESSION_STATE.state_domain_coverage",
+    "source": "wire:SESSION_STATE:v1",
+    "value": "1411"
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.SESSION_STATE.visibility_mode",
+    "source": "wire:SESSION_STATE:v1",
+    "value": 0
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.SHIELD_STATE/entity_id=1.entity_id",
+    "source": "wire:SHIELD_STATE:v1",
+    "value": "1"
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.SHIELD_STATE/entity_id=1.has_shields",
+    "source": "wire:SHIELD_STATE:v1",
+    "value": 0
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.SHIELD_STATE/entity_id=1.presence",
+    "source": "wire:SHIELD_STATE:v1",
+    "value": "0"
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.SHIELD_STATE/entity_id=1.producer_sample_time_us",
+    "source": "wire:SHIELD_STATE:v1",
+    "value": "1000000"
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.SHIELD_STATE/entity_id=1.reserved",
+    "source": "wire:SHIELD_STATE:v1",
+    "value": 0
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.SHIELD_STATE/entity_id=1.segment_count",
+    "source": "wire:SHIELD_STATE:v1",
+    "value": 0
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.SHIP_IDENTITY/entity_id=1.entity_id",
+    "source": "wire:SHIP_IDENTITY:v1",
+    "value": "1"
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.SHIP_IDENTITY/entity_id=1.iff_id",
+    "source": "wire:SHIP_IDENTITY:v1",
+    "value": 0
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.SHIP_IDENTITY/entity_id=1.internal_name",
+    "source": "wire:SHIP_IDENTITY:v1",
+    "value": "ship"
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.SHIP_IDENTITY/entity_id=1.presence",
+    "source": "wire:SHIP_IDENTITY:v1",
+    "value": "0"
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.SHIP_IDENTITY/entity_id=1.producer_sample_time_us",
+    "source": "wire:SHIP_IDENTITY:v1",
+    "value": "1000000"
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.SHIP_IDENTITY/entity_id=1.radius",
+    "source": "wire:SHIP_IDENTITY:v1",
+    "value": 0.0
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.SHIP_IDENTITY/entity_id=1.role_flags",
+    "source": "wire:SHIP_IDENTITY:v1",
+    "value": 0
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.SHIP_IDENTITY/entity_id=1.ship_class_id",
+    "source": "wire:SHIP_IDENTITY:v1",
+    "value": 1
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.SHIP_IDENTITY/entity_id=1.species_id",
+    "source": "wire:SHIP_IDENTITY:v1",
+    "value": 0
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.SHIP_IDENTITY/entity_id=1.team_id",
+    "source": "wire:SHIP_IDENTITY:v1",
+    "value": 0
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.SUBSYSTEM_STATE/entity_id=1/subsystem_id=2.canonical_index",
+    "source": "wire:SUBSYSTEM_STATE:v1",
+    "value": 0
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.SUBSYSTEM_STATE/entity_id=1/subsystem_id=2.current_hits",
+    "source": "wire:SUBSYSTEM_STATE:v1",
+    "value": 0.0
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.SUBSYSTEM_STATE/entity_id=1/subsystem_id=2.entity_id",
+    "source": "wire:SUBSYSTEM_STATE:v1",
+    "value": "1"
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.SUBSYSTEM_STATE/entity_id=1/subsystem_id=2.max_hits",
+    "source": "wire:SUBSYSTEM_STATE:v1",
+    "value": 0.0
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.SUBSYSTEM_STATE/entity_id=1/subsystem_id=2.presence",
+    "source": "wire:SUBSYSTEM_STATE:v1",
+    "value": "0"
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.SUBSYSTEM_STATE/entity_id=1/subsystem_id=2.producer_sample_time_us",
+    "source": "wire:SUBSYSTEM_STATE:v1",
+    "value": "1000000"
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.SUBSYSTEM_STATE/entity_id=1/subsystem_id=2.subsystem_flags",
+    "source": "wire:SUBSYSTEM_STATE:v1",
+    "value": 0
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.SUBSYSTEM_STATE/entity_id=1/subsystem_id=2.subsystem_id",
+    "source": "wire:SUBSYSTEM_STATE:v1",
+    "value": 2
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.SUBSYSTEM_STATE/entity_id=1/subsystem_id=2.type",
+    "source": "wire:SUBSYSTEM_STATE:v1",
+    "value": 1
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.SUPPORT_STATE/entity_id=1.entity_id",
+    "source": "wire:SUPPORT_STATE:v1",
+    "value": "1"
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.SUPPORT_STATE/entity_id=1.phase",
+    "source": "wire:SUPPORT_STATE:v1",
+    "value": 0
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.SUPPORT_STATE/entity_id=1.presence",
+    "source": "wire:SUPPORT_STATE:v1",
+    "value": "0"
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.SUPPORT_STATE/entity_id=1.producer_sample_time_us",
+    "source": "wire:SUPPORT_STATE:v1",
+    "value": "1000000"
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.SUPPORT_STATE/entity_id=1.reserved",
+    "source": "wire:SUPPORT_STATE:v1",
+    "value": "000000"
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.SUPPORT_STATE/entity_id=1.support_flags",
+    "source": "wire:SUPPORT_STATE:v1",
+    "value": 0
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.WEAPON_STATE/entity_id=1.current_primary_bank_id",
+    "source": "wire:WEAPON_STATE:v1",
+    "value": 0
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.WEAPON_STATE/entity_id=1.current_secondary_bank_id",
+    "source": "wire:WEAPON_STATE:v1",
+    "value": 0
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.WEAPON_STATE/entity_id=1.current_tertiary_bank_id",
+    "source": "wire:WEAPON_STATE:v1",
+    "value": 0
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.WEAPON_STATE/entity_id=1.entity_id",
+    "source": "wire:WEAPON_STATE:v1",
+    "value": "1"
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.WEAPON_STATE/entity_id=1.presence",
+    "source": "wire:WEAPON_STATE:v1",
+    "value": "0"
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.WEAPON_STATE/entity_id=1.primary_bank_count",
+    "source": "wire:WEAPON_STATE:v1",
+    "value": 0
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.WEAPON_STATE/entity_id=1.producer_sample_time_us",
+    "source": "wire:WEAPON_STATE:v1",
+    "value": "1000000"
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.WEAPON_STATE/entity_id=1.reserved",
+    "source": "wire:WEAPON_STATE:v1",
+    "value": 0
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.WEAPON_STATE/entity_id=1.secondary_bank_count",
+    "source": "wire:WEAPON_STATE:v1",
+    "value": 0
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.WEAPON_STATE/entity_id=1.tertiary_bank_count",
+    "source": "wire:WEAPON_STATE:v1",
+    "value": 0
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "records.WEAPON_STATE/entity_id=1.weapon_flags",
+    "source": "wire:WEAPON_STATE:v1",
+    "value": 0
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "manifest.CLASS_MANIFEST/manifest_generation=1/class_id=1.center_of_mass[0]",
+    "source": "wire:CLASS_MANIFEST:v1",
+    "value": 0.0
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "manifest.CLASS_MANIFEST/manifest_generation=1/class_id=1.center_of_mass[1]",
+    "source": "wire:CLASS_MANIFEST:v1",
+    "value": 0.0
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "manifest.CLASS_MANIFEST/manifest_generation=1/class_id=1.center_of_mass[2]",
+    "source": "wire:CLASS_MANIFEST:v1",
+    "value": 0.0
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "manifest.CLASS_MANIFEST/manifest_generation=1/class_id=1.class_id",
+    "source": "wire:CLASS_MANIFEST:v1",
+    "value": 1
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "manifest.CLASS_MANIFEST/manifest_generation=1/class_id=1.internal_name",
+    "source": "wire:CLASS_MANIFEST:v1",
+    "value": "ship"
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "manifest.CLASS_MANIFEST/manifest_generation=1/class_id=1.manifest_generation",
+    "source": "wire:CLASS_MANIFEST:v1",
+    "value": 1
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "manifest.CLASS_MANIFEST/manifest_generation=1/class_id=1.mass",
+    "source": "wire:CLASS_MANIFEST:v1",
+    "value": 1.0
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "manifest.CLASS_MANIFEST/manifest_generation=1/class_id=1.presence",
+    "source": "wire:CLASS_MANIFEST:v1",
+    "value": "0"
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "manifest.CLASS_MANIFEST/manifest_generation=1/class_id=1.ship_type_id",
+    "source": "wire:CLASS_MANIFEST:v1",
+    "value": 0
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "manifest.CLASS_MANIFEST/manifest_generation=1/class_id=1.species_id",
+    "source": "wire:CLASS_MANIFEST:v1",
+    "value": 0
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "manifest.WEAPON_MANIFEST/manifest_generation=1/weapon_class_id=1.gravity_multiplier",
+    "source": "wire:WEAPON_MANIFEST:v1",
+    "value": 0.0
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "manifest.WEAPON_MANIFEST/manifest_generation=1/weapon_class_id=1.internal_name",
+    "source": "wire:WEAPON_MANIFEST:v1",
+    "value": "weapon"
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "manifest.WEAPON_MANIFEST/manifest_generation=1/weapon_class_id=1.lifetime_us",
+    "source": "wire:WEAPON_MANIFEST:v1",
+    "value": "0"
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "manifest.WEAPON_MANIFEST/manifest_generation=1/weapon_class_id=1.manifest_generation",
+    "source": "wire:WEAPON_MANIFEST:v1",
+    "value": 1
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "manifest.WEAPON_MANIFEST/manifest_generation=1/weapon_class_id=1.mass",
+    "source": "wire:WEAPON_MANIFEST:v1",
+    "value": 0.0
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "manifest.WEAPON_MANIFEST/manifest_generation=1/weapon_class_id=1.max_speed",
+    "source": "wire:WEAPON_MANIFEST:v1",
+    "value": 0.0
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "manifest.WEAPON_MANIFEST/manifest_generation=1/weapon_class_id=1.presence",
+    "source": "wire:WEAPON_MANIFEST:v1",
+    "value": "0"
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "manifest.WEAPON_MANIFEST/manifest_generation=1/weapon_class_id=1.subtype",
+    "source": "wire:WEAPON_MANIFEST:v1",
+    "value": 0
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "manifest.WEAPON_MANIFEST/manifest_generation=1/weapon_class_id=1.velocity_inheritance",
+    "source": "wire:WEAPON_MANIFEST:v1",
+    "value": 0.0
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "manifest.WEAPON_MANIFEST/manifest_generation=1/weapon_class_id=1.weapon_class_id",
+    "source": "wire:WEAPON_MANIFEST:v1",
+    "value": 1
+  },
+  {
+    "available": true,
+    "kind": "A",
+    "path": "manifest.WEAPON_MANIFEST/manifest_generation=1/weapon_class_id=1.weapon_flags",
+    "source": "wire:WEAPON_MANIFEST:v1",
+    "value": "0"
+  },
+  {
+    "available": true,
+    "formula": "sqrt(vx^2+vy^2+vz^2)",
+    "formulaId": "p2.dashboard.speed.v1",
+    "kind": "D",
+    "path": "entities.1.speed",
+    "provenance": [
+      "wire:FLIGHT_STATE.velocity_world"
+    ],
+    "reason": null,
+    "source": "formula:p2.dashboard.speed.v1",
+    "value": 0.0
+  },
+  {
+    "available": true,
+    "formula": "conjugate(orientation_local_to_world) * velocity_world",
+    "formulaId": "p2.dashboard.velocity-local.v1",
+    "kind": "D",
+    "path": "entities.1.velocity_local",
+    "provenance": [
+      "wire:FLIGHT_STATE.orientation_local_to_world",
+      "wire:FLIGHT_STATE.velocity_world"
+    ],
+    "reason": null,
+    "source": "formula:p2.dashboard.velocity-local.v1",
+    "value": [
+      0.0,
+      0.0,
+      0.0
+    ]
+  },
+  {
+    "available": true,
+    "formula": "closed lifecycle_phase label mapping",
+    "formulaId": "p2.dashboard.lifecycle-label.v1",
+    "kind": "D",
+    "path": "entities.1.lifecycle_label",
+    "provenance": [
+      "wire:ENTITY_LIFECYCLE.lifecycle_phase"
+    ],
+    "reason": null,
+    "source": "formula:p2.dashboard.lifecycle-label.v1",
+    "value": "ACTIVE"
+  },
+  {
+    "available": true,
+    "formula": "clamp(hull_strength/dynamic_max_hull,0,1)",
+    "formulaId": "p2.dashboard.hull-ratio.v1",
+    "kind": "D",
+    "path": "entities.1.hull_ratio",
+    "provenance": [
+      "wire:DAMAGE_STATE.hull_strength",
+      "wire:DAMAGE_STATE.dynamic_max_hull"
+    ],
+    "reason": null,
+    "source": "formula:p2.dashboard.hull-ratio.v1",
+    "value": 0.5
+  },
+  {
+    "available": true,
+    "formula": "sum(segment_current_hits)",
+    "formulaId": "p2.dashboard.shield-current-total.v1",
+    "kind": "D",
+    "path": "entities.1.shield_current_total",
+    "provenance": [
+      "wire:SHIELD_STATE.segment_current_hits"
+    ],
+    "reason": null,
+    "source": "formula:p2.dashboard.shield-current-total.v1",
+    "value": 0
+  },
+  {
+    "available": true,
+    "formula": "sum(segment_max_hits)",
+    "formulaId": "p2.dashboard.shield-max-total.v1",
+    "kind": "D",
+    "path": "entities.1.shield_max_total",
+    "provenance": [
+      "wire:SHIELD_STATE.segment_max_hits"
+    ],
+    "reason": null,
+    "source": "formula:p2.dashboard.shield-max-total.v1",
+    "value": 0
+  },
+  {
+    "available": false,
+    "formula": "clamp(sum(segment_current_hits)/sum(segment_max_hits),0,1)",
+    "formulaId": "p2.dashboard.shield-ratio.v1",
+    "kind": "D",
+    "path": "entities.1.shield_ratio",
+    "provenance": [
+      "wire:SHIELD_STATE.has_shields",
+      "wire:SHIELD_STATE.segment_current_hits",
+      "wire:SHIELD_STATE.segment_max_hits"
+    ],
+    "reason": "shields-absent",
+    "source": "formula:p2.dashboard.shield-ratio.v1",
+    "value": null
+  },
+  {
+    "available": false,
+    "formula": "clamp(current_hits/max_hits,0,1)",
+    "formulaId": "p2.dashboard.subsystem-integrity-ratio.v1",
+    "kind": "D",
+    "path": "entities.1.subsystems.2.integrity_ratio",
+    "provenance": [
+      "wire:SUBSYSTEM_STATE.current_hits",
+      "wire:SUBSYSTEM_STATE.max_hits"
+    ],
+    "reason": "missing-or-nonpositive-denominator",
+    "source": "formula:p2.dashboard.subsystem-integrity-ratio.v1",
+    "value": null
+  },
+  {
+    "available": true,
+    "formula": "max_hits>0 && current_hits<=0",
+    "formulaId": "p2.dashboard.subsystem-destroyed.v1",
+    "kind": "D",
+    "path": "entities.1.subsystems.2.destroyed",
+    "provenance": [
+      "wire:SUBSYSTEM_STATE.current_hits",
+      "wire:SUBSYSTEM_STATE.max_hits"
+    ],
+    "reason": null,
+    "source": "formula:p2.dashboard.subsystem-destroyed.v1",
+    "value": false
+  },
+  {
+    "available": false,
+    "formula": "unavailable: Phase 2 wire lacks exact ets_properties applicability",
+    "formulaId": "p2.dashboard.ets-share-unavailable.v1",
+    "kind": "D",
+    "path": "entities.1.ets_share.shields",
+    "provenance": [
+      "wire:ENERGY_STATE.ets_mode",
+      "wire:ENERGY_STATE.ets_shields_index",
+      "wire:ENERGY_STATE.ets_weapons_index",
+      "wire:ENERGY_STATE.ets_engines_index"
+    ],
+    "reason": "ets-applicability-not-on-wire",
+    "source": "formula:p2.dashboard.ets-share-unavailable.v1",
+    "value": null
+  },
+  {
+    "available": false,
+    "formula": "unavailable: Phase 2 wire lacks exact ets_properties applicability",
+    "formulaId": "p2.dashboard.ets-share-unavailable.v1",
+    "kind": "D",
+    "path": "entities.1.ets_share.weapons",
+    "provenance": [
+      "wire:ENERGY_STATE.ets_mode",
+      "wire:ENERGY_STATE.ets_shields_index",
+      "wire:ENERGY_STATE.ets_weapons_index",
+      "wire:ENERGY_STATE.ets_engines_index"
+    ],
+    "reason": "ets-applicability-not-on-wire",
+    "source": "formula:p2.dashboard.ets-share-unavailable.v1",
+    "value": null
+  },
+  {
+    "available": false,
+    "formula": "unavailable: Phase 2 wire lacks exact ets_properties applicability",
+    "formulaId": "p2.dashboard.ets-share-unavailable.v1",
+    "kind": "D",
+    "path": "entities.1.ets_share.engines",
+    "provenance": [
+      "wire:ENERGY_STATE.ets_mode",
+      "wire:ENERGY_STATE.ets_shields_index",
+      "wire:ENERGY_STATE.ets_weapons_index",
+      "wire:ENERGY_STATE.ets_engines_index"
+    ],
+    "reason": "ets-applicability-not-on-wire",
+    "source": "formula:p2.dashboard.ets-share-unavailable.v1",
+    "value": null
+  },
+  {
+    "available": false,
+    "formula": "clamp(weapon_energy_current/weapon_energy_max,0,1)",
+    "formulaId": "p2.dashboard.weapon-energy-ratio.v1",
+    "kind": "D",
+    "path": "entities.1.weapon_energy_ratio",
+    "provenance": [
+      "wire:ENERGY_STATE.weapon_energy_current",
+      "wire:ENERGY_STATE.weapon_energy_max"
+    ],
+    "reason": "missing-or-nonpositive-denominator",
+    "source": "formula:p2.dashboard.weapon-energy-ratio.v1",
+    "value": null
+  },
+  {
+    "available": false,
+    "formula": "clamp(afterburner_fuel_current/afterburner_fuel_max,0,1)",
+    "formulaId": "p2.dashboard.fuel-ratio.v1",
+    "kind": "D",
+    "path": "entities.1.fuel_ratio",
+    "provenance": [
+      "wire:ENERGY_STATE.afterburner_fuel_current",
+      "wire:ENERGY_STATE.afterburner_fuel_max"
+    ],
+    "reason": "missing-or-nonpositive-denominator",
+    "source": "formula:p2.dashboard.fuel-ratio.v1",
+    "value": null
+  },
+  {
+    "available": false,
+    "formula": "client_monotonic_time_us+smoothed_offset-producer_sample_time_us",
+    "formulaId": "p2.dashboard.sample-age.v1",
+    "kind": "D",
+    "path": "records.CARGO_SCAN_STATE/entity_id=1.age_us",
+    "provenance": [
+      "client:monotonic_time_us",
+      "client:smoothed_offset_us",
+      "wire:producer_sample_time_us"
+    ],
+    "reason": "invalid-or-missing-clock-offset",
+    "source": "formula:p2.dashboard.sample-age.v1",
+    "value": null
+  },
+  {
+    "available": false,
+    "formula": "age_us > 3*block_period_us+100000",
+    "formulaId": "p2.dashboard.stale.v1",
+    "kind": "D",
+    "path": "records.CARGO_SCAN_STATE/entity_id=1.stale",
+    "provenance": [
+      "derived:p2.dashboard.sample-age.v1",
+      "config:flightHz",
+      "config:systemsHz",
+      "config:missionHeartbeatMs"
+    ],
+    "reason": "invalid-or-missing-age",
+    "source": "formula:p2.dashboard.stale.v1",
+    "value": null
+  },
+  {
+    "available": false,
+    "formula": "client_monotonic_time_us+smoothed_offset-producer_sample_time_us",
+    "formulaId": "p2.dashboard.sample-age.v1",
+    "kind": "D",
+    "path": "records.CONTROL_STATE/entity_id=1.age_us",
+    "provenance": [
+      "client:monotonic_time_us",
+      "client:smoothed_offset_us",
+      "wire:producer_sample_time_us"
+    ],
+    "reason": "invalid-or-missing-clock-offset",
+    "source": "formula:p2.dashboard.sample-age.v1",
+    "value": null
+  },
+  {
+    "available": false,
+    "formula": "age_us > 3*block_period_us+100000",
+    "formulaId": "p2.dashboard.stale.v1",
+    "kind": "D",
+    "path": "records.CONTROL_STATE/entity_id=1.stale",
+    "provenance": [
+      "derived:p2.dashboard.sample-age.v1",
+      "config:flightHz",
+      "config:systemsHz",
+      "config:missionHeartbeatMs"
+    ],
+    "reason": "invalid-or-missing-age",
+    "source": "formula:p2.dashboard.stale.v1",
+    "value": null
+  },
+  {
+    "available": false,
+    "formula": "client_monotonic_time_us+smoothed_offset-producer_sample_time_us",
+    "formulaId": "p2.dashboard.sample-age.v1",
+    "kind": "D",
+    "path": "records.DAMAGE_STATE/entity_id=1.age_us",
+    "provenance": [
+      "client:monotonic_time_us",
+      "client:smoothed_offset_us",
+      "wire:producer_sample_time_us"
+    ],
+    "reason": "invalid-or-missing-clock-offset",
+    "source": "formula:p2.dashboard.sample-age.v1",
+    "value": null
+  },
+  {
+    "available": false,
+    "formula": "age_us > 3*block_period_us+100000",
+    "formulaId": "p2.dashboard.stale.v1",
+    "kind": "D",
+    "path": "records.DAMAGE_STATE/entity_id=1.stale",
+    "provenance": [
+      "derived:p2.dashboard.sample-age.v1",
+      "config:flightHz",
+      "config:systemsHz",
+      "config:missionHeartbeatMs"
+    ],
+    "reason": "invalid-or-missing-age",
+    "source": "formula:p2.dashboard.stale.v1",
+    "value": null
+  },
+  {
+    "available": false,
+    "formula": "client_monotonic_time_us+smoothed_offset-producer_sample_time_us",
+    "formulaId": "p2.dashboard.sample-age.v1",
+    "kind": "D",
+    "path": "records.DOCKING_STATE/entity_id=1.age_us",
+    "provenance": [
+      "client:monotonic_time_us",
+      "client:smoothed_offset_us",
+      "wire:producer_sample_time_us"
+    ],
+    "reason": "invalid-or-missing-clock-offset",
+    "source": "formula:p2.dashboard.sample-age.v1",
+    "value": null
+  },
+  {
+    "available": false,
+    "formula": "age_us > 3*block_period_us+100000",
+    "formulaId": "p2.dashboard.stale.v1",
+    "kind": "D",
+    "path": "records.DOCKING_STATE/entity_id=1.stale",
+    "provenance": [
+      "derived:p2.dashboard.sample-age.v1",
+      "config:flightHz",
+      "config:systemsHz",
+      "config:missionHeartbeatMs"
+    ],
+    "reason": "invalid-or-missing-age",
+    "source": "formula:p2.dashboard.stale.v1",
+    "value": null
+  },
+  {
+    "available": false,
+    "formula": "client_monotonic_time_us+smoothed_offset-producer_sample_time_us",
+    "formulaId": "p2.dashboard.sample-age.v1",
+    "kind": "D",
+    "path": "records.ENERGY_STATE/entity_id=1.age_us",
+    "provenance": [
+      "client:monotonic_time_us",
+      "client:smoothed_offset_us",
+      "wire:producer_sample_time_us"
+    ],
+    "reason": "invalid-or-missing-clock-offset",
+    "source": "formula:p2.dashboard.sample-age.v1",
+    "value": null
+  },
+  {
+    "available": false,
+    "formula": "age_us > 3*block_period_us+100000",
+    "formulaId": "p2.dashboard.stale.v1",
+    "kind": "D",
+    "path": "records.ENERGY_STATE/entity_id=1.stale",
+    "provenance": [
+      "derived:p2.dashboard.sample-age.v1",
+      "config:flightHz",
+      "config:systemsHz",
+      "config:missionHeartbeatMs"
+    ],
+    "reason": "invalid-or-missing-age",
+    "source": "formula:p2.dashboard.stale.v1",
+    "value": null
+  },
+  {
+    "available": false,
+    "formula": "client_monotonic_time_us+smoothed_offset-producer_sample_time_us",
+    "formulaId": "p2.dashboard.sample-age.v1",
+    "kind": "D",
+    "path": "records.ENTITY_LIFECYCLE/class_id=1/entity_id=1.age_us",
+    "provenance": [
+      "client:monotonic_time_us",
+      "client:smoothed_offset_us",
+      "wire:producer_sample_time_us"
+    ],
+    "reason": "invalid-or-missing-clock-offset",
+    "source": "formula:p2.dashboard.sample-age.v1",
+    "value": null
+  },
+  {
+    "available": false,
+    "formula": "age_us > 3*block_period_us+100000",
+    "formulaId": "p2.dashboard.stale.v1",
+    "kind": "D",
+    "path": "records.ENTITY_LIFECYCLE/class_id=1/entity_id=1.stale",
+    "provenance": [
+      "derived:p2.dashboard.sample-age.v1",
+      "config:flightHz",
+      "config:systemsHz",
+      "config:missionHeartbeatMs"
+    ],
+    "reason": "invalid-or-missing-age",
+    "source": "formula:p2.dashboard.stale.v1",
+    "value": null
+  },
+  {
+    "available": false,
+    "formula": "client_monotonic_time_us+smoothed_offset-producer_sample_time_us",
+    "formulaId": "p2.dashboard.sample-age.v1",
+    "kind": "D",
+    "path": "records.FLIGHT_STATE/entity_id=1.age_us",
+    "provenance": [
+      "client:monotonic_time_us",
+      "client:smoothed_offset_us",
+      "wire:producer_sample_time_us"
+    ],
+    "reason": "invalid-or-missing-clock-offset",
+    "source": "formula:p2.dashboard.sample-age.v1",
+    "value": null
+  },
+  {
+    "available": false,
+    "formula": "age_us > 3*block_period_us+100000",
+    "formulaId": "p2.dashboard.stale.v1",
+    "kind": "D",
+    "path": "records.FLIGHT_STATE/entity_id=1.stale",
+    "provenance": [
+      "derived:p2.dashboard.sample-age.v1",
+      "config:flightHz",
+      "config:systemsHz",
+      "config:missionHeartbeatMs"
+    ],
+    "reason": "invalid-or-missing-age",
+    "source": "formula:p2.dashboard.stale.v1",
+    "value": null
+  },
+  {
+    "available": false,
+    "formula": "client_monotonic_time_us+smoothed_offset-producer_sample_time_us",
+    "formulaId": "p2.dashboard.sample-age.v1",
+    "kind": "D",
+    "path": "records.MISSION_STATE.age_us",
+    "provenance": [
+      "client:monotonic_time_us",
+      "client:smoothed_offset_us",
+      "wire:producer_sample_time_us"
+    ],
+    "reason": "invalid-or-missing-clock-offset",
+    "source": "formula:p2.dashboard.sample-age.v1",
+    "value": null
+  },
+  {
+    "available": false,
+    "formula": "age_us > 3*block_period_us+100000",
+    "formulaId": "p2.dashboard.stale.v1",
+    "kind": "D",
+    "path": "records.MISSION_STATE.stale",
+    "provenance": [
+      "derived:p2.dashboard.sample-age.v1",
+      "config:flightHz",
+      "config:systemsHz",
+      "config:missionHeartbeatMs"
+    ],
+    "reason": "invalid-or-missing-age",
+    "source": "formula:p2.dashboard.stale.v1",
+    "value": null
+  },
+  {
+    "available": false,
+    "formula": "client_monotonic_time_us+smoothed_offset-producer_sample_time_us",
+    "formulaId": "p2.dashboard.sample-age.v1",
+    "kind": "D",
+    "path": "records.PROPULSION_STATE/entity_id=1.age_us",
+    "provenance": [
+      "client:monotonic_time_us",
+      "client:smoothed_offset_us",
+      "wire:producer_sample_time_us"
+    ],
+    "reason": "invalid-or-missing-clock-offset",
+    "source": "formula:p2.dashboard.sample-age.v1",
+    "value": null
+  },
+  {
+    "available": false,
+    "formula": "age_us > 3*block_period_us+100000",
+    "formulaId": "p2.dashboard.stale.v1",
+    "kind": "D",
+    "path": "records.PROPULSION_STATE/entity_id=1.stale",
+    "provenance": [
+      "derived:p2.dashboard.sample-age.v1",
+      "config:flightHz",
+      "config:systemsHz",
+      "config:missionHeartbeatMs"
+    ],
+    "reason": "invalid-or-missing-age",
+    "source": "formula:p2.dashboard.stale.v1",
+    "value": null
+  },
+  {
+    "available": false,
+    "formula": "client_monotonic_time_us+smoothed_offset-producer_sample_time_us",
+    "formulaId": "p2.dashboard.sample-age.v1",
+    "kind": "D",
+    "path": "records.SESSION_STATE.age_us",
+    "provenance": [
+      "client:monotonic_time_us",
+      "client:smoothed_offset_us",
+      "wire:producer_sample_time_us"
+    ],
+    "reason": "invalid-or-missing-clock-offset",
+    "source": "formula:p2.dashboard.sample-age.v1",
+    "value": null
+  },
+  {
+    "available": false,
+    "formula": "age_us > 3*block_period_us+100000",
+    "formulaId": "p2.dashboard.stale.v1",
+    "kind": "D",
+    "path": "records.SESSION_STATE.stale",
+    "provenance": [
+      "derived:p2.dashboard.sample-age.v1",
+      "config:flightHz",
+      "config:systemsHz",
+      "config:missionHeartbeatMs"
+    ],
+    "reason": "invalid-or-missing-age",
+    "source": "formula:p2.dashboard.stale.v1",
+    "value": null
+  },
+  {
+    "available": false,
+    "formula": "client_monotonic_time_us+smoothed_offset-producer_sample_time_us",
+    "formulaId": "p2.dashboard.sample-age.v1",
+    "kind": "D",
+    "path": "records.SHIELD_STATE/entity_id=1.age_us",
+    "provenance": [
+      "client:monotonic_time_us",
+      "client:smoothed_offset_us",
+      "wire:producer_sample_time_us"
+    ],
+    "reason": "invalid-or-missing-clock-offset",
+    "source": "formula:p2.dashboard.sample-age.v1",
+    "value": null
+  },
+  {
+    "available": false,
+    "formula": "age_us > 3*block_period_us+100000",
+    "formulaId": "p2.dashboard.stale.v1",
+    "kind": "D",
+    "path": "records.SHIELD_STATE/entity_id=1.stale",
+    "provenance": [
+      "derived:p2.dashboard.sample-age.v1",
+      "config:flightHz",
+      "config:systemsHz",
+      "config:missionHeartbeatMs"
+    ],
+    "reason": "invalid-or-missing-age",
+    "source": "formula:p2.dashboard.stale.v1",
+    "value": null
+  },
+  {
+    "available": false,
+    "formula": "client_monotonic_time_us+smoothed_offset-producer_sample_time_us",
+    "formulaId": "p2.dashboard.sample-age.v1",
+    "kind": "D",
+    "path": "records.SHIP_IDENTITY/entity_id=1.age_us",
+    "provenance": [
+      "client:monotonic_time_us",
+      "client:smoothed_offset_us",
+      "wire:producer_sample_time_us"
+    ],
+    "reason": "invalid-or-missing-clock-offset",
+    "source": "formula:p2.dashboard.sample-age.v1",
+    "value": null
+  },
+  {
+    "available": false,
+    "formula": "age_us > 3*block_period_us+100000",
+    "formulaId": "p2.dashboard.stale.v1",
+    "kind": "D",
+    "path": "records.SHIP_IDENTITY/entity_id=1.stale",
+    "provenance": [
+      "derived:p2.dashboard.sample-age.v1",
+      "config:flightHz",
+      "config:systemsHz",
+      "config:missionHeartbeatMs"
+    ],
+    "reason": "invalid-or-missing-age",
+    "source": "formula:p2.dashboard.stale.v1",
+    "value": null
+  },
+  {
+    "available": false,
+    "formula": "client_monotonic_time_us+smoothed_offset-producer_sample_time_us",
+    "formulaId": "p2.dashboard.sample-age.v1",
+    "kind": "D",
+    "path": "records.SUBSYSTEM_STATE/entity_id=1/subsystem_id=2.age_us",
+    "provenance": [
+      "client:monotonic_time_us",
+      "client:smoothed_offset_us",
+      "wire:producer_sample_time_us"
+    ],
+    "reason": "invalid-or-missing-clock-offset",
+    "source": "formula:p2.dashboard.sample-age.v1",
+    "value": null
+  },
+  {
+    "available": false,
+    "formula": "age_us > 3*block_period_us+100000",
+    "formulaId": "p2.dashboard.stale.v1",
+    "kind": "D",
+    "path": "records.SUBSYSTEM_STATE/entity_id=1/subsystem_id=2.stale",
+    "provenance": [
+      "derived:p2.dashboard.sample-age.v1",
+      "config:flightHz",
+      "config:systemsHz",
+      "config:missionHeartbeatMs"
+    ],
+    "reason": "invalid-or-missing-age",
+    "source": "formula:p2.dashboard.stale.v1",
+    "value": null
+  },
+  {
+    "available": false,
+    "formula": "client_monotonic_time_us+smoothed_offset-producer_sample_time_us",
+    "formulaId": "p2.dashboard.sample-age.v1",
+    "kind": "D",
+    "path": "records.SUPPORT_STATE/entity_id=1.age_us",
+    "provenance": [
+      "client:monotonic_time_us",
+      "client:smoothed_offset_us",
+      "wire:producer_sample_time_us"
+    ],
+    "reason": "invalid-or-missing-clock-offset",
+    "source": "formula:p2.dashboard.sample-age.v1",
+    "value": null
+  },
+  {
+    "available": false,
+    "formula": "age_us > 3*block_period_us+100000",
+    "formulaId": "p2.dashboard.stale.v1",
+    "kind": "D",
+    "path": "records.SUPPORT_STATE/entity_id=1.stale",
+    "provenance": [
+      "derived:p2.dashboard.sample-age.v1",
+      "config:flightHz",
+      "config:systemsHz",
+      "config:missionHeartbeatMs"
+    ],
+    "reason": "invalid-or-missing-age",
+    "source": "formula:p2.dashboard.stale.v1",
+    "value": null
+  },
+  {
+    "available": false,
+    "formula": "client_monotonic_time_us+smoothed_offset-producer_sample_time_us",
+    "formulaId": "p2.dashboard.sample-age.v1",
+    "kind": "D",
+    "path": "records.WEAPON_STATE/entity_id=1.age_us",
+    "provenance": [
+      "client:monotonic_time_us",
+      "client:smoothed_offset_us",
+      "wire:producer_sample_time_us"
+    ],
+    "reason": "invalid-or-missing-clock-offset",
+    "source": "formula:p2.dashboard.sample-age.v1",
+    "value": null
+  },
+  {
+    "available": false,
+    "formula": "age_us > 3*block_period_us+100000",
+    "formulaId": "p2.dashboard.stale.v1",
+    "kind": "D",
+    "path": "records.WEAPON_STATE/entity_id=1.stale",
+    "provenance": [
+      "derived:p2.dashboard.sample-age.v1",
+      "config:flightHz",
+      "config:systemsHz",
+      "config:missionHeartbeatMs"
+    ],
+    "reason": "invalid-or-missing-age",
+    "source": "formula:p2.dashboard.stale.v1",
+    "value": null
+  },
+  {
+    "available": false,
+    "formula": "unavailable without a documented projection input",
+    "formulaId": "p2.dashboard.hud-coordinates-unavailable.v1",
+    "kind": "D",
+    "path": "dashboard.hud_coordinates",
+    "provenance": [
+      "contract:P2-REQ-032",
+      "wire:projection-input-absent"
+    ],
+    "reason": "projection-input-not-on-wire",
+    "source": "formula:p2.dashboard.hud-coordinates-unavailable.v1",
+    "value": null
+  },
+  {
+    "available": false,
+    "formula": "wire duration or explicitly observed stable rate only",
+    "formulaId": "p2.dashboard.support-eta-unavailable.v1",
+    "kind": "D",
+    "path": "dashboard.support_eta_us",
+    "provenance": [
+      "wire:SUPPORT_STATE",
+      "wire:stable-rate-or-duration-absent"
+    ],
+    "reason": "no-stable-rate-or-duration",
+    "source": "formula:p2.dashboard.support-eta-unavailable.v1",
+    "value": null
+  },
+  {
+    "available": true,
+    "formula": "manifest/keyframe APPLIED, no pending candidate, known baseline",
+    "formulaId": "p2.dashboard.synchronized.v1",
+    "kind": "D",
+    "path": "transport.synchronized",
+    "provenance": [
+      "client:manifest_applied",
+      "client:keyframe_applied",
+      "client:pending_transactions",
+      "client:baseline"
+    ],
+    "reason": null,
+    "source": "formula:p2.dashboard.synchronized.v1",
+    "value": true
+  }
+]

@@ -13,13 +13,20 @@ constexpr std::uint32_t MaximumFlightHz = 60U;
 
 bool Capture30Hz::configure(std::uint32_t flight_hz) noexcept
 {
+	return configure(flight_hz, MaximumFlightHz);
+}
+
+bool Capture30Hz::configure(std::uint32_t rate_hz,
+	std::uint32_t maximum_hz) noexcept
+{
 	reset();
-	if (flight_hz < MinimumFlightHz || flight_hz > MaximumFlightHz) {
+	if (rate_hz < MinimumFlightHz || rate_hz > maximum_hz ||
+		maximum_hz > MaximumFlightHz) {
 		return false;
 	}
 
-	m_period_us = MicrosecondsPerSecond / flight_hz;
-	if (MicrosecondsPerSecond % flight_hz != 0U) {
+	m_period_us = MicrosecondsPerSecond / rate_hz;
+	if (MicrosecondsPerSecond % rate_hz != 0U) {
 		++m_period_us;
 	}
 	return true;

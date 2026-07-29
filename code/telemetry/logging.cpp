@@ -145,6 +145,148 @@ void TelemetryStructuredLog::budget_high_water(TelemetryLogBudget budget, std::u
 	record.high_water = high_water;
 	append(record);
 }
+
+void TelemetryStructuredLog::phase2_profile_selected(std::size_t slot,
+	TelemetryPhase2Profile profile,
+	std::uint64_t capability_mask) noexcept
+{
+	if (slot >= m_phase2_profile_logged.size() ||
+		m_phase2_profile_logged[slot] ||
+		static_cast<std::size_t>(profile) >=
+			static_cast<std::size_t>(TelemetryPhase2Profile::Count))
+		return;
+	m_phase2_profile_logged[slot] = true;
+	TelemetryLogRecord record{TelemetryLogEvent::Phase2ProfileSelected,
+		TelemetryLogLevel::Info};
+	record.correlation_slot = static_cast<std::uint8_t>(slot + 1U);
+	record.phase2_profile = profile;
+	record.value = capability_mask;
+	append(record);
+}
+
+void TelemetryStructuredLog::phase2_profile_rejected(
+	TelemetryPhase2ProfileRejection reason,
+	std::uint64_t capability_mask) noexcept
+{
+	if (static_cast<std::size_t>(reason) >=
+		static_cast<std::size_t>(
+			TelemetryPhase2ProfileRejection::Count))
+		return;
+	TelemetryLogRecord record{TelemetryLogEvent::Phase2ProfileRejected,
+		TelemetryLogLevel::Warning};
+	record.phase2_profile_rejection = reason;
+	record.value = capability_mask;
+	append(record);
+}
+
+void TelemetryStructuredLog::phase2_manifest(std::size_t slot,
+	TelemetryLogEvent event, std::uint32_t local_generation,
+	std::uint32_t records, std::uint16_t parts,
+	std::uint64_t bytes, std::uint64_t duration_us) noexcept
+{
+	if (slot >= m_phase2_manifest_logged.size() ||
+		(event != TelemetryLogEvent::Phase2ManifestBuilt &&
+		 event != TelemetryLogEvent::Phase2ManifestInstalled &&
+		 event != TelemetryLogEvent::Phase2ManifestRejected))
+		return;
+	if (event != TelemetryLogEvent::Phase2ManifestRejected &&
+		m_phase2_manifest_logged[slot] == local_generation)
+		return;
+	if (event != TelemetryLogEvent::Phase2ManifestRejected)
+		m_phase2_manifest_logged[slot] = local_generation;
+	TelemetryLogRecord record{event,
+		event == TelemetryLogEvent::Phase2ManifestRejected
+			? TelemetryLogLevel::Warning
+			: TelemetryLogLevel::Info};
+	record.correlation_slot = static_cast<std::uint8_t>(slot + 1U);
+	record.local_generation = local_generation;
+	record.record_count = records;
+	record.part_count = parts;
+	record.bytes = bytes;
+	record.duration_us = duration_us;
+	append(record);
+}
+
+void TelemetryStructuredLog::phase2_lifecycle(std::size_t slot,
+	TelemetryPhase2LifecycleKind kind) noexcept
+{
+	if (slot >= 4U || static_cast<std::size_t>(kind) >=
+		static_cast<std::size_t>(TelemetryPhase2LifecycleKind::Count))
+		return;
+	TelemetryLogRecord record{TelemetryLogEvent::Phase2Lifecycle,
+		TelemetryLogLevel::Info};
+	record.correlation_slot = static_cast<std::uint8_t>(slot + 1U);
+	record.phase2_lifecycle = kind;
+	append(record);
+}
+
+void TelemetryStructuredLog::phase2_support_terminal(std::size_t slot,
+	TelemetryPhase2SupportKind kind, bool keyframe_forced) noexcept
+{
+	if (slot >= 4U || static_cast<std::size_t>(kind) >=
+		static_cast<std::size_t>(TelemetryPhase2SupportKind::Count))
+		return;
+	TelemetryLogRecord record{TelemetryLogEvent::Phase2SupportTerminal,
+		TelemetryLogLevel::Debug};
+	record.correlation_slot = static_cast<std::uint8_t>(slot + 1U);
+	record.phase2_support = kind;
+	record.value = keyframe_forced ? 1U : 0U;
+	append(record);
+}
+
+void TelemetryStructuredLog::phase2_resync(
+	std::size_t slot, TelemetryLogPhase2ResyncResult result) noexcept
+{
+	if (slot >= 4U || static_cast<std::size_t>(result) >=
+		static_cast<std::size_t>(
+			TelemetryLogPhase2ResyncResult::Count))
+		return;
+	TelemetryLogRecord record{TelemetryLogEvent::Phase2Resync,
+		TelemetryLogLevel::Info};
+	record.correlation_slot = static_cast<std::uint8_t>(slot + 1U);
+	record.phase2_resync = result;
+	append(record);
+}
+
+void TelemetryStructuredLog::phase2_source_rejected(
+	TelemetryPhase2Block block, TelemetryPhase2CaptureFailure reason,
+	std::uint64_t now_us) noexcept
+{
+	if (static_cast<std::size_t>(block) >=
+			static_cast<std::size_t>(TelemetryPhase2Block::Count) ||
+		static_cast<std::size_t>(reason) >=
+			static_cast<std::size_t>(
+				TelemetryPhase2CaptureFailure::Count))
+		return;
+	if (m_phase2_source_rejections != UINT64_MAX)
+		++m_phase2_source_rejections;
+	if (m_phase2_last_source_log_us != 0U &&
+		(now_us < m_phase2_last_source_log_us ||
+		 now_us - m_phase2_last_source_log_us < DropSummaryPeriodUs))
+		return;
+	TelemetryLogRecord record{TelemetryLogEvent::Phase2SourceRejected,
+		TelemetryLogLevel::Warning};
+	record.phase2_block = block;
+	record.phase2_capture_failure = reason;
+	record.value = m_phase2_source_rejections;
+	append(record);
+	m_phase2_source_rejections = 0U;
+	m_phase2_last_source_log_us = now_us;
+}
+
+void TelemetryStructuredLog::phase2_summary(std::size_t slot,
+	std::uint64_t aggregate_events,
+	std::uint64_t high_water_bytes) noexcept
+{
+	if (slot >= 4U) return;
+	TelemetryLogRecord record{TelemetryLogEvent::Phase2Summary,
+		TelemetryLogLevel::Info};
+	record.correlation_slot = static_cast<std::uint8_t>(slot + 1U);
+	record.value = aggregate_events;
+	record.high_water = high_water_bytes;
+	append(record);
+}
+
 void TelemetryStructuredLog::shutdown(std::uint64_t duration_us, std::uint64_t aggregate_total) noexcept
 {
 	if (m_shutdown_logged) return;

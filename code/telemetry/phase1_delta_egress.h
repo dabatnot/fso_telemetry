@@ -18,6 +18,18 @@
 namespace telemetry::detail {
 
 constexpr std::size_t Phase1DeltaScratchBytes = 512U;
+constexpr std::size_t Phase2CompleteShipDeltaBytes =
+	protocol::MaxStateMessageSize;
+
+enum class Phase1DeltaReplaceResult : std::uint8_t {
+	Replaced = 0,
+	InvalidState,
+	InvalidDelta,
+	CapacityExceeded,
+	EncodingFailed,
+	AllocationFailed,
+	Count,
+};
 
 struct Phase1DeltaDatagram {
 	protocol::EndpointKey endpoint;
@@ -31,17 +43,30 @@ struct Phase1DeltaDatagram {
 class Phase1DeltaEgress final {
   public:
 	static constexpr std::size_t StartupHeapBytes = Phase1DeltaScratchBytes * 2U;
+	static std::size_t startup_heap_bytes(
+		std::size_t payload_capacity) noexcept
+	{
+		return payload_capacity <=
+			std::numeric_limits<std::size_t>::max() / 2U
+			? payload_capacity * 2U
+			: 0U;
+	}
 	void set_allocation_observer(Phase1AllocationObserver* observer) noexcept { m_allocation_observer = observer; }
 	bool provisioned() const noexcept { return m_provisioned; }
 	std::size_t owned_heap_bytes() const noexcept { return m_records.capacity() + m_payload.capacity(); }
-	bool provision() noexcept
+	bool provision(
+		std::size_t payload_capacity =
+			Phase1DeltaScratchBytes) noexcept
 	{
-		if (m_provisioned) {
-			return true;
-		}
+		if (payload_capacity == 0U ||
+			payload_capacity > protocol::MaxStateMessageSize)
+			return false;
+		if (m_provisioned)
+			return m_capacity == payload_capacity;
 		try {
-			m_records.reserve(Phase1DeltaScratchBytes);
-			m_payload.reserve(Phase1DeltaScratchBytes);
+			m_records.reserve(payload_capacity);
+			m_payload.reserve(payload_capacity);
+			m_capacity = payload_capacity;
 			m_provisioned = true;
 			return true;
 		} catch (const std::bad_alloc&) {
@@ -53,13 +78,26 @@ class Phase1DeltaEgress final {
 		std::uint32_t message_id,
 		const protocol::CumulativeStateDelta& delta) noexcept
 	{
-		if (m_has_output || m_has_started || session_id == 0U || message_id == 0U || delta.baseline_snapshot_id == 0U ||
-			protocol::validate_cumulative_state_delta(delta) != protocol::StateDeltaValidationResult::Valid) {
-			return false;
-		}
-		if (delta.encoded_size() > Phase1DeltaScratchBytes) {
-			return false;
-		}
+		return replace_checked(
+			session_id, endpoint, message_id, delta) ==
+			Phase1DeltaReplaceResult::Replaced;
+	}
+
+	Phase1DeltaReplaceResult replace_checked(
+		std::uint64_t session_id,
+		const protocol::EndpointKey& endpoint,
+		std::uint32_t message_id,
+		const protocol::CumulativeStateDelta& delta) noexcept
+	{
+		if (m_has_output || m_has_started || session_id == 0U ||
+			message_id == 0U || !m_provisioned)
+			return Phase1DeltaReplaceResult::InvalidState;
+		if (delta.baseline_snapshot_id == 0U ||
+			protocol::validate_cumulative_state_delta(delta) !=
+				protocol::StateDeltaValidationResult::Valid)
+			return Phase1DeltaReplaceResult::InvalidDelta;
+		if (delta.encoded_size() > m_capacity)
+			return Phase1DeltaReplaceResult::CapacityExceeded;
 		auto& records = m_records;
 		records.clear();
 		auto& payload = m_payload;
@@ -77,7 +115,7 @@ class Phase1DeltaEgress final {
 				const auto& source = mutation.kind == protocol::StateMutationKind::Delete ? mutation.atom.key.identity
 																													 : mutation.atom.value;
 				if (source.size() > static_cast<std::size_t>(std::numeric_limits<std::uint16_t>::max())) {
-					return false;
+					return Phase1DeltaReplaceResult::EncodingFailed;
 				}
 				protocol::RecordEnvelopeView record;
 				record.raw_record_type = mutation.atom.key.record_type;
@@ -93,7 +131,7 @@ class Phase1DeltaEgress final {
 						{records.data() + offset, records.size() - offset},
 						written) != protocol::ValidationError::None ||
 					written != records.size() - offset) {
-					return false;
+					return Phase1DeltaReplaceResult::EncodingFailed;
 				}
 			}
 			protocol::DeltaPayload wire;
@@ -107,10 +145,10 @@ class Phase1DeltaEgress final {
 			if (protocol::encode_delta_payload(wire, {payload.data(), payload.size()}, written) !=
 					protocol::ValidationError::None ||
 				written != payload.size()) {
-				return false;
+				return Phase1DeltaReplaceResult::EncodingFailed;
 			}
 		} catch (const std::bad_alloc&) {
-			return false;
+			return Phase1DeltaReplaceResult::AllocationFailed;
 		}
 
 		m_endpoint = endpoint;
@@ -126,7 +164,7 @@ class Phase1DeltaEgress final {
 		m_has_started = false;
 		m_output = {};
 		m_has_delta = true;
-		return true;
+		return Phase1DeltaReplaceResult::Replaced;
 	}
 
 	bool service(std::uint32_t packet_sequence, std::uint64_t sent_time_us) noexcept
@@ -229,6 +267,7 @@ class Phase1DeltaEgress final {
 	bool has_delta() const noexcept { return m_has_delta; }
 	bool has_output() const noexcept { return m_has_output; }
 	bool can_replace() const noexcept { return !m_has_output && !m_has_started; }
+	std::size_t capacity_bytes() const noexcept { return m_capacity; }
 
   private:
 	std::vector<std::uint8_t> m_records;
@@ -243,6 +282,7 @@ class Phase1DeltaEgress final {
 	bool m_has_started = false;
 	Phase1DeltaDatagram m_output{};
 	Phase1AllocationObserver* m_allocation_observer = nullptr;
+	std::size_t m_capacity = 0U;
 	bool m_provisioned = false;
 };
 

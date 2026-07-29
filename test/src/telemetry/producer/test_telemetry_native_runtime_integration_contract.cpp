@@ -7,6 +7,7 @@
 #include "telemetry/runtime_adapter.h"
 #include "telemetry/runtime_adapter_test_seam.h"
 #include "telemetry/phase1_state_image.h"
+#include "telemetry/phase2_manifest_builder.h"
 #include "telemetry/protocol/telemetry_control_messages.h"
 #include "telemetry/protocol/telemetry_crc32.h"
 #include "telemetry/protocol/telemetry_datagram.h"
@@ -348,7 +349,9 @@ struct NativeFixture {
 	}
 
 	detail::NativeSessionStartStatus start_requested(telemetry::TelemetryConfig& config,
-		telemetry::Phase2Profile requested_phase2_profile)
+		telemetry::Phase2Profile requested_phase2_profile,
+		const telemetry::Phase2ManifestCandidate* phase2_manifest =
+			nullptr)
 	{
 		detail::NativeSessionStartRequest request{
 			&config,
@@ -359,12 +362,15 @@ struct NativeFixture {
 			&log};
 		request.phase2_eligibility = {};
 		request.requested_phase2_profile = requested_phase2_profile;
+		request.phase2_manifest = phase2_manifest;
 		return runtime.start(request);
 	}
 
 	detail::NativeSessionStartStatus start_with_eligibility(
 		telemetry::TelemetryConfig& config,
-		const telemetry::Phase2ProfileEligibility& eligibility)
+		const telemetry::Phase2ProfileEligibility& eligibility,
+		const telemetry::Phase2ManifestCandidate* phase2_manifest =
+			nullptr)
 	{
 		detail::NativeSessionStartRequest request{
 			&config,
@@ -375,6 +381,7 @@ struct NativeFixture {
 			&log};
 		request.phase2_eligibility = eligibility;
 		request.requested_phase2_profile = telemetry::Phase2Profile::CoreGate;
+		request.phase2_manifest = phase2_manifest;
 		return runtime.start(request);
 	}
 };
@@ -1140,22 +1147,36 @@ TEST(TelemetryP85PreallocationContract, ProvisionFailurePreventsBindAndAColdRunt
 TEST(TelemetryNativeRuntimeIntegrationContract, S8V4OwnedBudgetPlusOneFailsBeforeTransportBind)
 {
 	auto config = enabled_config(1U);
+	telemetry::Phase2ManifestCandidate manifest;
+	manifest.manifest_id = 1U;
 	auto baseline = std::make_unique<NativeFixture>();
 	ASSERT_EQ(detail::NativeSessionStartStatus::Started,
-		baseline->start_requested(config, telemetry::Phase2Profile::CoreGate));
+		baseline->start_requested(config,
+			telemetry::Phase2Profile::CoreGate, &manifest));
 	const auto startup_owned_bytes =
 		NativePlayerAccess::startup_owned_bytes(baseline->runtime);
+	const auto owned_budget =
+		NativePlayerAccess::phase2_owned_budget(baseline->runtime);
 	ASSERT_GT(startup_owned_bytes, 0U);
-	ASSERT_LE(startup_owned_bytes, detail::MaximumPhase2OwnedBytes);
+	ASSERT_EQ(detail::StartupBudgetError::None, owned_budget.error);
+	ASSERT_EQ(startup_owned_bytes, owned_budget.process_owned_bytes);
+	ASSERT_LE(owned_budget.shared_owned_bytes,
+		detail::Phase2SharedOwnedCapBytes);
+	ASSERT_LE(owned_budget.client_owned_bytes,
+		detail::Phase2ClientOwnedCapBytes);
+	ASSERT_LE(owned_budget.process_owned_bytes,
+		detail::Phase2ProcessOwnedCapBytes);
 	std::cout << "[ PHASE2 STARTUP OWNED BYTES ] " << startup_owned_bytes << '\n';
 
 	auto fixture = std::make_unique<NativeFixture>();
 	NativePlayerAccess::set_startup_owned_budget_adjustment(
 		fixture->runtime,
-		detail::MaximumPhase2OwnedBytes - startup_owned_bytes + 1U);
+		detail::Phase2SharedOwnedCapBytes -
+			owned_budget.shared_owned_bytes + 1U);
 
 	EXPECT_EQ(detail::NativeSessionStartStatus::AllocationFailure,
-		fixture->start_requested(config, telemetry::Phase2Profile::CoreGate));
+		fixture->start_requested(config,
+			telemetry::Phase2Profile::CoreGate, &manifest));
 	EXPECT_EQ(0U, fixture->backend.open_calls);
 	EXPECT_EQ(0U, fixture->runtime.socket_count());
 	EXPECT_EQ(0U, fixture->runtime.active_sessions());
@@ -1179,6 +1200,8 @@ TEST(TelemetryNativeRuntimeIntegrationContract,
 	ReviewerFinalTst008EligibilityMatrixRejectsBeforeOpenOrBind)
 {
 	auto config = enabled_config(1U);
+	telemetry::Phase2ManifestCandidate manifest;
+	manifest.manifest_id = 1U;
 	std::vector<telemetry::Phase2ProfileEligibility> rejected;
 	auto multiplayer_client = telemetry::Phase2ProfileEligibility{};
 	multiplayer_client.authority_mode = protocol::AuthorityMode::MultiplayerClient;
@@ -1213,9 +1236,50 @@ TEST(TelemetryNativeRuntimeIntegrationContract,
 
 	auto solo = std::make_unique<NativeFixture>();
 	EXPECT_EQ(detail::NativeSessionStartStatus::Started,
-		solo->start_with_eligibility(config, {}));
+		solo->start_with_eligibility(config, {}, &manifest));
 	EXPECT_GT(solo->backend.open_calls, 0U);
 	EXPECT_GT(NativePlayerAccess::startup_allocation_count(solo->runtime), 0U);
+}
+
+TEST(TelemetryNativeRuntimeIntegrationContract,
+	CoreGateRequiresAFullNonZeroManifestBeforeTransportBind)
+{
+	auto config = enabled_config();
+
+	auto missing = std::make_unique<NativeFixture>();
+	EXPECT_EQ(detail::NativeSessionStartStatus::InvalidConfiguration,
+		missing->start_requested(config,
+			telemetry::Phase2Profile::CoreGate));
+	EXPECT_EQ(0U, missing->backend.open_calls);
+	EXPECT_TRUE(missing->backend.io_trace.empty());
+
+	telemetry::Phase2ManifestCandidate zero_id;
+	auto zero = std::make_unique<NativeFixture>();
+	EXPECT_EQ(detail::NativeSessionStartStatus::InvalidConfiguration,
+		zero->start_requested(config,
+			telemetry::Phase2Profile::CoreGate, &zero_id));
+	EXPECT_EQ(0U, zero->backend.open_calls);
+	EXPECT_TRUE(zero->backend.io_trace.empty());
+
+	telemetry::Phase2ManifestCandidate invalid_kind;
+	invalid_kind.manifest_id = 1U;
+	invalid_kind.kind = static_cast<protocol::ManifestKind>(0U);
+	auto invalid = std::make_unique<NativeFixture>();
+	EXPECT_EQ(detail::NativeSessionStartStatus::InvalidConfiguration,
+		invalid->start_requested(config,
+			telemetry::Phase2Profile::CoreGate, &invalid_kind));
+	EXPECT_EQ(0U, invalid->backend.open_calls);
+	EXPECT_TRUE(invalid->backend.io_trace.empty());
+
+	telemetry::Phase2ManifestCandidate valid;
+	valid.manifest_id = 1U;
+	valid.kind = protocol::ManifestKind::FullRequired;
+	auto accepted = std::make_unique<NativeFixture>();
+	EXPECT_EQ(detail::NativeSessionStartStatus::Started,
+		accepted->start_requested(config,
+			telemetry::Phase2Profile::CoreGate, &valid));
+	EXPECT_GT(accepted->backend.open_calls, 0U);
+	EXPECT_EQ(1U, accepted->runtime.socket_count());
 }
 
 TEST(TelemetryNativeRuntimeIntegrationContract, S9V4KeyframePreparationSeamForcesBothProvisionalFamilies)

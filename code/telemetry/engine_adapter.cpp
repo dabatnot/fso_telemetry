@@ -2,6 +2,7 @@
 
 #include "ai/ai.h"
 #include "autopilot/autopilot.h"
+#include "cmeasure/cmeasure.h"
 #include "controlconfig/controlsconfig.h"
 #include "globalincs/systemvars.h"
 #include "hud/hudets.h"
@@ -21,8 +22,11 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <limits>
+
+extern int Game_skill_level;
 
 namespace telemetry::detail {
 namespace {
@@ -32,6 +36,57 @@ constexpr double MinimumRelativeDeterminant = 1.0e-8;
 constexpr double MinimumQuaternionSquaredNorm = 1.0e-24;
 constexpr double QuantizedNormMinimum = 0.9999;
 constexpr double QuantizedNormMaximum = 1.0001;
+
+thread_local Phase2CaptureDiagnostics* ActivePhase2CaptureDiagnostics = nullptr;
+
+void add_phase2_block_duration(Phase2CaptureDiagnostics& diagnostics,
+	Phase2CaptureBlock block,
+	std::uint64_t duration_ns) noexcept
+{
+	const auto index = static_cast<std::size_t>(block);
+	diagnostics.attempted_mask |= static_cast<std::uint8_t>(1U << index);
+	const auto previous = diagnostics.duration_ns[index];
+	if (duration_ns > std::numeric_limits<std::uint64_t>::max() - previous) {
+		diagnostics.duration_ns[index] = std::numeric_limits<std::uint64_t>::max();
+		diagnostics.duration_overflow = true;
+	} else {
+		diagnostics.duration_ns[index] = previous + duration_ns;
+	}
+}
+
+class Phase2ReadDiagnosticCursor {
+  public:
+	explicit Phase2ReadDiagnosticCursor(Phase2CaptureBlock block) noexcept
+		: m_diagnostics(ActivePhase2CaptureDiagnostics)
+	{
+		begin(block);
+	}
+	~Phase2ReadDiagnosticCursor() { finish(); }
+	void begin(Phase2CaptureBlock block) noexcept
+	{
+		finish();
+		m_block = block;
+		if (m_diagnostics != nullptr) {
+			m_diagnostics->primary_failed_block = block;
+			m_started = std::chrono::steady_clock::now();
+		}
+	}
+  private:
+	void finish() noexcept
+	{
+		if (m_diagnostics == nullptr ||
+			m_block == Phase2CaptureBlock::Count)
+			return;
+		const auto elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(
+			std::chrono::steady_clock::now() - m_started).count();
+		add_phase2_block_duration(*m_diagnostics, m_block,
+			elapsed > 0 ? static_cast<std::uint64_t>(elapsed) : 0U);
+		m_block = Phase2CaptureBlock::Count;
+	}
+	Phase2CaptureDiagnostics* m_diagnostics = nullptr;
+	Phase2CaptureBlock m_block = Phase2CaptureBlock::Count;
+	std::chrono::steady_clock::time_point m_started{};
+};
 
 static_assert(MaximumPhase2PhysicalPrimaryBanks == MAX_SHIP_PRIMARY_BANKS,
 	"Phase 2 turret primary-bank storage must match the engine authority");
@@ -137,29 +192,36 @@ bool fill_raw_weapon_definition(const weapon_info& source,
 SourceReadResult extract_production_static_authorities(const object& ship_object,
 	const ship& ship_instance,
 	const ship_info& ship_class,
-	Phase2ShipSource& output) noexcept
+	Phase2ShipSource& output,
+	bool core_gate) noexcept
 {
 	output.raw_static_references = {};
 	auto& input = output.static_authority_input;
 	reset_phase2_static_authority_input(input);
 	std::array<int, MaximumPhase2StaticWeapons> referenced_weapon_indices{};
 	std::uint32_t referenced_weapon_count = 0U;
+	std::array<std::uint32_t, MaximumPhase2SubsystemsPerShip>
+		instance_subsystem_armor_capture_keys{};
 	const auto collected = [&]() noexcept -> SourceReadResult {
 	if (ship_class.model_num < 0 || ship_class.n_subsystems < 0 ||
 		ship_class.n_subsystems >
 			static_cast<int>(MaximumPhase2SubsystemsPerShip) ||
-		ship_class.num_primary_banks < 0 ||
-		ship_class.num_primary_banks > MAX_SHIP_PRIMARY_BANKS ||
-		ship_class.num_secondary_banks < 0 ||
-		ship_class.num_secondary_banks > MAX_SHIP_SECONDARY_BANKS) {
+		(!core_gate &&
+		 (ship_class.num_primary_banks < 0 ||
+		  ship_class.num_primary_banks > MAX_SHIP_PRIMARY_BANKS ||
+		  ship_class.num_secondary_banks < 0 ||
+		  ship_class.num_secondary_banks >
+			  MAX_SHIP_SECONDARY_BANKS))) {
 		return {Phase2SourceReadStatus::UnsupportedEngineState};
 	}
 	auto* model = model_get(ship_class.model_num);
 	if (model == nullptr || model->id != ship_class.model_num ||
-		model->n_guns != ship_class.num_primary_banks ||
-		model->n_missiles != ship_class.num_secondary_banks ||
-		(model->n_guns > 0 && model->gun_banks == nullptr) ||
-		(model->n_missiles > 0 && model->missile_banks == nullptr) ||
+		(!core_gate &&
+		 (model->n_guns != ship_class.num_primary_banks ||
+		  model->n_missiles != ship_class.num_secondary_banks ||
+		  (model->n_guns > 0 && model->gun_banks == nullptr) ||
+		  (model->n_missiles > 0 &&
+			  model->missile_banks == nullptr))) ||
 		(ship_class.n_subsystems > 0 && ship_class.subsystems == nullptr)) {
 		return {Phase2SourceReadStatus::UnsupportedEngineState};
 	}
@@ -236,7 +298,7 @@ SourceReadResult extract_production_static_authorities(const object& ship_object
 				protocol::ClassSubsystemStaticFlagAwacs;
 	}
 
-	input.bank_count = static_cast<std::uint32_t>(
+	input.bank_count = core_gate ? 0U : static_cast<std::uint32_t>(
 		ship_class.num_primary_banks + ship_class.num_secondary_banks);
 	for (std::uint32_t index = 0U; index < input.bank_count; ++index) {
 		const auto primary =
@@ -297,7 +359,8 @@ SourceReadResult extract_production_static_authorities(const object& ship_object
 				Weapon_info[weapon_index].fire_wait;
 		}
 	}
-	const auto tertiary_count = ship_instance.weapons.num_tertiary_banks;
+	const auto tertiary_count = core_gate
+		? 0 : ship_instance.weapons.num_tertiary_banks;
 	if (tertiary_count < 0 ||
 		tertiary_count >
 			static_cast<int>(MaximumPhase2WeaponBanksPerFamily) ||
@@ -321,6 +384,7 @@ SourceReadResult extract_production_static_authorities(const object& ship_object
 	}
 	std::uint32_t turret_bank_count = 0U;
 	for (std::uint32_t subsystem_index = 0U;
+		 !core_gate &&
 		 subsystem_index < input.subsystem_count;
 		 ++subsystem_index) {
 		const auto& subsystem_definition =
@@ -372,11 +436,16 @@ SourceReadResult extract_production_static_authorities(const object& ship_object
 					return false;
 				}
 				const auto& bank_weapon = Weapon_info[weapon_index];
-				target.consumes_ammunition = primary
-					? bank_weapon
-						  .wi_flags[Weapon::Info_Flags::Ballistic]
-					: !bank_weapon
-						   .wi_flags[Weapon::Info_Flags::SecondaryNoAmmo];
+				const auto turret_uses_ammunition =
+					subsystem_definition.flags[
+						Model::Subsystem_Flags::Turret_use_ammo];
+				target.consumes_ammunition =
+					turret_uses_ammunition &&
+					(primary
+						? bank_weapon.wi_flags[
+							Weapon::Info_Flags::Ballistic]
+						: !bank_weapon.wi_flags[
+							Weapon::Info_Flags::SecondaryNoAmmo]);
 				target.capacity = target.consumes_ammunition
 					? static_cast<float>(primary
 						  ? turret_weapons
@@ -411,7 +480,7 @@ SourceReadResult extract_production_static_authorities(const object& ship_object
 			}
 		}
 	}
-	if (ship_class.cmeasure_max > 0) {
+	if (!core_gate && ship_class.cmeasure_max > 0) {
 		std::uint32_t countermeasure_key = 0U;
 		if (!capture_weapon(ship_class.cmeasure_type, countermeasure_key)) {
 			return {Phase2SourceReadStatus::UnsupportedEngineState};
@@ -481,10 +550,11 @@ SourceReadResult extract_production_static_authorities(const object& ship_object
 		ship_class.can_glide && raw_class.glide_cap > 0.0F;
 	raw_class.autoaim_fov_rad = ship_instance.autoaim_fov;
 	raw_class.has_autoaim = raw_class.autoaim_fov_rad > 0.0F;
-	raw_class.countermeasure_capacity =
-		static_cast<float>(ship_class.cmeasure_max);
-	raw_class.countermeasure_uses_capacity = Countermeasures_use_capacity;
-	if (ship_class.cmeasure_max > 0) {
+	raw_class.countermeasure_capacity = core_gate
+		? 0.0F : static_cast<float>(ship_class.cmeasure_max);
+	raw_class.countermeasure_uses_capacity =
+		!core_gate && Countermeasures_use_capacity;
+	if (!core_gate && ship_class.cmeasure_max > 0) {
 		if (Weapon_info[ship_class.cmeasure_type].cmeasure_firewait < 0) {
 			return {Phase2SourceReadStatus::UnsupportedEngineState};
 		}
@@ -501,10 +571,12 @@ SourceReadResult extract_production_static_authorities(const object& ship_object
 			}
 		}
 	}
-	raw_class.primary_bank_count =
-		static_cast<std::uint32_t>(ship_class.num_primary_banks);
-	raw_class.secondary_bank_count =
-		static_cast<std::uint32_t>(ship_class.num_secondary_banks);
+	raw_class.primary_bank_count = core_gate ? 0U
+		: static_cast<std::uint32_t>(
+			ship_class.num_primary_banks);
+	raw_class.secondary_bank_count = core_gate ? 0U
+		: static_cast<std::uint32_t>(
+			ship_class.num_secondary_banks);
 	raw_class.tertiary_bank_count =
 		static_cast<std::uint32_t>(tertiary_count);
 	raw_class.turret_bank_count = turret_bank_count;
@@ -612,6 +684,16 @@ SourceReadResult extract_production_static_authorities(const object& ship_object
 					input.subsystems[index].armor_capture_key))) {
 			return {Phase2SourceReadStatus::UnsupportedEngineState};
 		}
+		const auto instance_armor_source =
+			output.subsystems.values[index].armor_source_key.value;
+		if (instance_armor_source > Armor_types.size() ||
+			(instance_armor_source != 0U &&
+				!add_auxiliary(Phase2RawAuxiliaryRegistry::Armor,
+					Armor_types[instance_armor_source - 1U].GetNamePtr(),
+					0U,
+					instance_subsystem_armor_capture_keys[index]))) {
+			return {Phase2SourceReadStatus::UnsupportedEngineState};
+		}
 	}
 	for (std::uint32_t index = 0U; index < referenced_weapon_count; ++index) {
 		const auto damage_index =
@@ -631,7 +713,8 @@ SourceReadResult extract_production_static_authorities(const object& ship_object
 			return {Phase2SourceReadStatus::UnsupportedEngineState};
 		}
 	}
-	for (int bank = 0; bank < ship_class.num_primary_banks; ++bank) {
+	for (int bank = 0;
+		 !core_gate && bank < ship_class.num_primary_banks; ++bank) {
 		const auto weapon_index =
 			ship_instance.weapons.primary_bank_weapons[bank];
 		auto pattern = Weapon_info[weapon_index].firing_pattern;
@@ -730,10 +813,7 @@ SourceReadResult extract_production_static_authorities(const object& ship_object
 		output.subsystems.values[subsystem].source_key.value =
 			static_cast<std::uint32_t>(subsystem + 1U);
 		output.subsystems.values[subsystem].armor_source_key.value =
-			output.raw_static_catalog.subsystem_storage[
-				output.raw_static_catalog.class_definitions[0]
-					.subsystem_offset + subsystem]
-				.armor_capture_key;
+			instance_subsystem_armor_capture_keys[subsystem];
 		if (!output.subsystems.values[subsystem].turret.has_value()) continue;
 		auto& turret = *output.subsystems.values[subsystem].turret;
 		for (std::size_t bank = 0U;
@@ -1139,7 +1219,8 @@ SourceReadResult FsoEngineReadView::read_discovery_node(
 	std::uint32_t dock_leader_capture_key = 0U;
 	if (has_raw_dock_leader_flag(*Player_ship)) {
 		dock_leader_capture_key = key.object_signature;
-	} else {
+	}
+	{
 		std::size_t leader_search_steps = 0U;
 		for (auto* relation = Player_obj->dock_list;
 			 relation != nullptr;
@@ -1153,9 +1234,14 @@ SourceReadResult FsoEngineReadView::read_discovery_node(
 				relation->docked_objp->instance < MAX_SHIPS &&
 				has_raw_dock_leader_flag(
 					Ships[relation->docked_objp->instance])) {
-				dock_leader_capture_key =
-					static_cast<std::uint32_t>(relation->docked_objp->signature);
-				break;
+				const auto candidate =
+					static_cast<std::uint32_t>(
+						relation->docked_objp->signature);
+				if (dock_leader_capture_key != 0U &&
+					dock_leader_capture_key != candidate)
+					return {
+						Phase2SourceReadStatus::UnsupportedEngineState};
+				dock_leader_capture_key = candidate;
 			}
 		}
 	}
@@ -1230,10 +1316,14 @@ SourceReadResult FsoEngineReadView::resolve_capture_local_key(
 	return {Phase2SourceReadStatus::InvalidSource};
 }
 
-SourceReadResult FsoEngineReadView::read_ship(
-	EngineEntityKey key, Phase2ShipSource& output) const noexcept
+SourceReadResult FsoEngineReadView::read_ship_for_projection(
+	EngineEntityKey key, Phase2ShipSource& output,
+	bool core_gate) const noexcept
 {
+	Phase2ReadDiagnosticCursor diagnostic_cursor{Phase2CaptureBlock::Identity};
 	output = {};
+	if (!core_gate && phase2_wp07_seam_overflowed())
+		return {Phase2SourceReadStatus::SourceLimitExceeded};
 	if (!player_source_is_consistent() || key.object_index < 0 ||
 		key.object_index >= MAX_OBJECTS) {
 		return {Phase2SourceReadStatus::InvalidSource};
@@ -1269,6 +1359,46 @@ SourceReadResult FsoEngineReadView::read_ship(
 	output.class_name = std::string_view{ship_class.name, class_name_size};
 	output.identity.presence = protocol::ShipIdentityPresenceFlagNone;
 	output.identity.class_source_key.value = 1U;
+	output.identity.role_flags =
+		protocol::ShipRoleFlagPlayer | protocol::ShipRoleFlagMissionObject;
+	if (Player_ship->ai_index >= 0) {
+		output.identity.role_flags |= protocol::ShipRoleFlagAi;
+	}
+	if (ship_class.flags[Ship::Info_Flags::Support]) {
+		output.identity.role_flags |= protocol::ShipRoleFlagSupport;
+	}
+	if (Player_ship->has_display_name() && !Player_ship->display_name.empty()) {
+		if (!output.identity.display_name.assign(Player_ship->display_name)) {
+			return {Phase2SourceReadStatus::SourceLimitExceeded};
+		}
+		output.identity.presence |= protocol::ShipIdentityPresenceFlagDisplayName;
+	}
+	if (Player_ship->callsign_index >= 0) {
+		const auto* callsign = mission_parse_lookup_callsign_index(Player_ship->callsign_index);
+		if (callsign == nullptr || callsign[0] == '\0' ||
+			!output.identity.callsign.assign(callsign) ||
+			output.identity.callsign.size() > 127U) {
+			return {Phase2SourceReadStatus::UnsupportedEngineState};
+		}
+		output.identity.presence |= protocol::ShipIdentityPresenceFlagCallsign;
+	}
+	if (Player_ship->wingnum >= 0) {
+		if (Player_ship->wingnum >= MAX_WINGS) {
+			return {Phase2SourceReadStatus::UnsupportedEngineState};
+		}
+		const auto& wing = Wings[Player_ship->wingnum];
+		std::uint16_t matches = 0U;
+		for (int position = 0; position < wing.current_count; ++position) {
+			if (wing.ship_index[position] == Player_obj->instance) {
+				output.identity.wing_position = static_cast<std::uint16_t>(position);
+				++matches;
+			}
+		}
+		if (matches != 1U || !output.identity.wing_name.assign(wing.name)) {
+			return {Phase2SourceReadStatus::UnsupportedEngineState};
+		}
+		output.identity.presence |= protocol::ShipIdentityPresenceFlagWing;
+	}
 	output.lifecycle.presence = protocol::EntityLifecyclePresenceFlagNone;
 
 	if (Player_ship->flags[Ship::Ship_Flags::Exploded]) {
@@ -1299,6 +1429,7 @@ SourceReadResult FsoEngineReadView::read_ship(
 		output.lifecycle.lifecycle_flags |= protocol::EntityLifecycleFlagShouldBeDead;
 	}
 
+	diagnostic_cursor.begin(Phase2CaptureBlock::Flight);
 	output.flight.position_world =
 		{Player_obj->pos.xyz.x, Player_obj->pos.xyz.y, Player_obj->pos.xyz.z};
 	const CaptureOrientationBasis orientation_basis{
@@ -1331,7 +1462,14 @@ SourceReadResult FsoEngineReadView::read_ship(
 		Player_obj->flags[Object::Object_Flags::Dont_change_orientation]};
 	output.flight.physics_mode_flags = map_player_physics_mode_flags(physics);
 
+	diagnostic_cursor.begin(Phase2CaptureBlock::DamageShield);
 	output.damage.hull_maximum = Player_ship->ship_max_hull_strength;
+	if (Player_obj->flags[Object::Object_Flags::Invulnerable]) {
+		output.damage.protection_flags |= protocol::ProtectionFlagInvulnerable;
+	}
+	if (Player_obj->flags[Object::Object_Flags::Protected]) {
+		output.damage.protection_flags |= protocol::ProtectionFlagProtected;
+	}
 	if (std::isfinite(output.damage.hull_maximum) && output.damage.hull_maximum >= 0.0F &&
 		std::isfinite(Player_obj->hull_strength)) {
 		output.damage.hull_current =
@@ -1341,6 +1479,7 @@ SourceReadResult FsoEngineReadView::read_ship(
 	}
 	if (Player_ship->ship_guardian_threshold > 0) {
 		output.damage.presence |= protocol::DamageStatePresenceFlagGuardian;
+		output.damage.protection_flags |= protocol::ProtectionFlagGuardian;
 		const auto guardian_hp = 0.01 * static_cast<double>(Player_ship->ship_guardian_threshold) *
 			static_cast<double>(output.damage.hull_maximum);
 		output.damage.guardian_threshold = static_cast<float>(guardian_hp);
@@ -1384,6 +1523,7 @@ SourceReadResult FsoEngineReadView::read_ship(
 		output.shields.deferred_transfer = Player_ship->target_shields_delta;
 	}
 
+	diagnostic_cursor.begin(Phase2CaptureBlock::EnergyPropulsion);
 	const auto ets_domains = ets_properties(Player_obj);
 	const auto no_ets = Player_ship->flags[Ship::Ship_Flags::No_ets] || ets_domains == 0;
 	const auto copy_ets_index = [&](int domain, int source_index, std::uint8_t& destination) noexcept {
@@ -1406,6 +1546,8 @@ SourceReadResult FsoEngineReadView::read_ship(
 			((ets_domains & HAS_WEAPONS) != 0 ? 1U : 0U) +
 			((ets_domains & HAS_ENGINES) != 0 ? 1U : 0U);
 		output.energy.ets_available = !no_ets && ets_domain_count >= 2U;
+		output.energy.ets_mode = no_ets ? protocol::EtsMode::Absent
+			: (ets_domain_count >= 2U ? protocol::EtsMode::Available : protocol::EtsMode::Locked);
 	}
 	if (ship_has_energy_weapons(Player_ship)) {
 		output.energy.presence |= protocol::EnergyStatePresenceFlagWeaponEnergy;
@@ -1421,6 +1563,51 @@ SourceReadResult FsoEngineReadView::read_ship(
 	if (!ets_indices_valid) {
 		output.energy.weapon_energy_maximum = std::numeric_limits<float>::quiet_NaN();
 	}
+	output.energy.presence |= protocol::EnergyStatePresenceFlagRegeneration |
+		protocol::EnergyStatePresenceFlagPowerOutput;
+	output.energy.power_output = ship_class.power_output;
+	const auto dying_or_unpowered =
+		Player_ship->flags[Ship::Ship_Flags::Dying] || ship_class.power_output == 0.0F;
+	const auto player_scale_valid = The_mission.ai_profile != nullptr &&
+		Game_skill_level >= 0 && Game_skill_level < NUM_SKILL_LEVELS;
+	if (!player_scale_valid) {
+		output.energy.power_output = std::numeric_limits<float>::quiet_NaN();
+	} else if (!dying_or_unpowered) {
+		const auto power_factor = static_cast<double>(ets_power_factor(Player_obj));
+		const auto weapon_scale =
+			static_cast<double>(The_mission.ai_profile->weapon_energy_scale[Game_skill_level]);
+		const auto shield_scale =
+			static_cast<double>(The_mission.ai_profile->shield_energy_scale[Game_skill_level]);
+		output.energy.weapon_regeneration_rate = static_cast<float>(power_factor *
+			static_cast<double>(Energy_levels[output.energy.weapon_recharge_index]) *
+			static_cast<double>(Player_ship->max_weapon_regen_per_second) *
+			static_cast<double>(ship_class.max_weapon_reserve) * weapon_scale);
+		output.energy.shield_regeneration_rate = static_cast<float>(power_factor *
+			static_cast<double>(Energy_levels[output.energy.shield_recharge_index]) *
+			static_cast<double>(Player_ship->max_shield_regen_per_second) *
+			static_cast<double>(physical_shield_maximum) * shield_scale);
+		if (Player_ship->ai_index >= 0 && Player_ship->ai_index < MAX_AI_INFO &&
+			Missiontime - Ai_info[Player_ship->ai_index].last_hit_time <
+				fl2f(ship_class.shield_regen_hit_delay)) {
+			output.energy.shield_regeneration_rate = 0.0F;
+		}
+	}
+	if (output.shields.has_shields) {
+		output.shields.presence |= protocol::ShieldStatePresenceFlagRegenRate;
+		output.shields.regeneration_rate = output.energy.shield_regeneration_rate;
+	}
+	if ((output.energy.presence & protocol::EnergyStatePresenceFlagWeaponEnergy) != 0U &&
+		output.shields.has_shields) {
+		output.energy.presence |= protocol::EnergyStatePresenceFlagDeferredTransfers;
+		output.energy.deferred_weapon_transfer = Player_ship->target_weapon_energy_delta;
+		output.energy.deferred_shield_transfer = Player_ship->target_shields_delta;
+	}
+	const auto& engine_aggregate = Player_ship->subsys_info[SUBSYSTEM_ENGINE];
+	if (engine_aggregate.aggregate_max_hits > 0.0F) {
+		output.energy.presence |= protocol::EnergyStatePresenceFlagEngineIntegrity;
+		output.energy.engine_integrity_current = engine_aggregate.aggregate_current_hits;
+		output.energy.engine_integrity_maximum = engine_aggregate.aggregate_max_hits;
+	}
 
 	const auto has_afterburner_class = ship_class.flags[Ship::Info_Flags::Afterburner];
 	const auto afterburner_capacity = ship_class.afterburner_fuel_capacity;
@@ -1431,7 +1618,8 @@ SourceReadResult FsoEngineReadView::read_ship(
 		output.propulsion.afterburner_capacity = std::numeric_limits<float>::quiet_NaN();
 	} else if (has_afterburner_reservoir) {
 		output.propulsion.presence |= protocol::PropulsionStatePresenceFlagFuel |
-			protocol::PropulsionStatePresenceFlagConsumption;
+			protocol::PropulsionStatePresenceFlagConsumption |
+			protocol::PropulsionStatePresenceFlagDynamics;
 		output.propulsion.propulsion_flags |= protocol::PropulsionFlagAfterburnerAvailable;
 		output.propulsion.afterburner_capacity = afterburner_capacity;
 		output.propulsion.afterburner_fuel =
@@ -1440,6 +1628,12 @@ SourceReadResult FsoEngineReadView::read_ship(
 			: Player_ship->afterburner_fuel;
 		output.propulsion.burn_rate = ship_class.afterburner_burn_rate;
 		output.propulsion.recovery_rate = ship_class.afterburner_recover_rate;
+		output.propulsion.forward_acceleration_time_constant =
+			Player_obj->phys_info.forward_accel_time_const;
+		output.propulsion.afterburner_max_velocity = {
+			ship_class.afterburner_max_vel.xyz.x,
+			ship_class.afterburner_max_vel.xyz.y,
+			ship_class.afterburner_max_vel.xyz.z};
 		if (Player_ship->flags[Ship::Ship_Flags::Afterburner_locked]) {
 			output.propulsion.propulsion_flags |= protocol::PropulsionFlagAfterburnerLocked;
 		}
@@ -1451,6 +1645,10 @@ SourceReadResult FsoEngineReadView::read_ship(
 			ship_class.afterburner_min_start_fuel > afterburner_capacity) {
 			output.propulsion.afterburner_capacity = std::numeric_limits<float>::quiet_NaN();
 		}
+	}
+	if (Player_ship->wash_intensity > 0.0F) {
+		output.propulsion.presence |= protocol::PropulsionStatePresenceFlagEngineWash;
+		output.propulsion.engine_wash_intensity = Player_ship->wash_intensity;
 	}
 	const auto raw_physics_flags = static_cast<std::uint32_t>(Player_obj->phys_info.flags);
 	if ((raw_physics_flags & PF_AFTERBURNER_ON) != 0U) {
@@ -1482,6 +1680,9 @@ SourceReadResult FsoEngineReadView::read_ship(
 			output.propulsion.afterburner_capacity = std::numeric_limits<float>::quiet_NaN();
 		} else {
 			output.propulsion.presence |= protocol::PropulsionStatePresenceFlagEngagement;
+			output.propulsion.minimum_to_engage = ship_class.afterburner_min_start_fuel;
+			output.propulsion.fuel_at_last_engagement =
+				Player_ship->afterburner_last_engage_fuel;
 			output.propulsion.time_since_last_stop_us =
 				static_cast<std::uint64_t>(elapsed_ms) * 1000U;
 			const auto remaining_ms = std::max(cooldown_ms - static_cast<double>(elapsed_ms), 0.0);
@@ -1490,6 +1691,8 @@ SourceReadResult FsoEngineReadView::read_ship(
 		}
 	}
 
+	if (!core_gate) {
+	diagnostic_cursor.begin(Phase2CaptureBlock::Weapons);
 	const auto& source_weapons = Player_ship->weapons;
 	if (source_weapons.num_primary_banks < 0 ||
 		source_weapons.num_secondary_banks < 0 ||
@@ -1501,9 +1704,15 @@ SourceReadResult FsoEngineReadView::read_ship(
 		source_weapons.num_tertiary_banks >
 			static_cast<int>(MaximumPhase2WeaponBanksPerFamily) ||
 		source_weapons.tertiary_bank_ammo < 0 ||
+		source_weapons.tertiary_bank_start_ammo < 0 ||
 		source_weapons.tertiary_bank_capacity < 0 ||
 		source_weapons.tertiary_bank_ammo >
-			source_weapons.tertiary_bank_capacity) {
+			source_weapons.tertiary_bank_start_ammo ||
+		source_weapons.tertiary_bank_start_ammo >
+			source_weapons.tertiary_bank_capacity ||
+		Player_ship->num_swarm_missiles_to_fire < 0 ||
+		Player_ship->num_swarm_missiles_to_fire >
+			std::numeric_limits<std::uint16_t>::max()) {
 		return {Phase2SourceReadStatus::UnsupportedEngineState};
 	}
 	if (source_weapons.num_primary_banks >
@@ -1526,9 +1735,57 @@ SourceReadResult FsoEngineReadView::read_ship(
 	}
 	output.weapons.current_primary_bank = source_weapons.current_primary_bank;
 	output.weapons.current_secondary_bank = source_weapons.current_secondary_bank;
-	output.weapons.raw_weapon_flags = source_weapons.flags.to_u64();
+	output.weapons.previous_primary_bank = source_weapons.previous_primary_bank;
+	output.weapons.previous_secondary_bank = source_weapons.previous_secondary_bank;
+	output.weapons.targeting_laser_bank = Player_ship->targeting_laser_bank;
+	output.weapons.targeting_laser_active =
+		Player_ship->targeting_laser_bank >= 0 &&
+		Player_ship->targeting_laser_objnum >= 0 &&
+		Player_ship->targeting_laser_objnum < MAX_OBJECTS &&
+		Objects[Player_ship->targeting_laser_objnum].type == OBJ_BEAM;
+	output.weapons.swarm_remaining = static_cast<std::uint16_t>(
+		std::max(Player_ship->num_swarm_missiles_to_fire, 0));
+	output.weapons.swarm_secondary_bank = Player_ship->swarm_missile_bank;
+	output.weapons.remote_detonaters_active =
+		static_cast<std::uint32_t>(
+			std::max(source_weapons.remote_detonaters_active, 0));
+	const auto remote_remaining_ms =
+		std::max(timestamp_until(source_weapons.detonate_weapon_time), 0);
+	if (remote_remaining_ms > 3'600'000) {
+		return {Phase2SourceReadStatus::UnsupportedEngineState};
+	}
+	output.weapons.remote_detonation_remaining_us =
+		static_cast<std::uint64_t>(remote_remaining_ms) * 1000U;
+	output.weapons.per_burst_rotation = source_weapons.per_burst_rot;
+	output.weapons.raw_weapon_flags =
+		(Player_ship->flags[Ship::Ship_Flags::Primary_linked]
+			 ? protocol::WeaponGlobalFlagPrimaryLinked : 0U) |
+		(Player_ship->flags[Ship::Ship_Flags::Secondary_dual_fire]
+			 ? protocol::WeaponGlobalFlagSecondaryDouble : 0U) |
+		(source_weapons.flags[Ship::Weapon_Flags::Primary_trigger_down]
+			 ? protocol::WeaponGlobalFlagPrimaryTriggerHeld : 0U) |
+		(source_weapons.flags[Ship::Weapon_Flags::Secondary_trigger_down]
+			 ? protocol::WeaponGlobalFlagSecondaryTriggerHeld : 0U) |
+		(Player_ship->flags[Ship::Ship_Flags::Primaries_locked]
+			 ? protocol::WeaponGlobalFlagPrimaryLocked : 0U) |
+		(Player_ship->flags[Ship::Ship_Flags::Secondaries_locked]
+			 ? protocol::WeaponGlobalFlagSecondaryLocked : 0U) |
+		(output.weapons.targeting_laser_active
+			 ? protocol::WeaponGlobalFlagTargetingLaser : 0U) |
+		(output.weapons.remote_detonaters_active > 0U
+			 ? protocol::WeaponGlobalFlagRemoteDetonatorsActive : 0U) |
+		(source_weapons.flags[Ship::Weapon_Flags::Beam_Free]
+			 ? protocol::WeaponGlobalFlagBeamFree : 0U) |
+		(source_weapons.flags[Ship::Weapon_Flags::Turret_Lock]
+			 ? protocol::WeaponGlobalFlagBeamLocked : 0U);
+	output.weapons.tertiary_bank_count =
+		static_cast<std::uint8_t>(source_weapons.num_tertiary_banks);
+	output.weapons.current_tertiary_bank =
+		source_weapons.current_tertiary_bank;
 	output.weapons.tertiary_bank = source_weapons.current_tertiary_bank;
 	output.weapons.tertiary_ammunition_current = source_weapons.tertiary_bank_ammo;
+	output.weapons.tertiary_ammunition_initial =
+		source_weapons.tertiary_bank_start_ammo;
 	output.weapons.tertiary_ammunition_capacity = source_weapons.tertiary_bank_capacity;
 	const auto tertiary_remaining_ms =
 		std::max(timestamp_until(source_weapons.next_tertiary_fire_stamp), 0);
@@ -1537,6 +1794,13 @@ SourceReadResult FsoEngineReadView::read_ship(
 	}
 	output.weapons.tertiary_cooldown_remaining_us =
 		static_cast<std::uint64_t>(tertiary_remaining_ms) * 1000U;
+	const auto tertiary_rearm_ms =
+		std::max(timestamp_until(source_weapons.tertiary_bank_rearm_time), 0);
+	if (tertiary_rearm_ms > 3'600'000) {
+		return {Phase2SourceReadStatus::UnsupportedEngineState};
+	}
+	output.weapons.tertiary_rearm_remaining_us =
+		static_cast<std::uint64_t>(tertiary_rearm_ms) * 1000U;
 	const auto copy_bank = [](std::size_t bank_index,
 							   ShipWeaponBankFamily family,
 							   int weapon_class,
@@ -1579,7 +1843,64 @@ SourceReadResult FsoEngineReadView::read_ship(
 		}
 		auto& primary_bank = output.weapons.primary_banks[bank_index];
 		primary_bank.primary_slot = source_weapons.primary_next_slot[bank_index];
+		primary_bank.primary_fire_point =
+			static_cast<std::uint16_t>(
+				source_weapons.primary_firepoint_next_to_fire_index[bank_index]);
+		primary_bank.simultaneous_slots =
+			static_cast<std::uint16_t>(
+				source_weapons.primary_bank_slot_count[bank_index]);
 		primary_bank.burst_counter = source_weapons.burst_counter[bank_index];
+		primary_bank.burst_seed = static_cast<std::uint32_t>(
+			source_weapons.burst_seed[bank_index]);
+		primary_bank.substitution_pattern_index =
+			static_cast<std::uint16_t>(
+				source_weapons.primary_bank_substitution_pattern_index[bank_index]);
+		const auto primary_rearm_ms = std::max(timestamp_until(
+			source_weapons.primary_bank_rearm_time[bank_index]), 0);
+		if (primary_rearm_ms > 3'600'000) {
+			return {Phase2SourceReadStatus::UnsupportedEngineState};
+		}
+		primary_bank.rearm_remaining_us =
+			static_cast<std::uint64_t>(primary_rearm_ms) * 1000U;
+		const auto weapon_index =
+			source_weapons.primary_bank_weapons[bank_index];
+		const auto& weapon = Weapon_info[weapon_index];
+		auto effective_pattern = weapon.firing_pattern;
+		if (ship_class.flags[Ship::Info_Flags::Dyn_primary_linking]) {
+			const auto dynamic_index =
+				source_weapons.dynamic_firing_pattern[bank_index];
+			if (dynamic_index < 0 ||
+				static_cast<std::size_t>(dynamic_index) >=
+					ship_class.dyn_firing_patterns_allowed[
+						bank_index].size()) {
+				return {Phase2SourceReadStatus::UnsupportedEngineState};
+			}
+			effective_pattern =
+				ship_class.dyn_firing_patterns_allowed[
+					bank_index][dynamic_index];
+		}
+		const auto pattern_code =
+			static_cast<std::uint8_t>(effective_pattern);
+		if (pattern_code > 5U) {
+			return {Phase2SourceReadStatus::UnsupportedEngineState};
+		}
+		primary_bank.firing_pattern_source_code = pattern_code;
+		if (weapon.fof_reset_rate > 0.0F) {
+			const auto duration =
+				static_cast<double>(
+					source_weapons.primary_bank_fof_cooldown[bank_index]) /
+				static_cast<double>(weapon.fof_reset_rate) * 1'000'000.0;
+			if (!std::isfinite(duration) || duration < 0.0 ||
+				duration > 3'600'000'000.0) {
+				return {Phase2SourceReadStatus::UnsupportedEngineState};
+			}
+			primary_bank.fof_cooldown_remaining_us =
+				static_cast<std::uint64_t>(duration);
+		}
+		if (weapon.wi_flags[Weapon::Info_Flags::Beam] &&
+			weapon.b_info.beam_type == BeamType::NORMAL_FIRE) {
+			output.weapons.per_burst_rotation_active = true;
+		}
 		primary_bank.weapon_animation =
 			static_cast<std::int32_t>(source_weapons.primary_animation_position[bank_index]);
 	}
@@ -1599,6 +1920,20 @@ SourceReadResult FsoEngineReadView::read_ship(
 		secondary_bank.secondary_slot = source_weapons.secondary_next_slot[bank_index];
 		secondary_bank.burst_counter =
 			source_weapons.burst_counter[bank_index + MAX_SHIP_PRIMARY_BANKS];
+		secondary_bank.burst_seed = static_cast<std::uint32_t>(
+			source_weapons.burst_seed[
+				bank_index + MAX_SHIP_PRIMARY_BANKS]);
+		secondary_bank.substitution_pattern_index =
+			static_cast<std::uint16_t>(
+				source_weapons.secondary_bank_substitution_pattern_index[
+					bank_index]);
+		const auto secondary_rearm_ms = std::max(timestamp_until(
+			source_weapons.secondary_bank_rearm_time[bank_index]), 0);
+		if (secondary_rearm_ms > 3'600'000) {
+			return {Phase2SourceReadStatus::UnsupportedEngineState};
+		}
+		secondary_bank.rearm_remaining_us =
+			static_cast<std::uint64_t>(secondary_rearm_ms) * 1000U;
 		secondary_bank.weapon_animation =
 			static_cast<std::int32_t>(source_weapons.secondary_animation_position[bank_index]);
 	}
@@ -1608,14 +1943,57 @@ SourceReadResult FsoEngineReadView::read_ship(
 		Player_ship->current_cmeasure >= static_cast<int>(Weapon_info.size())) {
 		return {Phase2SourceReadStatus::UnsupportedEngineState};
 	}
-	if (Player_ship->current_cmeasure >= 0) {
+	if (ship_class.cmeasure_max > 0) {
+		if (ship_class.cmeasure_type < 0 ||
+			ship_class.cmeasure_type >=
+				static_cast<int>(Weapon_info.size()) ||
+			(Player_ship->current_cmeasure >= 0 &&
+			 Player_ship->current_cmeasure != ship_class.cmeasure_type)) {
+			return {Phase2SourceReadStatus::UnsupportedEngineState};
+		}
+		const auto& countermeasure =
+			Weapon_info[ship_class.cmeasure_type];
+		if (!countermeasure.wi_flags[Weapon::Info_Flags::Cmeasure] ||
+			(Countermeasures_use_capacity &&
+			 (!std::isfinite(countermeasure.cargo_size) ||
+			  countermeasure.cargo_size <= 0.0F))) {
+			return {Phase2SourceReadStatus::UnsupportedEngineState};
+		}
 		output.weapons.presence |= protocol::WeaponStatePresenceFlagCountermeasure;
 		output.weapons.countermeasure_count =
 			static_cast<std::uint16_t>(Player_ship->cmeasure_count);
 		output.weapons.countermeasure_class_source_key.value =
-			static_cast<std::uint32_t>(Player_ship->current_cmeasure + 1);
+			static_cast<std::uint32_t>(ship_class.cmeasure_type + 1);
+		output.weapons.countermeasures_enabled =
+			Countermeasures_enabled != 0;
+		const auto countermeasure_remaining_ms =
+			std::max(timestamp_until(Player_ship->cmeasure_fire_stamp), 0);
+		if (countermeasure_remaining_ms > 3'600'000) {
+			return {Phase2SourceReadStatus::UnsupportedEngineState};
+		}
+		output.weapons.countermeasure_cooldown_remaining_us =
+			static_cast<std::uint64_t>(
+				countermeasure_remaining_ms) * 1000U;
+		const auto maximum = Countermeasures_use_capacity
+			? static_cast<int>(std::floor(
+				static_cast<double>(ship_class.cmeasure_max) /
+				static_cast<double>(countermeasure.cargo_size)))
+			: ship_class.cmeasure_max;
+		if (maximum < 0 ||
+			maximum > std::numeric_limits<std::uint16_t>::max()) {
+			return {Phase2SourceReadStatus::UnsupportedEngineState};
+		}
+		output.weapons.countermeasure_maximum =
+			static_cast<std::uint16_t>(maximum);
+		if (output.weapons.countermeasure_count >
+			output.weapons.countermeasure_maximum) {
+			return {Phase2SourceReadStatus::UnsupportedEngineState};
+		}
+	} else if (Player_ship->cmeasure_count != 0) {
+		return {Phase2SourceReadStatus::UnsupportedEngineState};
 	}
 
+	diagnostic_cursor.begin(Phase2CaptureBlock::SupportCargoDocking);
 	if (Player_ship->ai_index >= 0 && Player_ship->ai_index < MAX_AI_INFO) {
 		const auto& ship_ai = Ai_info[Player_ship->ai_index];
 		output.support.raw_support_flags =
@@ -1646,14 +2024,40 @@ SourceReadResult FsoEngineReadView::read_ship(
 			output.support.support_capture_key.value =
 				static_cast<std::uint32_t>(ship_ai.support_ship_signature);
 		}
+		if (ship_ai.ai_flags[AI::AI_Flags::Awaiting_repair]) {
+			output.support.phase =
+				ship_ai.support_ship_objnum >= 0
+				? ShipSupportPhase::OnWay
+				: ShipSupportPhase::Queued;
+		}
 	}
 
 	const auto docking_result =
 		read_direct_docking_facts(*Player_obj, output.docking);
 	if (docking_result.status != Phase2SourceReadStatus::Valid) {
 		output.docking = {};
+	} else if (Player_ship->ai_index >= 0 &&
+		Player_ship->ai_index < MAX_AI_INFO) {
+		const auto& ship_ai = Ai_info[Player_ship->ai_index];
+		if (ship_ai.mode == AIM_DOCK &&
+			ship_ai.submode >= AIS_UNDOCK_0 &&
+			ship_ai.submode <= AIS_UNDOCK_4) {
+			output.docking.phase = protocol::DockingPhase::Undocking;
+		} else if (output.docking.relation_count != 0U) {
+			output.docking.phase = protocol::DockingPhase::Docked;
+		} else if (ship_ai.mode == AIM_DOCK &&
+			ship_ai.submode >= AIS_DOCK_2 &&
+			ship_ai.submode <= AIS_DOCK_4A) {
+			output.docking.phase = protocol::DockingPhase::Docking;
+		} else if (ship_ai.mode == AIM_DOCK &&
+			ship_ai.submode >= AIS_DOCK_0 &&
+			ship_ai.submode <= AIS_DOCK_1) {
+			output.docking.phase = protocol::DockingPhase::Approach;
+		}
+	}
 	}
 
+	diagnostic_cursor.begin(Phase2CaptureBlock::Subsystems);
 	if (ship_class.n_subsystems < 0 ||
 		(ship_class.n_subsystems > 0 && ship_class.subsystems == nullptr) ||
 		ship_class.n_subsystems > static_cast<int>(MaximumPhase2SubsystemsPerShip)) {
@@ -1697,21 +2101,41 @@ SourceReadResult FsoEngineReadView::read_ship(
 			destination.kind = ShipSubsystemKind::Navigation;
 			break;
 		case SUBSYSTEM_NONE:
+		case SUBSYSTEM_UNKNOWN:
+			destination.kind = ShipSubsystemKind::Generic;
+			break;
 		case SUBSYSTEM_SOLAR:
 		case SUBSYSTEM_GAS_COLLECT:
 		case SUBSYSTEM_ACTIVATION:
-		case SUBSYSTEM_UNKNOWN:
-			destination.kind = ShipSubsystemKind::Generic;
+			destination.kind = ShipSubsystemKind::Other;
 			break;
 		default:
 			return {Phase2SourceReadStatus::UnsupportedEngineState};
 		}
 		destination.hits_current = subsystem->current_hits;
 		destination.hits_maximum = subsystem->max_hits;
-		destination.position_local = {subsystem->system_info->pnt.xyz.x,
-			subsystem->system_info->pnt.xyz.y,
-			subsystem->system_info->pnt.xyz.z};
-		destination.raw_flags = subsystem->flags.to_u64();
+		destination.position_local = {0.0F, 0.0F, 0.0F};
+		destination.raw_flags = protocol::SubsystemFlagNone;
+		const auto perturbed = !timestamp_elapsed(subsystem->disruption_timestamp);
+		if (perturbed) {
+			destination.raw_flags |= protocol::SubsystemFlagPerturbed;
+			destination.presence |= protocol::SubsystemStatePresenceFlagPerturbation;
+		}
+		if (!subsystem->flags[Ship::Subsystem_Flags::Untargetable])
+			destination.raw_flags |= protocol::SubsystemFlagTargetable;
+		if (subsystem->submodel_instance_1 != nullptr &&
+			!subsystem->submodel_instance_1->blown_off)
+			destination.raw_flags |= protocol::SubsystemFlagVisible;
+		if (subsystem->flags[Ship::Subsystem_Flags::Cargo_revealed])
+			destination.raw_flags |= protocol::SubsystemFlagRevealed;
+		if (subsystem->subsys_guardian_threshold > 0)
+			destination.raw_flags |= protocol::SubsystemFlagGuardian;
+		if (Player_ship->flags[Ship::Ship_Flags::Subsystem_movement_locked])
+			destination.raw_flags |= protocol::SubsystemFlagMovementLocked;
+		if (subsystem->weapons.flags[Ship::Weapon_Flags::Beam_Free])
+			destination.raw_flags |= protocol::SubsystemFlagBeamFree;
+		if (subsystem->weapons.flags[Ship::Weapon_Flags::Turret_Lock])
+			destination.raw_flags |= protocol::SubsystemFlagBeamLocked;
 		if (subsystem->armor_type_idx < -1 ||
 			subsystem->armor_type_idx >= static_cast<int>(Armor_types.size())) {
 			return {Phase2SourceReadStatus::UnsupportedEngineState};
@@ -1720,6 +2144,8 @@ SourceReadResult FsoEngineReadView::read_ship(
 			subsystem->armor_type_idx >= 0
 			? static_cast<std::uint32_t>(subsystem->armor_type_idx + 1)
 			: 0U;
+		if (destination.armor_source_key.value != 0U)
+			destination.presence |= protocol::SubsystemStatePresenceFlagArmor;
 		const auto disruption_remaining_ms =
 			std::max(timestamp_until(subsystem->disruption_timestamp), 0);
 		if (disruption_remaining_ms > 86'400'000) {
@@ -1735,11 +2161,15 @@ SourceReadResult FsoEngineReadView::read_ship(
 			Player_ship->subsys_info[aggregate_index].aggregate_current_hits;
 		destination.aggregate_maximum_hits =
 			Player_ship->subsys_info[aggregate_index].aggregate_max_hits;
+		if (!subsystem->flags[Ship::Subsystem_Flags::No_aggregate] &&
+			Player_ship->subsys_info[aggregate_index].type_count > 0)
+			destination.presence |= protocol::SubsystemStatePresenceFlagTypeAggregate;
 		if (subsystem->submodel_instance_1 != nullptr) {
 			const auto& transform = *subsystem->submodel_instance_1;
-			destination.position_local[0] += transform.canonical_offset.xyz.x;
-			destination.position_local[1] += transform.canonical_offset.xyz.y;
-			destination.position_local[2] += transform.canonical_offset.xyz.z;
+			destination.position_local = {
+				transform.canonical_offset.xyz.x,
+				transform.canonical_offset.xyz.y,
+				transform.canonical_offset.xyz.z};
 			const CaptureOrientationBasis subsystem_basis{
 				{transform.canonical_orient.vec.rvec.xyz.x,
 					transform.canonical_orient.vec.rvec.xyz.y,
@@ -1760,10 +2190,26 @@ SourceReadResult FsoEngineReadView::read_ship(
 				subsystem_orientation.x,
 				subsystem_orientation.y,
 				subsystem_orientation.z};
+			const auto has_offset =
+				destination.position_local[0] != 0.0F ||
+				destination.position_local[1] != 0.0F ||
+				destination.position_local[2] != 0.0F;
+			const auto has_orientation =
+				destination.orientation_local[0] != 1.0F ||
+				destination.orientation_local[1] != 0.0F ||
+				destination.orientation_local[2] != 0.0F ||
+				destination.orientation_local[3] != 0.0F;
+			if (has_offset || has_orientation) {
+				destination.presence |=
+					protocol::SubsystemStatePresenceFlagAnimatedTransform;
+			}
 		}
-		if (destination.kind != ShipSubsystemKind::Turret) {
+		if (core_gate ||
+			destination.kind != ShipSubsystemKind::Turret) {
 			continue;
 		}
+		destination.presence |=
+			protocol::SubsystemStatePresenceFlagTurret;
 		destination.turret.emplace();
 		auto& turret = *destination.turret;
 		const auto& turret_weapons = subsystem->weapons;
@@ -1858,9 +2304,11 @@ SourceReadResult FsoEngineReadView::read_ship(
 			turret_current_direction.xyz.y,
 			turret_current_direction.xyz.z};
 		if (subsystem->system_info->turret_num_firing_points < 0 ||
-			subsystem->system_info->turret_num_firing_points >
-				std::numeric_limits<std::uint16_t>::max()) {
-			return {Phase2SourceReadStatus::UnsupportedEngineState};
+			subsystem->system_info->turret_num_firing_points > 64) {
+			return {
+				subsystem->system_info->turret_num_firing_points > 64
+				? Phase2SourceReadStatus::SourceLimitExceeded
+				: Phase2SourceReadStatus::UnsupportedEngineState};
 		}
 		turret.turret_firing_point_count =
 			static_cast<std::uint16_t>(
@@ -1868,12 +2316,21 @@ SourceReadResult FsoEngineReadView::read_ship(
 		turret.turret_rof_scaler = subsystem->rof_scaler;
 		turret.turret_animation =
 			static_cast<std::int32_t>(subsystem->turret_animation_position);
+		const auto animation_remaining_ms = std::max(
+			timestamp_until(subsystem->turret_animation_done_time), 0);
+		if (animation_remaining_ms > 86'400'000) {
+			return {Phase2SourceReadStatus::UnsupportedEngineState};
+		}
+		turret.turret_animation_remaining_us =
+			static_cast<std::uint64_t>(animation_remaining_ms) * 1000U;
 		turret.turret_beam_free =
 			turret_weapons.flags[Ship::Weapon_Flags::Beam_Free];
 		turret.turret_locked =
 			turret_weapons.flags[Ship::Weapon_Flags::Turret_Lock];
 	}
 
+	if (!core_gate) {
+	diagnostic_cursor.begin(Phase2CaptureBlock::SupportCargoDocking);
 	SupportWorkEvaluation support_work;
 	if (evaluate_support_work(Player_obj, support_work) !=
 		SupportWorkStatus::Valid) {
@@ -1926,14 +2383,102 @@ SourceReadResult FsoEngineReadView::read_ship(
 		support_work.ammunition_rearm_applicable;
 	output.support.raw_countermeasure_rearm_applicable =
 		support_work.countermeasure_rearm_applicable;
+	if (Player_ship->ai_index >= 0 &&
+		Player_ship->ai_index < MAX_AI_INFO) {
+		const auto& ship_ai = Ai_info[Player_ship->ai_index];
+		if (ship_ai.ai_flags[AI::AI_Flags::Being_repaired]) {
+			const auto repair_remaining =
+				support_work.hull_repair_applicable ||
+				support_work.shield_repair_applicable ||
+				support_work.subsystem_repair_applicable;
+			const auto rearm_remaining =
+				support_work.weapon_energy_rearm_applicable ||
+				support_work.ammunition_rearm_applicable ||
+				support_work.countermeasure_rearm_applicable;
+			output.support.phase = repair_remaining
+				? ShipSupportPhase::Repairing
+				: rearm_remaining
+				? ShipSupportPhase::Rearming
+				: ShipSupportPhase::Docking;
+		}
+	}
+	const auto terminal = phase2_latest_support_terminal(
+		static_cast<std::uint32_t>(Player_obj->signature));
+	if (terminal.assisted_signature != 0U) {
+		output.support.episode_sequence =
+			terminal.episode_sequence;
+		switch (terminal.reason) {
+		case SupportTransitionReason::Broken:
+			output.support.phase = ShipSupportPhase::Obstructed;
+			break;
+		case SupportTransitionReason::Abort:
+		case SupportTransitionReason::Killed:
+			output.support.phase = ShipSupportPhase::Aborted;
+			break;
+		case SupportTransitionReason::End:
+		case SupportTransitionReason::Complete:
+			output.support.phase = ShipSupportPhase::None;
+			if (output.support.support_capture_key.value == 0U)
+				output.support.presence =
+					protocol::SupportStatePresenceFlagNone;
+			break;
+		case SupportTransitionReason::Queue:
+		case SupportTransitionReason::OnWay:
+		case SupportTransitionReason::Begin:
+		case SupportTransitionReason::Count:
+			break;
+		}
+	}
+	}
+	diagnostic_cursor.begin(Phase2CaptureBlock::Identity);
 	const auto static_result = extract_production_static_authorities(
-		*Player_obj, *Player_ship, ship_class, output);
+		*Player_obj, *Player_ship, ship_class, output, core_gate);
 	if (static_result.status != Phase2SourceReadStatus::Valid) {
 		output.raw_static_catalog.clear();
 		output.raw_static_references = {};
 		return static_result;
 	}
 	return {Phase2SourceReadStatus::Valid};
+}
+
+SourceReadResult FsoEngineReadView::read_ship(
+	EngineEntityKey key, Phase2ShipSource& output) const noexcept
+{
+	return read_ship_for_projection(key, output, false);
+}
+
+SourceReadResult FsoEngineReadView::read_core_gate_ship(
+	EngineEntityKey key, Phase2ShipSource& output) const noexcept
+{
+	return read_ship_for_projection(key, output, true);
+}
+
+SourceReadResult FsoEngineReadView::read_ship_diagnosed(
+	EngineEntityKey key,
+	Phase2ShipSource& output,
+	Phase2CaptureDiagnostics& diagnostics) const noexcept
+{
+	auto* previous = ActivePhase2CaptureDiagnostics;
+	ActivePhase2CaptureDiagnostics = &diagnostics;
+	const auto result = read_ship(key, output);
+	if (result.status == Phase2SourceReadStatus::Valid)
+		diagnostics.primary_failed_block = Phase2CaptureBlock::Count;
+	ActivePhase2CaptureDiagnostics = previous;
+	return result;
+}
+
+SourceReadResult FsoEngineReadView::read_core_gate_ship_diagnosed(
+	EngineEntityKey key, Phase2ShipSource& output,
+	Phase2CaptureDiagnostics& diagnostics) const noexcept
+{
+	auto* previous = ActivePhase2CaptureDiagnostics;
+	ActivePhase2CaptureDiagnostics = &diagnostics;
+	const auto result = read_core_gate_ship(key, output);
+	if (result.status == Phase2SourceReadStatus::Valid)
+		diagnostics.primary_failed_block =
+			Phase2CaptureBlock::Count;
+	ActivePhase2CaptureDiagnostics = previous;
+	return result;
 }
 
 bool FsoEngineReadView::read_player_controls(PlayerControlObservation& output) const noexcept
@@ -1983,6 +2528,11 @@ bool FsoEngineReadView::read_player_controls(PlayerControlObservation& output) c
 	output.effective_aim_extent = ship_class.flight_cursor_aim_extent > 0.0F
 		? ship_class.flight_cursor_aim_extent
 		: Flight_cursor_extent;
+	output.flight_cursor_deadzone_extent = Flight_cursor_deadzone;
+	if (output.flight_cursor_active) {
+		output.presence |=
+			protocol::ControlStatePresenceFlagFlightCursor;
+	}
 	output.afterburner_requested = Control_config[AFTERBURNER].continuous_ongoing;
 	if ((Player->flags & PLAYER_FLAGS_MATCH_TARGET) != 0) {
 		output.action_flags |= protocol::ControlFlagMatchSpeed;

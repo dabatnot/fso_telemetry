@@ -347,7 +347,9 @@ ReliableRetainResult PreallocatedReliableControlWindow::retain(const ReliableMes
 		(message.message_type == MessageType::Welcome &&
 		 message.message_class == ReliableMessageClass::HandshakeCritical) ||
 		(message.message_type == MessageType::SessionBegin &&
-		 message.message_class == ReliableMessageClass::SessionCritical);
+		 message.message_class == ReliableMessageClass::SessionCritical) ||
+		(message.message_type == MessageType::SessionEnd &&
+		 message.message_class == ReliableMessageClass::SessionClosing);
 	if (!supported_control || !validate_message_before_copy(message) ||
 		message.logical_payload.size > PayloadBytesPerEntry || message.fragment_count != 1U) {
 		return ReliableRetainResult::InvalidMessage;

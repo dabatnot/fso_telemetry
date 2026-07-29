@@ -221,6 +221,15 @@ class FsoEngineReadView final : public EngineReadView, public Phase2EngineReadVi
 		Phase2CaptureLocalKey key, EngineEntityKey& output) const noexcept override;
 	SourceReadResult read_ship(
 		EngineEntityKey key, Phase2ShipSource& output) const noexcept override;
+	SourceReadResult read_core_gate_ship(
+		EngineEntityKey key,
+		Phase2ShipSource& output) const noexcept override;
+	SourceReadResult read_ship_diagnosed(EngineEntityKey key,
+		Phase2ShipSource& output,
+		Phase2CaptureDiagnostics& diagnostics) const noexcept override;
+	SourceReadResult read_core_gate_ship_diagnosed(
+		EngineEntityKey key, Phase2ShipSource& output,
+		Phase2CaptureDiagnostics& diagnostics) const noexcept override;
 	bool read_player_controls(PlayerControlObservation& output) const noexcept override;
 	bool read_player_cargo_scan(PlayerCargoScanObservation& output) const noexcept override;
 	bool player_object_is_ship() const noexcept override;
@@ -228,6 +237,11 @@ class FsoEngineReadView final : public EngineReadView, public Phase2EngineReadVi
 	bool player_object_matches_player() const noexcept override;
 	bool player_ship_matches_object() const noexcept override;
 	void read_player_kinematics(EnginePlayerKinematicsRead& output) const noexcept override;
+
+  private:
+	SourceReadResult read_ship_for_projection(
+		EngineEntityKey key, Phase2ShipSource& output,
+		bool core_gate) const noexcept;
 };
 #endif
 

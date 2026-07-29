@@ -10,6 +10,7 @@ the integration fixture supplies packets to it.
 from __future__ import annotations
 
 import ast
+import importlib.util
 import json
 import hashlib
 import socket
@@ -29,6 +30,7 @@ V11 = REPO / "test" / "telemetry" / "protocol" / "vectors-v1.1"
 
 sys.path.insert(0, str(TOOLS))
 import fstl_reference_decoder as reference
+import fstl_console_client as console
 
 
 def packet(message_type: int, payload: bytes, *, session_id: int, sequence: int, sent_us: int,
@@ -110,6 +112,101 @@ def receive_message_type(server: socket.socket, message_type: int) -> tuple[byte
 
 
 class FstlConsoleClientContractTest(unittest.TestCase):
+    def test_phase2_dashboard_formulas_are_explicit_and_fail_closed(self) -> None:
+        decoded = reference.decode_message(
+            6, 0, v11_payload("phase2-complete-ship", ".bin"), {}
+        )
+        state = console.ConsoleState()
+        state.status = "Live"
+        state.session_id = 0x1122334455667788
+        state.manifest_id = 1
+        state.required_manifest_id = 1
+        state.baseline = 1
+        state._apply_records(decoded["fields"]["records"], True)
+
+        dashboard = console.DashboardProjection(
+            state, at_us=1_100_000, smoothed_offset_us=0
+        ).build()
+        inventory = {item["path"]: item for item in dashboard["inventory"]}
+        self.assertEqual(0.5, inventory["entities.1.hull_ratio"]["value"])
+        self.assertFalse(inventory["entities.1.shield_ratio"]["available"])
+        self.assertEqual("shields-absent", inventory["entities.1.shield_ratio"]["reason"])
+        self.assertFalse(inventory["entities.1.subsystems.2.integrity_ratio"]["available"])
+        self.assertEqual(
+            "missing-or-nonpositive-denominator",
+            inventory["entities.1.subsystems.2.integrity_ratio"]["reason"],
+        )
+        self.assertEqual(0.0, inventory["entities.1.speed"]["value"])
+        self.assertEqual([0.0, 0.0, 0.0], inventory["entities.1.velocity_local"]["value"])
+        self.assertEqual("ACTIVE", inventory["entities.1.lifecycle_label"]["value"])
+        self.assertTrue(inventory["records.FLIGHT_STATE/entity_id=1.age_us"]["available"])
+        self.assertTrue(all(
+            item.get("formula", "").strip()
+            for item in dashboard["inventory"] if item["kind"] == "D"
+        ), "P2-TST-048: every derived field has an explicit tested formula")
+        self.assertTrue(all(
+            item.get("source", "").strip()
+            for item in dashboard["inventory"] if item["kind"] in ("A", "C")
+        ), "P2-AC-006: every raw field has non-empty wire provenance")
+
+        without_clock = console.DashboardProjection(state, at_us=1_100_000).build()
+        age = next(item for item in without_clock["inventory"]
+                   if item["path"] == "records.FLIGHT_STATE/entity_id=1.age_us")
+        self.assertFalse(age["available"])
+        self.assertEqual("invalid-or-missing-clock-offset", age["reason"])
+
+    def test_phase2_oracle_goldens_are_canonical_black_box_transcripts(self) -> None:
+        generator = REPO / "test/telemetry/producer/phase2/generate_phase2_oracle_goldens.py"
+        result = subprocess.run(
+            [sys.executable, "-B", str(generator)],
+            cwd=REPO, text=True, capture_output=True, check=False,
+        )
+        self.assertEqual(0, result.returncode, result.stderr + result.stdout)
+        self.assertIn("inventories are canonical", result.stdout)
+
+    def test_phase2_oracle_inventory_comparison_requires_provenance_and_formula(self) -> None:
+        runner = REPO / "test/telemetry/producer/phase2/run_phase2_oracle_evidence.py"
+        spec = importlib.util.spec_from_file_location("phase2_oracle_runner", runner)
+        self.assertIsNotNone(spec)
+        self.assertIsNotNone(spec.loader)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+
+        missing_source = [{"kind": "A", "path": "a", "available": True, "value": 1}]
+        _, raw_summary = module.compare_inventory(missing_source, missing_source)
+        self.assertEqual(1, raw_summary["missingProvenance"])
+        self.assertEqual(1, raw_summary["mismatches"])
+
+        missing_formula = [{
+            "kind": "D", "path": "d", "available": True, "value": 1,
+            "provenance": "oracle:double",
+        }]
+        _, derived_summary = module.compare_inventory(missing_formula, missing_formula)
+        self.assertEqual(1, derived_summary["uncoveredFormula"])
+        self.assertEqual(1, derived_summary["mismatches"])
+
+    def test_phase2_oracle_runner_missing_harness_fails_closed_without_report(self) -> None:
+        runner = REPO / "test/telemetry/producer/phase2/run_phase2_oracle_evidence.py"
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            report = root / "report"
+            result = subprocess.run(
+                [
+                    sys.executable, "-B", str(runner),
+                    "--profiles", "core-gate", "complete-ship",
+                    "--build-dir", str(root / "missing-build"),
+                    "--config", "Release",
+                    "--report-dir", str(report),
+                ],
+                cwd=REPO, text=True, capture_output=True, check=False,
+            )
+            self.assertNotEqual(0, result.returncode)
+            self.assertIn("missing telemetry_phase2_oracle_harness", result.stderr)
+            self.assertFalse(
+                (report / "phase2-oracle-evidence.json").exists(),
+                "fail-closed diagnostics must not leave a conclusive report",
+            )
+
     def test_console_tool_exists_and_does_not_import_producer_cpp_bindings(self) -> None:
         self.assertTrue(
             CONSOLE.is_file(),

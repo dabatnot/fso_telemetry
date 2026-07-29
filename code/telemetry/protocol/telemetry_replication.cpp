@@ -399,20 +399,56 @@ ProducerBaselineResult build_delta(const StateImage& baseline,
 	delta.producer_sample_time_us = producer_sample_time_us;
 	delta.active_mutation_count = plan.mutation_count;
 	std::size_t mutation_index = 0U;
-	auto append_mutation = [&delta, &mutation_index](StateMutationKind kind, const StateAtom& atom) noexcept {
+	auto retain_preallocated_backing =
+		[&delta](std::size_t target_index,
+			const StateAtom& atom,
+			bool copy_value) noexcept {
+			auto& target = delta.mutations[target_index].atom;
+			const auto fits = [&atom, copy_value](
+				const StateAtom& candidate) noexcept {
+				return candidate.key.record_type ==
+						atom.key.record_type &&
+					candidate.key.identity.capacity() >=
+						atom.key.identity.size() &&
+					(!copy_value ||
+					 candidate.value.capacity() >=
+						atom.value.size()) &&
+					candidate.cascade_owner.identity.capacity() >=
+						atom.cascade_owner.identity.size();
+			};
+			if (fits(target)) return;
+			for (std::size_t candidate_index = target_index + 1U;
+				 candidate_index < delta.mutations.size();
+				 ++candidate_index) {
+				auto& candidate =
+					delta.mutations[candidate_index].atom;
+				if (!fits(candidate)) continue;
+				std::swap(target, candidate);
+				return;
+			}
+		};
+	auto append_mutation = [&delta, &mutation_index,
+							   &retain_preallocated_backing](
+		StateMutationKind kind, const StateAtom& atom) noexcept {
 		if (mutation_index >= delta.mutation_count()) {
 			return false;
 		}
-		auto& target = delta.mutations[mutation_index++];
+		const auto target_index = mutation_index++;
+		retain_preallocated_backing(target_index, atom, true);
+		auto& target = delta.mutations[target_index];
 		target.kind = kind;
 		target.atom = atom;
 		return true;
 	};
-	auto append_delete = [&delta, &mutation_index](const StateAtom& atom) noexcept {
+	auto append_delete = [&delta, &mutation_index,
+							 &retain_preallocated_backing](
+		const StateAtom& atom) noexcept {
 		if (mutation_index >= delta.mutation_count()) {
 			return false;
 		}
-		auto& target = delta.mutations[mutation_index++];
+		const auto target_index = mutation_index++;
+		retain_preallocated_backing(target_index, atom, false);
+		auto& target = delta.mutations[target_index];
 		target.kind = StateMutationKind::Delete;
 		target.atom.key = atom.key;
 		target.atom.record_version = atom.record_version;

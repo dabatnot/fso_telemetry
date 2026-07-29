@@ -5,6 +5,7 @@
 #include "telemetry/protocol/telemetry_reliable_window.h"
 #include "telemetry/protocol/telemetry_state_messages.h"
 #include "telemetry/phase1_allocation_observer.h"
+#include "telemetry/phase2_manifest_builder.h"
 
 #include <array>
 #include <cstddef>
@@ -21,11 +22,6 @@ enum class Phase1SnapshotEgressResult : std::uint8_t {
 	AllocationFailure,
 };
 
-struct Phase1SnapshotEgressLimits {
-	std::size_t reliable_item_capacity = 8U;
-	std::size_t output_datagram_capacity = 8U;
-};
-
 // A retained FULL_SNAPSHOT is a State-class logical message.  The Phase 0/1
 // wire contract allows one part of exactly MaxStatePartSize bytes (including
 // the FullSnapshotPart payload prefix), and the fragmenter turns that logical
@@ -35,6 +31,22 @@ struct Phase1SnapshotEgressLimits {
 constexpr std::size_t Phase1ReplicationScratchBytes = protocol::MaxStatePartSize;
 constexpr std::size_t Phase1SnapshotRecordScratchBytes =
 	Phase1ReplicationScratchBytes - protocol::FullSnapshotPartPayloadPrefixSize;
+// With 1 MiB parts, an adversarial sequence of maximum-sized whole records
+// can waste less than one 65,541-byte envelope per boundary. Eighteen parts
+// therefore cover every valid <=16 MiB image while remaining below the
+// protocol ceiling of 64 parts.
+constexpr std::size_t Phase2SnapshotMaximumParts = 18U;
+constexpr std::size_t Phase2ReplicationPartBytes =
+	Phase1ReplicationScratchBytes;
+
+struct Phase1SnapshotEgressLimits {
+	std::size_t reliable_item_capacity = 8U;
+	std::size_t output_datagram_capacity = 8U;
+	std::size_t transaction_record_capacity =
+		Phase1SnapshotRecordScratchBytes;
+	std::size_t part_payload_capacity =
+		Phase1ReplicationScratchBytes;
+};
 
 struct Phase1SnapshotDatagram {
 	protocol::EndpointKey endpoint;
@@ -56,13 +68,20 @@ class Phase1SnapshotEgress final {
 		std::uint32_t snapshot_id,
 		std::uint64_t producer_sample_time_us,
 		const protocol::StateImage& image,
-		std::uint64_t now_us) noexcept;
+		std::uint64_t now_us,
+		std::uint32_t required_manifest_id = 0U) noexcept;
 	Phase1SnapshotEgressResult queue_snapshot(std::uint64_t session_id,
 		const protocol::EndpointKey& endpoint,
 		std::uint32_t snapshot_id,
 		std::uint64_t producer_sample_time_us,
 		const protocol::StateImage& image,
 		std::uint16_t snapshot_flags,
+		std::uint64_t now_us,
+		std::uint32_t required_manifest_id = 0U) noexcept;
+	Phase1SnapshotEgressResult queue_manifest(
+		std::uint64_t session_id,
+		const protocol::EndpointKey& endpoint,
+		const Phase2ManifestCandidate& manifest,
 		std::uint64_t now_us) noexcept;
 
 	// Produces at most one datagram while an output is outstanding.  The caller
@@ -89,11 +108,17 @@ class Phase1SnapshotEgress final {
 	void rollback_candidate() noexcept;
 
 	bool has_candidate() const noexcept { return m_has_candidate; }
+	protocol::MessageType candidate_message_type() const noexcept {
+		return m_candidate_message_type;
+	}
 	bool configured() const noexcept { return m_configured; }
 	bool has_retransmission_pending() const noexcept { return m_retransmission_pending; }
 	std::size_t retained_item_count() const noexcept { return m_window.entry_count(); }
 	std::size_t queued_datagram_count() const noexcept { return m_has_output ? 1U : 0U; }
 	std::size_t owned_heap_bytes() const noexcept;
+	std::uint32_t next_message_id() const noexcept {
+		return m_next_message_id;
+	}
 	const std::vector<protocol::SnapshotCandidatePart>& candidate_parts() const noexcept { return m_parts; }
 
   private:
@@ -103,12 +128,23 @@ class Phase1SnapshotEgress final {
 		std::uint32_t packet_sequence,
 		std::uint64_t sent_time_us) noexcept;
 	bool queue_retransmission_fragment(std::uint32_t packet_sequence) noexcept;
+	bool load_part_payload(std::size_t part_index) noexcept;
+	struct PartDescriptor {
+		std::size_t records_offset = 0U;
+		std::size_t records_size = 0U;
+		std::uint16_t record_count = 0U;
+		std::uint16_t fragment_count = 0U;
+		std::uint32_t message_id = 0U;
+		std::uint32_t message_crc32 = 0U;
+	};
 
 	Phase1SnapshotEgressLimits m_limits{};
 	protocol::ReliableSendWindow m_window;
 	std::vector<protocol::SnapshotCandidatePart> m_parts;
 	std::vector<std::uint8_t> m_records;
 	std::vector<std::uint8_t> m_payload;
+	std::array<PartDescriptor, protocol::MaxTransactionParts>
+		m_part_descriptors{};
 	protocol::EndpointKey m_endpoint;
 	std::uint64_t m_session_id = 0U;
 	std::uint64_t m_sent_time_us = 0U;
@@ -117,6 +153,14 @@ class Phase1SnapshotEgress final {
 	std::uint32_t m_next_message_id = 1U;
 	std::uint32_t m_next_packet_sequence = 1U;
 	std::uint16_t m_next_fragment_index = 0U;
+	std::uint16_t m_next_part_index = 0U;
+	std::uint16_t m_retransmission_part_index = 0U;
+	std::uint16_t m_snapshot_flags = protocol::SnapshotFlagNone;
+	std::uint32_t m_required_manifest_id = 0U;
+	std::uint64_t m_producer_sample_time_us = 0U;
+	protocol::Sha256Digest m_transaction_digest{};
+	protocol::MessageType m_candidate_message_type =
+		protocol::MessageType::FullSnapshot;
 	protocol::ReliableFragmentSelection m_retransmission_fragments;
 	std::uint16_t m_next_retransmission_fragment_index = 0U;
 	std::uint64_t m_retransmission_mission_time_us = 0U;

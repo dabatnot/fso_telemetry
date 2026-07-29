@@ -307,7 +307,7 @@ Le `TurretStateV1` impose `target_entity_id=0`. `current_direction_local` est ca
 
 | Groupe | Source/règle exacte |
 |---|---|
-| `NEXT_FIRE_POINT` | présent si `turret_num_firing_points` vaut `1..256`; valeur `turret_next_fire_pos % count` |
+| `NEXT_FIRE_POINT` | absent si `turret_num_firing_points=0`; présent si la valeur vaut `1..64`, avec `turret_next_fire_pos % count`; toute valeur `>64` refuse transactionnellement l’échantillon sans troncature |
 | `COOLDOWN` | toujours présent, `max(timestamp_until(turret_next_fire_stamp),0)` en µs |
 | `RATE_MULTIPLIER` | toujours présent ; projection sans appel mutateur : `rof_scaler<0 ? 1 : (rof_scaler==0 ? max(num_firing_points,1) : rof_scaler)` |
 | `ANIMATION` | présent pour `MA_POS_SET→MOVING` ou `MA_POS_READY→STOPPED`, avec `turret_animation_done_time`; absent pour `MA_POS_NOT_SET` |

@@ -326,6 +326,60 @@ TEST(Phase2Closure, FingerprintsRespectSemanticScopesCanonicalSortingAndSha256Pr
 	EXPECT_EQ(complete->catalog_fingerprint, changed->catalog_fingerprint);
 }
 
+TEST(Phase2Closure, P2REQ019TopologyFingerprintCoversAuthorizedEdgeKindsNotOnlyMemberSignatures)
+{
+	auto support = std::make_unique<Phase2ClosureInput>();
+	support->player_source_key = 1;
+	support->nodes[0] = ship(1, 101);
+	support->nodes[1] = ship(2, 102);
+	support->node_count = 2;
+	support->nodes[0].support_source_key = 2;
+	support->nodes[0].support_signature_valid = true;
+
+	auto docking = std::make_unique<Phase2ClosureInput>(*support);
+	docking->nodes[0].support_source_key = 0;
+	docking->nodes[0].support_signature_valid = false;
+	docking->nodes[0].dock_source_keys[0] = 2;
+	docking->nodes[0].dock_source_count = 1;
+	docking->nodes[1].dock_source_keys[0] = 1;
+	docking->nodes[1].dock_source_count = 1;
+
+	auto support_closure = std::make_unique<Phase2Closure>();
+	auto docking_closure = std::make_unique<Phase2Closure>();
+	ASSERT_EQ(Phase2ClosureError::None,
+		build_phase2_closure(*support, Phase2Profile::CompleteShip, *support_closure));
+	ASSERT_EQ(Phase2ClosureError::None,
+		build_phase2_closure(*docking, Phase2Profile::CompleteShip, *docking_closure));
+	ASSERT_EQ(support_closure->ship_entities, docking_closure->ship_entities);
+	EXPECT_NE(support_closure->topology_fingerprint, docking_closure->topology_fingerprint)
+		<< "P2-REQ-019 requires the topology fingerprint to cover support, leader, and docking relations.";
+}
+
+TEST(Phase2Closure, D2006CatalogFingerprintCoversClassAndSubsystemDescriptorsNotOnlyMass)
+{
+	auto baseline = fingerprint_input();
+	baseline->nodes[0].subsystem_keys[0] = 501;
+	baseline->nodes[0].subsystem_key_count = 1;
+	auto original = std::make_unique<Phase2Closure>();
+	ASSERT_EQ(Phase2ClosureError::None,
+		build_phase2_closure(*baseline, Phase2Profile::CompleteShip, *original));
+
+	auto class_change = std::make_unique<Phase2ClosureInput>(*baseline);
+	class_change->nodes[1].ship_class_key += 1;
+	auto changed = std::make_unique<Phase2Closure>();
+	ASSERT_EQ(Phase2ClosureError::None,
+		build_phase2_closure(*class_change, Phase2Profile::CompleteShip, *changed));
+	EXPECT_NE(original->catalog_fingerprint, changed->catalog_fingerprint)
+		<< "P2-REQ-018 requires every canonical pre-ID class descriptor change to rebuild the catalog.";
+
+	auto subsystem_change = std::make_unique<Phase2ClosureInput>(*baseline);
+	subsystem_change->nodes[0].subsystem_keys[0] += 1;
+	ASSERT_EQ(Phase2ClosureError::None,
+		build_phase2_closure(*subsystem_change, Phase2Profile::CompleteShip, *changed));
+	EXPECT_NE(original->catalog_fingerprint, changed->catalog_fingerprint)
+		<< "P2-REQ-015/017 require subsystem definitions to participate in the catalog fingerprint.";
+}
+
 TEST(Phase2Closure, D2020InvalidSourceNeverLeaksOrPartiallyPublishes)
 {
 	auto input_storage = std::make_unique<Phase2ClosureInput>();

@@ -28,6 +28,15 @@ TARGETS = (
     "fuzz_comm_views",
     "fuzz_video_payloads",
 )
+PHASE2_TARGETS = (
+    "telemetry_phase2_packet_reader_fuzz",
+    "telemetry_phase2_state_validator_fuzz",
+)
+ALL_TARGETS = TARGETS + PHASE2_TARGETS
+CORPUS_NAMES = {
+    "telemetry_phase2_packet_reader_fuzz": "packet_reader",
+    "telemetry_phase2_state_validator_fuzz": "state_validator",
+}
 
 EVIDENCE_SCHEMA = "FSTL-fuzz-evidence-v1"
 CORPUS_MANIFEST_SCHEMA = "FSTL-fuzz-corpus-manifest-v1"
@@ -41,16 +50,25 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--artifacts", type=Path, required=True)
     parser.add_argument("--runs", type=int, default=2000)
     parser.add_argument("--max-total-time", type=int)
-    parser.add_argument("--max-len", type=int, default=2_097_220)
+    parser.add_argument("--max-len", type=int)
+    parser.add_argument("--timeout", type=int, default=10)
+    parser.add_argument("--rss-limit-mb", type=int, default=2048)
     parser.add_argument("--dictionary", type=Path)
     parser.add_argument("--standalone", action="store_true")
     parser.add_argument(
         "--target",
         action="append",
-        choices=TARGETS,
+        choices=ALL_TARGETS,
         help="run only this target; repeat to select more than one (default: all eight targets)",
     )
     parser.add_argument("--seed", type=int, help="fixed libFuzzer seed recorded in campaign evidence")
+    parser.add_argument(
+        "--sanitizer",
+        action="append",
+        choices=("fuzzer", "address", "undefined"),
+        default=[],
+        help="sanitizer compiled into the target; repeat once per sanitizer",
+    )
     parser.add_argument(
         "--evidence-dir",
         type=Path,
@@ -242,14 +260,15 @@ def build_command(
         return command
     command.extend(
         (
-            f"-max_len={args.max_len}",
-            "-timeout=10",
-            "-rss_limit_mb=2048",
+            f"-timeout={args.timeout}",
+            f"-rss_limit_mb={args.rss_limit_mb}",
             "-print_final_stats=1",
             "-use_value_profile=1",
             f"-artifact_prefix={artifact_dir}{os.sep}",
         )
     )
+    if args.max_len is not None:
+        command.append(f"-max_len={args.max_len}")
     if args.max_total_time is None:
         command.append(f"-runs={args.runs}")
     else:
@@ -311,6 +330,7 @@ def build_report(
             "command": list(command),
             "seed": args.seed,
             "maxInputLength": args.max_len,
+            "sanitizers": args.sanitizer,
             "environment": {
                 key: environment.get(key)
                 for key in ("ASAN_OPTIONS", "UBSAN_OPTIONS", "CC", "CXX", "CFLAGS", "CXXFLAGS", "LDFLAGS")
@@ -435,7 +455,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
     if (
         args.runs < 0
-        or args.max_len <= 0
+        or (args.max_len is not None and args.max_len <= 0)
         or (args.max_total_time is not None and args.max_total_time <= 0)
         or (args.seed is not None and args.seed < 0)
     ):
@@ -471,7 +491,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     for target in selected_targets(args):
         executable = args.binary_dir / f"{target}{suffix}"
-        corpus = args.corpus / target
+        corpus = args.corpus / CORPUS_NAMES.get(target, target)
         artifact_dir = args.artifacts / target
         artifact_dir.mkdir(parents=True, exist_ok=True)
         if not executable.is_file():

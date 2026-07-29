@@ -379,6 +379,49 @@ bool wp09_budget_matches_metrics(const Wp03KnownBudgetSubtotal& budget,
 		budget.deferred_categories == 0U && budget.is_complete;
 }
 
+Phase2OwnedBudget calculate_phase2_owned_budget(
+	const Phase2OwnedBudgetRequest& request) noexcept
+{
+	Phase2OwnedBudget result;
+	result.shared_owned_bytes = request.shared_owned_bytes;
+	result.client_owned_bytes = request.client_owned_bytes;
+	if (request.max_clients == 0U ||
+		request.max_clients > TelemetryMetricsMaxClients) {
+		result.error = StartupBudgetError::InvalidClientCount;
+		return result;
+	}
+	if (!checked_multiply_size(request.max_clients,
+			request.client_owned_bytes, result.clients_owned_bytes) ||
+		!checked_add_size(request.shared_owned_bytes,
+			result.clients_owned_bytes, result.process_owned_bytes)) {
+		result.error = StartupBudgetError::ArithmeticOverflow;
+		return result;
+	}
+	if (result.shared_owned_bytes > Phase2SharedOwnedCapBytes ||
+		result.client_owned_bytes > Phase2ClientOwnedCapBytes ||
+		result.process_owned_bytes > Phase2ProcessOwnedCapBytes) {
+		result.error = StartupBudgetError::StaticCapExceeded;
+	}
+	return result;
+}
+
+bool phase2_owned_scope_within_cap(
+	TelemetryPhase2MemoryScope scope,
+	std::size_t owned_bytes) noexcept
+{
+	switch (scope) {
+	case TelemetryPhase2MemoryScope::Shared:
+		return owned_bytes <= Phase2SharedOwnedCapBytes;
+	case TelemetryPhase2MemoryScope::ClientTotal:
+		return owned_bytes <= Phase2ClientOwnedCapBytes;
+	case TelemetryPhase2MemoryScope::ProcessTotal:
+		return owned_bytes <= Phase2ProcessOwnedCapBytes;
+	case TelemetryPhase2MemoryScope::Count:
+	default:
+		return false;
+	}
+}
+
 bool startup_budget_category_is_deferred(const Wp03KnownBudgetSubtotal& subtotal,
 	DeferredStartupBudgetCategory category) noexcept
 {

@@ -13,6 +13,7 @@ import argparse
 import copy
 import hashlib
 import json
+import math
 import secrets
 import socket
 import struct
@@ -130,6 +131,398 @@ class PendingReliable:
     attempt: int = 0
 
 
+def _record_identity(record: dict[str, Any]) -> str:
+    """Return the stable public identity of one decoded state atom."""
+    fields = record["fields"]
+    parts = [record["recordName"]]
+    for name in ("manifest_generation", "class_id", "weapon_class_id", "entity_id",
+                 "subsystem_id", "event_id"):
+        if name in fields:
+            parts.append(f"{name}={fields[name]}")
+    return "/".join(parts)
+
+
+def _as_float(value: Any) -> float | None:
+    try:
+        result = float(value)
+    except (TypeError, ValueError):
+        return None
+    return result if math.isfinite(result) else None
+
+
+def _trunc_signed(value: int, divisor: int) -> int:
+    """Signed integer division truncated toward zero without float conversion."""
+    return value // divisor if value >= 0 else -((-value) // divisor)
+
+
+def _ratio(current: Any, maximum: Any) -> dict[str, Any]:
+    numerator, denominator = _as_float(current), _as_float(maximum)
+    if numerator is None or denominator is None or denominator <= 0.0:
+        return {"available": False, "reason": "missing-or-nonpositive-denominator", "value": None}
+    return {"available": True, "reason": None, "value": min(1.0, max(0.0, numerator / denominator))}
+
+
+def _rotate_world_to_local(orientation: list[Any], velocity: list[Any]) -> list[float] | None:
+    if len(orientation) != 4 or len(velocity) != 3:
+        return None
+    values = [_as_float(value) for value in (*orientation, *velocity)]
+    if any(value is None for value in values):
+        return None
+    w, x, y, z, vx, vy, vz = (float(value) for value in values)
+    # q^-1 * [0,v] * q, with FSTL quaternion order [w,x,y,z].
+    tx = 2.0 * (y * vz - z * vy)
+    ty = 2.0 * (z * vx - x * vz)
+    tz = 2.0 * (x * vy - y * vx)
+    return [
+        vx - w * tx + (y * tz - z * ty),
+        vy - w * ty + (z * tx - x * tz),
+        vz - w * tz + (x * ty - y * tx),
+    ]
+
+
+class DashboardProjection:
+    """Independent Phase 2 proof projection and machine-readable A/C/D inventory."""
+
+    LIFECYCLE_LABELS = {
+        0: "SPAWNING", 1: "ACTIVE", 2: "DEPARTING",
+        3: "DYING", 4: "DESTROYED", 5: "REMOVED",
+    }
+    FORMULA_CATALOG = {
+        "sqrt(vx^2+vy^2+vz^2)": (
+            "p2.dashboard.speed.v1", ["wire:FLIGHT_STATE.velocity_world"]),
+        "conjugate(orientation_local_to_world) * velocity_world": (
+            "p2.dashboard.velocity-local.v1",
+            ["wire:FLIGHT_STATE.orientation_local_to_world", "wire:FLIGHT_STATE.velocity_world"]),
+        "closed lifecycle_phase label mapping": (
+            "p2.dashboard.lifecycle-label.v1", ["wire:ENTITY_LIFECYCLE.lifecycle_phase"]),
+        "clamp(hull_strength/dynamic_max_hull,0,1)": (
+            "p2.dashboard.hull-ratio.v1",
+            ["wire:DAMAGE_STATE.hull_strength", "wire:DAMAGE_STATE.dynamic_max_hull"]),
+        "sum(segment_current_hits)": (
+            "p2.dashboard.shield-current-total.v1", ["wire:SHIELD_STATE.segment_current_hits"]),
+        "sum(segment_max_hits)": (
+            "p2.dashboard.shield-max-total.v1", ["wire:SHIELD_STATE.segment_max_hits"]),
+        "clamp(sum(segment_current_hits)/sum(segment_max_hits),0,1)": (
+            "p2.dashboard.shield-ratio.v1",
+            ["wire:SHIELD_STATE.has_shields", "wire:SHIELD_STATE.segment_current_hits",
+             "wire:SHIELD_STATE.segment_max_hits"]),
+        "clamp(current_hits/max_hits,0,1)": (
+            "p2.dashboard.subsystem-integrity-ratio.v1",
+            ["wire:SUBSYSTEM_STATE.current_hits", "wire:SUBSYSTEM_STATE.max_hits"]),
+        "max_hits>0 && current_hits<=0": (
+            "p2.dashboard.subsystem-destroyed.v1",
+            ["wire:SUBSYSTEM_STATE.current_hits", "wire:SUBSYSTEM_STATE.max_hits"]),
+        "unavailable: Phase 2 wire lacks exact ets_properties applicability": (
+            "p2.dashboard.ets-share-unavailable.v1",
+            ["wire:ENERGY_STATE.ets_mode", "wire:ENERGY_STATE.ets_shields_index",
+             "wire:ENERGY_STATE.ets_weapons_index", "wire:ENERGY_STATE.ets_engines_index"]),
+        "clamp(weapon_energy_current/weapon_energy_max,0,1)": (
+            "p2.dashboard.weapon-energy-ratio.v1",
+            ["wire:ENERGY_STATE.weapon_energy_current", "wire:ENERGY_STATE.weapon_energy_max"]),
+        "clamp(afterburner_fuel_current/afterburner_fuel_max,0,1)": (
+            "p2.dashboard.fuel-ratio.v1",
+            ["wire:ENERGY_STATE.afterburner_fuel_current",
+             "wire:ENERGY_STATE.afterburner_fuel_max"]),
+        "clamp(ammo_current/ammo_initial,0,1)": (
+            "p2.dashboard.ammo-ratio.v1",
+            ["wire:WEAPON_STATE.ammo_current", "wire:WEAPON_STATE.ammo_initial"]),
+        "clamp(quantity_current/quantity_max,0,1)": (
+            "p2.dashboard.countermeasure-ratio.v1",
+            ["wire:WEAPON_STATE.countermeasure.quantity_current",
+             "wire:WEAPON_STATE.countermeasure.quantity_max"]),
+        "client_monotonic_time_us+smoothed_offset-producer_sample_time_us": (
+            "p2.dashboard.sample-age.v1",
+            ["client:monotonic_time_us", "client:smoothed_offset_us",
+             "wire:producer_sample_time_us"]),
+        "age_us > 3*block_period_us+100000": (
+            "p2.dashboard.stale.v1",
+            ["derived:p2.dashboard.sample-age.v1", "config:flightHz", "config:systemsHz",
+             "config:missionHeartbeatMs"]),
+        "unavailable without a documented projection input": (
+            "p2.dashboard.hud-coordinates-unavailable.v1",
+            ["contract:P2-REQ-032", "wire:projection-input-absent"]),
+        "wire duration or explicitly observed stable rate only": (
+            "p2.dashboard.support-eta-unavailable.v1",
+            ["wire:SUPPORT_STATE", "wire:stable-rate-or-duration-absent"]),
+        "manifest/keyframe APPLIED, no pending candidate, known baseline": (
+            "p2.dashboard.synchronized.v1",
+            ["client:manifest_applied", "client:keyframe_applied",
+             "client:pending_transactions", "client:baseline"]),
+    }
+
+    def __init__(self, state: "ConsoleState", at_us: int,
+                 smoothed_offset_us: int | None = None,
+                 offset_filter_valid: bool | None = None,
+                 flight_hz: int = 30, systems_hz: int = 10,
+                 mission_heartbeat_ms: int = 500) -> None:
+        self.state = state
+        self.at_us = at_us
+        self.smoothed_offset_us = smoothed_offset_us
+        self.offset_filter_valid = (
+            smoothed_offset_us is not None
+            if offset_filter_valid is None
+            else offset_filter_valid
+        )
+        self.flight_hz = flight_hz
+        self.systems_hz = systems_hz
+        self.mission_heartbeat_ms = mission_heartbeat_ms
+        self.inventory: list[dict[str, Any]] = []
+        self.derived: dict[str, Any] = {}
+
+    def _raw_leaf(self, path: str, value: Any, source: str) -> None:
+        if isinstance(value, dict):
+            for name in sorted(value):
+                self._raw_leaf(f"{path}.{name}", value[name], source)
+        elif isinstance(value, list):
+            for index, item in enumerate(value):
+                self._raw_leaf(f"{path}[{index}]", item, source)
+        else:
+            self.inventory.append({
+                "available": True,
+                "kind": "A",
+                "path": path,
+                "source": source,
+                "value": value,
+            })
+
+    def _add_derived(self, path: str, formula: str, result: dict[str, Any]) -> None:
+        catalog = self.FORMULA_CATALOG.get(formula)
+        if catalog is None:
+            raise ValueError(f"uncatalogued dashboard formula: {formula}")
+        formula_id, provenance = catalog
+        item = {
+            "kind": "D",
+            "path": path,
+            "formula": formula,
+            "formulaId": formula_id,
+            "provenance": provenance,
+            "source": f"formula:{formula_id}",
+            **result,
+        }
+        self.inventory.append(item)
+        self.derived[path] = {
+            "available": item["available"],
+            "reason": item.get("reason"),
+            "value": item.get("value"),
+        }
+
+    def _records(self, name: str) -> list[dict[str, Any]]:
+        return [
+            record["fields"] for _, record in sorted(self.state.record_instances.items())
+            if record["recordName"] == name
+        ]
+
+    def _per_entity(self, name: str) -> dict[str, dict[str, Any]]:
+        return {str(record["entity_id"]): record for record in self._records(name)
+                if "entity_id" in record}
+
+    def build(self) -> dict[str, Any]:
+        for identity, record in sorted(self.state.record_instances.items()):
+            self._raw_leaf(f"records.{identity}", record["fields"],
+                           f"wire:{record['recordName']}:v{record['recordVersion']}")
+        for identity, record in sorted(self.state.manifest_records.items()):
+            self._raw_leaf(f"manifest.{identity}", record["fields"],
+                           f"wire:{record['recordName']}:v{record['recordVersion']}")
+
+        flights = self._per_entity("FLIGHT_STATE")
+        for entity, flight in flights.items():
+            velocity = [_as_float(value) for value in flight.get("velocity_world", [])]
+            speed = None if len(velocity) != 3 or any(value is None for value in velocity) else math.sqrt(
+                sum(float(value) * float(value) for value in velocity))
+            self._add_derived(
+                f"entities.{entity}.speed",
+                "sqrt(vx^2+vy^2+vz^2)",
+                {"available": speed is not None, "reason": None if speed is not None else "missing-velocity",
+                 "value": speed},
+            )
+            local = _rotate_world_to_local(
+                flight.get("orientation_local_to_world", []),
+                flight.get("velocity_world", []),
+            )
+            self._add_derived(
+                f"entities.{entity}.velocity_local",
+                "conjugate(orientation_local_to_world) * velocity_world",
+                {"available": local is not None,
+                 "reason": None if local is not None else "missing-pose", "value": local},
+            )
+
+        for entity, lifecycle in self._per_entity("ENTITY_LIFECYCLE").items():
+            phase = lifecycle.get("lifecycle_phase")
+            label = self.LIFECYCLE_LABELS.get(phase)
+            self._add_derived(
+                f"entities.{entity}.lifecycle_label",
+                "closed lifecycle_phase label mapping",
+                {"available": label is not None,
+                 "reason": None if label is not None else "invalid-lifecycle-phase", "value": label},
+            )
+
+        for entity, damage in self._per_entity("DAMAGE_STATE").items():
+            self._add_derived(
+                f"entities.{entity}.hull_ratio",
+                "clamp(hull_strength/dynamic_max_hull,0,1)",
+                _ratio(damage.get("hull_strength"), damage.get("dynamic_max_hull")),
+            )
+
+        for entity, shield in self._per_entity("SHIELD_STATE").items():
+            current = [_as_float(value) for value in shield.get("segment_current_hits", [])]
+            maximum = [_as_float(value) for value in shield.get("segment_max_hits", [])]
+            valid = not any(value is None for value in (*current, *maximum))
+            current_total = sum(float(value) for value in current) if valid else None
+            maximum_total = sum(float(value) for value in maximum) if valid else None
+            self._add_derived(
+                f"entities.{entity}.shield_current_total", "sum(segment_current_hits)",
+                {"available": current_total is not None, "reason": None if valid else "invalid-segments",
+                 "value": current_total},
+            )
+            self._add_derived(
+                f"entities.{entity}.shield_max_total", "sum(segment_max_hits)",
+                {"available": maximum_total is not None, "reason": None if valid else "invalid-segments",
+                 "value": maximum_total},
+            )
+            ratio = (_ratio(current_total, maximum_total)
+                     if shield.get("has_shields") and valid
+                     else {"available": False, "reason": "shields-absent", "value": None})
+            self._add_derived(
+                f"entities.{entity}.shield_ratio",
+                "clamp(sum(segment_current_hits)/sum(segment_max_hits),0,1)",
+                ratio,
+            )
+
+        for subsystem in self._records("SUBSYSTEM_STATE"):
+            entity, subsystem_id = str(subsystem["entity_id"]), subsystem["subsystem_id"]
+            prefix = f"entities.{entity}.subsystems.{subsystem_id}"
+            ratio = _ratio(subsystem.get("current_hits"), subsystem.get("max_hits"))
+            self._add_derived(f"{prefix}.integrity_ratio",
+                              "clamp(current_hits/max_hits,0,1)", ratio)
+            current, maximum = (_as_float(subsystem.get("current_hits")),
+                                _as_float(subsystem.get("max_hits")))
+            destroyed = maximum is not None and maximum > 0.0 and current is not None and current <= 0.0
+            self._add_derived(
+                f"{prefix}.destroyed", "max_hits>0 && current_hits<=0",
+                {"available": current is not None and maximum is not None,
+                 "reason": None if current is not None and maximum is not None else "missing-hits",
+                 "value": destroyed if current is not None and maximum is not None else None},
+            )
+
+        for entity, energy in self._per_entity("ENERGY_STATE").items():
+            for group in ("shields", "weapons", "engines"):
+                self._add_derived(
+                    f"entities.{entity}.ets_share.{group}",
+                    "unavailable: Phase 2 wire lacks exact ets_properties applicability",
+                    {"available": False, "reason": "ets-applicability-not-on-wire", "value": None},
+                )
+            for current_name, maximum_name, output in (
+                ("weapon_energy_current", "weapon_energy_max", "weapon_energy_ratio"),
+                ("afterburner_fuel_current", "afterburner_fuel_max", "fuel_ratio"),
+            ):
+                self._add_derived(
+                    f"entities.{entity}.{output}",
+                    f"clamp({current_name}/{maximum_name},0,1)",
+                    _ratio(energy.get(current_name), energy.get(maximum_name)),
+                )
+
+        for entity, weapon in self._per_entity("WEAPON_STATE").items():
+            for family in ("primary_banks", "secondary_banks"):
+                for index, bank in enumerate(weapon.get(family, [])):
+                    self._add_derived(
+                        f"entities.{entity}.{family}[{index}].ammo_ratio",
+                        "clamp(ammo_current/ammo_initial,0,1)",
+                        _ratio(bank.get("ammo_current"), bank.get("ammo_initial")),
+                    )
+            countermeasure = weapon.get("countermeasure")
+            if isinstance(countermeasure, dict):
+                self._add_derived(
+                    f"entities.{entity}.countermeasure.quantity_ratio",
+                    "clamp(quantity_current/quantity_max,0,1)",
+                    _ratio(countermeasure.get("quantity_current"), countermeasure.get("quantity_max")),
+                )
+
+        sample_periods = {
+            "FLIGHT_STATE": math.ceil(1_000_000 / self.flight_hz),
+            "CONTROL_STATE": math.ceil(1_000_000 / self.flight_hz),
+        }
+        default_system_period = math.ceil(1_000_000 / self.systems_hz)
+        estimated_now = (
+            self.at_us + self.smoothed_offset_us
+            if self.offset_filter_valid and self.smoothed_offset_us is not None
+            else None
+        )
+        if estimated_now is not None and not -(1 << 63) <= estimated_now < (1 << 63):
+            estimated_now = None
+        for identity, record in sorted(self.state.record_instances.items()):
+            sample = record["fields"].get("producer_sample_time_us")
+            sample_value = int(sample) if sample is not None else None
+            period = sample_periods.get(
+                record["recordName"],
+                self.mission_heartbeat_ms * 1000
+                if record["recordName"] in ("SESSION_STATE", "MISSION_STATE")
+                else default_system_period,
+            )
+            valid_age = estimated_now is not None and sample_value is not None and estimated_now >= sample_value
+            age = estimated_now - sample_value if valid_age else None
+            self._add_derived(
+                f"records.{identity}.age_us",
+                "client_monotonic_time_us+smoothed_offset-producer_sample_time_us",
+                {"available": valid_age, "reason": None if valid_age else "invalid-or-missing-clock-offset",
+                 "value": age},
+            )
+            self._add_derived(
+                f"records.{identity}.stale",
+                "age_us > 3*block_period_us+100000",
+                {"available": valid_age, "reason": None if valid_age else "invalid-or-missing-age",
+                 "value": age > 3 * period + 100_000 if valid_age else None},
+            )
+
+        self._add_derived(
+            "dashboard.hud_coordinates", "unavailable without a documented projection input",
+            {"available": False, "reason": "projection-input-not-on-wire", "value": None},
+        )
+        self._add_derived(
+            "dashboard.support_eta_us", "wire duration or explicitly observed stable rate only",
+            {"available": False, "reason": "no-stable-rate-or-duration", "value": None},
+        )
+        synchronized = (
+            self.state.status == "Live"
+            and self.state.manifest_applied
+            and self.state.keyframe_applied
+            and not self.state.reliable_dependency_pending
+            and not self.state.transactions
+            and not self.state.manifest_transactions
+            and self.state.required_manifest_id in (0, self.state.manifest_id)
+            and self.state.baseline != 0
+        )
+        synchronization_conditions = {
+            "lastManifestApplied": self.state.manifest_applied,
+            "lastKeyframeApplied": self.state.keyframe_applied,
+            "noPendingCandidateOrReliableDependency": (
+                not self.state.reliable_dependency_pending
+                and not self.state.transactions
+                and not self.state.manifest_transactions
+            ),
+            "baselineKnown": self.state.baseline != 0,
+        }
+        self._add_derived(
+            "transport.synchronized",
+            "manifest/keyframe APPLIED, no pending candidate, known baseline",
+            {"available": True, "reason": None, "value": synchronized},
+        )
+        return {
+            "derived": self.derived,
+            "inventory": self.inventory,
+            "inventorySummary": {
+                "available": sum(1 for item in self.inventory if item["available"]),
+                "derived": sum(1 for item in self.inventory if item["kind"] == "D"),
+                "raw": sum(1 for item in self.inventory if item["kind"] in ("A", "C")),
+                "total": len(self.inventory),
+                "unavailable": sum(1 for item in self.inventory if not item["available"]),
+            },
+            "manifestId": self.state.manifest_id,
+            "schema": "FSTL-phase2-dashboard-v1",
+            "synchronizationConditions": synchronization_conditions,
+            "synchronized": synchronized,
+        }
+
+
 @dataclass
 class ConsoleState:
     status: str = "Synchronizing"
@@ -143,19 +536,66 @@ class ConsoleState:
     stale_detected_utc: str | None = None
     records: dict[str, dict[str, Any]] = field(default_factory=dict)
     baseline_records: dict[str, dict[str, Any]] = field(default_factory=dict)
+    record_instances: dict[str, dict[str, Any]] = field(default_factory=dict)
+    baseline_record_instances: dict[str, dict[str, Any]] = field(default_factory=dict)
     transactions: dict[int, dict[str, Any]] = field(default_factory=dict)
+    manifest_id: int = 0
+    required_manifest_id: int = 0
+    manifest_records: dict[str, dict[str, Any]] = field(default_factory=dict)
+    manifest_transactions: dict[int, dict[str, Any]] = field(default_factory=dict)
     hello_sent: bool = False
     hello_nonce: int | None = None
     hello_t0_us: int | None = None
     welcomed: bool = False
     session_begun: bool = False
     ended: bool = False
+    clock_samples: list[tuple[int, int]] = field(default_factory=list)
+    smoothed_offset_us: int | None = None
+    clock_filter_valid: bool = False
+    clock_filter_error: str | None = None
+    manifest_applied: bool = False
+    keyframe_applied: bool = False
+    reliable_dependency_pending: bool = False
+
+    def invalidate_clock_filter(self, reason: str) -> None:
+        self.clock_samples.clear()
+        self.smoothed_offset_us = None
+        self.clock_filter_valid = False
+        self.clock_filter_error = reason
+
+    def add_clock_sample(self, t0: int, t1: int, t2: int, t3: int) -> bool:
+        limit = (1 << 64) - 1
+        if any(value < 0 or value > limit for value in (t0, t1, t2, t3)):
+            self.invalidate_clock_filter("clock-overflow")
+            return False
+        if t2 < t1 or t3 < t0:
+            self.clock_filter_error = "invalid-clock-sample"
+            return False
+        rtt = (t3 - t0) - (t2 - t1)
+        if rtt < 0:
+            self.clock_filter_error = "invalid-clock-sample"
+            return False
+        offset = _trunc_signed((t1 - t0) + (t2 - t3), 2)
+        self.clock_samples.append((rtt, offset))
+        self.clock_samples = self.clock_samples[-8:]
+        candidate = min(self.clock_samples, key=lambda sample: sample[0])[1]
+        if self.smoothed_offset_us is None:
+            self.smoothed_offset_us = candidate
+        else:
+            self.smoothed_offset_us += _trunc_signed(
+                candidate - self.smoothed_offset_us, 8
+            )
+        self.clock_filter_valid = True
+        self.clock_filter_error = None
+        return True
 
     def _apply_records(self, records: list[dict[str, Any]], replace: bool) -> None:
         if replace:
             self.records = {}
+            self.record_instances = {}
         for record in records:
             self.records[record["recordName"]] = record["fields"]
+            self.record_instances[_record_identity(record)] = copy.deepcopy(record)
 
     def end_session(self) -> None:
         """Publish a terminal tombstone then release all retained heavy state."""
@@ -170,11 +610,21 @@ class ConsoleState:
         self.stale_detected_utc = None
         self.records.clear()
         self.baseline_records.clear()
+        self.record_instances.clear()
+        self.baseline_record_instances.clear()
         self.transactions.clear()
+        self.manifest_records.clear()
+        self.manifest_transactions.clear()
+        self.manifest_id = 0
+        self.required_manifest_id = 0
+        self.manifest_applied = False
+        self.keyframe_applied = False
+        self.reliable_dependency_pending = False
         self.session_begun = False
         self.welcomed = False
         self.session_id = 0
         self.ended = True
+        self.invalidate_clock_filter("session-ended")
 
     def apply(self, message_type: int, fields: dict[str, Any], payload: bytes,
               header: dict[str, int], at_us: int, at_utc: str) -> tuple[bool, list[dict[str, int]], list[dict[str, int]]]:
@@ -190,12 +640,22 @@ class ConsoleState:
                 raise ValueError("WELCOME outside FSTL 1.1 negotiation")
             if header["session_id"] == 0:
                 raise ValueError("WELCOME without session")
+            self.invalidate_clock_filter("session-changed")
             self.session_id, self.welcomed, self.ended = header["session_id"], True, False
+            self.add_clock_sample(
+                int(fields["client_send_t0_us"]),
+                int(fields["producer_receive_t1_us"]),
+                int(fields["producer_send_t2_us"]),
+                at_us,
+            )
             return True, [], [header]
         if message_type == 4:  # SESSION_BEGIN
             if not self.welcomed or self.session_begun or header["session_id"] != self.session_id:
                 raise ValueError("SESSION_BEGIN outside negotiated session")
             self.session_begun = True
+            self.required_manifest_id = fields["required_manifest_id"]
+            self.manifest_applied = self.required_manifest_id == 0
+            self.keyframe_applied = False
             return True, [], [header]
         if message_type == 13:  # SESSION_END
             if not self.session_begun or header["session_id"] != self.session_id:
@@ -204,6 +664,62 @@ class ConsoleState:
             return True, [], [header]
         if not self.session_begun or header["session_id"] != self.session_id:
             raise ValueError("state before negotiated SESSION_BEGIN")
+        if message_type == 5:
+            manifest = fields["manifest_id"]
+            count, index = fields["part_count"], fields["part_index"]
+            if not 1 <= count <= 64 or index >= count or fields["transaction_size"] > MAX_SNAPSHOT_TRANSACTION_BYTES:
+                raise ValueError("invalid manifest transaction bounds")
+            candidate = self.manifest_transactions.get(manifest)
+            if candidate is None:
+                if len(self.manifest_transactions) >= MAX_SNAPSHOT_TRANSACTIONS:
+                    raise ValueError("manifest transaction quota")
+                candidate = {
+                    "manifest_kind": fields["manifest_kind"],
+                    "part_count": count,
+                    "producer_sample_time_us": fields["producer_sample_time_us"],
+                    "transaction_sha256": fields["transaction_sha256"],
+                    "transaction_size": fields["transaction_size"],
+                    "parts": {},
+                    "headers": {},
+                }
+                self.manifest_transactions[manifest] = candidate
+            for key in ("manifest_kind", "part_count", "producer_sample_time_us",
+                        "transaction_sha256", "transaction_size"):
+                if candidate[key] != fields[key]:
+                    self.manifest_transactions.pop(manifest, None)
+                    raise ValueError("inconsistent manifest transaction")
+            records_bytes = payload[56:]
+            existing = candidate["parts"].get(index)
+            if existing is not None and existing["records_bytes"] != records_bytes:
+                self.manifest_transactions.pop(manifest, None)
+                raise ValueError("conflicting manifest part")
+            candidate["parts"][index] = {"fields": fields, "records_bytes": records_bytes}
+            candidate["headers"][index] = header
+            if sum(len(part["records_bytes"]) for part in candidate["parts"].values()) > candidate["transaction_size"]:
+                self.manifest_transactions.pop(manifest, None)
+                raise ValueError("manifest transaction size")
+            if len(candidate["parts"]) != count:
+                return False, [header], []
+            merged: list[dict[str, Any]] = []
+            for part in range(count):
+                if part not in candidate["parts"]:
+                    return False, [header], []
+                merged.extend(candidate["parts"][part]["fields"]["records"])
+            concatenated = b"".join(candidate["parts"][part]["records_bytes"] for part in range(count))
+            if (len(concatenated) != candidate["transaction_size"] or
+                    hashlib.sha256(concatenated).hexdigest() != candidate["transaction_sha256"]):
+                self.manifest_transactions.pop(manifest, None)
+                raise ValueError("manifest transaction hash")
+            if any(record["recordName"] not in ("CLASS_MANIFEST", "WEAPON_MANIFEST")
+                   for record in merged):
+                self.manifest_transactions.pop(manifest, None)
+                raise ValueError("invalid manifest record")
+            self.manifest_records = {_record_identity(record): copy.deepcopy(record) for record in merged}
+            self.manifest_id = manifest
+            self.manifest_applied = self.required_manifest_id in (0, manifest)
+            ack_headers = [candidate["headers"][part] for part in range(count)]
+            self.manifest_transactions.clear()
+            return True, [header], ack_headers
         if message_type == 6:
             snapshot = fields["snapshot_id"]
             count = fields["part_count"]
@@ -240,6 +756,10 @@ class ConsoleState:
                 raise ValueError("snapshot candidate byte quota")
             if len(candidate["parts"]) != count:
                 return False, [header], []
+            if (candidate["required_manifest_id"] != 0 and
+                    candidate["required_manifest_id"] != self.manifest_id):
+                self.transactions.pop(snapshot, None)
+                raise ValueError("snapshot references unapplied manifest")
             merged: list[dict[str, Any]] = []
             for part in range(count):
                 if part not in candidate["parts"]:
@@ -255,6 +775,7 @@ class ConsoleState:
             self._apply_records(merged, True)
             self.baseline = snapshot
             self.baseline_records = copy.deepcopy(self.records)
+            self.baseline_record_instances = copy.deepcopy(self.record_instances)
             self.delta_sequence = 0
             self.last_state_us = at_us
             self.last_state_utc = at_utc
@@ -262,6 +783,7 @@ class ConsoleState:
             self.stale_detected_us = None
             self.stale_detected_utc = None
             self.status = "Live"
+            self.keyframe_applied = True
             ack_headers = [candidate["headers"][part] for part in range(count)]
             self.transactions.clear()
             return True, [header], ack_headers
@@ -275,9 +797,12 @@ class ConsoleState:
                 self.stale_detected_utc = None
                 return False, [], []
             replica = copy.deepcopy(self.baseline_records)
+            replica_instances = copy.deepcopy(self.baseline_record_instances)
             for record in fields["records"]:
                 replica[record["recordName"]] = record["fields"]
+                replica_instances[_record_identity(record)] = copy.deepcopy(record)
             self.records = replica
+            self.record_instances = replica_instances
             self.delta_sequence = fields["delta_sequence"]
             self.last_state_us = at_us
             self.last_state_utc = at_utc
@@ -324,6 +849,12 @@ class ConsoleState:
             "stale_reason": self.stale_reason if self.status == "Stale" else None,
             "angular_velocity": flight.get("rotational_velocity_local", []),
             "velocity": flight.get("velocity_world", []),
+            "dashboard": DashboardProjection(
+                self,
+                at_us,
+                self.smoothed_offset_us,
+                self.clock_filter_valid,
+            ).build(),
         }
         return json.dumps(result, sort_keys=True, separators=(",", ":"))
 
@@ -418,6 +949,7 @@ class ConsoleClient:
         pending = PendingReliable(12, self.sequence, self.state.session_id, payload, 1,
                                   reference.crc32_iso_hdlc(payload), at_us, at_us)
         self.pending_resync = pending
+        self.state.reliable_dependency_pending = True
         self.sequence += 1
         self.request_id += 1
         self._send_pending_resync(at_us, False)
@@ -446,6 +978,7 @@ class ConsoleClient:
         if pending is not None:
             if at_us - pending.first_us >= RELIABLE_WINDOW_US:
                 self.pending_resync = None
+                self.state.reliable_dependency_pending = False
             elif at_us >= pending.next_us:
                 self._send_pending_resync(at_us, True)
 
@@ -459,6 +992,7 @@ class ConsoleClient:
             return False
         if fields["ack_flags"] & ACK_VALIDATED:
             self.pending_resync = None
+            self.state.reliable_dependency_pending = False
             if self.state.status == "Stale":
                 self.state.status = "Synchronizing"
             return True
@@ -539,6 +1073,7 @@ class ConsoleClient:
             # A fresh committed snapshot is also a successful resynchronizing
             # lifecycle response; release any retained outbound request.
             self.pending_resync = None
+            self.state.reliable_dependency_pending = False
         if header["message_type"] == 7 and not changed:
             self._resync(at_us)
         return changed

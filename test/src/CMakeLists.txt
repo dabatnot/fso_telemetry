@@ -134,6 +134,71 @@ set_target_properties(telemetry_phase1_reliability_harness PROPERTIES
 	RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/$<CONFIG>"
 )
 
+add_executable(telemetry_phase2_loss_harness
+	telemetry/producer/telemetry_phase2_loss_harness.cpp
+	test_stubs.cpp
+)
+target_compile_features(telemetry_phase2_loss_harness PRIVATE cxx_std_17)
+target_compile_definitions(telemetry_phase2_loss_harness PRIVATE
+	FSO_TELEMETRY_TEST_SEAMS=1)
+target_include_directories(telemetry_phase2_loss_harness PRIVATE
+	${CODE_HEADERS}
+	${FREESPACE_HEADERS}
+	${GENERATED_SOURCE_DIR}
+	${GENERATED_SOURCE_DIR}/code
+)
+target_link_libraries(telemetry_phase2_loss_harness PRIVATE code)
+if(MSVC)
+	target_link_options(telemetry_phase2_loss_harness PRIVATE "/STACK:8388608")
+endif()
+set_target_properties(telemetry_phase2_loss_harness PROPERTIES
+	FOLDER "tests/telemetry/phase2"
+	RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/$<CONFIG>")
+add_test(NAME telemetry_phase2_loss_harness_smoke
+	COMMAND telemetry_phase2_loss_harness
+		--smoke
+		--profile complete-ship
+		--loss-rate 20
+		--mode burst
+		--seed 1345474380
+		--warmup-seconds 0
+		--duration-seconds 4
+		--decision-log "${CMAKE_BINARY_DIR}/Testing/Temporary/phase2-loss-smoke.jsonl"
+		--report "${CMAKE_BINARY_DIR}/Testing/Temporary/phase2-loss-smoke.json")
+if(WIN32)
+	set_tests_properties(telemetry_phase2_loss_harness_smoke PROPERTIES
+		ENVIRONMENT_MODIFICATION
+			"PATH=path_list_prepend:${CMAKE_BINARY_DIR}/lib/prebuilt/openal/bin;PATH=path_list_prepend:${CMAKE_BINARY_DIR}/lib/prebuilt/ffmpeg/bin;PATH=path_list_prepend:${CMAKE_BINARY_DIR}/lib/prebuilt/freetype/lib;PATH=path_list_prepend:${CMAKE_BINARY_DIR}/lib/prebuilt/sdl2/lib")
+endif()
+
+add_executable(telemetry_phase2_performance_harness
+	telemetry/producer/telemetry_phase2_performance_harness.cpp
+	test_stubs.cpp
+)
+target_compile_features(telemetry_phase2_performance_harness PRIVATE cxx_std_17)
+target_compile_definitions(telemetry_phase2_performance_harness PRIVATE
+	FSO_TELEMETRY_TEST_SEAMS=1)
+target_include_directories(telemetry_phase2_performance_harness PRIVATE
+	${CODE_HEADERS}
+	${FREESPACE_HEADERS}
+	${GENERATED_SOURCE_DIR}
+	${GENERATED_SOURCE_DIR}/code
+)
+target_link_libraries(telemetry_phase2_performance_harness PRIVATE code)
+set_target_properties(telemetry_phase2_performance_harness PROPERTIES
+	FOLDER "tests/telemetry/phase2"
+	RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/$<CONFIG>")
+add_test(NAME telemetry_phase2_performance_harness_smoke
+	COMMAND telemetry_phase2_performance_harness
+		--smoke
+		--soak-report-dir "${CMAKE_BINARY_DIR}/Testing/Temporary/phase2-soak-smoke"
+		--report "${CMAKE_BINARY_DIR}/Testing/Temporary/phase2-performance-smoke.json")
+if(WIN32)
+	set_tests_properties(telemetry_phase2_performance_harness_smoke PROPERTIES
+		ENVIRONMENT_MODIFICATION
+			"PATH=path_list_prepend:${CMAKE_BINARY_DIR}/lib/prebuilt/openal/bin;PATH=path_list_prepend:${CMAKE_BINARY_DIR}/lib/prebuilt/ffmpeg/bin;PATH=path_list_prepend:${CMAKE_BINARY_DIR}/lib/prebuilt/freetype/lib;PATH=path_list_prepend:${CMAKE_BINARY_DIR}/lib/prebuilt/sdl2/lib")
+endif()
+
 add_executable(telemetry_initialize_failure_contract_tests
 	telemetry/producer/telemetry_initialize_failure_contract_tests.cpp
 	${TELEMETRY_ISOLATED_RUNTIME_SOURCES}
@@ -323,6 +388,7 @@ add_test(NAME telemetry_phase2_engine_integration_source_contract_tests
 add_executable(telemetry_phase2_closure_tests
 	telemetry/producer/phase2_closure_tests.cpp
 	telemetry/phase2_wp03_allocation_tracker.cpp
+	${CMAKE_SOURCE_DIR}/code/telemetry/phase2_closure.cpp
 )
 target_compile_features(telemetry_phase2_closure_tests PRIVATE cxx_std_17)
 target_compile_definitions(telemetry_phase2_closure_tests PRIVATE
@@ -335,7 +401,7 @@ target_include_directories(telemetry_phase2_closure_tests PRIVATE
 	${GENERATED_SOURCE_DIR}
 	${GENERATED_SOURCE_DIR}/code
 )
-target_link_libraries(telemetry_phase2_closure_tests PRIVATE gtest_main code)
+target_link_libraries(telemetry_phase2_closure_tests PRIVATE gtest_main fstl_protocol)
 set_target_properties(telemetry_phase2_closure_tests PROPERTIES FOLDER "tests")
 source_group("Telemetry\\\\Producer" FILES
 	telemetry/producer/phase2_closure_tests.cpp
@@ -349,6 +415,8 @@ add_executable(telemetry_phase2_manifest_tests
 	telemetry/producer/phase2_manifest_tests.cpp
 	telemetry/phase2_wp03_allocation_tracker.cpp
 	telemetry/phase2_wp03_test_support.cpp
+	${CMAKE_SOURCE_DIR}/code/telemetry/entity_id_registry.cpp
+	${CMAKE_SOURCE_DIR}/code/telemetry/phase2_manifest_builder.cpp
 )
 target_compile_features(telemetry_phase2_manifest_tests PRIVATE cxx_std_17)
 target_include_directories(telemetry_phase2_manifest_tests PRIVATE
@@ -358,7 +426,7 @@ target_include_directories(telemetry_phase2_manifest_tests PRIVATE
 	${GENERATED_SOURCE_DIR}
 	${GENERATED_SOURCE_DIR}/code
 )
-target_link_libraries(telemetry_phase2_manifest_tests PRIVATE gtest_main code)
+target_link_libraries(telemetry_phase2_manifest_tests PRIVATE gtest_main fstl_protocol)
 set_target_properties(telemetry_phase2_manifest_tests PROPERTIES FOLDER "tests")
 source_group("Telemetry\\\\Producer" FILES
 	telemetry/producer/phase2_manifest_tests.cpp
@@ -372,6 +440,7 @@ add_test(NAME telemetry_phase2_manifest_tests COMMAND telemetry_phase2_manifest_
 add_executable(telemetry_phase2_manifest_codec_tests
 	telemetry/protocol/phase2_manifest_codec_tests.cpp
 	telemetry/phase2_wp03_test_support.cpp
+	${CMAKE_SOURCE_DIR}/code/telemetry/phase2_manifest_builder.cpp
 )
 target_compile_features(telemetry_phase2_manifest_codec_tests PRIVATE cxx_std_17)
 target_include_directories(telemetry_phase2_manifest_codec_tests PRIVATE
@@ -381,7 +450,7 @@ target_include_directories(telemetry_phase2_manifest_codec_tests PRIVATE
 	${GENERATED_SOURCE_DIR}
 	${GENERATED_SOURCE_DIR}/code
 )
-target_link_libraries(telemetry_phase2_manifest_codec_tests PRIVATE gtest_main code)
+target_link_libraries(telemetry_phase2_manifest_codec_tests PRIVATE gtest_main fstl_protocol)
 set_target_properties(telemetry_phase2_manifest_codec_tests PROPERTIES FOLDER "tests")
 source_group("Telemetry\\\\Protocol" FILES
 	telemetry/protocol/phase2_manifest_codec_tests.cpp
@@ -389,3 +458,296 @@ source_group("Telemetry\\\\Protocol" FILES
 	telemetry/phase2_wp03_test_support.h
 )
 add_test(NAME telemetry_phase2_manifest_codec_tests COMMAND telemetry_phase2_manifest_codec_tests)
+
+add_executable(telemetry_phase2_core_state_tests
+	telemetry/producer/phase2_state_image_tests.cpp
+	telemetry/phase2_wp03_allocation_tracker.cpp
+	${CMAKE_SOURCE_DIR}/code/telemetry/phase2_manifest_builder.cpp
+	${CMAKE_SOURCE_DIR}/code/telemetry/phase2_observation.cpp
+	${CMAKE_SOURCE_DIR}/code/telemetry/phase2_state_image.cpp
+)
+target_compile_features(telemetry_phase2_core_state_tests PRIVATE cxx_std_17)
+target_compile_definitions(telemetry_phase2_core_state_tests PRIVATE
+	FSTL_PROTOCOL_TEST_ASSET_PATH="${FSTL_PROTOCOL_TEST_ASSET_PATH}"
+)
+target_include_directories(telemetry_phase2_core_state_tests PRIVATE
+	${CMAKE_CURRENT_SOURCE_DIR}
+	${CODE_HEADERS}
+	${FREESPACE_HEADERS}
+	${GENERATED_SOURCE_DIR}
+	${GENERATED_SOURCE_DIR}/code
+)
+target_link_libraries(telemetry_phase2_core_state_tests PRIVATE gtest_main fstl_protocol)
+set_target_properties(telemetry_phase2_core_state_tests PROPERTIES FOLDER "tests")
+source_group("Telemetry\\\\Producer" FILES
+	telemetry/producer/phase2_state_image_tests.cpp
+	telemetry/phase2_wp03_allocation_tracker.cpp
+	telemetry/phase2_wp03_allocation_tracker.h
+)
+add_test(NAME telemetry_phase2_core_state_tests COMMAND telemetry_phase2_core_state_tests)
+
+add_executable(telemetry_phase2_control_turret_tests
+	telemetry/producer/phase2_control_turret_tests.cpp
+	telemetry/phase2_wp03_allocation_tracker.cpp
+	${CMAKE_SOURCE_DIR}/code/telemetry/phase2_manifest_builder.cpp
+	${CMAKE_SOURCE_DIR}/code/telemetry/phase2_observation.cpp
+	${CMAKE_SOURCE_DIR}/code/telemetry/phase2_state_image.cpp
+)
+target_compile_features(telemetry_phase2_control_turret_tests PRIVATE cxx_std_17)
+target_include_directories(telemetry_phase2_control_turret_tests PRIVATE
+	${CMAKE_CURRENT_SOURCE_DIR}
+	${CODE_HEADERS}
+	${FREESPACE_HEADERS}
+	${GENERATED_SOURCE_DIR}
+	${GENERATED_SOURCE_DIR}/code
+)
+target_link_libraries(telemetry_phase2_control_turret_tests PRIVATE gtest_main fstl_protocol)
+set_target_properties(telemetry_phase2_control_turret_tests PROPERTIES FOLDER "tests")
+source_group("Telemetry\\\\Producer" FILES
+	telemetry/producer/phase2_control_turret_tests.cpp
+	telemetry/phase2_wp03_allocation_tracker.cpp
+	telemetry/phase2_wp03_allocation_tracker.h
+)
+add_test(NAME telemetry_phase2_control_turret_tests
+	COMMAND telemetry_phase2_control_turret_tests)
+
+add_executable(telemetry_phase2_weapon_state_tests
+	telemetry/producer/phase2_weapon_state_tests.cpp
+	telemetry/phase2_wp03_allocation_tracker.cpp
+	${CMAKE_SOURCE_DIR}/code/telemetry/phase2_manifest_builder.cpp
+	${CMAKE_SOURCE_DIR}/code/telemetry/phase2_observation.cpp
+	${CMAKE_SOURCE_DIR}/code/telemetry/phase2_state_image.cpp
+)
+target_compile_features(telemetry_phase2_weapon_state_tests PRIVATE cxx_std_17)
+target_include_directories(telemetry_phase2_weapon_state_tests PRIVATE
+	${CMAKE_CURRENT_SOURCE_DIR}
+	${CODE_HEADERS}
+	${FREESPACE_HEADERS}
+	${GENERATED_SOURCE_DIR}
+	${GENERATED_SOURCE_DIR}/code
+)
+target_link_libraries(telemetry_phase2_weapon_state_tests PRIVATE
+	gtest_main
+	fstl_protocol
+)
+set_target_properties(telemetry_phase2_weapon_state_tests PROPERTIES FOLDER "tests")
+source_group("Telemetry\\Producer" FILES
+	telemetry/producer/phase2_weapon_state_tests.cpp
+	telemetry/phase2_wp03_allocation_tracker.cpp
+	telemetry/phase2_wp03_allocation_tracker.h
+)
+add_test(NAME telemetry_phase2_weapon_state_tests
+	COMMAND telemetry_phase2_weapon_state_tests)
+
+add_executable(telemetry_phase2_lifecycle_support_tests
+	telemetry/producer/phase2_lifecycle_support_tests.cpp
+	telemetry/phase2_wp03_allocation_tracker.cpp
+	${CMAKE_SOURCE_DIR}/code/telemetry/phase2_closure.cpp
+	${CMAKE_SOURCE_DIR}/code/telemetry/phase2_manifest_builder.cpp
+	${CMAKE_SOURCE_DIR}/code/telemetry/phase2_observation.cpp
+	${CMAKE_SOURCE_DIR}/code/telemetry/phase2_state_image.cpp
+)
+target_compile_features(telemetry_phase2_lifecycle_support_tests PRIVATE cxx_std_17)
+target_include_directories(telemetry_phase2_lifecycle_support_tests PRIVATE
+	${CMAKE_CURRENT_SOURCE_DIR}
+	${CODE_HEADERS}
+	${FREESPACE_HEADERS}
+	${GENERATED_SOURCE_DIR}
+	${GENERATED_SOURCE_DIR}/code
+)
+target_link_libraries(telemetry_phase2_lifecycle_support_tests PRIVATE
+	gtest_main
+	fstl_protocol
+)
+set_target_properties(telemetry_phase2_lifecycle_support_tests PROPERTIES FOLDER "tests")
+source_group("Telemetry\\Producer" FILES
+	telemetry/producer/phase2_lifecycle_support_tests.cpp
+	telemetry/phase2_wp03_allocation_tracker.cpp
+	telemetry/phase2_wp03_allocation_tracker.h
+)
+add_test(NAME telemetry_phase2_lifecycle_support_tests
+	COMMAND telemetry_phase2_lifecycle_support_tests)
+
+add_executable(telemetry_phase2_replication_tests
+	telemetry/producer/phase2_replication_tests.cpp
+	${CMAKE_SOURCE_DIR}/code/telemetry/phase1_snapshot_slot.cpp
+	${CMAKE_SOURCE_DIR}/code/telemetry/phase1_state_image.cpp
+	${CMAKE_SOURCE_DIR}/code/telemetry/phase2_observation.cpp
+	${CMAKE_SOURCE_DIR}/code/telemetry/phase2_runtime.cpp
+)
+target_compile_features(telemetry_phase2_replication_tests PRIVATE cxx_std_17)
+target_include_directories(telemetry_phase2_replication_tests PRIVATE
+	${CMAKE_CURRENT_SOURCE_DIR}
+	${CODE_HEADERS}
+	${FREESPACE_HEADERS}
+	${GENERATED_SOURCE_DIR}
+	${GENERATED_SOURCE_DIR}/code
+)
+target_link_libraries(telemetry_phase2_replication_tests PRIVATE
+	gtest_main
+	fstl_protocol
+)
+set_target_properties(telemetry_phase2_replication_tests PROPERTIES FOLDER "tests")
+source_group("Telemetry\\Producer" FILES
+	telemetry/producer/phase2_replication_tests.cpp
+)
+add_test(NAME telemetry_phase2_replication_tests
+	COMMAND telemetry_phase2_replication_tests)
+
+add_executable(telemetry_phase2_runtime_tests
+	telemetry/producer/phase2_runtime_tests.cpp
+	telemetry/producer/phase2_session_identity_test_support.cpp
+	${CMAKE_SOURCE_DIR}/code/telemetry/entity_id_registry.cpp
+	${CMAKE_SOURCE_DIR}/code/telemetry/phase1_snapshot_egress.cpp
+	${CMAKE_SOURCE_DIR}/code/telemetry/phase1_snapshot_slot.cpp
+	${CMAKE_SOURCE_DIR}/code/telemetry/phase1_state_image.cpp
+	${CMAKE_SOURCE_DIR}/code/telemetry/phase2_observation.cpp
+	${CMAKE_SOURCE_DIR}/code/telemetry/phase2_manifest_builder.cpp
+	${CMAKE_SOURCE_DIR}/code/telemetry/phase2_profile_gate.cpp
+	${CMAKE_SOURCE_DIR}/code/telemetry/phase2_runtime.cpp
+	${CMAKE_SOURCE_DIR}/code/telemetry/phase2_session_transition.cpp
+	${CMAKE_SOURCE_DIR}/code/telemetry/session_controller.cpp
+	${CMAKE_SOURCE_DIR}/code/telemetry/startup_budget.cpp
+)
+target_compile_features(telemetry_phase2_runtime_tests PRIVATE cxx_std_17)
+target_compile_definitions(telemetry_phase2_runtime_tests PRIVATE
+	FSO_TELEMETRY_TEST_SEAMS=1
+)
+target_include_directories(telemetry_phase2_runtime_tests PRIVATE
+	${CMAKE_CURRENT_SOURCE_DIR}
+	${CODE_HEADERS}
+	${FREESPACE_HEADERS}
+	${GENERATED_SOURCE_DIR}
+	${GENERATED_SOURCE_DIR}/code
+)
+target_link_libraries(telemetry_phase2_runtime_tests PRIVATE
+	gtest_main
+	fstl_protocol
+)
+set_target_properties(telemetry_phase2_runtime_tests PROPERTIES FOLDER "tests")
+source_group("Telemetry\\Producer" FILES
+	telemetry/producer/phase2_runtime_tests.cpp
+	telemetry/producer/phase2_session_identity_test_support.cpp
+)
+add_test(NAME telemetry_phase2_runtime_tests
+	COMMAND telemetry_phase2_runtime_tests)
+
+add_executable(telemetry_phase2_wp09_contract_tests
+	telemetry/producer/phase2_wp09_contract_tests.cpp
+	telemetry/producer/phase2_wp09_cfile_test_support.cpp
+	telemetry/producer/phase2_session_identity_test_support.cpp
+	${CMAKE_SOURCE_DIR}/code/telemetry/capture_scheduler.cpp
+	${CMAKE_SOURCE_DIR}/code/telemetry/config.cpp
+	${CMAKE_SOURCE_DIR}/code/telemetry/entity_id_registry.cpp
+	${CMAKE_SOURCE_DIR}/code/telemetry/logging.cpp
+	${CMAKE_SOURCE_DIR}/code/telemetry/metrics.cpp
+	${CMAKE_SOURCE_DIR}/code/telemetry/phase1_snapshot_egress.cpp
+	${CMAKE_SOURCE_DIR}/code/telemetry/phase1_snapshot_slot.cpp
+	${CMAKE_SOURCE_DIR}/code/telemetry/phase2_observation.cpp
+	${CMAKE_SOURCE_DIR}/code/telemetry/phase2_profile_gate.cpp
+	${CMAKE_SOURCE_DIR}/code/telemetry/phase2_runtime.cpp
+	${CMAKE_SOURCE_DIR}/code/telemetry/phase2_session_transition.cpp
+	${CMAKE_SOURCE_DIR}/code/telemetry/session_controller.cpp
+	${CMAKE_SOURCE_DIR}/code/telemetry/startup_budget.cpp
+)
+target_compile_features(telemetry_phase2_wp09_contract_tests PRIVATE cxx_std_17)
+target_compile_definitions(telemetry_phase2_wp09_contract_tests PRIVATE
+	FSO_PHASE2_SOURCE_ROOT="${CMAKE_SOURCE_DIR}"
+)
+target_include_directories(telemetry_phase2_wp09_contract_tests PRIVATE
+	${CODE_HEADERS}
+	${FREESPACE_HEADERS}
+	${GENERATED_SOURCE_DIR}
+	${GENERATED_SOURCE_DIR}/code
+)
+target_link_libraries(telemetry_phase2_wp09_contract_tests PRIVATE
+	gtest_main
+	fstl_protocol
+	jansson
+	sdl2
+)
+if(WIN32)
+	target_link_libraries(telemetry_phase2_wp09_contract_tests PRIVATE ws2_32)
+endif()
+set_target_properties(telemetry_phase2_wp09_contract_tests PROPERTIES FOLDER "tests")
+source_group("Telemetry\\Producer" FILES
+	telemetry/producer/phase2_wp09_contract_tests.cpp
+	telemetry/producer/phase2_wp09_cfile_test_support.cpp
+	telemetry/producer/phase2_session_identity_test_support.cpp
+)
+add_test(NAME telemetry_phase2_wp09_contract_tests
+	COMMAND telemetry_phase2_wp09_contract_tests)
+
+add_executable(telemetry_phase2_oracle_harness
+	telemetry/producer/phase2_oracle_harness.cpp
+)
+target_compile_features(telemetry_phase2_oracle_harness PRIVATE cxx_std_17)
+target_compile_definitions(telemetry_phase2_oracle_harness PRIVATE
+	FSO_PHASE2_SOURCE_ROOT="${CMAKE_SOURCE_DIR}"
+)
+target_include_directories(telemetry_phase2_oracle_harness PRIVATE
+	${CODE_HEADERS}
+	${FREESPACE_HEADERS}
+	${GENERATED_SOURCE_DIR}
+	${GENERATED_SOURCE_DIR}/code
+)
+target_link_libraries(telemetry_phase2_oracle_harness PRIVATE fstl_protocol)
+set_target_properties(telemetry_phase2_oracle_harness PROPERTIES FOLDER "tests")
+source_group("Telemetry\\Producer" FILES
+	telemetry/producer/phase2_oracle_harness.cpp
+)
+add_test(NAME telemetry_phase2_oracle_harness_smoke
+	COMMAND telemetry_phase2_oracle_harness
+		--profiles core-gate complete-ship
+		--output-dir "${CMAKE_CURRENT_BINARY_DIR}/phase2-oracle-smoke")
+
+if(FSO_TELEMETRY_FUZZ_STANDALONE
+	AND TARGET telemetry_phase2_packet_reader_fuzz
+	AND TARGET telemetry_phase2_state_validator_fuzz)
+	set(FSTL_PHASE2_REPLAY_CORPUS_DIR
+		"${CMAKE_SOURCE_DIR}/test/telemetry/producer/phase2/fuzz/corpus")
+
+	add_test(NAME telemetry_phase2_packet_reader_corpus_replay
+		COMMAND telemetry_phase2_packet_reader_fuzz
+			"${FSTL_PHASE2_REPLAY_CORPUS_DIR}/packet_reader")
+	set_tests_properties(telemetry_phase2_packet_reader_corpus_replay
+		PROPERTIES CONFIGURATIONS "Debug;Release")
+
+	add_test(NAME telemetry_phase2_state_validator_corpus_replay
+		COMMAND telemetry_phase2_state_validator_fuzz
+			"${FSTL_PHASE2_REPLAY_CORPUS_DIR}/state_validator")
+	set_tests_properties(telemetry_phase2_state_validator_corpus_replay
+		PROPERTIES CONFIGURATIONS "Debug;Release")
+endif()
+
+# Contract-level Phase 2 build entry points. Keep the dependencies explicit so
+# the portable Clang job and the MSVC matrix build the same bounded test surface.
+add_custom_target(telemetry_phase2_unit_tests DEPENDS
+	telemetry_phase2_profile_tests
+	telemetry_phase2_session_transition_tests
+	telemetry_phase2_business_state_tests
+	telemetry_phase2_closure_tests
+	telemetry_phase2_manifest_tests
+	telemetry_phase2_core_state_tests
+	telemetry_phase2_control_turret_tests
+	telemetry_phase2_weapon_state_tests
+	telemetry_phase2_lifecycle_support_tests
+	telemetry_phase2_wp09_contract_tests
+)
+set_target_properties(telemetry_phase2_unit_tests PROPERTIES FOLDER "tests")
+
+add_custom_target(telemetry_phase2_protocol_tests DEPENDS
+	telemetry_phase2_manifest_codec_tests
+	telemetry_phase2_replication_tests
+)
+set_target_properties(telemetry_phase2_protocol_tests PROPERTIES FOLDER "tests")
+
+add_custom_target(telemetry_phase2_integration_tests DEPENDS
+	telemetry_phase2_observation_contract_tests
+	telemetry_phase2_engine_integration_source_contract_tests
+	telemetry_phase2_runtime_tests
+	telemetry_phase2_loss_harness
+	telemetry_phase2_performance_harness
+	telemetry_phase2_oracle_harness
+)
+set_target_properties(telemetry_phase2_integration_tests PROPERTIES FOLDER "tests")

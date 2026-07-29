@@ -1,0 +1,816 @@
+#!/usr/bin/env python3
+"""Run the Phase 2 independent-client/dashboard oracle campaign."""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import hmac
+import json
+import math
+import platform
+import re
+import struct
+import subprocess
+import sys
+import time
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Sequence
+
+
+CAPTURE_SCHEMA = "FSTL-phase2-oracle-capture-v2"
+REPORT_SCHEMA = "FSTL-phase2-oracle-evidence-v1"
+PROFILES = ("core-gate", "complete-ship")
+FORMULA_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9._-]*$")
+SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
+FSTL_MAGIC = 0x4C545346
+FSTL_HEADER_SIZE = 68
+FULL_SNAPSHOT_MESSAGE_TYPE = 6
+FULL_SNAPSHOT_PREFIX_SIZE = 60
+PROFILE_DTO_VECTORS = {
+    "core-gate": Path(
+        "test/telemetry/protocol/vectors-v1.1/phase2-promotion/phase2-promotion.bin"
+    ),
+    "complete-ship": Path(
+        "test/telemetry/protocol/vectors-v1.1/phase2-complete-ship/"
+        "phase2-complete-ship.bin"
+    ),
+}
+
+
+def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--profiles", nargs="+", choices=PROFILES, required=True)
+    parser.add_argument("--build-dir", type=Path, required=True)
+    parser.add_argument("--config", choices=("Debug", "Release", "RelWithDebInfo"), required=True)
+    parser.add_argument("--report-dir", type=Path, required=True)
+    return parser.parse_args(argv)
+
+
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def write_json(path: Path, value: Any) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(f".{path.name}.tmp")
+    temporary.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    temporary.replace(path)
+
+
+def repository_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def find_harness(build_dir: Path, config: str) -> Path:
+    suffix = ".exe" if sys.platform == "win32" else ""
+    name = f"telemetry_phase2_oracle_harness{suffix}"
+    candidates = (
+        build_dir / "bin" / config / name,
+        build_dir / "bin" / name,
+        build_dir / "test" / "src" / config / name,
+        build_dir / "test" / "src" / name,
+    )
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate.resolve()
+    raise FileNotFoundError(f"missing telemetry_phase2_oracle_harness under {build_dir}")
+
+
+def checked_capture_path(root: Path, relative: str) -> Path:
+    candidate = (root / relative).resolve()
+    if candidate != root.resolve() and root.resolve() not in candidate.parents:
+        raise ValueError(f"capture path escapes scenario directory: {relative}")
+    if not candidate.is_file():
+        raise ValueError(f"missing capture file: {relative}")
+    return candidate
+
+
+def checked_declared_sha256(scenario_name: str, field: str, value: Any) -> str:
+    if not isinstance(value, str) or SHA256_PATTERN.fullmatch(value) is None:
+        raise ValueError(f"{scenario_name}: invalid {field}")
+    return value
+
+
+def oracle_record_identity(record: dict[str, Any]) -> str:
+    fields = record["fields"]
+    parts = [record["recordName"]]
+    for field in (
+        "manifest_generation",
+        "class_id",
+        "weapon_class_id",
+        "entity_id",
+        "subsystem_id",
+        "event_id",
+    ):
+        if field in fields:
+            parts.append(f"{field}={fields[field]}")
+    return "/".join(parts)
+
+
+def oracle_float(value: Any) -> float | None:
+    try:
+        result = float(value)
+    except (TypeError, ValueError):
+        return None
+    return result if math.isfinite(result) else None
+
+
+def oracle_ratio(current: Any, maximum: Any) -> dict[str, Any]:
+    numerator, denominator = oracle_float(current), oracle_float(maximum)
+    if numerator is None or denominator is None or denominator <= 0.0:
+        return {
+            "available": False,
+            "reason": "missing-or-nonpositive-denominator",
+            "value": None,
+        }
+    return {
+        "available": True,
+        "reason": None,
+        "value": min(1.0, max(0.0, numerator / denominator)),
+    }
+
+
+def oracle_velocity_local(
+    orientation: list[Any], velocity: list[Any]
+) -> list[float] | None:
+    if len(orientation) != 4 or len(velocity) != 3:
+        return None
+    values = [oracle_float(value) for value in (*orientation, *velocity)]
+    if any(value is None for value in values):
+        return None
+    w, x, y, z, vx, vy, vz = (float(value) for value in values)
+    tx = 2.0 * (y * vz - z * vy)
+    ty = 2.0 * (z * vx - x * vz)
+    tz = 2.0 * (x * vy - y * vx)
+    return [
+        vx - w * tx + (y * tz - z * ty),
+        vy - w * ty + (z * tx - x * tz),
+        vz - w * tz + (x * ty - y * tx),
+    ]
+
+
+def trunc_signed(value: int, divisor: int) -> int:
+    return value // divisor if value >= 0 else -((-value) // divisor)
+
+
+def oracle_offset(clock: Any) -> int | None:
+    if not isinstance(clock, dict):
+        return None
+    try:
+        t0, t1, t2, t3 = (int(clock[name]) for name in ("t0", "t1", "t2", "t3"))
+    except (KeyError, TypeError, ValueError):
+        return None
+    limit = (1 << 64) - 1
+    if (
+        any(value < 0 or value > limit for value in (t0, t1, t2, t3))
+        or t2 < t1
+        or t3 < t0
+        or (t3 - t0) - (t2 - t1) < 0
+    ):
+        return None
+    return trunc_signed((t1 - t0) + (t2 - t3), 2)
+
+
+ORACLE_FORMULA_IDS = {
+    "sqrt(vx^2+vy^2+vz^2)": "p2.dashboard.speed.v1",
+    "conjugate(orientation_local_to_world) * velocity_world":
+        "p2.dashboard.velocity-local.v1",
+    "closed lifecycle_phase label mapping": "p2.dashboard.lifecycle-label.v1",
+    "clamp(hull_strength/dynamic_max_hull,0,1)": "p2.dashboard.hull-ratio.v1",
+    "sum(segment_current_hits)": "p2.dashboard.shield-current-total.v1",
+    "sum(segment_max_hits)": "p2.dashboard.shield-max-total.v1",
+    "clamp(sum(segment_current_hits)/sum(segment_max_hits),0,1)":
+        "p2.dashboard.shield-ratio.v1",
+    "clamp(current_hits/max_hits,0,1)":
+        "p2.dashboard.subsystem-integrity-ratio.v1",
+    "max_hits>0 && current_hits<=0": "p2.dashboard.subsystem-destroyed.v1",
+    "unavailable: Phase 2 wire lacks exact ets_properties applicability":
+        "p2.dashboard.ets-share-unavailable.v1",
+    "clamp(weapon_energy_current/weapon_energy_max,0,1)":
+        "p2.dashboard.weapon-energy-ratio.v1",
+    "clamp(afterburner_fuel_current/afterburner_fuel_max,0,1)":
+        "p2.dashboard.fuel-ratio.v1",
+    "clamp(ammo_current/ammo_initial,0,1)": "p2.dashboard.ammo-ratio.v1",
+    "clamp(quantity_current/quantity_max,0,1)":
+        "p2.dashboard.countermeasure-ratio.v1",
+    "client_monotonic_time_us+smoothed_offset-producer_sample_time_us":
+        "p2.dashboard.sample-age.v1",
+    "age_us > 3*block_period_us+100000": "p2.dashboard.stale.v1",
+    "unavailable without a documented projection input":
+        "p2.dashboard.hud-coordinates-unavailable.v1",
+    "wire duration or explicitly observed stable rate only":
+        "p2.dashboard.support-eta-unavailable.v1",
+    "manifest/keyframe APPLIED, no pending candidate, known baseline":
+        "p2.dashboard.synchronized.v1",
+}
+
+
+def build_oracle_inventory(authority: Any, observed_at_us: int) -> list[dict[str, Any]]:
+    if (
+        not isinstance(authority, dict)
+        or authority.get("source") != "fixed-canonical-cpp-engine-update"
+        or not isinstance(authority.get("snapshot"), dict)
+        or not isinstance(authority.get("manifests"), list)
+    ):
+        raise ValueError("invalid independent oracle authority")
+    records = authority["snapshot"].get("fields", {}).get("records")
+    manifests = authority["manifests"]
+    if not isinstance(records, list) or not all(isinstance(item, dict) for item in records):
+        raise ValueError("invalid independent snapshot authority")
+    if not all(isinstance(item, dict) and "fields" in item for item in manifests):
+        raise ValueError("invalid independent manifest authority")
+    state = {oracle_record_identity(record): record for record in records}
+    inventory: list[dict[str, Any]] = []
+
+    def raw_leaf(path: str, value: Any, source: str) -> None:
+        if isinstance(value, dict):
+            for name in sorted(value):
+                raw_leaf(f"{path}.{name}", value[name], source)
+        elif isinstance(value, list):
+            for index, item in enumerate(value):
+                raw_leaf(f"{path}[{index}]", item, source)
+        else:
+            inventory.append({
+                "available": True,
+                "kind": "A",
+                "path": path,
+                "source": source,
+                "value": value,
+            })
+
+    def add(path: str, formula: str, result: dict[str, Any]) -> None:
+        formula_id = ORACLE_FORMULA_IDS.get(formula)
+        if formula_id is None:
+            raise ValueError(f"uncatalogued oracle formula: {formula}")
+        inventory.append({
+            "kind": "D",
+            "path": path,
+            "formula": formula,
+            "formulaId": formula_id,
+            "provenance": [f"authority:{authority['source']}"],
+            "source": f"oracle-formula:{formula_id}",
+            **result,
+        })
+
+    for identity, record in sorted(state.items()):
+        raw_leaf(
+            f"records.{identity}",
+            record["fields"],
+            f"authority:{record['recordName']}:v{record['recordVersion']}",
+        )
+    for record in sorted(manifests, key=oracle_record_identity):
+        identity = oracle_record_identity(record)
+        raw_leaf(
+            f"manifest.{identity}",
+            record["fields"],
+            f"authority:{record['recordName']}:v{record['recordVersion']}",
+        )
+
+    def per_entity(name: str) -> dict[str, dict[str, Any]]:
+        return {
+            str(record["fields"]["entity_id"]): record["fields"]
+            for record in state.values()
+            if record["recordName"] == name and "entity_id" in record["fields"]
+        }
+
+    for entity, flight in per_entity("FLIGHT_STATE").items():
+        velocity = [oracle_float(value) for value in flight.get("velocity_world", [])]
+        speed = (
+            None
+            if len(velocity) != 3 or any(value is None for value in velocity)
+            else math.sqrt(sum(float(value) * float(value) for value in velocity))
+        )
+        add(
+            f"entities.{entity}.speed",
+            "sqrt(vx^2+vy^2+vz^2)",
+            {"available": speed is not None, "reason": None if speed is not None else "missing-velocity",
+             "value": speed},
+        )
+        local = oracle_velocity_local(
+            flight.get("orientation_local_to_world", []), flight.get("velocity_world", [])
+        )
+        add(
+            f"entities.{entity}.velocity_local",
+            "conjugate(orientation_local_to_world) * velocity_world",
+            {"available": local is not None, "reason": None if local is not None else "missing-pose",
+             "value": local},
+        )
+    labels = {
+        0: "SPAWNING", 1: "ACTIVE", 2: "DEPARTING",
+        3: "DYING", 4: "DESTROYED", 5: "REMOVED",
+    }
+    for entity, lifecycle in per_entity("ENTITY_LIFECYCLE").items():
+        label = labels.get(lifecycle.get("lifecycle_phase"))
+        add(
+            f"entities.{entity}.lifecycle_label",
+            "closed lifecycle_phase label mapping",
+            {"available": label is not None,
+             "reason": None if label is not None else "invalid-lifecycle-phase", "value": label},
+        )
+    for entity, damage in per_entity("DAMAGE_STATE").items():
+        add(
+            f"entities.{entity}.hull_ratio",
+            "clamp(hull_strength/dynamic_max_hull,0,1)",
+            oracle_ratio(damage.get("hull_strength"), damage.get("dynamic_max_hull")),
+        )
+    for entity, shield in per_entity("SHIELD_STATE").items():
+        current = [oracle_float(value) for value in shield.get("segment_current_hits", [])]
+        maximum = [oracle_float(value) for value in shield.get("segment_max_hits", [])]
+        valid = not any(value is None for value in (*current, *maximum))
+        current_total = sum(float(value) for value in current) if valid else None
+        maximum_total = sum(float(value) for value in maximum) if valid else None
+        add(
+            f"entities.{entity}.shield_current_total", "sum(segment_current_hits)",
+            {"available": current_total is not None, "reason": None if valid else "invalid-segments",
+             "value": current_total},
+        )
+        add(
+            f"entities.{entity}.shield_max_total", "sum(segment_max_hits)",
+            {"available": maximum_total is not None, "reason": None if valid else "invalid-segments",
+             "value": maximum_total},
+        )
+        ratio = (
+            oracle_ratio(current_total, maximum_total)
+            if shield.get("has_shields") and valid
+            else {"available": False, "reason": "shields-absent", "value": None}
+        )
+        add(
+            f"entities.{entity}.shield_ratio",
+            "clamp(sum(segment_current_hits)/sum(segment_max_hits),0,1)",
+            ratio,
+        )
+    for record in state.values():
+        if record["recordName"] != "SUBSYSTEM_STATE":
+            continue
+        subsystem = record["fields"]
+        prefix = f"entities.{subsystem['entity_id']}.subsystems.{subsystem['subsystem_id']}"
+        add(
+            f"{prefix}.integrity_ratio", "clamp(current_hits/max_hits,0,1)",
+            oracle_ratio(subsystem.get("current_hits"), subsystem.get("max_hits")),
+        )
+        current = oracle_float(subsystem.get("current_hits"))
+        maximum = oracle_float(subsystem.get("max_hits"))
+        available = current is not None and maximum is not None
+        add(
+            f"{prefix}.destroyed", "max_hits>0 && current_hits<=0",
+            {"available": available, "reason": None if available else "missing-hits",
+             "value": maximum > 0.0 and current <= 0.0 if available else None},
+        )
+    for entity, energy in per_entity("ENERGY_STATE").items():
+        for group in ("shields", "weapons", "engines"):
+            add(
+                f"entities.{entity}.ets_share.{group}",
+                "unavailable: Phase 2 wire lacks exact ets_properties applicability",
+                {"available": False, "reason": "ets-applicability-not-on-wire", "value": None},
+            )
+        for current_name, maximum_name, output in (
+            ("weapon_energy_current", "weapon_energy_max", "weapon_energy_ratio"),
+            ("afterburner_fuel_current", "afterburner_fuel_max", "fuel_ratio"),
+        ):
+            add(
+                f"entities.{entity}.{output}",
+                f"clamp({current_name}/{maximum_name},0,1)",
+                oracle_ratio(energy.get(current_name), energy.get(maximum_name)),
+            )
+    for entity, weapon in per_entity("WEAPON_STATE").items():
+        for family in ("primary_banks", "secondary_banks"):
+            for index, bank in enumerate(weapon.get(family, [])):
+                add(
+                    f"entities.{entity}.{family}[{index}].ammo_ratio",
+                    "clamp(ammo_current/ammo_initial,0,1)",
+                    oracle_ratio(bank.get("ammo_current"), bank.get("ammo_initial")),
+                )
+        countermeasure = weapon.get("countermeasure")
+        if isinstance(countermeasure, dict):
+            add(
+                f"entities.{entity}.countermeasure.quantity_ratio",
+                "clamp(quantity_current/quantity_max,0,1)",
+                oracle_ratio(
+                    countermeasure.get("quantity_current"),
+                    countermeasure.get("quantity_max"),
+                ),
+            )
+    config = authority.get("config", {})
+    flight_hz = int(config.get("flightHz", 30))
+    systems_hz = int(config.get("systemsHz", 10))
+    heartbeat_ms = int(config.get("missionHeartbeatMs", 500))
+    offset = oracle_offset(authority.get("clockSample"))
+    estimated_now = observed_at_us + offset if offset is not None else None
+    if estimated_now is not None and not -(1 << 63) <= estimated_now < (1 << 63):
+        estimated_now = None
+    for identity, record in sorted(state.items()):
+        sample = record["fields"].get("producer_sample_time_us")
+        sample_value = int(sample) if sample is not None else None
+        period = (
+            math.ceil(1_000_000 / flight_hz)
+            if record["recordName"] in ("FLIGHT_STATE", "CONTROL_STATE")
+            else heartbeat_ms * 1000
+            if record["recordName"] in ("SESSION_STATE", "MISSION_STATE")
+            else math.ceil(1_000_000 / systems_hz)
+        )
+        valid_age = (
+            estimated_now is not None
+            and sample_value is not None
+            and estimated_now >= sample_value
+        )
+        age = estimated_now - sample_value if valid_age else None
+        add(
+            f"records.{identity}.age_us",
+            "client_monotonic_time_us+smoothed_offset-producer_sample_time_us",
+            {"available": valid_age,
+             "reason": None if valid_age else "invalid-or-missing-clock-offset", "value": age},
+        )
+        add(
+            f"records.{identity}.stale",
+            "age_us > 3*block_period_us+100000",
+            {"available": valid_age, "reason": None if valid_age else "invalid-or-missing-age",
+             "value": age > 3 * period + 100_000 if valid_age else None},
+        )
+    add(
+        "dashboard.hud_coordinates", "unavailable without a documented projection input",
+        {"available": False, "reason": "projection-input-not-on-wire", "value": None},
+    )
+    add(
+        "dashboard.support_eta_us", "wire duration or explicitly observed stable rate only",
+        {"available": False, "reason": "no-stable-rate-or-duration", "value": None},
+    )
+    add(
+        "transport.synchronized",
+        "manifest/keyframe APPLIED, no pending candidate, known baseline",
+        {"available": True, "reason": None, "value": True},
+    )
+    return inventory
+
+
+def snapshot_image_from_datagrams(name: str, datagrams: list[Path]) -> bytes:
+    parts: dict[int, bytes] = {}
+    expected_metadata: tuple[int, int, bytes, int, int, int] | None = None
+    expected_part_count: int | None = None
+    for path in datagrams:
+        packet = path.read_bytes()
+        if len(packet) < FSTL_HEADER_SIZE:
+            raise ValueError(f"{name}: truncated datagram {path.name}")
+        magic, message_type, header_size, payload_size = struct.unpack_from(
+            "<I2xB1xHH", packet
+        )
+        if magic != FSTL_MAGIC or header_size != FSTL_HEADER_SIZE:
+            raise ValueError(f"{name}: invalid datagram header {path.name}")
+        if len(packet) != header_size + payload_size:
+            raise ValueError(f"{name}: inconsistent datagram size {path.name}")
+        if message_type != FULL_SNAPSHOT_MESSAGE_TYPE:
+            continue
+        payload = packet[header_size:]
+        if len(payload) < FULL_SNAPSHOT_PREFIX_SIZE:
+            raise ValueError(f"{name}: truncated FULL_SNAPSHOT payload {path.name}")
+        snapshot_id, part_index, part_count, transaction_size = struct.unpack_from(
+            "<IHHI", payload
+        )
+        transaction_sha256 = payload[12:44]
+        producer_sample_time_us, required_manifest_id, snapshot_flags, record_count = (
+            struct.unpack_from("<QIHH", payload, 44)
+        )
+        if (
+            snapshot_id == 0
+            or part_count == 0
+            or part_index >= part_count
+            or transaction_size == 0
+            or record_count == 0
+        ):
+            raise ValueError(f"{name}: invalid FULL_SNAPSHOT metadata {path.name}")
+        metadata = (
+            snapshot_id,
+            transaction_size,
+            transaction_sha256,
+            producer_sample_time_us,
+            required_manifest_id,
+            snapshot_flags,
+        )
+        if expected_metadata is None:
+            expected_metadata = metadata
+            expected_part_count = part_count
+        elif metadata != expected_metadata or part_count != expected_part_count:
+            raise ValueError(f"{name}: inconsistent FULL_SNAPSHOT transaction")
+        if part_index in parts:
+            raise ValueError(f"{name}: duplicate FULL_SNAPSHOT part {part_index}")
+        parts[part_index] = payload[FULL_SNAPSHOT_PREFIX_SIZE:]
+    if expected_metadata is None or expected_part_count is None:
+        raise ValueError(f"{name}: no FULL_SNAPSHOT payload")
+    if set(parts) != set(range(expected_part_count)):
+        raise ValueError(f"{name}: incomplete FULL_SNAPSHOT transaction")
+    image = b"".join(parts[index] for index in range(expected_part_count))
+    transaction_size = expected_metadata[1]
+    transaction_sha256 = expected_metadata[2]
+    if len(image) != transaction_size:
+        raise ValueError(f"{name}: FULL_SNAPSHOT transaction size mismatch")
+    if not hmac.compare_digest(hashlib.sha256(image).digest(), transaction_sha256):
+        raise ValueError(f"{name}: FULL_SNAPSHOT transaction hash mismatch")
+    return image
+
+
+def verify_capture_hash_chain(
+    repo: Path, name: str, profile: Any, datagrams: list[Path], scenario: dict[str, Any]
+) -> dict[str, str]:
+    if profile not in PROFILE_DTO_VECTORS:
+        raise ValueError(f"{name}: unsupported canonical DTO profile")
+    declared = {
+        field: checked_declared_sha256(name, field, scenario.get(field))
+        for field in ("dtoSha256", "imageSha256", "wireSha256")
+    }
+    dto_path = (repo / PROFILE_DTO_VECTORS[profile]).resolve()
+    if repo.resolve() not in dto_path.parents or not dto_path.is_file():
+        raise ValueError(f"{name}: missing canonical DTO vector")
+    dto = dto_path.read_bytes()
+    if len(dto) < FULL_SNAPSHOT_PREFIX_SIZE:
+        raise ValueError(f"{name}: truncated canonical DTO vector")
+    canonical_image = dto[FULL_SNAPSHOT_PREFIX_SIZE:]
+    captured_image = snapshot_image_from_datagrams(name, datagrams)
+    if not hmac.compare_digest(captured_image, canonical_image):
+        raise ValueError(f"{name}: captured snapshot does not match canonical image")
+    computed = {
+        "dtoSha256": hashlib.sha256(dto).hexdigest(),
+        "imageSha256": hashlib.sha256(captured_image).hexdigest(),
+        "wireSha256": hashlib.sha256(
+            b"".join(path.read_bytes() for path in datagrams)
+        ).hexdigest(),
+    }
+    for field, actual in computed.items():
+        if not hmac.compare_digest(declared[field], actual):
+            raise ValueError(f"{name}: {field} mismatch")
+    return computed
+
+
+def comparable(expected: Any, actual: Any, kind: str) -> bool:
+    if kind != "D":
+        return expected == actual
+    if isinstance(expected, list) and isinstance(actual, list):
+        return len(expected) == len(actual) and all(
+            comparable(left, right, kind) for left, right in zip(expected, actual)
+        )
+    if isinstance(expected, (int, float)) and isinstance(actual, (int, float)):
+        return math.isfinite(float(expected)) and math.isfinite(float(actual)) and math.isclose(
+            float(expected), float(actual), rel_tol=1.0e-6, abs_tol=1.0e-6
+        )
+    return expected == actual
+
+
+def nonempty_provenance(item: dict[str, Any]) -> bool:
+    provenance = item.get("provenance", item.get("source"))
+    if isinstance(provenance, str):
+        return bool(provenance.strip())
+    if isinstance(provenance, list):
+        return bool(provenance) and all(
+            isinstance(entry, str) and bool(entry.strip()) for entry in provenance
+        )
+    return False
+
+
+def covered_formula(item: dict[str, Any]) -> bool:
+    if item.get("kind") != "D":
+        return True
+    formula = item.get("formula")
+    formula_id = item.get("formulaId")
+    return (
+        isinstance(formula, str)
+        and bool(formula.strip())
+        and isinstance(formula_id, str)
+        and FORMULA_ID_PATTERN.fullmatch(formula_id) is not None
+    )
+
+
+def compare_inventory(
+    expected_items: list[dict[str, Any]], actual_items: list[dict[str, Any]]
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    expected = {(item["kind"], item["path"]): item for item in expected_items}
+    actual = {(item["kind"], item["path"]): item for item in actual_items}
+    results: list[dict[str, Any]] = []
+    missing_provenance = 0
+    uncovered_formula = 0
+    for key in sorted(expected.keys() | actual.keys()):
+        wanted, observed = expected.get(key), actual.get(key)
+        passed = wanted is not None and observed is not None
+        provenance_ok = (
+            wanted is not None
+            and observed is not None
+            and nonempty_provenance(wanted)
+            and nonempty_provenance(observed)
+        )
+        if not provenance_ok:
+            missing_provenance += 1
+        formula_ok = key[0] != "D" or (
+            wanted is not None
+            and observed is not None
+            and covered_formula(wanted)
+            and covered_formula(observed)
+            and wanted.get("formulaId") == observed.get("formulaId")
+        )
+        if not formula_ok:
+            uncovered_formula += 1
+        passed = passed and provenance_ok and formula_ok
+        if passed:
+            passed = wanted.get("available") == observed.get("available")
+        if passed and wanted.get("available"):
+            passed = comparable(wanted.get("value"), observed.get("value"), key[0])
+        results.append({
+            "available": observed.get("available") if observed else None,
+            "expected": wanted.get("value") if wanted else None,
+            "kind": key[0],
+            "observed": observed.get("value") if observed else None,
+            "passed": passed,
+            "path": key[1],
+            "provenanceCovered": provenance_ok,
+            "formulaCovered": formula_ok,
+            "formulaId": observed.get("formulaId") if observed else None,
+        })
+    raw_expected = {key for key in expected if key[0] in ("A", "C")}
+    raw_actual = {key for key in actual if key[0] in ("A", "C")}
+    summary = {
+        "expectedFields": len(expected),
+        "matchedFields": sum(1 for item in results if item["passed"]),
+        "missingProvenance": missing_provenance,
+        "mismatches": sum(1 for item in results if not item["passed"]),
+        "rawCoveragePercent": (
+            100.0 if raw_expected == raw_actual
+            else 100.0 * len(raw_expected & raw_actual) / max(1, len(raw_expected | raw_actual))
+        ),
+        "uncoveredFormula": uncovered_formula,
+    }
+    return results, summary
+
+
+def run_client(repo: Path, datagrams: list[Path]) -> tuple[list[dict[str, Any]], list[str]]:
+    console = repo / "test/telemetry/protocol/tools/fstl_console_client.py"
+    command = [sys.executable, "-B", str(console), "--replay", *(str(path) for path in datagrams)]
+    result = subprocess.run(command, cwd=repo, text=True, capture_output=True, check=False)
+    if result.returncode != 0:
+        raise RuntimeError(f"independent client failed ({result.returncode}): {result.stderr.strip()}")
+    transcript = [json.loads(line) for line in result.stdout.splitlines() if line.strip()]
+    if not transcript:
+        raise ValueError("independent client produced no transcript")
+    return transcript, command
+
+
+def run_scenario(repo: Path, scenario_root: Path, scenario: dict[str, Any]) -> dict[str, Any]:
+    name = scenario.get("name")
+    if not isinstance(name, str) or not name:
+        raise ValueError("scenario has no stable name")
+    datagrams = [checked_capture_path(scenario_root, item) for item in scenario.get("datagrams", [])]
+    if not datagrams:
+        raise ValueError(f"{name}: no datagrams")
+    authority = scenario.get("oracleAuthority")
+    if not isinstance(authority, dict):
+        raise ValueError(f"{name}: missing oracleAuthority")
+    verified_hashes = verify_capture_hash_chain(
+        repo, name, scenario.get("profile"), datagrams, scenario
+    )
+    oracle_state_sha256 = checked_declared_sha256(
+        name, "oracleAuthority.canonicalStateSha256",
+        authority.get("canonicalStateSha256"),
+    )
+    if not hmac.compare_digest(
+        oracle_state_sha256, verified_hashes["imageSha256"]
+    ):
+        raise ValueError(f"{name}: decoded state hash does not match oracle authority")
+    transcript, command = run_client(repo, datagrams)
+    published = [item for item in transcript if item.get("status") == "Live"]
+    if not published:
+        raise ValueError(f"{name}: no atomically published Live state")
+    dashboard = published[-1].get("dashboard")
+    if not isinstance(dashboard, dict) or dashboard.get("schema") != "FSTL-phase2-dashboard-v1":
+        raise ValueError(f"{name}: missing Phase 2 dashboard")
+    try:
+        observed_at_us = int(published[-1]["observed_at_monotonic_us"])
+    except (KeyError, TypeError, ValueError):
+        raise ValueError(f"{name}: missing dashboard observation time")
+    oracle_inventory = build_oracle_inventory(authority, observed_at_us)
+    comparisons, summary = compare_inventory(
+        oracle_inventory, dashboard.get("inventory", [])
+    )
+    expected_hashes = {
+        path.name: sha256_file(path) for path in datagrams
+    }
+    passed = (
+        summary["mismatches"] == 0
+        and summary["missingProvenance"] == 0
+        and summary["rawCoveragePercent"] == 100.0
+        and summary["uncoveredFormula"] == 0
+    )
+    synchronization_conditions = dashboard.get("synchronizationConditions", {})
+    if not isinstance(synchronization_conditions, dict):
+        raise ValueError(f"{name}: missing synchronization conditions")
+    convergence_conditions = {
+        "canonicalHashMatchesOracle": hmac.compare_digest(
+            oracle_state_sha256, verified_hashes["imageSha256"]
+        ),
+        "closureStable": authority.get("closureStable") is True,
+        "lastKeyframeApplied": synchronization_conditions.get("lastKeyframeApplied") is True,
+        "lastManifestApplied": synchronization_conditions.get("lastManifestApplied") is True,
+        "noPendingCandidateOrReliableDependency": (
+            synchronization_conditions.get("noPendingCandidateOrReliableDependency") is True
+        ),
+        "sourceStable": authority.get("sourceStable") is True,
+        "baselineKnown": synchronization_conditions.get("baselineKnown") is True,
+    }
+    converged = passed and all(convergence_conditions.values())
+    passed = passed and converged
+    return {
+        "clientCommand": command,
+        "comparisons": comparisons,
+        "dashboardSummary": dashboard["inventorySummary"],
+        "datagrams": expected_hashes,
+        "dtoSha256": verified_hashes["dtoSha256"],
+        "hashChainVerified": True,
+        "imageSha256": verified_hashes["imageSha256"],
+        "name": name,
+        "oracleSummary": summary,
+        "oracleAuthoritySha256": hashlib.sha256(
+            json.dumps(authority, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        ).hexdigest(),
+        "passed": passed,
+        "profile": scenario.get("profile"),
+        "sample": scenario.get("sample"),
+        "converged": converged,
+        "convergenceConditions": convergence_conditions,
+        "wireSha256": verified_hashes["wireSha256"],
+    }
+
+
+def git_context(repo: Path) -> dict[str, Any]:
+    head = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=repo, text=True, capture_output=True, check=False
+    )
+    status = subprocess.run(
+        ["git", "status", "--porcelain"], cwd=repo, text=True, capture_output=True, check=False
+    )
+    return {
+        "head": head.stdout.strip() if head.returncode == 0 else None,
+        "workingTreeClean": status.stdout == "" if status.returncode == 0 else None,
+    }
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    args = parse_args(argv)
+    repo = repository_root()
+    started_at = datetime.now(timezone.utc).isoformat()
+    started = time.monotonic()
+    try:
+        harness = find_harness(args.build_dir.resolve(), args.config)
+        campaign_root = args.report_dir.resolve() / "captures"
+        harness_command = [
+            str(harness), "--profiles", *args.profiles, "--output-dir", str(campaign_root)
+        ]
+        harness_result = subprocess.run(
+            harness_command, cwd=repo, text=True, capture_output=True, check=False
+        )
+        if harness_result.returncode != 0:
+            raise RuntimeError(
+                f"oracle harness failed ({harness_result.returncode}): "
+                f"{harness_result.stderr.strip()}"
+            )
+        manifest_path = campaign_root / "capture-manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        if manifest.get("schema") != CAPTURE_SCHEMA:
+            raise ValueError("unsupported oracle capture manifest")
+        if sorted(manifest.get("profiles", [])) != sorted(args.profiles):
+            raise ValueError("capture profiles do not match the requested campaign")
+        scenarios = [
+            run_scenario(repo, campaign_root, scenario)
+            for scenario in manifest.get("scenarios", [])
+        ]
+        if not scenarios:
+            raise ValueError("oracle harness produced no scenarios")
+        passed = all(item["passed"] for item in scenarios)
+        report = {
+            "build": {"config": args.config, "directory": str(args.build_dir.resolve())},
+            "captureManifestSha256": sha256_file(manifest_path),
+            "elapsedSeconds": round(time.monotonic() - started, 3),
+            "finishedAtUtc": datetime.now(timezone.utc).isoformat(),
+            "git": git_context(repo),
+            "harness": {
+                "command": harness_command,
+                "executable": str(harness),
+                "sha256": sha256_file(harness),
+                "stderr": harness_result.stderr,
+                "stdout": harness_result.stdout,
+            },
+            "platform": platform.platform(),
+            "profiles": args.profiles,
+            "scenarios": scenarios,
+            "schema": REPORT_SCHEMA,
+            "startedAtUtc": started_at,
+            "status": "passed" if passed else "failed",
+        }
+        write_json(args.report_dir.resolve() / "phase2-oracle-evidence.json", report)
+        return 0 if passed else 1
+    except (FileNotFoundError, OSError, ValueError, RuntimeError, json.JSONDecodeError) as error:
+        print(f"oracle evidence error: {error}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -1218,7 +1218,9 @@ ValidationError BusinessStateImageValidator::validate(const StateImage& image) c
 	if (session.observed_entity_id != 0) {
 		const auto* observed = find_owner(atoms, RecordType::EntityLifecycle, session.observed_entity_id);
 		if (observed == nullptr) {
-			return ValidationError::UnknownEntity;
+			return phase2_complete_ship
+				? ValidationError::InvalidAbsence
+				: ValidationError::UnknownEntity;
 		}
 		if (const auto error = parse_lifecycle(*observed, observed_lifecycle); error != ValidationError::None) {
 			return error;
@@ -1243,7 +1245,9 @@ ValidationError BusinessStateImageValidator::validate(const StateImage& image) c
 		const auto owner_id = read_u64(atom.key.identity.data());
 		const auto* lifecycle_atom = find_owner(atoms, RecordType::EntityLifecycle, owner_id);
 		if (lifecycle_atom == nullptr) {
-			return ValidationError::UnknownEntity;
+			return phase2_complete_ship
+				? ValidationError::InvalidAbsence
+				: ValidationError::UnknownEntity;
 		}
 		LifecycleFacts lifecycle;
 		if (const auto error = parse_lifecycle(*lifecycle_atom, lifecycle); error != ValidationError::None) {

@@ -1,0 +1,444 @@
+{
+  "schema": "fs2open.telemetry.phase2.g2-d-complete-domain.v1",
+  "phaseNumber": 2,
+  "workPackages": [
+    "P2-WP-07",
+    "P2-WP-08"
+  ],
+  "gate": "G2-D",
+  "profile": "balanced",
+  "cadence": "corrective-wp-checkpoint",
+  "status": "closed",
+  "sealedAtUtc": "2026-07-27T12:01:14.9320513Z",
+  "supersedes": {
+    "path": "test/telemetry/producer/phase2/reports/wp07-lifecycle-support/g2-d-complete-domain.json",
+    "sha256": "2ec557c35b48943f3ce46f48d4885a61a6baf9415bea66f93dccaa9f45a9bb1e",
+    "reason": "Authorized WP07 complete-domain correction changed observation, engine-adapter, state-image, runtime and metrics inputs and therefore required one fresh G2-D/WP08 corrective checkpoint."
+  },
+  "source": {
+    "branch": "codex/phase2-pre-skill-checkpoint",
+    "head": "6f845a864e9f9f6100790893c190877114e89027",
+    "worktree": "dirty-G2-D-WP08-corrective-balanced-checkpoint",
+    "platform": "Windows",
+    "buildDirectory": "build",
+    "configuration": "Release",
+    "timezone": "Europe/Paris"
+  },
+  "roles": {
+    "coordinator": "/root",
+    "contractTracker": "/root/contract_tracker",
+    "implementer": "/root/implementer",
+    "testOwner": "/root/test_agent",
+    "reviewer": "/root/reviewer"
+  },
+  "dependencies": {
+    "P2-WP-05": "verified",
+    "P2-WP-06": "verified",
+    "P2-WP-07": "verified-refreshed",
+    "P2-WP-08": "verified-refreshed",
+    "G2-C": "closed",
+    "G2-D": "closed",
+    "refreshDisposition": "The authorized correction refreshed only the invalidated complete-domain, G2-D and WP08 runtime dependency cone. WP09 remains the current writer package and G2-E remains pending."
+  },
+  "contractCoverage": {
+    "verifiedWorkPackages": [
+      "P2-WP-07",
+      "P2-WP-08"
+    ],
+    "verifiedRequirements": [
+      "P2-REQ-005",
+      "P2-REQ-020",
+      "P2-REQ-030",
+      "P2-REQ-031",
+      "P2-REQ-034",
+      "P2-REQ-035",
+      "P2-REQ-036",
+      "P2-REQ-037",
+      "P2-REQ-038",
+      "P2-REQ-039"
+    ],
+    "verifiedTests": [
+      "P2-TST-018",
+      "P2-TST-035",
+      "P2-TST-036",
+      "P2-TST-037",
+      "P2-TST-038",
+      "P2-TST-040",
+      "P2-TST-041",
+      "P2-TST-042",
+      "P2-TST-043",
+      "P2-TST-044",
+      "P2-TST-046",
+      "P2-TST-050",
+      "P2-TST-051",
+      "P2-TST-052",
+      "P2-TST-053",
+      "P2-TST-054",
+      "P2-TST-055",
+      "P2-TST-056",
+      "P2-TST-057",
+      "P2-TST-058",
+      "P2-TST-059"
+    ],
+    "acceptance": {
+      "P2-AC-003": "verified on refreshed complete-domain and runtime evidence",
+      "P2-AC-006": "implemented unit prerequisite refreshed; final independent dashboard oracle remains WP10 ownership",
+      "P2-AC-007": "implemented runtime prerequisite refreshed; final independent-client lifecycle proof remains WP10 ownership",
+      "P2-AC-008": "implemented runtime prerequisite refreshed; final client/loss proof remains WP10/WP11 ownership",
+      "P2-AC-009": "implemented functional runtime prerequisite refreshed; the required extended loss campaign remains WP11 ownership"
+    },
+    "decisionsCovered": [
+      "D2-002",
+      "D2-003",
+      "D2-004",
+      "D2-006",
+      "D2-008",
+      "D2-009",
+      "D2-011",
+      "D2-012",
+      "D2-017",
+      "D2-019",
+      "D2-020"
+    ]
+  },
+  "checkpointCriteria": {
+    "completeDomain0583": "pass",
+    "controlTurretWeaponMatrix": "pass",
+    "cargoDockingSupportLifecycle": "pass",
+    "nonFiniteAndAtomicFailure": "pass",
+    "runtimeBaselineDeltaKeyframe": "pass",
+    "sourceContract": "80/80-pass",
+    "packetCorpusReplay": "pass",
+    "stateValidatorCorpusReplay": "pass",
+    "combinedRuntimeAndBusinessFilter": "64-pass-2-loopback-opt-in-skip-0-fail",
+    "review": "GO",
+    "diffCheck": "pass",
+    "G2-D": "closed",
+    "G2-E": "pending-WP09"
+  },
+  "commands": [
+    {
+      "id": "corrective-release-build",
+      "command": "cmake --build build --config Release --parallel 2 --target telemetry_phase2_lifecycle_support_tests telemetry_phase2_core_state_tests telemetry_phase2_control_turret_tests telemetry_phase2_weapon_state_tests telemetry_phase2_observation_contract_tests telemetry_phase2_engine_adapter_evidence telemetry_phase2_replication_tests telemetry_phase2_runtime_tests telemetry_phase2_wp09_contract_tests telemetry_phase2_packet_reader_fuzz telemetry_phase2_state_validator_fuzz unittests",
+      "exitCode": 0,
+      "durationMilliseconds": 714684,
+      "result": "pass"
+    },
+    {
+      "id": "initial-release-composition-diagnostic",
+      "command": "ctest -C Release --output-on-failure -R '^(telemetry_phase2_lifecycle_support_tests|telemetry_phase2_core_state_tests|telemetry_phase2_control_turret_tests|telemetry_phase2_weapon_state_tests|telemetry_phase2_observation_contract_tests|telemetry_phase2_engine_integration_source_contract_tests|telemetry_phase2_replication_tests|telemetry_phase2_runtime_tests|telemetry_phase2_wp09_contract_tests|telemetry_phase2_packet_reader_corpus_replay|telemetry_phase2_state_validator_corpus_replay)$'",
+      "exitCode": 8,
+      "durationSeconds": 12.99,
+      "result": "superseded-diagnostic-10-of-11-pass",
+      "disposition": "Only the source-contract oracle was red. The affected assertions were corrected and the exact target was relinked; the standalone final source-contract proof supersedes that one result. The ten unchanged passing suite results remain fresh and conclusive."
+    },
+    {
+      "id": "final-unchanged-suite-composition",
+      "command": "ctest -C Release --output-on-failure -R '^(telemetry_phase2_lifecycle_support_tests|telemetry_phase2_core_state_tests|telemetry_phase2_control_turret_tests|telemetry_phase2_weapon_state_tests|telemetry_phase2_observation_contract_tests|telemetry_phase2_replication_tests|telemetry_phase2_runtime_tests|telemetry_phase2_wp09_contract_tests|telemetry_phase2_packet_reader_corpus_replay|telemetry_phase2_state_validator_corpus_replay)$'",
+      "result": "10-of-10-retained-fresh-pass",
+      "suiteResults": [
+        {
+          "suite": "telemetry_phase2_observation_contract_tests",
+          "result": "pass",
+          "durationSeconds": 10.00
+        },
+        {
+          "suite": "telemetry_phase2_core_state_tests",
+          "result": "pass",
+          "durationSeconds": 0.25
+        },
+        {
+          "suite": "telemetry_phase2_control_turret_tests",
+          "result": "pass",
+          "durationSeconds": 0.30
+        },
+        {
+          "suite": "telemetry_phase2_weapon_state_tests",
+          "result": "pass",
+          "durationSeconds": 0.20
+        },
+        {
+          "suite": "telemetry_phase2_lifecycle_support_tests",
+          "result": "pass",
+          "durationSeconds": 0.72
+        },
+        {
+          "suite": "telemetry_phase2_replication_tests",
+          "result": "pass",
+          "durationSeconds": 0.11
+        },
+        {
+          "suite": "telemetry_phase2_runtime_tests",
+          "result": "pass",
+          "durationSeconds": 0.19
+        },
+        {
+          "suite": "telemetry_phase2_wp09_contract_tests",
+          "result": "pass",
+          "durationSeconds": 0.16
+        },
+        {
+          "suite": "telemetry_phase2_packet_reader_corpus_replay",
+          "result": "pass",
+          "durationSeconds": 0.13
+        },
+        {
+          "suite": "telemetry_phase2_state_validator_corpus_replay",
+          "result": "pass",
+          "durationSeconds": 0.14
+        }
+      ]
+    },
+    {
+      "id": "final-source-contract",
+      "command": "ctest -C Release --output-on-failure -R '^telemetry_phase2_engine_integration_source_contract_tests$'",
+      "exitCode": 0,
+      "durationMilliseconds": 503,
+      "result": "80/80-pass"
+    },
+    {
+      "id": "final-combined-unittests",
+      "command": ".\\build\\bin\\Release\\unittests.exe '--gtest_filter=TelemetryPhase2GameplayAbContract.CargoAuthorityThresholdsResetsAndHooksAreExactOffOnOff:FinalB/SupportWorkContract.ExactBranchesAndSharedOracle/*:TelemetryPhase1SnapshotSlotContract.*:TelemetryPhase1DeltaContract.*:TelemetryPhase1SnapshotEgressContract.*:TelemetryNativeRuntimeIntegrationContract.*:TelemetryNativeRuntimeLoopbackContract.*:TelemetryNativePlayerCaptureContract.*'",
+      "exitCode": 0,
+      "durationMilliseconds": 3235,
+      "result": "64-pass-2-loopback-opt-in-skip-0-fail",
+      "totalCases": 66,
+      "totalSuites": 8
+    },
+    {
+      "id": "diff-check",
+      "command": "git diff --check",
+      "exitCode": 0,
+      "result": "pass"
+    }
+  ],
+  "supersededDiagnostics": [
+    {
+      "rootCause": "The first corrective Release composition used stale source-contract assertions.",
+      "classification": "superseded-test-oracle-diagnostic",
+      "blocking": false,
+      "finalDisposition": "Assertions corrected, target relinked, exact standalone CTest 80/80 PASS."
+    },
+    {
+      "rootCause": "Earlier WP07 source-contract evidence reported 78/80 because two lexical checks rejected the contract-required Repairing authority.",
+      "classification": "superseded-adjacent-harness-diagnostic",
+      "blocking": false,
+      "finalDisposition": "The refreshed corrected Release suite passes 80/80; no follow-up blocker remains."
+    }
+  ],
+  "nonblockingFollowUp": [
+    {
+      "classification": "environment-opt-in",
+      "blocking": false,
+      "rootCause": "Two native runtime loopback cases require their explicit opt-in environment.",
+      "affects": [
+        "P2-WP-09",
+        "P2-WP-11"
+      ],
+      "disposition": "Replay under the WP09 or WP11 owning environment/gate. Do not reopen WP07, WP08 or G2-D."
+    }
+  ],
+  "review": {
+    "reviewer": "/root/reviewer",
+    "disposition": "GO",
+    "findings": [],
+    "summary": "The fixed-role reviewer accepted the authorized corrective batch and final evidence composition with no remaining contractually blocking finding."
+  },
+  "releaseArtifacts": [
+    {
+      "path": "build/bin/Release/telemetry_phase2_lifecycle_support_tests.exe",
+      "bytes": 721408,
+      "sha256": "029025a149de9368cb1e478918ee0f7871e30d2e273a5b135707bdda1e1ba66c",
+      "mtimeUtc": "2026-07-27T11:31:02.7987940Z"
+    },
+    {
+      "path": "build/bin/Release/telemetry_phase2_core_state_tests.exe",
+      "bytes": 627200,
+      "sha256": "55aed370a719170b2ef930ce81ab9be2193265153b713948cb1824245570f571",
+      "mtimeUtc": "2026-07-27T11:31:16.7981584Z"
+    },
+    {
+      "path": "build/bin/Release/telemetry_phase2_control_turret_tests.exe",
+      "bytes": 587776,
+      "sha256": "b52ea9022b7c01d64461c00ed1e136eb6440c9e8d49d28a1a1c18593a94ff72a",
+      "mtimeUtc": "2026-07-27T11:31:30.4448920Z"
+    },
+    {
+      "path": "build/bin/Release/telemetry_phase2_weapon_state_tests.exe",
+      "bytes": 623616,
+      "sha256": "a865d5f89be95a1235105b8893f9593cc04d82e5e3c73bfc9275f4682d3ae129",
+      "mtimeUtc": "2026-07-27T11:31:44.4091864Z"
+    },
+    {
+      "path": "build/bin/Release/telemetry_phase2_observation_contract_tests.exe",
+      "bytes": 967168,
+      "sha256": "471703a6345bfeb5557fdf0bcb3e3569fe71bceab69481bfc17f4f706e3f1cb0",
+      "mtimeUtc": "2026-07-27T11:32:01.7367208Z"
+    },
+    {
+      "path": "build/bin/Release/telemetry_phase2_replication_tests.exe",
+      "bytes": 645120,
+      "sha256": "73bc872a52958f3c789a9c6fe720415a1837df16af1b9fde4281f6689894fcc1",
+      "mtimeUtc": "2026-07-27T11:33:41.4099909Z"
+    },
+    {
+      "path": "build/bin/Release/telemetry_phase2_runtime_tests.exe",
+      "bytes": 715776,
+      "sha256": "fd577613971bd47b31b72ee5f03c0c59128e97e090f4e40c7b61082b8ed0cc46",
+      "mtimeUtc": "2026-07-27T11:33:55.4552156Z"
+    },
+    {
+      "path": "build/bin/Release/telemetry_phase2_wp09_contract_tests.exe",
+      "bytes": 527872,
+      "sha256": "fc31eafbc7c95e187ebd8bc4493c3fe4a2126eddea4c662ebe08ecfe23f93b73",
+      "mtimeUtc": "2026-07-27T11:34:08.8194048Z"
+    },
+    {
+      "path": "build/bin/Release/telemetry_phase2_packet_reader_fuzz.exe",
+      "bytes": 96768,
+      "sha256": "fe85824c995ecf51f4772cd92dd03116ef6f13a41d2f597d8bee63667f56630e",
+      "mtimeUtc": "2026-07-27T11:34:23.8512280Z"
+    },
+    {
+      "path": "build/bin/Release/telemetry_phase2_state_validator_fuzz.exe",
+      "bytes": 226816,
+      "sha256": "6a3badd9ed812a9e88e0b139bce0fb02b923e9ee5443152b1c7d30cdba98293e",
+      "mtimeUtc": "2026-07-27T11:34:31.8615221Z"
+    },
+    {
+      "path": "build/bin/Release/telemetry_phase2_engine_integration_source_contract_tests.exe",
+      "bytes": 948224,
+      "sha256": "88300cc78c767e0beddc8132370f1302493af44a9d5eebea5f6ff595aa2894f6",
+      "mtimeUtc": "2026-07-27T11:48:58.4024763Z"
+    },
+    {
+      "path": "build/bin/Release/unittests.exe",
+      "bytes": 25532416,
+      "sha256": "360f8ac2ba87b994ff9d6c5113f7fadc5a533066854c2448b1954b2ba1db0395",
+      "mtimeUtc": "2026-07-27T11:56:34.4588618Z"
+    },
+    {
+      "path": "build/test/src/telemetry_phase2_engine_adapter_evidence_object.dir/Release/engine_adapter.obj",
+      "bytes": 1246080,
+      "sha256": "d3561f8541b84596b590287ca5aaf1854d4b5257bd063a39ae32400dc12a0e08",
+      "mtimeUtc": "2026-07-27T11:32:16.5964265Z"
+    },
+    {
+      "path": "build/test/src/telemetry_phase2_engine_adapter_evidence_object.dir/Release/engine_adapter.obj.linkable.txt",
+      "bytes": 642407,
+      "sha256": "bcac15b21b66243e5aa2139cef24fc0c36b6f156ef4414774e05336a99a7707d",
+      "mtimeUtc": "2026-07-27T11:48:45.7603292Z"
+    }
+  ],
+  "sourceBindings": [
+    {
+      "path": "code/telemetry/phase2_observation.cpp",
+      "sha256": "275040caf0344b74e95b9529b14801e1bf1b44f92f864e0c3cbcbcffe21c2d3a"
+    },
+    {
+      "path": "code/telemetry/phase2_observation.h",
+      "sha256": "1f7790582789a257d30424c09cca98e7ded4544f10c9dde9f636e597d45cb386"
+    },
+    {
+      "path": "code/telemetry/engine_adapter.cpp",
+      "sha256": "85e6e9f0a1fc1048865b964d7d9c1837b00965a7bb83282295cccd9793cb762d"
+    },
+    {
+      "path": "code/telemetry/native_session_runtime.cpp",
+      "sha256": "378dab553e3df8c371f94ee798352ed4bf2b8b61d96a9dfc2a21538478d0d6d1"
+    },
+    {
+      "path": "code/telemetry/native_session_runtime.h",
+      "sha256": "a39f84dec3270d2f1053409ceebb1537b6b981f9fea0f1361ac474c41462b627"
+    },
+    {
+      "path": "code/telemetry/phase2_state_image.cpp",
+      "sha256": "01075b9ccde3f16337ed4527abfa8e54e1f0fe396396aa6a06ed3e511a879b02"
+    },
+    {
+      "path": "code/telemetry/phase2_state_image.h",
+      "sha256": "7c81f02174b58726167c1ffa718cfc7d684796b3f8f1998c61c6dec7142835c3"
+    },
+    {
+      "path": "code/telemetry/metrics.cpp",
+      "sha256": "856a8ffbddd63f384b758d75867edf3067c83ed93bf160d9f6ee812c1c593e24"
+    },
+    {
+      "path": "code/telemetry/metrics.h",
+      "sha256": "91f337d34c0157c75ea77ac004cb7883759c4ea78f33169a31f471a4b483ae6a"
+    },
+    {
+      "path": "test/src/telemetry/producer/phase2_lifecycle_support_tests.cpp",
+      "sha256": "842b4dfe7a46e447364e4115f2422a5c417f32155bc299b764cd9c173163fa16"
+    },
+    {
+      "path": "test/src/telemetry/producer/phase2_state_image_tests.cpp",
+      "sha256": "e3ca0f27a04ac8c72374dc76d118899fd7ae74b048e0a381bc41ba60c0b8b762"
+    },
+    {
+      "path": "test/src/telemetry/producer/phase2_control_turret_tests.cpp",
+      "sha256": "1142fabae7a027f9dfedbf84e2f7a279b4c24ab815c4f350253a95b88d31823f"
+    },
+    {
+      "path": "test/src/telemetry/producer/phase2_weapon_state_tests.cpp",
+      "sha256": "06ba37bd0d00b62894735f32149673f19f337d56b55d65403edbf4dd399eb7e7"
+    },
+    {
+      "path": "test/src/telemetry/producer/test_phase2_observation_contract.cpp",
+      "sha256": "02553011baecc29c2b02073a8bd0f3581f33588225708ccf6bdabb33771d71fc"
+    },
+    {
+      "path": "test/src/telemetry/producer/test_phase2_engine_integration_source_contract.cpp",
+      "sha256": "77cd5246fbbfe44079e36bde717598bf5ace0f3182d9532203825e10f98186c7"
+    },
+    {
+      "path": "test/src/telemetry/producer/phase2_replication_tests.cpp",
+      "sha256": "30b87321746018395e77a42227f2b38b5c01aa4b65572b499299fd403e27c4d0"
+    },
+    {
+      "path": "test/src/telemetry/producer/phase2_runtime_tests.cpp",
+      "sha256": "17173d755622419832de7736625d42989f4f80f999cb04a3187a123a6b1f9f24"
+    },
+    {
+      "path": "test/src/telemetry/producer/phase2_wp09_contract_tests.cpp",
+      "sha256": "33d2339dac4c3ee54174a26e522db42ee9096572dacf92c6080db1befd1394c4"
+    },
+    {
+      "path": "test/src/CMakeLists.txt",
+      "sha256": "fb5037f35f3818a4515385f8e8da1331104fdb4afac1bf26fb46ec33dc6e3803"
+    },
+    {
+      "path": "code/source_groups.cmake",
+      "sha256": "950d0894da336e8736b1ad9d9e920b4cf9ade43bc12629db8ddee3ba75824ec1"
+    }
+  ],
+  "binding": {
+    "stableTracker": {
+      "path": "documentation/analysis/progress/phase-2.json",
+      "sha256": "5582f103200ee6c7a90aac156cda4de00b348ee8828a77a4944fc3c42066a0b6",
+      "validation": "passed"
+    },
+    "statusLineCountBeforeTrackerAndReport": 156,
+    "statusSha256Utf8BeforeTrackerAndReport": "aecaf046af174b9327593cd9e34d511991f10aa4be02bf155931ee39b38dded1",
+    "focusedTrackedDiffSha256BeforeTrackerAndReport": "ab0a347f54586c9573df76ea18e8cd424deafe080d8b400fed7c3a463b8b5722",
+    "reportSha256": "recorded externally after this single final write to avoid self-reference",
+    "untrackedFilesPreserved": true
+  },
+  "gateDisposition": {
+    "gate": "G2-D",
+    "result": "closed",
+    "refreshedBy": [
+      "P2-WP-07",
+      "P2-WP-08"
+    ],
+    "currentWorkPackage": "P2-WP-09",
+    "nextGate": "G2-E",
+    "G2-E": "pending",
+    "doesNotAuthorize": [
+      "P2-WP-10 until G2-E closes",
+      "any later phase"
+    ]
+  },
+  "blockers": [],
+  "nextAction": "Continue P2-WP-09 under the balanced profile as the current single-writer package. Retain the fresh WP09 contract and corpus-replay results from this checkpoint, complete its remaining security/platform/fuzz proof, and close G2-E only through its normative report."
+}

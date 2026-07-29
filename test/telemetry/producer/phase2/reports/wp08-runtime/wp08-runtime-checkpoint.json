@@ -1,0 +1,342 @@
+{
+  "schema": "fs2open.telemetry.phase2.wp08-runtime-checkpoint.v1",
+  "phaseNumber": 2,
+  "workPackage": "P2-WP-08",
+  "gate": "G2-E",
+  "profile": "balanced",
+  "cadence": "wp-checkpoint",
+  "status": "verified-gate-open",
+  "sealedAtUtc": "2026-07-27T05:59:32.4074875Z",
+  "source": {
+    "branch": "codex/phase2-pre-skill-checkpoint",
+    "head": "6f845a864e9f9f6100790893c190877114e89027",
+    "worktree": "dirty-WP08-balanced-checkpoint",
+    "platform": "Windows",
+    "buildDirectory": "build",
+    "configuration": "Release",
+    "timezone": "Europe/Paris"
+  },
+  "roles": {
+    "coordinator": "/root",
+    "contractTracker": "/root/contract_tracker",
+    "implementer": "/root/implementer",
+    "testOwner": "/root/test_agent",
+    "reviewer": "/root/reviewer"
+  },
+  "dependencies": {
+    "P2-WP-04": "verified",
+    "P2-WP-05": "verified",
+    "P2-WP-06": "verified",
+    "P2-WP-07": "verified",
+    "G2-D": "closed",
+    "refreshDisposition": "WP08 refreshed only the runtime, replication, session-controller, egress, reliable-window, CMake and dedicated-test dependency cone. Closed evidence outside that cone was reused and remains valid."
+  },
+  "contractCoverage": {
+    "verifiedWorkPackages": [
+      "P2-WP-08"
+    ],
+    "verifiedRequirements": [
+      "P2-REQ-005",
+      "P2-REQ-035",
+      "P2-REQ-036",
+      "P2-REQ-037",
+      "P2-REQ-038",
+      "P2-REQ-039"
+    ],
+    "verifiedTests": [
+      "P2-TST-050",
+      "P2-TST-051",
+      "P2-TST-052",
+      "P2-TST-053",
+      "P2-TST-054",
+      "P2-TST-055",
+      "P2-TST-056",
+      "P2-TST-057",
+      "P2-TST-058",
+      "P2-TST-059"
+    ],
+    "refreshedSharedTests": [
+      "P2-TST-018"
+    ],
+    "acceptance": {
+      "P2-AC-003": "verified by the dedicated replication/runtime suites, exact filtered runtime campaign, stable final Release artifacts and reviewer GO",
+      "P2-AC-007": "implemented runtime prerequisite; WP10 still owns independent-client lifecycle evidence",
+      "P2-AC-008": "implemented runtime prerequisite; WP10/WP11 still own independent-client and loss evidence",
+      "P2-AC-009": "implemented functional runtime prerequisite; WP11 still owns the required extended campaign"
+    },
+    "decisionsCovered": [
+      "D2-002",
+      "D2-003",
+      "D2-006",
+      "D2-012",
+      "D2-017",
+      "D2-019",
+      "D2-020"
+    ]
+  },
+  "checkpointCriteria": {
+    "final0583Image": "pass",
+    "perClientManifestBaselineDelta": "pass",
+    "manifestBeforeSnapshotFence": "pass",
+    "cumulativeAtomReplacement": "pass",
+    "resyncAndKeyframeRepair": "pass",
+    "closureMutationAndPurge": "pass",
+    "sessionEndPreallocationAndRetry": "pass",
+    "oneMiBDeltaFallback": "pass",
+    "runtimeTst018Refresh": "pass",
+    "review": "GO",
+    "diffCheck": "pass",
+    "G2-E": "open-pending-WP09"
+  },
+  "commands": [
+    {
+      "id": "debug-build",
+      "command": "cmake --build build --config Debug --target telemetry_phase2_replication_tests telemetry_phase2_runtime_tests -j 2",
+      "exitCode": 0,
+      "result": "pass"
+    },
+    {
+      "id": "debug-dedicated-contract",
+      "command": "ctest --test-dir build -C Debug -R \"^(telemetry_phase2_replication_tests|telemetry_phase2_runtime_tests)$\" --output-on-failure",
+      "exitCode": 0,
+      "result": "2/2-suites-12/12-gtest-pass",
+      "suiteResults": [
+        {
+          "suite": "telemetry_phase2_replication_tests",
+          "result": "8/8-pass"
+        },
+        {
+          "suite": "telemetry_phase2_runtime_tests",
+          "result": "4/4-pass",
+          "tst018Scenarios": 2
+        }
+      ]
+    },
+    {
+      "id": "initial-release-build-wrapper",
+      "command": "cmake --build build --config Release --target telemetry_phase2_replication_tests telemetry_phase2_runtime_tests telemetry_session_controller_allocation_contract_tests unittests -j 2",
+      "exitCode": 124,
+      "durationSeconds": 604.0,
+      "result": "diagnostic-wrapper-timeout-during-lto",
+      "disposition": "The underlying build continued and produced all four executables. This diagnostic is superseded by the final exact no-op build and is not closure evidence."
+    },
+    {
+      "id": "release-dedicated-contract",
+      "command": "ctest --test-dir build -C Release -R \"^(telemetry_phase2_replication_tests|telemetry_phase2_runtime_tests|telemetry_session_controller_allocation_contract_tests)$\" --output-on-failure",
+      "exitCode": 0,
+      "durationSeconds": 0.25,
+      "result": "2/2-registered-suites-pass",
+      "suiteResults": [
+        {
+          "suite": "telemetry_phase2_replication_tests",
+          "result": "pass",
+          "durationSeconds": 0.07
+        },
+        {
+          "suite": "telemetry_phase2_runtime_tests",
+          "result": "pass",
+          "durationSeconds": 0.08
+        }
+      ],
+      "registryDiagnostic": "telemetry_session_controller_allocation_contract_tests was absent from the CTest registry and therefore not executed; P2-TST-049/P2-REQ-046 remain WP09 ownership."
+    },
+    {
+      "id": "release-filtered-runtime",
+      "command": "build/bin/Release/unittests.exe '--gtest_filter=TelemetryPhase1SnapshotSlotContract.*:TelemetryPhase1DeltaContract.*:TelemetryPhase1SnapshotEgressContract.*:TelemetryNativeRuntimeIntegrationContract.*:TelemetryNativeRuntimeLoopbackContract.*:TelemetryNativePlayerCaptureContract.*'",
+      "exitCode": 0,
+      "durationSeconds": 4.093,
+      "result": "50-pass-2-loopback-opt-in-skip-0-fail",
+      "totalCases": 52,
+      "suiteBreakdown": {
+        "TelemetryNativeRuntimeIntegrationContract": "16 pass",
+        "TelemetryNativePlayerCaptureContract": "20 pass",
+        "TelemetryPhase1SnapshotSlotContract": "4 pass",
+        "TelemetryPhase1DeltaContract": "7 pass",
+        "TelemetryPhase1SnapshotEgressContract": "3 pass",
+        "TelemetryNativeRuntimeLoopbackContract": "2 opt-in skips"
+      }
+    },
+    {
+      "id": "final-release-noop-build",
+      "command": "cmake --build build --config Release --target telemetry_phase2_replication_tests telemetry_phase2_runtime_tests telemetry_session_controller_allocation_contract_tests unittests -j 2",
+      "exitCode": 0,
+      "durationSeconds": 24.7,
+      "result": "pass-no-compile-no-link-hashes-and-mtimes-unchanged"
+    },
+    {
+      "id": "diff-check",
+      "command": "git diff --check",
+      "exitCode": 0,
+      "result": "pass"
+    }
+  ],
+  "review": {
+    "reviewer": "/root/reviewer",
+    "disposition": "GO",
+    "findings": [],
+    "summary": "The MANIFEST candidate is typed; WP03 parts and fragments follow the ACK Applied transaction; the final Released part applies; required_manifest_applied blocks snapshots; slot mutations purge or fault; SESSION_END SessionClosing ACK Applied is preallocated; unrelated output is preserved; same-slot state is replaced; payload, flags, isolation, purge and stable retry are covered. No contractual finding remains."
+  },
+  "nonblockingFollowUp": [
+    {
+      "classification": "WP09-required-proof",
+      "blocking": false,
+      "rootCause": "The allocation contract executable exists but is not registered in CTest and was not executed.",
+      "affects": [
+        "P2-WP-09",
+        "P2-TST-049",
+        "P2-REQ-046",
+        "G2-E"
+      ],
+      "disposition": "Register and execute the allocation target in WP09. Do not reopen or block WP08."
+    },
+    {
+      "classification": "environment-opt-in",
+      "blocking": false,
+      "rootCause": "The two native loopback cases require their explicit opt-in environment.",
+      "affects": [
+        "P2-WP-09",
+        "P2-WP-11"
+      ],
+      "disposition": "Replay under the WP09 or WP11 owning environment/gate."
+    }
+  ],
+  "releaseArtifacts": [
+    {
+      "path": "build/bin/Release/telemetry_phase2_replication_tests.exe",
+      "bytes": 644096,
+      "sha256": "1598d4abfc11dbbd6c590dfb41361f50471bbd158faa458bd8ea7c257221807b",
+      "mtimeUtc": "2026-07-27T05:37:17.8642614Z"
+    },
+    {
+      "path": "build/bin/Release/telemetry_phase2_runtime_tests.exe",
+      "bytes": 586752,
+      "sha256": "2b157feb0cac7716e93de9d5dc5d3cb6835437b345ec37033334b04374258aae",
+      "mtimeUtc": "2026-07-27T05:37:31.3592070Z"
+    },
+    {
+      "path": "build/bin/Release/telemetry_session_controller_allocation_contract_tests.exe",
+      "bytes": 16171008,
+      "sha256": "011a9193897a03209757d6029072bb0254518cdfdf46b4ea4c7f1fe7a646317",
+      "mtimeUtc": "2026-07-27T05:41:08.2555408Z",
+      "executionStatus": "built-not-registered-or-executed"
+    },
+    {
+      "path": "build/bin/Release/unittests.exe",
+      "bytes": 25477632,
+      "sha256": "36cd3a7a4b9836d1628113dcea7502a9ac000430a53c599c4feaf666c3b000ed",
+      "mtimeUtc": "2026-07-27T05:49:39.2657231Z"
+    }
+  ],
+  "sourceBindings": [
+    {
+      "path": "code/telemetry/phase2_runtime.cpp",
+      "sha256": "a689085f48577e98956580b2879858553a886bb4e4ba858e4c99fc5d8dc8db2a"
+    },
+    {
+      "path": "code/telemetry/phase2_runtime.h",
+      "sha256": "535da90cdfeb8aa1df993b17febbc2337f870f15bcb3f2d14d8e1603160ca3fc"
+    },
+    {
+      "path": "code/telemetry/native_session_runtime.cpp",
+      "sha256": "539862225e8137a532945576714fe171424ea218ce57180190a26548d2fe23a0"
+    },
+    {
+      "path": "code/telemetry/native_session_runtime.h",
+      "sha256": "a81c58e12950b1733f335d01fd3159d2f486108176f9a0a85056c31587574a62"
+    },
+    {
+      "path": "code/telemetry/phase1_delta_egress.h",
+      "sha256": "e88dc241505843f53cb7dcbb9c60560108c341c9ad33cd4aca978feb36723ed2"
+    },
+    {
+      "path": "code/telemetry/phase1_snapshot_egress.cpp",
+      "sha256": "49f9a248e6799f118e6e8cf3e293a34cbb71f0ee171a7bc2cb8eb7d0fc33bc65"
+    },
+    {
+      "path": "code/telemetry/phase1_snapshot_egress.h",
+      "sha256": "c6de3c81869deb3ebf0c7adbe23b5efead9677e02eeb38c130ec96e90e12f0fb"
+    },
+    {
+      "path": "code/telemetry/protocol/telemetry_reliable_window.cpp",
+      "sha256": "08f88a30079e424968f0463e552df9a5023034eedc60821787c18ffaa6319892"
+    },
+    {
+      "path": "code/telemetry/protocol/telemetry_reliable_window.h",
+      "sha256": "42bd911b31fb12e5d6793baf253d43a7d9113d4b6121f7bd34ebc5893379dc4b"
+    },
+    {
+      "path": "code/telemetry/session_controller.cpp",
+      "sha256": "e8fe2ba3f7e55e305072fbe050363684ce10ca660844d3363ca981fde321d627"
+    },
+    {
+      "path": "code/telemetry/session_controller.h",
+      "sha256": "dafa6a5453e4b5f59bc50c668974f7c7072330ebe0576d2dc3373f0782ff54c2"
+    },
+    {
+      "path": "code/telemetry/phase2_state_image.cpp",
+      "sha256": "c49bf76921dc9c39a170cf73300102eb845ab79b4082e2deffa27e88c8bad779"
+    },
+    {
+      "path": "code/telemetry/phase2_state_image.h",
+      "sha256": "37ff77250f5e6643c29733e86db56ee8156753e27de2bd6765b0de30461a499c"
+    },
+    {
+      "path": "code/telemetry/phase2_manifest_builder.cpp",
+      "sha256": "e7d6aa446d76ab837a495ee20c138aefb1c23e236de8ecfbc2986dfe35dd4c4a"
+    },
+    {
+      "path": "code/telemetry/phase2_manifest_builder.h",
+      "sha256": "cfc13b733000599f5089d80696028c11dce1f612c1e8e1501a3abbed25148e3f"
+    },
+    {
+      "path": "test/src/telemetry/producer/phase2_replication_tests.cpp",
+      "sha256": "30b87321746018395e77a42227f2b38b5c01aa4b65572b499299fd403e27c4d0"
+    },
+    {
+      "path": "test/src/telemetry/producer/phase2_runtime_tests.cpp",
+      "sha256": "864cda565cdb37720354c22f0156127a22e5a614e1dab4ab5a961035c9c06893"
+    },
+    {
+      "path": "test/src/telemetry/producer/phase2_session_identity_test_support.cpp",
+      "sha256": "b48743f54a8aff5c1156b9cb5889aa21e76e6d30b31eedb0e93f04628ee77c00"
+    },
+    {
+      "path": "test/src/CMakeLists.txt",
+      "sha256": "0fa2dcf332f5ffa16a882d70f72ef342b2d0997d199ebf65098d617c9b384cdd"
+    },
+    {
+      "path": "code/source_groups.cmake",
+      "sha256": "950d0894da336e8736b1ad9d9e920b4cf9ade43bc12629db8ddee3ba75824ec1"
+    }
+  ],
+  "binding": {
+    "stableTracker": {
+      "path": "documentation/analysis/progress/phase-2.json",
+      "sha256": "e785a3165b040797ef5f3a38a8466512a2970537731a8576282c4797fe4072cb",
+      "validation": "passed"
+    },
+    "statusLineCountBeforeTrackerAndReport": 132,
+    "statusSha256Utf8BeforeTrackerAndReport": "47f6fae1b49a35974103f21f1898e58496dee381c1e639e8001f46c6011fc25d",
+    "focusedTrackedDiffSha256BeforeTrackerAndReport": "33def5ce80afc4a347f47d473ca7f06c29b1b639d035f56dea0fdf1d43645ff6",
+    "reportSha256": "recorded externally after this single final write to avoid self-reference",
+    "untrackedFilesPreserved": true
+  },
+  "gateDisposition": {
+    "gate": "G2-E",
+    "result": "open",
+    "completedByThisCheckpoint": [
+      "P2-WP-08"
+    ],
+    "stillRequired": [
+      "P2-WP-09",
+      "P2-TST-049",
+      "P2-REQ-046 security/allocation proof"
+    ],
+    "doesNotAuthorize": [
+      "P2-WP-10 until G2-E closes",
+      "any later phase"
+    ]
+  },
+  "blockers": [],
+  "nextAction": "Begin P2-WP-09 under the balanced profile as the next single-writer package. Register and execute the allocation contract target, complete the security/configuration evidence, and close G2-E only on fresh conclusive proof."
+}

@@ -1749,6 +1749,10 @@ add_file_folder("Telemetry"
 	telemetry/phase2_gameplay_ab_test_seam.h
 	telemetry/phase2_profile_gate.cpp
 	telemetry/phase2_profile_gate.h
+	telemetry/phase2_runtime.cpp
+	telemetry/phase2_runtime.h
+	telemetry/phase2_state_image.cpp
+	telemetry/phase2_state_image.h
 	telemetry/phase2_session_transition.cpp
 	telemetry/phase2_session_transition.h
 	telemetry/runtime.cpp

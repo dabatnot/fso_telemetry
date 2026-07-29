@@ -278,6 +278,8 @@ La Phase 2 n’annonce pas `PREDICTION`; les groupes prédictifs optionnels de `
 
 La Phase 2 publie mécanique, cooldown, animation, banques et ammo. Cible, aim point, range liée à la cible, priorité, AWACS et locks restent Phase 3.
 
+Pour `NEXT_FIRE_POINT`, `turret_num_firing_points=0` rend le groupe absent, `1..64` le rend présent avec `turret_next_fire_pos % count`, et toute valeur `>64` refuse transactionnellement l’échantillon sans troncature. Cette clarification résout l’arbitrage utilisateur de `P2-WP-05` sans nouvel identifiant de décision.
+
 ### `D2-015` — Provenance dégâts absente
 
 Faute d’autorité durable complète, `CUMULATIVE_DAMAGE`, `LAST_DAMAGE` et `CONTRIBUTORS` sont absents. Aucun hook de tir/dégât global n’est anticipé.

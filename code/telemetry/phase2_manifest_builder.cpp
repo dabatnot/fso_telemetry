@@ -12,54 +12,275 @@ namespace telemetry {
 using namespace protocol;
 namespace {
 
+template <typename T>
+bool hash_scalar(Sha256& hash, const T& value) noexcept
+{
+	return hash.update(ByteView{
+		reinterpret_cast<const std::uint8_t*>(&value), sizeof(value)});
+}
+
+bool hash_string(Sha256& hash, const std::string& value) noexcept
+{
+	const auto size = static_cast<std::uint32_t>(value.size());
+	return hash_scalar(hash, size) &&
+		hash.update(ByteView{reinterpret_cast<const std::uint8_t*>(value.data()), value.size()});
+}
+
+bool auxiliary_entry_referenced(const Phase2ManifestSource& source,
+	const Phase2AuxiliaryEntry& entry) noexcept
+{
+	const auto registry = entry.registry;
+	for(std::uint32_t r=0;r<source.referenced_ship_class_count;++r) {
+		const Phase2ClassSource* ship_class=nullptr;
+		for(std::uint32_t c=0;c<source.ship_class_count;++c)
+			if(source.ship_classes[c].source_key==source.referenced_ship_class_keys[r]) {
+				ship_class=&source.ship_classes[c];break;
+			}
+		if(!ship_class)continue;
+		if((registry==AuxiliaryRegistry::Species&&ship_class->species_index==entry.engine_index)||
+			(registry==AuxiliaryRegistry::ShipType&&ship_class->ship_type_index==entry.engine_index)||
+			(registry==AuxiliaryRegistry::Iff&&ship_class->iff_index==entry.engine_index)||
+			(registry==AuxiliaryRegistry::Wing&&ship_class->wing_index==entry.engine_index)||
+			(registry==AuxiliaryRegistry::Armor&&ship_class->armor_index==entry.engine_index)||
+			(registry==AuxiliaryRegistry::DamageType&&ship_class->damage_type_index==entry.engine_index))
+			return true;
+		if(registry==AuxiliaryRegistry::Armor)
+			for(std::uint32_t s=0;s<ship_class->subsystem_count && s<ship_class->subsystems.size();++s)
+				if(ship_class->subsystems[s].armor_index==entry.engine_index)return true;
+		if(registry==AuxiliaryRegistry::Pattern)
+			for(std::uint32_t b=0;b<ship_class->bank_count && b<ship_class->banks.size();++b)
+				if(ship_class->banks[b].firing_pattern_source_code!=0U &&
+					ship_class->banks[b].firing_pattern_source_code==entry.engine_index)return true;
+	}
+	if(registry==AuxiliaryRegistry::DamageType)
+		for(std::uint32_t r=0;r<source.referenced_weapon_count;++r)
+			for(std::uint32_t w=0;w<source.weapon_count;++w)
+				if(source.weapons[w].source_key==source.referenced_weapon_keys[r]&&
+					source.weapons[w].damage_type_index==entry.engine_index)return true;
+	return false;
+}
+
 std::uint32_t auxiliary_id(const Phase2ManifestSource& source, AuxiliaryRegistry registry,
 	std::int32_t engine_index, Phase2ManifestError& error) noexcept
 {
 	if (engine_index == -1) return 0;
-	const auto referenced=[&](const Phase2AuxiliaryEntry& entry) noexcept {
-		for(std::uint32_t r=0;r<source.referenced_ship_class_count;++r) {
-			const Phase2ClassSource* ship_class=nullptr;
-			for(std::uint32_t c=0;c<source.ship_class_count;++c)
-				if(source.ship_classes[c].source_key==source.referenced_ship_class_keys[r]) {
-					ship_class=&source.ship_classes[c];break;
-				}
-			if(!ship_class)continue;
-			if((registry==AuxiliaryRegistry::Species&&ship_class->species_index==entry.engine_index)||
-				(registry==AuxiliaryRegistry::ShipType&&ship_class->ship_type_index==entry.engine_index)||
-				(registry==AuxiliaryRegistry::Iff&&ship_class->iff_index==entry.engine_index)||
-				(registry==AuxiliaryRegistry::Wing&&ship_class->wing_index==entry.engine_index)||
-				(registry==AuxiliaryRegistry::Armor&&ship_class->armor_index==entry.engine_index)||
-				(registry==AuxiliaryRegistry::DamageType&&ship_class->damage_type_index==entry.engine_index))
-				return true;
-			if(registry==AuxiliaryRegistry::Armor)
-				for(std::uint32_t s=0;s<ship_class->subsystem_count;++s)
-					if(ship_class->subsystems[s].armor_index==entry.engine_index)return true;
-		}
-		if(registry==AuxiliaryRegistry::DamageType)
-			for(std::uint32_t r=0;r<source.referenced_weapon_count;++r)
-				for(std::uint32_t w=0;w<source.weapon_count;++w)
-					if(source.weapons[w].source_key==source.referenced_weapon_keys[r]&&
-						source.weapons[w].damage_type_index==entry.engine_index)return true;
-		return false;
-	};
 	std::array<const Phase2AuxiliaryEntry*, Phase2ManifestLimits::MaxAuxiliaryEntries> entries{};
 	std::uint32_t count=0;
 	for (std::uint32_t i=0;i<source.auxiliary_entry_count;++i)
-		if (source.auxiliary_entries[i].registry==registry&&referenced(source.auxiliary_entries[i]))
+		if (source.auxiliary_entries[i].registry==registry&&
+			auxiliary_entry_referenced(source, source.auxiliary_entries[i]))
 			entries[count++]=&source.auxiliary_entries[i];
-	std::sort(entries.begin(), entries.begin()+count, [](auto a, auto b){ return a->name < b->name; });
-	for(std::uint32_t i=1;i<count;++i) if(entries[i-1]->name==entries[i]->name) {
+	std::sort(entries.begin(), entries.begin()+count, [registry](auto a, auto b){
+		return registry==AuxiliaryRegistry::Pattern
+			? a->engine_index<b->engine_index : a->name<b->name;
+	});
+	for(std::uint32_t i=1;i<count;++i) if(
+		registry==AuxiliaryRegistry::Pattern
+			? entries[i-1]->engine_index==entries[i]->engine_index
+			: entries[i-1]->name==entries[i]->name) {
 		error=Phase2ManifestError::AmbiguousAuxiliaryName; return 0;
 	}
 	for(std::uint32_t i=0;i<count;++i) if(entries[i]->engine_index==engine_index) return i+1;
 	error=Phase2ManifestError::InvalidSource; return 0;
 }
 
-bool contains(const std::uint32_t* values, std::uint32_t count, std::uint32_t key) noexcept
+bool hash_auxiliary_reference(Sha256& hash,
+	const Phase2ManifestSource& source,
+	AuxiliaryRegistry registry,
+	std::int32_t engine_index) noexcept
 {
-	for(std::uint32_t i=0;i<count;++i) if(values[i]==key) return true;
+	if(!hash_scalar(hash,registry))return false;
+	const bool present=engine_index!=-1;
+	if(!hash_scalar(hash,present))return false;
+	if(!present)return true;
+	const Phase2AuxiliaryEntry* match=nullptr;
+	for(std::uint32_t index=0;index<source.auxiliary_entry_count;++index) {
+		const auto& entry=source.auxiliary_entries[index];
+		if(entry.registry==registry&&entry.engine_index==engine_index) {
+			if(match!=nullptr)return false;
+			match=&entry;
+		}
+	}
+	return match!=nullptr&&hash_string(hash,match->name);
+}
+
+bool weapon_descriptor_digest(const Phase2ManifestSource& source,
+	const Phase2WeaponSource& weapon,
+	Sha256Digest& digest) noexcept
+{
+	Sha256 hash;
+	bool ok=hash_string(hash,weapon.name)&&hash_string(hash,weapon.title)&&
+		hash_scalar(hash,weapon.subtype)&&hash_scalar(hash,weapon.class_flags)&&
+		hash_scalar(hash,weapon.max_speed)&&hash_scalar(hash,weapon.mass)&&
+		hash_scalar(hash,weapon.gravity_constant)&&hash_scalar(hash,weapon.velocity_inherit_amount)&&
+		hash_scalar(hash,weapon.turn_factor)&&hash_scalar(hash,weapon.lifetime_us)&&
+		hash_scalar(hash,weapon.effect_flags)&&hash_scalar(hash,weapon.guidance_type)&&
+		hash_scalar(hash,weapon.has_acceleration)&&hash_scalar(hash,weapon.has_ranges)&&
+		hash_scalar(hash,weapon.has_fire)&&hash_scalar(hash,weapon.has_damage)&&
+		hash_scalar(hash,weapon.has_guidance)&&hash_scalar(hash,weapon.has_lock)&&
+		hash_scalar(hash,weapon.has_cargo_rearm)&&hash_scalar(hash,weapon.has_burst)&&
+		hash_scalar(hash,weapon.has_swarm)&&hash_scalar(hash,weapon.acceleration_time_us)&&
+		hash_scalar(hash,weapon.fire_wait_us)&&hash_scalar(hash,weapon.lock_time_us)&&
+		hash_scalar(hash,weapon.rearm_time_us)&&hash_scalar(hash,weapon.burst_interval_us)&&
+		hash_scalar(hash,weapon.minimum_range)&&hash_scalar(hash,weapon.optimal_range)&&
+		hash_scalar(hash,weapon.maximum_range)&&hash_scalar(hash,weapon.energy_consumed)&&
+		hash_scalar(hash,weapon.damage)&&hash_scalar(hash,weapon.guidance_fov_rad)&&
+		hash_scalar(hash,weapon.lock_fov_rad)&&hash_scalar(hash,weapon.cargo_size)&&
+		hash_scalar(hash,weapon.reloaded_per_batch)&&hash_scalar(hash,weapon.burst_count)&&
+		hash_scalar(hash,weapon.swarm_count)&&hash_scalar(hash,weapon.shots_per_trigger);
+	ok=ok&&hash_auxiliary_reference(
+		hash,source,AuxiliaryRegistry::DamageType,weapon.damage_type_index);
+	return ok&&hash.finalize(digest);
+}
+
+std::uint32_t canonical_bank_owner(const Phase2BankSource& bank) noexcept
+{
+	return bank.owner_subsystem_canonical_index==UINT16_MAX
+		? 0U : static_cast<std::uint32_t>(bank.owner_subsystem_canonical_index)+1U;
+}
+
+bool bank_descriptor_less(const Phase2ManifestSource& source,
+	const Phase2BankSource& left,
+	const Phase2BankSource& right) noexcept
+{
+	if(left.family!=right.family)return left.family<right.family;
+	if(canonical_bank_owner(left)!=canonical_bank_owner(right))
+		return canonical_bank_owner(left)<canonical_bank_owner(right);
+	if(left.source_family!=right.source_family)return left.source_family<right.source_family;
+	if(left.bank_index!=right.bank_index)return left.bank_index<right.bank_index;
+	if(left.firing_pattern_source_code!=right.firing_pattern_source_code)
+		return left.firing_pattern_source_code<right.firing_pattern_source_code;
+	Sha256Digest left_weapon{},right_weapon{};
+	for(std::uint32_t index=0;index<source.weapon_count;++index) {
+		if(source.weapons[index].source_key==left.weapon_source_key)
+			weapon_descriptor_digest(source,source.weapons[index],left_weapon);
+		if(source.weapons[index].source_key==right.weapon_source_key)
+			weapon_descriptor_digest(source,source.weapons[index],right_weapon);
+	}
+	if(left_weapon!=right_weapon)return left_weapon<right_weapon;
+	if(left.consumes_ammunition!=right.consumes_ammunition)
+		return left.consumes_ammunition<right.consumes_ammunition;
+	if(left.capacity!=right.capacity)return left.capacity<right.capacity;
+	if(left.fire_point_count!=right.fire_point_count)return left.fire_point_count<right.fire_point_count;
+	for(std::uint32_t point=0;point<left.fire_point_count;++point) {
+		if(left.fire_points[point].x!=right.fire_points[point].x)
+			return left.fire_points[point].x<right.fire_points[point].x;
+		if(left.fire_points[point].y!=right.fire_points[point].y)
+			return left.fire_points[point].y<right.fire_points[point].y;
+		if(left.fire_points[point].z!=right.fire_points[point].z)
+			return left.fire_points[point].z<right.fire_points[point].z;
+	}
 	return false;
 }
+
+bool class_descriptor_digest(const Phase2ManifestSource& source,
+	const Phase2ClassSource& ship_class,
+	Sha256Digest& digest) noexcept
+{
+	Sha256 hash;
+	bool ok=hash_string(hash,ship_class.name)&&
+		hash_scalar(hash,ship_class.effective_mass);
+	const auto has_full_inertia=std::any_of(ship_class.effective_inertia_matrix.begin(),
+		ship_class.effective_inertia_matrix.end(),[](float value){return value!=0.0F;});
+	for(std::size_t row=0;row<3;++row)for(std::size_t column=0;column<3;++column) {
+		const auto value=has_full_inertia?ship_class.effective_inertia_matrix[row*3+column]:
+			(row==column?ship_class.effective_inertia[row]:0.0F);
+		ok=ok&&hash_scalar(hash,value);
+	}
+	for(const auto value:ship_class.half_angle_cosines)ok=ok&&hash_scalar(hash,value);
+	ok=ok&&hash_scalar(hash,ship_class.center_of_mass.x)&&hash_scalar(hash,ship_class.center_of_mass.y)&&
+		hash_scalar(hash,ship_class.center_of_mass.z)&&
+		hash_scalar(hash,ship_class.max_velocity.x)&&hash_scalar(hash,ship_class.max_velocity.y)&&
+		hash_scalar(hash,ship_class.max_velocity.z)&&
+		hash_scalar(hash,ship_class.afterburner_max_velocity.x)&&
+		hash_scalar(hash,ship_class.afterburner_max_velocity.y)&&
+		hash_scalar(hash,ship_class.afterburner_max_velocity.z)&&
+		hash_scalar(hash,ship_class.booster_max_velocity.x)&&hash_scalar(hash,ship_class.booster_max_velocity.y)&&
+		hash_scalar(hash,ship_class.booster_max_velocity.z)&&
+		hash_scalar(hash,ship_class.max_rotational_velocity.x)&&
+		hash_scalar(hash,ship_class.max_rotational_velocity.y)&&
+		hash_scalar(hash,ship_class.max_rotational_velocity.z)&&
+		hash_scalar(hash,ship_class.max_rear_velocity)&&hash_scalar(hash,ship_class.forward_accel_time)&&
+		hash_scalar(hash,ship_class.afterburner_forward_accel_time)&&
+		hash_scalar(hash,ship_class.booster_forward_accel_time)&&hash_scalar(hash,ship_class.forward_decel_time)&&
+		hash_scalar(hash,ship_class.slide_accel_time)&&hash_scalar(hash,ship_class.slide_decel_time)&&
+		hash_scalar(hash,ship_class.max_hull_strength)&&
+		hash_scalar(hash,ship_class.max_shield_strength)&&hash_scalar(hash,ship_class.has_afterburner)&&
+		hash_scalar(hash,ship_class.afterburner_fuel_capacity)&&hash_scalar(hash,ship_class.afterburner_burn_rate)&&
+		hash_scalar(hash,ship_class.afterburner_recover_rate)&&hash_scalar(hash,ship_class.afterburner_min_start_fuel)&&
+		hash_scalar(hash,ship_class.afterburner_cooldown_us)&&hash_scalar(hash,ship_class.has_scan)&&
+		hash_scalar(hash,ship_class.scan_required_time_us)&&hash_scalar(hash,ship_class.scan_max_distance)&&
+		hash_scalar(hash,ship_class.scan_max_angle_rad)&&hash_scalar(hash,ship_class.has_glide)&&
+		hash_scalar(hash,ship_class.glide_cap)&&hash_scalar(hash,ship_class.has_autoaim)&&
+		hash_scalar(hash,ship_class.autoaim_fov_rad)&&
+		hash_scalar(hash,ship_class.countermeasure_capacity)&&
+		hash_scalar(hash,ship_class.countermeasure_cargo_size)&&
+		hash_scalar(hash,ship_class.countermeasure_uses_capacity)&&
+		hash_scalar(hash,ship_class.countermeasure_firewait_ms)&&
+		hash_scalar(hash,ship_class.subsystem_count)&&
+		hash_scalar(hash,ship_class.bank_count);
+	ok=ok&&hash_auxiliary_reference(hash,source,AuxiliaryRegistry::Species,ship_class.species_index)&&
+		hash_auxiliary_reference(hash,source,AuxiliaryRegistry::ShipType,ship_class.ship_type_index)&&
+		hash_auxiliary_reference(hash,source,AuxiliaryRegistry::Iff,ship_class.iff_index)&&
+		hash_auxiliary_reference(hash,source,AuxiliaryRegistry::Wing,ship_class.wing_index)&&
+		hash_auxiliary_reference(hash,source,AuxiliaryRegistry::Armor,ship_class.armor_index)&&
+		hash_auxiliary_reference(hash,source,AuxiliaryRegistry::DamageType,ship_class.damage_type_index);
+	for(std::uint32_t index=0;index<ship_class.subsystem_count&&ok;++index) {
+		const auto& subsystem=ship_class.subsystems[index];
+		ok=hash_string(hash,subsystem.name)&&hash_string(hash,subsystem.alt_name)&&
+			hash_string(hash,subsystem.hud_name)&&hash_scalar(hash,subsystem.max_hits)&&
+			hash_scalar(hash,subsystem.type)&&hash_scalar(hash,subsystem.local_position.x)&&
+			hash_scalar(hash,subsystem.local_position.y)&&hash_scalar(hash,subsystem.local_position.z)&&
+			hash_scalar(hash,subsystem.radius)&&hash_scalar(hash,subsystem.static_flags);
+		ok=ok&&hash_auxiliary_reference(
+			hash,source,AuxiliaryRegistry::Armor,subsystem.armor_index);
+	}
+	std::array<std::uint32_t,Phase2ManifestLimits::MaxBanksPerClass> bank_order{};
+	for(std::uint32_t index=0;index<ship_class.bank_count;++index)bank_order[index]=index;
+	std::sort(bank_order.begin(),bank_order.begin()+ship_class.bank_count,[&](auto left,auto right) {
+		return bank_descriptor_less(source,ship_class.banks[left],ship_class.banks[right]);
+	});
+	for(std::uint32_t index=0;index<ship_class.bank_count&&ok;++index) {
+		const auto& bank=ship_class.banks[bank_order[index]];
+		ok=hash_scalar(hash,bank.family)&&hash_scalar(hash,bank.source_family)&&
+			hash_scalar(hash,bank.bank_index)&&hash_scalar(hash,bank.owner_subsystem_canonical_index)&&
+			hash_scalar(hash,bank.firing_pattern_source_code)&&
+			hash_scalar(hash,bank.consumes_ammunition)&&hash_scalar(hash,bank.capacity)&&
+			hash_scalar(hash,bank.fire_point_count);
+		for(std::uint32_t point=0;point<bank.fire_point_count&&ok;++point)
+			ok=hash_scalar(hash,bank.fire_points[point].x)&&hash_scalar(hash,bank.fire_points[point].y)&&
+				hash_scalar(hash,bank.fire_points[point].z);
+		if(bank.weapon_source_key!=0) {
+			const Phase2WeaponSource* weapon=nullptr;
+			for(std::uint32_t candidate=0;candidate<source.weapon_count;++candidate)
+				if(source.weapons[candidate].source_key==bank.weapon_source_key) {
+					if(weapon!=nullptr)return false;
+					weapon=&source.weapons[candidate];
+				}
+			Sha256Digest weapon_digest{};
+			if(weapon==nullptr||!weapon_descriptor_digest(source,*weapon,weapon_digest)||
+				!hash.update(ByteView{weapon_digest.data(),weapon_digest.size()}))return false;
+		}
+	}
+	if(ship_class.countermeasure_weapon_source_key!=0) {
+		const Phase2WeaponSource* weapon=nullptr;
+		for(std::uint32_t candidate=0;candidate<source.weapon_count;++candidate)
+			if(source.weapons[candidate].source_key==ship_class.countermeasure_weapon_source_key) {
+				if(weapon!=nullptr)return false;
+				weapon=&source.weapons[candidate];
+			}
+		Sha256Digest weapon_digest{};
+		if(weapon==nullptr||!weapon_descriptor_digest(source,*weapon,weapon_digest)||
+			!hash.update(ByteView{weapon_digest.data(),weapon_digest.size()}))return false;
+	}
+	return ok&&hash.finalize(digest);
+}
+
+template <typename T>
+struct CanonicalDescriptorRef {
+	const T* value=nullptr;
+	Sha256Digest digest{};
+};
 
 std::size_t estimated_class_payload(const Phase2ClassSource& value) noexcept
 {
@@ -71,30 +292,6 @@ std::size_t estimated_class_payload(const Phase2ClassSource& value) noexcept
 			(value.banks[i].family==telemetry::WeaponFamily::Secondary?4:0);
 	return std::min<std::size_t>(65535, result);
 }
-std::size_t estimated_weapon_payload(const Phase2WeaponSource& w) noexcept
-{
-	std::size_t n=45+w.name.size()+w.title.size();
-	n += w.has_acceleration?8:0; n += w.has_ranges?12:0; n += w.has_fire?12:0;
-	n += w.has_damage?12:0; n += w.has_guidance?5:0; n += w.has_lock?12:0;
-	n += w.has_cargo_rearm?16:0; n += w.has_burst?10:0; n += w.has_swarm?4:0;
-	if(w.has_acceleration&&w.has_ranges&&w.has_fire&&w.has_damage&&w.has_guidance&&
-		w.has_lock&&w.has_cargo_rearm&&w.has_burst&&w.has_swarm) return 654;
-	return std::min<std::size_t>(654, n);
-}
-
-bool append_extension_padding(MutableByteView arena,std::size_t& offset,std::size_t bytes) noexcept
-{
-	while(bytes>=RecordEnvelopeHeaderSize) {
-		const auto payload=std::min<std::size_t>(65535,bytes-RecordEnvelopeHeaderSize);
-		if(offset+RecordEnvelopeHeaderSize+payload>arena.size)return false;
-		PacketWriter writer({arena.data+offset,arena.size-offset});
-		if(!writer.write_u16(0x7ffe)||!writer.write_u8(1)||!writer.write_u8(0)||
-			!writer.write_u16(static_cast<std::uint16_t>(payload))||!writer.write_zeroes(payload))return false;
-		offset+=writer.size();bytes-=writer.size();
-	}
-	return true;
-}
-
 bool write_class_record(MutableByteView arena,std::size_t& offset,std::uint32_t generation,
 	std::uint32_t id,const Phase2ClassSource& source,const Phase2ClassRecord& projected) noexcept
 {
@@ -153,11 +350,11 @@ bool write_class_record(MutableByteView arena,std::size_t& offset,std::uint32_t 
 			std::array<std::uint8_t,1024> item{};PacketWriter iw({item.data(),item.size()});
 			std::uint16_t item_presence=0;
 			if(bank.weapon_class_id)item_presence|=ClassBankPresenceFlagWeaponClass;
-			if(bank.capacity>0)item_presence|=ClassBankPresenceFlagCapacity;
+			if(bank.consumes_ammunition)item_presence|=ClassBankPresenceFlagCapacity;
 			if(!iw.write_u16(item_presence)||!iw.write_u8(static_cast<std::uint8_t>(bank.family))||
 				!iw.write_u8(0)||!iw.write_u16(bank.canonical_index)||!iw.write_u32(bank.bank_id))return false;
 			if(bank.weapon_class_id&&!iw.write_u32(bank.weapon_class_id))return false;
-			if(bank.capacity>0&&!iw.write_f32(bank.capacity))return false;
+			if(bank.consumes_ammunition&&!iw.write_f32(bank.capacity))return false;
 			if(!iw.write_u16(static_cast<std::uint16_t>(bank.fire_point_count))||
 				!iw.write_u8(1)||!iw.write_u16(12))return false;
 			for(std::uint32_t p=0;p<bank.fire_point_count;++p)
@@ -204,7 +401,7 @@ bool write_class_record(MutableByteView arena,std::size_t& offset,std::uint32_t 
 }
 
 bool write_weapon_record(MutableByteView arena,std::size_t& offset,std::uint32_t generation,
-	std::uint32_t id,const Phase2WeaponSource& source,std::size_t target_size) noexcept
+	std::uint32_t id,const Phase2WeaponSource& source,const Phase2WeaponRecord& projected) noexcept
 {
 	std::array<std::uint8_t,65535> payload{};
 	std::uint64_t presence=0;
@@ -221,15 +418,17 @@ bool write_weapon_record(MutableByteView arena,std::size_t& offset,std::uint32_t
 	PacketWriter w({payload.data(),payload.size()});
 	bool ok=w.write_u32(generation)&&w.write_u32(id)&&w.write_u64(presence)&&w.write_utf8(source.name,255);
 	if(!source.title.empty())ok=ok&&w.write_utf8(source.title,255);
-	ok=ok&&w.write_u8(0)&&w.write_u64(0)&&w.write_f32(0);
+	ok=ok&&w.write_u8(static_cast<std::uint8_t>(source.subtype))&&
+		w.write_u64(source.class_flags)&&w.write_f32(source.max_speed);
 	if(source.has_acceleration)ok=ok&&w.write_u64(source.acceleration_time_us);
-	ok=ok&&w.write_f32(0)&&w.write_f32(0)&&w.write_u64(0);
+	ok=ok&&w.write_f32(source.mass)&&w.write_f32(source.gravity_constant)&&w.write_u64(source.lifetime_us);
 	if(source.has_ranges)ok=ok&&w.write_f32(source.minimum_range)&&w.write_f32(source.optimal_range)&&w.write_f32(source.maximum_range);
 	if(source.has_fire)ok=ok&&w.write_u64(source.fire_wait_us)&&w.write_f32(source.energy_consumed);
-	if(source.has_damage)ok=ok&&w.write_f32(source.damage)&&w.write_u32(0)&&w.write_u32(0);
-	if(source.has_guidance)ok=ok&&w.write_u8(0)&&w.write_f32(source.guidance_fov_rad);
+	if(source.has_damage)ok=ok&&w.write_f32(source.damage)&&w.write_u32(projected.damage_type_id)&&
+		w.write_u32(source.effect_flags);
+	if(source.has_guidance)ok=ok&&w.write_u8(source.guidance_type)&&w.write_f32(source.guidance_fov_rad);
 	if(source.has_lock)ok=ok&&w.write_u64(source.lock_time_us)&&w.write_f32(source.lock_fov_rad);
-	ok=ok&&w.write_f32(0);
+	ok=ok&&w.write_f32(source.velocity_inherit_amount);
 	if(source.has_cargo_rearm)ok=ok&&w.write_f32(source.cargo_size)&&w.write_u64(source.rearm_time_us)&&w.write_u32(source.reloaded_per_batch);
 	if(source.has_burst)ok=ok&&w.write_u16(source.burst_count)&&w.write_u64(source.burst_interval_us);
 	if(source.has_swarm)ok=ok&&w.write_u16(source.swarm_count)&&w.write_u16(source.shots_per_trigger);
@@ -238,7 +437,7 @@ bool write_weapon_record(MutableByteView arena,std::size_t& offset,std::uint32_t
 	std::size_t written=0;
 	if(encode_business_record(record,BusinessRecordContainer::Manifest,{arena.data+offset,arena.size-offset},written)!=ValidationError::None)return false;
 	offset+=written;
-	return target_size<=written||append_extension_padding(arena,offset,target_size-written);
+	return true;
 }
 
 bool same_digest(const Sha256Digest& a,const Sha256Digest& b) noexcept { return a==b; }
@@ -269,11 +468,19 @@ Phase2ManifestError Phase2ManifestSlot::rebuild(const Phase2ManifestSource& sour
 		source.metadata.maximum_string_bytes>65535 || source.metadata.projected_record_count>65535 ||
 		source.metadata.maximum_record_length>65535)
 		return Phase2ManifestError::SourceLimitExceeded;
+	for(std::uint32_t i=0;i<source.ship_class_count;++i) {
+		if(source.ship_classes[i].subsystem_count>Phase2ManifestLimits::MaxSubsystemsPerShip)
+			return Phase2ManifestError::TooManySubsystemsPerShip;
+		if(source.ship_classes[i].bank_count>Phase2ManifestLimits::MaxBanksPerClass)
+			return Phase2ManifestError::SourceLimitExceeded;
+	}
 	for(std::uint32_t i=0;i<source.auxiliary_entry_count;++i) {
 		const auto& a=source.auxiliary_entries[i];
 		if(a.name.size()>255||!is_valid_utf8(a.name))return Phase2ManifestError::InvalidString;
 		for(std::uint32_t j=0;j<i;++j)
-			if(source.auxiliary_entries[j].registry==a.registry&&source.auxiliary_entries[j].name==a.name)
+			if(auxiliary_entry_referenced(source,a)&&
+				auxiliary_entry_referenced(source,source.auxiliary_entries[j])&&
+				source.auxiliary_entries[j].registry==a.registry&&source.auxiliary_entries[j].name==a.name)
 				return Phase2ManifestError::AmbiguousAuxiliaryName;
 	}
 	for(std::uint32_t i=0;i<source.ship_class_count;++i) {
@@ -320,73 +527,90 @@ Phase2ManifestError Phase2ManifestSlot::rebuild(const Phase2ManifestSource& sour
 	}
 	if(m_next_id==0||m_next_id==UINT32_MAX)return Phase2ManifestError::InvalidSource;
 
-	std::array<const Phase2ClassSource*,Phase2ManifestLimits::MaxClasses> classes{};
-	std::array<const Phase2WeaponSource*,Phase2ManifestLimits::MaxWeapons> weapons{};
+	std::array<CanonicalDescriptorRef<Phase2ClassSource>,Phase2ManifestLimits::MaxClasses> classes{};
+	std::array<CanonicalDescriptorRef<Phase2WeaponSource>,Phase2ManifestLimits::MaxWeapons> weapons{};
 	for(std::uint32_t r=0;r<source.referenced_ship_class_count;++r) {
 		const Phase2ClassSource* found=nullptr;
 		for(std::uint32_t i=0;i<source.ship_class_count;++i) if(source.ship_classes[i].source_key==source.referenced_ship_class_keys[r]) {
 			if(found) return Phase2ManifestError::DuplicateDefinition; found=&source.ship_classes[i];
 		}
-		if(!found) return Phase2ManifestError::MissingRequiredDefinition; classes[r]=found;
+		if(!found) return Phase2ManifestError::MissingRequiredDefinition;
+		classes[r].value=found;
+		if(!class_descriptor_digest(source,*found,classes[r].digest))
+			return Phase2ManifestError::InvalidSource;
 	}
 	for(std::uint32_t r=0;r<source.referenced_weapon_count;++r) {
 		const Phase2WeaponSource* found=nullptr;
 		for(std::uint32_t i=0;i<source.weapon_count;++i) if(source.weapons[i].source_key==source.referenced_weapon_keys[r]) {
 			if(found) return Phase2ManifestError::DuplicateDefinition; found=&source.weapons[i];
 		}
-		if(!found) return Phase2ManifestError::MissingRequiredDefinition; weapons[r]=found;
+		if(!found) return Phase2ManifestError::MissingRequiredDefinition;
+		weapons[r].value=found;
+		if(!weapon_descriptor_digest(source,*found,weapons[r].digest))
+			return Phase2ManifestError::InvalidSource;
 	}
 	std::sort(classes.begin(),classes.begin()+source.referenced_ship_class_count,[](auto a,auto b){
-		if(a->name!=b->name)return a->name<b->name; if(a->effective_mass!=b->effective_mass)return a->effective_mass<b->effective_mass;
-		return a->subsystem_count<b->subsystem_count;
+		if(a.value->name!=b.value->name)return a.value->name<b.value->name;
+		return a.digest<b.digest;
 	});
 	std::sort(weapons.begin(),weapons.begin()+source.referenced_weapon_count,[](auto a,auto b){
-		if(a->name!=b->name)return a->name<b->name; return a->title<b->title;
+		if(a.value->name!=b.value->name)return a.value->name<b.value->name;
+		return a.digest<b.digest;
 	});
-	auto index=m_staged_index;
+	const auto previous_staged_index=m_staged_index;
+	auto index=m_staged&&!m_active
+		? static_cast<std::uint8_t>(m_staged_index^1U)
+		: m_staged_index;
 	auto& candidate=m_candidates[index];
 	auto arena=m_storage.arenas[index];
 	if(arena.data==nullptr || arena.size==0) return Phase2ManifestError::AllocationFailed;
-	PacketWriter semantic_writer(arena);
-	bool semantic_ok=semantic_writer.write_u32(source.referenced_ship_class_count)&&
-		semantic_writer.write_u32(source.referenced_weapon_count);
-	for(std::uint32_t i=0;i<source.referenced_ship_class_count&&semantic_ok;++i) {
-		const auto& c=*classes[i];
-		semantic_ok=semantic_writer.write_utf8(c.name,255)&&semantic_writer.write_f32(c.effective_mass);
-		for(float v:c.effective_inertia)semantic_ok=semantic_ok&&semantic_writer.write_f32(v);
-		for(float v:c.half_angle_cosines)semantic_ok=semantic_ok&&semantic_writer.write_f32(v);
-		semantic_ok=semantic_ok&&semantic_writer.write_u32(c.subsystem_count)&&semantic_writer.write_u32(c.bank_count);
-		for(std::uint32_t s=0;s<c.subsystem_count&&semantic_ok;++s) {
-			const auto& sub=c.subsystems[s];
-			semantic_ok=semantic_writer.write_utf8(sub.name,255)&&semantic_writer.write_utf8(sub.alt_name,255)&&
-				semantic_writer.write_utf8(sub.hud_name,255)&&semantic_writer.write_f32(sub.max_hits);
-		}
-	}
-	for(std::uint32_t i=0;i<source.referenced_weapon_count&&semantic_ok;++i) {
-		const auto& w=*weapons[i];
-		semantic_ok=semantic_writer.write_utf8(w.name,255)&&semantic_writer.write_utf8(w.title,255)&&
-			semantic_writer.write_f32(w.damage)&&semantic_writer.write_f32(w.maximum_range)&&
-			semantic_writer.write_u64(w.fire_wait_us);
-	}
+	Sha256 semantic_hash;
+	bool semantic_ok=hash_scalar(semantic_hash,source.referenced_ship_class_count)&&
+		hash_scalar(semantic_hash,source.referenced_weapon_count);
+	for(std::uint32_t i=0;i<source.referenced_ship_class_count&&semantic_ok;++i)
+		semantic_ok=semantic_hash.update(ByteView{classes[i].digest.data(),classes[i].digest.size()});
+	for(std::uint32_t i=0;i<source.referenced_weapon_count&&semantic_ok;++i)
+		semantic_ok=semantic_hash.update(ByteView{weapons[i].digest.data(),weapons[i].digest.size()});
 	std::array<const Phase2AuxiliaryEntry*,Phase2ManifestLimits::MaxAuxiliaryEntries> aux{};
-	for(std::uint32_t i=0;i<source.auxiliary_entry_count;++i)aux[i]=&source.auxiliary_entries[i];
-	std::sort(aux.begin(),aux.begin()+source.auxiliary_entry_count,[](auto a,auto b){
-		if(a->registry!=b->registry)return a->registry<b->registry;return a->name<b->name;});
-	for(std::uint32_t i=0;i<source.auxiliary_entry_count&&semantic_ok;++i)
-		semantic_ok=semantic_writer.write_u8(static_cast<std::uint8_t>(aux[i]->registry))&&semantic_writer.write_utf8(aux[i]->name,255);
+	std::uint32_t auxiliary_count=0;
+	for(std::uint32_t i=0;i<source.auxiliary_entry_count;++i)
+		if(auxiliary_entry_referenced(source,source.auxiliary_entries[i]))
+			aux[auxiliary_count++]=&source.auxiliary_entries[i];
+	std::sort(aux.begin(),aux.begin()+auxiliary_count,[](auto a,auto b){
+		if(a->registry!=b->registry)return a->registry<b->registry;
+		return a->registry==AuxiliaryRegistry::Pattern
+			? a->engine_index<b->engine_index : a->name<b->name;});
+	semantic_ok=semantic_ok&&hash_scalar(semantic_hash,auxiliary_count);
+	for(std::uint32_t i=0;i<auxiliary_count&&semantic_ok;++i)
+		semantic_ok=hash_scalar(semantic_hash,aux[i]->registry)&&
+			(aux[i]->registry==AuxiliaryRegistry::Pattern
+				? hash_scalar(semantic_hash,aux[i]->engine_index)
+				: hash_string(semantic_hash,aux[i]->name));
 	if(!semantic_ok)return Phase2ManifestError::AllocationFailed;
 	Sha256Digest catalog{};
-	if(!sha256(semantic_writer.written(),catalog))return Phase2ManifestError::InvalidSource;
+	if(!semantic_hash.finalize(catalog))return Phase2ManifestError::InvalidSource;
 	std::size_t offset=0;
 	candidate.class_record_count=source.referenced_ship_class_count;
 	candidate.weapon_record_count=source.referenced_weapon_count;
 	candidate.aggregate_subsystem_count=0;
+	Phase2ManifestError error=Phase2ManifestError::None;
+	candidate.auxiliary_record_count=0;
+	for(std::uint32_t i=0;i<source.auxiliary_entry_count;++i) {
+		const auto& entry=source.auxiliary_entries[i];
+		if(!auxiliary_entry_referenced(source,entry))continue;
+		if(entry.engine_index<0||candidate.auxiliary_record_count>=
+			Phase2ManifestLimits::MaxAuxiliaryEntries)return Phase2ManifestError::InvalidSource;
+		auto& projected=candidate.auxiliary_records[candidate.auxiliary_record_count++];
+		projected.registry=entry.registry;
+		projected.source_key=static_cast<std::uint32_t>(entry.engine_index)+1U;
+		projected.public_id=auxiliary_id(source,entry.registry,entry.engine_index,error);
+		if(error!=Phase2ManifestError::None)return error;
+	}
 	std::uint32_t subsystem_record_offset=0;
 	std::uint32_t bank_record_offset=0;
 	const auto new_id=m_next_id;
-	Phase2ManifestError error=Phase2ManifestError::None;
 	for(std::uint32_t i=0;i<candidate.class_record_count;++i) {
-		const auto& src=*classes[i];
+		const auto& src=*classes[i].value;
 		if(!is_valid_utf8(src.name) || src.name.size()>65535) return Phase2ManifestError::InvalidString;
 		if(src.required_model_index==-1) return Phase2ManifestError::InvalidSource;
 		if(src.bank_count>Phase2ManifestLimits::MaxBanksPerClass) return Phase2ManifestError::SourceLimitExceeded;
@@ -397,7 +621,7 @@ Phase2ManifestError Phase2ManifestSlot::rebuild(const Phase2ManifestSource& sour
 			if(!std::isfinite(v)) return Phase2ManifestError::NonFiniteDescriptor;
 			if(v<-1||v>1) return Phase2ManifestError::InvalidCosine;
 		}
-		auto& dst=candidate.class_records[i]; dst.class_id=i+1; dst.name.assign(src.name); dst.mass=src.effective_mass;
+		auto& dst=candidate.class_records[i]; dst.source_key=src.source_key; dst.class_id=i+1; dst.name.assign(src.name); dst.mass=src.effective_mass;
 		dst.subsystems={candidate.subsystem_records.data()+subsystem_record_offset,src.subsystem_count};
 		dst.banks={candidate.bank_records.data()+bank_record_offset,src.bank_count};
 		subsystem_record_offset+=src.subsystem_count;
@@ -423,6 +647,7 @@ Phase2ManifestError Phase2ManifestSlot::rebuild(const Phase2ManifestSource& sour
 		for(std::uint32_t s=0;s<src.subsystem_count;++s) {
 			const auto& source_subsystem=src.subsystems[s];
 			auto& projected_subsystem=dst.subsystems[s];
+			projected_subsystem.source_key=source_subsystem.source_key;
 			projected_subsystem.subsystem_id=s+1; projected_subsystem.canonical_index=s;
 			projected_subsystem.armor_id=auxiliary_id(source,AuxiliaryRegistry::Armor,source_subsystem.armor_index,error);
 			if(error!=Phase2ManifestError::None)return error;
@@ -431,16 +656,25 @@ Phase2ManifestError Phase2ManifestSlot::rebuild(const Phase2ManifestSource& sour
 		std::array<std::uint32_t,Phase2ManifestLimits::MaxBanksPerClass> bank_weapon_ids{};
 		for(std::uint32_t b=0;b<src.bank_count;++b) {
 			const auto& source_bank=src.banks[b];
-			if(source_bank.family!=source_bank.source_family ||
+			if(source_bank.firing_pattern_source_code>5U)
+				return Phase2ManifestError::InvalidSource;
+			const auto family_mapping_valid=source_bank.family==source_bank.source_family ||
+				(source_bank.family==telemetry::WeaponFamily::Turret &&
+					(source_bank.source_family==telemetry::WeaponFamily::Primary ||
+					 source_bank.source_family==telemetry::WeaponFamily::Secondary));
+			if(!family_mapping_valid ||
 				source_bank.fire_point_count>Phase2ManifestLimits::MaxFirePoints ||
 				source_bank.bank_index>63||!std::isfinite(source_bank.capacity)||source_bank.capacity<0)
+				return Phase2ManifestError::InvalidSource;
+			if(source_bank.owner_subsystem_canonical_index!=UINT16_MAX &&
+				source_bank.owner_subsystem_canonical_index>=src.subsystem_count)
 				return Phase2ManifestError::InvalidSource;
 			for(std::uint32_t p=0;p<source_bank.fire_point_count;++p)
 				if(!std::isfinite(source_bank.fire_points[p].x)||!std::isfinite(source_bank.fire_points[p].y)||
 					!std::isfinite(source_bank.fire_points[p].z))return Phase2ManifestError::NonFiniteDescriptor;
 			if(source_bank.weapon_source_key) {
 				for(std::uint32_t w=0;w<candidate.weapon_record_count;++w)
-					if(weapons[w]->source_key==source_bank.weapon_source_key)bank_weapon_ids[b]=w+1;
+					if(weapons[w].value->source_key==source_bank.weapon_source_key)bank_weapon_ids[b]=w+1;
 				if(bank_weapon_ids[b]==0)return Phase2ManifestError::MissingRequiredDefinition;
 			}
 			if(source_bank.family==telemetry::WeaponFamily::Tertiary&&bank_weapon_ids[b]!=0)
@@ -448,35 +682,31 @@ Phase2ManifestError Phase2ManifestSlot::rebuild(const Phase2ManifestSource& sour
 			bank_order[b]=b;
 		}
 		std::sort(bank_order.begin(),bank_order.begin()+src.bank_count,[&](auto a,auto b){
-			const auto& left=src.banks[a];const auto& right=src.banks[b];
-			if(left.family!=right.family)return left.family<right.family;
-			if(left.bank_index!=right.bank_index)return left.bank_index<right.bank_index;
-			if(bank_weapon_ids[a]!=bank_weapon_ids[b])return bank_weapon_ids[a]<bank_weapon_ids[b];
-			if(left.capacity!=right.capacity)return left.capacity<right.capacity;
-			if(left.fire_point_count!=right.fire_point_count)return left.fire_point_count<right.fire_point_count;
-			for(std::uint32_t p=0;p<left.fire_point_count;++p) {
-				if(left.fire_points[p].x!=right.fire_points[p].x)return left.fire_points[p].x<right.fire_points[p].x;
-				if(left.fire_points[p].y!=right.fire_points[p].y)return left.fire_points[p].y<right.fire_points[p].y;
-				if(left.fire_points[p].z!=right.fire_points[p].z)return left.fire_points[p].z<right.fire_points[p].z;
-			}
-			return a<b;
+			return bank_descriptor_less(source,src.banks[a],src.banks[b]);
 		});
 		for(std::uint32_t b=0;b<src.bank_count;++b) {
 			const auto source_index=bank_order[b];const auto& source_bank=src.banks[source_index];
 			auto& projected_bank=dst.banks[b];
-			projected_bank.bank_id=b+1;projected_bank.weapon_class_id=bank_weapon_ids[source_index];
+			projected_bank.bank_id=static_cast<std::uint32_t>(
+				&projected_bank-candidate.bank_records.data())+1U;
+			projected_bank.weapon_class_id=bank_weapon_ids[source_index];
 			projected_bank.family=source_bank.family;projected_bank.canonical_index=source_bank.bank_index;
 			projected_bank.source_family=source_bank.source_family;projected_bank.source_index=static_cast<std::uint16_t>(source_index);
 			projected_bank.capacity=source_bank.capacity;projected_bank.fire_point_count=source_bank.fire_point_count;
+			projected_bank.pattern_id=source_bank.firing_pattern_source_code==0U ? 0U :
+				auxiliary_id(source,AuxiliaryRegistry::Pattern,
+					source_bank.firing_pattern_source_code,error);
+			if(error!=Phase2ManifestError::None)return error;
+			projected_bank.consumes_ammunition=source_bank.consumes_ammunition;
 			projected_bank.owner_subsystem_id=source_bank.owner_subsystem_canonical_index==UINT16_MAX
 				? 0U : static_cast<std::uint32_t>(source_bank.owner_subsystem_canonical_index)+1U;
 		}
 		if(src.countermeasure_weapon_source_key) {
 			for(std::uint32_t w=0;w<candidate.weapon_record_count;++w)
-				if(weapons[w]->source_key==src.countermeasure_weapon_source_key)dst.countermeasure_weapon_class_id=w+1;
+				if(weapons[w].value->source_key==src.countermeasure_weapon_source_key)dst.countermeasure_weapon_class_id=w+1;
 		} else if(src.countermeasure_capacity>0.0F) {
 			for(std::uint32_t w=0;w<candidate.weapon_record_count;++w)
-				if(weapons[w]->name=="Countermeasure")dst.countermeasure_weapon_class_id=w+1;
+				if(weapons[w].value->name=="Countermeasure")dst.countermeasure_weapon_class_id=w+1;
 		}
 		if(src.countermeasure_capacity>0.0F&&dst.countermeasure_weapon_class_id==0)
 			return Phase2ManifestError::MissingRequiredDefinition;
@@ -484,22 +714,29 @@ Phase2ManifestError Phase2ManifestSlot::rebuild(const Phase2ManifestSource& sour
 			? static_cast<std::uint32_t>(src.countermeasure_capacity/src.countermeasure_cargo_size)
 			: static_cast<std::uint32_t>(src.countermeasure_capacity);
 		dst.countermeasure_firewait_us=static_cast<std::uint64_t>(src.countermeasure_firewait_ms)*1000;
+		dst.countermeasure_installed=src.countermeasure_capacity>0.0F;
 		candidate.aggregate_subsystem_count+=src.subsystem_count;
 		if(!write_class_record(arena,offset,new_id,i+1,src,dst))
 			return Phase2ManifestError::AllocationFailed;
 	}
 	for(std::uint32_t i=0;i<candidate.weapon_record_count;++i) {
-		const auto& src=*weapons[i]; if(!is_valid_utf8(src.name)||!is_valid_utf8(src.title))return Phase2ManifestError::InvalidString;
-		auto& dst=candidate.weapon_records[i];dst.weapon_class_id=i+1;dst.name.assign(src.name);
+		const auto& src=*weapons[i].value; if(!is_valid_utf8(src.name)||!is_valid_utf8(src.title))return Phase2ManifestError::InvalidString;
+		auto& dst=candidate.weapon_records[i];dst.source_key=src.source_key;dst.weapon_class_id=i+1;
+		dst.class_flags=src.class_flags;dst.name.assign(src.name);
 		dst.damage_type_id=auxiliary_id(source,AuxiliaryRegistry::DamageType,src.damage_type_index,error);
 		if(error!=Phase2ManifestError::None)return error;
-		if(!write_weapon_record(arena,offset,new_id,i+1,src,estimated_weapon_payload(src)+RecordEnvelopeHeaderSize))
+		if(!write_weapon_record(arena,offset,new_id,i+1,src,dst))
 			return Phase2ManifestError::AllocationFailed;
 	}
-	Sha256Digest topology{}; sha256({reinterpret_cast<const std::uint8_t*>(&source.player_instance_signature),4},topology);
+	Sha256Digest topology=source.topology_fingerprint;
+	const auto has_supplied_topology=std::any_of(topology.begin(),topology.end(),
+		[](std::uint8_t value){return value!=0U;});
+	if(!has_supplied_topology)
+		sha256({reinterpret_cast<const std::uint8_t*>(&source.player_instance_signature),4},topology);
 	const auto has_baseline=m_active||m_staged;
 	const auto& baseline=m_active?active_candidate():staged_candidate();
 	if(has_baseline && same_digest(baseline.catalog_fingerprint,catalog)) {
+		m_rebuild_intent=false;m_rebuild_scheduled=false;
 		if(baseline.topology_fingerprint==topology){return Phase2ManifestError::NoCatalogChange;}
 		m_keyframe_required=true; return Phase2ManifestError::TopologyOnly;
 	}
@@ -518,13 +755,33 @@ Phase2ManifestError Phase2ManifestSlot::rebuild(const Phase2ManifestSource& sour
 		begin=end;++part;
 	}
 	candidate.part_count=part;for(std::uint16_t i=0;i<part;++i)candidate.parts[i].part_count=part;
+	if(m_staged&&!m_active&&index!=previous_staged_index) {
+		m_active_index=previous_staged_index;
+		m_staged_index=index;
+	}
 	m_staged=true;m_manifest_applied=false;m_keyframe_required=true;m_next_id++;m_required_id=m_active?active_manifest_id():0;
+	m_rebuild_intent=false;m_rebuild_scheduled=false;
 	return Phase2ManifestError::None;
 }
 
 Phase2ManifestError Phase2ManifestSlot::validate_and_install(const CompletedTransaction& t) noexcept
 {
 	if(t.message_type!=MessageType::Manifest || t.kind_or_flags!=static_cast<std::uint16_t>(ManifestKind::FullRequired))
+		return Phase2ManifestError::InvalidFullRequiredCatalog;
+	if(!m_staged||t.transaction_id!=staged_manifest_id()||
+		t.transaction_size!=staged_candidate().encoded_size||
+		t.transaction_sha256!=staged_candidate().transaction_sha256)
+		return Phase2ManifestError::InvalidFullRequiredCatalog;
+	std::size_t transaction_offset=0;
+	for(const auto& part:t.parts) {
+		if(transaction_offset+part.records.size()>staged_candidate().encoded_bytes.size||
+			(part.records.size()!=0&&std::memcmp(
+				staged_candidate().encoded_bytes.data+transaction_offset,
+				part.records.data(),part.records.size())!=0))
+			return Phase2ManifestError::InvalidFullRequiredCatalog;
+		transaction_offset+=part.records.size();
+	}
+	if(transaction_offset!=staged_candidate().encoded_bytes.size)
 		return Phase2ManifestError::InvalidFullRequiredCatalog;
 	std::uint32_t classes=0,weapons=0;
 	std::array<bool,Phase2ManifestLimits::MaxClasses+1> class_ids{};
@@ -554,9 +811,14 @@ Phase2ManifestError Phase2ManifestSlot::validate_and_install(const CompletedTran
 					if(id>Phase2ManifestLimits::MaxWeapons||weapon_ids[id])return Phase2ManifestError::InvalidFullRequiredCatalog;
 					weapon_ids[id]=true;++weapons;
 				}
-			}}}
-	if(!m_staged||classes!=staged_candidate().class_record_count||weapons!=staged_candidate().weapon_record_count)
+			}else return Phase2ManifestError::InvalidFullRequiredCatalog;
+		}}
+	if(classes!=staged_candidate().class_record_count||weapons!=staged_candidate().weapon_record_count)
 		return Phase2ManifestError::InvalidFullRequiredCatalog;
+	for(std::uint32_t id=1;id<=classes;++id)
+		if(!class_ids[id])return Phase2ManifestError::InvalidFullRequiredCatalog;
+	for(std::uint32_t id=1;id<=weapons;++id)
+		if(!weapon_ids[id])return Phase2ManifestError::InvalidFullRequiredCatalog;
 	return Phase2ManifestError::None;
 }
 Phase2ManifestError Phase2ManifestSlot::on_manifest_applied(std::uint32_t id) noexcept
@@ -570,7 +832,8 @@ Phase2ManifestError Phase2ManifestSlot::on_manifest_applied(std::uint32_t id) no
 Phase2ManifestError Phase2ManifestSlot::on_dependent_snapshot_applied(std::uint32_t, std::uint32_t id) noexcept
 {
 	if(is_active(id))return Phase2ManifestError::None;
-	if(!is_staged(id)||!m_manifest_applied)return retains_generation(id)?Phase2ManifestError::None:Phase2ManifestError::InvalidSource;
+	if(is_staged(id)&&!m_manifest_applied)return Phase2ManifestError::InvalidSource;
+	if(!is_staged(id))return retains_generation(id)?Phase2ManifestError::None:Phase2ManifestError::InvalidSource;
 	m_previous_id=m_active?active_manifest_id():0;m_retain_previous=m_active;std::swap(m_active_index,m_staged_index);
 	m_active=true;m_staged=false;m_manifest_applied=false;m_keyframe_required=false;m_required_id=id;
 	m_rebuild_scheduled=m_rebuild_intent;return Phase2ManifestError::None;

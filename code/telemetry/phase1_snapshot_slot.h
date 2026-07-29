@@ -63,6 +63,7 @@ class Phase1SnapshotSlot final {
 	bool has_candidate() const noexcept { return m_baseline.has_candidate(); }
 	bool has_active_baseline() const noexcept { return m_baseline.has_active_baseline(); }
 	const protocol::StateImage& current_state() const noexcept { return m_baseline.current(); }
+	const protocol::StateImage& active_baseline() const noexcept { return m_baseline.active_baseline(); }
 	// P8.3 only transports value mutations. A player/entity composition change
 	// is deferred to the next keyframe phase rather than encoded as a delta.
 	bool current_record_set_compatible_with_active_baseline() noexcept;

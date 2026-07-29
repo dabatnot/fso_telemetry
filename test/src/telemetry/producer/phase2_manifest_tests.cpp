@@ -153,6 +153,51 @@ bool ids_are_bijective(const Phase2ManifestCandidate& candidate)
 	return nonzero_unique(classes) && nonzero_unique(weapons);
 }
 
+struct WireRecordStats {
+	std::uint32_t count = 0;
+	std::size_t maximum_payload = 0;
+};
+
+WireRecordStats wire_record_stats(const Phase2ManifestCandidate& candidate)
+{
+	WireRecordStats stats{};
+	for (std::uint16_t part_index = 0; part_index < candidate.part_count; ++part_index) {
+		const auto& part = candidate.parts[part_index];
+		RecordEnvelopeIterator iterator(part.records, part.record_count, RecordFlagPolicy::RequireNone);
+		for (;;) {
+			RecordEnvelopeView envelope{};
+			bool has_value = false;
+			EXPECT_EQ(ValidationError::None, iterator.next(envelope, has_value));
+			if (!has_value) break;
+			++stats.count;
+			stats.maximum_payload = std::max(stats.maximum_payload, envelope.payload.size);
+		}
+	}
+	return stats;
+}
+
+std::unique_ptr<Phase2ManifestSource> exact_max_class_record_source(bool plus_one)
+{
+	auto source = minimal_source();
+	auto& ship_class = source->ship_classes[0];
+	ship_class.name.assign(255, 'C');
+	ship_class.subsystem_count = 81;
+	for (std::uint32_t index = 0; index < 80; ++index) {
+		auto& subsystem = ship_class.subsystems[index];
+		subsystem.source_key = 1000 + index;
+		subsystem.system_info_key = 2000 + index;
+		subsystem.name.assign(255, 'N');
+		subsystem.alt_name.assign(255, 'A');
+		subsystem.hud_name.assign(255, 'H');
+	}
+	auto& tail = ship_class.subsystems[80];
+	tail.source_key = 1080;
+	tail.system_info_key = 2080;
+	tail.name.assign(255, 'T');
+	tail.alt_name.assign(plus_one ? 185 : 184, 'A');
+	return source;
+}
+
 TEST(Phase2Manifest, P2TST020FullRequiredContainsClassAndAnExplicitEmptyWeaponCatalog)
 {
 	ProvisionedSlot provisioned;
@@ -205,6 +250,85 @@ TEST(Phase2Manifest, P2TST021CanonicalIdsAndWireBytesIgnoreEngineOrder)
 	EXPECT_EQ(static_ids(left), static_ids(right));
 }
 
+TEST(Phase2Manifest, P2TST021CanonicalOrderingUsesCompleteDescriptorsWhenNamesAndShallowKeysCollide)
+{
+	auto first = test::wp03::make_source(test::wp03::SourceCase::TwoClassesThreeWeaponsWithDecoys);
+	first->ship_classes[0].name = "Colliding class";
+	first->ship_classes[1].name = "Colliding class";
+	first->ship_classes[0].effective_mass = 100.0F;
+	first->ship_classes[1].effective_mass = 100.0F;
+	first->ship_classes[0].subsystem_count = 1;
+	first->ship_classes[1].subsystem_count = 1;
+	first->ship_classes[0].subsystems[0].system_info_key = 10;
+	first->ship_classes[1].subsystems[0].system_info_key = 20;
+	first->ship_classes[0].subsystems[0].max_hits = 10.0F;
+	first->ship_classes[1].subsystems[0].max_hits = 20.0F;
+	first->weapons[0].name = "Colliding weapon";
+	first->weapons[1].name = "Colliding weapon";
+	first->weapons[0].title = "Same title";
+	first->weapons[1].title = "Same title";
+	first->weapons[0].has_damage = true;
+	first->weapons[1].has_damage = true;
+	first->weapons[0].damage = 10.0F;
+	first->weapons[1].damage = 20.0F;
+
+	auto reversed = std::make_unique<Phase2ManifestSource>(*first);
+	test::wp03::reverse_engine_order(*reversed);
+	ProvisionedSlot a;
+	ProvisionedSlot b;
+	ASSERT_EQ(Phase2ManifestError::None, a.slot.rebuild(*first));
+	ASSERT_EQ(Phase2ManifestError::None, b.slot.rebuild(*reversed));
+	const auto& left = a.slot.staged_candidate();
+	const auto& right = b.slot.staged_candidate();
+	EXPECT_EQ(left.catalog_fingerprint, right.catalog_fingerprint)
+		<< "P2-TST-021 requires complete canonical descriptors, not source order, to break collisions.";
+	EXPECT_EQ(left.topology_fingerprint, right.topology_fingerprint);
+	ASSERT_EQ(left.encoded_size, right.encoded_size);
+	EXPECT_TRUE(std::equal(left.encoded_bytes.begin(), left.encoded_bytes.end(), right.encoded_bytes.begin()))
+		<< "P2-REQ-017 requires identical IDs and bytes for semantically identical catalogs.";
+	EXPECT_EQ(static_ids(left), static_ids(right));
+}
+
+TEST(Phase2Manifest, P2TST021BankDescriptorsUseTheFullLexicographicTopology)
+{
+	auto first = minimal_source();
+	auto& ship_class = first->ship_classes[0];
+	ship_class.subsystem_count = 2;
+	for (std::uint32_t index = 0; index < ship_class.subsystem_count; ++index) {
+		ship_class.subsystems[index].source_key = 10 + index;
+		ship_class.subsystems[index].system_info_key = 20 + index;
+		ship_class.subsystems[index].name = "Turret " + std::to_string(index);
+	}
+	ship_class.bank_count = 2;
+	for (std::uint32_t index = 0; index < ship_class.bank_count; ++index) {
+		auto& bank = ship_class.banks[index];
+		bank.family = WeaponFamily::Tertiary;
+		bank.source_family = WeaponFamily::Tertiary;
+		bank.bank_index = 0;
+		bank.owner_subsystem_canonical_index = static_cast<std::uint16_t>(1 - index);
+	}
+	auto reversed = std::make_unique<Phase2ManifestSource>(*first);
+	std::swap(reversed->ship_classes[0].banks[0], reversed->ship_classes[0].banks[1]);
+
+	ProvisionedSlot a;
+	ProvisionedSlot b;
+	ASSERT_EQ(Phase2ManifestError::None, a.slot.rebuild(*first));
+	ASSERT_EQ(Phase2ManifestError::None, b.slot.rebuild(*reversed));
+	const auto& left = a.slot.staged_candidate();
+	const auto& right = b.slot.staged_candidate();
+	EXPECT_EQ(left.catalog_fingerprint, right.catalog_fingerprint);
+	EXPECT_EQ(left.topology_fingerprint, right.topology_fingerprint);
+	ASSERT_EQ(left.encoded_size, right.encoded_size);
+	EXPECT_TRUE(std::equal(left.encoded_bytes.begin(), left.encoded_bytes.end(), right.encoded_bytes.begin()));
+	ASSERT_EQ(2u, left.class_records[0].bank_count);
+	EXPECT_EQ(1u, left.class_records[0].banks[0].owner_subsystem_id);
+	EXPECT_EQ(2u, left.class_records[0].banks[1].owner_subsystem_id);
+	EXPECT_EQ(WeaponFamily::Tertiary, left.class_records[0].banks[0].source_family);
+	EXPECT_EQ(WeaponFamily::Tertiary, left.class_records[0].banks[1].source_family);
+	EXPECT_EQ(1u, left.class_records[0].banks[0].bank_id);
+	EXPECT_EQ(2u, left.class_records[0].banks[1].bank_id);
+}
+
 TEST(Phase2Manifest, D2008IdsAreStableWithinGenerationAcrossOrderAndRespawnAndFormBijections)
 {
 	ProvisionedSlot provisioned;
@@ -253,6 +377,8 @@ TEST(Phase2Manifest, P2TST022SemanticDescriptorsNotNamesDefineIdentity)
 	source.auxiliary_entries[0] = {AuxiliaryRegistry::Species, 11, "duplicate"};
 	source.auxiliary_entries[1] = {AuxiliaryRegistry::Species, 12, "duplicate"};
 	source.auxiliary_entry_count = 2;
+	source.ship_classes[0].species_index = 11;
+	source.ship_classes[1].species_index = 12;
 	EXPECT_EQ(Phase2ManifestError::AmbiguousAuxiliaryName, provisioned.slot.rebuild(source));
 }
 
@@ -278,6 +404,39 @@ TEST(Phase2Manifest, D2008AuxiliaryIdsFollowLexicographicCanonicalKeysNotEngineI
 	for (std::uint32_t i = 0; i < provisioned.slot.staged_candidate().class_record_count; ++i) {
 		EXPECT_EQ(records[i].name == "Second" ? 1u : 2u, records[i].species_id);
 	}
+}
+
+TEST(Phase2Manifest, P2REQ017BankIdsAreNonZeroAndDistinctAcrossTheWholeManifestGeneration)
+{
+	auto source_storage = minimal_source();
+	auto& source = *source_storage;
+	source.ship_classes[1] = source.ship_classes[0];
+	source.ship_classes[1].source_key = 42;
+	source.ship_classes[1].name = "Second class";
+	source.ship_class_count = 2;
+	source.referenced_ship_class_keys[1] = 42;
+	source.referenced_ship_class_count = 2;
+	for (std::uint32_t class_index = 0; class_index < 2; ++class_index) {
+		auto& ship_class = source.ship_classes[class_index];
+		ship_class.bank_count = 1;
+		ship_class.banks[0].family = telemetry::WeaponFamily::Tertiary;
+		ship_class.banks[0].source_family = telemetry::WeaponFamily::Tertiary;
+		ship_class.banks[0].bank_index = 0;
+	}
+
+	ProvisionedSlot provisioned;
+	ASSERT_EQ(Phase2ManifestError::None, provisioned.slot.rebuild(source));
+	const auto& candidate = provisioned.slot.staged_candidate();
+	std::vector<std::uint32_t> bank_ids;
+	for (std::uint32_t class_index = 0; class_index < candidate.class_record_count; ++class_index) {
+		const auto& ship_class = candidate.class_records[class_index];
+		for (std::uint32_t bank_index = 0; bank_index < ship_class.bank_count; ++bank_index) {
+			bank_ids.push_back(ship_class.banks[bank_index].bank_id);
+		}
+	}
+	ASSERT_EQ(2u, bank_ids.size());
+	EXPECT_TRUE(nonzero_unique(bank_ids))
+		<< "P2-REQ-017/D2-008 require one canonical non-zero bank ID per (class, family, owner, source, index) tuple.";
 }
 
 TEST(Phase2Manifest, P2REQ050BuilderRejectsInvalidUtf8AndEmbeddedNulAtomically)
@@ -323,19 +482,13 @@ TEST(Phase2Manifest, P2TST027MinusOneMapsToZeroOnlyForExplicitAbsence)
 
 TEST(Phase2Manifest, P2TST023AcceptsAllExactSourceBoundsAndRejectsEveryPlusOneAtomically)
 {
-	for (const auto exact_case : {test::wp03::BoundaryCase::String65535,
-		     test::wp03::BoundaryCase::RecordCount65535,
-		     test::wp03::BoundaryCase::RecordLength65535,
-		     test::wp03::BoundaryCase::ClassBanks192}) {
+	for (const auto exact_case : {test::wp03::BoundaryCase::ClassBanks192}) {
 		ProvisionedSlot accepted;
 		const auto exact = test::wp03::make_boundary_source(exact_case);
 		ASSERT_EQ(Phase2ManifestError::None, accepted.slot.rebuild(*exact));
 	}
 
-	for (const auto overflow_case : {test::wp03::BoundaryCase::String65536,
-		     test::wp03::BoundaryCase::RecordCount65536,
-		     test::wp03::BoundaryCase::RecordLength65536,
-		     test::wp03::BoundaryCase::ClassBanks193}) {
+	for (const auto overflow_case : {test::wp03::BoundaryCase::ClassBanks193}) {
 		ProvisionedSlot rejected;
 		auto baseline = minimal_source();
 		ASSERT_EQ(Phase2ManifestError::None, rejected.slot.rebuild(*baseline));
@@ -344,6 +497,85 @@ TEST(Phase2Manifest, P2TST023AcceptsAllExactSourceBoundsAndRejectsEveryPlusOneAt
 		EXPECT_EQ(Phase2ManifestError::SourceLimitExceeded, rejected.slot.rebuild(*overflow));
 		EXPECT_EQ(sentinel_id, rejected.slot.staged_manifest_id());
 	}
+}
+
+TEST(Phase2Manifest, P2TST023ActualCatalogFieldsAcceptExactLimitsAndRejectEachPlusOne)
+{
+	{
+		ProvisionedSlot provisioned;
+		auto source = minimal_source();
+		source->ship_classes[0].name.assign(255, 'C');
+		ASSERT_EQ(Phase2ManifestError::None, provisioned.slot.rebuild(*source));
+		const auto exact_stats = wire_record_stats(provisioned.slot.staged_candidate());
+		EXPECT_EQ(1u, exact_stats.count);
+		EXPECT_EQ(provisioned.slot.staged_candidate().encoded_size - RecordEnvelopeHeaderSize,
+			exact_stats.maximum_payload);
+		EXPECT_LE(exact_stats.maximum_payload, 65535u);
+		const auto sentinel = provisioned.slot.staged_manifest_id();
+		source->ship_classes[0].name.push_back('X');
+		EXPECT_EQ(Phase2ManifestError::InvalidString, provisioned.slot.rebuild(*source));
+		EXPECT_EQ(sentinel, provisioned.slot.staged_manifest_id());
+	}
+
+	{
+		ProvisionedSlot provisioned;
+		auto source = minimal_source();
+		source->ship_class_count = Phase2ManifestLimits::MaxClasses;
+		source->referenced_ship_class_count = Phase2ManifestLimits::MaxClasses;
+		for (std::uint32_t index = 1; index < Phase2ManifestLimits::MaxClasses; ++index) {
+			source->ship_classes[index] = source->ship_classes[0];
+			source->ship_classes[index].source_key = 1000 + index;
+			source->ship_classes[index].name = "Class " + std::to_string(index);
+			source->referenced_ship_class_keys[index] = source->ship_classes[index].source_key;
+		}
+		ASSERT_EQ(Phase2ManifestError::None, provisioned.slot.rebuild(*source));
+		EXPECT_EQ(Phase2ManifestLimits::MaxClasses,
+			wire_record_stats(provisioned.slot.staged_candidate()).count);
+		const auto sentinel = provisioned.slot.staged_manifest_id();
+		source->ship_class_count = Phase2ManifestLimits::MaxClasses + 1;
+		source->referenced_ship_class_count = Phase2ManifestLimits::MaxClasses + 1;
+		EXPECT_EQ(Phase2ManifestError::SourceLimitExceeded, provisioned.slot.rebuild(*source));
+		EXPECT_EQ(sentinel, provisioned.slot.staged_manifest_id());
+	}
+
+	{
+		ProvisionedSlot provisioned;
+		auto source = test::wp03::make_source(test::wp03::SourceCase::MultipartFullRequired);
+		ASSERT_EQ(Phase2ManifestLimits::MaxWeapons, source->weapon_count);
+		ASSERT_EQ(Phase2ManifestError::None, provisioned.slot.rebuild(*source));
+		EXPECT_EQ(1u + Phase2ManifestLimits::MaxWeapons,
+			wire_record_stats(provisioned.slot.staged_candidate()).count);
+		const auto sentinel = provisioned.slot.staged_manifest_id();
+		source->weapon_count = Phase2ManifestLimits::MaxWeapons + 1;
+		source->referenced_weapon_count = Phase2ManifestLimits::MaxWeapons + 1;
+		EXPECT_EQ(Phase2ManifestError::SourceLimitExceeded, provisioned.slot.rebuild(*source));
+		EXPECT_EQ(sentinel, provisioned.slot.staged_manifest_id());
+	}
+}
+
+TEST(Phase2Manifest, P2TST023ClassManifestRecordLength65535IsRealAndPlusOneFailsBeforeEgress)
+{
+	ProvisionedSlot provisioned;
+	auto exact = exact_max_class_record_source(false);
+	ASSERT_EQ(Phase2ManifestError::None, provisioned.slot.rebuild(*exact));
+	const auto& candidate = provisioned.slot.staged_candidate();
+	const auto stats = wire_record_stats(candidate);
+	ASSERT_EQ(1u, stats.count);
+	EXPECT_EQ(65535u, stats.maximum_payload);
+	ASSERT_GE(candidate.encoded_bytes.size, RecordEnvelopeHeaderSize);
+	EXPECT_EQ(65535u,
+		static_cast<std::uint32_t>(candidate.encoded_bytes.data[4]) |
+			(static_cast<std::uint32_t>(candidate.encoded_bytes.data[5]) << 8));
+	EXPECT_EQ(65535u + RecordEnvelopeHeaderSize, candidate.encoded_size);
+	const auto sentinel_id = candidate.manifest_id;
+	const auto sentinel_hash = candidate.transaction_sha256;
+	const auto sentinel_size = candidate.encoded_size;
+
+	auto plus_one = exact_max_class_record_source(true);
+	EXPECT_EQ(Phase2ManifestError::AllocationFailed, provisioned.slot.rebuild(*plus_one));
+	EXPECT_EQ(sentinel_id, provisioned.slot.staged_manifest_id());
+	EXPECT_EQ(sentinel_hash, provisioned.slot.staged_candidate().transaction_sha256);
+	EXPECT_EQ(sentinel_size, provisioned.slot.staged_candidate().encoded_size);
 }
 
 TEST(Phase2Manifest, P2TST039UsesReal1025PerShipAnd4097AggregateCases)
@@ -489,6 +721,56 @@ TEST(Phase2Manifest, P2TST047AuxiliaryRegistriesUseCanonicalKeyOrderAndCounterme
 	EXPECT_EQ(10u, count_record->countermeasure_initial_count);
 }
 
+TEST(Phase2Manifest, P2TST047BankOwnerAndAmmunitionSemanticsAreProjectedAndValidated)
+{
+	auto source = test::wp03::make_source(test::wp03::SourceCase::TwoClassesThreeWeaponsWithDecoys);
+	auto& ship_class = source->ship_classes[0];
+	ship_class.subsystem_count = 1;
+	ship_class.subsystems[0].source_key = 700;
+	ship_class.subsystems[0].system_info_key = 701;
+	ship_class.subsystems[0].name = "Missile turret";
+	ship_class.bank_count = 2;
+	ship_class.banks[0].family = WeaponFamily::Primary;
+	ship_class.banks[0].source_family = WeaponFamily::Primary;
+	ship_class.banks[0].bank_index = 0;
+	ship_class.banks[0].weapon_source_key = 101;
+	ship_class.banks[0].consumes_ammunition = false;
+	ship_class.banks[0].capacity = 99.0F;
+	ship_class.banks[1].family = WeaponFamily::Secondary;
+	ship_class.banks[1].source_family = WeaponFamily::Secondary;
+	ship_class.banks[1].bank_index = 0;
+	ship_class.banks[1].owner_subsystem_canonical_index = 0;
+	ship_class.banks[1].weapon_source_key = 102;
+	ship_class.banks[1].consumes_ammunition = true;
+	ship_class.banks[1].capacity = 12.0F;
+
+	ProvisionedSlot provisioned;
+	ASSERT_EQ(Phase2ManifestError::None, provisioned.slot.rebuild(*source));
+	const auto& candidate = provisioned.slot.staged_candidate();
+	const auto class_end = candidate.class_records.begin() + candidate.class_record_count;
+	const auto record = std::find_if(candidate.class_records.begin(), class_end, [&](const auto& value) {
+		return value.name == ship_class.name;
+	});
+	ASSERT_NE(class_end, record);
+	ASSERT_EQ(2u, record->bank_count);
+	const auto primary = std::find_if(record->banks.begin(), record->banks.end(), [](const auto& bank) {
+		return bank.family == WeaponFamily::Primary;
+	});
+	const auto secondary = std::find_if(record->banks.begin(), record->banks.end(), [](const auto& bank) {
+		return bank.family == WeaponFamily::Secondary;
+	});
+	ASSERT_NE(record->banks.end(), primary);
+	ASSERT_NE(record->banks.end(), secondary);
+	EXPECT_EQ(0u, primary->owner_subsystem_id);
+	EXPECT_EQ(WeaponFamily::Primary, primary->source_family);
+	EXPECT_EQ(1u, secondary->owner_subsystem_id);
+	EXPECT_EQ(WeaponFamily::Secondary, secondary->source_family);
+
+	auto invalid = std::make_unique<Phase2ManifestSource>(*source);
+	invalid->ship_classes[0].banks[1].owner_subsystem_canonical_index = 1;
+	EXPECT_EQ(Phase2ManifestError::InvalidSource, provisioned.slot.rebuild(*invalid));
+}
+
 TEST(Phase2Manifest, P2TST026KeepsActiveAndStagedUntilDependentSnapshotApplied)
 {
 	ProvisionedSlot provisioned;
@@ -502,6 +784,10 @@ TEST(Phase2Manifest, P2TST026KeepsActiveAndStagedUntilDependentSnapshotApplied)
 	source.ship_classes[0].effective_mass = 101.0F;
 	ASSERT_EQ(Phase2ManifestError::None, provisioned.slot.rebuild(source));
 	ASSERT_EQ(2u, provisioned.slot.staged_manifest_id());
+	EXPECT_EQ(Phase2ManifestError::InvalidSource,
+		provisioned.slot.on_dependent_snapshot_applied(101, 2));
+	EXPECT_EQ(1u, provisioned.slot.active_manifest_id());
+	EXPECT_EQ(2u, provisioned.slot.staged_manifest_id());
 	ASSERT_EQ(Phase2ManifestError::None, provisioned.slot.on_manifest_applied(2));
 	EXPECT_EQ(1u, provisioned.slot.active_manifest_id());
 	EXPECT_EQ(2u, provisioned.slot.staged_manifest_id());
@@ -521,6 +807,15 @@ TEST(Phase2Manifest, P2TST026KeepsActiveAndStagedUntilDependentSnapshotApplied)
 	provisioned.slot.release_reliable_references(1);
 	EXPECT_FALSE(provisioned.slot.retains_generation(1));
 	EXPECT_TRUE(provisioned.slot.rebuild_intent_scheduled());
+	ASSERT_EQ(Phase2ManifestError::None, provisioned.slot.rebuild(source));
+	EXPECT_EQ(3u, provisioned.slot.staged_manifest_id());
+	EXPECT_EQ(2u, provisioned.slot.resident_generation_count());
+	EXPECT_FALSE(provisioned.slot.has_rebuild_intent());
+	EXPECT_FALSE(provisioned.slot.rebuild_intent_scheduled());
+	ASSERT_EQ(Phase2ManifestError::None, provisioned.slot.on_manifest_applied(3));
+	ASSERT_EQ(Phase2ManifestError::None, provisioned.slot.on_dependent_snapshot_applied(102, 3));
+	EXPECT_FALSE(provisioned.slot.has_rebuild_intent());
+	EXPECT_FALSE(provisioned.slot.rebuild_intent_scheduled());
 }
 
 TEST(Phase2Manifest, FingerprintsSeparateTopologyCatalogAndExcludeIdsAndGenerations)
@@ -592,6 +887,69 @@ TEST(Phase2Manifest, CatalogFingerprintUsesCompleteSemanticDescriptorsAndNotRawS
 		ASSERT_EQ(Phase2ManifestError::None, changed.slot.rebuild(semantic));
 		EXPECT_NE(fingerprint, changed.slot.staged_candidate().catalog_fingerprint) << mutation;
 	}
+}
+
+TEST(Phase2Manifest, P2REQ018CatalogFingerprintIncludesAuxiliaryAssociationsAtConstantDefinitionSet)
+{
+	auto baseline = test::wp03::make_source(test::wp03::SourceCase::AllAuxiliaryRegistries);
+	auto reassigned = std::make_unique<Phase2ManifestSource>(*baseline);
+	std::swap(reassigned->ship_classes[0].species_index, reassigned->ship_classes[1].species_index);
+	std::swap(reassigned->ship_classes[0].subsystems[0].armor_index,
+		reassigned->ship_classes[1].subsystems[0].armor_index);
+	std::swap(reassigned->weapons[0].damage_type_index, reassigned->weapons[1].damage_type_index);
+
+	ProvisionedSlot lifecycle;
+	ASSERT_EQ(Phase2ManifestError::None, lifecycle.slot.rebuild(*baseline));
+	const auto original_catalog = lifecycle.slot.staged_candidate().catalog_fingerprint;
+	const auto original_topology = lifecycle.slot.staged_candidate().topology_fingerprint;
+	ASSERT_EQ(Phase2ManifestError::None, lifecycle.slot.on_manifest_applied(1));
+	ASSERT_EQ(Phase2ManifestError::None, lifecycle.slot.on_dependent_snapshot_applied(1, 1));
+	ASSERT_EQ(Phase2ManifestError::None, lifecycle.slot.rebuild(*reassigned))
+		<< "Auxiliary associations are catalog semantics even when the auxiliary definition set is constant.";
+	EXPECT_EQ(2u, lifecycle.slot.staged_manifest_id());
+	EXPECT_NE(original_catalog, lifecycle.slot.staged_candidate().catalog_fingerprint);
+	EXPECT_EQ(original_topology, lifecycle.slot.staged_candidate().topology_fingerprint)
+		<< "Closure evidence is topological; the manifest catalog fingerprint owns descriptor associations.";
+
+	auto reordered = std::make_unique<Phase2ManifestSource>(*reassigned);
+	test::wp03::reverse_engine_order(*reordered);
+	std::reverse(reordered->auxiliary_entries.begin(),
+		reordered->auxiliary_entries.begin() + reordered->auxiliary_entry_count);
+	ProvisionedSlot canonical;
+	ProvisionedSlot reversed;
+	ASSERT_EQ(Phase2ManifestError::None, canonical.slot.rebuild(*reassigned));
+	ASSERT_EQ(Phase2ManifestError::None, reversed.slot.rebuild(*reordered));
+	EXPECT_EQ(canonical.slot.staged_candidate().catalog_fingerprint,
+		reversed.slot.staged_candidate().catalog_fingerprint);
+	EXPECT_EQ(canonical.slot.staged_candidate().topology_fingerprint,
+		reversed.slot.staged_candidate().topology_fingerprint);
+	ASSERT_EQ(canonical.slot.staged_candidate().encoded_size,
+		reversed.slot.staged_candidate().encoded_size);
+	EXPECT_TRUE(std::equal(canonical.slot.staged_candidate().encoded_bytes.begin(),
+		canonical.slot.staged_candidate().encoded_bytes.end(),
+		reversed.slot.staged_candidate().encoded_bytes.begin()));
+}
+
+TEST(Phase2Manifest, P2REQ015UnreferencedAuxiliaryDefinitionsDoNotChangeTheLeastPrivilegeCatalog)
+{
+	auto source_storage = test::wp03::make_source(test::wp03::SourceCase::AllAuxiliaryRegistries);
+	auto& source = *source_storage;
+	ProvisionedSlot provisioned;
+	ASSERT_EQ(Phase2ManifestError::None, provisioned.slot.rebuild(source));
+	ASSERT_EQ(Phase2ManifestError::None,
+		provisioned.slot.on_manifest_applied(provisioned.slot.staged_manifest_id()));
+	ASSERT_EQ(Phase2ManifestError::None,
+		provisioned.slot.on_dependent_snapshot_applied(1, provisioned.slot.staged_manifest_id()));
+	const auto active_id = provisioned.slot.active_manifest_id();
+	const auto active_hash = provisioned.slot.active_candidate().transaction_sha256;
+
+	source.auxiliary_entries[source.auxiliary_entry_count++] =
+		{AuxiliaryRegistry::Species, 999, "WP03-UNREFERENCED-AUXILIARY"};
+	EXPECT_EQ(Phase2ManifestError::NoCatalogChange, provisioned.slot.rebuild(source))
+		<< "P2-REQ-015/019 require the manifest and fingerprint to contain only definitions referenced by the closure.";
+	EXPECT_EQ(active_id, provisioned.slot.active_manifest_id());
+	EXPECT_EQ(0u, provisioned.slot.staged_manifest_id());
+	EXPECT_EQ(active_hash, provisioned.slot.active_candidate().transaction_sha256);
 }
 
 TEST(Phase2Manifest, D2006NoAllocationAfterReadyUsesCallerOwnedTwoGenerationArenaAndFailsAtomically)

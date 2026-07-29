@@ -26,6 +26,17 @@ class NativeSessionRuntimeTestAccess final {
 		const NativeSessionRuntime& runtime) noexcept;
 	static Phase2CapturePlan phase2_keyframe_test_seam(
 		NativeSessionRuntime& runtime) noexcept;
+	static Phase2CapturePlan phase2_capture_plan(
+		const NativeSessionRuntime& runtime) noexcept;
+	static Phase2CaptureResult last_phase2_capture_result(
+		const NativeSessionRuntime& runtime) noexcept;
+	static NativePhase2FailureDiagnostic last_phase2_failure_diagnostic(
+		const NativeSessionRuntime& runtime) noexcept;
+	static Phase2OwnedBudget phase2_owned_budget(
+		const NativeSessionRuntime& runtime) noexcept;
+	static bool phase2_owned_scope_within_cap(
+		TelemetryPhase2MemoryScope scope,
+		std::size_t owned_bytes) noexcept;
 	static void begin_steady_state_allocation_tracking(NativeSessionRuntime& runtime) noexcept;
 	static std::uint64_t steady_state_allocation_count(const NativeSessionRuntime& runtime) noexcept;
 	static void force_steady_state_allocation_for_tests(NativeSessionRuntime& runtime) noexcept;

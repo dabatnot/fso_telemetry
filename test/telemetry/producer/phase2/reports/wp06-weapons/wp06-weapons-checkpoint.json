@@ -1,0 +1,285 @@
+{
+  "schema": "fs2open.telemetry.phase2.wp06-weapons-checkpoint.v1",
+  "phaseNumber": 2,
+  "workPackage": "P2-WP-06",
+  "profile": "balanced",
+  "cadence": "wp-checkpoint",
+  "status": "verified",
+  "sealedAtUtc": "2026-07-26T22:15:00.0000000Z",
+  "source": {
+    "branch": "codex/phase2-pre-skill-checkpoint",
+    "head": "6f845a864e9f9f6100790893c190877114e89027",
+    "worktree": "dirty-WP06-balanced-checkpoint",
+    "platform": "Windows",
+    "buildDirectory": "build",
+    "configuration": "Release",
+    "timezone": "Europe/Paris"
+  },
+  "roles": {
+    "coordinator": "/root",
+    "contractTracker": "/root/contract_tracker",
+    "implementer": "/root/implementer",
+    "testOwner": "/root/test_agent",
+    "reviewer": "/root/reviewer"
+  },
+  "dependencies": {
+    "P2-WP-03": "verified",
+    "P2-WP-04": "verified",
+    "G2-C": "closed",
+    "P2-WP-05": "verified-independent-sibling-prerequisite-for-WP07",
+    "refreshDisposition": "WP06 changed the state-image, observation, engine-adapter, manifest/ID, CMake, codec, and dedicated-test dependency cone. The exact checkpoint rebuilt and reran weapon-state, core-state, control/turret, observation-contract, manifest, manifest-codec, and engine-adapter source evidence once. Closed WP02-WP05 evidence outside that cone remains valid; unittests was not relinked."
+  },
+  "contractCoverage": {
+    "verifiedWorkPackages": [
+      "P2-WP-06"
+    ],
+    "verifiedRequirements": [
+      "P2-REQ-029"
+    ],
+    "refreshedSharedRequirements": [
+      "P2-REQ-015",
+      "P2-REQ-016",
+      "P2-REQ-017",
+      "P2-REQ-018",
+      "P2-REQ-019",
+      "P2-REQ-025",
+      "P2-REQ-027",
+      "P2-REQ-028",
+      "P2-REQ-033",
+      "P2-REQ-049",
+      "P2-REQ-050"
+    ],
+    "verifiedTests": [
+      "P2-TST-036",
+      "P2-TST-037",
+      "P2-TST-038"
+    ],
+    "refreshedSharedTests": [
+      "P2-TST-020",
+      "P2-TST-021",
+      "P2-TST-022",
+      "P2-TST-023",
+      "P2-TST-024",
+      "P2-TST-025",
+      "P2-TST-026",
+      "P2-TST-027",
+      "P2-TST-028",
+      "P2-TST-029",
+      "P2-TST-034",
+      "P2-TST-035",
+      "P2-TST-039",
+      "P2-TST-040",
+      "P2-TST-047"
+    ],
+    "acceptance": {
+      "P2-AC-003": "prerequisite-only; final full 0x0583 image remains owned by WP08",
+      "P2-AC-005": "previously verified and refreshed where manifest inputs changed",
+      "P2-AC-006": "implemented-oracle-prerequisite; final independent dashboard and zero-mismatch proof remain owned by WP10"
+    },
+    "decisionsCovered": [
+      "D2-002",
+      "D2-003",
+      "D2-006",
+      "D2-007",
+      "D2-008",
+      "D2-010",
+      "D2-011",
+      "D2-014",
+      "D2-020"
+    ]
+  },
+  "checkpointCriteria": {
+    "weaponStatePerExportedShip": "pass",
+    "emptyWeaponsGenerationAndZeroSelectors": "pass",
+    "primarySecondaryTertiaryBoundsAndSelectors": "pass",
+    "countermeasureCapacityCooldownAndFlags": "pass",
+    "manifestBankAndWeaponIdsReused": "pass",
+    "exactFireEventsExcluded": "pass",
+    "phase3TargetLockAwacsDataExcluded": "pass",
+    "blockingFindings": 0
+  },
+  "review": {
+    "reviewer": "/root/reviewer",
+    "decision": "GO",
+    "blockingFindingCount": 0,
+    "remainingFindingCount": 0,
+    "result": "accepted-for-WP06-verification"
+  },
+  "commands": [
+    {
+      "ordinal": 1,
+      "purpose": "release-changed-and-dependency-target-build",
+      "command": "cmake --build build --config Release --target telemetry_phase2_weapon_state_tests telemetry_phase2_core_state_tests telemetry_phase2_control_turret_tests telemetry_phase2_observation_contract_tests telemetry_phase2_manifest_tests telemetry_phase2_manifest_codec_tests telemetry_phase2_engine_adapter_evidence -j 2",
+      "exitCode": 0,
+      "durationSeconds": 169.7,
+      "result": "pass",
+      "unittestsRelinked": false,
+      "targets": [
+        "telemetry_phase2_weapon_state_tests",
+        "telemetry_phase2_core_state_tests",
+        "telemetry_phase2_control_turret_tests",
+        "telemetry_phase2_observation_contract_tests",
+        "telemetry_phase2_manifest_tests",
+        "telemetry_phase2_manifest_codec_tests",
+        "telemetry_phase2_engine_adapter_evidence"
+      ]
+    },
+    {
+      "ordinal": 2,
+      "purpose": "release-wp06-and-dependency-contract-suite",
+      "command": "ctest --test-dir build -C Release --output-on-failure -R '^telemetry_phase2_(weapon_state|core_state|control_turret|observation_contract|manifest|manifest_codec|engine_integration_source_contract)_tests$'",
+      "exitCode": 0,
+      "durationSeconds": 21.82,
+      "result": "pass",
+      "tests": {
+        "run": 7,
+        "passed": 7,
+        "failed": 0,
+        "durationsSeconds": {
+          "telemetry_phase2_observation_contract_tests": 10.79,
+          "telemetry_phase2_engine_integration_source_contract_tests": 0.30,
+          "telemetry_phase2_manifest_tests": 1.84,
+          "telemetry_phase2_manifest_codec_tests": 7.05,
+          "telemetry_phase2_core_state_tests": 0.28,
+          "telemetry_phase2_control_turret_tests": 0.40,
+          "telemetry_phase2_weapon_state_tests": 0.21
+        }
+      }
+    },
+    {
+      "ordinal": 3,
+      "purpose": "final-diff-check",
+      "command": "git diff --check",
+      "exitCode": 0,
+      "durationSeconds": 0.318,
+      "result": "pass"
+    },
+    {
+      "ordinal": 4,
+      "purpose": "tracker-validation",
+      "command": "& '.agents/skills/implement-telemetry-phase/scripts/validate_phase_progress.ps1' -PhaseNumber 2",
+      "exitCode": 0,
+      "result": "pass"
+    }
+  ],
+  "releaseArtifacts": [
+    {
+      "path": "build/bin/Release/telemetry_phase2_weapon_state_tests.exe",
+      "bytes": 622592,
+      "sha256": "a59af63fedae1aeccc4c75d1463586f94490f0dbcdb88dfe02e6118b2360e95b"
+    },
+    {
+      "path": "build/bin/Release/telemetry_phase2_core_state_tests.exe",
+      "bytes": 627200,
+      "sha256": "a0d0e46f5c59411ff868f97a21ff46a5ec84f050041fe0920fefd767449864dc"
+    },
+    {
+      "path": "build/bin/Release/telemetry_phase2_control_turret_tests.exe",
+      "bytes": 587264,
+      "sha256": "51d0c88b3141d0185e2efa30e0afddaf951c07585a6c26ceece87e7fe3c8b38a"
+    },
+    {
+      "path": "build/bin/Release/telemetry_phase2_observation_contract_tests.exe",
+      "bytes": 949760,
+      "sha256": "b17f230418060e89bc18987b675a31c89c238666a78906cd94a06d626e22519c"
+    },
+    {
+      "path": "build/bin/Release/telemetry_phase2_manifest_tests.exe",
+      "bytes": 741888,
+      "sha256": "9183b321cd407a902ce4cb495547925206276d59f698c39bca26809280a2809f"
+    },
+    {
+      "path": "build/bin/Release/telemetry_phase2_manifest_codec_tests.exe",
+      "bytes": 716800,
+      "sha256": "c0ceeb2338ddabb212c6e6b3418bcca582021262bc92bd50ca30575c01f047e6"
+    },
+    {
+      "path": "build/bin/Release/telemetry_phase2_engine_integration_source_contract_tests.exe",
+      "bytes": 939520,
+      "sha256": "723c29676ac8347dbd83ccac8bd39d2b99ad3342a353e378882a98a39b69fcce"
+    },
+    {
+      "path": "build/test/src/telemetry_phase2_engine_adapter_evidence_object.dir/Release/engine_adapter.obj",
+      "bytes": 1208845,
+      "sha256": "b274cc540cddea40478803676a088594dd2c28b8693829a6015c9955dbbbeb00"
+    }
+  ],
+  "sourceBindings": [
+    {
+      "path": "code/telemetry/engine_adapter.cpp",
+      "sha256": "0bfe43aecb34156c780bae212a04e52a358da07f8b7d3b6ca37a28c1c1e65613"
+    },
+    {
+      "path": "code/telemetry/phase2_observation.cpp",
+      "sha256": "8788780e0c76d1abd5b0c9d63d6c690ae7802fab7c6c506ac8084128fb4d3a45"
+    },
+    {
+      "path": "code/telemetry/phase2_observation.h",
+      "sha256": "6a035c1d487ea58e09159be58a849a6cb48de7bc815c12975aafb3f3517c3609"
+    },
+    {
+      "path": "code/telemetry/phase2_manifest_builder.cpp",
+      "sha256": "e7d6aa446d76ab837a495ee20c138aefb1c23e236de8ecfbc2986dfe35dd4c4a"
+    },
+    {
+      "path": "code/telemetry/phase2_manifest_builder.h",
+      "sha256": "cfc13b733000599f5089d80696028c11dce1f612c1e8e1501a3abbed25148e3f"
+    },
+    {
+      "path": "code/telemetry/phase2_state_image.cpp",
+      "sha256": "aac6755bef82379f6598fa96419615cae7ec89980d4c58169930caf75f5b6b83"
+    },
+    {
+      "path": "code/telemetry/phase2_state_image.h",
+      "sha256": "170cc3dd6b185ed82fad9cfaf9ba766bc1e832186cc4faed48477c723f18d5a3"
+    },
+    {
+      "path": "test/src/CMakeLists.txt",
+      "sha256": "fd263027a072f80b6ed63db4c064db3554da915dac5fd8286922654262080759"
+    },
+    {
+      "path": "test/src/telemetry/producer/phase2_weapon_state_tests.cpp",
+      "sha256": "06ba37bd0d00b62894735f32149673f19f337d56b55d65403edbf4dd399eb7e7"
+    },
+    {
+      "path": "test/src/telemetry/producer/phase2_manifest_tests.cpp",
+      "sha256": "da24bdc1deffee4e9cb227e9f44f50c3ff9ebd7813aca1a3114754a8c45ad026"
+    },
+    {
+      "path": "test/src/telemetry/protocol/phase2_manifest_codec_tests.cpp",
+      "sha256": "ddcc001743a918dedfa2764ae0c16a9f3ff9a16b4fb07efee5c014f3402af601"
+    }
+  ],
+  "binding": {
+    "stableTracker": {
+      "path": "documentation/analysis/progress/phase-2.json",
+      "bytes": 125507,
+      "sha256": "c7c7fd237c9c933ee0a8614ca72f4f92e7ad4f02434f43fd81d00bb8bdd46cb1",
+      "validation": "passed"
+    },
+    "statusLineCountBeforeReport": 114,
+    "statusSha256Utf8BeforeReport": "646d4a9a96f0e567cd1dfc5e3db39d4a6d9c855be5a7575ae0ea4432590648e0",
+    "reportSha256": "recorded externally after this single final write to avoid self-reference",
+    "untrackedFilesPreserved": true
+  },
+  "gateDisposition": {
+    "gate": "G2-D",
+    "result": "open",
+    "closedPrerequisites": [
+      "P2-WP-05",
+      "P2-WP-06"
+    ],
+    "remainingPrerequisites": [
+      "P2-WP-07"
+    ],
+    "authorizesNext": [
+      "P2-WP-07"
+    ],
+    "doesNotAuthorize": [
+      "P2-WP-08 until G2-D closes",
+      "any later phase"
+    ]
+  },
+  "blockers": [],
+  "nextAction": "Begin P2-WP-07 under the balanced profile as the next single-writer work package. Preserve WP06 evidence unless a later change invalidates an input in its dependency cone."
+}

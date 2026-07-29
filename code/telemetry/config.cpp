@@ -53,6 +53,7 @@ constexpr const char* KnownConfigKeys[]{
 	"trustedFullState",
 	"maxClients",
 	"flightHz",
+	"systemsHz",
 	"keyframeSeconds",
 	"missionHeartbeatMs",
 	"idleHeartbeatMs",
@@ -540,6 +541,12 @@ ConfigLoadResult parse_config_json(std::string_view input) noexcept
 		return invalid_result(error);
 	}
 	config.flight_hz = static_cast<std::uint8_t>(integer);
+
+	integer = config.systems_hz;
+	if (!read_bounded_integer(root.get(), "systemsHz", 1U, 20U, integer, error)) {
+		return invalid_result(error);
+	}
+	config.systems_hz = static_cast<std::uint8_t>(integer);
 
 	integer = config.keyframe_seconds;
 	if (!read_bounded_integer(root.get(), "keyframeSeconds", 1U, 5U, integer, error)) {

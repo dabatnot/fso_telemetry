@@ -208,9 +208,9 @@ struct ReliableWindowCounters {
 };
 
 // Allocation-free control-only composition for runtimes that must preallocate
-// every byte before becoming Ready. It deliberately accepts only the two
-// ordinary reliable control datagrams a Phase 1 client slot can retain at
-// once; transaction, event and video retention remain with ReliableSendWindow.
+// every byte before becoming Ready. It accepts the bounded handshake/session
+// controls, including the terminal SessionEnd that replaces in-slot work;
+// transaction, event and video retention remain with ReliableSendWindow.
 class PreallocatedReliableControlWindow final {
   public:
 	static constexpr std::size_t MaximumEntries = 2U;

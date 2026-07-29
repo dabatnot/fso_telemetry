@@ -1118,16 +1118,25 @@ TEST(TelemetryPhase2EngineIntegrationSourceContract, ReviewerS8AdapterReadsOnlyB
 TEST(TelemetryPhase2EngineIntegrationSourceContract, ReviewerS8SupportCopiesRawAuthorityWithoutInventedProgress)
 {
 	const auto header = read_source("code/telemetry/phase2_observation.h");
+	const auto adapter_header =
+		read_source("code/telemetry/engine_adapter.h");
 	const auto source = read_source("code/telemetry/engine_adapter.cpp");
 	const auto read =
 		function_body(source, "SourceReadResult FsoEngineReadView::read_ship(");
 	ASSERT_FALSE(read.empty());
+	EXPECT_NE(std::string::npos,
+		adapter_header.find("evaluate_support_work("));
+	EXPECT_NE(std::string::npos, read.find("evaluate_support_work("));
+	for (const auto phase : {"ShipSupportPhase::Docking",
+			 "ShipSupportPhase::Repairing",
+			 "ShipSupportPhase::Rearming"})
+		EXPECT_NE(std::string::npos, read.find(phase)) << phase;
 	for (const auto token : {"raw_support_flags", "support_ship_objnum",
 			 "support_ship_signature", "ai_index"}) {
 		EXPECT_TRUE(header.find(token) != std::string::npos ||
 			read.find(token) != std::string::npos) << token;
 	}
-	for (const auto forbidden : {"ShipSupportPhase::Repairing", "repair_progress = 0.0F",
+	for (const auto forbidden : {"repair_progress = 0.0F",
 			 "rearm_progress = 0.0F"}) {
 		EXPECT_EQ(std::string::npos, read.find(forbidden)) << forbidden;
 	}
@@ -1282,6 +1291,8 @@ TEST(TelemetryPhase2EngineIntegrationSourceContract, ReviewerS8V3RawFactsAreExha
 {
 	SCOPED_TRACE("REVIEW-S8V3-03 REQ-012 REQ-013 D2-010 D2-020");
 	const auto header = read_source("code/telemetry/phase2_observation.h");
+	const auto adapter_header =
+		read_source("code/telemetry/engine_adapter.h");
 	const auto source = read_source("code/telemetry/engine_adapter.cpp");
 	for (const auto token : {"current_primary_bank", "current_secondary_bank",
 			 "raw_weapon_flags", "tertiary_bank", "primary_slot", "secondary_slot",
@@ -1298,8 +1309,15 @@ TEST(TelemetryPhase2EngineIntegrationSourceContract, ReviewerS8V3RawFactsAreExha
 	}
 	const auto ship =
 		function_body(source, "SourceReadResult FsoEngineReadView::read_ship(");
-	for (const auto forbidden : {"ShipSupportPhase::Repairing",
-			 "repair_progress = 0.0F", "rearm_progress = 0.0F"}) {
+	EXPECT_NE(std::string::npos,
+		adapter_header.find("evaluate_support_work("));
+	EXPECT_NE(std::string::npos, ship.find("evaluate_support_work("));
+	for (const auto phase : {"ShipSupportPhase::Docking",
+			 "ShipSupportPhase::Repairing",
+			 "ShipSupportPhase::Rearming"})
+		EXPECT_NE(std::string::npos, ship.find(phase)) << phase;
+	for (const auto forbidden : {"repair_progress = 0.0F",
+			 "rearm_progress = 0.0F"}) {
 		EXPECT_EQ(std::string::npos, ship.find(forbidden)) << forbidden;
 	}
 }
@@ -1654,19 +1672,27 @@ TEST(TelemetryPhase2EngineIntegrationSourceContract, ReviewerS8V4DiscoveryFailur
 
 TEST(TelemetryPhase2EngineIntegrationSourceContract, ReviewerS8V4StartupOwnedBudgetIsMeasuredAndRejectedBeforeTransport)
 {
-	const auto observation_header = read_source("code/telemetry/phase2_observation.h");
+	const auto budget_header = read_source("code/telemetry/startup_budget.h");
 	const auto native = read_source("code/telemetry/native_session_runtime.cpp");
 	const auto start =
 		function_body(native, "NativeSessionStartStatus NativeSessionRuntime::start(");
 	ASSERT_FALSE(start.empty());
-	EXPECT_NE(std::string::npos, observation_header.find("MaximumPhase2OwnedBytes"));
+	for (const auto cap : {"Phase2SharedOwnedCapBytes",
+			 "Phase2ClientOwnedCapBytes",
+			 "Phase2ProcessOwnedCapBytes"})
+		EXPECT_NE(std::string::npos, budget_header.find(cap)) << cap;
 	EXPECT_NE(std::string::npos, start.find("phase2_observation->owned_bytes()"));
-	EXPECT_NE(std::string::npos, start.find("64U * 1024U * 1024U"));
+	EXPECT_NE(std::string::npos, start.find("checked_add_size("));
+	EXPECT_NE(std::string::npos,
+		start.find("calculate_phase2_owned_budget("));
 	const auto measured = start.find("phase2_observation->owned_bytes()");
+	const auto calculated = start.find("calculate_phase2_owned_budget(");
 	const auto transport = start.find("m_transport.open(");
 	ASSERT_NE(std::string::npos, measured);
+	ASSERT_NE(std::string::npos, calculated);
 	ASSERT_NE(std::string::npos, transport);
 	EXPECT_LT(measured, transport);
+	EXPECT_LT(calculated, transport);
 }
 
 TEST(TelemetryPhase2EngineIntegrationSourceContract, ReviewerS9V4Phase2ActivationAndCadencesAreProvisionalAndSeparated)
@@ -1799,13 +1825,21 @@ TEST(TelemetryPhase2EngineIntegrationSourceContract,
 	EXPECT_NE(std::string::npos, owned.find("sizeof(Phase2ShipSource)"));
 	EXPECT_NE(std::string::npos, runtime_header.find("startup_owned_bytes"))
 		<< "A test seam must expose the exact inclusive total used at the cap boundary.";
-	const auto budget = start.find("SharedStartupOwnedBudgetBytes");
+	EXPECT_NE(std::string::npos,
+		runtime_header.find("Phase2OwnedBudget m_phase2_owned_budget"));
+	const auto measured = start.find("phase2_observation->owned_bytes()");
+	const auto checked = start.find("checked_add_size(", measured);
+	const auto budget = start.find("calculate_phase2_owned_budget(", checked);
 	const auto bind = start.find("m_transport.open(");
+	ASSERT_NE(std::string::npos, measured);
+	ASSERT_NE(std::string::npos, checked);
 	ASSERT_NE(std::string::npos, budget);
 	ASSERT_NE(std::string::npos, bind);
+	EXPECT_LT(measured, checked);
+	EXPECT_LT(checked, budget);
 	EXPECT_LT(budget, bind);
-	EXPECT_EQ(start.find("phase2_observation.owned_bytes()"),
-		start.rfind("phase2_observation.owned_bytes()"))
+	EXPECT_EQ(start.find("phase2_observation->owned_bytes()"),
+		start.rfind("phase2_observation->owned_bytes()"))
 		<< "Measure a shared owner once, then reuse the measured value.";
 }
 

@@ -7,7 +7,9 @@
 #include "telemetry/phase1_state_image.h"
 #include "telemetry/phase2_observation.h"
 #include "telemetry/phase2_profile_gate.h"
+#include "telemetry/phase2_state_image.h"
 #include "telemetry/session_controller.h"
+#include "telemetry/startup_budget.h"
 #include "telemetry/transport.h"
 
 #include <array>
@@ -67,6 +69,10 @@ struct NativeSessionStartRequest {
 	Phase2ProfileEligibility phase2_eligibility{};
 	Phase2Profile requested_phase2_profile = Phase2Profile::None;
 	const Phase2ObservationSelection* phase2_selection = nullptr;
+	// The manifest is immutable for the lifetime of the runtime. Its generation
+	// is still gated per client by MANIFEST APPLIED before any dependent image
+	// can enter the snapshot machinery.
+	const Phase2ManifestCandidate* phase2_manifest = nullptr;
 };
 
 struct NativeSessionTickContext {
@@ -105,6 +111,39 @@ struct NativeRuntimePerformanceSample {
 	std::size_t queue_depth = 0U;
 	std::size_t baselines_active = 0U;
 	bool keyframe = false;
+};
+
+enum class NativePhase2FailureStage : std::uint8_t {
+	None = 0,
+	PlayerCaptureClassification,
+	Phase2Precondition,
+	Closure,
+	Lifecycle,
+	Manifest,
+	PlayerBinding,
+	BlockSamples,
+	StateImage,
+	BaselineReplace,
+	Count,
+};
+
+struct NativePhase2FailureDiagnostic {
+	std::uint64_t tick_now_us = 0U;
+	std::uint64_t phase2_capture_sample_time_us = 0U;
+	std::size_t ship_count = 0U;
+	std::size_t first_zero_block = Phase2RuntimeSlot::BlockCount;
+	std::uint64_t player_entity_id = 0U;
+	std::uint32_t player_key = 0U;
+	NativePhase2FailureStage stage = NativePhase2FailureStage::None;
+	CaptureStatus player_capture_status = CaptureStatus::Count;
+	CaptureReason player_capture_reason = CaptureReason::Count;
+	Phase2RuntimeResult runtime_result = Phase2RuntimeResult::Count;
+	Phase2StateImageBuildStatus image_status =
+		Phase2StateImageBuildStatus::Count;
+	Phase2StateImageBuildDiagnostic image_diagnostic{};
+	protocol::ProducerBaselineResult baseline_result =
+		protocol::ProducerBaselineResult::InvalidArgument;
+	bool capture_observed_this_tick = false;
 };
 
 class NativeOutputCompletionPort {
@@ -167,13 +206,20 @@ class NativeSessionRuntime final : private DatagramIoWork {
 	void clear_player_capture() noexcept;
 	void fail_transport() noexcept;
 	void fail_capture(NativePlayerCaptureStatus status) noexcept;
+	NativePhase2FailureDiagnostic* begin_phase2_failure_diagnostic(
+		NativePhase2FailureStage stage) noexcept;
 	void prepare_phase2_keyframe(Phase2CapturePlan& plan) noexcept;
 	bool provision_state_image_pools(std::size_t client_count) noexcept;
+	bool provision_phase2_core_gate_image_pools(
+		std::size_t client_count) noexcept;
+	bool provision_phase2_image_pools(std::size_t client_count) noexcept;
 	void release_state_image_pools() noexcept;
 	void refresh_metrics_session_scope() noexcept;
 	void refresh_log_budget_high_water() noexcept;
 	void record_capture_metric(NativePlayerCaptureStatus status, std::uint64_t duration_us) noexcept;
 	void refresh_performance_resource_sample() noexcept;
+	void observe_phase2_support_transitions() noexcept;
+	void reset_phase2_support_tracker() noexcept;
 	std::uint64_t state_image_pool_allocation_count() const noexcept;
 	std::size_t state_image_pool_backing_bytes() const noexcept;
 
@@ -182,8 +228,10 @@ class NativeSessionRuntime final : private DatagramIoWork {
 	SessionController m_controller;
 	DatagramTickScheduler m_scheduler;
 	Capture30Hz m_capture_cadence;
+	Capture30Hz m_systems_capture_cadence;
 	Phase2ObservationBuffer m_phase2_observation;
 	Phase2CapturePlan m_phase2_capture_plan{};
+	Phase2CaptureResult m_last_phase2_capture_result{};
 	Phase2Profile m_selected_phase2_profile = Phase2Profile::None;
 	bool m_phase2_enabled = false;
 	bool m_phase2_keyframe_test_seam = false;
@@ -203,18 +251,41 @@ class NativeSessionRuntime final : private DatagramIoWork {
 	std::size_t m_startup_owned_bytes = 0U;
 	std::uint64_t m_startup_allocation_count = 0U;
 	std::size_t m_state_image_pool_backing_bytes = 0U;
+	std::size_t m_phase2_core_gate_image_pool_backing_bytes = 0U;
+	std::size_t m_phase2_image_pool_backing_bytes = 0U;
+	Phase2OwnedBudget m_phase2_owned_budget{};
+	Phase2Wp07GlobalEventBatch m_phase2_event_batch_scratch{};
+	Phase2GlobalFanoutResult m_phase2_fanout_scratch{};
+	struct Phase2SupportTrackerEntry {
+		Phase2CaptureLocalKey capture_key{};
+		std::uint32_t signature = 0U;
+		ShipSupportPhase previous = ShipSupportPhase::None;
+		bool active = false;
+	};
+	std::array<Phase2SupportTrackerEntry,
+		MaximumPhase2ObservationShips> m_phase2_support_tracker{};
+	std::array<bool, MaximumPhase2ObservationShips>
+		m_phase2_support_seen_scratch{};
 	// Retained only by the production-owned friend seam to prove that the
 	// scoped observer sees a real runtime allocation event.
 	std::unique_ptr<std::uint8_t[]> m_test_allocation_probe;
 	std::array<Phase1StateImagePool, 4U> m_state_image_pools{};
+	std::array<Phase2StateImagePool, 4U>
+		m_phase2_core_gate_image_pools{};
+	std::array<Phase2CompleteDomainPool, 4U> m_phase2_image_pools{};
+	const Phase2ManifestCandidate* m_phase2_manifest = nullptr;
 	TelemetryMetrics* m_metrics = nullptr;
 	TelemetryStructuredLog* m_log = nullptr;
 	std::array<bool, TelemetryMetricsMaxClients> m_metrics_session_active{};
 	std::array<std::uint64_t, TelemetryMetricsMaxClients> m_session_started_at_us{};
+	std::array<std::uint64_t, TelemetryMetricsMaxClients>
+		m_phase2_started_snapshot_sequences{};
 	bool m_capture_after_ready_transition = false;
 	bool m_applying_engine_capture = false;
+	bool m_phase2_event_pipeline_failed_closed = false;
 	bool m_performance_observation_active = false;
 	NativeRuntimePerformanceSample m_last_performance_sample{};
+	NativePhase2FailureDiagnostic m_last_phase2_failure_diagnostic{};
 };
 
 } // namespace telemetry::detail

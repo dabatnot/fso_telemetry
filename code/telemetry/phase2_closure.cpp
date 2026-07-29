@@ -29,11 +29,132 @@ bool append_key(Phase2Closure& closure, std::uint64_t key) noexcept
 	return true;
 }
 
-template <typename T>
-void hash_values(const T* values, std::size_t count, protocol::Sha256Digest& digest) noexcept
+bool hash_u8(protocol::Sha256& hash, std::uint8_t value) noexcept
 {
-	protocol::sha256(protocol::ByteView{
-		reinterpret_cast<const std::uint8_t*>(values), count * sizeof(T)}, digest);
+	return hash.update(protocol::ByteView{&value, sizeof(value)});
+}
+
+bool hash_u32(protocol::Sha256& hash, std::uint32_t value) noexcept
+{
+	std::array<std::uint8_t, 4> bytes{{
+		static_cast<std::uint8_t>(value),
+		static_cast<std::uint8_t>(value >> 8U),
+		static_cast<std::uint8_t>(value >> 16U),
+		static_cast<std::uint8_t>(value >> 24U)}};
+	return hash.update(protocol::ByteView{bytes.data(), bytes.size()});
+}
+
+bool hash_float(protocol::Sha256& hash, float value) noexcept
+{
+	std::uint32_t bits = 0;
+	static_assert(sizeof(bits) == sizeof(value), "float32 is required");
+	std::memcpy(&bits, &value, sizeof(bits));
+	return hash_u32(hash, bits);
+}
+
+struct TopologyMember {
+	std::uint32_t signature = 0;
+};
+
+struct TopologyEdge {
+	std::uint8_t kind = 0;
+	std::uint32_t owner_signature = 0;
+	std::uint32_t target_signature = 0;
+
+	bool operator<(const TopologyEdge& other) const noexcept
+	{
+		if (kind != other.kind) return kind < other.kind;
+		if (owner_signature != other.owner_signature) return owner_signature < other.owner_signature;
+		return target_signature < other.target_signature;
+	}
+};
+
+bool append_topology_edge(std::array<TopologyEdge,
+		Phase2ClosureLimits::MaxShips * (Phase2ClosureLimits::MaxShips + 2)>& edges,
+	std::uint32_t& count,
+	std::uint8_t kind,
+	const Phase2ClosureInput& input,
+	const Phase2ClosureNode& owner,
+	std::uint64_t target_key) noexcept
+{
+	const auto* target = find_node(input, target_key);
+	if (target == nullptr || count == edges.size()) return false;
+	edges[count++] = {kind, owner.instance_signature, target->instance_signature};
+	return true;
+}
+
+bool build_topology_fingerprint(const Phase2ClosureInput& input,
+	const Phase2Closure& closure,
+	protocol::Sha256Digest& digest) noexcept
+{
+	std::array<TopologyMember, Phase2ClosureLimits::MaxShips> members{};
+	std::array<TopologyEdge,
+		Phase2ClosureLimits::MaxShips * (Phase2ClosureLimits::MaxShips + 2)> edges{};
+	std::uint32_t edge_count = 0;
+	for (std::uint32_t index = 0; index < closure.ship_entity_count; ++index) {
+		const auto* node = find_node(input, closure.ship_entities[index]);
+		if (node == nullptr) return false;
+		members[index].signature = node->instance_signature;
+		if (node->support_source_key != 0 && has_key(closure, node->support_source_key) &&
+			!append_topology_edge(edges, edge_count, 1, input, *node, node->support_source_key))
+			return false;
+		if (node->group_leader_source_key != 0 && has_key(closure, node->group_leader_source_key) &&
+			!append_topology_edge(edges, edge_count, 2, input, *node, node->group_leader_source_key))
+			return false;
+		for (std::uint32_t dock = 0; dock < node->dock_source_count; ++dock)
+			if (has_key(closure, node->dock_source_keys[dock]) &&
+				!append_topology_edge(edges, edge_count, 3, input, *node, node->dock_source_keys[dock]))
+				return false;
+	}
+	std::sort(members.begin(), members.begin() + closure.ship_entity_count,
+		[](const auto& left, const auto& right) { return left.signature < right.signature; });
+	std::sort(edges.begin(), edges.begin() + edge_count);
+
+	protocol::Sha256 hash;
+	if (!hash_u32(hash, closure.ship_entity_count) || !hash_u32(hash, edge_count)) return false;
+	for (std::uint32_t index = 0; index < closure.ship_entity_count; ++index)
+		if (!hash_u32(hash, members[index].signature)) return false;
+	for (std::uint32_t index = 0; index < edge_count; ++index)
+		if (!hash_u8(hash, edges[index].kind) ||
+			!hash_u32(hash, edges[index].owner_signature) ||
+			!hash_u32(hash, edges[index].target_signature))
+			return false;
+	return hash.finalize(digest);
+}
+
+bool build_catalog_fingerprint(const Phase2ClosureInput& input,
+	const Phase2Closure& closure,
+	protocol::Sha256Digest& digest) noexcept
+{
+	std::array<protocol::Sha256Digest, Phase2ClosureLimits::MaxShips> descriptors{};
+	for (std::uint32_t index = 0; index < closure.ship_entity_count; ++index) {
+		const auto* node = find_node(input, closure.ship_entities[index]);
+		if (node == nullptr) return false;
+		std::array<std::uint32_t, Phase2ClosureLimits::MaxSubsystemsPerShip> subsystem_keys{};
+		std::copy(node->subsystem_keys.begin(),
+			node->subsystem_keys.begin() + node->subsystem_key_count,
+			subsystem_keys.begin());
+		std::sort(subsystem_keys.begin(), subsystem_keys.begin() + node->subsystem_key_count);
+		protocol::Sha256 descriptor;
+		if (!hash_u32(descriptor, node->ship_class_key) ||
+			!hash_float(descriptor, node->effective_mass) ||
+			!hash_u32(descriptor, node->subsystem_key_count))
+			return false;
+		for (std::uint32_t subsystem = 0; subsystem < node->subsystem_key_count; ++subsystem)
+			if (!hash_u32(descriptor, subsystem_keys[subsystem])) return false;
+		if (!descriptor.finalize(descriptors[index])) return false;
+	}
+	std::sort(descriptors.begin(), descriptors.begin() + closure.ship_entity_count);
+	const auto unique_end = std::unique(
+		descriptors.begin(), descriptors.begin() + closure.ship_entity_count);
+	const auto unique_count = static_cast<std::uint32_t>(
+		std::distance(descriptors.begin(), unique_end));
+	protocol::Sha256 catalog;
+	if (!hash_u32(catalog, unique_count)) return false;
+	for (std::uint32_t index = 0; index < unique_count; ++index)
+		if (!catalog.update(protocol::ByteView{descriptors[index].data(), descriptors[index].size()}))
+			return false;
+	return catalog.finalize(digest);
 }
 
 } // namespace
@@ -118,17 +239,9 @@ Phase2ClosureError build_phase2_closure(
 				return a.instance_signature < b.instance_signature;
 			return a.ship_class_key < b.ship_class_key;
 		});
-	std::array<std::uint32_t, Phase2ClosureLimits::MaxShips> topology{};
-	for (std::uint32_t i = 0; i < candidate.class_descriptor_count; ++i)
-		topology[i] = candidate.class_descriptors[i].instance_signature;
-	std::sort(topology.begin(), topology.begin() + candidate.class_descriptor_count);
-	hash_values(topology.data(), candidate.class_descriptor_count, candidate.topology_fingerprint);
-	std::array<float, Phase2ClosureLimits::MaxShips> catalog{};
-	for (std::uint32_t i = 0; i < candidate.class_descriptor_count; ++i)
-		catalog[i] = candidate.class_descriptors[i].effective_mass;
-	std::sort(catalog.begin(), catalog.begin() + candidate.class_descriptor_count,
-		[](float a, float b) { return a < b; });
-	hash_values(catalog.data(), candidate.class_descriptor_count, candidate.catalog_fingerprint);
+	if (!build_topology_fingerprint(input, candidate, candidate.topology_fingerprint) ||
+		!build_catalog_fingerprint(input, candidate, candidate.catalog_fingerprint))
+		return Phase2ClosureError::InvalidSource;
 	output = candidate;
 	return Phase2ClosureError::None;
 }
