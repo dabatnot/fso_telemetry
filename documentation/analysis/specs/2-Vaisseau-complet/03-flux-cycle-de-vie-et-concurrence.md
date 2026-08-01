@@ -103,7 +103,7 @@ DELTA(baseline=S)                -> application remplaçable
 
 Deux fingerprints sont distincts et comparés sur la capture cohérente :
 
-- `topology_fingerprint` couvre les instances, le support assigné, les leaders et les relations de docking. Sa modification seule force une keyframe sous le manifeste N déjà installé ;
+- `topology_fingerprint` couvre les instances, le support assigné et les relations de docking. Chef de groupe et cible cargo en sont exclus. Sa modification seule force une keyframe sous le manifeste N déjà installé ;
 - `catalog_fingerprint` couvre exactement les `ClassDescriptor`, `WeaponDescriptor`, clés auxiliaires et définitions imbriquées canoniques pré-ID triées nécessaires ; générations, IDs alloués et index moteur en sont exclus. Sa modification déclenche :
 
 1. gel de l’ancien manifeste et de la baseline pour le trafic déjà en vol ;
@@ -116,7 +116,18 @@ Deux fingerprints sont distincts et comparés sur la capture cohérente :
 
 Aucun delta contre `S` ne référence un ID de `N+1`. L’ajout d’une instance dont la classe et les armes sont déjà requises par un autre membre change seulement la topologie ; le retrait du dernier utilisateur d’une définition change le catalogue afin de préserver le least-privilege. Si l’ancienne fermeture ne peut plus être représentée sans mentir, la session est terminée au lieu de continuer avec une image incohérente.
 
-Le producteur conserve `active_manifest=N` tant que la baseline S le référence et `staged_manifest=N+1` après `APPLIED(N+1)` jusqu’à `APPLIED(S+1)`. N n’est retiré qu’après disparition de toute référence en vol. Une mutation catalogue supplémentaire pendant cette fenêtre devient un unique rebuild-intent coalescé ; elle ne matérialise pas une troisième génération.
+Le producteur conserve `active_manifest=N` tant que la baseline S le référence et `staged_manifest=N+1` jusqu'à l'application complète de la keyframe liée. N n’est retiré qu’après disparition de toute référence en vol.
+
+La séquence N/N+1/N+2 est fermée par client :
+
+1. N reste le tuple cohérent appliqué : candidat/génération, fingerprint, `manifest_id`, état `applied` ;
+2. N+1 est la seule image `staged` ;
+3. si une source N+2 arrive pendant que N+1 est busy, le slot conserve uniquement le dernier fingerprint et une intention de reconstruction, sans construire ni allouer une image N+2 ;
+4. après `APPLIED(N+1)`, le producteur émet une keyframe exactement liée à N+1 ;
+5. les deltas susceptibles de mélanger N et N+1 sont suspendus ;
+6. après application de cette keyframe, le producteur construit le dernier candidat pending et reprend par une nouvelle keyframe sous son manifeste appliqué.
+
+La projection pré-ID immuable peut être partagée entre clients, mais chaque client conserve ses tuples atomiques complets. Un snapshot doit référencer exactement le `manifest_id` effectivement appliqué pour ce client.
 
 ## 6. Ordonnancement d’un tick
 
@@ -130,11 +141,11 @@ Pour chaque `EngineUpdate` :
 4. déterminer `flight_due`, `systems_due` et `keyframe_due` ;
 5. si aucun bloc n’est dû, produire seulement heartbeat/egress en attente ;
 6. valider les sources moteur ;
-7. capturer tous les blocs requis par les flags dus ; une keyframe force tous les blocs ;
+7. capturer uniquement les blocs requis par les flags dus ; conserver la dernière copie validée des blocs non dus ; une keyframe ou une invalidation topology/lifecycle/catalogue force tous les blocs ;
 8. recalculer la fermeture si `topology_fingerprint` a changé et construire un manifeste seulement si `catalog_fingerprint` change ;
-9. construire l’image filtrée et valider la matrice de couverture ;
+9. remplacer dans l’image filtrée uniquement les atomes des blocs capturés, ou reconstruire l’image exhaustive lorsqu’elle est forcée, puis valider la matrice de couverture ;
 10. créer les événements lifecycle reconstructibles observés ;
-11. mettre à jour les deltas cumulatifs par client ;
+11. mettre à jour les deltas cumulatifs par client à partir des seuls atomes reconstruits ou invalidés, tout en conservant la comparaison cumulative contre la baseline immuable ;
 12. planifier les datagrammes selon les priorités ;
 13. mettre à jour métriques et logs bornés.
 
@@ -151,6 +162,8 @@ Toute sortie anticipée laisse les candidats immuables et les files dans un éta
 | heartbeat | paramètres hérités | hérités Phase 1 | indépendant de la pause mission |
 
 Le scheduler utilise une deadline monotone et saute les échéances dépassées ; il NE DOIT PAS exécuter plusieurs captures de rattrapage dans la même frame. Les `producer_sample_time_us` proviennent de l’horloge producteur monotone héritée, pas du temps de mission compressé.
+
+La conservation incrémentale n'est jamais une capture partielle filaire : chaque atome modifié reste complet et garde le sample time de sa dernière capture. Un bloc non dû n'est ni relu, ni réencodé, ni marqué dirty. Toute ambiguïté sur l'appartenance d'un atome à un bloc, toute modification de la fermeture ou tout besoin de keyframe bascule transactionnellement vers une capture et une image exhaustives.
 
 ### 6.3 Pause et compression temporelle
 
@@ -216,7 +229,7 @@ Le client purge tous les atomes de l’ancien joueur par lifecycle/cascade selon
 
 ### 8.5 Membres non joueurs de la closure
 
-La même machine vaut pour support, leader et dockés. À l’ajout d’un membre : nouvel `entity_id`, éventuel manifeste si `catalog_fingerprint` change, keyframe créatrice `APPLIED`, puis `ENTITY_APPEARED`. Au retrait d’une relation alors que l’objet moteur reste vivant : `ENTITY_DISAPPEARED` est acquitté contre l’ancienne baseline, puis une keyframe supprime en cascade le membre ; son ID est définitivement retiré. Si le retrait du dernier utilisateur modifie le catalogue, le manifeste N+1 est installé entre l’événement et la keyframe de retrait. Une réentrée ultérieure de la même signature reçoit donc un nouvel ID.
+La même machine vaut pour support et dockés. À l’ajout d’un membre : nouvel `entity_id`, éventuel manifeste si `catalog_fingerprint` change, keyframe créatrice `APPLIED`, puis `ENTITY_APPEARED`. Au retrait d’une relation alors que l’objet moteur reste vivant : `ENTITY_DISAPPEARED` est acquitté contre l’ancienne baseline, puis une keyframe supprime en cascade le membre ; son ID est définitivement retiré. Si le retrait du dernier utilisateur modifie le catalogue, le manifeste N+1 est installé entre l’événement et la keyframe de retrait. Une réentrée ultérieure de la même signature reçoit donc un nouvel ID.
 
 Mort ou cleanup d’un membre utilise les mêmes phases/fences que le joueur. Une disparition pendant ACK ne mutile pas la candidate : événement et éventuel manifeste sont ordonnés, puis une candidate successeur porte la closure recalculée. La fermeture reste un point fixe ; retirer un support ou une relation peut retirer transitivement plusieurs membres, chacun avec son événement et sa cascade.
 
@@ -263,7 +276,7 @@ Si réparation et réarmement progressent simultanément, `REPAIRING` a priorit�
 
 La table ne rejoue pas un historique comme de faux états courants : elle garantit seulement le terminal le plus récent par entité assistée et `episode_sequence`. `ABORTED`/`OBSTRUCTED` remplacent une valeur active ; `COMPLETE` produit `NONE(Completed)` ; seul un `END` portant la même `assisted_signature` et le même `episode_sequence` est coalescé sans dégrader `Completed`, quel que soit l’attribut support courant ou nul. Un nouveau `QUEUE`/`ONWAY`/`BEGIN` après ce terminal incrémente la séquence : son futur `END` devient donc `NONE(Ended)`. Si un nouveau terminal arrive pendant une candidate, sa génération de latch reste pour la candidate successeur. Un overflow du ring global journalise `SourceLimitExceeded`, incrémente le compteur puis ferme toutes les sessions Phase 2 avec `SESSION_END(Restart, RECONNECT_ALLOWED)` ; la table par session ne peut dépasser la closure de 64 ships.
 
-Cette règle garantit les transitions que le moteur signale par le seam sans créer de nouvel `EventKind`. Un simple polling `EngineUpdate` n’est pas une preuve acceptable de terminalité support.
+Cette règle conserve les transitions signalées par le seam sans créer de nouvel `EventKind`. Un simple polling `EngineUpdate` ne garantit pas l'observation de la terminalité support.
 
 ### 9.3 Closure de docking
 
@@ -321,11 +334,11 @@ Les limites Phase 0 de 16 Mio/transaction, 64 parts et 32 Mio de candidates/clie
 
 | Cause | Action obligatoire |
 |---|---|
-| source temporairement absente | transition lifecycle si valide, keyframe, pas de lecture invalide |
-| topologie modifiée entre discovery et copie | abandon atomique du tick et retry au prochain `EngineUpdate`; fermeture `SourceInconsistent` au troisième échec consécutif ou après 250 ms depuis le premier, première borne atteinte |
-| index, signature, référence, flottant obligatoire ou invariant incohérent | fermeture immédiate `SourceInconsistent`, métrique et log rate-limité ; aucun retry avec état partiel |
-| cardinalité hors borne | refus immédiat du profil/session, aucune troncature |
-| manifeste non installable | fermeture session, conservation sûre des autres clients |
+| source temporairement absente | conserver la dernière image cohérente et reprendre sur une capture valide |
+| topologie modifiée entre discovery et copie | abandon atomique du tick, diagnostic observable et nouvelle observation au tick systèmes suivant |
+| index, signature, référence, flottant obligatoire ou invariant incohérent | ne pas publier la candidate concernée ; conserver la baseline et exposer l’écart |
+| cardinalité hors borne | conserver la baseline, exposer la limite atteinte et attendre une fermeture représentable |
+| manifeste non installable | conserver le manifeste actif et attendre une candidate valide |
 | timeout transaction | abandon candidate et fermeture/resync selon Phase 0 |
 | perte de couverture | `SESSION_END`, purge et nouveau handshake éventuel |
 | sortie mission | drainage, purge complète, retour `Idle` |

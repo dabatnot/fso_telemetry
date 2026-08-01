@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Small independent FSTL 1.1 proof client (P1-WP-10).
+"""Small independent FSTL 1.1 observation client.
 
 It deliberately imports only :mod:`fstl_reference_decoder`; it never imports
-the C++ producer, its DTOs, fixture generators, or a generated layout.  The
-``--replay`` mode is useful to produce deterministic transcripts in CI while
-the default mode is a bounded UDP proof client for a configured producer.
+the C++ producer, its DTOs, fixture generators, or a generated layout. The
+``--replay`` mode produces deterministic transcripts in CI while the default
+mode is a bounded UDP observation client for a configured producer.
 """
 
 from __future__ import annotations
@@ -542,6 +542,7 @@ class ConsoleState:
     manifest_id: int = 0
     required_manifest_id: int = 0
     manifest_records: dict[str, dict[str, Any]] = field(default_factory=dict)
+    injections: list[dict[str, Any]] = field(default_factory=list)
     manifest_transactions: dict[int, dict[str, Any]] = field(default_factory=dict)
     hello_sent: bool = False
     hello_nonce: int | None = None
@@ -855,12 +856,14 @@ class ConsoleState:
                 self.smoothed_offset_us,
                 self.clock_filter_valid,
             ).build(),
+            "injections": copy.deepcopy(self.injections),
         }
         return json.dumps(result, sort_keys=True, separators=(",", ":"))
 
 
 class ConsoleClient:
-    def __init__(self, sender: socket.socket | None, stale_us: int) -> None:
+    def __init__(self, sender: socket.socket | None, stale_us: int,
+                 drop_once_delta: bool = False) -> None:
         self.sender, self.stale_us = sender, stale_us
         self.state = ConsoleState()
         self.fragments: dict[tuple[int, int], FragmentSet] = {}
@@ -876,6 +879,7 @@ class ConsoleClient:
         self.hello_next_us = 0
         self.hello_attempt = 0
         self.pending_resync: PendingReliable | None = None
+        self.drop_once_delta = drop_once_delta
 
     def _send(self, data: bytes) -> None:
         if self.sender is not None:
@@ -1055,6 +1059,16 @@ class ConsoleClient:
                 if header["flags"] & ACK_REQUIRED:
                     self._ack(header, ACK_APPLIED)
                 return False
+        if header["message_type"] == 7 and self.drop_once_delta:
+            self.drop_once_delta = False
+            self.state.injections.append({
+                "action": "drop-once",
+                "message": "delta",
+                "message_id": header["message_id"],
+            })
+            # A replaceable delta receives no ACK and does not trigger resync.
+            # The next cumulative delta or keyframe is sufficient to converge.
+            return True
         changed, validated_headers, applied_headers = self.state.apply(
             header["message_type"], decoded["fields"], payload, header, at_us, at_utc)
         for ack_header in validated_headers:
@@ -1079,8 +1093,8 @@ class ConsoleClient:
         return changed
 
 
-def replay(paths: list[Path], stale_us: int) -> int:
-    client = ConsoleClient(None, stale_us)
+def replay(paths: list[Path], stale_us: int, drop_once_delta: bool = False) -> int:
+    client = ConsoleClient(None, stale_us, drop_once_delta)
     # A capture contains inbound datagrams only.  Reconstruct the exact local
     # HELLO identity from its recorded matching WELCOME before replaying it, so
     # the normal handshake follows the same nonce/t0 correlation as live UDP.
@@ -1119,12 +1133,13 @@ def replay(paths: list[Path], stale_us: int) -> int:
     return 0
 
 
-def live(host: str, port: int, seconds: float, stale_us: int) -> int:
+def live(host: str, port: int, seconds: float, stale_us: int,
+         drop_once_delta: bool = False) -> int:
     family = socket.AF_INET6 if ":" in host else socket.AF_INET
     with socket.socket(family, socket.SOCK_DGRAM) as sock:
         sock.settimeout(0.1)
         sock.connect((host, port))
-        client = ConsoleClient(sock, stale_us)
+        client = ConsoleClient(sock, stale_us, drop_once_delta)
         client.begin()
         deadline = time.monotonic() + seconds
         while time.monotonic() < deadline:
@@ -1146,17 +1161,23 @@ def live(host: str, port: int, seconds: float, stale_us: int) -> int:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="independent FSTL 1.1 proof console")
+    parser = argparse.ArgumentParser(description="independent FSTL 1.1 observation console")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=42042)
     parser.add_argument("--seconds", type=float, default=10.0)
     parser.add_argument("--stale-ms", type=int, default=3000)
+    parser.add_argument("--drop-once", choices=("delta",),
+                        help="drop exactly one decoded replaceable message and record the injection")
     parser.add_argument("--replay", type=Path, nargs="+", help="raw datagrams for deterministic transcript")
     args = parser.parse_args()
     if args.port < 1 or args.port > 65535 or args.seconds <= 0 or args.stale_ms < 1:
         parser.error("invalid port, duration or stale timeout")
     try:
-        return replay(args.replay, args.stale_ms * 1000) if args.replay else live(args.host, args.port, args.seconds, args.stale_ms * 1000)
+        drop_once_delta = args.drop_once == "delta"
+        return (replay(args.replay, args.stale_ms * 1000, drop_once_delta)
+                if args.replay
+                else live(args.host, args.port, args.seconds,
+                          args.stale_ms * 1000, drop_once_delta))
     except (OSError, ValueError, reference.DecodeFailure) as exc:
         print(f"console error: {exc}", file=sys.stderr)
         return 1

@@ -70,6 +70,10 @@ struct StateAtom {
 constexpr std::size_t MaxReplicationStateAtomCount = MaxTransactionSize / RecordEnvelopeHeaderSize;
 constexpr std::size_t MaxReplicationStateImageRetainedBytes =
 	MaxTransactionSize * 3U + MaxReplicationStateAtomCount * sizeof(StateAtom);
+// The incremental Phase 2 profile has at most 4 + 10*64 + 4096 = 4740
+// records. Keep some headroom so the engine-neutral replication layer can
+// track an exact rebuilt-index union without heap growth on the live path.
+constexpr std::size_t MaxIncrementalDirtyStateAtomCount = 8192U;
 
 enum class StateImageResult : std::uint8_t {
 	Created = 0,
@@ -110,6 +114,19 @@ class StateImage final {
 		StateImageInvalidRecordReason& invalid_record_reason) noexcept;
 
 	const std::vector<StateAtom>& records() const noexcept;
+	// Internal live-pipeline seam. Only startup-owned preallocated images may
+	// expose their backing, and only while no baseline/candidate shares it.
+	// Callers must restore canonical validity and refresh metadata before
+	// publishing the image again.
+	std::vector<StateAtom>* mutable_preallocated_records_if_unique() noexcept;
+	StateImageResult refresh_preallocated_metadata(
+		StateImageInvalidRecordReason& invalid_record_reason) noexcept;
+	StateImageResult refresh_preallocated_metadata_incremental(
+		const std::vector<StateAtom>& previous_records,
+		const std::uint16_t* canonical_indices,
+		const std::uint16_t* previous_record_indices,
+		std::size_t canonical_index_count,
+		StateImageInvalidRecordReason& invalid_record_reason) noexcept;
 	std::size_t encoded_snapshot_records_size() const noexcept
 	{
 		return m_encoded_snapshot_records_size;
@@ -137,6 +154,7 @@ class StateImage final {
 	std::shared_ptr<const std::vector<StateAtom>> m_records;
 	std::size_t m_encoded_snapshot_records_size = 0;
 	std::size_t m_retained_payload_bytes = 0;
+	bool m_preallocated_mutable_backing = false;
 };
 
 enum class StateMutationKind : std::uint8_t {
@@ -179,6 +197,13 @@ struct CumulativeStateDelta {
 	{
 		return !(left == right);
 	}
+};
+
+struct DeltaBuildChanges {
+	std::array<std::uint16_t,
+		MaxIncrementalDirtyStateAtomCount> mutation_indices{};
+	std::size_t count = 0U;
+	bool layout_changed = true;
 };
 
 enum class StateDeltaValidationResult : std::uint8_t {
@@ -320,6 +345,21 @@ class ProducerBaselineTracker final {
 	// after all of its exact part identities receive VALIDATED|APPLIED.
 	ProducerBaselineResult initialize(const StateImage& current) noexcept;
 	ProducerBaselineResult replace_current(const StateImage& current) noexcept;
+	// Replaces a current image whose record set and canonical order are known
+	// unchanged, and records exactly the rebuilt canonical indices. This is the
+	// bounded fast path for cadence-scoped Phase 2 updates. Callers must use the
+	// ordinary replacement for topology/lifecycle/catalogue discontinuities.
+	ProducerBaselineResult replace_current_incremental(const StateImage& current,
+		const std::uint16_t* rebuilt_indices,
+		std::size_t rebuilt_index_count) noexcept;
+	ProducerBaselineResult take_current_for_incremental_patch(
+		StateImage& current) noexcept;
+	ProducerBaselineResult restore_current_after_incremental_patch(
+		StateImage&& current) noexcept;
+	ProducerBaselineResult commit_current_incremental_patch(
+		StateImage&& current,
+		const std::uint16_t* rebuilt_indices,
+		std::size_t rebuilt_index_count) noexcept;
 
 	ProducerBaselineResult capture_snapshot(std::uint32_t snapshot_id,
 		std::uint32_t required_manifest_id,
@@ -333,7 +373,8 @@ class ProducerBaselineTracker final {
 	// No sequence is consumed on NoChange or failure. If the exact encoded
 	// delta would exceed one MiB, KeyframeRequired is returned.
 	ProducerBaselineResult emit_cumulative_delta(std::uint64_t producer_sample_time_us,
-		CumulativeStateDelta& delta) noexcept;
+		CumulativeStateDelta& delta,
+		DeltaBuildChanges* changes = nullptr) noexcept;
 
 	void clear() noexcept;
 
@@ -363,6 +404,10 @@ class ProducerBaselineTracker final {
 	}
 	std::size_t active_dirty_record_count() const noexcept;
 	std::size_t candidate_dirty_record_count() const noexcept;
+	bool incremental_record_set_compatible() const noexcept
+	{
+		return m_active_incremental_record_set_compatible;
+	}
 	const StateImage& current() const noexcept
 	{
 		return m_current;
@@ -386,6 +431,13 @@ class ProducerBaselineTracker final {
 	std::uint32_t m_next_delta_sequence = 1;
 	std::uint64_t m_candidate_deadline_us = 0;
 	bool m_emitted_delta_for_active_baseline = false;
+	std::array<std::uint16_t, MaxIncrementalDirtyStateAtomCount> m_active_dirty_indices{};
+	std::array<std::uint16_t, MaxIncrementalDirtyStateAtomCount> m_candidate_dirty_indices{};
+	std::array<std::uint16_t, MaxIncrementalDirtyStateAtomCount> m_dirty_merge_scratch{};
+	std::size_t m_active_dirty_index_count = 0U;
+	std::size_t m_candidate_dirty_index_count = 0U;
+	bool m_active_incremental_record_set_compatible = false;
+	bool m_candidate_incremental_record_set_compatible = false;
 };
 
 enum class ManifestInstallResult : std::uint8_t {

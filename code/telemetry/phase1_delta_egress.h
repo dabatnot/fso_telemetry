@@ -2,11 +2,13 @@
 
 #include "telemetry/protocol/telemetry_business_records.h"
 #include "telemetry/phase1_allocation_observer.h"
+#include "telemetry/protocol/packet_writer.h"
 #include "telemetry/protocol/telemetry_datagram.h"
 #include "telemetry/protocol/telemetry_fragmenter.h"
 #include "telemetry/protocol/telemetry_replication.h"
 #include "telemetry/protocol/telemetry_state_messages.h"
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -89,63 +91,243 @@ class Phase1DeltaEgress final {
 		std::uint32_t message_id,
 		const protocol::CumulativeStateDelta& delta) noexcept
 	{
+		return replace_impl(session_id, endpoint, message_id,
+			delta, false);
+	}
+
+	Phase1DeltaReplaceResult replace_prevalidated_checked(
+		std::uint64_t session_id,
+		const protocol::EndpointKey& endpoint,
+		std::uint32_t message_id,
+		const protocol::CumulativeStateDelta& delta,
+		const protocol::DeltaBuildChanges& changes) noexcept
+	{
+		return replace_impl(session_id, endpoint, message_id,
+			delta, true, &changes);
+	}
+
+  private:
+	Phase1DeltaReplaceResult replace_impl(
+		std::uint64_t session_id,
+		const protocol::EndpointKey& endpoint,
+		std::uint32_t message_id,
+		const protocol::CumulativeStateDelta& delta,
+		bool delta_prevalidated,
+		const protocol::DeltaBuildChanges* changes = nullptr) noexcept
+	{
 		if (m_has_output || m_has_started || session_id == 0U ||
 			message_id == 0U || !m_provisioned)
 			return Phase1DeltaReplaceResult::InvalidState;
 		if (delta.baseline_snapshot_id == 0U ||
-			protocol::validate_cumulative_state_delta(delta) !=
-				protocol::StateDeltaValidationResult::Valid)
+			(!delta_prevalidated &&
+			 protocol::validate_cumulative_state_delta(delta) !=
+				 protocol::StateDeltaValidationResult::Valid))
 			return Phase1DeltaReplaceResult::InvalidDelta;
-		if (delta.encoded_size() > m_capacity)
+		const auto encoded_size = delta.encoded_size();
+		if (encoded_size > m_capacity)
 			return Phase1DeltaReplaceResult::CapacityExceeded;
 		auto& records = m_records;
-		records.clear();
 		auto& payload = m_payload;
-		payload.clear();
 		const auto records_capacity_before = records.capacity();
 		const auto payload_capacity_before = payload.capacity();
-		try {
-			records.reserve(delta.encoded_size() - protocol::DeltaPayloadPrefixSize);
-			for (std::size_t mutation_index = 0U; mutation_index < delta.mutation_count(); ++mutation_index) {
-				const auto& mutation = delta.mutations[mutation_index];
-				const auto flags = mutation.kind == protocol::StateMutationKind::Create
-					? protocol::RecordFlagCreate
-					: (mutation.kind == protocol::StateMutationKind::Delete ? protocol::RecordFlagDelete
-																								 : protocol::RecordFlagNone);
-				const auto& source = mutation.kind == protocol::StateMutationKind::Delete ? mutation.atom.key.identity
-																													 : mutation.atom.value;
-				if (source.size() > static_cast<std::size_t>(std::numeric_limits<std::uint16_t>::max())) {
-					return Phase1DeltaReplaceResult::EncodingFailed;
+		auto incremental_payload_valid =
+			delta_prevalidated && changes != nullptr &&
+			!changes->layout_changed &&
+			m_cached_layout_valid &&
+			m_cached_baseline_snapshot_id ==
+				delta.baseline_snapshot_id &&
+			m_cached_mutation_count == delta.mutation_count() &&
+			records.size() ==
+				encoded_size -
+					protocol::DeltaPayloadPrefixSize &&
+			payload.size() == encoded_size;
+		if (incremental_payload_valid) {
+			std::size_t next_change = 0U;
+			std::size_t record_offset = 0U;
+			for (std::size_t mutation_index = 0U;
+				 mutation_index < delta.mutation_count();
+				 ++mutation_index) {
+				const auto& mutation =
+					delta.mutations[mutation_index];
+				const auto& source =
+					mutation.kind ==
+							protocol::StateMutationKind::Delete
+						? mutation.atom.key.identity
+						: mutation.atom.value;
+				const auto record_size =
+					protocol::RecordEnvelopeHeaderSize +
+					source.size();
+				if (record_offset >
+						records.size() ||
+					record_size >
+						records.size() - record_offset) {
+					incremental_payload_valid = false;
+					break;
 				}
-				protocol::RecordEnvelopeView record;
-				record.raw_record_type = mutation.atom.key.record_type;
-				record.record_version = mutation.atom.record_version;
-				record.record_flags = flags;
-				record.payload = {source.data(), source.size()};
-				const auto offset = records.size();
-				records.resize(offset + protocol::RecordEnvelopeHeaderSize + source.size());
-				std::size_t written = 0U;
-				if (protocol::encode_business_record(record,
-						protocol::BusinessRecordContainer::Delta,
-						protocol::VersionMinorV1_1,
-						{records.data() + offset, records.size() - offset},
-						written) != protocol::ValidationError::None ||
-					written != records.size() - offset) {
-					return Phase1DeltaReplaceResult::EncodingFailed;
+				if (next_change < changes->count &&
+					changes->mutation_indices[next_change] ==
+						mutation_index) {
+					const auto flags =
+						mutation.kind ==
+								protocol::StateMutationKind::
+									Create
+							? protocol::RecordFlagCreate
+							: (mutation.kind ==
+									  protocol::
+										  StateMutationKind::
+											  Delete
+								   ? protocol::
+										 RecordFlagDelete
+								   : protocol::
+										 RecordFlagNone);
+					const protocol::RecordEnvelopeView
+						record{
+							mutation.atom.key.record_type,
+							mutation.atom.record_version,
+							flags,
+							{source.data(), source.size()}};
+					std::size_t written = 0U;
+					if (protocol::encode_business_record(
+							record,
+							protocol::
+								BusinessRecordContainer::
+									Delta,
+							protocol::VersionMinorV1_1,
+							{records.data() +
+								 record_offset,
+							 record_size},
+							written) !=
+							protocol::ValidationError::None ||
+						written != record_size) {
+						incremental_payload_valid = false;
+						break;
+					}
+					std::copy_n(
+						records.data() + record_offset,
+						record_size,
+						payload.data() +
+							protocol::
+								DeltaPayloadPrefixSize +
+							record_offset);
+					++next_change;
+				} else if (next_change <
+						changes->count &&
+					changes->mutation_indices[next_change] <
+						mutation_index) {
+					incremental_payload_valid = false;
+					break;
 				}
+				record_offset += record_size;
 			}
-			protocol::DeltaPayload wire;
-			wire.baseline_snapshot_id = delta.baseline_snapshot_id;
-			wire.delta_sequence = delta.delta_sequence;
-			wire.producer_sample_time_us = delta.producer_sample_time_us;
-			wire.record_count = static_cast<std::uint16_t>(delta.mutation_count());
-			wire.records = {records.data(), records.size()};
-			payload.resize(protocol::DeltaPayloadPrefixSize + records.size());
-			std::size_t written = 0U;
-			if (protocol::encode_delta_payload(wire, {payload.data(), payload.size()}, written) !=
-					protocol::ValidationError::None ||
-				written != payload.size()) {
-				return Phase1DeltaReplaceResult::EncodingFailed;
+			if (record_offset != records.size() ||
+				next_change != changes->count)
+				incremental_payload_valid = false;
+			if (incremental_payload_valid) {
+				protocol::PacketWriter writer(
+					{payload.data(),
+					 protocol::DeltaPayloadPrefixSize});
+				incremental_payload_valid =
+					writer.write_u32(
+						delta.baseline_snapshot_id) &&
+					writer.write_u32(
+						delta.delta_sequence) &&
+					writer.write_u64(
+						delta.producer_sample_time_us) &&
+					writer.write_u16(static_cast<
+						std::uint16_t>(
+						delta.mutation_count())) &&
+					writer.write_u16(0U) &&
+					writer.remaining() == 0U;
+			}
+		}
+		try {
+			if (!incremental_payload_valid) {
+				// Incremental patching may already have touched a subset of the
+				// cached envelopes. Invalidate before rebuilding so an early
+				// encoding failure can never make that partial cache reusable.
+				m_cached_layout_valid = false;
+				records.clear();
+				payload.clear();
+				records.reserve(
+					encoded_size -
+						protocol::DeltaPayloadPrefixSize);
+				for (std::size_t mutation_index = 0U;
+					 mutation_index < delta.mutation_count();
+					 ++mutation_index) {
+					const auto& mutation =
+						delta.mutations[mutation_index];
+					const auto flags =
+						mutation.kind ==
+								protocol::StateMutationKind::Create
+							? protocol::RecordFlagCreate
+							: (mutation.kind ==
+									  protocol::StateMutationKind::Delete
+								   ? protocol::RecordFlagDelete
+								   : protocol::RecordFlagNone);
+					const auto& source =
+						mutation.kind ==
+								protocol::StateMutationKind::Delete
+							? mutation.atom.key.identity
+							: mutation.atom.value;
+					if (source.size() >
+						static_cast<std::size_t>(
+							std::numeric_limits<
+								std::uint16_t>::max())) {
+						return Phase1DeltaReplaceResult::
+							EncodingFailed;
+					}
+					protocol::RecordEnvelopeView record;
+					record.raw_record_type =
+						mutation.atom.key.record_type;
+					record.record_version =
+						mutation.atom.record_version;
+					record.record_flags = flags;
+					record.payload =
+						{source.data(), source.size()};
+					const auto offset = records.size();
+					records.resize(offset +
+						protocol::RecordEnvelopeHeaderSize +
+						source.size());
+					std::size_t written = 0U;
+					if (protocol::encode_business_record(
+							record,
+							protocol::
+								BusinessRecordContainer::Delta,
+							protocol::VersionMinorV1_1,
+							{records.data() + offset,
+							 records.size() - offset},
+							written) !=
+							protocol::ValidationError::None ||
+						written != records.size() - offset) {
+						return Phase1DeltaReplaceResult::
+							EncodingFailed;
+					}
+				}
+				protocol::DeltaPayload wire;
+				wire.baseline_snapshot_id =
+					delta.baseline_snapshot_id;
+				wire.delta_sequence = delta.delta_sequence;
+				wire.producer_sample_time_us =
+					delta.producer_sample_time_us;
+				wire.record_count = static_cast<std::uint16_t>(
+					delta.mutation_count());
+				wire.records = {records.data(), records.size()};
+				payload.resize(protocol::DeltaPayloadPrefixSize +
+					records.size());
+				std::size_t written = 0U;
+				if (protocol::encode_delta_payload(wire,
+						{payload.data(), payload.size()},
+						written) !=
+						protocol::ValidationError::None ||
+					written != payload.size()) {
+					return Phase1DeltaReplaceResult::
+						EncodingFailed;
+				}
+				m_cached_layout_valid = true;
+				m_cached_baseline_snapshot_id =
+					delta.baseline_snapshot_id;
+				m_cached_mutation_count =
+					delta.mutation_count();
 			}
 		} catch (const std::bad_alloc&) {
 			return Phase1DeltaReplaceResult::AllocationFailed;
@@ -156,8 +338,12 @@ class Phase1DeltaEgress final {
 		m_baseline_snapshot_id = delta.baseline_snapshot_id;
 		m_message_id = message_id;
 		if (m_allocation_observer != nullptr) {
-			m_allocation_observer->note_growth(records_capacity_before, records.capacity());
-			m_allocation_observer->note_growth(payload_capacity_before, payload.capacity());
+			m_allocation_observer->note_growth(records_capacity_before,
+				records.capacity(),
+				Phase1AllocationGrowthSource::DeltaEgressScratch);
+			m_allocation_observer->note_growth(payload_capacity_before,
+				payload.capacity(),
+				Phase1AllocationGrowthSource::DeltaEgressScratch);
 		}
 		m_next_fragment_index = 0U;
 		m_has_output = false;
@@ -167,6 +353,7 @@ class Phase1DeltaEgress final {
 		return Phase1DeltaReplaceResult::Replaced;
 	}
 
+  public:
 	bool service(std::uint32_t packet_sequence, std::uint64_t sent_time_us) noexcept
 	{
 		if (!m_has_delta || m_has_output) {
@@ -251,8 +438,6 @@ class Phase1DeltaEgress final {
 
 	void discard() noexcept
 	{
-		m_payload.clear();
-		m_records.clear();
 		m_endpoint = {};
 		m_session_id = 0U;
 		m_baseline_snapshot_id = 0U;
@@ -284,6 +469,9 @@ class Phase1DeltaEgress final {
 	Phase1AllocationObserver* m_allocation_observer = nullptr;
 	std::size_t m_capacity = 0U;
 	bool m_provisioned = false;
+	bool m_cached_layout_valid = false;
+	std::uint32_t m_cached_baseline_snapshot_id = 0U;
+	std::size_t m_cached_mutation_count = 0U;
 };
 
 } // namespace telemetry::detail

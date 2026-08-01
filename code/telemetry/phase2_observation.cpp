@@ -3,7 +3,6 @@
 #include "telemetry/protocol/telemetry_protocol_constants.h"
 
 #include <algorithm>
-#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <cstring>
@@ -16,7 +15,6 @@
 namespace telemetry::detail {
 namespace {
 
-std::atomic<Phase2SeamTestDouble*> Phase2TestDouble{nullptr};
 Phase2SeamHandoffSnapshot Phase2Handoff;
 Phase2Wp07CleanupRing Phase2CleanupRing;
 Phase2Wp07SupportTerminalRing Phase2SupportTerminalRing;
@@ -62,6 +60,106 @@ void reset_observation(Phase2ObservationDto& output) noexcept
 	output.raw_static_diagnostic = {};
 	output.player_controls = {};
 	output.player_cargo_scan = {};
+}
+
+void copy_weapons_logical(const ShipWeaponsObservation& source,
+	ShipWeaponsObservation& destination) noexcept
+{
+	destination.sample_time_us = source.sample_time_us;
+	destination.presence = source.presence;
+	destination.primary_bank_count = source.primary_bank_count;
+	destination.secondary_bank_count = source.secondary_bank_count;
+	destination.current_primary_bank = source.current_primary_bank;
+	destination.current_secondary_bank = source.current_secondary_bank;
+	destination.previous_primary_bank = source.previous_primary_bank;
+	destination.previous_secondary_bank = source.previous_secondary_bank;
+	destination.targeting_laser_bank = source.targeting_laser_bank;
+	destination.targeting_laser_active =
+		source.targeting_laser_active;
+	destination.swarm_remaining = source.swarm_remaining;
+	destination.swarm_secondary_bank =
+		source.swarm_secondary_bank;
+	destination.remote_detonaters_active =
+		source.remote_detonaters_active;
+	destination.remote_detonation_remaining_us =
+		source.remote_detonation_remaining_us;
+	destination.per_burst_rotation_active =
+		source.per_burst_rotation_active;
+	destination.per_burst_rotation =
+		source.per_burst_rotation;
+	destination.raw_weapon_flags = source.raw_weapon_flags;
+	destination.tertiary_bank_count =
+		source.tertiary_bank_count;
+	destination.current_tertiary_bank =
+		source.current_tertiary_bank;
+	destination.tertiary_bank = source.tertiary_bank;
+	destination.tertiary_ammunition_current =
+		source.tertiary_ammunition_current;
+	destination.tertiary_ammunition_initial =
+		source.tertiary_ammunition_initial;
+	destination.tertiary_ammunition_capacity =
+		source.tertiary_ammunition_capacity;
+	destination.tertiary_cooldown_remaining_us =
+		source.tertiary_cooldown_remaining_us;
+	destination.tertiary_rearm_remaining_us =
+		source.tertiary_rearm_remaining_us;
+	for (std::size_t index = 0U;
+		 index < source.primary_bank_count; ++index)
+		destination.primary_banks[index] =
+			source.primary_banks[index];
+	for (std::size_t index = 0U;
+		 index < source.secondary_bank_count; ++index)
+		destination.secondary_banks[index] =
+			source.secondary_banks[index];
+	destination.countermeasure_count =
+		source.countermeasure_count;
+	destination.countermeasure_maximum =
+		source.countermeasure_maximum;
+	destination.countermeasure_class_source_key =
+		source.countermeasure_class_source_key;
+	destination.countermeasures_enabled =
+		source.countermeasures_enabled;
+	destination.countermeasure_cooldown_remaining_us =
+		source.countermeasure_cooldown_remaining_us;
+}
+
+void copy_docking_logical(const ShipDockingObservation& source,
+	ShipDockingObservation& destination) noexcept
+{
+	destination.sample_time_us = source.sample_time_us;
+	destination.presence = source.presence;
+	destination.phase = source.phase;
+	destination.relation_count = source.relation_count;
+	destination.dock_leader = source.dock_leader;
+	for (std::size_t index = 0U;
+		 index < source.relation_count; ++index)
+		destination.relations[index] =
+			source.relations[index];
+}
+
+void copy_subsystems_logical(const ShipSubsystemStorage& source,
+	ShipSubsystemStorage& destination) noexcept
+{
+	destination.count = source.count;
+	for (std::size_t index = 0U; index < source.count; ++index)
+		destination.values[index] = source.values[index];
+}
+
+void copy_static_references_logical(
+	const Phase2RawStaticReferences& source,
+	Phase2RawStaticReferences& destination) noexcept
+{
+	destination.class_capture_key = source.class_capture_key;
+	destination.weapon_count = source.weapon_count;
+	for (std::size_t index = 0U;
+		 index < source.weapon_count; ++index)
+		destination.weapon_capture_keys[index] =
+			source.weapon_capture_keys[index];
+	destination.auxiliary_count = source.auxiliary_count;
+	for (std::size_t index = 0U;
+		 index < source.auxiliary_count; ++index)
+		destination.auxiliary_capture_keys[index] =
+			source.auxiliary_capture_keys[index];
 }
 
 bool validate_raw_static_catalog_bounds(
@@ -893,6 +991,23 @@ bool canonicalize_bounded(float value, float minimum, float maximum, float& outp
 	return true;
 }
 
+bool clamp_finite_current(float value,
+	float maximum,
+	float& output,
+	std::uint64_t* normalization_count) noexcept
+{
+	if (!std::isfinite(value) || !std::isfinite(maximum) ||
+		maximum < 0.0F)
+		return false;
+	const auto clamped = std::clamp(value, 0.0F, maximum);
+	output = clamped == 0.0F ? 0.0F : clamped;
+	if (clamped != value && normalization_count != nullptr &&
+		*normalization_count !=
+			std::numeric_limits<std::uint64_t>::max())
+		++*normalization_count;
+	return true;
+}
+
 template <std::size_t Size>
 bool canonicalize_array(std::array<float, Size>& values, float minimum, float maximum) noexcept
 {
@@ -931,7 +1046,8 @@ bool canonicalize_orientation(std::array<float, 4U>& orientation) noexcept
 	return true;
 }
 
-bool canonicalize_ship_blocks(ShipObservationDto& ship) noexcept
+bool canonicalize_ship_blocks(ShipObservationDto& ship,
+	std::uint64_t* normalization_count) noexcept
 {
 	if (static_cast<std::uint8_t>(ship.lifecycle.state) >=
 			static_cast<std::uint8_t>(ShipLifecycleState::Count) ||
@@ -958,23 +1074,20 @@ bool canonicalize_ship_blocks(ShipObservationDto& ship) noexcept
 		return false;
 	}
 
-	if (!canonicalize_bounded(ship.damage.hull_maximum, 0.0F, 1.0e12F, ship.damage.hull_maximum) ||
-		!std::isfinite(ship.damage.hull_current)) {
+	if (!canonicalize_bounded(ship.damage.hull_maximum, 0.0F,
+			1.0e12F, ship.damage.hull_maximum) ||
+		!clamp_finite_current(ship.damage.hull_current,
+			ship.damage.hull_maximum,
+			ship.damage.hull_current,
+			normalization_count)) {
 		return false;
 	}
-	const auto hull_current = ship.damage.hull_current;
-	ship.damage.hull_current = 0.0F;
-	if (hull_current > 0.0F) {
-		ship.damage.hull_current = hull_current;
-	}
-	if (ship.damage.hull_current > ship.damage.hull_maximum ||
-		!canonicalize_bounded(
+	if (!canonicalize_bounded(
 			ship.damage.guardian_threshold, 0.0F, ship.damage.hull_maximum, ship.damage.guardian_threshold)) {
 		return false;
 	}
 
 	if (ship.shields.segment_count > MaximumPhase2ShieldSegments ||
-		!canonicalize_array(ship.shields.segment_current_hits, 0.0F, 1.0e12F) ||
 		!canonicalize_array(ship.shields.segment_maximum_hits, 0.0F, 1.0e12F) ||
 		!canonicalize_bounded(
 			ship.shields.recharge_maximum, 0.0F, 1.0e12F, ship.shields.recharge_maximum) ||
@@ -984,6 +1097,14 @@ bool canonicalize_ship_blocks(ShipObservationDto& ship) noexcept
 			ship.shields.deferred_transfer, -1.0e12F, 1.0e12F, ship.shields.deferred_transfer)) {
 		return false;
 	}
+	for (std::size_t index = 0U;
+		 index < ship.shields.segment_current_hits.size(); ++index)
+		if (!clamp_finite_current(
+				ship.shields.segment_current_hits[index],
+				ship.shields.segment_maximum_hits[index],
+				ship.shields.segment_current_hits[index],
+				normalization_count))
+			return false;
 	if (!ship.shields.has_shields) {
 		if (ship.shields.segment_count != 0U || ship.shields.recharge_maximum != 0.0F ||
 			ship.shields.regeneration_rate != 0.0F || ship.shields.deferred_transfer != 0.0F) {
@@ -995,9 +1116,6 @@ bool canonicalize_ship_blocks(ShipObservationDto& ship) noexcept
 		}
 		double physical_maximum = 0.0;
 		for (std::size_t index = 0U; index < ship.shields.segment_count; ++index) {
-			if (ship.shields.segment_current_hits[index] > ship.shields.segment_maximum_hits[index]) {
-				return false;
-			}
 			physical_maximum += ship.shields.segment_maximum_hits[index];
 		}
 		if (!std::isfinite(physical_maximum) ||
@@ -1008,10 +1126,10 @@ bool canonicalize_ship_blocks(ShipObservationDto& ship) noexcept
 
 	if (!canonicalize_bounded(
 			ship.energy.weapon_energy_maximum, 0.0F, 1.0e12F, ship.energy.weapon_energy_maximum) ||
-		!canonicalize_bounded(ship.energy.weapon_energy_current,
-			0.0F,
+		!clamp_finite_current(ship.energy.weapon_energy_current,
 			ship.energy.weapon_energy_maximum,
-			ship.energy.weapon_energy_current) ||
+			ship.energy.weapon_energy_current,
+			normalization_count) ||
 		ship.energy.shield_recharge_index > 12U || ship.energy.weapon_recharge_index > 12U ||
 		ship.energy.engine_recharge_index > 12U) {
 		return false;
@@ -1034,18 +1152,19 @@ bool canonicalize_ship_blocks(ShipObservationDto& ship) noexcept
 			ship.energy.deferred_shield_transfer) ||
 		!canonicalize_bounded(ship.energy.power_output, 0.0F, 1.0e12F,
 			ship.energy.power_output) ||
-		!canonicalize_bounded(ship.energy.engine_integrity_current, 0.0F, 1.0e12F,
-			ship.energy.engine_integrity_current) ||
 		!canonicalize_bounded(ship.energy.engine_integrity_maximum, 0.0F, 1.0e12F,
 			ship.energy.engine_integrity_maximum) ||
-		ship.energy.engine_integrity_current > ship.energy.engine_integrity_maximum) return false;
+		!clamp_finite_current(ship.energy.engine_integrity_current,
+			ship.energy.engine_integrity_maximum,
+			ship.energy.engine_integrity_current,
+			normalization_count)) return false;
 
 	if (!canonicalize_bounded(
 			ship.propulsion.afterburner_capacity, 0.0F, 1.0e12F, ship.propulsion.afterburner_capacity) ||
-		!canonicalize_bounded(ship.propulsion.afterburner_fuel,
-			0.0F,
+		!clamp_finite_current(ship.propulsion.afterburner_fuel,
 			ship.propulsion.afterburner_capacity,
-			ship.propulsion.afterburner_fuel) ||
+			ship.propulsion.afterburner_fuel,
+			normalization_count) ||
 		!canonicalize_bounded(
 			ship.propulsion.burn_rate, 0.0F, 1.0e12F, ship.propulsion.burn_rate) ||
 		!canonicalize_bounded(
@@ -1274,16 +1393,17 @@ bool canonicalize_ship_blocks(ShipObservationDto& ship) noexcept
 			subsystem.source_key.value == 0U ||
 			!canonicalize_bounded(
 				subsystem.hits_maximum, 0.0F, 1.0e12F, subsystem.hits_maximum) ||
-			!canonicalize_bounded(
-				subsystem.hits_current, 0.0F, subsystem.hits_maximum, subsystem.hits_current) ||
+			!clamp_finite_current(
+				subsystem.hits_current, subsystem.hits_maximum,
+				subsystem.hits_current, normalization_count) ||
 			!canonicalize_bounded(subsystem.aggregate_maximum_hits,
 				0.0F,
 				1.0e12F,
 				subsystem.aggregate_maximum_hits) ||
-			!canonicalize_bounded(subsystem.aggregate_current_hits,
-				0.0F,
+			!clamp_finite_current(subsystem.aggregate_current_hits,
 				subsystem.aggregate_maximum_hits,
-				subsystem.aggregate_current_hits) ||
+				subsystem.aggregate_current_hits,
+				normalization_count) ||
 			!canonicalize_array(subsystem.position_local, -1.0e9F, 1.0e9F) ||
 			!canonicalize_orientation(subsystem.orientation_local) ||
 			subsystem.disruption_remaining_us > 86'400'000'000ULL) {
@@ -1499,27 +1619,43 @@ Phase2SourceReadStatus validate_discovery_keys(
 	return Phase2SourceReadStatus::Valid;
 }
 
-template <typename Value>
-void reconstruct_phase2_authority_member(Value& value) noexcept
-{
-	value.~Value();
-	new (static_cast<void*>(&value)) Value();
-}
-
 } // namespace
 
 void reset_phase2_static_authority_input(
 	Phase2StaticAuthorityInput& input) noexcept
 {
 	input.guards_valid = false;
-	reconstruct_phase2_authority_member(input.ship_info);
-	reconstruct_phase2_authority_member(input.weapon_info);
-	reconstruct_phase2_authority_member(input.model);
+	input.ship_info = {};
+	static_cast<Phase2RawWeaponDefinition&>(input.weapon_info) = {};
+	input.weapon_info.additional_count = 0U;
+	input.model = {};
 	input.subsystem_count = 0U;
-	reconstruct_phase2_authority_member(input.subsystems);
 	input.bank_count = 0U;
-	reconstruct_phase2_authority_member(input.banks);
-	reconstruct_phase2_authority_member(input.registries);
+	input.registries.species = {};
+	input.registries.weapon_damage_type = {};
+	input.registries.additional_count = 0U;
+}
+
+void clear_phase2_ship_source_logical(Phase2ShipSource& source) noexcept
+{
+	source.internal_name = {};
+	source.class_name = {};
+	source.identity = {};
+	source.lifecycle = {};
+	source.flight = {};
+	source.damage = {};
+	source.shields = {};
+	source.energy = {};
+	source.propulsion = {};
+	source.weapons = {};
+	source.support = {};
+	source.docking = {};
+	source.subsystems.count = 0U;
+	source.raw_static_catalog.clear();
+	source.raw_static_references.class_capture_key = 0U;
+	source.raw_static_references.weapon_count = 0U;
+	source.raw_static_references.auxiliary_count = 0U;
+	reset_phase2_static_authority_input(source.static_authority_input);
 }
 
 SourceReadResult map_phase2_static_authorities(
@@ -1773,7 +1909,9 @@ static Phase2CaptureResult collect_phase2_observation_with_scratch(
 	Phase2ObservationProjection projection,
 	Phase2CaptureDiagnostics* diagnostics = nullptr) noexcept
 {
+	auto reusable_ships = std::move(output.ships);
 	reset_observation(output);
+	output.ships = std::move(reusable_ships);
 	if (!source.current_thread_is_main()) {
 		return capture_failure(output, Phase2CaptureStatus::InvalidSource, Phase2CaptureReason::WrongThread);
 	}
@@ -1909,18 +2047,24 @@ static Phase2CaptureResult collect_phase2_observation_with_scratch(
 	}
 	if (diagnostics != nullptr) {
 		diagnostics->source_count = effective_selection.count;
-		for (std::size_t index = 0U; index < effective_selection.count; ++index)
+		for (std::size_t index = 0U; index < effective_selection.count; ++index) {
 			diagnostics->source_signatures[index] =
 				engine_keys[index].object_signature;
+			diagnostics->source_object_indices[index] =
+				engine_keys[index].object_index;
+		}
 	}
 
 	try {
 		Phase2SourceReadResult first_discovery_failure{
 			Phase2SourceReadStatus::Valid};
-		output.ships.reserve(effective_selection.count);
+		// The observation buffer owns storage for the maximum closure at
+		// startup. Resize reuses already-constructed DTOs on steady-state
+		// captures instead of zero-initializing every inactive fixed-capacity
+		// subsystem, bank and docking slot on every systems tick.
+		output.ships.resize(effective_selection.count);
 		for (std::size_t index = 0U; index < effective_selection.count; ++index) {
-			source_ship.~Phase2ShipSource();
-			new (&source_ship) Phase2ShipSource;
+			clear_phase2_ship_source_logical(source_ship);
 			const auto source_result =
 				projection == Phase2ObservationProjection::CoreGate
 				? diagnostics != nullptr
@@ -1959,6 +2103,19 @@ static Phase2CaptureResult collect_phase2_observation_with_scratch(
 				return capture_failure(output,Phase2CaptureStatus::SourceLimitExceeded,
 					Phase2CaptureReason::UnsupportedShipBlock);
 			}
+			if (source_ship.weapons.primary_bank_count >
+					source_ship.weapons.primary_banks.size() ||
+				source_ship.weapons.secondary_bank_count >
+					source_ship.weapons.secondary_banks.size() ||
+				source_ship.weapons.tertiary_bank_count > 1U ||
+				source_ship.docking.relation_count >
+					source_ship.docking.relations.size() ||
+				source_ship.subsystems.count >
+					source_ship.subsystems.values.size()) {
+				return capture_failure(output,
+					Phase2CaptureStatus::UnsupportedEngineState,
+					Phase2CaptureReason::UnsupportedShipBlock);
+			}
 			std::array<std::uint32_t, MaximumPhase2StaticAuxiliaryEntries>
 				auxiliary_key_map{};
 			if (!merge_raw_static_catalog(output.raw_static_catalog,
@@ -1974,8 +2131,7 @@ static Phase2CaptureResult collect_phase2_observation_with_scratch(
 				return capture_failure(output,merge_status,
 					Phase2CaptureReason::UnsupportedShipBlock);
 			}
-			output.ships.emplace_back();
-			auto& ship = output.ships.back();
+			auto& ship = output.ships[index];
 			ship.capture_key = {
 				static_cast<std::uint32_t>(index + 1U)};
 			ship.identity = source_ship.identity;
@@ -1987,11 +2143,16 @@ static Phase2CaptureResult collect_phase2_observation_with_scratch(
 			ship.shields = source_ship.shields;
 			ship.energy = source_ship.energy;
 			ship.propulsion = source_ship.propulsion;
-			ship.weapons = source_ship.weapons;
+			copy_weapons_logical(
+				source_ship.weapons, ship.weapons);
 			ship.support = source_ship.support;
-			ship.docking = source_ship.docking;
-			ship.subsystems = source_ship.subsystems;
-			ship.raw_static_references=source_ship.raw_static_references;
+			copy_docking_logical(
+				source_ship.docking, ship.docking);
+			copy_subsystems_logical(
+				source_ship.subsystems, ship.subsystems);
+			copy_static_references_logical(
+				source_ship.raw_static_references,
+				ship.raw_static_references);
 			const auto remap_auxiliary_key =
 				[&](Phase2CaptureLocalKey& key) noexcept {
 					if (key.value == 0U) return true;
@@ -2076,7 +2237,10 @@ static Phase2CaptureResult collect_phase2_observation_with_scratch(
 				ship.subsystems.values[subsystem_index].sample_time_us =
 					producer_sample_time_us;
 			}
-			if (!canonicalize_ship_blocks(ship)) {
+			if (!canonicalize_ship_blocks(ship,
+					diagnostics != nullptr
+						? &diagnostics->normalization_count
+						: nullptr)) {
 				return capture_failure(output,
 					Phase2CaptureStatus::UnsupportedEngineState,
 					Phase2CaptureReason::UnsupportedShipBlock);
@@ -2255,9 +2419,13 @@ static Phase2CaptureResult collect_phase2_observation_with_scratch(
 		cargo.target_capture_key =
 			remap_capture_local(cargo.target_capture_key);
 		if (cargo.target_capture_key.value == 0U) {
-			return capture_failure(output,
-				Phase2CaptureStatus::UnsupportedEngineState,
-				Phase2CaptureReason::UnsupportedShipBlock);
+			// Cargo scanning does not extend the Phase 2 subject closure.
+			// A gameplay target outside player/support/direct-docking is
+			// represented as a closed, non-disclosing state.
+			cargo = {};
+			cargo.sample_time_us = producer_sample_time_us;
+			cargo.phase =
+				CargoScanPhaseObservation::NotScannable;
 		}
 	}
 	if (!canonicalize_player_controls(controls) || !validate_player_cargo_scan(cargo)) {
@@ -2326,10 +2494,9 @@ static Phase2CaptureResult build_phase2_selection(
 			return source_failure(keys == Phase2SourceReadStatus::Valid
 				? Phase2SourceReadStatus::UnsupportedEngineState : keys);
 		std::array<Phase2CaptureLocalKey,
-			MaximumPhase2DockRelationsPerShip + 2U> related{};
+			MaximumPhase2DockRelationsPerShip + 1U> related{};
 		std::size_t related_count = 0U;
 		related[related_count++] = node.support_capture_key;
-		related[related_count++] = node.group_leader_capture_key;
 		if (node.direct_docking_count > MaximumPhase2DockRelationsPerShip)
 			return capture_failure(output,
 				Phase2CaptureStatus::SourceLimitExceeded,
@@ -2565,7 +2732,8 @@ bool Phase2ObservationBuffer::enter_ready() noexcept
 
 Phase2CaptureResult Phase2ObservationBuffer::capture(const Phase2EngineReadView& source,
 	std::uint64_t producer_sample_time_us,
-	Phase2ObservationProjection projection) noexcept
+	Phase2ObservationProjection projection,
+	Phase2ObservationRefresh refresh) noexcept
 {
 	m_capture_diagnostics = {};
 	if (m_state != Phase2ObservationBufferState::Ready) {
@@ -2578,15 +2746,98 @@ Phase2CaptureResult Phase2ObservationBuffer::capture(const Phase2EngineReadView&
 		return capture_failure(
 			m_observation, Phase2CaptureStatus::InvalidSource, Phase2CaptureReason::BufferNotReady);
 	}
-	const auto finalize = [&](Phase2CaptureResult result) noexcept {
-		if (result.status == Phase2CaptureStatus::InvalidSource ||
-			result.status == Phase2CaptureStatus::UnsupportedEngineState ||
-			result.status == Phase2CaptureStatus::SourceLimitExceeded) {
-			if (result.reason != Phase2CaptureReason::NotInMission)
-				m_state = Phase2ObservationBufferState::FailedClosed;
+	if (refresh == Phase2ObservationRefresh::FlightControls) {
+		const auto reusable =
+			m_observation.capture.status ==
+				Phase2CaptureStatus::Valid &&
+			!m_observation.ships.empty() &&
+			m_accepted_capture_map.source_count ==
+				m_observation.ships.size();
+		EngineEntityKey current_player{};
+		if (!reusable || !source.current_thread_is_main() ||
+			!source.in_mission() || !source.player_exists() ||
+			!source.player_object_exists() ||
+			!source.player_ship_exists() ||
+			!source.player_source_is_consistent() ||
+			source.read_player_root_key(current_player).status !=
+				Phase2SourceReadStatus::Valid ||
+			current_player.object_signature == 0U ||
+			current_player.object_signature !=
+				m_observation.player_key.value)
+			refresh = Phase2ObservationRefresh::All;
+	}
+	auto flight_started = std::chrono::steady_clock::time_point{};
+	auto control_started = std::chrono::steady_clock::time_point{};
+	if (refresh == Phase2ObservationRefresh::FlightControls) {
+		flight_started = std::chrono::steady_clock::now();
+		bool flight_refresh_valid = true;
+		for (std::size_t index = 0U; index < m_observation.ships.size();
+			 ++index) {
+			EngineEntityKey key{};
+			key.object_index =
+				m_accepted_capture_map.source_object_indices[index];
+			key.object_signature =
+				m_accepted_capture_map.source_signatures[index];
+			if (key.object_signature == 0U ||
+				source.read_ship_flight(
+					key, m_observation.ships[index].flight).status !=
+					Phase2SourceReadStatus::Valid) {
+				flight_refresh_valid = false;
+				break;
+			}
+			m_observation.ships[index].flight.sample_time_us =
+				producer_sample_time_us;
 		}
-		if (result.status == Phase2CaptureStatus::Valid)
+		if (!flight_refresh_valid)
+			refresh = Phase2ObservationRefresh::All;
+	}
+	if (refresh == Phase2ObservationRefresh::FlightControls) {
+		m_capture_diagnostics.attempted_mask |=
+			static_cast<std::uint8_t>(
+				1U << static_cast<std::uint8_t>(
+					Phase2CaptureBlock::Flight));
+		add_capture_duration(m_capture_diagnostics,
+			Phase2CaptureBlock::Flight,
+			static_cast<std::uint64_t>(
+				std::chrono::duration_cast<std::chrono::nanoseconds>(
+					std::chrono::steady_clock::now() - flight_started)
+					.count()));
+		control_started = std::chrono::steady_clock::now();
+		if (!source.read_player_controls(m_observation.player_controls))
+			refresh = Phase2ObservationRefresh::All;
+	}
+	if (refresh == Phase2ObservationRefresh::FlightControls) {
+		m_observation.player_controls.sample_time_us =
+			producer_sample_time_us;
+		m_capture_diagnostics.attempted_mask |=
+			static_cast<std::uint8_t>(
+				1U << static_cast<std::uint8_t>(
+					Phase2CaptureBlock::Control));
+		add_capture_duration(m_capture_diagnostics,
+			Phase2CaptureBlock::Control,
+			static_cast<std::uint64_t>(
+				std::chrono::duration_cast<std::chrono::nanoseconds>(
+					std::chrono::steady_clock::now() - control_started)
+					.count()));
+		m_observation.producer_sample_time_us = producer_sample_time_us;
+		m_observation.capture =
+			{Phase2CaptureStatus::Valid, Phase2CaptureReason::None};
+		m_capture_diagnostics.completed_refresh =
+			Phase2ObservationRefresh::FlightControls;
+		return m_observation.capture;
+	}
+	if (refresh != Phase2ObservationRefresh::All)
+		return capture_failure(m_observation,
+			Phase2CaptureStatus::InvalidSource,
+			Phase2CaptureReason::UnsupportedShipBlock);
+	const auto finalize = [&](Phase2CaptureResult result) noexcept {
+		if (result.status == Phase2CaptureStatus::Valid ||
+			result.status == Phase2CaptureStatus::NoPlayer)
+			m_capture_diagnostics.completed_refresh =
+				Phase2ObservationRefresh::All;
+		if (result.status == Phase2CaptureStatus::Valid) {
 			m_accepted_capture_map = m_capture_diagnostics;
+		}
 		return result;
 	};
 	Phase2ObservationSelection selection;
@@ -2614,9 +2865,11 @@ Phase2CaptureResult Phase2ObservationBuffer::capture(const Phase2EngineReadView&
 Phase2CaptureResult collect_phase2_observation(Phase2ObservationBuffer& buffer,
 	const Phase2EngineReadView& source,
 	std::uint64_t producer_sample_time_us,
-	Phase2ObservationProjection projection) noexcept
+	Phase2ObservationProjection projection,
+	Phase2ObservationRefresh refresh) noexcept
 {
-	return buffer.capture(source, producer_sample_time_us, projection);
+	return buffer.capture(
+		source, producer_sample_time_us, projection, refresh);
 }
 
 Phase2ObservationBufferState Phase2ObservationBuffer::state() const noexcept
@@ -2687,16 +2940,6 @@ bool phase2_timestamp_remaining_us(std::int64_t now_ms,
 	}
 	remaining_us = candidate;
 	return true;
-}
-
-Phase2SeamTestDouble* phase2_seam_test_double() noexcept
-{
-	return Phase2TestDouble.load(std::memory_order_acquire);
-}
-
-void set_phase2_seam_test_double_internal(Phase2SeamTestDouble* test_double) noexcept
-{
-	Phase2TestDouble.store(test_double, std::memory_order_release);
 }
 
 void reset_phase2_seam_handoff() noexcept
@@ -3038,15 +3281,19 @@ Phase2Wp07DrainStatus prepare_phase2_global_events(
 	const Phase2CaptureDiagnostics& accepted_map,
 	Phase2Wp07GlobalEventBatch& batch) noexcept
 {
-	batch = {};
 	if (Phase2CleanupRing.overflowed() ||
 		Phase2SupportTerminalRing.overflowed() ||
 		Phase2Wp07SeamFailedClosed)
 		return Phase2Wp07DrainStatus::RingOverflow;
 	if (accepted_map.source_count > accepted_map.source_signatures.size())
 		return Phase2Wp07DrainStatus::InvalidInput;
-	batch.cleanup_ring_count = Phase2CleanupRing.size();
-	batch.support_ring_count = Phase2SupportTerminalRing.size();
+	const auto cleanup_ring_count = Phase2CleanupRing.size();
+	const auto support_ring_count = Phase2SupportTerminalRing.size();
+	if (cleanup_ring_count == 0U && support_ring_count == 0U)
+		return Phase2Wp07DrainStatus::NoFacts;
+	batch = {};
+	batch.cleanup_ring_count = cleanup_ring_count;
+	batch.support_ring_count = support_ring_count;
 	for (std::size_t index = 0U; index < batch.cleanup_ring_count; ++index) {
 		auto intent = Phase2CleanupRing.at(index);
 		std::uint32_t local_key = 0U;
@@ -3081,10 +3328,7 @@ Phase2Wp07DrainStatus prepare_phase2_global_events(
 			return Phase2Wp07DrainStatus::TableOverflow;
 		batch.support[batch.support_count++] = fact;
 	}
-	return batch.cleanup_ring_count == 0U &&
-		batch.support_ring_count == 0U
-		? Phase2Wp07DrainStatus::NoFacts
-		: Phase2Wp07DrainStatus::Drained;
+	return Phase2Wp07DrainStatus::Drained;
 }
 
 bool commit_phase2_global_events(
@@ -3221,9 +3465,6 @@ void OnShipCleanup(std::uint32_t object_signature, ShipCleanupMode mode) noexcep
 	if (!detail::Phase2CleanupRing.record(
 			{object_signature, mode}, 0U))
 		detail::Phase2Wp07SeamFailedClosed = true;
-	if (auto* test_double = detail::phase2_seam_test_double()) {
-		test_double->on_ship_cleanup(detail::ShipCleanupFact{object_signature, mode});
-	}
 }
 
 void OnSupportTransition(std::uint32_t assisted_signature,
@@ -3278,10 +3519,6 @@ void OnSupportTransition(std::uint32_t assisted_signature,
 	if (terminal && resolved_sequence != 0U) {
 		episode->active = false;
 	}
-	if (auto* test_double = detail::phase2_seam_test_double()) {
-		test_double->on_support_transition(
-			detail::SupportTransitionFact{assisted_signature, support_signature, resolved_sequence, reason, sample_time});
-	}
 }
 
 void OnControlTarget(ControlTargetAuthority authority) noexcept
@@ -3291,26 +3528,12 @@ void OnControlTarget(ControlTargetAuthority authority) noexcept
 	}
 	detail::Phase2Handoff.has_control_target = true;
 	detail::Phase2Handoff.control_target = authority;
-	if (auto* test_double = detail::phase2_seam_test_double()) {
-		test_double->on_control_target(authority);
-	}
 }
 
 void OnCargoAuthority(const CargoAuthorityFact& fact) noexcept
 {
 	detail::Phase2Handoff.has_cargo_authority = true;
 	detail::Phase2Handoff.cargo_authority = fact;
-	if (auto* test_double = detail::phase2_seam_test_double()) {
-		test_double->on_cargo_authority(fact);
-	}
 }
 
-namespace test_seam {
-
-void set_phase2_seam_test_double(detail::Phase2SeamTestDouble* test_double) noexcept
-{
-	detail::set_phase2_seam_test_double_internal(test_double);
-}
-
-} // namespace test_seam
 } // namespace telemetry

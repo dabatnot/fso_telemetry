@@ -7,8 +7,8 @@ dependency to the repository. This tool itself uses only the Python standard
 library.
 
 The FSTL 1.0 schema is a byte-frozen input and ordinary ``--write`` mode can
-never refresh it.  FSTL 1.1 is deterministically derived from that frozen base
-plus the seven versioned Phase 1 normative documents.
+never refresh it. FSTL 1.1 is deterministically derived from that frozen base
+and carries non-normative product-document provenance.
 """
 
 from __future__ import annotations
@@ -53,14 +53,6 @@ FROZEN_SCHEMA_V1_0_BYTES = 499_786
 FROZEN_SCHEMA_V1_0_SHA256 = "1d89c4a95a121c178bf85570cd616568fd939942b8d053835069b2d7d6a1f0d4"
 FROZEN_ARTIFACT_COUNT_V1_0 = 438
 FROZEN_ARTIFACT_TREE_SHA256_V1_0 = "9baac6a20db33bcf350066ed533c5581b7117410899d7bc4a6dc24406e47856d"
-FSTL_1_1_DOCUMENT_SET_ID = "FSTL-1.1-AMENDMENT-NORMATIVE-DOCUMENTS"
-FSTL_1_1_DOCUMENT_SET_VERSION = "1.1.0"
-# Computed by phase1_source_metadata(): SHA-256 over sorted
-# ``repo-relative-path + NUL + per-file-SHA-256 + LF`` entries for
-# PHASE1_SOURCE_NAMES.  Keep this pinned derived value so a normative-document
-# change cannot silently alter the generated FSTL 1.1 contract.
-FSTL_1_1_DOCUMENT_TREE_SHA256 = "fd3660bdf7e7beb8261a67e0464136755e509d794755b27eee1b13f71a72d1ef"
-
 SOURCE_NAMES = (
     "01-cadre-normatif-et-perimetre.md",
     "02-format-filaire-et-registres.md",
@@ -3470,29 +3462,8 @@ def run_schema_vector_self_test(schema_path: Path) -> str:
     return process.stdout.strip()
 
 
-def file_sha256(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
-
-
-def phase1_source_metadata() -> list[dict[str, str]]:
-    metadata: list[dict[str, str]] = []
-    tree_lines: list[str] = []
-    for name in PHASE1_SOURCE_NAMES:
-        path = PHASE1_DIR / name
-        try:
-            data = path.read_bytes()
-        except OSError as exc:
-            raise SchemaError(f"cannot read FSTL 1.1 normative source {path}: {exc}") from exc
-        relative = path.relative_to(REPO_ROOT).as_posix()
-        digest = hashlib.sha256(data).hexdigest()
-        metadata.append({"path": relative, "sha256": digest})
-        tree_lines.append(f"{relative}\0{digest}\n")
-    tree = hashlib.sha256("".join(sorted(tree_lines)).encode("utf-8")).hexdigest()
-    if tree != FSTL_1_1_DOCUMENT_TREE_SHA256:
-        raise SchemaError(
-            f"FSTL 1.1 normative document set drift: {tree} != {FSTL_1_1_DOCUMENT_TREE_SHA256}"
-        )
-    return metadata
+def phase1_provenance_path(index: int) -> str:
+    return (PHASE1_DIR / PHASE1_SOURCE_NAMES[index]).relative_to(REPO_ROOT).as_posix()
 
 
 def load_frozen_v1_0_schema() -> dict[str, object]:
@@ -3552,19 +3523,11 @@ def build_fstl_v1_1_schema() -> dict[str, object]:
 
     schema = json.loads(json.dumps(load_frozen_v1_0_schema()))
     assert isinstance(schema, dict)
-    normative_sources = phase1_source_metadata()
     _, ledger_sha256, ledger_bytes = load_frozen_v1_0_ledger()
-
-    phase1_doc01 = (PHASE1_DIR / PHASE1_SOURCE_NAMES[0]).read_text(encoding="utf-8")
-    phase1_doc04 = (PHASE1_DIR / PHASE1_SOURCE_NAMES[3]).read_text(encoding="utf-8")
-    if "PLAYER_KINEMATICS = 0x0000000000000400" not in phase1_doc01:
-        raise SchemaError("Phase 1 section 4.2 no longer defines PLAYER_KINEMATICS=0x0400")
-    if "`PLAYER_KINEMATICS` | 10 | `0x0000000000000400`" not in phase1_doc04:
-        raise SchemaError("Phase 1 data-model section 2.1 no longer defines bit 10")
 
     schema["wire_version"] = "1.1"
     schema["wire_version_scope"] = "additive FSTL 1.1 amendment view"
-    schema["normative_sources"] = normative_sources
+    schema.pop("normative_sources", None)
     schema["base_schema"] = {
         "path": SCHEMA_V1_0_PATH.relative_to(REPO_ROOT).as_posix(),
         "wire_version": "1.0",
@@ -3580,27 +3543,23 @@ def build_fstl_v1_1_schema() -> dict[str, object]:
         "file_count": FROZEN_ARTIFACT_COUNT_V1_0,
         "tree_sha256": FROZEN_ARTIFACT_TREE_SHA256_V1_0,
     }
-    schema["normative_document_set"] = {
-        "identity": FSTL_1_1_DOCUMENT_SET_ID,
-        "version": FSTL_1_1_DOCUMENT_SET_VERSION,
-        "file_count": len(normative_sources),
-        "tree_sha256": FSTL_1_1_DOCUMENT_TREE_SHA256,
-        "documents": normative_sources,
-    }
-
-    p1_doc01_path = normative_sources[0]["path"]
-    p1_doc04_path = normative_sources[3]["path"]
-    p1_doc07_path = normative_sources[6]["path"]
+    p1_doc01_path = phase1_provenance_path(0)
+    p1_doc04_path = phase1_provenance_path(3)
+    p1_doc07_path = phase1_provenance_path(6)
     schema["amendment_provenance"] = {
+        "normative": False,
         "player_kinematics": [
-            {"document": p1_doc01_path, "section": "4.2"},
-            {"document": p1_doc04_path, "section": "2.1"},
-            {"document": p1_doc07_path, "section": "6 / D1-002"},
+            {"document": p1_doc01_path, "requirements": ["P1-REQ-020"]},
+            {"document": p1_doc04_path, "requirements": ["P1-REQ-020"]},
+            {"document": p1_doc07_path, "requirements": ["P1-REQ-020"]},
         ],
         "phase1_minimal_profile": [
-            {"document": p1_doc01_path, "section": "4.2-4.3"},
-            {"document": p1_doc04_path, "section": "2.2"},
-            {"document": p1_doc07_path, "section": "6 / D1-003-D1-006"},
+            {"document": p1_doc01_path,
+             "requirements": ["P1-REQ-021", "P1-REQ-022", "P1-REQ-023"]},
+            {"document": p1_doc04_path,
+             "requirements": ["P1-REQ-021", "P1-REQ-022", "P1-REQ-023"]},
+            {"document": p1_doc07_path,
+             "requirements": ["P1-REQ-021", "P1-REQ-022", "P1-REQ-023"]},
         ],
     }
 
@@ -3697,7 +3656,7 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     action = parser.add_mutually_exclusive_group()
     action.add_argument("--write", action="store_true", help="regenerate only the additive FSTL 1.1 schema")
     action.add_argument("--check", action="store_true", help="verify checked-in schemas (default)")
-    action.add_argument("--self-test", action="store_true", help="run negative drift/collision checks after verification")
+    parser.add_argument("--self-test", action="store_true", help="run negative drift/collision checks after verification")
     parser.add_argument("--wire-version", choices=("all", "1.0", "1.1"), default="all")
     parser.add_argument("--schema", type=Path, help="override one selected schema path")
     return parser.parse_args(argv)

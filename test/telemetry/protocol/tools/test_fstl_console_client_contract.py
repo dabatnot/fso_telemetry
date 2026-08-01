@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""WP10 structural contract for the independent Phase 1 console proof tool.
+"""Short contract tests for the independent FSTL observation client.
 
 The behavioural UDP transcript remains intentionally black-box: the Phase 1
 contract defines its observable behaviour but not a Python API.  This guard
@@ -147,7 +147,7 @@ class FstlConsoleClientContractTest(unittest.TestCase):
         self.assertTrue(all(
             item.get("source", "").strip()
             for item in dashboard["inventory"] if item["kind"] in ("A", "C")
-        ), "P2-AC-006: every raw field has non-empty wire provenance")
+        ), "every raw field has non-empty wire provenance")
 
         without_clock = console.DashboardProjection(state, at_us=1_100_000).build()
         age = next(item for item in without_clock["inventory"]
@@ -155,62 +155,10 @@ class FstlConsoleClientContractTest(unittest.TestCase):
         self.assertFalse(age["available"])
         self.assertEqual("invalid-or-missing-clock-offset", age["reason"])
 
-    def test_phase2_oracle_goldens_are_canonical_black_box_transcripts(self) -> None:
-        generator = REPO / "test/telemetry/producer/phase2/generate_phase2_oracle_goldens.py"
-        result = subprocess.run(
-            [sys.executable, "-B", str(generator)],
-            cwd=REPO, text=True, capture_output=True, check=False,
-        )
-        self.assertEqual(0, result.returncode, result.stderr + result.stdout)
-        self.assertIn("inventories are canonical", result.stdout)
-
-    def test_phase2_oracle_inventory_comparison_requires_provenance_and_formula(self) -> None:
-        runner = REPO / "test/telemetry/producer/phase2/run_phase2_oracle_evidence.py"
-        spec = importlib.util.spec_from_file_location("phase2_oracle_runner", runner)
-        self.assertIsNotNone(spec)
-        self.assertIsNotNone(spec.loader)
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
-
-        missing_source = [{"kind": "A", "path": "a", "available": True, "value": 1}]
-        _, raw_summary = module.compare_inventory(missing_source, missing_source)
-        self.assertEqual(1, raw_summary["missingProvenance"])
-        self.assertEqual(1, raw_summary["mismatches"])
-
-        missing_formula = [{
-            "kind": "D", "path": "d", "available": True, "value": 1,
-            "provenance": "oracle:double",
-        }]
-        _, derived_summary = module.compare_inventory(missing_formula, missing_formula)
-        self.assertEqual(1, derived_summary["uncoveredFormula"])
-        self.assertEqual(1, derived_summary["mismatches"])
-
-    def test_phase2_oracle_runner_missing_harness_fails_closed_without_report(self) -> None:
-        runner = REPO / "test/telemetry/producer/phase2/run_phase2_oracle_evidence.py"
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            report = root / "report"
-            result = subprocess.run(
-                [
-                    sys.executable, "-B", str(runner),
-                    "--profiles", "core-gate", "complete-ship",
-                    "--build-dir", str(root / "missing-build"),
-                    "--config", "Release",
-                    "--report-dir", str(report),
-                ],
-                cwd=REPO, text=True, capture_output=True, check=False,
-            )
-            self.assertNotEqual(0, result.returncode)
-            self.assertIn("missing telemetry_phase2_oracle_harness", result.stderr)
-            self.assertFalse(
-                (report / "phase2-oracle-evidence.json").exists(),
-                "fail-closed diagnostics must not leave a conclusive report",
-            )
-
     def test_console_tool_exists_and_does_not_import_producer_cpp_bindings(self) -> None:
         self.assertTrue(
             CONSOLE.is_file(),
-            "P1-WP-10 requires test/telemetry/protocol/tools/fstl_console_client.py",
+            "the independent observation client must remain available",
         )
 
         tree = ast.parse(CONSOLE.read_text(encoding="utf-8"), filename=str(CONSOLE))
@@ -456,6 +404,45 @@ class FstlConsoleClientContractTest(unittest.TestCase):
         self.assertIsNone(protocol_stale["stale_detected_monotonic_us"])
         self.assertIsNone(protocol_stale["stale_detected_utc"])
         self.assertIsNone(protocol_stale["stale_duration_us"])
+
+    def test_drop_once_delta_is_reported_and_next_cumulative_delta_converges(self) -> None:
+        session_id = 0x1122334455667788
+        packets = (
+            packet(3, v11_payload("welcome-accepted-minor-one", ".payload.bin"),
+                   session_id=session_id, sequence=1, sent_us=1_000_000, flags=2),
+            packet(4, session_begin_payload(), session_id=session_id,
+                   sequence=2, sent_us=1_000_001, flags=2),
+            packet(6, v11_payload("minimal-with-player", ".bin"),
+                   session_id=session_id, sequence=3, sent_us=1_000_002, flags=2),
+            packet(7, v11_payload("delta-player-kinematics-cumulative", ".payload.bin"),
+                   session_id=session_id, sequence=4, sent_us=1_000_003),
+            packet(7, v11_payload("delta-player-return-baseline", ".payload.bin"),
+                   session_id=session_id, sequence=5, sent_us=1_000_004),
+        )
+        with tempfile.TemporaryDirectory() as temp:
+            paths: list[str] = []
+            for index, value in enumerate(packets):
+                path = Path(temp) / f"drop-once-{index}.bin"
+                path.write_bytes(value)
+                paths.append(str(path))
+            result = subprocess.run(
+                [sys.executable, "-B", str(CONSOLE), "--drop-once", "delta",
+                 "--replay", *paths, "--stale-ms", "100000000"],
+                cwd=REPO, text=True, capture_output=True, check=False,
+            )
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        transcripts = [json.loads(line) for line in result.stdout.splitlines()]
+        injection = next(line for line in transcripts if line["injections"])
+        self.assertEqual(
+            [{"action": "drop-once", "message": "delta", "message_id": 4}],
+            injection["injections"],
+        )
+        self.assertEqual(0, injection["delta_sequence"])
+        self.assertEqual(3, next(
+            line["delta_sequence"] for line in transcripts
+            if line["delta_sequence"] == 3
+        ))
 
     def test_unknown_baseline_stays_stale_without_resync_ack(self) -> None:
         session_id = 0x1122334455667788

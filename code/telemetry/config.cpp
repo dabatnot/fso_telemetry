@@ -44,6 +44,7 @@ struct CFileCloser {
 
 constexpr const char* KnownConfigKeys[]{
 	"schemaVersion",
+	"phase2Profile",
 	"enabled",
 	"bindAddresses",
 	"bindPort",
@@ -485,11 +486,37 @@ ConfigLoadResult parse_config_json(std::string_view input) noexcept
 	if (!json_is_integer(schema_version)) {
 		return invalid_result(ConfigError::InvalidType);
 	}
-	if (json_integer_value(schema_version) != 1) {
+	const auto parsed_schema_version = json_integer_value(schema_version);
+	if (parsed_schema_version != 1 && parsed_schema_version != 2) {
 		return invalid_result(ConfigError::OutOfRange);
 	}
 
 	TelemetryConfig config;
+	config.schema_version = static_cast<std::uint8_t>(parsed_schema_version);
+	const auto* phase2_profile = json_object_get(root.get(), "phase2Profile");
+	if (parsed_schema_version == 1) {
+		if (phase2_profile != nullptr) {
+			return invalid_result(ConfigError::Phase2ProfileNotAllowed);
+		}
+		config.phase2_profile = Phase2Profile::CompleteShip;
+	} else {
+		if (phase2_profile == nullptr) {
+			return invalid_result(ConfigError::MissingPhase2Profile);
+		}
+		if (!json_is_string(phase2_profile)) {
+			return invalid_result(ConfigError::InvalidType);
+		}
+		const std::string_view value{
+			json_string_value(phase2_profile),
+			json_string_length(phase2_profile)};
+		if (value == "CoreGate") {
+			config.phase2_profile = Phase2Profile::CoreGate;
+		} else if (value == "CompleteShip") {
+			config.phase2_profile = Phase2Profile::CompleteShip;
+		} else {
+			return invalid_result(ConfigError::InvalidPhase2Profile);
+		}
+	}
 	ConfigError error = ConfigError::None;
 	if (!read_boolean(root.get(), "enabled", config.enabled, error) ||
 		!parse_bind_addresses(root.get(), config, error)) {

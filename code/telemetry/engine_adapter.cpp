@@ -254,6 +254,7 @@ SourceReadResult extract_production_static_authorities(const object& ship_object
 	for (std::uint32_t index = 0U; index < input.subsystem_count; ++index) {
 		const auto& source = ship_class.subsystems[index];
 		auto& target = input.subsystems[index];
+		target = {};
 		target.subsystem_capture_key = index + 1U;
 		if (!assign_bounded_engine_name(
 				target.internal_name, source.name, MAX_NAME_LEN)) {
@@ -318,6 +319,7 @@ SourceReadResult extract_production_static_authorities(const object& ship_object
 					: Phase2SourceReadStatus::UnsupportedEngineState};
 		}
 		auto& target = input.banks[index];
+		target = {};
 		target.num_slots =
 			static_cast<std::uint32_t>(source.num_slots);
 		target.bank_capture_key = index + 1U;
@@ -373,6 +375,7 @@ SourceReadResult extract_production_static_authorities(const object& ship_object
 	}
 	for (int tertiary = 0; tertiary < tertiary_count; ++tertiary) {
 		auto& target = input.banks[input.bank_count++];
+		target = {};
 		target.num_slots = 1U;
 		target.bank_capture_key = input.bank_count;
 		target.family_source = 3U;
@@ -425,6 +428,7 @@ SourceReadResult extract_production_static_authorities(const object& ship_object
 					? turret_weapons.primary_bank_weapons[family_index]
 					: turret_weapons.secondary_bank_weapons[family_index];
 				auto& target = input.banks[input.bank_count];
+				target = {};
 				target.bank_capture_key = input.bank_count + 1U;
 				target.owner_subsystem_capture_key = subsystem_index + 1U;
 				target.family_source = 4U;
@@ -586,6 +590,7 @@ SourceReadResult extract_production_static_authorities(const object& ship_object
 		auto& raw_weapon = index == 0U
 			? static_cast<Phase2RawWeaponDefinition&>(input.weapon_info)
 			: input.weapon_info.additional_definitions[index - 1U];
+		raw_weapon = {};
 		const auto& source = Weapon_info[referenced_weapon_indices[index]];
 		if (!fill_raw_weapon_definition(source, index + 1U, raw_weapon)) {
 			return {Phase2SourceReadStatus::SourceLimitExceeded};
@@ -1321,7 +1326,7 @@ SourceReadResult FsoEngineReadView::read_ship_for_projection(
 	bool core_gate) const noexcept
 {
 	Phase2ReadDiagnosticCursor diagnostic_cursor{Phase2CaptureBlock::Identity};
-	output = {};
+	clear_phase2_ship_source_logical(output);
 	if (!core_gate && phase2_wp07_seam_overflowed())
 		return {Phase2SourceReadStatus::SourceLimitExceeded};
 	if (!player_source_is_consistent() || key.object_index < 0 ||
@@ -1808,6 +1813,7 @@ SourceReadResult FsoEngineReadView::read_ship_for_projection(
 							   int ammunition_initial,
 							   int fire_stamp,
 							   ShipWeaponBankObservation& destination) noexcept {
+		destination = {};
 		if (weapon_class < 0 || weapon_class >= static_cast<int>(Weapon_info.size()) ||
 			ammunition_current < 0 ||
 			ammunition_current > std::numeric_limits<std::uint16_t>::max() ||
@@ -2076,6 +2082,7 @@ SourceReadResult FsoEngineReadView::read_ship_for_projection(
 			return {Phase2SourceReadStatus::UnsupportedEngineState};
 		}
 		auto& destination = output.subsystems.values[source_key];
+		destination = {};
 		destination.source_key.value =
 			static_cast<std::uint32_t>(source_key + 1U);
 		switch (subsystem->system_info->type) {
@@ -2105,6 +2112,8 @@ SourceReadResult FsoEngineReadView::read_ship_for_projection(
 			destination.kind = ShipSubsystemKind::Generic;
 			break;
 		case SUBSYSTEM_SOLAR:
+			destination.kind = ShipSubsystemKind::Reactor;
+			break;
 		case SUBSYSTEM_GAS_COLLECT:
 		case SUBSYSTEM_ACTIVATION:
 			destination.kind = ShipSubsystemKind::Other;
@@ -2445,6 +2454,48 @@ SourceReadResult FsoEngineReadView::read_ship(
 	EngineEntityKey key, Phase2ShipSource& output) const noexcept
 {
 	return read_ship_for_projection(key, output, false);
+}
+
+SourceReadResult FsoEngineReadView::read_ship_flight(
+	EngineEntityKey key, ShipFlightObservation& output) const noexcept
+{
+	output = {};
+	if (!player_source_is_consistent() || key.object_index < 0 ||
+		key.object_index >= MAX_OBJECTS)
+		return {Phase2SourceReadStatus::InvalidSource};
+	const auto& object = Objects[key.object_index];
+	if (object.type != OBJ_SHIP || object.signature <= 0 ||
+		key.object_signature != static_cast<std::uint32_t>(object.signature) ||
+		object.instance < 0 || object.instance >= MAX_SHIPS ||
+		Ships[object.instance].objnum != key.object_index)
+		return {Phase2SourceReadStatus::InvalidSource};
+	output.position_world =
+		{object.pos.xyz.x, object.pos.xyz.y, object.pos.xyz.z};
+	const CaptureOrientationBasis basis{
+		{object.orient.vec.rvec.xyz.x, object.orient.vec.rvec.xyz.y,
+			object.orient.vec.rvec.xyz.z},
+		{object.orient.vec.uvec.xyz.x, object.orient.vec.uvec.xyz.y,
+			object.orient.vec.uvec.xyz.z},
+		{object.orient.vec.fvec.xyz.x, object.orient.vec.fvec.xyz.y,
+			object.orient.vec.fvec.xyz.z}};
+	CaptureQuaternionf orientation;
+	if (convert_fso_orientation_to_local_to_world(basis, orientation) !=
+		QuaternionConversionStatus::Converted)
+		return {Phase2SourceReadStatus::UnsupportedEngineState};
+	output.orientation_local_to_world =
+		{orientation.w, orientation.x, orientation.y, orientation.z};
+	output.velocity_world = {object.phys_info.vel.xyz.x,
+		object.phys_info.vel.xyz.y, object.phys_info.vel.xyz.z};
+	output.rotational_velocity_local = {object.phys_info.rotvel.xyz.x,
+		object.phys_info.rotvel.xyz.y, object.phys_info.rotvel.xyz.z};
+	output.radius = object.radius;
+	const EnginePhysicsFlagInput physics{
+		static_cast<std::uint32_t>(object.phys_info.flags),
+		object.flags[Object::Object_Flags::Immobile],
+		object.flags[Object::Object_Flags::Dont_change_position],
+		object.flags[Object::Object_Flags::Dont_change_orientation]};
+	output.physics_mode_flags = map_player_physics_mode_flags(physics);
+	return {Phase2SourceReadStatus::Valid};
 }
 
 SourceReadResult FsoEngineReadView::read_core_gate_ship(

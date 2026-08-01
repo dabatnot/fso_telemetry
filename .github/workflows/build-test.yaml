@@ -161,14 +161,20 @@ jobs:
           COMPILER: ${{ matrix.compiler }}
         shell: bash
         run: |
-          cmake --build . --config "$CONFIGURATION" --target INSTALL -- /verbosity:minimal
+          cmake --build . --config "$CONFIGURATION" --target INSTALL -- /m:1 /p:CL_MPCount=1 /verbosity:minimal
           ls -alR "$(pwd)/install"
       - name: Run Tests
         working-directory: ./build
         env:
           CONFIGURATION: ${{ matrix.configuration }}
         shell: bash
-        run: ./bin/$CONFIGURATION/unittests --gtest_shuffle
+        run: |
+          ./bin/$CONFIGURATION/unittests --gtest_shuffle
+          if [ "$CONFIGURATION" = "Release" ]; then
+            started=$SECONDS
+            ctest -C "$CONFIGURATION" -L telemetry-short --output-on-failure --timeout 60
+            test $((SECONDS - started)) -lt 300
+          fi
       - name: Set artifact id
         shell: bash
         run: |

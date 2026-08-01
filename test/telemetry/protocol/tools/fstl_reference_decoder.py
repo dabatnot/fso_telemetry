@@ -153,6 +153,17 @@ def vec3(reader: Reader) -> list[float]:
     return [reader.f32(), reader.f32(), reader.f32()]
 
 
+def mat3(reader: Reader) -> list[list[float]]:
+    return [[reader.f32(), reader.f32(), reader.f32()] for _ in range(3)]
+
+
+def item_reader(reader: Reader) -> tuple[int, int, Reader]:
+    version = reader.u8()
+    size = reader.u16()
+    require(version == 1, 27, "unsupported item version")
+    return version, size, Reader(reader.take(size))
+
+
 def canonical_record(
     record_type: int,
     version: int,
@@ -233,14 +244,14 @@ def decode_record_payload(record_type: int, reader: Reader) -> dict[str, Any]:
         generation = reader.u32()
         class_id = reader.u32()
         presence = reader.u64()
-        require(presence == 0, 37, "fixture profile expects base CLASS_MANIFEST")
+        require(presence & ~0x3FFF == 0, 37, "CLASS_MANIFEST presence")
         name = reader.utf8(255)
         species = reader.u32()
         ship_type = reader.u32()
         mass = reader.f32()
         center = vec3(reader)
         require(generation and class_id and name and mass > 0, 34, "CLASS_MANIFEST invariant")
-        return {
+        result = {
             "center_of_mass": center,
             "class_id": class_id,
             "internal_name": name,
@@ -250,22 +261,138 @@ def decode_record_payload(record_type: int, reader: Reader) -> dict[str, Any]:
             "ship_type_id": ship_type,
             "species_id": species,
         }
+        if presence & 0x0001:
+            result["inertia_matrix"] = mat3(reader)
+        if presence & 0x0002:
+            result["rotational_damping_time"] = vec3(reader)
+            result["translational_damping_time"] = vec3(reader)
+        if presence & 0x0004:
+            result["max_velocity"] = vec3(reader)
+            result["afterburner_max_velocity"] = vec3(reader)
+            result["booster_max_velocity"] = vec3(reader)
+            result["max_rotational_velocity"] = vec3(reader)
+            result["max_rear_velocity"] = reader.f32()
+            result["forward_accel_time"] = reader.f32()
+            result["afterburner_forward_accel_time"] = reader.f32()
+            result["booster_forward_accel_time"] = reader.f32()
+            result["forward_decel_time"] = reader.f32()
+            result["slide_accel_time"] = reader.f32()
+            result["slide_decel_time"] = reader.f32()
+        if presence & 0x0008:
+            result["max_hull_strength"] = reader.f32()
+        if presence & 0x0010:
+            result["max_shield_strength"] = reader.f32()
+        if presence & 0x0020:
+            result["max_weapon_energy"] = reader.f32()
+            result["weapon_energy_recharge_rate"] = reader.f32()
+            result["max_speed_with_engines_disabled"] = reader.f32()
+        if presence & 0x0040:
+            result["afterburner"] = {
+                "fuel_capacity": reader.f32(),
+                "burn_rate": reader.f32(),
+                "recover_rate": reader.f32(),
+                "minimum_start_fuel": reader.f32(),
+                "cooldown_us": u64s(reader.u64()),
+            }
+        if presence & 0x0080:
+            result["countermeasure"] = {
+                "weapon_class_id": reader.u32(),
+                "initial_count": reader.u32(),
+                "fire_wait_us": u64s(reader.u64()),
+            }
+        if presence & 0x0100:
+            banks = []
+            for _ in range(reader.u16()):
+                version, size, item = item_reader(reader)
+                item_presence = item.u16()
+                require(item_presence & ~0x0003 == 0, 37, "class bank presence")
+                bank = {
+                    "item_version": version,
+                    "item_size": size,
+                    "presence": item_presence,
+                    "family": item.u8(),
+                    "reserved": item.u8(),
+                    "canonical_index": item.u16(),
+                    "bank_id": item.u32(),
+                }
+                if item_presence & 0x0002:
+                    bank["weapon_class_id"] = item.u32()
+                if item_presence & 0x0001:
+                    bank["capacity"] = item.f32()
+                firepoint_count = item.u16()
+                firepoint_version = item.u8()
+                firepoint_size = item.u16()
+                require(firepoint_version == 1 and firepoint_size == 12, 44, "firepoint envelope")
+                bank["fire_points"] = [vec3(item) for _ in range(firepoint_count)]
+                item.finish()
+                banks.append(bank)
+            result["banks"] = banks
+        if presence & 0x0200:
+            subsystems = []
+            for _ in range(reader.u16()):
+                version, size, item = item_reader(reader)
+                item_presence = item.u16()
+                require(item_presence & ~0x000F == 0, 37, "class subsystem presence")
+                subsystem = {
+                    "item_version": version,
+                    "item_size": size,
+                    "presence": item_presence,
+                    "subsystem_id": item.u32(),
+                    "canonical_index": item.u16(),
+                    "type": item.u8(),
+                    "reserved": item.u8(),
+                    "internal_name": item.utf8(255),
+                }
+                if item_presence & 0x0001:
+                    subsystem["alternate_name"] = item.utf8(255)
+                if item_presence & 0x0002:
+                    subsystem["hud_name"] = item.utf8(255)
+                subsystem["position_local"] = vec3(item)
+                if item_presence & 0x0004:
+                    subsystem["orientation_local"] = [item.f32() for _ in range(4)]
+                subsystem["radius"] = item.f32()
+                subsystem["max_hits"] = item.f32()
+                if item_presence & 0x0008:
+                    subsystem["armor_id"] = item.u32()
+                subsystem["static_flags"] = item.u32()
+                item.finish()
+                subsystems.append(subsystem)
+            result["subsystems"] = subsystems
+        if presence & 0x0400:
+            result["scan"] = {
+                "required_time_us": u64s(reader.u64()),
+                "maximum_distance": reader.f32(),
+                "maximum_angle_rad": reader.f32(),
+            }
+        if presence & 0x0800:
+            result["glide_cap"] = reader.f32()
+        if presence & 0x1000:
+            result["autoaim_fov_rad"] = reader.f32()
+        if presence & 0x2000:
+            result["radar_icon"] = {
+                "base": reader.u32(),
+                "friendly": reader.u32(),
+                "hostile": reader.u32(),
+                "neutral": reader.u32(),
+            }
+        return result
 
     if record_type == 4:
         generation = reader.u32()
         weapon_class = reader.u32()
         presence = reader.u64()
-        require(presence == 0, 37, "fixture profile expects base WEAPON_MANIFEST")
+        require(presence & ~0x07FF == 0, 37, "WEAPON_MANIFEST presence")
         name = reader.utf8(255)
+        title = reader.utf8(255) if presence & 0x0001 else None
         subtype = reader.u8()
         flags = reader.u64()
         speed = reader.f32()
+        acceleration = reader.u64() if presence & 0x0002 else None
         mass = reader.f32()
         gravity = reader.f32()
         lifetime = reader.u64()
-        inheritance = reader.f32()
         require(generation and weapon_class and name and subtype <= 5, 34, "WEAPON_MANIFEST invariant")
-        return {
+        result = {
             "gravity_multiplier": gravity,
             "internal_name": name,
             "lifetime_us": u64s(lifetime),
@@ -274,10 +401,63 @@ def decode_record_payload(record_type: int, reader: Reader) -> dict[str, Any]:
             "max_speed": speed,
             "presence": u64s(presence),
             "subtype": subtype,
-            "velocity_inheritance": inheritance,
             "weapon_class_id": weapon_class,
             "weapon_flags": u64s(flags),
         }
+        if title is not None:
+            result["title"] = title
+        if acceleration is not None:
+            result["acceleration_time_us"] = u64s(acceleration)
+        if presence & 0x0004:
+            result["ranges"] = {
+                "minimum": reader.f32(),
+                "optimal": reader.f32(),
+                "maximum": reader.f32(),
+            }
+        if presence & 0x0008:
+            result["fire"] = {
+                "wait_us": u64s(reader.u64()),
+                "energy_consumed": reader.f32(),
+            }
+        if presence & 0x0010:
+            result["damage"] = {
+                "amount": reader.f32(),
+                "damage_type_id": reader.u32(),
+                "effect_flags": reader.u32(),
+            }
+        if presence & 0x0020:
+            result["guidance"] = {
+                "type": reader.u8(),
+                "fov_rad": reader.f32(),
+            }
+        if presence & 0x0040:
+            result["lock"] = {
+                "time_us": u64s(reader.u64()),
+                "fov_rad": reader.f32(),
+            }
+        result["velocity_inheritance"] = reader.f32()
+        if presence & 0x0080:
+            result["cargo_rearm"] = {
+                "cargo_size": reader.f32(),
+                "rearm_time_us": u64s(reader.u64()),
+                "reloaded_per_batch": reader.u32(),
+            }
+        if presence & 0x0100:
+            result["burst"] = {
+                "count": reader.u16(),
+                "interval_us": u64s(reader.u64()),
+            }
+        if presence & 0x0200:
+            result["swarm"] = {
+                "count": reader.u16(),
+                "shots_per_trigger": reader.u16(),
+            }
+        if presence & 0x0400:
+            result["countermeasure"] = {
+                "effectiveness": reader.f32(),
+                "life_us": u64s(reader.u64()),
+            }
+        return result
 
     if record_type == 5:
         entity = reader.u64()
@@ -485,31 +665,155 @@ def decode_record_payload(record_type: int, reader: Reader) -> dict[str, Any]:
     if record_type == 14:
         entity = reader.u64()
         presence = reader.u64()
-        require(presence == 0, 37, "fixture profile expects base WEAPON_STATE")
+        require(presence & ~0x00FF == 0, 37, "WEAPON_STATE presence")
         sample = reader.u64()
         primary, secondary, tertiary, reserved = [reader.u16() for _ in range(4)]
         current_primary = reader.u32()
         current_secondary = reader.u32()
         current_tertiary = reader.u32()
         flags = reader.u32()
-        primary_items = reader.u16()
-        secondary_items = reader.u16()
-        require(entity and primary == primary_items == 0 and secondary == secondary_items == 0 and tertiary == 0 and reserved == 0, 44, "WEAPON_STATE count")
-        return {
+        require(entity and reserved == 0, 34, "WEAPON_STATE invariant")
+        result = {
             "current_primary_bank_id": current_primary,
             "current_secondary_bank_id": current_secondary,
             "current_tertiary_bank_id": current_tertiary,
             "entity_id": u64s(entity),
             "presence": u64s(presence),
             "primary_bank_count": primary,
-            "primary_banks": [],
             "producer_sample_time_us": u64s(sample),
             "reserved": reserved,
             "secondary_bank_count": secondary,
-            "secondary_banks": [],
             "tertiary_bank_count": tertiary,
             "weapon_flags": flags,
         }
+        if presence & 0x0001:
+            result["previous_primary_bank_id"] = reader.u32()
+        if presence & 0x0002:
+            result["previous_secondary_bank_id"] = reader.u32()
+        if presence & 0x0004:
+            result["targeting_laser_bank_id"] = reader.u32()
+        if presence & 0x0008:
+            result["swarm"] = {
+                "remaining": reader.u16(),
+                "origin_bank_id": reader.u32(),
+            }
+        if presence & 0x0010:
+            result["remote_detonation_remaining_us"] = u64s(reader.u64())
+        if presence & 0x0020:
+            result["per_burst_rotation"] = reader.f32()
+        primary_items = reader.u16()
+        require(primary == primary_items, 44, "WEAPON_STATE primary count")
+        primary_banks = []
+        for _ in range(primary_items):
+            version, size, item = item_reader(reader)
+            item_presence = item.u16()
+            require(item_presence & ~0x003F == 0, 37, "primary bank presence")
+            bank = {
+                "item_version": version,
+                "item_size": size,
+                "presence": item_presence,
+                "canonical_index": item.u16(),
+                "bank_id": item.u32(),
+                "weapon_class_id": item.u32(),
+                "cooldown_remaining_us": u64s(item.u64()),
+                "primary_slot": item.u16(),
+                "fire_point": item.u16(),
+                "simultaneous_slots": item.u16(),
+                "pattern_id": item.u16(),
+            }
+            if item_presence & 0x0001:
+                bank["ammunition"] = {
+                    "current": item.u32(),
+                    "initial": item.u32(),
+                    "capacity": item.f32(),
+                }
+            if item_presence & 0x0002:
+                bank.setdefault("ammunition", {})["rearm_remaining_us"] = u64s(item.u64())
+            if item_presence & 0x0004:
+                bank["burst"] = {
+                    "counter": item.u16(),
+                    "reserved": item.u16(),
+                    "seed": item.u32(),
+                }
+            if item_presence & 0x0008:
+                bank["substitution_pattern_index"] = item.u16()
+                bank["substitution_reserved"] = item.u16()
+            if item_presence & 0x0010:
+                bank["animation"] = {
+                    "position": item.f32(),
+                    "velocity": item.f32(),
+                }
+            if item_presence & 0x0020:
+                bank["fof_cooldown_remaining_us"] = u64s(item.u64())
+            item.finish()
+            primary_banks.append(bank)
+        secondary_items = reader.u16()
+        require(secondary == secondary_items, 44, "WEAPON_STATE secondary count")
+        secondary_banks = []
+        for _ in range(secondary_items):
+            version, size, item = item_reader(reader)
+            item_presence = item.u16()
+            require(item_presence & ~0x001F == 0, 37, "secondary bank presence")
+            bank = {
+                "item_version": version,
+                "item_size": size,
+                "presence": item_presence,
+                "canonical_index": item.u16(),
+                "bank_id": item.u32(),
+                "weapon_class_id": item.u32(),
+                "cooldown_remaining_us": u64s(item.u64()),
+                "secondary_slot": item.u16(),
+                "reserved": item.u16(),
+            }
+            if item_presence & 0x0001:
+                bank["ammunition"] = {
+                    "current": item.u32(),
+                    "initial": item.u32(),
+                    "capacity": item.f32(),
+                }
+            if item_presence & 0x0002:
+                bank.setdefault("ammunition", {})["rearm_remaining_us"] = u64s(item.u64())
+            if item_presence & 0x0004:
+                bank["burst"] = {
+                    "counter": item.u16(),
+                    "reserved": item.u16(),
+                    "seed": item.u32(),
+                }
+            if item_presence & 0x0008:
+                bank["substitution_pattern_index"] = item.u16()
+                bank["substitution_reserved"] = item.u16()
+            if item_presence & 0x0010:
+                bank["animation"] = {
+                    "position": item.f32(),
+                    "velocity": item.f32(),
+                }
+            item.finish()
+            secondary_banks.append(bank)
+        result["primary_banks"] = primary_banks
+        result["secondary_banks"] = secondary_banks
+        require((presence & 0x0040 != 0) == (tertiary > 0), 44, "WEAPON_STATE tertiary presence")
+        if presence & 0x0040:
+            result["tertiary"] = {
+                "bank_id": reader.u32(),
+                "ammunition_current": reader.u32(),
+                "ammunition_initial": reader.u32(),
+                "ammunition_capacity": reader.f32(),
+                "cooldown_remaining_us": u64s(reader.u64()),
+                "rearm_remaining_us": u64s(reader.u64()),
+            }
+        if presence & 0x0080:
+            countermeasure_presence = reader.u16()
+            countermeasure = {
+                "presence": countermeasure_presence,
+                "flags": reader.u16(),
+            }
+            if countermeasure_presence & 0x0001:
+                countermeasure["weapon_class_id"] = reader.u32()
+            countermeasure["current"] = reader.u32()
+            countermeasure["maximum"] = reader.u32()
+            countermeasure["cooldown_remaining_us"] = u64s(reader.u64())
+            result["countermeasure"] = countermeasure
+        return result
 
     if record_type == 15:
         entity = reader.u64()
@@ -589,39 +893,74 @@ def decode_record_payload(record_type: int, reader: Reader) -> dict[str, Any]:
         entity = reader.u64()
         presence = reader.u64()
         sample = reader.u64()
-        require(entity and presence == 0, 37, f"{RECORD_NAMES[record_type]} fixture invariant")
+        require(entity, 34, f"{RECORD_NAMES[record_type]} entity")
         common = {
             "entity_id": u64s(entity),
             "presence": u64s(presence),
             "producer_sample_time_us": u64s(sample),
         }
         if record_type == 19:
+            require(presence == 0, 37, "THREAT_STATE presence")
             level = reader.u8()
             count = reader.u16()
             require(level <= 3 and count == 0, 34, "THREAT_STATE invariant")
             return {**common, "incoming_missiles": [], "threat_level": level}
         if record_type == 20:
+            require(presence & ~0x001F == 0, 37, "CARGO_SCAN_STATE presence")
             phase = reader.u8()
             disclosure = reader.u8()
             require(phase <= 3 and disclosure <= 1, 35, "CARGO_SCAN_STATE enum")
-            return {**common, "disclosure": disclosure, "scan_phase": phase}
+            result = {**common, "disclosure": disclosure, "scan_phase": phase}
+            if presence & 0x0001:
+                result["target_entity_id"] = u64s(reader.u64())
+            if presence & 0x0002:
+                result["target_subsystem_id"] = reader.u32()
+            if presence & 0x0004:
+                result["elapsed_us"] = u64s(reader.u64())
+                result["required_us"] = u64s(reader.u64())
+            if presence & 0x0008:
+                result["validity_flags"] = reader.u8()
+            if presence & 0x0010:
+                result["cargo_text"] = reader.utf8(511)
+            return result
         if record_type == 21:
+            require(presence == 0, 37, "DOCKING_STATE presence")
             phase = reader.u8()
             leader = reader.u64()
             count = reader.u16()
-            require(phase <= 4 and count == 0, 34, "DOCKING_STATE invariant")
-            return {**common, "group_leader_entity_id": u64s(leader), "phase": phase, "relations": []}
+            require(phase <= 4 and count <= 64, 34, "DOCKING_STATE invariant")
+            relations = []
+            for _ in range(count):
+                version, size, item = item_reader(reader)
+                relation = {
+                    "item_version": version,
+                    "item_size": size,
+                    "remote_entity_id": u64s(item.u64()),
+                    "local_dockpoint": item.u16(),
+                    "remote_dockpoint": item.u16(),
+                    "local_dock_bay_name": item.utf8(127),
+                    "remote_dock_bay_name": item.utf8(127),
+                }
+                item.finish()
+                relations.append(relation)
+            return {**common, "group_leader_entity_id": u64s(leader), "phase": phase, "relations": relations}
         if record_type == 22:
+            require(presence & ~0x0001 == 0, 37, "SUPPORT_STATE presence")
             phase = reader.u8()
             flags = reader.u8()
             reserved = reader.take(3)
             require(phase <= 7 and reserved == bytes(3), 34, "SUPPORT_STATE invariant")
-            return {**common, "phase": phase, "reserved": reserved.hex(), "support_flags": flags}
+            result = {**common, "phase": phase, "reserved": reserved.hex(), "support_flags": flags}
+            if presence & 0x0001:
+                result["support_entity_id"] = u64s(reader.u64())
+            return result
         if record_type == 23:
+            require(presence == 0, 37, "NAVIGATION_STATE presence")
             state = reader.u8()
             count = reader.u16()
             require(state <= 3 and count == 0, 34, "NAVIGATION_STATE invariant")
             return {**common, "autopilot_state": state, "navpoints": []}
+        require(presence == 0, 37, "EFFECT_STATE presence")
         flags = reader.u32()
         return {**common, "effect_flags": flags}
 
@@ -1741,12 +2080,9 @@ def verify_fstl11_corpus(root: Path) -> int:
             base_manifest.get("file_count") == ledger.get("fileCount") and
             base_manifest.get("tree_sha256") == ledger.get("treeSha256"),
             44, "schema/fstl-v1.1.yaml base_artifact_manifest identity drift")
-    for source in schema.get("normative_sources", []):
-        source_path = root.parents[2] / source["path"]
-        require(source_path.is_file(), 44,
-                f"schema/fstl-v1.1.yaml source missing: {source['path']}")
-        require(hashlib.sha256(source_path.read_bytes()).hexdigest() == source["sha256"], 44,
-                f"schema/fstl-v1.1.yaml source hash drift: {source['path']}")
+    provenance = schema.get("amendment_provenance", {})
+    require(provenance.get("normative") is False, 44,
+            "schema/fstl-v1.1.yaml provenance must be informative")
 
     verified = 0
     error_ids = {"None": 0, "DuplicateRecord": 29, "ReservedFlag": 36,

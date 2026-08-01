@@ -21,37 +21,13 @@ L’intégration minimale touche :
 - `code/ai/aicode.cpp` pour `OnSupportTransition` avant mutation de chaque branche `REPAIR_INFO_*` ;
 - `code/playerman/playercontrol.cpp` et `code/hud/hudtargetbox.cpp` pour extraire l’autorité cargo sans changer son point/gating historique ;
 - `code/playerman/playercontrol.cpp` pour le latch scalaire ship/caméra dans `read_keyboard_controls()` ;
-- `code/source_groups.cmake` et `test/src/CMakeLists.txt`.
+- `code/source_groups.cmake`.
 
-Les codecs FSTL existants peuvent recevoir des tests et corrections de conformité, mais aucun registre ou layout ne change. Chacun des quatre seams moteur est `noexcept`, main-thread, sans allocation, injectable en test, initialisé/purgé avec la mission et inerte vis-à-vis du réseau. Les tests off/on prouvent même contrôles, même nombre d’avances cargo, même révélation/HUD et aucun effet supplémentaire lorsque le runtime est désactivé.
+Les codecs FSTL existants restent compatibles et aucun registre ou layout ne change. Chacun des quatre seams moteur est `noexcept`, main-thread, sans allocation, initialisé et purgé avec la mission, et inerte vis-à-vis du réseau.
 
 ### 2.2 Build et plateformes
 
-Les fichiers `.cpp` et `.h` sont listés explicitement. Les builds suivants sont obligatoires :
-
-| Plateforme/configuration | Obligation |
-|---|---|
-| Windows MSVC Debug | compilation et tests fonctionnels |
-| Windows MSVC Release | tests fonctionnels, performance et endurance |
-| au moins une plateforme non-Windows CI | compilation et tests portables |
-| télémétrie compilée, config absente | fast path désactivé Phase 1 inchangé |
-| télémétrie activée, un puis quatre clients loopback | ressources et scheduling |
-
-La Phase 2 n’ajoute aucune dépendance tierce et ne change aucune option de build publique. Jansson, crypto/hash, réseau et tests réutilisent les dépendances déjà approuvées.
-
-### 2.3 Cibles de tests proposées
-
-| Cible | Contenu |
-|---|---|
-| `telemetry_phase2_unit_tests` | collecteurs, closure, mapping et formules |
-| `telemetry_phase2_protocol_tests` | manifestes, images, matrices, goldens et compatibilité |
-| `telemetry_phase2_integration_tests` | runtime, mission, lifecycle, support et sessions |
-| `telemetry_phase2_loss_harness` | perte, duplication, réordre et convergence |
-| `telemetry_phase2_oracle_harness` | comparaison DTO moteur / décodeur indépendant |
-| `telemetry_phase2_performance_harness` | allocations, timings et endurance |
-| `telemetry_phase2_fuzz_tests` | builds libFuzzer/AFL++ des readers datagramme/transaction et validateurs manifeste/état |
-
-Une cible peut regrouper plusieurs exécutables si CMake le requiert, mais les sept catégories et leurs résultats restent séparables dans les preuves. `telemetry_phase2_fuzz_tests` produit au minimum `telemetry_phase2_packet_reader_fuzz` et `telemetry_phase2_state_validator_fuzz`.
+Les fichiers `.cpp` et `.h` sont listés explicitement. La Phase 2 reste compatible avec les plateformes et configurations supportées par le dépôt, n'ajoute aucune dépendance tierce et ne change aucune option de build publique.
 
 ## 3. Schéma JSON fermé
 
@@ -63,7 +39,8 @@ Exemple complet Phase 2 :
 
 ```json
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
+  "phase2Profile": "CompleteShip",
   "enabled": false,
   "bindAddresses": ["127.0.0.1", "::1"],
   "bindPort": 42042,
@@ -81,17 +58,19 @@ Exemple complet Phase 2 :
 }
 ```
 
-L’unique nouvelle clé est :
+Les clés normatives de Phase 2 sont :
 
 | Clé | Type | Défaut | Domaine | Effet |
 |---|---|---:|---:|---|
 | `systemsHz` | entier JSON | `10` | `1..20` | cadence dégâts, boucliers, énergie, propulsion, armes, sous-systèmes, support, cargo et docking |
+| `phase2Profile` | string | aucun en v2 | `CoreGate` ou `CompleteShip` | projection choisie une fois avant bind |
 
 Les clés héritées conservent exactement leurs défauts et bornes :
 
 | Clé | Défaut | Domaine Phase 2 |
 |---|---:|---|
-| `schemaVersion` | obligatoire si fichier | exactement `1` |
+| `schemaVersion` | obligatoire si fichier | `1` ou `2` |
+| `phase2Profile` | interdit en v1, obligatoire en v2 | `CoreGate` ou `CompleteShip` en v2 |
 | `enabled` | `false` | booléen |
 | `bindAddresses` | loopback v4/v6 | 1–2 adresses numériques uniques |
 | `bindPort` | `42042` | 1024–65535 |
@@ -106,7 +85,7 @@ Les clés héritées conservent exactement leurs défauts et bornes :
 | `idleHeartbeatMs` | `1000` | 200–5000 |
 | `maxDatagramsPerTick` | `64` | 1–256 |
 
-Une clé inconnue, dupliquée, mal typée ou hors borne invalide l’objet entier. L’absence de `systemsHz` dans une configuration Phase 1 existante produit le défaut 10 et ne modifie aucun autre champ. Le schéma reste `schemaVersion=1` car l’ajout est optionnel et rétrocompatible pour le parseur producteur ; le parseur fermé est mis à jour pour reconnaître explicitement la clé.
+Une clé inconnue, dupliquée, mal typée ou hors borne invalide l’objet entier. Une configuration v1 interdit `phase2Profile` et migre explicitement vers `CompleteShip`; l’absence de `systemsHz` y produit le défaut 10. Une configuration v2 exige `phase2Profile` et n’applique aucun fallback si le champ manque ou si sa valeur est inconnue. Le profil effectif est figé à l’initialisation du runtime ; le changer exige un redémarrage.
 
 ### 3.2 Relations croisées
 
@@ -157,13 +136,14 @@ Le producteur Phase 2 fixe en plus :
 | classes de vaisseau dans la fermeture Cockpit | 64 |
 | classes d’armes dans la fermeture | 4096 |
 | sous-systèmes agrégés dans la closure | 4096, sans dépasser 1024 par vaisseau |
-| records dans une image Phase 2 complète | 65 535, limite d’implémentation distincte du count par part |
+| records dans une image `CoreGate` | `9 + N`, au plus `1033` |
+| records dans une image `CompleteShip` | `4 + 10K + N`, au plus `4740` |
 | banques cataloguées par variante | 192 au total, chacune dans sa famille à 0–64 |
 | événements lifecycle fiables en attente | fenêtre fiable héritée, sans nouvelle croissance |
 | images complètes | une image courante projetée et une baseline par client ; la candidate sérialisée vit dans la rétention fiable ; seul le DTO moteur pré-ID est partagé |
 | deltas cumulatifs | un par baseline/client |
 
-La limite de 64 classes est supérieure au besoin nominal d’un joueur mais borne les closures de mod et les références transitives. Elle n’élargit pas le contenu autorisé. Toute multiplication `maxClients × slots × taille` utilise une arithmétique vérifiée `size_t` avant bind. `record_length=65 536`, 193 banques de classe ou 65 536 records d’image donnent `SourceRecordTooLarge`/`SourceLimitExceeded` avant mise en file, jamais une pagination interne au record.
+La limite de 64 classes est supérieure au besoin nominal d’un joueur mais borne les closures de mod et les références transitives. Elle n’élargit pas le contenu autorisé. Toute multiplication `maxClients × slots × taille` utilise une arithmétique vérifiée `size_t` avant bind. `record_length=65 536`, 193 banques de classe ou toute valeur source supérieure au maximum de profil donnent `SourceRecordTooLarge`/`SourceLimitExceeded` avant conversion vers un type plus petit et avant mise en file. Aucune fixture n'a à construire une image artificielle de 65 535 entrées.
 
 ### 4.3 Plafond mémoire process
 
@@ -175,17 +155,17 @@ La Phase 2 remplace le plafond provisoire Phase 1 de 256 Mio par le plafond comp
 | par client | 83 886 080 octets | rétention fiable 33 554 432, réassemblage 4 194 304, image courante et baseline jusqu’à 16 777 216 chacune, delta jusqu’à 1 048 576, egress/latches/manifest IDs/métadonnées dans le solde |
 | process total | `shared + maxClients × perClient <= 402 653 184` | avec `maxClients<=4`, arithmétique vérifiée avant bind |
 
-Ces plafonds sont simultanés, non des estimations moyennes. Chaque objet préalloué publie capacité et octets possédés ; leur somme doit égaler le budget calculé. Un dépassement d’un sous-budget ou du total donne `StartupBudgetExceeded`, zéro bind et zéro état `Ready`. Le test borne accepte exactement chaque plafond puis rejette `+1`.
+Ces plafonds sont simultanés, non des estimations moyennes. Chaque objet préalloué publie capacité et octets possédés ; leur somme égale le budget calculé. Un dépassement d’un sous-budget ou du total donne `StartupBudgetExceeded`, zéro bind et zéro état `Ready`. Chaque plafond est accepté exactement et la valeur `+1` est rejetée.
 
 ### 4.4 Préallocation
 
 Après chargement d’une configuration valide avec `enabled=true`, avant tout bind et avant `Ready` Phase 2 :
 
-1. le collecteur provisionne les maxima absolus Phase 2 : 64 ships, 64 classes, 4096 armes, 4096 sous-systèmes, 192 banques par variante et 65 535 atomes ;
+1. le collecteur provisionne les maxima absolus Phase 2 : 64 ships, 64 classes, 4096 armes, 4096 sous-systèmes, 192 banques par variante et 4740 atomes d'image ;
 2. les builders provisionnent aux maxima les records, clés, valeurs et scratch de sérialisation ;
 3. le process provisionne les descripteurs pré-ID partagés ; chaque slot client provisionne ses deux slots sémantiques `active/staged`, image courante, baseline, rétention fiable, delta et latches, car IDs, `manifest_id`, ACK et late join sont session-scoped ;
 4. les capacités et leurs octets possédés sont enregistrés comme high-water initial, puis le budget 384 Mio est validé ; un échec conserve zéro socket ;
-5. toute croissance ultérieure est comptée et bloque la gate de performance.
+5. toute croissance ultérieure est comptée et produit un diagnostic de limite.
 
 À l’entrée mission, aucune réservation ni croissance n’est autorisée : le runtime remet à zéro les buffers, construit les vues, clés et registres dans les capacités déjà possédées, puis seulement entre dans l’état mission `Ready`. Une configuration absente ou `enabled=false` ne suit pas ce chemin de provisionnement et conserve zéro allocation Phase 2.
 
@@ -250,9 +230,9 @@ Les enums de labels sont compilées, fermées et terminées par `Count` :
 - lifecycle `kind={Appeared,Disabled,DyingStarted,Destroyed,Disappeared}` ; support `kind={Requested,Approaching,Docking,Repairing,Rearming,Obstructed,Aborted,CompletedPrivate,EndedPrivate}` ;
 - keyframe `reason={Periodic,Topology,Catalog,Lifecycle,Support,Resync}`, allocation `kind={VectorGrowth,StringGrowth,HeapFallback,LazyIndex,Other}`, limite `kind={Ships,Classes,Weapons,Subsystems,ClassBanks,ImageRecords,RecordBytes,TransactionBytes,Parts,Memory}`.
 
-Un ordinal inconnu est impossible à exposer comme label ; les tests vérifient nombre, orthographe et reset de chaque enum.
+Un ordinal inconnu est impossible à exposer comme label ; nombre, orthographe et remise à zéro de chaque enum sont stables.
 
-Les métriques d’oracle/mismatch appartiennent aux exécutables de preuve et ne sont pas compilées dans le runtime de livraison.
+Les comparaisons détaillées source/décodage restent extérieures au runtime de livraison.
 
 ### 6.3 Cohérence des compteurs
 
@@ -279,43 +259,30 @@ Les règles Phase 1 de fréquence et de contenu restent valides. La Phase 2 ajou
 | source incohérente/hors borne | warning agrégé | au plus une fois/s | bloc, enum raison, compteur |
 | bilan Phase 2 | info | fin session/shutdown | profils, high-water, tailles, durées, drops et resync agrégés |
 
-Sont interdits : payloads, fragments, catalogues, noms/callsigns, texte cargo, chemins absolus, IP complète, IDs aléatoires, pointeurs, handles et dump par tick. Les tests scannent les logs.
+Les logs ne contiennent ni payloads, fragments, catalogues, noms/callsigns, texte cargo, chemins absolus, IP complète, IDs aléatoires, pointeurs, handles ou dump par tick.
 
-## 8. Performance et allocations
+## 8. Travail borné et allocations
 
 ### 8.1 Fast path désactivé
 
-Les seuils Phase 1 restent : sur 100 000 callbacks, moyenne inférieure ou égale à 0,01 ms, p99 inférieur ou égal à 0,05 ms et écart de frame médiane inférieur à 1 % face au témoin. `systemsHz` n’est pas lu sur le fast path désactivé après chargement.
+Le module désactivé conserve zéro socket, zéro allocation persistante Phase 2 et zéro log récurrent. `systemsHz` et le profil ne sont pas relus sur le fast path après chargement.
 
 ### 8.2 Runtime actif Release
 
-Sur la machine de référence documentée, un joueur, un client loopback, après warm-up :
+Le runtime réutilise une projection pré-ID immuable et les arènes fiables existantes par client. Chaque tick et chaque transaction possède une borne de cardinalité et de travail ; aucune attente réseau ni allocation steady-state non bornée n'est permise. Les fixtures `193e banque`, `record_length=65 536`, maximum de profil `+1` et chaque cap mémoire `+1` sont refusées avant egress.
 
-| Scénario | Seuil |
-|---|---:|
-| tick flight/control sans systèmes | p99 télémétrie total `<= 0,25 ms` |
-| tick systèmes nominal | p99 télémétrie ajouté `<= 0,75 ms` |
-| keyframe complète, hors attente réseau | p99 construction `<= 2,0 ms`, max `<= 5,0 ms` |
-| quatre clients réutilisant le même DTO pré-ID et la même capture moteur, avec image/baseline propres à chaque slot | p99 tick systèmes `<= 1,50 ms` |
-| frame médiane actif vs témoin mission | régression `< 2 %` |
-| steady-state de 30 minutes | zéro allocation/croissance après `Ready` |
+### 8.3 Relevé de performance
 
-Le scénario nominal comporte deux vaisseaux exportés (joueur + support), au moins 4 segments de bouclier, 32 sous-systèmes agrégés, 4 banques joueur, 4 banques tourelles et un support actif. Un scénario de borne séparé mesure 64 vaisseaux, 4096 sous-systèmes agrégés, 64 segments par ship, 64 banques par famille d’état et exactement 192 définitions de banque de classe ; il doit rester sans allocation ni blocage et sous les bornes transactionnelles. Les fixtures `193e banque`, `record_length=65 536`, `65 536e atome` et chaque cap mémoire `+1` sont refusées avant egress. Les timings du scénario borne sont rapportés séparément du seuil nominal.
-
-Les seuils ne sont évalués qu’en Release. Debug doit exécuter les mêmes chemins fonctionnels.
-
-### 8.3 Protocole de mesure
-
-La preuve coordonnée utilise une référence contrôle de 600 s, puis une campagne active de 1 800 s découpée en trois segments déterministes de 600 s : nominal, quatre clients dont un lent, puis bornes/perte-resync. Elle se prolonge seulement si elle n’a pas réuni simultanément 100 000 frames/callbacks, 54 000 ticks flight/control au défaut 30 Hz, 18 000 ticks systèmes au défaut 10 Hz et 900 keyframes au défaut 2 s. Le chrono est `std::chrono::steady_clock`; sa résolution mesurée est archivée. Aucun échantillon n’est retiré, winsorisé ou remplacé. Pour N valeurs triées croissantes, p99 est le nearest-rank `x[ceil(0,99×N)-1]`; médiane est la moyenne des deux centres pour N pair et le centre pour N impair.
-
-Le rapport archive : révision, compilateur, flags, plateforme, CPU, mode alimentation fixé, températures/throttling, mission/mod, profil, `flightHz`, `systemsHz`, `keyframeSeconds`, clients, cardinalités, warm-up, durée, nombre de chaque échantillon, séries brutes et commandes. Témoin et actif rejouent la même trace d’inputs/mission, dans un ordre alterné déterministe seed 4242, sur le même hôte sans autre charge de test ; régression frame `=100×(median_active/median_control-1)`.
-
-Les cas obligatoires témoin sans module, fichier absent, `enabled=false`, actif nominal, actif bornes, quatre clients, `WOULD_BLOCK`, perte/resync et manifeste changé sont des segments ou injections de cette campagne coordonnée, pas neuf campagnes longues indépendantes. L’endurance appartient au soak composite du document 06. Le premier chargement/provisionnement est mesuré séparément du steady-state. La campagne est invalide, pas PASS, si les minima, le mode alimentation, la stabilité d’horloge ou l’absence de throttling ne sont pas prouvés.
+Deux observations Release courtes utilisent le vrai produit, l'une `CoreGate`, l'autre `CompleteShip`, pour une durée combinée inférieure à cinq minutes. Le relevé indique plateforme, mission, profil, cadences, nombre de clients et cardinalités, puis consigne attendu, observé, écart et impact. Il ne calcule aucun score ni percentile de certification.
 
 ## 9. Matrice configuration / résultat
 
 | Cas | Résultat |
 |---|---|
+| v1 sans `phase2Profile` | migration explicite vers `CompleteShip` |
+| v1 avec `phase2Profile` | fichier entier invalide, zéro socket |
+| v2 sans `phase2Profile` ou valeur inconnue | fichier entier invalide, zéro socket |
+| v2 avec `CoreGate` ou `CompleteShip` | profil figé avant bind |
 | `systemsHz` absent | défaut 10, configuration valide |
 | `systemsHz=1` ou `20`, quelle que soit la valeur valide de `flightHz` | valide |
 | `systemsHz=0`, `21`, non entier | fichier entier invalide, zéro socket |
@@ -324,22 +291,18 @@ Les cas obligatoires témoin sans module, fichier absent, `enabled=false`, actif
 | profil source incomplet | runtime actif possible, session Phase 2 refusée |
 | closure hors borne | session refusée, métrique source-limit, aucune troncature |
 | manifeste >16 Mio ou >64 parts | session refusée avant envoi |
-| tentative de croissance après `Ready` | aucune allocation ; `SourceLimitExceeded`, `SESSION_END(Restart,RECONNECT_ALLOWED)` et gate performance en échec |
+| tentative de croissance après `Ready` | `SourceLimitExceeded`, puis `SESSION_END(Restart,RECONNECT_ALLOWED)` sans croissance non bornée |
 
-## 10. Vérification de l’observabilité
+## 10. Qualité de l’observabilité
 
-Les tests DOIVENT :
-
-1. déclencher chaque métrique et enum atteignable ;
-2. vérifier unités, scopes, reset et agrégats process ;
-3. vérifier les gauges à zéro après purge ;
-4. comparer records/bytes/parts aux transactions décodées ;
-5. vérifier qu’un refus incrémente une seule raison primaire ;
-6. provoquer saturation et high-water sans overflow ;
-7. confirmer l’absence de labels issus du pair ou du jeu ;
-8. scanner les logs pour contenu interdit ;
-9. comparer les durées sectionnelles au tick total avec tolérance d’instrumentation ;
-10. prouver zéro allocation après warm-up dans les scénarios nominal et borné.
+- les métriques indiquent unité, portée et règle de remise à zéro ;
+- les gauges reviennent à zéro après purge ;
+- records, octets et parts correspondent aux transactions produites ;
+- un refus incrémente une raison primaire ;
+- saturation et high-water restent représentables sans overflow ;
+- aucun label ne dépend d'une chaîne fournie par le pair ou le jeu ;
+- les durées sectionnelles restent cohérentes avec le temps total du tick ;
+- les allocations et croissances après `Ready` sont visibles.
 
 ## 11. Traçabilité
 

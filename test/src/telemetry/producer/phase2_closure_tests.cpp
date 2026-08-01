@@ -2,7 +2,7 @@
 
 #include "telemetry/protocol/telemetry_sha256.h"
 #include "telemetry/phase2_closure.h"
-#include "telemetry/phase2_wp03_allocation_tracker.h"
+#include "telemetry/phase2_allocation_tracker.h"
 
 #include <algorithm>
 #include <array>
@@ -408,7 +408,7 @@ TEST(Phase2Closure, BuildIsNoexceptAndUsesCallerOwnedBoundedStorage)
 	input.nodes[0] = ship(1, 1);
 	input.node_count = 1;
 	auto output = std::make_unique<Phase2Closure>();
-	test::wp03::GlobalAllocationScope allocation_scope;
+	test::phase2test::GlobalAllocationScope allocation_scope;
 	const auto result = build_phase2_closure(input, Phase2Profile::CoreGate, *output);
 	const auto allocations = allocation_scope.finish();
 	EXPECT_EQ(Phase2ClosureError::None, result);

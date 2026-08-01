@@ -7,11 +7,12 @@ no 1.1 generator or verifier is allowed to rewrite its artifact set.
 ## Layout
 
 - `schema/fstl-v1.yaml`: the byte-frozen FSTL 1.0 registry and schema;
-- `schema/fstl-v1.1.yaml`: the generated additive FSTL 1.1 view, tied to the
-  frozen base and its own seven-document normative set;
-- `fstl-1.0-artifacts.manifest.json`: the exhaustive 438-file frozen ledger;
-- `tools/verify_fstl_1_0_freeze.py`: fail-closed verifier with an independent
-  pinned tree oracle;
+- `schema/fstl-v1.1.yaml`: the generated additive FSTL 1.1 wire contract,
+  tied to the frozen base and carrying informative product provenance;
+- `fstl-1.0-artifacts.manifest.json`: the byte-frozen historical 438-file
+  ledger;
+- `tools/verify_fstl_1_0_freeze.py`: verifier for the frozen ledger identity
+  and the independent 431-file machine-readable contract oracle;
 - `tools/fstl_schema.py`: immutable 1.0 validation plus deterministic 1.1
   generation and C++ registry cross-checks;
 - `tools/verify_schema_vectors.py`: schema-driven reconstruction of all 20
@@ -53,8 +54,9 @@ carry `expectedCanonicalJson`.
 
 The amendment manifest references the complete FSTL 1.0 ledger, its 438-file
 count and its frozen tree SHA-256. `schema/fstl-v1.1.yaml` likewise pins the
-base schema and ledger identities, then records the versioned Phase 1 document
-set and the Phase 1 provenance of the new bit and minimal producer profile.
+base schema and ledger identities. Its Phase 1 document references are
+informative provenance only: product-document edits do not change or validate
+the wire contract.
 
 The 21-case corpus covers minor negotiation, accepted and rejected WELCOME, two
 cumulative DELTAs (real change then return to baseline), minimal snapshots,

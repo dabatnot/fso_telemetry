@@ -344,9 +344,20 @@ bool write_class_record(MutableByteView arena,std::size_t& offset,std::uint32_t 
 		if(!body.write_u16(wire_bank_count))return false;
 		for(std::uint32_t index=0;index<source.bank_count;++index) {
 			const auto& bank=projected.banks[index];
-			const auto& source_bank=source.banks[bank.source_index];
 			if(!bank.weapon_class_id&&bank.family!=telemetry::WeaponFamily::Tertiary&&
 				bank.family!=telemetry::WeaponFamily::Turret)continue;
+			const Phase2BankSource* source_bank=nullptr;
+			for(std::uint32_t source_index=0;source_index<source.bank_count;++source_index) {
+				const auto& candidate=source.banks[source_index];
+				const auto candidate_owner=candidate.owner_subsystem_canonical_index==UINT16_MAX
+					? 0U : static_cast<std::uint32_t>(candidate.owner_subsystem_canonical_index)+1U;
+				if(candidate.family!=bank.family||candidate_owner!=bank.owner_subsystem_id||
+					candidate.source_family!=bank.source_family||candidate.bank_index!=bank.canonical_index||
+					candidate.bank_index!=bank.source_index)continue;
+				if(source_bank!=nullptr)return false;
+				source_bank=&candidate;
+			}
+			if(source_bank==nullptr)return false;
 			std::array<std::uint8_t,1024> item{};PacketWriter iw({item.data(),item.size()});
 			std::uint16_t item_presence=0;
 			if(bank.weapon_class_id)item_presence|=ClassBankPresenceFlagWeaponClass;
@@ -358,8 +369,8 @@ bool write_class_record(MutableByteView arena,std::size_t& offset,std::uint32_t 
 			if(!iw.write_u16(static_cast<std::uint16_t>(bank.fire_point_count))||
 				!iw.write_u8(1)||!iw.write_u16(12))return false;
 			for(std::uint32_t p=0;p<bank.fire_point_count;++p)
-				if(!iw.write_f32(source_bank.fire_points[p].x)||!iw.write_f32(source_bank.fire_points[p].y)||
-					!iw.write_f32(source_bank.fire_points[p].z))return false;
+				if(!iw.write_f32(source_bank->fire_points[p].x)||!iw.write_f32(source_bank->fire_points[p].y)||
+					!iw.write_f32(source_bank->fire_points[p].z))return false;
 			if(!body.write_u8(1)||!body.write_u16(static_cast<std::uint16_t>(iw.size()))||!body.write_bytes(iw.written()))return false;
 		}
 	}
@@ -691,7 +702,7 @@ Phase2ManifestError Phase2ManifestSlot::rebuild(const Phase2ManifestSource& sour
 				&projected_bank-candidate.bank_records.data())+1U;
 			projected_bank.weapon_class_id=bank_weapon_ids[source_index];
 			projected_bank.family=source_bank.family;projected_bank.canonical_index=source_bank.bank_index;
-			projected_bank.source_family=source_bank.source_family;projected_bank.source_index=static_cast<std::uint16_t>(source_index);
+			projected_bank.source_family=source_bank.source_family;projected_bank.source_index=source_bank.bank_index;
 			projected_bank.capacity=source_bank.capacity;projected_bank.fire_point_count=source_bank.fire_point_count;
 			projected_bank.pattern_id=source_bank.firing_pattern_source_code==0U ? 0U :
 				auxiliary_id(source,AuxiliaryRegistry::Pattern,
@@ -734,10 +745,11 @@ Phase2ManifestError Phase2ManifestSlot::rebuild(const Phase2ManifestSource& sour
 	if(!has_supplied_topology)
 		sha256({reinterpret_cast<const std::uint8_t*>(&source.player_instance_signature),4},topology);
 	const auto has_baseline=m_active||m_staged;
-	const auto& baseline=m_active?active_candidate():staged_candidate();
+	auto& baseline=m_active?m_candidates[m_active_index]:m_candidates[m_staged_index];
 	if(has_baseline && same_digest(baseline.catalog_fingerprint,catalog)) {
 		m_rebuild_intent=false;m_rebuild_scheduled=false;
 		if(baseline.topology_fingerprint==topology){return Phase2ManifestError::NoCatalogChange;}
+		baseline.topology_fingerprint=topology;
 		m_keyframe_required=true; return Phase2ManifestError::TopologyOnly;
 	}
 	candidate.manifest_id=new_id;candidate.kind=ManifestKind::FullRequired;candidate.encoded_size=static_cast<std::uint32_t>(offset);
@@ -842,6 +854,17 @@ Phase2ManifestError Phase2ManifestSlot::validate_delta_required_manifest_id(std:
 { return id==m_required_id?Phase2ManifestError::None:Phase2ManifestError::ManifestIdChangeRequiresKeyframe; }
 void Phase2ManifestSlot::release_reliable_references(std::uint32_t id) noexcept
 { if(id==m_previous_id)m_retain_previous=false; }
+const Phase2ManifestCandidate* Phase2ManifestSlot::candidate_for_id(
+	std::uint32_t id) const noexcept
+{
+	if (id == 0U) return nullptr;
+	if (is_active(id)) return &active_candidate();
+	if (is_staged(id)) return &staged_candidate();
+	if (m_retain_previous && id == m_previous_id &&
+		m_candidates[m_staged_index].manifest_id == id)
+		return &m_candidates[m_staged_index];
+	return nullptr;
+}
 bool Phase2ManifestSlot::retains_generation(std::uint32_t id) const noexcept
 { return is_active(id)||is_staged(id)||(m_retain_previous&&m_previous_id==id); }
 const Sha256Digest& Phase2ManifestSlot::catalog_fingerprint() const noexcept

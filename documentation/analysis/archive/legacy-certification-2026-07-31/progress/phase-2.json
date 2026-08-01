@@ -1,0 +1,1378 @@
+{
+  "schema": "fs2open.telemetry.phase-progress.v3",
+  "phaseNumber": 2,
+  "title": "Phase 2 — Vaisseau complet",
+  "workflowContractVersion": 3,
+  "profile": "certification",
+  "executionState": "paused",
+  "updatedAtUtc": "2026-07-31T20:15:01.0015140Z",
+  "source": {
+    "branch": "codex/phase2-pre-skill-checkpoint",
+    "head": "a3a1ef58368c5b48b23e67401458c4078533f884",
+    "trackedWorktree": "workflow-v2-migration-after-functional-checkpoint",
+    "contractDirectory": "documentation/analysis/specs/2-Vaisseau-complet"
+  },
+  "current": {
+    "workPackage": "P2-WP-11",
+    "gate": "G2-F",
+    "activity": "paused-during-contract-audit-before-code",
+    "summary": "Paused cleanly during the mandatory resume audit, before any code edit, build, test, harness or performance run. The Phase 2 specification validator passes with exactly eight documents and a 660-minute approved budget; the implementation skill, execution policy, tracker schema, AGENTS.md, README and documents 01 through 04 were reread. Documents 05 through 07 and the directly inherited Phase 0/1 passages remain unread in this resume attempt. Existing v45 evidence and source state are unchanged.",
+    "nextAction": "Resume by completing the read-only contract audit: read Phase 2 documents 05, 06 and 07 plus the directly inherited Phase 0/1 passages. Then inspect the v45 flight and systems image/delta hot paths and choose one bounded optimization slice; do not start qualification or certification until stage microbenchmarks have margin and independent review is refreshed.",
+    "startedAtUtc": "2026-07-29T09:34:20.2862139Z",
+    "lastHeartbeatAtUtc": "2026-07-31T20:15:01.0015140Z",
+    "slice": "resume audit paused after Phase 2 document 04; no new code or executable evidence; v45 blocker and proof freshness unchanged",
+    "lastClosedGate": "G2-E",
+    "nextGate": "G2-F"
+  },
+  "campaign": {
+    "id": "P2-WP11-PERFORMANCE-TOOLING-QUALIFICATION",
+    "state": "paused",
+    "completed": 35,
+    "total": 39,
+    "unit": "check",
+    "startedAtUtc": "2026-07-30T22:02:19.0165048Z",
+    "updatedAtUtc": "2026-07-31T20:15:01.0015140Z",
+    "estimatedRemainingMinutes": 121,
+    "scenarios": [
+      {
+        "id": "P2-WP11-BOUNDS-QUALIFICATION",
+        "state": "failed",
+        "dependencyCone": ["performance-runner", "performance-harness", "D2-019", "P2-AC-013"],
+        "nextAction": "Historical red retained: fixed prelude bounds did not drain the R2 scheduler backlog."
+      },
+      {
+        "id": "P2-WP11-BOUNDS-REQUALIFICATION",
+        "state": "failed",
+        "dependencyCone": ["corrected-performance-runner", "performance-harness", "D2-019", "P2-AC-013"],
+        "nextAction": "Historical red retained: the helper queued a periodic keyframe because it replaced the complete Phase 2 image with a partial Phase 1 image."
+      },
+      {
+        "id": "P2-WP11-BOUNDS-REQUALIFICATION-2",
+        "state": "passed",
+        "dependencyCone": ["complete-image-performance-runner", "performance-harness", "D2-019", "P2-AC-013"],
+        "nextAction": "Completed: the complete-image mutation emitted the required WOULD_BLOCK/loss/resync/manifest sequence and produced ten Bounds rows."
+      },
+      {
+        "id": "P2-WP11-PERFORMANCE-QUALIFICATION",
+        "state": "failed",
+        "dependencyCone": ["P2-WP11-BOUNDS-QUALIFICATION", "performance-runner", "P2-AC-013"],
+        "nextAction": "Historical red retained: the harness executable embedded the stale pre-v15 runner even though the standalone v15 600-sample Bounds run passes."
+      },
+      {
+        "id": "P2-WP11-PERFORMANCE-QUALIFICATION-2",
+        "state": "failed",
+        "dependencyCone": ["rebuilt-performance-harness", "performance-runner-v15", "P2-AC-013"],
+        "nextAction": "Historical red retained: disabled thresholds were applied to total shared frame time instead of the telemetry stage-duration sum."
+      },
+      {
+        "id": "P2-WP11-PERFORMANCE-QUALIFICATION-3",
+        "state": "failed",
+        "dependencyCone": ["stage-metric-performance-harness", "performance-runner-v15", "P2-AC-013"],
+        "nextAction": "Fresh red retained: disabled stage cost passes, but the composite-soak respawn tick fails; keyframes are 7/10 and steady-state growth is one byte. Diagnose this cone before any replay."
+      },
+      {
+        "id": "P2-WP11-PERFORMANCE-CERTIFICATION",
+        "state": "deferred-by-dependency",
+        "dependencyCone": ["P2-WP11-PERFORMANCE-QUALIFICATION", "performance-environment", "P2-AC-013"],
+        "nextAction": "Run only after performance qualification and environment readiness are independently accepted."
+      },
+      {
+        "id": "P2-WP11-PERFORMANCE-QUALIFICATION-4",
+        "state": "failed",
+        "dependencyCone": ["respawn-identity-performance-runner", "stage-metric-performance-harness", "P2-AC-013"],
+        "nextAction": "Historical red retained: signature reuse is fixed, but the workload oracle still held both the retired and replacement entity identities after respawn."
+      },
+      {
+        "id": "P2-WP11-PERFORMANCE-QUALIFICATION-5",
+        "state": "failed",
+        "dependencyCone": ["respawn-current-state-performance-runner", "stage-metric-performance-harness", "P2-AC-013"],
+        "nextAction": "Fresh red retained: current_state exposed the retired and replacement lifecycle identities while the capture contained only the replacement."
+      },
+      {
+        "id": "P2-WP11-PERFORMANCE-QUALIFICATION-6",
+        "state": "failed",
+        "dependencyCone": ["retired-identity-filter-performance-runner", "stage-metric-performance-harness", "P2-AC-013"],
+        "nextAction": "Fresh red retained: removing only the player identity left the retired support identity in the transition oracle."
+      },
+      {
+        "id": "P2-WP11-PERFORMANCE-RESPAWN-SUPPORT-DIAGNOSTIC",
+        "state": "failed",
+        "dependencyCone": ["pre-respawn-closure-identity-filter", "composite-soak-oracle"],
+        "nextAction": "Fresh red retained: current_state remained ambiguous after filtering and is removed as an oracle input."
+      },
+      {
+        "id": "P2-WP11-PERFORMANCE-RESPAWN-CLEAR-DIAGNOSTIC",
+        "state": "failed",
+        "dependencyCone": ["explicit-absence-oracle-clear", "monotonic-test-entity-id-allocation", "composite-soak-oracle"],
+        "nextAction": "Fresh red retained: explicit absence clearing still failed when a non-empty closure later shrank."
+      },
+      {
+        "id": "P2-WP11-PERFORMANCE-SUBJECT-RECONCILIATION-SELF-TEST",
+        "state": "failed",
+        "dependencyCone": ["capture-key-entity-id-reconciliation", "performance-oracle"],
+        "nextAction": "Fresh red retained: process exited 0xC00000FD before assertions because the large observation DTO was allocated on the Windows stack."
+      },
+      {
+        "id": "P2-WP11-PERFORMANCE-SUBJECT-RECONCILIATION-HEAP-SELF-TEST",
+        "state": "passed",
+        "dependencyCone": ["capture-key-entity-id-reconciliation", "heap-self-test-fixture"],
+        "nextAction": "Completed: shrink, grow, reorder and absence preserve or allocate capture-key bindings exactly; exit code 0."
+      },
+      {
+        "id": "P2-WP11-PERFORMANCE-COMPOSITE-REQUALIFICATION",
+        "state": "passed",
+        "dependencyCone": ["capture-key-entity-id-reconciliation", "composite-soak-oracle", "P2-AC-015"],
+        "nextAction": "Completed: the historically failing composite-soak respawn path is qualification-passed with the capture-key reconciler."
+      },
+      {
+        "id": "P2-WP11-PERFORMANCE-QUALIFICATION-7",
+        "state": "failed",
+        "dependencyCone": ["capture-key-entity-id-reconciliation", "coordinated-performance-harness", "P2-AC-013", "P2-AC-015"],
+        "nextAction": "Fresh red retained: all workloads complete, but the composite restart path records 12 post-Ready allocations and steady-state growth."
+      },
+      {
+        "id": "P2-WP11-PERFORMANCE-ALLOCATION-SOURCE-DIAGNOSTIC",
+        "state": "failed",
+        "dependencyCone": ["allocation-observer", "snapshot-slot-delta-scratch", "composite-restart"],
+        "nextAction": "Diagnostic red retained: all 12 observed events are attributed to SnapshotSlotDeltaScratch."
+      },
+      {
+        "id": "P2-WP11-PERFORMANCE-AGGREGATE-ALLOCATION-REQUALIFICATION",
+        "state": "failed",
+        "dependencyCone": ["aggregate-allocation-observer", "snapshot-slot-delta-scratch", "composite-restart"],
+        "nextAction": "Second consecutive red retained: aggregate accounting proves 19 real capacity-growth events across the six cycles; automatic retries stop."
+      },
+      {
+        "id": "P2-WP11-PERFORMANCE-FAIL-CLOSED-ALLOCATION-REQUALIFICATION",
+        "state": "passed",
+        "dependencyCone": ["subsystem-identity-capacity", "allocation-oracle", "snapshot-slot-delta-scratch", "composite-restart"],
+        "nextAction": "Completed: Release self-test rejects negative allocation fixtures and v18 passes with no growth and all allocation-source counters at zero."
+      },
+      {
+        "id": "P2-WP11-PERFORMANCE-MEASUREMENT-REQUALIFICATION",
+        "state": "failed",
+        "dependencyCone": ["performance-measurement-protocol", "performance-harness", "P2-AC-013"],
+        "nextAction": "Fresh v22 red retained after the independently approved test-only correction: flight p99 2.0505 ms, systems p99 1.3413 ms, four-client systems p99 5.338 ms, keyframes 6/10. No production redesign or long campaign without an explicit strategy decision."
+      },
+      {
+        "id": "P2-WP11-PERFORMANCE-INCREMENTAL-CONTRACTS",
+        "state": "running",
+        "dependencyCone": ["capture-mask", "incremental-state-image", "delta-dirty-set", "keyframe-window", "native-frame-oracle", "P2-AC-013"],
+        "nextAction": "Paused with the latest targeted Release suites green (replication 12/12, runtime 20/20, observation 73/73). Refresh lifecycle, broad-suite and independent-owner evidence after the next bounded performance slice."
+      },
+      {
+        "id": "P2-WP11-PERFORMANCE-INCREMENTAL-QUALIFICATION-1",
+        "state": "failed",
+        "dependencyCone": ["P2-WP11-PERFORMANCE-INCREMENTAL-CONTRACTS", "performance-harness", "P2-AC-013"],
+        "nextAction": "Retain v23 red: flight 2.7245 ms, systems 1.94 ms, four-client 4.249 ms and 6/10 keyframes. Linear retained-atom lookup identified and removed."
+      },
+      {
+        "id": "P2-WP11-PERFORMANCE-INCREMENTAL-QUALIFICATION-2",
+        "state": "failed",
+        "dependencyCone": ["P2-WP11-PERFORMANCE-INCREMENTAL-QUALIFICATION-1", "historical-v22-worst-case", "performance-harness", "P2-AC-013"],
+        "nextAction": "Retain v24 red: flight improves to 1.7062 ms but remains above 0.25 ms; systems 1.4604 ms, four-client 5.5736 ms and 6/10 keyframes. Independent readiness and test reviews requested; no third qualification before verdict."
+      },
+      {
+        "id": "P2-WP11-PERFORMANCE-INCREMENTAL-READINESS-REVIEW",
+        "state": "passed",
+        "dependencyCone": ["P2-WP11-PERFORMANCE-INCREMENTAL-CONTRACTS", "v23-v24-evidence", "performance-harness", "P2-AC-013"],
+        "nextAction": "Completed: independent test owner and readiness reviewer accepted the flight seam, periodic/forced split, exact aggregation and one bounded v26 replay after the v25 inactive-schema red."
+      },
+      {
+        "id": "P2-WP11-PERFORMANCE-INCREMENTAL-QUALIFICATION-3",
+        "state": "failed",
+        "dependencyCone": ["inactive-control-schema", "performance-harness", "P2-AC-013"],
+        "nextAction": "Retain v25 red: all active series completed exactly, but the inactive/control producer still emitted the obsolete 22-column CSV and the harness stopped before soak."
+      },
+      {
+        "id": "P2-WP11-PERFORMANCE-INCREMENTAL-QUALIFICATION-4",
+        "state": "failed",
+        "dependencyCone": ["incremental-performance-strategy", "restart-workload-oracle", "performance-harness", "P2-AC-013", "P2-AC-015"],
+        "nextAction": "Retain v26 red: JSON and active keyframe evidence are valid, but flight 1.1086 ms, systems 2.2585 ms and four-client systems 5.4363 ms exceed unchanged thresholds; soak then exposed an empty retained oracle after restart. Retry budget for this strategy is exhausted."
+      },
+      {
+        "id": "P2-WP11-SOAK-QUALIFICATION",
+        "state": "deferred-by-dependency",
+        "dependencyCone": ["P2-WP11-BOUNDS-QUALIFICATION", "performance-runner", "P2-AC-015"],
+        "nextAction": "Deferred because the shared composite-soak respawn path failed in performance qualification 3."
+      },
+      {
+        "id": "P2-WP11-SOAK-CERTIFICATION",
+        "state": "deferred-by-dependency",
+        "dependencyCone": ["P2-WP11-SOAK-QUALIFICATION", "performance-environment", "P2-AC-015"],
+        "nextAction": "Run only after composite-soak qualification and readiness approval."
+      },
+      {
+        "id": "P2-WP11-LOSS-EVIDENCE-AUDIT",
+        "state": "passed",
+        "dependencyCone": ["loss-harness", "loss-oracle", "loss-configuration", "P2-AC-009"],
+        "nextAction": "Completed: current-harness targeted proof retained; historical matrices classified non-conclusive."
+      },
+      {
+        "id": "P2-WP11-LOSS-QUALIFICATION",
+        "state": "failed",
+        "dependencyCone": ["loss-harness", "loss-oracle", "loss-configuration", "P2-AC-009"],
+        "nextAction": "Preserve the core-gate:20:burst red result and diagnose it with one focused reproducer after independent work."
+      },
+      {
+        "id": "P2-WP11-LOSS-SMOKE",
+        "state": "failed",
+        "dependencyCone": ["P2-WP11-LOSS-QUALIFICATION", "loss-harness", "loss-oracle", "P2-AC-009"],
+        "nextAction": "Fresh red retained: 9/12 cells pass; complete-ship:5:iid, complete-ship:20:iid and complete-ship:20:burst require the corrected stale-snapshot and impairment-boundary oracle."
+      },
+      {
+        "id": "P2-WP11-LOSS-REPRESENTATIVE",
+        "state": "passed",
+        "dependencyCone": ["P2-WP11-LOSS-SMOKE", "loss-harness", "loss-oracle", "P2-AC-009"],
+        "nextAction": "Completed PASS 4/4 with the four named 300-second representative scenarios after 30-second warm-up."
+      },
+      {
+        "id": "P2-WP11-LOSS-REQUALIFICATION",
+        "state": "failed",
+        "dependencyCone": ["corrected-loss-harness", "loss-oracle", "loss-configuration", "P2-AC-009"],
+        "nextAction": "Historical red retained: final snapshot equality was reached, but the retry envelope expired before the post-resync heartbeat barrier established t0."
+      },
+      {
+        "id": "P2-WP11-LOSS-REQUALIFICATION-2",
+        "state": "failed",
+        "dependencyCone": ["bounded-heartbeat-loss-harness", "loss-oracle", "loss-configuration", "P2-AC-009"],
+        "nextAction": "Historical red retained: retransmitted RESYNC snapshot was already committed and ACKed, but the idempotent path did not latch recovered_snapshot."
+      },
+      {
+        "id": "P2-WP11-LOSS-REQUALIFICATION-3",
+        "state": "failed",
+        "dependencyCone": ["idempotent-resync-loss-harness", "loss-oracle", "loss-configuration", "P2-AC-009"],
+        "nextAction": "Historical red retained; rebuild diagnostic fields and inspect the peer ACK/recovery/heartbeat latches before another correction."
+      },
+      {
+        "id": "P2-WP11-LOSS-LATCH-DIAGNOSTIC",
+        "state": "passed",
+        "dependencyCone": ["instrumented-loss-harness", "loss-oracle", "loss-configuration"],
+        "nextAction": "Completed: ACK, recovered snapshot, RESYNC flag and reserved budget are true; post-ACK producer heartbeat armed/response are false."
+      },
+      {
+        "id": "P2-WP11-LOSS-CADENCE-DIAGNOSTIC",
+        "state": "passed",
+        "dependencyCone": ["cadence-instrumented-loss-harness", "loss-oracle", "loss-configuration"],
+        "nextAction": "Completed: eight lost probes saturated the tracker, so the due recovery heartbeat could not be admitted after clock staleness."
+      },
+      {
+        "id": "P2-WP11-LOSS-REQUALIFICATION-4",
+        "state": "passed",
+        "dependencyCone": ["stale-clock-probe-reset", "loss-harness", "loss-oracle", "loss-configuration", "P2-AC-009"],
+        "nextAction": "Completed: core-gate:20:burst passes and the stale-clock recovery behavior is protected by two focused Release contracts."
+      },
+      {
+        "id": "P2-WP11-LOSS-SMOKE-REQUALIFICATION",
+        "state": "passed",
+        "dependencyCone": ["stale-snapshot-classification", "impairment-scheduler-boundary", "loss-harness", "loss-oracle", "P2-AC-009"],
+        "nextAction": "Completed by composition: v10 complete-ship:5:iid, v11 complete-ship:20:burst and v15 complete-ship:20:iid pass; the nine v9 passes remain reusable."
+      }
+    ]
+  },
+  "failurePolicy": {
+    "mode": "dependency-scoped-continue-independent",
+    "sharedTrustState": "valid",
+    "independentContinuationAuthorized": false,
+    "authorizedScenarioIds": [],
+    "failedScenarioIds": [
+      "P2-WP11-BOUNDS-QUALIFICATION",
+      "P2-WP11-BOUNDS-REQUALIFICATION",
+      "P2-WP11-PERFORMANCE-QUALIFICATION",
+      "P2-WP11-PERFORMANCE-QUALIFICATION-2",
+      "P2-WP11-PERFORMANCE-QUALIFICATION-3",
+      "P2-WP11-PERFORMANCE-QUALIFICATION-4",
+      "P2-WP11-PERFORMANCE-QUALIFICATION-5",
+      "P2-WP11-PERFORMANCE-QUALIFICATION-6",
+      "P2-WP11-PERFORMANCE-RESPAWN-SUPPORT-DIAGNOSTIC",
+      "P2-WP11-PERFORMANCE-RESPAWN-CLEAR-DIAGNOSTIC",
+      "P2-WP11-PERFORMANCE-SUBJECT-RECONCILIATION-SELF-TEST",
+      "P2-WP11-PERFORMANCE-QUALIFICATION-7",
+      "P2-WP11-PERFORMANCE-MEASUREMENT-REQUALIFICATION",
+      "P2-WP11-PERFORMANCE-ALLOCATION-SOURCE-DIAGNOSTIC",
+      "P2-WP11-PERFORMANCE-AGGREGATE-ALLOCATION-REQUALIFICATION",
+      "P2-WP11-PERFORMANCE-INCREMENTAL-QUALIFICATION-1",
+      "P2-WP11-PERFORMANCE-INCREMENTAL-QUALIFICATION-2",
+      "P2-WP11-PERFORMANCE-INCREMENTAL-QUALIFICATION-3",
+      "P2-WP11-PERFORMANCE-INCREMENTAL-QUALIFICATION-4",
+      "P2-WP11-LOSS-QUALIFICATION",
+      "P2-WP11-LOSS-REQUALIFICATION",
+      "P2-WP11-LOSS-REQUALIFICATION-2",
+      "P2-WP11-LOSS-REQUALIFICATION-3",
+      "P2-WP11-LOSS-SMOKE"
+    ],
+    "deferredScenarioIds": [
+      "P2-WP11-PERFORMANCE-CERTIFICATION",
+      "P2-WP11-SOAK-QUALIFICATION",
+      "P2-WP11-SOAK-CERTIFICATION"
+    ]
+  },
+  "budget": {
+    "limitMinutes": 660,
+    "plannedMinutes": 660,
+    "consumedMinutes": 539,
+    "remainingMinutes": 121,
+    "exceptionDecisionId": "P2-PERFORMANCE-INCREMENTAL-PIPELINE-BUDGET-EXCEPTION-20260731"
+  },
+  "statusBuckets": {
+    "workPackages": {
+      "pending": ["P2-WP-12"],
+      "in_progress": ["P2-WP-11"],
+      "implemented": [],
+      "verified": ["P2-WP-01", "P2-WP-02", "P2-WP-03", "P2-WP-04", "P2-WP-05", "P2-WP-06", "P2-WP-07", "P2-WP-08", "P2-WP-09", "P2-WP-10"],
+      "blocked": [],
+      "deferred": [],
+      "suspended": []
+    },
+    "requirements": {
+      "pending": [],
+      "in_progress": [],
+      "implemented": ["P2-REQ-040", "P2-REQ-045", "P2-REQ-046", "P2-REQ-048", "P2-REQ-049", "P2-REQ-050"],
+      "verified": ["P2-REQ-001", "P2-REQ-002", "P2-REQ-003", "P2-REQ-004", "P2-REQ-005", "P2-REQ-006", "P2-REQ-007", "P2-REQ-008", "P2-REQ-009", "P2-REQ-010", "P2-REQ-011", "P2-REQ-012", "P2-REQ-013", "P2-REQ-014", "P2-REQ-015", "P2-REQ-016", "P2-REQ-017", "P2-REQ-018", "P2-REQ-019", "P2-REQ-020", "P2-REQ-021", "P2-REQ-022", "P2-REQ-023", "P2-REQ-024", "P2-REQ-025", "P2-REQ-026", "P2-REQ-027", "P2-REQ-028", "P2-REQ-029", "P2-REQ-030", "P2-REQ-031", "P2-REQ-032", "P2-REQ-033", "P2-REQ-034", "P2-REQ-035", "P2-REQ-036", "P2-REQ-037", "P2-REQ-038", "P2-REQ-039", "P2-REQ-041", "P2-REQ-042", "P2-REQ-043", "P2-REQ-044", "P2-REQ-047"],
+      "blocked": [],
+      "deferred": [],
+      "suspended": []
+    },
+    "tests": {
+      "pending": [],
+      "in_progress": [],
+      "implemented": [],
+      "verified": ["P2-TST-001", "P2-TST-002", "P2-TST-003", "P2-TST-004", "P2-TST-005", "P2-TST-006", "P2-TST-007", "P2-TST-008", "P2-TST-009", "P2-TST-010", "P2-TST-011", "P2-TST-012", "P2-TST-013", "P2-TST-014", "P2-TST-015", "P2-TST-016", "P2-TST-017", "P2-TST-018", "P2-TST-019", "P2-TST-020", "P2-TST-021", "P2-TST-022", "P2-TST-023", "P2-TST-024", "P2-TST-025", "P2-TST-026", "P2-TST-027", "P2-TST-028", "P2-TST-029", "P2-TST-030", "P2-TST-031", "P2-TST-032", "P2-TST-033", "P2-TST-034", "P2-TST-035", "P2-TST-036", "P2-TST-037", "P2-TST-038", "P2-TST-039", "P2-TST-040", "P2-TST-041", "P2-TST-042", "P2-TST-043", "P2-TST-044", "P2-TST-045", "P2-TST-046", "P2-TST-047", "P2-TST-048", "P2-TST-049", "P2-TST-050", "P2-TST-051", "P2-TST-052", "P2-TST-053", "P2-TST-054", "P2-TST-055", "P2-TST-056", "P2-TST-057", "P2-TST-058", "P2-TST-059", "P2-TST-060", "P2-TST-061", "P2-TST-062", "P2-TST-063", "P2-TST-064", "P2-TST-065", "P2-TST-066", "P2-TST-067", "P2-TST-068", "P2-TST-069", "P2-TST-070"],
+      "blocked": [],
+      "deferred": [],
+      "suspended": []
+    },
+    "acceptanceCriteria": {
+      "pending": ["P2-AC-013", "P2-AC-015"],
+      "in_progress": [],
+      "implemented": ["P2-AC-007", "P2-AC-008"],
+      "verified": ["P2-AC-001", "P2-AC-002", "P2-AC-003", "P2-AC-004", "P2-AC-005", "P2-AC-006", "P2-AC-009", "P2-AC-010", "P2-AC-011", "P2-AC-012", "P2-AC-014"],
+      "blocked": [],
+      "deferred": [],
+      "suspended": []
+    },
+    "gates": {
+      "pending": ["G2-F", "G2-G"],
+      "ready": [],
+      "closed": ["G2-A", "G2-B", "G2-C", "G2-D", "G2-E"],
+      "reopened": [],
+      "blocked": ["G2-F"]
+    }
+  },
+  "decisionIds": ["D2-001", "D2-002", "D2-003", "D2-004", "D2-005", "D2-006", "D2-007", "D2-008", "D2-009", "D2-010", "D2-011", "D2-012", "D2-013", "D2-014", "D2-015", "D2-016", "D2-017", "D2-018", "D2-019", "D2-020", "D2-021"],
+  "blockers": [
+    {
+      "id": "WP11-PERFORMANCE-CLI-CONTRACT",
+      "state": "resolved",
+      "category": "required-proof-defect",
+      "owner": "test_agent",
+      "summary": "The first Bounds requalification remained red because its test helper replaced a complete Phase 2 state image with a partial Phase 1 image, correctly selecting a keyframe instead of the expected Delta. The helper now mutates only the existing FlightState atom and preserves the complete record set.",
+      "affects": ["P2-WP-11", "P2-REQ-045", "P2-REQ-046", "P2-AC-013", "P2-AC-015", "G2-F"],
+      "nextAction": "Resolved by P2-WP11-BOUNDS-REQUALIFICATION-2; proceed with independent performance and soak qualifications.",
+      "consecutiveFailures": 5,
+      "scope": "dependency-scoped",
+      "affectedScenarioIds": [
+        "P2-WP11-BOUNDS-QUALIFICATION",
+        "P2-WP11-BOUNDS-REQUALIFICATION",
+        "P2-WP11-BOUNDS-REQUALIFICATION-2",
+        "P2-WP11-PERFORMANCE-QUALIFICATION",
+        "P2-WP11-PERFORMANCE-CERTIFICATION",
+        "P2-WP11-SOAK-QUALIFICATION",
+        "P2-WP11-SOAK-CERTIFICATION"
+      ]
+    },
+    {
+      "id": "WP11-PERFORMANCE-EMBEDDED-RUNNER-STALE",
+      "state": "resolved",
+      "category": "required-proof-defect",
+      "owner": "test_agent",
+      "summary": "The capture-key identity defect is resolved. The allocation reds are caused by provisioning every mutation key identity at 8 bytes although SubsystemState uses a 12-byte entity/subsystem composite key. Each cycle consumes additional undersized subsystem backings, matching the observed growth at boundaries 85, 171, 257, 342 and 428.",
+      "affects": ["P2-WP-11", "P2-REQ-045", "P2-REQ-046", "P2-AC-013", "G2-F"],
+      "nextAction": "Resolved by the Release capacity/oracle self-test and v18 fail-closed allocation requalification.",
+      "consecutiveFailures": 12,
+      "scope": "dependency-scoped",
+      "affectedScenarioIds": [
+        "P2-WP11-PERFORMANCE-QUALIFICATION",
+        "P2-WP11-PERFORMANCE-QUALIFICATION-2",
+        "P2-WP11-PERFORMANCE-QUALIFICATION-3",
+        "P2-WP11-PERFORMANCE-QUALIFICATION-4",
+        "P2-WP11-PERFORMANCE-QUALIFICATION-5",
+        "P2-WP11-PERFORMANCE-QUALIFICATION-6",
+        "P2-WP11-PERFORMANCE-RESPAWN-SUPPORT-DIAGNOSTIC",
+        "P2-WP11-PERFORMANCE-RESPAWN-CLEAR-DIAGNOSTIC",
+        "P2-WP11-PERFORMANCE-SUBJECT-RECONCILIATION-SELF-TEST",
+        "P2-WP11-PERFORMANCE-SUBJECT-RECONCILIATION-HEAP-SELF-TEST",
+        "P2-WP11-PERFORMANCE-COMPOSITE-REQUALIFICATION",
+        "P2-WP11-PERFORMANCE-QUALIFICATION-7",
+        "P2-WP11-PERFORMANCE-ALLOCATION-SOURCE-DIAGNOSTIC",
+        "P2-WP11-PERFORMANCE-AGGREGATE-ALLOCATION-REQUALIFICATION",
+        "P2-WP11-PERFORMANCE-CERTIFICATION"
+      ]
+    },
+    {
+      "id": "WP11-CERTIFICATION-BUDGET-POST-REQUALIFICATION",
+      "state": "resolved",
+      "category": "certification-budget",
+      "owner": "coordinator",
+      "summary": "Only 110 minutes remain. The unique normative performance-plus-soak campaign requires 105 minutes and the final independent audit requires 20 minutes, leaving a 15-minute contractual deficit before host-readiness overhead.",
+      "affects": ["P2-WP-11", "P2-WP-12", "P2-AC-013", "P2-AC-015", "G2-F", "G2-G"],
+      "nextAction": "Resolved by the user's +20-minute exception and standing authorization for any later strictly necessary extension.",
+      "consecutiveFailures": 0,
+      "scope": "shared-trust",
+      "affectedScenarioIds": [
+        "P2-WP11-PERFORMANCE-CERTIFICATION",
+        "P2-WP11-SOAK-CERTIFICATION"
+      ]
+    },
+    {
+      "id": "WP11-LOSS-CORE-GATE-20-BURST",
+      "state": "resolved",
+      "category": "required-proof-defect",
+      "owner": "test_agent",
+      "summary": "The loss path saturated all eight heartbeat probes before clock staleness, preventing the recovery heartbeat from being admitted. The stale transition now releases the session's lost-probe capacity; the targeted requalification and two production contracts pass.",
+      "affects": ["P2-WP-11", "P2-REQ-040", "P2-AC-009", "G2-F"],
+      "nextAction": "Resolved by P2-WP11-LOSS-REQUALIFICATION-4; execute the independently authorized loss smoke once.",
+      "consecutiveFailures": 4,
+      "scope": "dependency-scoped",
+      "affectedScenarioIds": [
+        "P2-WP11-LOSS-QUALIFICATION",
+        "P2-WP11-LOSS-REQUALIFICATION",
+        "P2-WP11-LOSS-REQUALIFICATION-2",
+        "P2-WP11-LOSS-REQUALIFICATION-3",
+        "P2-WP11-LOSS-LATCH-DIAGNOSTIC",
+        "P2-WP11-LOSS-CADENCE-DIAGNOSTIC",
+        "P2-WP11-LOSS-REQUALIFICATION-4",
+        "P2-WP11-LOSS-SMOKE",
+        "P2-WP11-LOSS-REPRESENTATIVE"
+      ]
+    },
+    {
+      "id": "WP11-LOSS-SMOKE-COMPLETE-SHIP",
+      "state": "resolved",
+      "category": "required-proof-harness-defect",
+      "owner": "test_agent",
+      "summary": "The full smoke continued through all 12 cells and retained 9 passes. The three CompleteShip reds were resolved by stale-snapshot ordering, dependency-scoped impairment completion, explicit RESYNC-cycle handoff and restoring ReadyForState after a validated stale-clock heartbeat response.",
+      "affects": ["P2-WP-11", "P2-REQ-040", "P2-AC-009", "G2-F"],
+      "nextAction": "Resolved by P2-WP11-LOSS-SMOKE-REQUALIFICATION. The 25-minute representative matrix is independently authorized under the completion exception.",
+      "consecutiveFailures": 1,
+      "scope": "dependency-scoped",
+      "affectedScenarioIds": [
+        "P2-WP11-LOSS-SMOKE",
+        "P2-WP11-LOSS-SMOKE-REQUALIFICATION",
+        "P2-WP11-LOSS-REPRESENTATIVE"
+      ]
+    },
+    {
+      "id": "WP11-CERTIFICATION-BUDGET-CEILING",
+      "state": "resolved",
+      "category": "certification-budget-exhausted",
+      "owner": "phase_owner",
+      "summary": "The user explicitly approved a third bounded 30-minute exception, raising the cumulative ceiling to 480 minutes. At resume, 340 minutes are consumed and 140 remain for one allocation reproducer/correction, targeted rebuild/requalification, the 105-minute normative campaign and final audit.",
+      "affects": ["P2-WP-11", "P2-WP-12", "P2-AC-013", "P2-AC-015", "G2-F", "G2-G"],
+      "nextAction": "Resolved by P2-PERFORMANCE-RESTART-ALLOCATION-BUDGET-EXCEPTION-20260731; enforce the 480-minute cumulative ceiling and the single-correction-strategy scope.",
+      "consecutiveFailures": 2,
+      "scope": "shared-trust",
+      "affectedScenarioIds": [
+        "P2-WP11-PERFORMANCE-QUALIFICATION-6",
+        "P2-WP11-PERFORMANCE-CERTIFICATION",
+        "P2-WP11-SOAK-QUALIFICATION",
+        "P2-WP11-SOAK-CERTIFICATION",
+        "P2-WP11-LOSS-REPRESENTATIVE"
+      ]
+    },
+    {
+      "id": "WP11-PERFORMANCE-THRESHOLDS-AFTER-MEASUREMENT-CORRECTION",
+      "state": "resolved",
+      "category": "required-proof-performance-red",
+      "owner": "phase_owner",
+      "summary": "The v22 exclusive measurement protocol is self-tested, but the single reviewed requalification exceeds all active latency thresholds and observes only 6 of 10 required keyframes. The independent reviewer forbids a production correction or long campaign without a strategy expansion decision.",
+      "affects": ["P2-WP-11", "P2-WP-12", "P2-REQ-045", "P2-AC-013", "G2-F", "G2-G"],
+      "nextAction": "Resolved by explicit user authorization of D2-021; retain v22 red and execute only the bounded incremental redesign and two short qualifications.",
+      "consecutiveFailures": 3,
+      "scope": "dependency-scoped",
+      "affectedScenarioIds": [
+        "P2-WP11-PERFORMANCE-MEASUREMENT-REQUALIFICATION",
+        "P2-WP11-PERFORMANCE-CERTIFICATION",
+        "P2-WP11-SOAK-CERTIFICATION"
+      ]
+    },
+    {
+      "id": "WP11-INCREMENTAL-IMAGE-DIFF-DELTA-COST",
+      "state": "active",
+      "category": "required-proof-performance-red",
+      "owner": "phase_owner",
+      "summary": "Dirty-atom retained-image patching, per-slot incremental encoded-delta caching, redundant dirty-index validation removal and logical DTO reuse are implemented and targeted-contract green. The latest exact v45 stage microbenchmark still exceeds unchanged thresholds: flight non-keyframe p99 0.4241 ms versus 0.25 ms and systems non-keyframe p99 0.9720 ms versus 0.75 ms; keyframe p99/max 0.8164 ms is green.",
+      "affects": ["P2-WP-11", "P2-WP-12", "P2-REQ-045", "P2-REQ-046", "P2-AC-013", "G2-F", "G2-G"],
+      "nextAction": "Resume with a bounded analysis of the remaining v45 image/delta costs after logical DTO reuse; require stage margin and refreshed independent review before any qualification.",
+      "consecutiveFailures": 3,
+      "scope": "dependency-scoped",
+      "affectedScenarioIds": [
+        "P2-WP11-PERFORMANCE-INCREMENTAL-QUALIFICATION-3",
+        "P2-WP11-PERFORMANCE-INCREMENTAL-QUALIFICATION-4",
+        "P2-WP11-PERFORMANCE-CERTIFICATION",
+        "P2-WP11-SOAK-CERTIFICATION"
+      ]
+    }
+  ],
+  "evidence": [
+    {
+      "id": "G2-A-report",
+      "status": "fresh",
+      "path": "test/telemetry/producer/phase2/reports/wp01-contract/g2-a-wire-profiles.json",
+      "covers": ["G2-A", "P2-WP-01"],
+      "note": "Conclusive closed-gate wire/profile report."
+    },
+    {
+      "id": "G2-B-report",
+      "status": "fresh",
+      "path": "test/telemetry/producer/phase2/reports/wp02-capture/g2-b-capture.json",
+      "covers": ["G2-B", "P2-WP-02", "P2-AC-004"],
+      "note": "Sealed report with final independent GO; no replay required."
+    },
+    {
+      "id": "G2-C-final",
+      "status": "fresh",
+      "path": null,
+      "covers": ["G2-C", "P2-WP-03", "P2-WP-04", "P2-AC-005", "P2-AC-006"],
+      "note": "Conclusive Release 5/5 contract and independent GO retained from the closed checkpoint."
+    },
+    {
+      "id": "G2-D-final",
+      "status": "fresh",
+      "path": null,
+      "covers": ["G2-D", "P2-WP-05", "P2-WP-06", "P2-WP-07", "P2-WP-08", "P2-AC-003", "P2-AC-007", "P2-AC-008", "P2-AC-009"],
+      "note": "Conclusive Release composition, source contract, runtime filter and independent GO retained from the closed checkpoint."
+    },
+    {
+      "id": "G2-E-packet-fuzz",
+      "status": "fresh",
+      "path": "test/telemetry/producer/phase2/reports/wp09-security/fuzz-artifacts/packet-final/telemetry_phase2_packet_reader_fuzz/report.json",
+      "covers": ["G2-E", "P2-WP-09", "P2-AC-011", "P2-AC-012"],
+      "note": "Final sanitizer-backed packet-reader fuzz PASS."
+    },
+    {
+      "id": "G2-E-state-fuzz",
+      "status": "fresh",
+      "path": "test/telemetry/producer/phase2/reports/wp09-security/fuzz-artifacts/validator-final/telemetry_phase2_state_validator_fuzz/report.json",
+      "covers": ["G2-E", "P2-WP-09", "P2-AC-011", "P2-AC-012"],
+      "note": "Final sanitizer-backed state-validator fuzz PASS."
+    },
+    {
+      "id": "WP10-oracle-report",
+      "status": "fresh",
+      "path": "test/telemetry/producer/phase2/reports/wp10-oracle/phase2-oracle-evidence.json",
+      "covers": ["P2-WP-10", "P2-REQ-032", "P2-REQ-047", "P2-REQ-048", "P2-AC-006", "P2-AC-007", "P2-AC-014"],
+      "note": "Sealed independent-client oracle report: CoreGate 147/147 and CompleteShip 195/195."
+    },
+    {
+      "id": "WP11-loss-evidence-freshness-audit",
+      "kind": "audit",
+      "state": "fresh",
+      "path": "test/telemetry/producer/phase2/reports/wp11-loss-gate/loss-evidence-freshness-audit.json",
+      "command": "Read-only manifest and SHA-256 audit; no campaign replay.",
+      "observedAtUtc": "2026-07-30T22:02:19.0165048Z",
+      "requirements": ["P2-REQ-040", "P2-REQ-048"],
+      "acceptanceCriteria": ["P2-AC-009"],
+      "gate": "G2-F",
+      "reuseKey": "P2-EV-LOSS-FRESHNESS-AUDIT",
+      "invalidationScope": ["loss harness source", "reliability runner", "session controller", "manifest builder", "test build integration"],
+      "fingerprint": {
+        "sourceHash": "ccb68b150ab814f7a66a7ee7c52e4d343a3bcf12856ac01b0707fa8373435a92",
+        "testHash": "aa0750a585e8b9fc0dec74db521a9ff8e37d7935270ddbb484ae03a40e367929",
+        "harnessHash": "5ca7153b4252c880c91c22dc6ac60833e11c2cb25d261abc38eae698bad6dac1",
+        "buildHash": "c70f07b10542973e303361ec641d450f44642542ae678737fb165909e7220776",
+        "configurationHash": null,
+        "commandHash": null
+      },
+      "note": "Current-harness targeted proof is reusable; historical full and smoke matrices are not conclusive and require current-harness qualification before replay."
+    },
+    {
+      "id": "WP11-loss-current-harness-qualification",
+      "kind": "qualification",
+      "state": "failed",
+      "path": "test/telemetry/producer/phase2/reports/wp11-loss-qualification/current-harness-v3/campaign-manifest.json",
+      "command": "py -3 test/telemetry/producer/phase2/run_phase2_reliability_evidence.py --cases core-gate:20:burst complete-ship:20:iid --seed 1345474380 --warmup-seconds 0 --duration-seconds 30 --build-dir build/phase2-msvc --config Release --report-dir test/telemetry/producer/phase2/reports/wp11-loss-qualification/current-harness-v3",
+      "observedAtUtc": "2026-07-30T22:06:32.7405368Z",
+      "requirements": ["P2-REQ-040", "P2-REQ-048"],
+      "acceptanceCriteria": ["P2-AC-009"],
+      "gate": "G2-F",
+      "reuseKey": "P2-EV-LOSS-QUALIFICATION-CURRENT-HARNESS",
+      "invalidationScope": ["loss harness", "loss oracle", "session controller", "manifest builder", "loss configuration"],
+      "fingerprint": {
+        "sourceHash": "ccb68b150ab814f7a66a7ee7c52e4d343a3bcf12856ac01b0707fa8373435a92",
+        "testHash": "aa0750a585e8b9fc0dec74db521a9ff8e37d7935270ddbb484ae03a40e367929",
+        "harnessHash": "5ca7153b4252c880c91c22dc6ac60833e11c2cb25d261abc38eae698bad6dac1",
+        "buildHash": "c70f07b10542973e303361ec641d450f44642542ae678737fb165909e7220776",
+        "configurationHash": "seed=1345474380;warmup=0;duration=30;cases=core-gate:20:burst,complete-ship:20:iid",
+        "commandHash": "8778df3e794137404dea5868cd49ec5fd6f9e72cfbceaa69fa6fd7533e1b5b50"
+      },
+      "note": "Red core-gate:20:burst retained; complete-ship:20:iid passed because the revised runner continued after the independent failure."
+    },
+    {
+      "id": "WP11-performance-qualification-3",
+      "kind": "qualification",
+      "state": "failed",
+      "path": "test/telemetry/producer/phase2/reports/wp11-performance-qualification/v7-smoke/harness-report.json",
+      "command": "telemetry_phase2_performance_harness.exe --smoke with the v7-smoke report directory",
+      "observedAtUtc": "2026-07-30T23:23:40.7747213Z",
+      "requirements": ["P2-REQ-045", "P2-REQ-046"],
+      "acceptanceCriteria": ["P2-AC-013", "P2-AC-015"],
+      "gate": "G2-F",
+      "reuseKey": "P2-EV-PERFORMANCE-QUALIFICATION-3-RED",
+      "invalidationScope": ["performance harness", "performance runner", "composite-soak respawn lifecycle", "keyframe schedule", "steady-state allocation accounting"],
+      "fingerprint": {
+        "sourceHash": null,
+        "testHash": "037642d63c3d741fc5e50c6949346e8dfee8e9f503f47cff275e11a414938149",
+        "harnessHash": null,
+        "buildHash": null,
+        "configurationHash": "smoke=true;report=v7-smoke",
+        "commandHash": null
+      },
+      "note": "Fresh red retained. Disabled telemetry-stage cost passes; composite-soak respawn fails, keyframes are 7/10 and steady-state growth is one byte."
+    },
+    {
+      "id": "WP11-performance-qualification-4",
+      "kind": "qualification",
+      "state": "failed",
+      "path": "test/telemetry/producer/phase2/reports/wp11-performance-qualification/v8-respawn-smoke/harness-report.json",
+      "command": "telemetry_phase2_performance_harness.exe --smoke --qualification-plan coordinated-performance --report v8-respawn-smoke/harness-report.json --soak-profile composite",
+      "observedAtUtc": "2026-07-31T00:34:18.0000000Z",
+      "requirements": ["P2-REQ-045", "P2-REQ-046"],
+      "acceptanceCriteria": ["P2-AC-013", "P2-AC-015"],
+      "gate": "G2-F",
+      "reuseKey": "P2-EV-PERFORMANCE-QUALIFICATION-4-RED",
+      "invalidationScope": ["performance runner respawn oracle", "composite-soak respawn lifecycle"],
+      "fingerprint": {
+        "sourceHash": null,
+        "testHash": null,
+        "harnessHash": "7f85e5790d6dcf7837283c1083451f7b8313e920aed824ae871046292898ed45",
+        "buildHash": null,
+        "configurationHash": "smoke=true;qualification-plan=coordinated-performance;soak-profile=composite",
+        "commandHash": null
+      },
+      "note": "Red retained. Signature reuse and capacity are corrected, but the oracle still expects two entity identities after the first respawn while the capture contains one ship."
+    },
+    {
+      "id": "WP11-performance-qualification-5",
+      "kind": "qualification",
+      "state": "failed",
+      "path": "test/telemetry/producer/phase2/reports/wp11-performance-qualification/v9-respawn-oracle-smoke/harness-report.json",
+      "command": "telemetry_phase2_performance_harness.exe --smoke --qualification-plan coordinated-performance --report v9-respawn-oracle-smoke/harness-report.json --soak-profile composite",
+      "observedAtUtc": "2026-07-31T00:42:32.0000000Z",
+      "requirements": ["P2-REQ-045", "P2-REQ-046"],
+      "acceptanceCriteria": ["P2-AC-013", "P2-AC-015"],
+      "gate": "G2-F",
+      "reuseKey": "P2-EV-PERFORMANCE-QUALIFICATION-5-RED",
+      "invalidationScope": ["performance runner retained pre-respawn identity filter", "composite-soak respawn lifecycle"],
+      "fingerprint": {
+        "sourceHash": null,
+        "testHash": null,
+        "harnessHash": "b36212c6132dffce2259e4d91ddfb2656e3fd7646a6e1c3d6fab4553eef68ec1",
+        "buildHash": null,
+        "configurationHash": "smoke=true;qualification-plan=coordinated-performance;soak-profile=composite",
+        "commandHash": null
+      },
+      "note": "Red retained. Reading current_state proved the transition contains both the retired and replacement lifecycle identities; the engine observation correctly contains only the replacement. The subsequent test-only filter is unbuilt because the 280-minute ceiling is reached."
+    },
+    {
+      "id": "WP11-performance-qualification-6",
+      "kind": "qualification",
+      "state": "failed",
+      "path": "test/telemetry/producer/phase2/reports/wp11-performance-qualification/v10-retired-identity-smoke/harness-report.json",
+      "command": "telemetry_phase2_performance_harness.exe --smoke --qualification-plan coordinated-performance --report v10-retired-identity-smoke/harness-report.json --soak-profile composite",
+      "observedAtUtc": "2026-07-31T06:06:26.6121111Z",
+      "requirements": ["P2-REQ-045", "P2-REQ-046"],
+      "acceptanceCriteria": ["P2-AC-013", "P2-AC-015"],
+      "gate": "G2-F",
+      "reuseKey": "P2-EV-PERFORMANCE-QUALIFICATION-6-RED",
+      "invalidationScope": ["performance runner complete pre-respawn closure identity filter", "composite-soak respawn lifecycle"],
+      "fingerprint": {
+        "sourceHash": null,
+        "testHash": null,
+        "harnessHash": "73a23793dfc2a1020ff20d229cc87fcf309d68745c1eda69c0bef41947a33dd5",
+        "buildHash": "aa81f22376928f986c8f9a99b3278ab9e9d32d24827bb5cbd4f0512466518d17",
+        "configurationHash": "smoke=true;qualification-plan=coordinated-performance;soak-profile=composite",
+        "commandHash": null
+      },
+      "note": "Red retained. The single-player removal left the retired support identity in the transient state, producing ships=1 ids=2. Automatic full-qualification retries stop; only a short composite reproducer is authorized."
+    },
+    {
+      "id": "WP11-performance-respawn-support-diagnostic",
+      "kind": "diagnostic",
+      "state": "failed",
+      "path": "test/telemetry/producer/phase2/reports/wp11-performance-qualification/v11-support-identity-reproducer/harness-report.json",
+      "command": "telemetry_phase2_performance_harness.exe --smoke --qualification-plan composite-soak --report v11-support-identity-reproducer/harness-report.json --soak-profile composite",
+      "observedAtUtc": "2026-07-31T06:12:48.1431760Z",
+      "requirements": ["P2-REQ-045", "P2-REQ-046"],
+      "acceptanceCriteria": ["P2-AC-013", "P2-AC-015"],
+      "gate": "G2-F",
+      "reuseKey": "P2-EV-PERFORMANCE-RESPAWN-SUPPORT-DIAGNOSTIC-RED",
+      "invalidationScope": ["performance runner current_state oracle input", "composite-soak respawn lifecycle"],
+      "fingerprint": {
+        "sourceHash": null,
+        "testHash": null,
+        "harnessHash": "516cfd5870e44ac864b8dd9e33f040cc0455a90aebda9f3befd1c0ada2f0ac5e",
+        "buildHash": null,
+        "configurationHash": "smoke=true;qualification-plan=composite-soak;soak-profile=composite",
+        "commandHash": null
+      },
+      "note": "Red retained. Filtering current_state remained ambiguous (ships=1 ids=2), proving it must not be used as the respawn oracle source."
+    },
+    {
+      "id": "WP11-performance-respawn-clear-diagnostic",
+      "kind": "diagnostic",
+      "state": "failed",
+      "path": "test/telemetry/producer/phase2/reports/wp11-performance-qualification/v12-explicit-oracle-clear-reproducer/harness-report.json",
+      "command": "telemetry_phase2_performance_harness.exe --smoke --qualification-plan composite-soak --report v12-explicit-oracle-clear-reproducer/harness-report.json --soak-profile composite",
+      "observedAtUtc": "2026-07-31T06:20:52.7324841Z",
+      "requirements": ["P2-REQ-045", "P2-REQ-046"],
+      "acceptanceCriteria": ["P2-AC-013", "P2-AC-015"],
+      "gate": "G2-F",
+      "reuseKey": "P2-EV-PERFORMANCE-RESPAWN-CLEAR-DIAGNOSTIC-RED",
+      "invalidationScope": ["performance runner positional subject oracle", "composite-soak closure shrink and reorder"],
+      "fingerprint": {
+        "sourceHash": null,
+        "testHash": null,
+        "harnessHash": "87e75f67ec8beaaa6a4d56eb1807fac14ab46225318c514e94d27e652a58bb84",
+        "buildHash": null,
+        "configurationHash": "smoke=true;qualification-plan=composite-soak;soak-profile=composite",
+        "commandHash": null
+      },
+      "note": "Red retained. Explicit absence clearing was insufficient because a later non-empty closure shrink left two positional IDs for one observed ship. The oracle is replaced by capture-key reconciliation."
+    },
+    {
+      "id": "WP11-performance-subject-reconciliation-self-test",
+      "kind": "test",
+      "state": "passed",
+      "path": null,
+      "command": "build/phase2-msvc/bin/Release/telemetry_phase2_performance_harness.exe --subject-reconciliation-self-test",
+      "observedAtUtc": "2026-07-31T06:30:39.1343613Z",
+      "requirements": ["P2-REQ-045", "P2-REQ-046"],
+      "acceptanceCriteria": ["P2-AC-013", "P2-AC-015"],
+      "gate": "G2-F",
+      "reuseKey": "P2-EV-PERFORMANCE-SUBJECT-RECONCILIATION",
+      "invalidationScope": ["performance runner capture-key entity-ID reconciler", "self-test fixture"],
+      "fingerprint": {
+        "sourceHash": null,
+        "testHash": null,
+        "harnessHash": null,
+        "buildHash": "780922361346d8b7b018f7fe1339f3c8ab31c23d26e19e4fdf287ec09fe9b237",
+        "configurationHash": "shrink,grow,reorder,no-player",
+        "commandHash": null
+      },
+      "note": "PASS exit 0. The deterministic self-test preserves existing IDs by capture key, allocates one new monotonic ID, handles reorder and clears on no-player."
+    },
+    {
+      "id": "WP11-performance-composite-requalification",
+      "kind": "qualification",
+      "state": "passed",
+      "path": "test/telemetry/producer/phase2/reports/wp11-performance-qualification/v13-capture-key-reconciler-composite/harness-report.json",
+      "command": "telemetry_phase2_performance_harness.exe --smoke --qualification-plan composite-soak --report v13-capture-key-reconciler-composite/harness-report.json --soak-profile composite",
+      "observedAtUtc": "2026-07-31T06:32:47.0000000Z",
+      "requirements": ["P2-REQ-045", "P2-REQ-046"],
+      "acceptanceCriteria": ["P2-AC-013", "P2-AC-015"],
+      "gate": "G2-F",
+      "reuseKey": "P2-EV-PERFORMANCE-COMPOSITE-REQUALIFICATION",
+      "invalidationScope": ["performance runner capture-key entity-ID reconciler", "composite-soak respawn lifecycle"],
+      "fingerprint": {
+        "sourceHash": null,
+        "testHash": null,
+        "harnessHash": "0bed23f5cb344b4ae866ee39b48c723b09edc6974ff1e1bb96494a53119e0bb1",
+        "buildHash": "780922361346d8b7b018f7fe1339f3c8ab31c23d26e19e4fdf287ec09fe9b237",
+        "configurationHash": "smoke=true;qualification-plan=composite-soak;soak-profile=composite",
+        "commandHash": null
+      },
+      "note": "PASS qualification-passed. The formerly failing respawn workload now preserves subject identity across closure shrink, grow and reorder."
+    },
+    {
+      "id": "WP11-performance-qualification-7",
+      "kind": "qualification",
+      "state": "failed",
+      "path": "test/telemetry/producer/phase2/reports/wp11-performance-qualification/v14-capture-key-reconciler-coordinated-smoke/harness-report.json",
+      "command": "telemetry_phase2_performance_harness.exe --smoke --qualification-plan coordinated-performance --report v14-capture-key-reconciler-coordinated-smoke/harness-report.json --soak-profile composite",
+      "observedAtUtc": "2026-07-31T06:38:11.0000000Z",
+      "requirements": ["P2-REQ-045", "P2-REQ-046"],
+      "acceptanceCriteria": ["P2-AC-013", "P2-AC-015"],
+      "gate": "G2-F",
+      "reuseKey": "P2-EV-PERFORMANCE-QUALIFICATION-7-RED",
+      "invalidationScope": ["session restart steady-state allocation accounting", "performance and soak certification"],
+      "fingerprint": {
+        "sourceHash": null,
+        "testHash": null,
+        "harnessHash": "2c20f2a10d68eb7fc4d322c1740580922c6f885dbd174c7d681108814d3acc58",
+        "buildHash": "780922361346d8b7b018f7fe1339f3c8ab31c23d26e19e4fdf287ec09fe9b237",
+        "configurationHash": "smoke=true;qualification-plan=coordinated-performance;soak-profile=composite",
+        "commandHash": null
+      },
+      "note": "Additive red retained. All 44 coordinated steps and the composite lifecycle complete, but the harness exits 4 because allocation_events rises 0->4->12 after the first four-client restart and noGrowth is false."
+    },
+    {
+      "id": "WP11-performance-allocation-source-diagnostic",
+      "kind": "diagnostic",
+      "state": "failed",
+      "path": "test/telemetry/producer/phase2/reports/wp11-performance-qualification/v15-allocation-source-reproducer/harness-report.json",
+      "command": "telemetry_phase2_performance_harness.exe --smoke --qualification-plan composite-soak --report v15-allocation-source-reproducer/harness-report.json --soak-profile composite",
+      "observedAtUtc": "2026-07-31T06:57:52.0000000Z",
+      "requirements": ["P2-REQ-045", "P2-REQ-046"],
+      "acceptanceCriteria": ["P2-AC-013", "P2-AC-015"],
+      "gate": "G2-F",
+      "reuseKey": "P2-EV-PERFORMANCE-ALLOCATION-SOURCE-RED",
+      "invalidationScope": ["allocation observer attribution", "snapshot slot delta scratch"],
+      "fingerprint": {
+        "sourceHash": null,
+        "testHash": null,
+        "harnessHash": "6ff0c14741c458dea3a6f8a9fa64ab61bd5e81cece83233f8ec79410e4818d70",
+        "buildHash": "54b26e8048fca0c9fbfd59833b83a761168f94f1cf555c2da62879be403b023e",
+        "configurationHash": "smoke=true;qualification-plan=composite-soak;allocation-source-counters=v1",
+        "commandHash": null
+      },
+      "note": "Diagnostic red retained. SnapshotSlotDeltaScratch=12; SnapshotEgressReliable=0, SnapshotEgressScratch=0 and DeltaEgressScratch=0."
+    },
+    {
+      "id": "WP11-performance-aggregate-allocation-requalification",
+      "kind": "qualification",
+      "state": "failed",
+      "path": "test/telemetry/producer/phase2/reports/wp11-performance-qualification/v16-aggregate-allocation-observer-reproducer/harness-report.json",
+      "command": "telemetry_phase2_performance_harness.exe --smoke --qualification-plan composite-soak --report v16-aggregate-allocation-observer-reproducer/harness-report.json --soak-profile composite",
+      "observedAtUtc": "2026-07-31T07:04:38.0000000Z",
+      "requirements": ["P2-REQ-045", "P2-REQ-046"],
+      "acceptanceCriteria": ["P2-AC-013", "P2-AC-015"],
+      "gate": "G2-F",
+      "reuseKey": "P2-EV-PERFORMANCE-AGGREGATE-ALLOCATION-RED",
+      "invalidationScope": ["aggregate allocation observer", "snapshot slot delta scratch", "composite restart"],
+      "fingerprint": {
+        "sourceHash": null,
+        "testHash": null,
+        "harnessHash": "463bcffcce75aea13f1955e4990f685f533edf6b22ac7a6c6156dc18f2ad92cd",
+        "buildHash": "7e8ada0ebe0218c3b0075a459bc1bb78b39ca234bba494aae1fd783edb9fce8b",
+        "configurationHash": "smoke=true;qualification-plan=composite-soak;aggregate-capacity-accounting=v1",
+        "commandHash": null
+      },
+      "note": "Second consecutive red retained. Aggregate accounting records real growth 0->4->12->15->16->19 at composite cycle boundaries; automatic retries stop."
+    },
+    {
+      "id": "WP11-performance-fail-closed-allocation-requalification",
+      "kind": "qualification",
+      "state": "passed",
+      "path": "test/telemetry/producer/phase2/reports/wp11-performance-qualification/v18-fail-closed-allocation-requalification/harness-report.json",
+      "command": "telemetry_phase2_performance_harness.exe --smoke --qualification-plan composite-soak --report v18-fail-closed-allocation-requalification/harness-report.json --soak-profile composite --soak-report-dir v18-fail-closed-allocation-requalification/soak",
+      "observedAtUtc": "2026-07-31T07:40:18.0000000Z",
+      "requirements": ["P2-REQ-045", "P2-REQ-046"],
+      "acceptanceCriteria": ["P2-AC-013", "P2-AC-015"],
+      "gate": "G2-F",
+      "reuseKey": "P2-EV-PERFORMANCE-FAIL-CLOSED-ALLOCATION-GREEN",
+      "invalidationScope": ["SubsystemState identity capacity", "allocation summary oracle", "performance runner", "performance harness", "composite restart"],
+      "fingerprint": {
+        "sourceHash": "d20083545b852c9a07ff6ff80226a711c1f4e222b965e78d593012563dd898ef",
+        "testHash": "11f7c5ad211891c28032dc6e920989b69ec17706c0534b9b9d2dbbf99e05e6d8:e4d813683c3ec0aee9f9d095ee2ba440a30cf902292b5037070a5c8cccb77d8c",
+        "harnessHash": "637f518c48461778372fe1e1b071da6b6b86273aab690508b19af4e2ee6c4561",
+        "buildHash": "d83eba75c62e2a7338fc693ab4ff5c23ffcfb912c069388b753e2f96c842948d",
+        "configurationHash": "smoke=true;qualification-plan=composite-soak;fail-closed-allocation-oracle=v1",
+        "commandHash": null
+      },
+      "note": "Independent test owner ACCEPT. Release self-test rejects missing fields, noGrowth=0 and an attributed source count; v18 reports noGrowth=1, four source counters at zero, exact final state and complete purge. Raw SHA-256 55baeceaf805465866c01c3511eaf22db038def05506e40eb3ea06ad4fcb009c."
+    },
+    {
+      "id": "WP11-loss-requalification-4",
+      "kind": "qualification",
+      "state": "passed",
+      "path": "test/telemetry/producer/phase2/reports/wp11-loss-qualification/core-gate-20-burst-v8-requal/campaign-manifest.json",
+      "command": "py -3 test/telemetry/producer/phase2/run_phase2_reliability_evidence.py --cases core-gate:20:burst --seed 1345474380 --warmup-seconds 0 --duration-seconds 30 --keyframe-seconds 2 --build-dir build/phase2-msvc --config Release --report-dir test/telemetry/producer/phase2/reports/wp11-loss-qualification/core-gate-20-burst-v8-requal",
+      "observedAtUtc": "2026-07-30T23:37:01.9018930Z",
+      "requirements": ["P2-REQ-040", "P2-REQ-048"],
+      "acceptanceCriteria": ["P2-AC-009"],
+      "gate": "G2-F",
+      "reuseKey": "P2-EV-LOSS-REQUALIFICATION-4",
+      "invalidationScope": ["session controller stale-clock probe reset", "loss harness", "loss oracle", "loss configuration"],
+      "fingerprint": {
+        "sourceHash": "f78963a193b4136a8f2f41bdbefb39e4ad709a7594292f255e7bb22d4d986801",
+        "testHash": null,
+        "harnessHash": "21fb571b84c47d44c39dacaa47db17a6de377fcd48a1a3469930cd65be9421dd",
+        "buildHash": null,
+        "configurationHash": "seed=1345474380;warmup=0;duration=30;keyframe=2;cases=core-gate:20:burst",
+        "commandHash": null
+      },
+      "note": "The previously failing core-gate:20:burst cell passes with report SHA-256 e4785d023abfab2fb2e6ec82643f2d54a23ddd9ddae3461e84f9af85348c9821."
+    },
+    {
+      "id": "WP11-stale-clock-probe-reset-contracts",
+      "kind": "test",
+      "state": "passed",
+      "path": null,
+      "command": "unittests.exe --gtest_filter=TelemetryPhase1HeartbeatContract.ClockStaleTransitionReleasesLostProbeCapacityForRecovery:TelemetryPhase1DeltaEgressContract.SaturatedHeartbeatProbesCannotPreemptOrMutateQueuedDelta",
+      "observedAtUtc": "2026-07-30T23:43:19.1547897Z",
+      "requirements": ["P2-REQ-040"],
+      "acceptanceCriteria": ["P2-AC-009"],
+      "gate": "G2-F",
+      "reuseKey": "P2-EV-STALE-CLOCK-PROBE-RESET-CONTRACTS",
+      "invalidationScope": ["session controller heartbeat probe tracking", "session controller contract tests"],
+      "fingerprint": {
+        "sourceHash": "f78963a193b4136a8f2f41bdbefb39e4ad709a7594292f255e7bb22d4d986801",
+        "testHash": "83208eac982f648c35439ab3bb2a92b0e2375998f25282a5a785e0bd5d058353",
+        "harnessHash": null,
+        "buildHash": "9b7c496f775f9275e4b655b8de7714f1e592c457d7080ec8609b7187dd9aa5b6",
+        "configurationHash": "Release;2 focused tests",
+        "commandHash": null
+      },
+      "note": "Both focused Release contracts pass in 5 ms."
+    },
+    {
+      "id": "WP11-loss-smoke-v9",
+      "kind": "qualification",
+      "state": "failed",
+      "path": "test/telemetry/producer/phase2/reports/wp11-loss-qualification/v9-smoke/campaign-manifest.json",
+      "command": "py -3 test/telemetry/producer/phase2/run_phase2_reliability_evidence.py --seed 1345474380 --warmup-seconds 0 --duration-seconds 30 --keyframe-seconds 2 --build-dir build/phase2-msvc --config Release --report-dir test/telemetry/producer/phase2/reports/wp11-loss-qualification/v9-smoke",
+      "observedAtUtc": "2026-07-30T23:47:02.6655720Z",
+      "requirements": ["P2-REQ-040", "P2-REQ-048"],
+      "acceptanceCriteria": ["P2-AC-009"],
+      "gate": "G2-F",
+      "reuseKey": "P2-EV-LOSS-SMOKE-V9",
+      "invalidationScope": ["loss harness stale snapshot classification", "loss harness impairment completion boundary"],
+      "fingerprint": {
+        "sourceHash": "f78963a193b4136a8f2f41bdbefb39e4ad709a7594292f255e7bb22d4d986801",
+        "testHash": "d92468cde5d356c75fcc5e18cbeff841c3554f40f29c7844d19ff36d9f7f3912",
+        "harnessHash": "21fb571b84c47d44c39dacaa47db17a6de377fcd48a1a3469930cd65be9421dd",
+        "buildHash": null,
+        "configurationHash": "seed=1345474380;warmup=0;duration=30;keyframe=2;cases=12-cell-matrix",
+        "commandHash": null
+      },
+      "note": "All 12 cells ran despite failures. Nine passes remain reusable; only complete-ship:5:iid, complete-ship:20:iid and complete-ship:20:burst are invalidated for targeted retry."
+    },
+    {
+      "id": "WP11-loss-smoke-v10-targeted",
+      "kind": "qualification",
+      "state": "mixed",
+      "path": "test/telemetry/producer/phase2/reports/wp11-loss-qualification/v10-targeted-requal/campaign-manifest.json",
+      "command": "Targeted three-cell requalification with the v10 loss harness.",
+      "observedAtUtc": "2026-07-30T23:57:28.0249670Z",
+      "requirements": ["P2-REQ-040", "P2-REQ-048"],
+      "acceptanceCriteria": ["P2-AC-009"],
+      "gate": "G2-F",
+      "reuseKey": "P2-EV-LOSS-SMOKE-V10-TARGETED",
+      "invalidationScope": ["complete-ship:20:iid", "complete-ship:20:burst"],
+      "fingerprint": {
+        "sourceHash": null,
+        "testHash": "85974c26d264b45aaf2d27cfdb936e1d8d0647720ffda99f043af23bb136b2ba",
+        "harnessHash": "3c73e47336802c422e1436017887cc41bfaa347fadf909145a9939b82f336b30",
+        "buildHash": null,
+        "configurationHash": "complete-ship:5:iid,complete-ship:20:iid,complete-ship:20:burst",
+        "commandHash": null
+      },
+      "note": "complete-ship:5:iid is reusable PASS; the two 20% reds were retained for narrower requalification."
+    },
+    {
+      "id": "WP11-loss-smoke-v11-targeted",
+      "kind": "qualification",
+      "state": "mixed",
+      "path": "test/telemetry/producer/phase2/reports/wp11-loss-qualification/v11-targeted-requal/campaign-manifest.json",
+      "command": "Targeted two-cell requalification with the v11 loss harness.",
+      "observedAtUtc": "2026-07-31T00:03:43.2183260Z",
+      "requirements": ["P2-REQ-040", "P2-REQ-048"],
+      "acceptanceCriteria": ["P2-AC-009"],
+      "gate": "G2-F",
+      "reuseKey": "P2-EV-LOSS-SMOKE-V11-TARGETED",
+      "invalidationScope": ["complete-ship:20:iid"],
+      "fingerprint": {
+        "sourceHash": null,
+        "testHash": "6ec4877aa3c51790a63362bae174b33964031664729c37f00bc66f98da412ea2",
+        "harnessHash": "46d604d27e9bc6d221b24085f6b51c0f048a8c1c19ef93806a813fdf10e10eeb",
+        "buildHash": null,
+        "configurationHash": "complete-ship:20:iid,complete-ship:20:burst",
+        "commandHash": null
+      },
+      "note": "complete-ship:20:burst is reusable PASS; complete-ship:20:iid remained isolated."
+    },
+    {
+      "id": "WP11-loss-smoke-v15-final-cell",
+      "kind": "qualification",
+      "state": "passed",
+      "path": "test/telemetry/producer/phase2/reports/wp11-loss-qualification/v15-final-cell-requal/campaign-manifest.json",
+      "command": "Single-cell complete-ship:20:iid requalification after production clock-state recovery and bounded RESYNC-cycle handoff fixes.",
+      "observedAtUtc": "2026-07-31T00:25:17.0000000Z",
+      "requirements": ["P2-REQ-040", "P2-REQ-048"],
+      "acceptanceCriteria": ["P2-AC-009"],
+      "gate": "G2-F",
+      "reuseKey": "P2-EV-LOSS-SMOKE-V15-FINAL-CELL",
+      "invalidationScope": ["session controller stale-clock recovery", "loss harness RESYNC-cycle handoff"],
+      "fingerprint": {
+        "sourceHash": null,
+        "testHash": "1c9088528e9de60f3cec86cb375fa7e199b2b04abbffe24f7af1dd3e530eab6a",
+        "harnessHash": null,
+        "buildHash": null,
+        "configurationHash": "complete-ship:20:iid",
+        "commandHash": null
+      },
+      "note": "PASS. Together with the nine v9 cells, v10 5% iid and v11 20% burst, this closes all 12 loss-smoke cells without replaying green evidence."
+    },
+    {
+      "id": "WP11-loss-representative",
+      "kind": "gate-certification",
+      "state": "passed",
+      "path": "test/telemetry/producer/phase2/reports/wp11-loss-gate/representative/campaign-manifest.json",
+      "command": "py -3 test/telemetry/producer/phase2/run_phase2_reliability_evidence.py --cases core-gate:1:iid core-gate:20:burst complete-ship:5:iid complete-ship:20:burst --seed 1345474380 --warmup-seconds 30 --duration-seconds 300 --build-dir build/phase2-msvc --config Release --report-dir test/telemetry/producer/phase2/reports/wp11-loss-gate/representative",
+      "observedAtUtc": "2026-07-31T05:51:03.1662872Z",
+      "requirements": ["P2-REQ-040", "P2-REQ-048"],
+      "acceptanceCriteria": ["P2-AC-009"],
+      "gate": "G2-F",
+      "reuseKey": "P2-EV-LOSS-LONG",
+      "invalidationScope": ["session controller loss recovery", "loss harness", "loss oracle", "loss configuration", "seed"],
+      "fingerprint": {
+        "sourceHash": null,
+        "testHash": null,
+        "harnessHash": "ea84c64a955697f37f79934a3fa461393ac259047d5ba80820ba0a10bc46f495",
+        "buildHash": null,
+        "configurationHash": "seed=1345474380;warmup=30;duration=300;cases=core-gate:1:iid,core-gate:20:burst,complete-ship:5:iid,complete-ship:20:burst",
+        "commandHash": null
+      },
+      "note": "PASS 4/4. Manifest SHA-256 9dada09a1bd56ac76a6dc23a3b89c926b44ca3bca50b041dda39add3d789faec; all four representative reports passed."
+    },
+    {
+      "id": "WP11-incremental-readiness-oracles-v1",
+      "kind": "diagnostic",
+      "state": "passed",
+      "path": "test/telemetry/producer/phase2/reports/wp11-performance-qualification/incremental-readiness-oracles-v1",
+      "command": "Three direct 300-callback/10-second native runner oracles plus one mixed bounds/resync/manifest oracle.",
+      "observedAtUtc": "2026-07-31T14:00:00.0000000Z",
+      "requirements": ["P2-REQ-045", "P2-REQ-046"],
+      "acceptanceCriteria": ["P2-AC-013"],
+      "gate": "G2-F",
+      "reuseKey": "P2-EV-INCREMENTAL-READINESS-ORACLES-V1",
+      "invalidationScope": ["flight-only engine seam", "periodic/forced keyframe classification", "native performance runner"],
+      "fingerprint": {
+        "sourceHash": null,
+        "testHash": null,
+        "harnessHash": null,
+        "buildHash": null,
+        "configurationHash": "callbacks=300;callbackHz=30;seed=4242",
+        "commandHash": null
+      },
+      "note": "PASS. Each nominal runtime has 400 flight-only reads, zero unexpected full reads and five periodic keyframes. The mixed oracle has five periodic plus two forced keyframes with exact final state."
+    },
+    {
+      "id": "WP11-performance-incremental-v25",
+      "kind": "qualification",
+      "state": "failed",
+      "path": "test/telemetry/producer/phase2/reports/wp11-performance-qualification/v25-incremental-qualification-3/harness-report.json",
+      "command": "Bounded coordinated Release smoke after independent GO.",
+      "observedAtUtc": "2026-07-31T14:08:00.0000000Z",
+      "requirements": ["P2-REQ-045", "P2-REQ-046"],
+      "acceptanceCriteria": ["P2-AC-013"],
+      "gate": "G2-F",
+      "reuseKey": "P2-EV-INCREMENTAL-V25-RED",
+      "invalidationScope": ["inactive-control-schema"],
+      "fingerprint": {
+        "sourceHash": null,
+        "testHash": null,
+        "harnessHash": null,
+        "buildHash": null,
+        "configurationHash": "smoke;seed=4242;periodic-forced-split",
+        "commandHash": null
+      },
+      "note": "RED retained. The three active raw series completed exactly, but inactive/control still emitted the obsolete 22-column CSV and stopped coordinated aggregation before soak."
+    },
+    {
+      "id": "WP11-performance-incremental-v26",
+      "kind": "qualification",
+      "state": "failed",
+      "path": "test/telemetry/producer/phase2/reports/wp11-performance-qualification/v26-incremental-qualification-4/harness-report.json",
+      "command": "Single independently authorized replay after inactive-control-schema correction.",
+      "observedAtUtc": "2026-07-31T14:20:00.0000000Z",
+      "requirements": ["P2-REQ-045", "P2-REQ-046", "P2-REQ-050"],
+      "acceptanceCriteria": ["P2-AC-013", "P2-AC-015"],
+      "gate": "G2-F",
+      "reuseKey": "P2-EV-INCREMENTAL-V26-RED",
+      "invalidationScope": ["incremental image/diff/delta strategy", "restart workload oracle"],
+      "fingerprint": {
+        "sourceHash": null,
+        "testHash": null,
+        "harnessHash": null,
+        "buildHash": null,
+        "configurationHash": "smoke;seed=4242;periodic=15;forced=1",
+        "commandHash": null
+      },
+      "note": "Valid JSON and reusable historical RED: flight p99 1.1086 ms, systems p99 2.2585 ms, four-client systems p99 5.4363 ms; periodic keyframe p99/max 0.9894 ms passes. This evidence is stale for the current source after the dirty-atom/delta-cache/DTO-reuse slice and is not conclusive gate evidence."
+    },
+    {
+      "id": "WP11-incremental-targeted-contracts-v45",
+      "kind": "diagnostic",
+      "state": "passed",
+      "path": "build/phase2-msvc-wp11-cert",
+      "command": "Release targeted executables: telemetry_phase2_replication_tests.exe, telemetry_phase2_runtime_tests.exe and telemetry_phase2_observation_contract_tests.exe.",
+      "observedAtUtc": "2026-07-31T20:00:00.0000000Z",
+      "requirements": ["P2-REQ-045", "P2-REQ-046"],
+      "acceptanceCriteria": ["P2-AC-013"],
+      "gate": "G2-F",
+      "reuseKey": "P2-EV-INCREMENTAL-TARGETED-CONTRACTS-V45",
+      "invalidationScope": ["incremental retained-image implementation", "per-slot delta cache", "observation DTO reuse", "targeted test sources"],
+      "fingerprint": {
+        "sourceHash": null,
+        "testHash": null,
+        "harnessHash": null,
+        "buildHash": null,
+        "configurationHash": "Release;replication=12/12;runtime=20/20;observation=73/73",
+        "commandHash": null
+      },
+      "note": "Fresh targeted PASS for the current slice. This does not replace lifecycle, broad-suite, independent-owner, qualification or certification evidence."
+    },
+    {
+      "id": "WP11-performance-stage-micro-v45",
+      "kind": "diagnostic",
+      "state": "failed",
+      "path": "build/phase2-msvc-wp11-cert/wp11-micro-v45/high-3000.summary.txt",
+      "command": "Exact 3000-callback high-cardinality native stage microbenchmark.",
+      "observedAtUtc": "2026-07-31T20:06:00.0000000Z",
+      "requirements": ["P2-REQ-045", "P2-REQ-046"],
+      "acceptanceCriteria": ["P2-AC-013"],
+      "gate": "G2-F",
+      "reuseKey": "P2-EV-INCREMENTAL-STAGE-MICRO-V45-RED",
+      "invalidationScope": ["incremental image patching", "delta generation", "logical DTO copying", "native performance runner"],
+      "fingerprint": {
+        "sourceHash": null,
+        "testHash": null,
+        "harnessHash": null,
+        "buildHash": null,
+        "configurationHash": "callbacks=3000;flightTicks=3000;systemsTicks=1000;keyframes=50;hashEqual=1;boundsCardinalityProven=1;finalStateExact=1",
+        "commandHash": null
+      },
+      "note": "Fresh diagnostic RED: flight non-keyframe p99 total/image/delta 0.4241/0.1006/0.1304 ms; systems non-keyframe p99 total/collect/image/delta 0.9720/0.2434/0.3855/0.1736 ms. Keyframe p99/max 0.8164 ms passes. v42-v44 are superseded diagnostics."
+    }
+  ],
+  "nextActions": [
+    "Resume at the v45 image/delta hot-path analysis after logical DTO reuse; select only one bounded optimization slice.",
+    "Refresh lifecycle, broad-suite and independent-owner evidence after that slice because those proofs are stale or missing for the latest source.",
+    "Require stage microbenchmarks with margin on image and delta before a fresh independent strategy review.",
+    "Do not run a short qualification or the 105-minute normative campaign while the stage microbenchmark remains red.",
+    "Preserve every fresh WP01-WP10 proof and every historical WP11 red."
+  ],
+  "decisionHistory": [
+    {
+      "atUtc": "2026-07-29T09:30:13.0176313Z",
+      "kind": "migration",
+      "subject": "workflow-v2",
+      "decision": "preserve-product-contract-and-reduce-proof",
+      "reason": "WP01-WP10 and G2-A..G2-E remain verified; only dependency-invalidated WP11 evidence is replayed."
+    },
+    {
+      "atUtc": "2026-07-30T06:30:56.116Z",
+      "kind": "budget-exception",
+      "subject": "P2-WP-11-G2F-COMPLETION",
+      "decision": "approved-280-minute-ceiling",
+      "reason": "The user approved the one-shot +100-minute exception; no implicit retry or overrun is authorized."
+    },
+    {
+      "atUtc": "2026-07-30T17:27:37.3030181Z",
+      "kind": "specification-clarification",
+      "subject": "D2-019-COORDINATED-PERFORMANCE-TOPOLOGY",
+      "decision": "adopted-synchronized-and-validated",
+      "reason": "Documents 05/06/07 define the exact topology, rotation, warm-ups, raw-series median and fail-closed minima. Validation passes with 8 documents, certificationBudgetMinutes=280 and evidenceDurationMinutes=180; independent review is GO."
+    },
+    {
+      "atUtc": "2026-07-30T20:45:23.4779287Z",
+      "kind": "pause",
+      "subject": "P2-WP-11-G2-F",
+      "decision": "paused-cleanly-before-rebuild",
+      "reason": "The user requested a clean stop. No Phase 2 process is active; the latest test-only drain correction has independent GO but its Release targets and Bounds reproducer are intentionally left unexecuted."
+    },
+    {
+      "atUtc": "2026-07-30T20:46:36.9419867Z",
+      "kind": "resume",
+      "subject": "P2-WP-11-G2-F",
+      "decision": "resume-from-first-bounded-action",
+      "reason": "Resume is limited to the invalidated Release runner and performance harness followed by one short Bounds reproducer; no closed work package or fresh evidence is replayed."
+    },
+    {
+      "atUtc": "2026-07-30T20:56:52.7216495Z",
+      "kind": "pause",
+      "subject": "WP11-PERFORMANCE-CLI-CONTRACT",
+      "decision": "pause-after-two-exit-46-reproductions",
+      "reason": "Both runs produced all ten Bounds samples but failed the final impairment oracle: one WOULD_BLOCK was observed while the test-only state required four Delta opportunities. Automatic retry stops pending focused rereview of the bounded single-occurrence correction."
+    },
+    {
+      "atUtc": "2026-07-30T20:57:37.5780864Z",
+      "kind": "resume",
+      "subject": "WP11-PERFORMANCE-CLI-CONTRACT",
+      "decision": "resume-after-focused-independent-go",
+      "reason": "Independent review confirms one deterministic WOULD_BLOCK satisfies D2-019 and all downstream loss/resync and final-state oracles remain mandatory."
+    },
+    {
+      "atUtc": "2026-07-30T21:22:44.8537449Z",
+      "kind": "pause",
+      "subject": "P2-WP-11-G2-F",
+      "decision": "paused-after-atomic-runner-rebuild",
+      "reason": "The user requested a clean stop before revising the specification and preparation skill. The final Release runner rebuild is green, no subsequent test or scenario was launched, and no owned process remains active."
+    },
+    {
+      "atUtc": "2026-07-30T22:00:03.9552895Z",
+      "kind": "migration",
+      "subject": "workflow-v3",
+      "decision": "dependency-scoped-continuation-enabled",
+      "reason": "The revised Phase 2 contract is valid. Existing history and evidence are preserved; only the performance-runner cone is deferred, while the independent WP11 loss-evidence audit is authorized."
+    },
+    {
+      "atUtc": "2026-07-30T23:43:19.1547897Z",
+      "kind": "dependency-cone-resolution",
+      "subject": "WP11-LOSS-CORE-GATE-20-BURST",
+      "decision": "loss-smoke-authorized",
+      "reason": "The stale-clock probe reset passes the previously red core-gate:20:burst requalification and two focused Release contracts. Performance qualification 3 remains independently red and is not replay-authorized."
+    },
+    {
+      "atUtc": "2026-07-31T00:43:03.1413805Z",
+      "kind": "blocker",
+      "subject": "WP11-CERTIFICATION-BUDGET-CEILING",
+      "decision": "stop-at-approved-280-minute-ceiling",
+      "reason": "Performance qualifications 4 and 5 were retained as additive reds and isolated the remaining test-only oracle defect. The final retired-identity filter is implemented but no build, retry or long evidence is authorized after the approved ceiling is consumed."
+    },
+    {
+      "atUtc": "2026-07-31T05:43:38.5155944Z",
+      "kind": "budget-exception",
+      "subject": "P2-PHASE-COMPLETION",
+      "decision": "approved-450-minute-cumulative-ceiling",
+      "reason": "The user explicitly approved 170 additional minutes to cover only the remaining targeted qualification, representative loss, performance, soak and final audit. Fresh WP01-WP10 and loss-smoke evidence remains reusable."
+    },
+    {
+      "atUtc": "2026-07-31T05:43:38.5155944Z",
+      "kind": "resume",
+      "subject": "P2-WP-11-G2-F",
+      "decision": "resume-independent-loss-before-performance-cone",
+      "reason": "The composed 12/12 loss smoke independently qualifies the representative loss matrix. Performance qualification 6 is also authorized but remains sequenced after loss to avoid polluting its measurements."
+    },
+    {
+      "atUtc": "2026-07-31T06:43:37.3363245Z",
+      "kind": "pause",
+      "subject": "P2-WP11-PERFORMANCE-RESTART-ALLOCATION",
+      "decision": "pause-before-normative-campaign",
+      "reason": "Qualification 7 completed all coordinated workloads but exited 4 on 12 post-Ready allocations and steady-state growth. With 110 minutes left and a 105-minute physical certification lower bound, the current ceiling cannot cover a targeted correction plus the final audit."
+    },
+    {
+      "atUtc": "2026-07-31T06:49:19.3769888Z",
+      "kind": "budget-exception",
+      "subject": "P2-WP11-PERFORMANCE-RESTART-ALLOCATION",
+      "decision": "approved-480-minute-cumulative-ceiling",
+      "reason": "The user explicitly approved 30 additional minutes for one short restart-allocation reproducer and correction strategy, targeted requalification, the single normative performance-plus-soak campaign and final audit."
+    },
+    {
+      "atUtc": "2026-07-31T06:49:19.3769888Z",
+      "kind": "resume",
+      "subject": "P2-WP11-PERFORMANCE-RESTART-ALLOCATION",
+      "decision": "resume-one-bounded-reproducer",
+      "reason": "Qualification 7 remains an additive red; no long campaign is authorized until the allocation reproducer and invalidated smoke are green."
+    },
+    {
+      "atUtc": "2026-07-31T07:05:06.5157956Z",
+      "kind": "pause",
+      "subject": "P2-WP11-SNAPSHOT-SLOT-DELTA-SCRATCH",
+      "decision": "pause-after-two-consecutive-reproducer-reds",
+      "reason": "Source attribution isolated SnapshotSlotDeltaScratch, but aggregate capacity accounting still records 19 real growth events. The third exception permits no second correction strategy, so automatic retries and the normative campaign stop."
+    },
+    {
+      "atUtc": "2026-07-31T07:20:03.9529406Z",
+      "kind": "resume",
+      "subject": "P2-WP11-SNAPSHOT-SLOT-DELTA-SCRATCH",
+      "decision": "authorize-bounded-second-strategy",
+      "reason": "The user explicitly authorized continuation. Scope is limited to a deterministic SubsystemState identity-capacity self-test, the 8-to-12-byte provision correction, and one targeted zero-growth requalification before normative certification."
+    },
+    {
+      "atUtc": "2026-07-31T07:41:07.2361611Z",
+      "kind": "pause",
+      "subject": "P2-WP11-G2-F-CERTIFICATION-BUDGET",
+      "decision": "pause-before-normative-campaign",
+      "reason": "The fail-closed allocation oracle and v18 qualification are independently accepted, but only 110 minutes remain against 105 minutes of normative execution plus 20 minutes of final audit. Independent readiness is NO-GO until an explicit minimum +15-minute exception and host evidence are recorded."
+    },
+    {
+      "atUtc": "2026-07-31T07:46:24.4613417Z",
+      "kind": "budget-exception",
+      "subject": "P2-HOST-PREFLIGHT-AND-FINAL-AUDIT",
+      "decision": "approved-500-minute-cumulative-ceiling-and-standing-future-extensions",
+      "reason": "The user explicitly approved +20 minutes and every later extension strictly necessary to finish the phase, instructing the coordinator not to request more time. Each effective increase remains quantified and documented."
+    },
+    {
+      "atUtc": "2026-07-31T07:46:24.4613417Z",
+      "kind": "resume",
+      "subject": "P2-WP-11-G2-F",
+      "decision": "resume-host-preflight",
+      "reason": "The 130 remaining minutes cover the 105-minute normative campaign plus the 20-minute final audit; host temperature/throttling evidence and a fresh fingerprint remain the first bounded actions."
+    },
+    {
+      "atUtc": "2026-07-31T07:52:00.0000000Z",
+      "kind": "budget-exception",
+      "subject": "P2-HOST-MONITOR-INTEGRATION",
+      "decision": "approved-under-standing-authorization-510-minute-cumulative-ceiling",
+      "reason": "A quantified +10 minutes covers only fail-closed host-monitor integration, Release rebuild, short qualification and readiness review; the normative campaign remains single-run."
+    },
+    {
+      "atUtc": "2026-07-31T08:47:00.0000000Z",
+      "kind": "budget-exception",
+      "subject": "P2-PERFORMANCE-CAPTURE-OPTIMIZATION",
+      "decision": "approved-under-standing-authorization-555-minute-cumulative-ceiling",
+      "reason": "A quantified +45 minutes retains host-monitor v19 and performance v20 as additive reds, covers one instrumented diagnosis plus the bounded logical-reset optimization and short qualifications, and preserves the unreduced 105-minute normative campaign and 20-minute final audit."
+    },
+    {
+      "atUtc": "2026-07-31T09:22:00.0000000Z",
+      "kind": "budget-exception",
+      "subject": "P2-PERFORMANCE-MEASUREMENT-PROTOCOL",
+      "decision": "approved-under-standing-authorization-570-minute-cumulative-ceiling",
+      "reason": "A quantified +15 minutes covers only the independently approved test-only measurement correction, rebuild, aggregation self-test and single v22 requalification; 155 minutes remain reserved."
+    },
+    {
+      "atUtc": "2026-07-31T09:22:00.0000000Z",
+      "kind": "pause",
+      "subject": "P2-WP11-PERFORMANCE-STRATEGY",
+      "decision": "pause-after-reviewed-v22-red",
+      "reason": "The corrected exclusive measurement remains above all active latency thresholds and keyframe cadence is 6/10. Automatic retries and the long campaign stop; a production redesign or specification change requires an explicit strategy decision, not additional time approval."
+    },
+    {
+      "atUtc": "2026-07-31T10:00:00.0000000Z",
+      "kind": "budget-exception",
+      "subject": "P2-PERFORMANCE-INCREMENTAL-PIPELINE",
+      "decision": "approved-under-standing-authorization-660-minute-cumulative-ceiling",
+      "reason": "A quantified +90 minutes covers only D2-021 implementation, focused contracts, two short Release qualifications including the v22 worst case, and independent reviews. Thresholds, wire contracts, the single normative campaign and final audit remain unchanged."
+    },
+    {
+      "atUtc": "2026-07-31T10:00:00.0000000Z",
+      "kind": "resume",
+      "subject": "P2-WP11-PERFORMANCE-STRATEGY",
+      "decision": "authorize-incremental-production-redesign",
+      "reason": "The user explicitly authorized capture-by-cadence, incremental image and delta work, corrected keyframe accounting and a comparable native mission frame proof. v22 remains retained red and no long run starts before two short green qualifications."
+    },
+    {
+      "atUtc": "2026-07-31T14:08:00.0000000Z",
+      "kind": "qualification-stop",
+      "subject": "P2-WP11-PERFORMANCE-INCREMENTAL-V25",
+      "decision": "retain-red-and-continue-inactive-control-schema-only",
+      "reason": "v25 completed every active raw series but stopped because inactive/control emitted the obsolete CSV schema. Independent owners authorized exactly one replay after a 24-column direct oracle."
+    },
+    {
+      "atUtc": "2026-07-31T14:20:00.0000000Z",
+      "kind": "strategy-stop",
+      "subject": "P2-WP11-PERFORMANCE-INCREMENTAL-V26",
+      "decision": "no-more-qualification-current-strategy",
+      "reason": "v26 validates periodic keyframes and the real flight seam but remains structurally above flight, systems and four-client thresholds. The two-attempt strategy budget is exhausted; only restart-oracle closure and a new dirty-atom/shared-delta architecture slice may continue."
+    },
+    {
+      "atUtc": "2026-07-31T20:11:13.1375354Z",
+      "kind": "pause",
+      "subject": "P2-WP-11-G2-F",
+      "decision": "paused-cleanly-after-v45-stage-microbenchmark",
+      "reason": "The user requested an immediate clean stop. No owned Phase 2 build, test, harness or run process is active. Targeted Release contracts are green, v45 remains a diagnostic performance red, and no qualification or certification was started."
+    },
+    {
+      "atUtc": "2026-07-31T20:15:01.0015140Z",
+      "kind": "pause",
+      "subject": "P2-WP-11-G2-F",
+      "decision": "paused-during-read-only-resume-audit",
+      "reason": "The user repeated the clean-stop request while the canonical contract was being reread. No code edit, build, test, harness or performance run had started; the exact resume point is Phase 2 document 05, followed by documents 06/07 and inherited Phase 0/1 passages."
+    }
+  ],
+  "notes": [
+    "No commit, push, cleanup or branch change was performed. Existing untracked build, corpus and report files remain visible and untouched.",
+    "G2-B is already sealed; no action requests its sealing and no WP02 proof is replayed.",
+    "The tracker preserves conclusive reusable evidence plus each additive red required to explain the current dependency cone; no green evidence was replayed.",
+    "The latest changed production cone includes the incremental retained-state image, replication/session runtime and observation DTO path; corresponding targeted Release proof is fresh, but no repository-wide validation was performed after the final changes.",
+    "v25/v26 and v42-v44 remain historical additive diagnostics but are stale for the current source. Lifecycle, broad-suite, independent test-owner/readiness review, official performance/soak qualification and certification, and final G2-F evidence are not fresh for the latest slice.",
+    "The transactionally rebased restart oracle is built and passes the direct three-cycle client-stop/restart reproducer; the single direct composite reproducer exposes a separate FillBusiness transition red and was not retried.",
+    "The unvalidated worktree also contains pre-existing and phase-wide modifications outside the latest performance slice, including skill/spec, telemetry production, test/harness and report changes; none was cleaned, reverted or attributed by this pause.",
+    "Budget accounting at pause is 539 of 660 minutes consumed, including four minutes for the read-only resume audit; 121 minutes remain.",
+    "The latest resume attempt changed no production or test source and produced no new executable proof. Existing v45 targeted evidence remains fresh for its recorded cone; broad, lifecycle, independent-review, qualification and certification evidence remains stale or missing as previously recorded.",
+    "No commit, push, cleanup, deletion or branch change was performed; all existing tracked and untracked files remain visible and untouched."
+  ]
+}

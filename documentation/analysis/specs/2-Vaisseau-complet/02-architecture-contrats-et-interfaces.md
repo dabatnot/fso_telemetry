@@ -22,7 +22,6 @@ Les seams courants à réutiliser sont :
 | `code/telemetry/runtime.cpp` | mission, purge et shutdown | invalidation manifeste et transition de session |
 | `code/telemetry/protocol/*` | codecs, validateurs et réplication FSTL | réutilisation des records v1 ; aucune nouvelle disposition filaire |
 | `code/source_groups.cmake` | groupe source producteur | déclaration explicite des nouveaux fichiers |
-| `test/src/CMakeLists.txt` | cibles de tests | déclaration des suites Phase 2 |
 
 Les appels de lifecycle existants dans `freespace2/freespace.cpp` et `code/mission/missionload.cpp` restent les points d’intégration globaux du runtime. La Phase 2 ajoute deux seams **événementiels** main-thread étroits : `telemetry::OnShipCleanup(signature, cleanup_mode)` au début de `ship_cleanup()` avant purge, et `telemetry::OnSupportTransition(...)` au début de chaque branche `QUEUE`, `ONWAY`, `BEGIN`, `BROKEN`, `END`, `ABORT`, `KILLED` et `COMPLETE` de `ai_do_objects_repairing_stuff()` avant nettoyage des flags/IDs. Ils copient uniquement clés, raison, numéro d’épisode et sample time dans des rings préalloués ; ils ne lisent aucun socket, ne sérialisent rien et n’allouent pas. Un hook dans le chemin de dégâts n’est pas nécessaire tant que le polling et `OnShipCleanup` couvrent les fronts garantis.
 
@@ -44,7 +43,7 @@ EngineUpdate (thread principal)
        -> codecs FSTL 1.1 existants
        -> scheduler de datagrammes Phase 1
 
-Client de preuve indépendant
+Client de référence indépendant
   -> validation en-tête / fragments / message / records
   -> installation manifeste APPLIED
   -> commit snapshot APPLIED
@@ -71,7 +70,6 @@ Le filtrage de visibilité se termine avant `Phase2StateImage`. Le diff et le tr
 | `CargoScanAuthority` | décider phase, visibilité, timing et validité sans DTO HUD | un `CargoScanAuthorityState` possédé par le joueur |
 | `ControlTargetLatch` | conserver l’autorité ship/caméra choisie pendant la lecture des commandes | enum mission-scoped `Ship`/`Camera`, remis à `Ship` à l’entrée/sortie mission |
 | `DatagramScheduler` | prioriser fiable, snapshot puis delta | files héritées bornées |
-| `ProofOracleSink` | test uniquement, enregistrer DTO + image au même tick | buffer local de preuve, jamais activé en production |
 
 Le manifeste, le snapshot candidat et la baseline acquittée sont immuables après publication. Une nouvelle génération utilise un autre slot ; aucun buffer en cours de retransmission n’est réécrit.
 
@@ -98,6 +96,7 @@ struct ShipObservationDto {
 
 struct Phase2ObservationDto {
     CaptureResult capture;
+    Phase2CaptureMask captured_blocks;
     PlayerObservationKey player_key;
     std::uint64_t producer_sample_time_us;
     BoundedVector<ShipObservationDto, 64> ships;
@@ -106,7 +105,7 @@ struct Phase2ObservationDto {
 };
 ```
 
-Les types `BoundedVector` et chaînes peuvent être des implémentations existantes ou des vecteurs provisionnés. Le contrat exige : capacité calculée avant `Ready`, aucune croissance après warm-up, ownership complet et remise à zéro déterministe entre ticks.
+`Phase2CaptureMask` distingue au minimum `FlightControl`, `Systems` et `All`. Les types `BoundedVector` et chaînes peuvent être des implémentations existantes ou des vecteurs provisionnés. Le contrat exige : capacité calculée avant `Ready`, aucune croissance après warm-up, ownership complet et remise à zéro déterministe des seuls blocs capturés. Un bloc non dû n'est ni parcouru ni effacé ; sa dernière copie validée reste possédée par le runtime. Toute modification de topologie, lifecycle, catalogue ou fermeture invalide cette réutilisation et force `All`.
 
 `Phase2ShipCollector::collect()` retourne l’un des résultats fermés :
 
@@ -132,7 +131,7 @@ La garde distingue l’absence normale avant toute déréférence : hors mission
 6. cohérence bidirectionnelle de `Objects`, `Ships`, `Player_obj` et `Player_ship` ;
 7. signature objet strictement positive ;
 8. index `ship_info_index`, armes, sous-systèmes, modèles et armor valides avant lecture ;
-9. chaque référence support/docking/leader/cargo résout une signature objet ship autorisée ; les cycles de docking réciproques sont normaux et arrêtés par un visited-set, tandis qu’un 65e membre refuse la fermeture.
+9. chaque référence support/docking publiée résout une signature objet ship autorisée ; les cycles de docking réciproques sont normaux et arrêtés par un visited-set, tandis qu’un 65e membre refuse la fermeture. Chef de groupe et cible cargo ne l'étendent pas.
 
 Les APIs qui peuvent construire paresseusement un index, notamment les helpers de sous-systèmes indexés, NE DOIVENT PAS être appelées sur le fast path. Le provisioning éventuel se fait avant `Ready`, ou le collecteur parcourt les listes déjà possédées par `ship`.
 
@@ -154,7 +153,7 @@ Le mapping détaillé et les règles de présence sont fixés dans [04-modele-de
 
 ### 5.4 Catalogues et fermeture
 
-La capture distingue deux projections. `CoreGateClosure` contient exactement le joueur valide et ne lit ni support, ni docking, ni cible cargo pour décider si `0x0401` est matérialisable. `CompleteShipClosure` est une extension indépendante : `Phase2ClosureDiscovery` produit un `Phase2DiscoveryDto` possédé ne contenant que clés moteur, signatures, support assigné, relations distantes et `group_leader` validés, puis suit le point fixe décrit ci-dessous. `Phase2ShipCollector` copie d’abord la racine commune, puis les membres supplémentaires de l’extension. Une erreur propre à l’extension invalide `CompleteShip` sans invalider `CoreGate`, sauf si elle révèle une incohérence de la racine ou d’une source effectivement requise par `CoreGate`.
+La capture distingue deux projections. `CoreGateClosure` contient exactement le joueur valide et ne lit ni support, ni docking, ni cible cargo pour décider si `0x0401` est matérialisable. `CompleteShipClosure` est une extension indépendante : `Phase2ClosureDiscovery` produit un `Phase2DiscoveryDto` possédé ne contenant que clés moteur, signatures, support assigné et relations de docking validées, puis suit ce point fixe. Chef de groupe et cible cargo ne sont jamais des arêtes de fermeture. `Phase2ShipCollector` copie d’abord la racine commune, puis les membres supplémentaires de l’extension. Une erreur propre à l’extension invalide `CompleteShip` sans invalider `CoreGate`, sauf si elle révèle une incohérence de la racine ou d’une source effectivement requise par `CoreGate`.
 
 L’allowlist est le prédicat fermé `is_phase2_cockpit_ship_authorized(candidate, edge)` : le joueur valide est l’unique racine ; un ship candidat est autorisé seulement s’il est atteint depuis un membre déjà autorisé par (a) une affectation support dont objnum, signature et flags AI concordent, (b) une entrée directe de `dock_list` réciproque, ou (c) le leader calculé de cette même composante dockée. Support, leader et docking sont réévalués pour chaque nouveau membre jusqu’au point fixe. Équipe, proximité, cible courante, capteurs, registre global des ships, parent lifecycle, acteur d’événement et cible cargo ne sont jamais des critères d’ajout. Le parcours lit les liens directs avec un visited-set préalloué ; il NE DOIT PAS appeler `dock_evaluate_all_docked_objects()`, qui peut allouer. Un edge incohérent ou non réciproque refuse la session avant copie publique.
 
@@ -174,9 +173,9 @@ struct Phase2Closure {
 
 Pour `CoreGate`, `ship_entities` contient uniquement la racine, les classes/armes/sous-systèmes ne couvrent que son `CLASS_MANIFEST` et ses définitions requises par les records cœur, et les deux fingerprints sont calculés sur cette projection. Pour `CompleteShip`, ils couvrent tout le point fixe transitif. La découverte brute peut être partagée, mais ni la closure, ni les descripteurs, ni les registres auxiliaires, ni les fingerprints d’un slot `CoreGate` ne contiennent un support ou un docké. Ainsi, un 65e membre, un edge invalide ou un catalogue non représentable dans l’extension ne bloque pas une session `CoreGate` dont la racine reste représentable et ne fait fuiter aucun catalogue de l’extension.
 
-Les bornes plus petites que le wire sont des limites d’implémentation Phase 2 : 64 ships, 1024 sous-systèmes par ship/classe et 4096 sous-systèmes agrégés. La formule `4 + 10K + N` DOIT aussi rester inférieure ou égale à 65 535 records. Si une borne est dépassée, `SourceLimitExceeded` interdit le profil. Les limites wire restent les autorités ultimes.
+Les bornes plus petites que le wire sont des limites d’implémentation Phase 2 : 64 ships, 1024 sous-systèmes par ship/classe et 4096 sous-systèmes agrégés. Les maxima d'image sont `9+N=1033` pour `CoreGate` et `4+10K+N=4740` pour `CompleteShip`. Si une borne source est dépassée, elle est rejetée avant cast et `SourceLimitExceeded` interdit le profil. Les limites wire restent les autorités ultimes ; aucune image artificielle de 65 535 entrées n'est requise.
 
-Chaque paire de fingerprints est profil-scoped. `topology_fingerprint` couvre les membres, références support, leaders et relations de la projection choisie ; sa modification force une keyframe. `catalog_fingerprint` couvre uniquement les `ClassDescriptor`, `WeaponDescriptor`, clés auxiliaires et définitions imbriquées canoniques pré-ID de cette projection, triés ; générations, IDs alloués et index moteur en sont exclus. Sa modification force d’abord un manifeste N+1. Une apparition d’instance d’une classe déjà installée change donc la topologie mais pas le manifeste du profil complet ; elle ne touche pas les fingerprints `CoreGate` si la racine est inchangée.
+Chaque paire de fingerprints est profil-scoped. `topology_fingerprint` couvre les membres et relations support/docking de la projection choisie ; sa modification force une keyframe. `catalog_fingerprint` couvre uniquement les `ClassDescriptor`, `WeaponDescriptor`, clés auxiliaires et définitions imbriquées canoniques pré-ID de cette projection, triés ; générations, IDs alloués et index moteur en sont exclus. Sa modification force d’abord un manifeste N+1. Une apparition d’instance d’une classe déjà installée change donc la topologie mais pas le manifeste du profil complet ; elle ne touche pas les fingerprints `CoreGate` si la racine est inchangée.
 
 La clé moteur n’est jamais sérialisée. Chaque membre de `CoreGateClosure` reçoit un `entity_id` public, `ENTITY_LIFECYCLE` et toute la matrice `CORE_SHIP`. Chaque membre de `CompleteShipClosure` reçoit en plus `WEAPON_STATE`, `DOCKING_STATE` et `SUPPORT_STATE`; le joueur de ce profil reçoit aussi les records globaux pilotés exigés par `0x0583`. Les IDs statiques sont assignés en ordre canonique :
 
@@ -208,7 +207,7 @@ Le contrôleur conserve au plus deux générations sémantiques simultanées : `
 
 ### 5.6 Image canonique
 
-`Phase2StateImageBuilder` reçoit le DTO, les IDs publics, le profil exact et le manifeste installé. Il doit fournir :
+`Phase2StateImageBuilder` reçoit le DTO, son masque de capture, les IDs publics, le profil exact et le manifeste installé. Il doit fournir :
 
 ```cpp
 Phase2ImageResult build_phase2_state_image(
@@ -218,7 +217,7 @@ Phase2ImageResult build_phase2_state_image(
     Phase2StateImageSlot& output) noexcept;
 ```
 
-L’image contient des `StateAtom` triés selon `(record_type, identity bytes)` pour rendre diff, hash et goldens déterministes. Aucun ordre d’itération d’une table moteur ou d’un conteneur non ordonné ne doit influencer les octets.
+L’image contient des `StateAtom` triés selon `(record_type, identity bytes)` pour rendre diff, hash et goldens déterministes. Sur un tick ordinaire, le builder remplace uniquement les atomes appartenant aux blocs capturés et conserve sans réencodage les atomes des blocs non dus. Sur une keyframe, un changement de topologie/lifecycle/catalogue ou une invalidation de source, il reconstruit et valide l'image exhaustive. Aucun ordre d’itération d’une table moteur ou d’un conteneur non ordonné ne doit influencer les octets.
 
 Les profils acceptés sont fermés :
 
@@ -262,9 +261,9 @@ Les réponses filaires utilisent exclusivement les raisons définies par Phase 0
 | manifestes | DTO et codecs FSTL | pointeurs/tables globales après capture |
 | image/diff | DTO public, manifeste installé, réplication Phase 0 | APIs moteur, UI, renderer |
 | runtime | configuration, session, transport dédié, builders | socket de gameplay, FFmpeg, OpenGL |
-| client de preuve | schéma/goldens et son propre décodeur | bibliothèque codec C++ du producteur |
+| client de référence | schéma/goldens et son propre décodeur | bibliothèque codec C++ du producteur |
 
-Les APIs Lua et le protocole multijoueur existant PEUVENT servir d’oracles de test ou de précédents sémantiques, mais NE DOIVENT être copiés comme wire format public.
+Les APIs Lua et le protocole multijoueur existant peuvent servir de références sémantiques, sans devenir le format filaire public.
 
 ## 7. Invariants d’état et de propriété
 
@@ -284,10 +283,10 @@ Les APIs Lua et le protocole multijoueur existant PEUVENT servir d’oracles de 
 
 1. `EngineUpdate` appelle le runtime sur le thread enregistré.
 2. Le scheduler détermine si le tick flight, systems ou keyframe est dû.
-3. Le collecteur valide et copie la racine joueur, puis tente indépendamment la découverte/capture de l’extension `CompleteShip`.
+3. Le collecteur valide et copie uniquement les blocs dus de la racine joueur et, lorsque `Systems` ou `All` est dû, tente indépendamment la découverte/capture de l’extension `CompleteShip`; une keyframe ou invalidation force `All`.
 4. Le builder produit `CoreGateClosure={joueur}` et, si possible, `CompleteShipClosure=point fixe`, avec descripteurs et fingerprints pré-ID séparés ; aucune projection ne porte d’ID de session.
 5. Pour chaque slot, le profile gate choisit sa projection ; si son `catalog_fingerprint` a changé, son builder prépare son manifeste et alloue ses IDs, et si seul son `topology_fingerprint` change, il force une keyframe sous son manifeste actif.
-6. Toujours dans la boucle du slot, le profile gate valide manifeste, cardinalités, autorité et ensemble de records, puis projette l’image canonique filtrée avec les IDs de ce slot.
+6. Toujours dans la boucle du slot, le profile gate valide manifeste, cardinalités, autorité et ensemble de records, puis met à jour l’image canonique filtrée avec les IDs de ce slot ; seuls les atomes du masque capturé sont réencodés hors reconstruction exhaustive.
 7. Les événements lifecycle observés sont projetés dans la voie fiable du slot avec leur fence de dépendance ; aucun événement dépendant n’est émis avant sa baseline.
 8. Le contrôleur du slot choisit manifeste, snapshot ou delta cumulatif à partir de sa propre image/baseline.
 9. Le scheduler respecte la priorité et le budget commun de datagrammes.
@@ -313,22 +312,9 @@ code/telemetry/
   session_controller.h/.cpp             # extension des slots
   native_session_runtime.cpp            # cadence et orchestration
 
-test/src/telemetry/producer/
-  phase2_engine_adapter_tests.cpp
-  phase2_closure_tests.cpp
-  phase2_manifest_tests.cpp
-  phase2_state_image_tests.cpp
-  phase2_lifecycle_tests.cpp
-  phase2_oracle_tests.cpp
-  phase2_security_corpus_tests.cpp
-
-test/src/telemetry/protocol/
-  phase2_profile_tests.cpp
-  phase2_manifest_codec_tests.cpp
-  phase2_state_codec_tests.cpp
 ```
 
-Une généralisation de `phase1_state_image.*` est acceptable si elle conserve explicitement les tests et le fast path Phase 1. La suppression opportuniste de composants Phase 1 ou la réécriture du transport est hors scope.
+Une généralisation de `phase1_state_image.*` est acceptable si elle conserve le fast path et le comportement Phase 1.
 
 ## 11. Évolutivité sans anticipation
 
@@ -338,4 +324,4 @@ La closure Cockpit prépare le filtrage des phases suivantes sans annoncer `ALL_
 
 ## 12. Traçabilité
 
-Ce document satisfait principalement `P2-REQ-009` à `P2-REQ-020`, `P2-REQ-034` à `P2-REQ-039` et `P2-REQ-049`. Les preuves correspondantes sont routées par [06-validation-securite-et-conformite.md](06-validation-securite-et-conformite.md) et les lots par [07-livraison-et-tracabilite.md](07-livraison-et-tracabilite.md).
+Ce document satisfait principalement `P2-REQ-009` à `P2-REQ-020`, `P2-REQ-034` à `P2-REQ-039` et `P2-REQ-049`. Les critères de qualité correspondants sont regroupés dans [06-validation-securite-et-conformite.md](06-validation-securite-et-conformite.md).

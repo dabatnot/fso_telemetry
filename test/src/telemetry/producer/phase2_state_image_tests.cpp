@@ -1,5 +1,5 @@
 #include "telemetry/phase2_state_image.h"
-#include "telemetry/phase2_wp03_allocation_tracker.h"
+#include "telemetry/phase2_allocation_tracker.h"
 #include "telemetry/protocol/packet_reader.h"
 #include "telemetry/protocol/telemetry_business_records.h"
 #include "telemetry/protocol/telemetry_business_state_validation.h"
@@ -470,7 +470,7 @@ TEST(Phase2StateImage, PreallocatedReadyBuildDoesNotGrowAndFailurePreservesImage
 	ASSERT_EQ(Phase2StateImageBuildStatus::Created,
 		build_phase2_core_gate_state_image_preallocated(fixture.input, pool, first));
 	StateImage second;
-	telemetry::test::wp03::GlobalAllocationScope allocations;
+	telemetry::test::phase2test::GlobalAllocationScope allocations;
 	const auto status =
 		build_phase2_core_gate_state_image_preallocated(fixture.input, pool, second);
 	const auto growth = allocations.finish();

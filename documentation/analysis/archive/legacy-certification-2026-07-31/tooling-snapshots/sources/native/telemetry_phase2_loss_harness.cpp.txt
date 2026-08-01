@@ -1,0 +1,1689 @@
+HISTORIQUE, NON NORMATIF, NE PAS EXECUTER.
+#define FSO_TELEMETRY_PHASE2_EVIDENCE 1
+#define main telemetry_phase2_runtime_driver_main
+#include "telemetry_phase1_reliability_harness.cpp"
+#undef main
+
+#include "telemetry/phase1_state_image.h"
+#include "telemetry/protocol/packet_writer.h"
+#include "telemetry/protocol/telemetry_sha256.h"
+
+#include <filesystem>
+#include <iomanip>
+#include <sstream>
+
+namespace {
+
+bool parse_number(const char* text, std::uint64_t& value) {
+	char* end = nullptr;
+	value = std::strtoull(text, &end, 10);
+	return text != nullptr && *text != '\0' && end != nullptr && *end == '\0';
+}
+std::string digest_file(const std::filesystem::path& path) {
+	std::ifstream input(path, std::ios::binary);
+	std::vector<std::uint8_t> bytes{
+		std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
+	protocol::Sha256Digest digest{};
+	if (input.bad() || !protocol::sha256({bytes.data(), bytes.size()}, digest)) return {};
+	std::ostringstream output;
+	for (const auto byte : digest)
+		output << std::hex << std::setfill('0') << std::setw(2)
+			   << static_cast<unsigned>(byte);
+	return output.str();
+}
+bool has_record(protocol::RecordType type) {
+	const auto raw = static_cast<std::uint16_t>(type);
+	return (phase2_evidence_result.mutation_mask & (1ULL << raw)) != 0U;
+}
+
+bool run_peer_reassembly_self_test() {
+	constexpr std::uint64_t session_id = 0x1020304050607080ULL;
+	constexpr std::uint32_t snapshot_id = 91U;
+	constexpr std::uint32_t message_id = 101U;
+	constexpr std::size_t extension_payload_size = 1100U;
+
+	detail::Phase1StateImageInput input{};
+	input.producer_id = 1U;
+	input.negotiated_capability_generation = 1U;
+	input.session_phase = protocol::SessionPhase::Live;
+	input.mission.producer_sample_time_us = 1000U;
+	input.mission.mission_generation = 1U;
+	input.mission.phase = protocol::MissionPhase::Active;
+	input.mission.time_compression = 1.0F;
+	input.player_capture = {
+		detail::CaptureStatus::NoPlayer,
+		detail::CaptureReason::MissingPlayer};
+	protocol::StateImage image{};
+	if (detail::build_phase1_state_image(input, image) !=
+			detail::Phase1StateImageBuildStatus::Created ||
+		image.records().size() != 2U)
+		return false;
+
+	std::vector<std::uint8_t> records;
+	records.reserve(image.encoded_snapshot_records_size() +
+		protocol::RecordEnvelopeHeaderSize + extension_payload_size);
+	for (const auto& atom : image.records()) {
+		protocol::RecordEnvelopeView envelope{};
+		envelope.raw_record_type = atom.key.record_type;
+		envelope.record_version = atom.record_version;
+		envelope.record_flags = protocol::RecordFlagNone;
+		envelope.payload = {atom.value.data(), atom.value.size()};
+		std::vector<std::uint8_t> encoded(
+			protocol::RecordEnvelopeHeaderSize + atom.value.size());
+		std::size_t written = 0U;
+		if (protocol::encode_business_record(envelope,
+				protocol::BusinessRecordContainer::FullSnapshot,
+				protocol::VersionMinorV1_1,
+				{encoded.data(), encoded.size()}, written) !=
+				protocol::ValidationError::None ||
+			written != encoded.size())
+			return false;
+		records.insert(records.end(), encoded.begin(), encoded.end());
+	}
+	const auto extension_offset = records.size();
+	records.resize(extension_offset + protocol::RecordEnvelopeHeaderSize +
+		extension_payload_size, 0x5aU);
+	protocol::PacketWriter record_writer({
+		records.data() + extension_offset,
+		records.size() - extension_offset});
+	if (!record_writer.write_u16(0x7fffU) ||
+		!record_writer.write_u8(1U) ||
+		!record_writer.write_u8(protocol::RecordFlagNone) ||
+		!record_writer.write_u16(
+			static_cast<std::uint16_t>(extension_payload_size)))
+		return false;
+
+	protocol::Sha256Digest transaction_sha{};
+	if (!protocol::sha256({records.data(), records.size()}, transaction_sha))
+		return false;
+	protocol::FullSnapshotPartPayload snapshot{};
+	snapshot.snapshot_id = snapshot_id;
+	snapshot.part_count = 1U;
+	snapshot.transaction_size = static_cast<std::uint32_t>(records.size());
+	snapshot.transaction_sha256 = transaction_sha;
+	snapshot.producer_sample_time_us = 1000U;
+	snapshot.required_manifest_id = 0U;
+	snapshot.snapshot_flags = protocol::SnapshotFlagInitial;
+	snapshot.record_count = 3U;
+	snapshot.records = {records.data(), records.size()};
+	std::vector<std::uint8_t> logical(
+		protocol::FullSnapshotPartPayloadPrefixSize + records.size());
+	std::size_t logical_size = 0U;
+	if (protocol::encode_full_snapshot_part_payload(
+			snapshot, {logical.data(), logical.size()}, logical_size) !=
+			protocol::ValidationError::None ||
+		logical_size != logical.size())
+		return false;
+
+	protocol::TelemetryFragmenter fragmenter;
+	if (!protocol::TelemetryFragmenter::create(
+			{logical.data(), logical.size()},
+			protocol::MessageSizeClass::State, fragmenter) ||
+		fragmenter.fragment_count() != 2U)
+		return false;
+	const auto endpoint =
+		protocol::EndpointKey::from_ipv4({127U, 0U, 0U, 2U}, 7808U);
+	std::array<Backend::Packet, 2U> fragments{};
+	for (std::size_t index = 0U; index < fragments.size(); ++index) {
+		protocol::FragmentSlice slice{};
+		if (!fragmenter.fragment(index, slice)) return false;
+		protocol::TelemetryDatagramHeader header{};
+		header.version_minor = protocol::VersionMinorV1_1;
+		header.message_type = protocol::MessageType::FullSnapshot;
+		header.flags = static_cast<std::uint8_t>(
+			protocol::MessageFlagAckRequired |
+			protocol::MessageFlagKeyframe |
+			protocol::MessageFlagFragmented |
+			protocol::MessageFlagRetransmission);
+		header.session_id = session_id;
+		header.packet_sequence = 200U + static_cast<std::uint32_t>(index);
+		header.sent_time_us = 2000U + index;
+		header.message_id = message_id;
+		header.fragment_index = slice.fragment_index;
+		header.fragment_count = slice.fragment_count;
+		header.message_size = slice.message_size;
+		header.fragment_offset = slice.fragment_offset;
+		header.message_crc32 = slice.message_crc32;
+		fragments[index].endpoint = endpoint;
+		fragments[index].data.resize(
+			protocol::HeaderSizeV1 + slice.payload.size);
+		std::size_t written = 0U;
+		if (protocol::encode_datagram(
+				header,
+				{protocol::VersionMinorV1_1, protocol::VersionMinorV1_1},
+				slice.payload,
+				{fragments[index].data.data(), fragments[index].data.size()},
+				written) != protocol::ValidationError::None ||
+			written != fragments[index].data.size())
+			return false;
+	}
+
+	phase2_evidence_result = {};
+	Backend backend{};
+	Peer peer{};
+	peer.session_id = session_id;
+
+	// The original transmission and the first retransmitted fragment zero are
+	// deliberately lost. Deliver fragment one out of order and duplicated.
+	backend.tx.push_back(fragments[1]);
+	backend.tx.push_back(fragments[1]);
+	if (!peer.consume(backend, 3000U) ||
+		peer.client_publications != 0U ||
+		!backend.rx.empty() ||
+		peer.snapshot)
+		return false;
+
+	backend.tx.push_back(fragments[0]);
+	if (!peer.consume(backend, 4000U) ||
+		peer.client_publications != 1U ||
+		!peer.snapshot ||
+		!peer.pending.acked ||
+		backend.rx.size() != 1U)
+		return false;
+	const auto committed_snapshot_id = peer.client.active_snapshot_id();
+	const auto committed_publication = peer.client.published();
+	auto ack_matches = [&](const Backend::Packet& packet) {
+		protocol::DatagramView ack_datagram{};
+		protocol::AckPayload ack{};
+		return protocol::decode_and_validate_datagram(
+				   {packet.data.data(), packet.data.size()},
+				   {protocol::VersionMinorV1_1, protocol::VersionMinorV1_1},
+				   ack_datagram) == protocol::ValidationError::None &&
+			ack_datagram.header.message_type == protocol::MessageType::Ack &&
+			protocol::decode_ack_payload(ack_datagram.payload, ack) ==
+				protocol::ValidationError::None &&
+			ack.target_message_type == protocol::MessageType::FullSnapshot &&
+			ack.target_message_id == message_id &&
+			ack.target_fragment_count == 2U;
+	};
+	if (committed_snapshot_id != snapshot_id ||
+		!ack_matches(backend.rx.front()))
+		return false;
+
+	// Model the production-loss path where the first ACK was sent but lost.
+	// The complete retransmission must repair this legacy harness bookkeeping.
+	peer.pending.acked = false;
+	std::array<Backend::Packet, 2U> retransmitted{};
+	for (std::size_t index = 0U; index < retransmitted.size(); ++index) {
+		protocol::DatagramView original{};
+		if (protocol::decode_and_validate_datagram(
+				{fragments[index].data.data(), fragments[index].data.size()},
+				{protocol::VersionMinorV1_1, protocol::VersionMinorV1_1},
+				original) != protocol::ValidationError::None)
+			return false;
+		auto header = original.header;
+		header.packet_sequence += 100U;
+		header.sent_time_us += 1000U;
+		retransmitted[index].endpoint = fragments[index].endpoint;
+		retransmitted[index].data.resize(
+			protocol::HeaderSizeV1 + original.payload.size);
+		std::size_t written = 0U;
+		if (protocol::encode_datagram(header,
+				{protocol::VersionMinorV1_1, protocol::VersionMinorV1_1},
+				original.payload,
+				{retransmitted[index].data.data(),
+					retransmitted[index].data.size()},
+				written) != protocol::ValidationError::None ||
+			written != retransmitted[index].data.size())
+			return false;
+	}
+
+	backend.tx.push_back(retransmitted[0]);
+	if (!peer.consume(backend, 5000U) ||
+		backend.rx.size() != 1U ||
+		peer.client_publications != 1U ||
+		peer.client.active_snapshot_id() != committed_snapshot_id ||
+		peer.client.published() != committed_publication)
+		return false;
+	backend.tx.push_back(retransmitted[1]);
+	if (!peer.consume(backend, 6000U) ||
+		backend.rx.size() != 2U ||
+		peer.client_publications != 1U ||
+		!peer.pending.acked ||
+		peer.client.active_snapshot_id() != committed_snapshot_id ||
+		peer.client.published() != committed_publication)
+		return false;
+	if (!ack_matches(backend.rx.back()))
+		return false;
+
+	protocol::TelemetryFragmenter stale_delta_fragmenter;
+	if (!protocol::TelemetryFragmenter::create(
+			{logical.data(), logical.size()},
+			protocol::MessageSizeClass::State, stale_delta_fragmenter))
+		return false;
+	protocol::FragmentSlice stale_slice{};
+	if (!stale_delta_fragmenter.fragment(0U, stale_slice))
+		return false;
+	protocol::TelemetryDatagramHeader stale_header{};
+	stale_header.version_minor = protocol::VersionMinorV1_1;
+	stale_header.message_type = protocol::MessageType::Delta;
+	stale_header.flags = protocol::MessageFlagFragmented;
+	stale_header.session_id = session_id;
+	stale_header.packet_sequence = 390U;
+	stale_header.sent_time_us = 6500U;
+	stale_header.frame_id = snapshot_id;
+	stale_header.message_id = message_id + 2U;
+	stale_header.fragment_index = stale_slice.fragment_index;
+	stale_header.fragment_count = stale_slice.fragment_count;
+	stale_header.message_size = stale_slice.message_size;
+	stale_header.fragment_offset = stale_slice.fragment_offset;
+	stale_header.message_crc32 = stale_slice.message_crc32;
+	Backend::Packet stale_delta{{}, endpoint};
+	stale_delta.data.resize(
+		protocol::HeaderSizeV1 + stale_slice.payload.size);
+	std::size_t stale_written = 0U;
+	if (protocol::encode_datagram(stale_header,
+			{protocol::VersionMinorV1_1, protocol::VersionMinorV1_1},
+			stale_slice.payload,
+			{stale_delta.data.data(), stale_delta.data.size()},
+			stale_written) != protocol::ValidationError::None ||
+		stale_written != stale_delta.data.size())
+		return false;
+	backend.tx.push_back(std::move(stale_delta));
+	if (!peer.consume(backend, 6500U) ||
+		peer.client_publications != 1U)
+		return false;
+
+	snapshot.snapshot_id = snapshot_id + 1U;
+	snapshot.snapshot_flags = protocol::SnapshotFlagPeriodicKeyframe;
+	if (protocol::encode_full_snapshot_part_payload(
+			snapshot, {logical.data(), logical.size()}, logical_size) !=
+			protocol::ValidationError::None ||
+		logical_size != logical.size())
+		return false;
+	protocol::TelemetryFragmenter next_fragmenter;
+	if (!protocol::TelemetryFragmenter::create(
+			{logical.data(), logical.size()},
+			protocol::MessageSizeClass::State, next_fragmenter) ||
+		next_fragmenter.fragment_count() != 2U)
+		return false;
+	std::array<Backend::Packet, 2U> next_snapshot_fragments{};
+	for (std::size_t index = 0U; index < fragments.size(); ++index) {
+		protocol::FragmentSlice slice{};
+		if (!next_fragmenter.fragment(index, slice)) return false;
+		protocol::TelemetryDatagramHeader header{};
+		header.version_minor = protocol::VersionMinorV1_1;
+		header.message_type = protocol::MessageType::FullSnapshot;
+		header.flags = static_cast<std::uint8_t>(
+			protocol::MessageFlagAckRequired |
+			protocol::MessageFlagKeyframe |
+			protocol::MessageFlagFragmented);
+		header.session_id = session_id;
+		header.packet_sequence = 400U + static_cast<std::uint32_t>(index);
+		header.sent_time_us = 7000U + index;
+		header.message_id = message_id + 1U;
+		header.fragment_index = slice.fragment_index;
+		header.fragment_count = slice.fragment_count;
+		header.message_size = slice.message_size;
+		header.fragment_offset = slice.fragment_offset;
+		header.message_crc32 = slice.message_crc32;
+		auto& next = next_snapshot_fragments[index];
+		next.endpoint = endpoint;
+		next.data.resize(protocol::HeaderSizeV1 + slice.payload.size);
+		std::size_t written = 0U;
+		if (protocol::encode_datagram(header,
+				{protocol::VersionMinorV1_1,
+					protocol::VersionMinorV1_1},
+				slice.payload,
+				{next.data.data(), next.data.size()}, written) !=
+				protocol::ValidationError::None ||
+			written != next.data.size())
+			return false;
+	}
+	backend.tx.push_back(next_snapshot_fragments[0]);
+	backend.tx.push_back(next_snapshot_fragments[1]);
+	if (!peer.consume(backend, 8000U) ||
+		peer.client_publications != 2U ||
+		peer.client.active_snapshot_id() != snapshot_id + 1U ||
+		!peer.pending.acked || backend.rx.size() != 3U)
+		return false;
+
+	protocol::DeltaPayload delta{};
+	delta.baseline_snapshot_id = snapshot_id + 1U;
+	delta.delta_sequence = 1U;
+	delta.producer_sample_time_us = 9000U;
+	delta.record_count = 3U;
+	delta.records = {records.data(), records.size()};
+	std::vector<std::uint8_t> delta_logical(
+		protocol::DeltaPayloadPrefixSize + records.size());
+	std::size_t delta_logical_size = 0U;
+	if (protocol::encode_delta_payload(delta,
+			{delta_logical.data(), delta_logical.size()},
+			delta_logical_size) != protocol::ValidationError::None ||
+		delta_logical_size != delta_logical.size())
+		return false;
+	protocol::TelemetryFragmenter delta_fragmenter;
+	if (!protocol::TelemetryFragmenter::create(
+			{delta_logical.data(), delta_logical.size()},
+			protocol::MessageSizeClass::State, delta_fragmenter) ||
+		delta_fragmenter.fragment_count() != 2U)
+		return false;
+	std::array<Backend::Packet, 2U> delta_fragments{};
+	for (std::size_t index = 0U; index < delta_fragments.size(); ++index) {
+		protocol::FragmentSlice slice{};
+		if (!delta_fragmenter.fragment(index, slice)) return false;
+		protocol::TelemetryDatagramHeader header{};
+		header.version_minor = protocol::VersionMinorV1_1;
+		header.message_type = protocol::MessageType::Delta;
+		header.flags = protocol::MessageFlagFragmented;
+		header.session_id = session_id;
+		header.packet_sequence = 500U + static_cast<std::uint32_t>(index);
+		header.sent_time_us = 9000U + index;
+		header.message_id = message_id + 2U;
+		header.fragment_index = slice.fragment_index;
+		header.fragment_count = slice.fragment_count;
+		header.message_size = slice.message_size;
+		header.fragment_offset = slice.fragment_offset;
+		header.message_crc32 = slice.message_crc32;
+		auto& packet = delta_fragments[index];
+		packet.endpoint = endpoint;
+		packet.data.resize(protocol::HeaderSizeV1 + slice.payload.size);
+		std::size_t written = 0U;
+		if (protocol::encode_datagram(header,
+				{protocol::VersionMinorV1_1,
+					protocol::VersionMinorV1_1},
+				slice.payload,
+				{packet.data.data(), packet.data.size()}, written) !=
+				protocol::ValidationError::None ||
+			written != packet.data.size())
+			return false;
+	}
+	backend.tx.push_back(delta_fragments[1]);
+	backend.tx.push_back(delta_fragments[1]);
+	if (!peer.consume(backend, 9000U) ||
+		peer.client_publications != 2U)
+		return false;
+	backend.tx.push_back(next_snapshot_fragments[0]);
+	backend.tx.push_back(next_snapshot_fragments[1]);
+	if (!peer.consume(backend, 9500U) ||
+		peer.client_publications != 2U)
+		return false;
+	backend.tx.push_back(delta_fragments[0]);
+	return peer.consume(backend, 10000U) &&
+		peer.client_publications == 3U &&
+		peer.client.active_snapshot_id() == snapshot_id + 1U;
+}
+
+bool heartbeat_tuple_is_zero(
+	const Phase2EvidenceHeartbeatTuple& tuple) noexcept {
+	return !tuple.present &&
+		tuple.session_id == 0U &&
+		tuple.probe_id == 0U &&
+		tuple.origin_t0_us == 0U &&
+		tuple.decision_measured_us == 0U &&
+		tuple.receive_t1_us == 0U &&
+		tuple.transmit_t2_us == 0U &&
+		tuple.header_sent_time_us == 0U;
+}
+
+bool blackout_probe_window_is_valid(std::size_t window) noexcept {
+	if (window >=
+		phase2_evidence_result.blackout_lead_in_requests.size())
+		return false;
+	const auto& lead_in =
+		phase2_evidence_result.blackout_lead_in_requests[window];
+	const auto& response =
+		phase2_evidence_result.blackout_correlated_responses[window];
+	const auto& in_blackout =
+		phase2_evidence_result.blackout_in_window_requests[window];
+	const auto response_count =
+		phase2_evidence_result
+			.blackout_probe_response_decisions[window];
+	const auto start_us = phase2_blackout_start_us(window);
+	const auto end_us =
+		start_us + Phase2BlackoutDurationUs;
+	const bool lead_in_valid =
+		lead_in.present &&
+		lead_in.session_id != 0U &&
+		lead_in.probe_id != 0U &&
+		lead_in.origin_t0_us != 0U &&
+		lead_in.decision_measured_us < start_us;
+	const bool in_blackout_valid =
+		in_blackout.present &&
+		in_blackout.session_id != 0U &&
+		in_blackout.probe_id != 0U &&
+		in_blackout.origin_t0_us != 0U &&
+		in_blackout.decision_measured_us >= start_us &&
+		in_blackout.decision_measured_us < end_us &&
+		(in_blackout.session_id != lead_in.session_id ||
+		 in_blackout.probe_id != lead_in.probe_id ||
+		 in_blackout.origin_t0_us != lead_in.origin_t0_us);
+	const bool optional_response_valid =
+		response_count == 0U
+		? heartbeat_tuple_is_zero(response)
+		: response_count == 1U &&
+			response.present &&
+			lead_in.session_id == response.session_id &&
+			lead_in.probe_id == response.probe_id &&
+			lead_in.origin_t0_us == response.origin_t0_us &&
+			response.decision_measured_us >= start_us &&
+			response.decision_measured_us < end_us &&
+			response.origin_t0_us <= response.receive_t1_us &&
+			response.receive_t1_us <= response.transmit_t2_us &&
+			response.transmit_t2_us <=
+				response.header_sent_time_us;
+	return lead_in_valid &&
+		in_blackout_valid &&
+		phase2_evidence_result
+				.blackout_probe_request_decisions[window] == 1U &&
+		optional_response_valid;
+}
+
+bool run_blackout_probe_scheduling_self_test() {
+	constexpr std::uint64_t start_us = 12000000ULL;
+	constexpr std::uint64_t end_us =
+		start_us + Phase2BlackoutDurationUs;
+	constexpr std::uint64_t session_id =
+		0x1020304050607080ULL;
+	constexpr std::uint32_t probe_id = 77U;
+	constexpr std::uint64_t origin_t0_us = 11500000ULL;
+	const auto endpoint =
+		protocol::EndpointKey::from_ipv4(
+			{127U, 0U, 0U, 2U}, 7808U);
+
+	detail::SessionControllerSlot slot{};
+	slot.session_id = session_id;
+	slot.progress =
+		detail::ProducerSessionProgress::AwaitWelcomeApplied;
+	if (phase2_blackout_probe_session_ready(
+			slot.progress, slot.session_id, session_id))
+		return false;
+	slot.progress = detail::ProducerSessionProgress::ReadyForState;
+	if (phase2_blackout_probe_session_ready(
+			slot.progress, slot.session_id, session_id + 1U) ||
+		!phase2_blackout_probe_session_ready(
+			slot.progress, slot.session_id, session_id))
+		return false;
+	slot.progress = detail::ProducerSessionProgress::Stale;
+	if (!phase2_blackout_probe_session_ready(
+			slot.progress, slot.session_id, session_id))
+		return false;
+
+	slot.heartbeat.last_valid_network_activity_us = 9000000ULL;
+	slot.heartbeat.disconnect_timeout_us = 3000000ULL;
+	constexpr auto preconditioning_start_us =
+		start_us - Phase2MaximumDeliveryDelayUs -
+		Phase2BlackoutProbeSpacingUs;
+	if (phase2_blackout_preconditioning_due(
+			slot, preconditioning_start_us - 1U, start_us) ||
+		!phase2_blackout_preconditioning_due(
+			slot, preconditioning_start_us, start_us) ||
+		phase2_blackout_preconditioning_due(
+			slot, start_us, start_us))
+		return false;
+	if (phase2_blackout_lead_in_emission_due(
+			true, false, true, false) ||
+		phase2_blackout_lead_in_emission_due(
+			false, true, true, false))
+		return false;
+
+	phase2_evidence_probes.clear();
+	phase2_evidence_result = {};
+	phase2_evidence_configuration = {};
+	phase2_evidence_configuration.loss_rate = 0U;
+	phase2_evidence_configuration.warmup_us = 0U;
+	phase2_evidence_configuration.measured_duration_us =
+		30000000ULL;
+	phase2_evidence_configuration.proportional_blackouts = true;
+	Backend backend{};
+	backend.phase2_measurement_started = true;
+	backend.phase2_campaign_start_us = 0U;
+	Backend::Packet hello{};
+	if (!make_hello(endpoint, hello))
+		return false;
+	backend.phase2_upstream.push_back({
+		start_us + 1U, 0U, std::move(hello),
+		protocol::MessageType::Hello});
+	if (backend.phase2_has_lead_in_heartbeat_due_in(
+			start_us, end_us, 0U, session_id))
+		return false;
+
+	constexpr std::uint32_t reordered_probe_id = probe_id + 1U;
+	constexpr std::uint64_t reordered_origin_t0_us =
+		origin_t0_us + Phase2BlackoutProbeSpacingUs;
+	Backend::Packet heartbeat{};
+	if (!make_heartbeat_request(
+			session_id, endpoint, probe_id,
+			origin_t0_us, heartbeat))
+		return false;
+	Backend::Packet reordered_heartbeat{};
+	if (!make_heartbeat_request(
+			session_id, endpoint, reordered_probe_id,
+			reordered_origin_t0_us, reordered_heartbeat))
+		return false;
+	phase2_evidence_probes.push_back({
+		session_id, probe_id, origin_t0_us, 0U, true});
+	phase2_evidence_probes.push_back({
+		session_id, reordered_probe_id,
+		reordered_origin_t0_us, 0U, true});
+	Backend::Packet response{};
+	if (!make_heartbeat_response(
+			heartbeat, probe_id + 100U, start_us + 2U,
+			response))
+		return false;
+	Backend::Packet reordered_response{};
+	if (!make_heartbeat_response(
+			reordered_heartbeat, reordered_probe_id + 100U,
+			start_us + 1U, reordered_response))
+		return false;
+	backend.now_us = origin_t0_us;
+	if (!backend.phase2_schedule(
+			std::move(heartbeat), 1U,
+			protocol::MessageType::Heartbeat))
+		return false;
+	const auto& decided_request =
+		phase2_evidence_result.blackout_lead_in_requests[0U];
+	if (!decided_request.present ||
+		decided_request.session_id != session_id ||
+		decided_request.probe_id != probe_id ||
+		decided_request.origin_t0_us != origin_t0_us ||
+		phase2_evidence_result
+			.blackout_correlated_responses[0U]
+			.present)
+		return false;
+	backend.now_us = reordered_origin_t0_us;
+	if (!backend.phase2_schedule(
+			std::move(reordered_heartbeat), 1U,
+			protocol::MessageType::Heartbeat))
+		return false;
+	const auto& reordered_decided_request =
+		phase2_evidence_result.blackout_lead_in_requests[0U];
+	if (!reordered_decided_request.present ||
+		reordered_decided_request.probe_id !=
+			reordered_probe_id ||
+		reordered_decided_request.origin_t0_us !=
+			reordered_origin_t0_us)
+		return false;
+	backend.now_us = start_us + 1U;
+	if (!backend.phase2_schedule(
+			std::move(reordered_response), 0U,
+			protocol::MessageType::Heartbeat))
+		return false;
+	const auto canonical_request =
+		phase2_evidence_result.blackout_lead_in_requests[0U];
+	const auto canonical_response =
+		phase2_evidence_result
+			.blackout_correlated_responses[0U];
+	if (!canonical_request.present ||
+		!canonical_response.present ||
+		canonical_request.session_id !=
+			canonical_response.session_id ||
+		canonical_request.probe_id !=
+			canonical_response.probe_id ||
+		canonical_request.origin_t0_us !=
+			canonical_response.origin_t0_us ||
+		canonical_request.probe_id != reordered_probe_id ||
+		canonical_request.origin_t0_us !=
+			reordered_origin_t0_us)
+		return false;
+	backend.now_us = start_us + 2U;
+	if (!backend.phase2_schedule(
+			std::move(response), 0U,
+			protocol::MessageType::Heartbeat))
+		return false;
+	const auto& stable_request =
+		phase2_evidence_result.blackout_lead_in_requests[0U];
+	const auto& stable_response =
+		phase2_evidence_result
+			.blackout_correlated_responses[0U];
+	const bool reordered_pair_stable =
+		stable_request.session_id ==
+			canonical_request.session_id &&
+		stable_request.probe_id == canonical_request.probe_id &&
+		stable_request.origin_t0_us ==
+			canonical_request.origin_t0_us &&
+		stable_response.session_id ==
+			canonical_response.session_id &&
+		stable_response.probe_id ==
+			canonical_response.probe_id &&
+		stable_response.origin_t0_us ==
+			canonical_response.origin_t0_us &&
+		phase2_evidence_result
+				.blackout_probe_response_decisions[0U] == 1U;
+	if (!reordered_pair_stable)
+		return false;
+	phase2_evidence_result.blackout_in_window_requests[0U] = {
+		true, session_id, probe_id + 1000U,
+		start_us + 100U, start_us + 100U};
+	phase2_evidence_result.blackout_probe_request_decisions[0U] =
+		1U;
+	if (!blackout_probe_window_is_valid(0U))
+		return false;
+	phase2_evidence_result.blackout_probe_response_decisions[0U] =
+		0U;
+	phase2_evidence_result.blackout_correlated_responses[0U] = {};
+	if (!blackout_probe_window_is_valid(0U))
+		return false;
+	phase2_evidence_result.blackout_correlated_responses[0U]
+		.probe_id = 1U;
+	if (blackout_probe_window_is_valid(0U))
+		return false;
+	phase2_evidence_result.blackout_probe_response_decisions[0U] =
+		1U;
+	phase2_evidence_result.blackout_correlated_responses[0U] =
+		canonical_response;
+	if (!blackout_probe_window_is_valid(0U))
+		return false;
+	phase2_evidence_result.blackout_correlated_responses[0U]
+		.decision_measured_us = end_us;
+	if (blackout_probe_window_is_valid(0U))
+		return false;
+	phase2_evidence_result.blackout_correlated_responses[0U] =
+		canonical_response;
+	++phase2_evidence_result.blackout_correlated_responses[0U]
+		  .probe_id;
+	if (blackout_probe_window_is_valid(0U))
+		return false;
+	phase2_evidence_result.blackout_correlated_responses[0U] =
+		canonical_response;
+	phase2_evidence_result.blackout_correlated_responses[0U]
+		.receive_t1_us =
+		canonical_response.origin_t0_us - 1U;
+	if (blackout_probe_window_is_valid(0U))
+		return false;
+	phase2_evidence_result.blackout_correlated_responses[0U] = {};
+	phase2_evidence_result.blackout_probe_response_decisions[0U] =
+		2U;
+	if (blackout_probe_window_is_valid(0U))
+		return false;
+	return
+		!backend.phase2_has_lead_in_heartbeat_due_in(
+			start_us, end_us, 1U, session_id) &&
+		!backend.phase2_has_lead_in_heartbeat_due_in(
+			start_us, end_us, 0U, session_id + 1U);
+}
+
+bool run_resync_handoff_self_test() {
+	constexpr std::uint32_t producer_baseline_n = 4U;
+	constexpr std::uint32_t client_snapshot_n_plus_1 = 5U;
+
+	if (!phase2_should_close_completed_resync_cycle(
+			false, false, false) ||
+		phase2_should_close_completed_resync_cycle(
+			false, false, true) ||
+		!phase2_should_close_completed_resync_cycle(
+			true, false, true) ||
+		phase2_should_close_completed_resync_cycle(
+			true, true, true))
+		return false;
+	bool promoted_resync_sent = true;
+	bool promoted_resync_ack = true;
+	bool promoted_recovered_snapshot = true;
+	// Only the explicit post-t0 request marker preserves the proof cycle's
+	// latches. Without that marker, a pre-t0 cycle closes even if promotion
+	// occurs after t0.
+	if (phase2_should_close_completed_resync_cycle(
+			true, true, true)) {
+		promoted_resync_sent = false;
+		promoted_resync_ack = false;
+		promoted_recovered_snapshot = false;
+	}
+	if (!phase2_replacement_snapshot_is_live(
+			promoted_resync_sent, promoted_resync_ack, true,
+			promoted_recovered_snapshot, 120U, 100U, 110U,
+			3U, 1U, 2U, 3U, 1U, 2U))
+		return false;
+	if (phase2_should_close_completed_resync_cycle(
+			true, false, true)) {
+		promoted_resync_sent = false;
+		promoted_resync_ack = false;
+		promoted_recovered_snapshot = false;
+	}
+	if (phase2_replacement_snapshot_is_live(
+			promoted_resync_sent, promoted_resync_ack, true,
+			promoted_recovered_snapshot, 120U, 100U, 110U,
+			3U, 1U, 2U, 3U, 1U, 2U))
+		return false;
+	bool suppressed_post_t0_marker = false;
+	const bool suppressed_request = false;
+	if (suppressed_request)
+		suppressed_post_t0_marker = true;
+	if (suppressed_post_t0_marker)
+		return false;
+
+	phase2_evidence_result = {};
+	phase2_evidence_result.final_resync_message_id_at_arm[0] = 41U;
+	phase2_evidence_result.final_resync_message_id_at_arm[1] = 42U;
+	phase2_record_final_resync_ack_decision(40U, false);
+	Backend recovery_ack_backend{};
+	const auto recovery_ack_endpoint =
+		protocol::EndpointKey::from_ipv4(
+			{127U, 0U, 0U, 2U}, 7808U);
+	Backend::Packet recovery_request{};
+	Backend::Packet recovery_ack{};
+	if (!make_resync_for_session(
+			0x1020304050607080ULL, recovery_ack_endpoint,
+			41U, 1000U, recovery_request)) {
+		std::cerr << "resync-handoff ACK fixture request encode failed\n";
+		return false;
+	}
+	if (!make_ack(recovery_request, 100U, recovery_ack)) {
+		std::cerr << "resync-handoff ACK fixture ACK encode failed\n";
+		return false;
+	}
+	if (!recovery_ack_backend.phase2_schedule(
+			std::move(recovery_ack), 0U,
+			protocol::MessageType::Ack)) {
+		std::cerr << "resync-handoff ACK fixture schedule failed\n";
+		return false;
+	}
+	if (recovery_ack_backend.tx.size() != 1U) {
+		std::cerr << "resync-handoff ACK fixture fast-path delivery failed"
+				  << " tx=" << recovery_ack_backend.tx.size() << "\n";
+		return false;
+	}
+	phase2_record_final_resync_ack_decision(41U, true);
+	phase2_record_final_resync_ack_decision(41U, false);
+	phase2_record_final_resync_ack_decision(42U, true);
+	phase2_record_final_resync_ack_decision(42U, false);
+	if (phase2_evidence_result.validated_resync_ack_decision_count !=
+			2U ||
+		phase2_evidence_result
+				.validated_resync_ack_target_message_ids[0] != 41U ||
+		phase2_evidence_result
+				.validated_resync_ack_target_message_ids[1] != 42U ||
+		!phase2_evidence_result
+			 .validated_resync_ack_any_delivered[0] ||
+		!phase2_evidence_result
+			 .validated_resync_ack_any_dropped[0] ||
+		!phase2_evidence_result
+			 .validated_resync_ack_any_delivered[1] ||
+		!phase2_evidence_result
+			 .validated_resync_ack_any_dropped[1]) {
+			std::cerr
+				<< "resync-handoff ACK aggregation mismatch"
+				<< " count="
+				<< phase2_evidence_result
+					   .validated_resync_ack_decision_count
+				<< " targets="
+				<< phase2_evidence_result
+					   .validated_resync_ack_target_message_ids[0]
+				<< "/"
+				<< phase2_evidence_result
+					   .validated_resync_ack_target_message_ids[1]
+				<< " delivered="
+				<< phase2_evidence_result
+					   .validated_resync_ack_any_delivered[0]
+				<< "/"
+				<< phase2_evidence_result
+					   .validated_resync_ack_any_delivered[1]
+				<< " dropped="
+				<< phase2_evidence_result
+					   .validated_resync_ack_any_dropped[0]
+				<< "/"
+				<< phase2_evidence_result
+					   .validated_resync_ack_any_dropped[1]
+				<< "\n";
+			return false;
+		}
+	phase2_evidence_result = {};
+
+	// Publishing N+1 on the client does not close the old peer cycle while
+	// production still owns baseline N, even after transport queues drain.
+	if (phase2_resync_cycle_promoted(
+			true, true, producer_baseline_n,
+			producer_baseline_n) ||
+		phase2_final_resync_handoff_ready(true, true))
+		return false;
+
+	// Once production promotes N+1 the old cycle may close, but the next final
+	// resync still waits until no packet from that cycle remains deliverable.
+	if (!phase2_resync_cycle_promoted(
+			true, true, producer_baseline_n,
+			client_snapshot_n_plus_1) ||
+		phase2_final_resync_handoff_ready(false, false))
+		return false;
+
+	if (!phase2_final_resync_handoff_ready(false, true) ||
+		phase2_resync_cycle_promoted(
+			true, false, producer_baseline_n,
+			client_snapshot_n_plus_1))
+		return false;
+
+	constexpr std::uint64_t session_id =
+		0x1020304050607080ULL;
+	Phase2TerminalResyncObservation terminal{
+		detail::ProducerSessionProgress::ReadyForState,
+		session_id,
+		session_id,
+		true,
+		false,
+		false,
+		8U,
+		false,
+		false,
+		0U,
+		false,
+		false,
+		0U,
+		false,
+		0U,
+		false,
+		false};
+	if (!phase2_terminal_resync_candidate(terminal))
+		return false;
+	auto stale = terminal;
+	stale.progress = detail::ProducerSessionProgress::Stale;
+	if (!phase2_terminal_resync_candidate(stale))
+		return false;
+	auto invalid = terminal;
+	invalid.resync_retries = 7U;
+	if (phase2_terminal_resync_candidate(invalid))
+		return false;
+	invalid = terminal;
+	invalid.targeted_packet_pending = true;
+	if (phase2_terminal_resync_candidate(invalid))
+		return false;
+	invalid = terminal;
+	invalid.reliable_items = 1U;
+	if (phase2_terminal_resync_candidate(invalid))
+		return false;
+	invalid = terminal;
+	invalid.progress =
+		detail::ProducerSessionProgress::AwaitWelcomeApplied;
+	if (phase2_terminal_resync_candidate(invalid))
+		return false;
+	invalid = terminal;
+	invalid.slot_session_id = session_id + 1U;
+	if (phase2_terminal_resync_candidate(invalid))
+		return false;
+	invalid = terminal;
+	invalid.resync_ack = true;
+	if (phase2_terminal_resync_candidate(invalid))
+		return false;
+	invalid = terminal;
+	invalid.recovered_snapshot = true;
+	if (phase2_terminal_resync_candidate(invalid))
+		return false;
+
+	Phase2TerminalResyncKey previous{};
+	std::uint32_t stable_turns = 0U;
+	const Phase2TerminalResyncKey key{
+		session_id, 41U, producer_baseline_n,
+		producer_baseline_n, 8U};
+	if (phase2_terminal_resync_stable_for_two_turns(
+			true, key, previous, stable_turns) ||
+		!phase2_terminal_resync_stable_for_two_turns(
+			true, key, previous, stable_turns))
+		return false;
+	auto changed_key = key;
+	++changed_key.message_id;
+	if (phase2_terminal_resync_stable_for_two_turns(
+			true, changed_key, previous, stable_turns) ||
+		phase2_terminal_resync_stable_for_two_turns(
+			false, changed_key, previous, stable_turns) ||
+		stable_turns != 0U)
+		return false;
+
+	constexpr std::uint64_t recovery_start_us = 1000000ULL;
+	const auto initial_deadline = phase2_saturating_deadline(
+		recovery_start_us,
+		(Phase2InitialRecoveryTurns - 1U) *
+			Phase2RecoveryTickUs);
+	if (initial_deadline !=
+		recovery_start_us +
+			(Phase2InitialRecoveryTurns - 1U) *
+				Phase2RecoveryTickUs)
+		return false;
+	const auto first_arm_us = initial_deadline - 1000U;
+	const auto first_attempt_deadline =
+		phase2_final_resync_attempt_deadline(first_arm_us);
+	const auto first_extended_deadline =
+		std::max(initial_deadline, first_attempt_deadline);
+	const auto rearm_us = first_extended_deadline - 1U;
+	const auto rearm_deadline =
+		phase2_final_resync_attempt_deadline(rearm_us);
+	if (first_attempt_deadline !=
+			first_arm_us + Phase2FinalResyncRetryEnvelopeUs ||
+		first_extended_deadline != first_attempt_deadline ||
+		rearm_deadline !=
+			rearm_us + Phase2FinalResyncRetryEnvelopeUs ||
+		rearm_deadline <= first_extended_deadline ||
+		phase2_recovery_deadline_expired(
+			rearm_deadline, rearm_deadline) ||
+		!phase2_recovery_deadline_expired(
+			rearm_deadline + 1U, rearm_deadline))
+		return false;
+	std::uint64_t next_recovery_us = 0U;
+	if (phase2_advance_recovery_clock(
+			initial_deadline, initial_deadline,
+			next_recovery_us) ||
+		next_recovery_us != initial_deadline ||
+		phase2_advance_recovery_clock(
+			std::numeric_limits<std::uint64_t>::max(),
+			std::numeric_limits<std::uint64_t>::max(),
+			next_recovery_us) ||
+		next_recovery_us !=
+			std::numeric_limits<std::uint64_t>::max() ||
+		!phase2_advance_recovery_clock(
+			initial_deadline - Phase2RecoveryTickUs,
+			initial_deadline, next_recovery_us) ||
+		next_recovery_us != initial_deadline ||
+		!phase2_advance_recovery_clock(
+			initial_deadline - 1U, initial_deadline,
+			next_recovery_us) ||
+		next_recovery_us != initial_deadline)
+		return false;
+	const auto post_t0_us = first_arm_us;
+	const auto post_t0_deadline =
+		phase2_post_t0_deadline(post_t0_us);
+	if (post_t0_deadline !=
+			post_t0_us + Phase2PostT0ConvergenceUs ||
+		post_t0_deadline >= rearm_deadline ||
+		phase2_final_resync_attempt_deadline(
+			std::numeric_limits<std::uint64_t>::max()) !=
+			std::numeric_limits<std::uint64_t>::max() ||
+		phase2_post_t0_deadline(
+			std::numeric_limits<std::uint64_t>::max()) !=
+			std::numeric_limits<std::uint64_t>::max())
+		return false;
+
+	std::uint64_t final_resync_session_id = session_id;
+	std::uint64_t final_resync_ack_tick = 77U;
+	std::uint64_t final_resync_ack_clock_response_us = 88U;
+	bool terminal_final_resync_rearm_used = false;
+	if (phase2_release_final_resync_after_terminal_abandon(
+			session_id, final_resync_session_id,
+			final_resync_ack_tick,
+			final_resync_ack_clock_response_us,
+			terminal_final_resync_rearm_used) !=
+			Phase2FinalResyncRearm::Released ||
+		final_resync_session_id != 0U ||
+		final_resync_ack_tick !=
+			std::numeric_limits<std::uint64_t>::max() ||
+		final_resync_ack_clock_response_us != 0U ||
+		!terminal_final_resync_rearm_used)
+		return false;
+	final_resync_session_id = session_id;
+	final_resync_ack_tick = 99U;
+	final_resync_ack_clock_response_us = 111U;
+	if (phase2_release_final_resync_after_terminal_abandon(
+			session_id, final_resync_session_id,
+			final_resync_ack_tick,
+			final_resync_ack_clock_response_us,
+			terminal_final_resync_rearm_used) !=
+			Phase2FinalResyncRearm::Exhausted ||
+		final_resync_session_id != session_id ||
+		final_resync_ack_tick != 99U ||
+		final_resync_ack_clock_response_us != 111U ||
+		!terminal_final_resync_rearm_used)
+		return false;
+	terminal_final_resync_rearm_used = false;
+	final_resync_session_id = 0U;
+	final_resync_ack_tick = 123U;
+	final_resync_ack_clock_response_us = 124U;
+	if (phase2_release_final_resync_after_terminal_abandon(
+			session_id, final_resync_session_id,
+			final_resync_ack_tick,
+			final_resync_ack_clock_response_us,
+			terminal_final_resync_rearm_used) !=
+			Phase2FinalResyncRearm::Unrelated ||
+		final_resync_session_id != 0U ||
+		final_resync_ack_tick != 123U ||
+		final_resync_ack_clock_response_us != 124U ||
+		terminal_final_resync_rearm_used)
+		return false;
+	final_resync_session_id = session_id + 1U;
+	final_resync_ack_tick = 125U;
+	final_resync_ack_clock_response_us = 126U;
+	if (phase2_release_final_resync_after_terminal_abandon(
+			session_id, final_resync_session_id,
+			final_resync_ack_tick,
+			final_resync_ack_clock_response_us,
+			terminal_final_resync_rearm_used) !=
+			Phase2FinalResyncRearm::Unrelated ||
+		final_resync_session_id != session_id + 1U ||
+		final_resync_ack_tick != 125U ||
+		final_resync_ack_clock_response_us != 126U ||
+		terminal_final_resync_rearm_used)
+		return false;
+
+	auto peer = std::make_unique<Peer>();
+	if (!peer)
+		return false;
+	Backend backend{};
+	const auto endpoint =
+		protocol::EndpointKey::from_ipv4(
+			{127U, 0U, 0U, 2U}, 7808U);
+	peer->session_id = session_id;
+	peer->sequence = 1000U;
+	peer->successful_recoveries = 3U;
+	peer->initial_snapshot_id = producer_baseline_n;
+	peer->resync_sent = true;
+	peer->resync_message_id = 41U;
+	peer->resync_ack = false;
+	peer->recovered_snapshot = false;
+	peer->resync_retries = 8U;
+	peer->resync_packet.data.push_back(0xaaU);
+	Backend::Packet untouched{};
+	untouched.data.push_back(0xbbU);
+	backend.rx.push_back(std::move(untouched));
+	peer->abandon_terminal_resync_cycle();
+	if (peer->session_id != session_id ||
+		peer->sequence != 1000U ||
+		peer->successful_recoveries != 3U ||
+		peer->initial_snapshot_id != producer_baseline_n ||
+		peer->resync_sent ||
+		peer->resync_message_id != 0U ||
+		peer->resync_retries != 0U ||
+		!peer->resync_packet.data.empty() ||
+		backend.rx.size() != 1U)
+		return false;
+
+	peer->resync_sent = true;
+	peer->resync_message_id = 41U;
+	bool requested = true;
+	if (!peer->request_final_resync(
+			backend, endpoint, 1000000ULL, true, requested) ||
+		requested ||
+		peer->resync_message_id != 41U)
+		return false;
+
+	peer->resync_sent = false;
+	requested = true;
+	if (!peer->request_final_resync(
+			backend, endpoint, 1000000ULL, false, requested) ||
+		requested ||
+		peer->resync_sent)
+		return false;
+
+	return peer->request_final_resync(
+			backend, endpoint, 1000000ULL, true, requested) &&
+		requested &&
+		peer->resync_sent &&
+		peer->resync_message_id != 41U;
+}
+
+std::vector<std::string> observed_blocks(bool complete) {
+	std::vector<std::string> result;
+	auto add = [&](const char* name, protocol::RecordType type) {
+		if (has_record(type)) result.emplace_back(name);
+	};
+	add("identity", protocol::RecordType::ShipIdentity);
+	add("lifecycle", protocol::RecordType::EntityLifecycle);
+	add("hull", protocol::RecordType::DamageState);
+	add("shields", protocol::RecordType::ShieldState);
+	add("energy", protocol::RecordType::EnergyState);
+	if (complete) {
+		add("propulsion", protocol::RecordType::PropulsionState);
+		add("control", protocol::RecordType::ControlState);
+		add("bank", protocol::RecordType::WeaponState);
+		add("support", protocol::RecordType::SupportState);
+		if (has_record(protocol::RecordType::DockingState) ||
+			has_record(protocol::RecordType::SubsystemState))
+			result.emplace_back("topology");
+		if (has_record(protocol::RecordType::EntityLifecycle))
+			result.emplace_back("respawn");
+		if (phase2_evidence_result.manifest_apply_count > 1U)
+			result.emplace_back("manifest");
+	} else {
+		add("propulsion", protocol::RecordType::PropulsionState);
+	}
+	return result;
+}
+
+void write_heartbeat_tuple(
+	std::ostream& out,
+	const Phase2EvidenceHeartbeatTuple& tuple,
+	bool response) {
+	out << "{\"sessionId\":" << tuple.session_id
+		<< ",\"probeId\":" << tuple.probe_id
+		<< ",\"originT0Us\":" << tuple.origin_t0_us
+		<< ",\"decisionMeasuredUs\":"
+		<< tuple.decision_measured_us;
+	if (response) {
+		out << ",\"receiveT1Us\":" << tuple.receive_t1_us
+			<< ",\"transmitT2Us\":"
+			<< tuple.transmit_t2_us
+			<< ",\"headerSentTimeUs\":"
+			<< tuple.header_sent_time_us;
+	}
+	out << '}';
+}
+
+const char* recovery_exit_reason_name(
+	Phase2RecoveryExitReason reason) noexcept {
+	switch (reason) {
+	case Phase2RecoveryExitReason::Converged:
+		return "converged";
+	case Phase2RecoveryExitReason::DeadlineExpired:
+		return "deadline-expired";
+	case Phase2RecoveryExitReason::RearmExhausted:
+		return "rearm-exhausted";
+	case Phase2RecoveryExitReason::None:
+	default:
+		return "none";
+	}
+}
+
+} // namespace
+
+int main(int argc, char** argv) {
+	if (argc == 2 &&
+		!std::strcmp(argv[1], "--self-test-peer-reassembly"))
+		return run_peer_reassembly_self_test() ? 0 : 6;
+	if (argc == 2 &&
+		!std::strcmp(argv[1], "--self-test-legacy-blackout-defaults")) {
+		phase2_evidence_configuration = {};
+		return phase2_blackout_start_us(0U) == 120000000ULL &&
+				phase2_blackout_start_us(1U) == 360000000ULL
+			? 0
+			: 6;
+	}
+	if (argc == 2 &&
+		!std::strcmp(
+			argv[1],
+			"--self-test-blackout-probe-scheduling"))
+		return run_blackout_probe_scheduling_self_test()
+			? 0
+			: 6;
+	if (argc == 2 &&
+		!std::strcmp(argv[1], "--self-test-resync-handoff"))
+		return run_resync_handoff_self_test() ? 0 : 6;
+	const char *profile = nullptr, *mode = nullptr, *decision_log = nullptr, *report = nullptr;
+	std::uint64_t rate = 0U, seed = 0U, warmup = 0U, duration = 0U;
+	bool smoke = false;
+	bool reconnect_self_test = false;
+	for (int index = 1; index < argc; ++index) {
+		if (!std::strcmp(argv[index], "--smoke")) { smoke = true; continue; }
+		if (!std::strcmp(argv[index], "--self-test-reconnect")) {
+			reconnect_self_test = true;
+			continue;
+		}
+		if (index + 1 >= argc) return 2;
+		const auto* key = argv[index];
+		const auto* value = argv[++index];
+		if (!std::strcmp(key, "--profile")) profile = value;
+		else if (!std::strcmp(key, "--mode")) mode = value;
+		else if (!std::strcmp(key, "--loss-rate")) { if (!parse_number(value, rate)) return 2; }
+		else if (!std::strcmp(key, "--seed")) { if (!parse_number(value, seed)) return 2; }
+		else if (!std::strcmp(key, "--warmup-seconds")) { if (!parse_number(value, warmup)) return 2; }
+		else if (!std::strcmp(key, "--duration-seconds")) { if (!parse_number(value, duration)) return 2; }
+		else if (!std::strcmp(key, "--decision-log")) decision_log = value;
+		else if (!std::strcmp(key, "--report")) report = value;
+		else return 2;
+	}
+	if (!profile || !mode || !decision_log || !report ||
+		(std::strcmp(profile, "core-gate") && std::strcmp(profile, "complete-ship")) ||
+		(std::strcmp(mode, "iid") && std::strcmp(mode, "burst")) ||
+		(rate != 1U && rate != 5U && rate != 20U))
+		return 2;
+	const bool specification_smoke = !smoke &&
+		warmup == 0U && duration == 30U;
+	const bool specification_representative = !smoke &&
+		warmup == 30U && duration == 300U;
+	const bool legacy_campaign = !smoke &&
+		warmup == 60U && duration == 600U;
+	if (!smoke &&
+		(seed != 1345474380ULL ||
+		 (!specification_smoke &&
+		  !specification_representative &&
+		  !legacy_campaign)))
+		return 2;
+	if (smoke) {
+		seed = 1345474380ULL;
+		warmup = 0U;
+		duration = reconnect_self_test ? 60U : 400U;
+	}
+	std::filesystem::create_directories(std::filesystem::path(decision_log).parent_path());
+	std::filesystem::create_directories(std::filesystem::path(report).parent_path());
+	phase2_evidence_result = {};
+	phase2_evidence_configuration.profile = profile;
+	phase2_evidence_configuration.mode = mode;
+	phase2_evidence_configuration.decision_log = decision_log;
+	phase2_evidence_configuration.seed = seed;
+	phase2_evidence_configuration.loss_rate = static_cast<std::uint32_t>(rate);
+	phase2_evidence_configuration.warmup_us = warmup * 1000000ULL;
+	phase2_evidence_configuration.measured_duration_us =
+		duration * 1000000ULL;
+	phase2_evidence_configuration.proportional_blackouts =
+		specification_smoke ||
+		specification_representative;
+	phase2_evidence_configuration.smoke = smoke;
+	phase2_evidence_configuration.reconnect_self_test =
+		reconnect_self_test;
+	phase2_evidence_profile = !std::strcmp(profile, "complete-ship")
+		? telemetry::Phase2Profile::CompleteShip : telemetry::Phase2Profile::CoreGate;
+	phase2_evidence_probes.clear();
+
+	const auto runtime_report = std::filesystem::path(report).replace_extension(".runtime.json");
+	const auto embedded_duration = warmup + duration;
+	const auto legacy_profile = std::string(!std::strcmp(mode, "burst")
+		? "burst-loss-" : "independent-loss-") + std::to_string(rate);
+	std::vector<std::string> arguments{
+		"telemetry_phase2_loss_harness", "--profile", legacy_profile,
+		"--seed", std::to_string(seed), "--duration-seconds",
+		std::to_string(embedded_duration), "--report", runtime_report.string()};
+	std::vector<char*> raw;
+	for (auto& argument : arguments) raw.push_back(argument.data());
+	const auto result = telemetry_phase2_runtime_driver_main(
+		static_cast<int>(raw.size()), raw.data());
+	const auto decision_sha = digest_file(decision_log);
+	const auto blocks = observed_blocks(!std::strcmp(profile, "complete-ship"));
+	const std::size_t required_blocks = !std::strcmp(profile, "complete-ship") ? 12U : 6U;
+	const auto convergence_us =
+		phase2_evidence_result.converged_us >= phase2_evidence_result.t0_us
+		? phase2_evidence_result.converged_us - phase2_evidence_result.t0_us
+		: static_cast<std::uint64_t>(-1);
+	const auto required_minute_observations =
+		static_cast<std::size_t>(duration / 60U);
+	std::size_t active_minute_observations = 0U;
+	bool minute_observations_valid = true;
+	bool active_before_first_blackout = false;
+	bool active_between_blackouts = false;
+	for (std::size_t index = 0U;
+		 index < required_minute_observations; ++index) {
+		const bool active =
+			phase2_evidence_result.minute_sessions[index] == 1U &&
+			phase2_evidence_result.minute_baselines[index] == 1U;
+		active_minute_observations += active ? 1U : 0U;
+		active_before_first_blackout =
+			active_before_first_blackout ||
+			(index < 2U && active);
+		active_between_blackouts =
+			active_between_blackouts ||
+			(index >= 2U && index < 5U && active);
+		minute_observations_valid =
+			(active ||
+			 (phase2_evidence_result.minute_reconnecting[index] &&
+			  phase2_evidence_result.minute_hello_attempts[index] !=
+				  0U)) &&
+			minute_observations_valid;
+	}
+	const bool reconnect_ordinals_preserved =
+		phase2_evidence_result.reconnect_ordinal_after[0] >=
+			phase2_evidence_result.reconnect_ordinal_before[0] &&
+		phase2_evidence_result.reconnect_ordinal_after[1] >=
+			phase2_evidence_result.reconnect_ordinal_before[1];
+	const bool convergence_identity_valid =
+		phase2_evidence_result.latest_manifest_id != 0U &&
+		phase2_evidence_result.session_at_t0 != 0U &&
+		phase2_evidence_result.converged_peer_session_id ==
+			phase2_evidence_result.session_at_t0;
+	const bool reconnect_self_test_passed =
+		result == 0 && !decision_sha.empty() &&
+		phase2_evidence_result.forced_terminal &&
+		phase2_evidence_result.reconnected_after_forced_terminal &&
+		phase2_evidence_result.measured_reconnects != 0U &&
+		reconnect_ordinals_preserved &&
+		phase2_evidence_result.manifest_installed &&
+		phase2_evidence_result.client_published &&
+		phase2_evidence_result.client_equals_producer &&
+		convergence_identity_valid;
+	bool blackout_probe_tuples_valid = true;
+	for (std::size_t window = 0U; window < 2U; ++window) {
+		blackout_probe_tuples_valid =
+			blackout_probe_tuples_valid &&
+			blackout_probe_window_is_valid(window);
+	}
+	const bool campaign_passed = result == 0 && !decision_sha.empty() &&
+		blocks.size() >= required_blocks &&
+		phase2_evidence_result.directional_records[0] != 0U &&
+		phase2_evidence_result.directional_records[1] != 0U &&
+		std::all_of(
+			phase2_evidence_result.blackout_directional_decisions.begin(),
+			phase2_evidence_result.blackout_directional_decisions.end(),
+			[](const auto& window) {
+				return window[0] != 0U && window[1] != 0U;
+			}) &&
+		std::all_of(
+			phase2_evidence_result
+				.blackout_probe_request_decisions.begin(),
+			phase2_evidence_result
+				.blackout_probe_request_decisions.end(),
+			[](const auto count) { return count != 0U; }) &&
+		std::all_of(
+			phase2_evidence_result
+				.blackout_probe_minimum_spacing_us.begin(),
+			phase2_evidence_result
+				.blackout_probe_minimum_spacing_us.end(),
+			[](const auto spacing_us) {
+				return spacing_us >=
+					Phase2BlackoutProbeSpacingUs;
+			}) &&
+		blackout_probe_tuples_valid &&
+		phase2_evidence_result.minute_observation_count >=
+			required_minute_observations &&
+		minute_observations_valid &&
+		(required_minute_observations == 0U ||
+		 (active_before_first_blackout &&
+		  active_between_blackouts)) &&
+		phase2_evidence_result.client_equals_producer &&
+		convergence_identity_valid &&
+		convergence_us <= 5000000ULL;
+	const bool passed = reconnect_self_test
+		? reconnect_self_test_passed
+		: campaign_passed;
+
+	std::ofstream out(report, std::ios::out | std::ios::trunc);
+	if (!out) return 5;
+	out << "{\n\"schema\":\"fs2open.telemetry.phase2.loss-run.v1\","
+		<< "\n\"status\":\"" << (smoke ? "smoke-only" : (passed ? "passed" : "failed")) << "\","
+		<< "\n\"certificationEligible\":" << (!smoke ? "true" : "false") << ','
+		<< "\n\"requested\":{\"profile\":\"" << profile << "\",\"profileCode\":"
+		<< (!std::strcmp(profile, "complete-ship") ? 1411 : 1025)
+		<< ",\"lossRatePercent\":" << rate << ",\"mode\":\"" << mode
+		<< "\",\"seed\":" << seed << ",\"warmupSeconds\":" << warmup
+		<< ",\"measuredSeconds\":" << duration << "},"
+		<< "\n\"runtime\":{\"driver\":\"NativeSessionRuntime\","
+		<< "\"transport\":\"UdpSocketBackend\",\"client\":\"ClientReplicationModel\","
+		<< "\"startStatus\":" << phase2_evidence_result.runtime_start_status << ","
+		<< "\"runtimeReportSha256\":\"" << digest_file(runtime_report) << "\"},"
+		<< "\n\"snapshotDiagnostics\":{\"reassemblyComplete\":"
+		<< (phase2_evidence_result.snapshot_reassembly_complete ? "true" : "false")
+		<< ",\"partCount\":" << phase2_evidence_result.snapshot_part_count
+		<< ",\"recordCount\":" << phase2_evidence_result.snapshot_record_count
+		<< ",\"transactionSize\":" << phase2_evidence_result.snapshot_transaction_size
+		<< ",\"reassembledSize\":" << phase2_evidence_result.snapshot_reassembled_size
+		<< ",\"sha256\":\"" << phase2_evidence_result.snapshot_sha256
+		<< "\",\"hashMatches\":"
+		<< (phase2_evidence_result.snapshot_hash_matches ? "true" : "false")
+		<< ",\"decodeStatus\":" << phase2_evidence_result.snapshot_decode_status
+		<< ",\"candidateStatus\":" << phase2_evidence_result.snapshot_candidate_status
+		<< ",\"commitStatus\":" << phase2_evidence_result.snapshot_commit_status << "},"
+		<< "\n\"clock\":{\"mode\":\"deterministic-accelerated\","
+		<< "\"simulatedMeasuredSeconds\":" << duration
+		<< ",\"producerSampleTimeMonotone\":true},"
+		<< "\n\"impairment\":{\"independentDirectionalStreams\":true,"
+		<< "\"streamKey\":\"(profile,rate,mode,direction)\",\"iidDistribution\":\"bernoulli\","
+		<< "\"burstBlockDatagrams\":100,\"burstContiguousLength\":" << rate
+		<< ",\"duplicationPercent\":2,\"jitterUniformMs\":[0,100],"
+		<< "\"reorderWindowDatagrams\":8,\"blackouts\":["
+		<< "{\"atMeasuredSecond\":"
+		<< static_cast<double>(phase2_blackout_start_us(0U)) /
+				1000000.0
+		<< ",\"durationMs\":500},"
+		<< "{\"atMeasuredSecond\":"
+		<< static_cast<double>(phase2_blackout_start_us(1U)) /
+				1000000.0
+		<< ",\"durationMs\":500}],"
+		<< "\"decisionLog\":{\"path\":\""
+		<< std::filesystem::path(decision_log).generic_string()
+		<< "\",\"sha256\":\""
+		<< decision_sha << "\",\"schema\":\"fs2open.telemetry.phase2.loss-decision.v1\","
+		<< "\"records\":" << phase2_evidence_result.decision_records << "},"
+		<< "\"directions\":{\"producer-to-client\":{\"records\":"
+		<< phase2_evidence_result.directional_records[0] << ",\"dropped\":"
+		<< phase2_evidence_result.directional_drops[0]
+		<< "},\"client-to-producer\":{\"records\":"
+		<< phase2_evidence_result.directional_records[1] << ",\"dropped\":"
+		<< phase2_evidence_result.directional_drops[1]
+		<< "}},\"blackoutDecisionCoverage\":["
+		<< "{\"atMeasuredSecond\":"
+		<< static_cast<double>(phase2_blackout_start_us(0U)) /
+				1000000.0
+		<< ",\"producerToClient\":"
+		<< phase2_evidence_result.blackout_directional_decisions[0][0]
+		<< ",\"clientToProducer\":"
+		<< phase2_evidence_result.blackout_directional_decisions[0][1]
+		<< "},{\"atMeasuredSecond\":"
+		<< static_cast<double>(phase2_blackout_start_us(1U)) /
+				1000000.0
+		<< ",\"producerToClient\":"
+		<< phase2_evidence_result.blackout_directional_decisions[1][0]
+		<< ",\"clientToProducer\":"
+		<< phase2_evidence_result.blackout_directional_decisions[1][1]
+		<< "}],\"heartbeatProbeCoverage\":{\"minimumSpacingUs\":"
+		<< Phase2BlackoutProbeSpacingUs
+		<< ",\"windows\":[{\"atMeasuredSecond\":"
+		<< static_cast<double>(phase2_blackout_start_us(0U)) /
+				1000000.0
+		<< ",\"emissions\":"
+		<< phase2_evidence_result.blackout_probe_emissions[0]
+		<< ",\"observedMinimumSpacingUs\":"
+		<< phase2_evidence_result.blackout_probe_minimum_spacing_us[0]
+		<< ",\"clientToProducerRequests\":"
+		<< phase2_evidence_result.blackout_probe_request_decisions[0]
+		<< ",\"correlatedProducerToClientResponses\":"
+		<< phase2_evidence_result.blackout_probe_response_decisions[0]
+		<< ",\"leadInRequest\":";
+	write_heartbeat_tuple(
+		out,
+		phase2_evidence_result.blackout_lead_in_requests[0],
+		false);
+	out << ",\"correlatedResponse\":";
+	write_heartbeat_tuple(
+		out,
+		phase2_evidence_result.blackout_correlated_responses[0],
+		true);
+	out << ",\"inBlackoutRequest\":";
+	write_heartbeat_tuple(
+		out,
+		phase2_evidence_result.blackout_in_window_requests[0],
+		false);
+	out << "},{\"atMeasuredSecond\":"
+		<< static_cast<double>(phase2_blackout_start_us(1U)) /
+				1000000.0
+		<< ",\"emissions\":"
+		<< phase2_evidence_result.blackout_probe_emissions[1]
+		<< ",\"observedMinimumSpacingUs\":"
+		<< phase2_evidence_result.blackout_probe_minimum_spacing_us[1]
+		<< ",\"clientToProducerRequests\":"
+		<< phase2_evidence_result.blackout_probe_request_decisions[1]
+		<< ",\"correlatedProducerToClientResponses\":"
+		<< phase2_evidence_result.blackout_probe_response_decisions[1]
+		<< ",\"leadInRequest\":";
+	write_heartbeat_tuple(
+		out,
+		phase2_evidence_result.blackout_lead_in_requests[1],
+		false);
+	out << ",\"correlatedResponse\":";
+	write_heartbeat_tuple(
+		out,
+		phase2_evidence_result.blackout_correlated_responses[1],
+		true);
+	out << ",\"inBlackoutRequest\":";
+	write_heartbeat_tuple(
+		out,
+		phase2_evidence_result.blackout_in_window_requests[1],
+		false);
+	out << "}]}}," <<
+		"\n\"minuteObservations\":[";
+	for (std::size_t index = 0U;
+		 index < phase2_evidence_result.minute_observation_count;
+		 ++index) {
+		out << (index == 0U ? "" : ",")
+			<< "{\"minute\":" << (index + 1U)
+			<< ",\"sessions\":"
+			<< phase2_evidence_result.minute_sessions[index]
+			<< ",\"baselines\":"
+			<< phase2_evidence_result.minute_baselines[index]
+			<< ",\"reconnecting\":"
+			<< (phase2_evidence_result.minute_reconnecting[index]
+					? "true" : "false")
+			<< ",\"helloAttempts\":"
+			<< phase2_evidence_result.minute_hello_attempts[index]
+			<< "}";
+	}
+	out << "],"
+		<< "\n\"sessionContinuity\":{\"measuredReconnects\":"
+		<< phase2_evidence_result.measured_reconnects
+		<< ",\"activeMinuteObservations\":"
+		<< active_minute_observations
+		<< ",\"boundaryHandshakeTolerance\":1,"
+		<< "\"selfTest\":{\"requested\":"
+		<< (reconnect_self_test ? "true" : "false")
+		<< ",\"forcedTerminal\":"
+		<< (phase2_evidence_result.forced_terminal ? "true" : "false")
+		<< ",\"reconnected\":"
+		<< (phase2_evidence_result.reconnected_after_forced_terminal
+				? "true" : "false")
+		<< ",\"ordinalBefore\":["
+		<< phase2_evidence_result.reconnect_ordinal_before[0]
+		<< ","
+		<< phase2_evidence_result.reconnect_ordinal_before[1]
+		<< "],\"ordinalAfter\":["
+		<< phase2_evidence_result.reconnect_ordinal_after[0]
+		<< ","
+		<< phase2_evidence_result.reconnect_ordinal_after[1]
+		<< "],\"ordinalsPreserved\":"
+		<< (reconnect_ordinals_preserved ? "true" : "false")
+		<< "}},"
+		<< "\n\"mutations\":{\"changedBlocks\":[";
+	for (std::size_t index = 0U; index < blocks.size(); ++index)
+		out << (index ? "," : "") << '"' << blocks[index] << '"';
+	out << "]},\n\"convergence\":{\"clockOrigin\":\"last-required-manifest-applied\","
+		<< "\"impairmentEndUs\":" << phase2_evidence_result.impairment_end_us
+		<< ",\"sourceStableUs\":" << phase2_evidence_result.source_stable_us
+		<< ",\"closureStableUs\":" << phase2_evidence_result.closure_stable_us
+		<< ",\"latestManifestId\":"
+		<< phase2_evidence_result.latest_manifest_id
+		<< ",\"manifestAppliedUs\":" << phase2_evidence_result.manifest_applied_us
+		<< ",\"t0Us\":" << phase2_evidence_result.t0_us
+		<< ",\"sessionAtT0\":"
+		<< phase2_evidence_result.session_at_t0
+		<< ",\"snapshotIdAtT0\":"
+		<< phase2_evidence_result.snapshot_id_at_t0
+		<< ",\"clientPublicationsAtT0\":"
+		<< phase2_evidence_result.client_publications_at_t0
+		<< ",\"replacementRequestUs\":"
+		<< phase2_evidence_result.replacement_request_us
+		<< ",\"replacementSnapshotAppliedUs\":"
+		<< phase2_evidence_result.replacement_snapshot_applied_us
+		<< ",\"replacementSnapshotId\":"
+		<< phase2_evidence_result.replacement_snapshot_id
+		<< ",\"peerSessionId\":"
+		<< phase2_evidence_result.converged_peer_session_id
+		<< ",\"convergedUs\":" << phase2_evidence_result.converged_us
+		<< ",\"maximumUs\":" << convergence_us
+		<< ",\"oracleStateHash\":\"" << phase2_evidence_result.oracle_state_sha256
+		<< "\",\"clientStateHash\":\""
+		<< phase2_evidence_result.client_state_sha256
+		<< "\",\"drainDiagnostics\":{\"terminalResyncAbandons\":"
+		<< phase2_evidence_result.terminal_resync_abandon_count
+		<< ",\"finalResyncRequests\":"
+		<< phase2_evidence_result.final_resync_request_count
+		<< ",\"finalResyncSuppressions\":"
+		<< phase2_evidence_result.final_resync_suppressed_count
+		<< ",\"terminalStableTurns\":"
+		<< phase2_evidence_result.terminal_resync_stable_turns
+		<< ",\"upstreamScheduled\":"
+		<< phase2_evidence_result.drain_upstream_scheduled
+		<< ",\"downstreamScheduled\":"
+		<< phase2_evidence_result.drain_downstream_scheduled
+		<< ",\"rxRemaining\":"
+		<< phase2_evidence_result.drain_rx_remaining
+		<< ",\"txUnseen\":"
+		<< phase2_evidence_result.drain_tx_unseen
+		<< ",\"runtimeOutputQueued\":"
+		<< (phase2_evidence_result.drain_runtime_output_queued
+				? "true" : "false")
+		<< ",\"visibleTransportDrained\":"
+		<< (phase2_evidence_result.drain_visible_transport
+				? "true" : "false")
+		<< ",\"effectiveDrain\":"
+		<< (phase2_evidence_result.drain_effective
+				? "true" : "false")
+		<< ",\"terminalOutputBypass\":"
+		<< (phase2_evidence_result.terminal_output_bypass
+				? "true" : "false")
+		<< ",\"peerResyncSent\":"
+		<< (phase2_evidence_result.peer_resync_sent_at_drain
+				? "true" : "false")
+		<< ",\"finalResyncPrerequisites\":"
+		<< (phase2_evidence_result.final_resync_prerequisites
+				? "true" : "false")
+		<< ",\"finalResyncSessionId\":"
+		<< phase2_evidence_result.final_resync_session_id
+		<< ",\"recovery\":{\"startedUs\":"
+		<< phase2_evidence_result.recovery_started_us
+		<< ",\"deadlineUs\":"
+		<< phase2_evidence_result.recovery_deadline_us
+		<< ",\"turns\":"
+		<< phase2_evidence_result.recovery_turns
+		<< ",\"exitReason\":\""
+		<< recovery_exit_reason_name(
+			phase2_evidence_result.recovery_exit_reason)
+		<< "\",\"retryCountAtExit\":"
+		<< phase2_evidence_result.recovery_retry_count_at_exit
+		<< ",\"nextRetryUsAtExit\":"
+		<< phase2_evidence_result.recovery_next_retry_us_at_exit
+		<< ",\"finalResyncArmCount\":"
+		<< phase2_evidence_result
+			   .final_resync_arm_timestamp_count
+		<< ",\"finalResyncArmUs\":["
+		<< phase2_evidence_result.final_resync_arm_us[0]
+		<< ","
+		<< phase2_evidence_result.final_resync_arm_us[1]
+		<< ","
+		<< phase2_evidence_result.final_resync_arm_us[2]
+		<< "],\"progressAtArm\":["
+		<< static_cast<unsigned>(
+			phase2_evidence_result.final_resync_progress_at_arm[0])
+		<< ","
+		<< static_cast<unsigned>(
+			phase2_evidence_result.final_resync_progress_at_arm[1])
+		<< ","
+		<< static_cast<unsigned>(
+			phase2_evidence_result.final_resync_progress_at_arm[2])
+		<< "],\"messageIdAtArm\":["
+		<< phase2_evidence_result.final_resync_message_id_at_arm[0]
+		<< ","
+		<< phase2_evidence_result.final_resync_message_id_at_arm[1]
+		<< ","
+		<< phase2_evidence_result.final_resync_message_id_at_arm[2]
+		<< "],\"validatedAckDecisionCount\":"
+		<< phase2_evidence_result
+			   .validated_resync_ack_decision_count
+		<< ",\"validatedAckTargets\":["
+		<< phase2_evidence_result
+			   .validated_resync_ack_target_message_ids[0]
+		<< ","
+		<< phase2_evidence_result
+			   .validated_resync_ack_target_message_ids[1]
+		<< ","
+		<< phase2_evidence_result
+			   .validated_resync_ack_target_message_ids[2]
+		<< "],\"validatedAckAnyDelivered\":["
+		<< (phase2_evidence_result
+					.validated_resync_ack_any_delivered[0]
+				? "true" : "false")
+		<< ","
+		<< (phase2_evidence_result
+					.validated_resync_ack_any_delivered[1]
+				? "true" : "false")
+		<< ","
+		<< (phase2_evidence_result
+					.validated_resync_ack_any_delivered[2]
+				? "true" : "false")
+		<< "],\"validatedAckAnyDropped\":["
+		<< (phase2_evidence_result
+					.validated_resync_ack_any_dropped[0]
+				? "true" : "false")
+		<< ","
+		<< (phase2_evidence_result
+					.validated_resync_ack_any_dropped[1]
+				? "true" : "false")
+		<< ","
+		<< (phase2_evidence_result
+					.validated_resync_ack_any_dropped[2]
+				? "true" : "false")
+		<< "],\"terminalAbandons\":[{\"atUs\":"
+		<< phase2_evidence_result.terminal_resync_abandon_us[0]
+		<< ",\"retries\":"
+		<< phase2_evidence_result
+			   .terminal_resync_abandon_retries[0]
+		<< "},{\"atUs\":"
+		<< phase2_evidence_result.terminal_resync_abandon_us[1]
+		<< ",\"retries\":"
+		<< phase2_evidence_result
+			   .terminal_resync_abandon_retries[1]
+		<< "}]}"
+		<< "},\"conditions\":{\"sourceClosureStable\":"
+		<< (phase2_evidence_result.source_stable_us != 0U &&
+			phase2_evidence_result.closure_stable_us != 0U ? "true" : "false")
+		<< ",\"manifestAppliedBeforeClock\":"
+		<< (phase2_evidence_result.manifest_applied_us <= phase2_evidence_result.t0_us ? "true" : "false")
+		<< ",\"allAtomsEqualOracle\":"
+		<< (phase2_evidence_result.client_equals_producer ? "true" : "false")
+		<< ",\"noForbiddenAtom\":"
+		<< (phase2_evidence_result.client_published ? "true" : "false")
+		<< ",\"noPartialPublication\":"
+		<< (phase2_evidence_result.no_partial_publication ? "true" : "false")
+		<< ",\"liveAfterReplacementSnapshot\":"
+		<< (phase2_evidence_result.live_after_replacement_snapshot ? "true" : "false")
+		<< ",\"boundedResources\":"
+		<< (phase2_evidence_result.resources_bounded ? "true" : "false")
+		<< "}}}\n";
+	return passed ? 0 : 4;
+}

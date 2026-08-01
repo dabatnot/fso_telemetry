@@ -226,8 +226,13 @@ class Phase2ManifestSlot {
 	void release_reliable_references(std::uint32_t id) noexcept;
 	const Phase2ManifestCandidate& staged_candidate() const noexcept { return m_candidates[m_staged_index]; }
 	const Phase2ManifestCandidate& active_candidate() const noexcept { return m_candidates[m_active_index]; }
+	const Phase2ManifestCandidate* candidate_for_id(
+		std::uint32_t id) const noexcept;
 	std::uint32_t staged_manifest_id() const noexcept { return m_staged ? staged_candidate().manifest_id : 0; }
 	std::uint32_t active_manifest_id() const noexcept { return m_active ? active_candidate().manifest_id : 0; }
+	std::uint32_t previous_manifest_id() const noexcept {
+		return m_retain_previous ? m_previous_id : 0U;
+	}
 	std::uint32_t required_manifest_id() const noexcept { return m_required_id; }
 	bool is_active(std::uint32_t id) const noexcept { return m_active && active_manifest_id()==id; }
 	bool is_staged(std::uint32_t id) const noexcept { return m_staged && staged_manifest_id()==id; }

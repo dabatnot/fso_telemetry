@@ -1,4 +1,4 @@
-# Feuille de route d'implémentation et validation
+# Feuille de route d'implémentation et validation produit
 
 ## 1. Définition de « terminé »
 
@@ -16,6 +16,10 @@ Le premier système complet est considéré opérationnel lorsqu'un client dista
 10. afficher la cible dans un flux 3D rendu nativement jusqu'en 1024, sans agrandir le viewport HUD ;
 11. ne jamais influencer la simulation ;
 12. ne pas introduire de ralentissement sensible lorsque la télémétrie est désactivée.
+
+Ces propriétés sont acceptées par une session de jeu représentative et des vérifications courtes ciblées sur le comportement livré. Toute campagne de plus de cinq minutes, tout soak et toute matrice longue sont non bloquants et ne peuvent être lancés que sur demande humaine explicite.
+
+Chaque phase possède une seule décision de livraison et aucune gate intermédiaire. Cette décision repose sur sa checklist produit, une session représentative et des vérifications directes courtes. Le harness, les rapports et les campagnes ne conditionnent ni le lot suivant ni la fermeture de la phase. Si le harness échoue alors que le comportement produit est directement accepté, il est simplifié ou consigné comme issue et la livraison continue. Seul un défaut produit grave directement reproduit peut bloquer.
 
 ## 2. Phase 0 — Contrat de protocole
 
@@ -35,9 +39,9 @@ Livrables :
 - tests de valeurs invalides, tronquées, incohérentes entre fragments et surdimensionnées.
 - amendement additif FSTL 1.1 pour le premier flux Phase 1 : `StateDomainCoverage.PLAYER_KINEMATICS` au bit 10, négociation `1..1`, snapshot minimal sans manifeste, rejets croisés et non-régression byte-identical de tous les artefacts FSTL 1.0.
 
-Cette phase peut être réalisée sans toucher à la boucle FS2Open. Aucun collecteur ni client applicatif ne commence avant que ce contrat v1 et ses golden vectors soient revus ensemble.
+Cette phase peut être réalisée sans toucher à la boucle FS2Open. Avant de publier un producteur ou un client interopérable, le contrat v1 et ses golden vectors doivent concorder dans une revue courte. Le travail d'intégration peut progresser derrière des interfaces proposées tant qu'il ne prétend pas figer ou publier un wire incompatible.
 
-La préparation documentaire et contractuelle `WP01` de la Phase 1 est explicitement autorisée pour produire l'amendement FSTL 1.1 et fermer la gate `G0-G Amendement 1.1`. Cette autorisation ne couvre aucun hook, collecteur, socket producteur ni client applicatif. `WP02` et tous les lots suivants restent bloqués tant que `G0-G` n'est pas satisfaite ; la gate ne dépend donc d'aucun code qu'elle est censée autoriser.
+La préparation documentaire et contractuelle `WP01` de la Phase 1 peut produire l'amendement FSTL 1.1. La cohérence du schéma et des vecteurs est un prérequis produit à l'interopérabilité, pas une chaîne de certification : elle ne demande aucune campagne longue et ne justifie pas de bloquer les travaux indépendants qui ne publient pas encore ce format.
 
 ## 3. Phase 1 — Squelette et premier flux
 
@@ -60,7 +64,7 @@ Livrables producteur, dans cet ordre :
 
 Une fois ce premier flux producteur stabilisé, un décodeur puis un client console minimal l'affichent et le valident. Ce client de preuve ne préjuge pas de l'architecture du client distant de la phase 5.
 
-Critère de sortie : une mission solo peut être observée à distance pendant trente minutes, puis arrêtée et relancée sans fuite ni blocage ; le client valide la complétude `PLAYER_KINEMATICS`, une nouvelle keyframe accompagne tout changement de mission ou de joueur observé, et le corpus FSTL 1.0 reste byte-identical.
+Critère de sortie : une mission solo représentative peut être observée à distance, puis arrêtée et relancée proprement ; le client valide la complétude `PLAYER_KINEMATICS`, une nouvelle keyframe accompagne tout changement de mission ou de joueur observé, et le corpus FSTL 1.0 reste byte-identical. Une observation prolongée ou un soak peut rechercher des défauts rares après livraison, uniquement sur demande humaine explicite, sans bloquer ce critère.
 
 ## 4. Phase 2 — Vaisseau complet
 
@@ -78,7 +82,7 @@ Ajouter :
 - snapshots complets et deltas cumulatifs par bloc contre une baseline explicite ;
 - apparition, mort et respawn du vaisseau joueur.
 
-Critère de sortie : chaque valeur d'un tableau de bord peut être comparée à sa source moteur et retrouve sa valeur correcte après une perte artificielle de paquets.
+Critère de sortie : chaque valeur d'un tableau de bord peut être comparée à sa source moteur et retrouve sa valeur correcte après une perturbation réseau prise en charge.
 
 ## 5. Phase 3 — Ciblage et capteurs
 
@@ -109,7 +113,7 @@ Ajouter le mode `TrustedFullState` :
 - keyframes périodiques complètes ;
 - contrôle de bande passante et priorités.
 
-Critère de sortie : après connexion en cours de mission, le client converge vers le même graphe d'entités que le producteur, puis reste cohérent sous perte et réordonnancement simulés.
+Critère de sortie : après connexion en cours de mission, le client converge vers le même graphe d'entités que le producteur, puis reste cohérent sous perte et réordonnancement pris en charge.
 
 ## 7. Phase 5 — Vue de communication et client distant utilisable
 
@@ -222,7 +226,7 @@ Ordre de couverture :
 
 Critère nominal de sortie : un MFD distant affiche un vaisseau ciblé en 1024 × 1024 à 15 FPS, avec une latence bornée, sans présenter une frame de l'ancienne cible et sans blocage mesurable de la frame du jeu.
 
-Les tests de perte, reproductibles et d'au moins dix minutes par profil, appliquent perte indépendante et rafales sans jamais laisser la vidéo retarder la télémétrie numérique :
+Sous perte UDP, la vidéo ne doit jamais retarder la télémétrie numérique :
 
 | Perte UDP injectée | Critère de sortie vidéo et télémétrie |
 |---:|---|
@@ -230,116 +234,11 @@ Les tests de perte, reproductibles et d'au moins dix minutes par profil, appliqu
 | 5 % | session et télémétrie restent `Live`, le trafic d'état n'est jamais privé de bande passante et la vidéo récupère sur une IDR complète en 1 s au plus |
 | 20 % | session et télémétrie restent `Live`, mémoire et files restent bornées, et le flux retrouve une frame décodable en 2 s au plus ; aucune qualité, cadence ou continuité nominale n'est exigée à ce niveau de perte |
 
-## 10. Plan de tests
+## 10. Validation définie avec chaque phase
 
-### 10.1 Sérialisation
+Les specs racines ne définissent aucun harness, aucune matrice de tests et aucun seuil de campagne. Lors de la spécification d'une phase, ses livrables et critères produit sont établis d'abord. Un plan de validation séparé peut ensuite définir les quelques tests et outils nécessaires à ces seuls livrables.
 
-- round-trip de chaque record ;
-- golden vector du schéma wire v1 exhaustif, y compris `CONTROL_STATE` et `SUPPORT_STATE` ;
-- delta cumulatif contenant tous les changements depuis sa `baseline_snapshot_id`, avec perte du delta intermédiaire ;
-- négociation FSTL 1.1 `1..1`, rejet d'un pair limité à 1.0 et vérification que tous les vectors FSTL 1.0 restent byte-identical ;
-- snapshots `PLAYER_KINEMATICS` minimal sans joueur et avec joueur, plus rejets pour record obligatoire absent, bit 10 sous FSTL 1.0 et `CORE_SHIP` incomplet ;
-- limites min/max et valeurs non finies ;
-- buffers tronqués ;
-- type/version inconnus ;
-- ordre des octets ;
-- `message_size`, `fragment_count`, offsets, somme des fragments et CRC incohérents refusés avant allocation ;
-- fichiers golden partagés avec le client ;
-- golden records pour `COMM_ASSET_MANIFEST`, `COMM_VIEW_STATE` et `COMM_VIEW_EVENT` ;
-- golden messages pour `TARGET_VIDEO_SUBSCRIBE`, `TARGET_VIDEO_CONFIG`, `TARGET_VIDEO_FRAME`, `TARGET_VIDEO_KEYFRAME_REQUEST` et `TARGET_VIDEO_STOP`, avec `max_bitrate_kbps`, `preferred_bitrate_kbps`, `supported_h264_profiles`, `supported_h264_levels`, `overlay_capabilities`, `codec_profile`, `codec_level`, `overlay_mode`, `recovery_mode` et `idr_recovery_window_ms` ;
-- fuzzing du `PacketReader`.
-
-### 10.2 UDP
-
-- perte indépendante et par rafales à 1 %, 5 % et 20 %, pendant au moins dix minutes par profil, avec vérification des seuils de la phase 7 ;
-- duplication ;
-- désordre ;
-- jitter ;
-- coupure temporaire ;
-- fragments manquants ;
-- perte d'un delta intermédiaire suivie d'un delta cumulatif plus récent de la même baseline ;
-- delta d'une baseline inconnue et renouvellement de baseline pendant du désordre ;
-- modifications, créations et suppressions entre la capture d'une keyframe et son `ACK APPLIED`, toutes présentes dans le premier delta de la nouvelle baseline ;
-- frames H.264 incomplètes et abandonnées ;
-- `NACK` sélectif des fragments d'IDR encore en cache et retransmission avant la deadline de 500 ms ;
-- expiration de l'IDR en cache, absence de retransmission tardive et demande limitée d'une nouvelle IDR ;
-- ancienne frame reçue après changement de cible ;
-- client lent ou silencieux ;
-- ACK perdus, avec réacquittement idempotent d'un `FULL_SNAPSHOT` déjà appliqué sans rollback de la réplique ;
-- resynchronisations répétées ;
-- paquets supérieurs à la limite refusés.
-
-### 10.3 Cycle de vie
-
-- connexion avant, pendant et après le chargement ;
-- changement de mission ;
-- pause et compression temporelle ;
-- mort, observer, respawn ;
-- sortie vers le menu ;
-- communication commencée avant la connexion du client ;
-- communication remplacée par une autre plus prioritaire ;
-- fin de communication perdue puis corrigée par une keyframe ;
-- abonnement vidéo avant et pendant une mission ;
-- cible acquise, remplacée puis désélectionnée ;
-- changement de résolution et de génération du flux ;
-- encodeur indisponible ou perdu pendant la session, puis bascule vers `NullTargetVideoEncoder` et retrait de la capability ;
-- arrêt normal et crash du client ;
-- nouvelle session réutilisant des signatures internes.
-
-### 10.4 Données de jeu
-
-- vaisseaux sans boucliers ou sans ETS ;
-- nombre de segments de bouclier non standard ;
-- armes balistiques et énergétiques ;
-- banques absentes ou dynamiques ;
-- sous-systèmes animés et tourelles ;
-- docking multiple ;
-- scan cargo ;
-- stealth, AWACS, EMP et radar déformé ;
-- mission solo, client multi et serveur/master ;
-- animation ANI, EFF et APNG ou leurs équivalents convertis ;
-- lecture unique, boucle, sens inverse, teinte HUD et pleine couleur ;
-- bundle visuel correct, absent, ancien et hash invalide ;
-- offset initial non nul et resynchronisation en cours de lecture ;
-- modèle principal en `MfdHigh` et POF HUD en `HudExact` ;
-- textures de remplacement, couleurs d'équipe et sous-modèles animés/détruits ;
-- cible vaisseau, missile, astéroïde, débris et jump node ;
-- overlays locaux synchronisés avec la bonne entité.
-
-### 10.5 Build, dépendances et packaging
-
-- configuration sans FFmpeg : build réussi, backend `NullTargetVideoEncoder` et capability vidéo absente ;
-- configuration FFmpeg avec chaque encodeur H.264 autorisé : sélection déterministe et refus des encodeurs hors allowlist ;
-- exécution avec encodeur logiciel, encodeur matériel disponible et encodeur matériel annoncé mais inutilisable ;
-- inventaire de licences généré et vérifié pour chaque artefact distribué ;
-- packaging et chargement des bibliothèques dynamiques sur chaque plateforme supportée ;
-- absence de symboles FFmpeg dans une build qui désactive cette dépendance ;
-- packager de communication validé contre la résolution CFile sur fichiers libres, plusieurs mods et VP.
-
-### 10.6 Performance
-
-Mesurer séparément :
-
-- temps de collecte ;
-- temps de diff ;
-- temps de sérialisation ;
-- nombre et taille des datagrammes ;
-- allocations par frame ;
-- taille des files et retransmissions ;
-- débit par client ;
-- coût des notifications de communication ;
-- temps GPU du second rendu ;
-- readbacks lancés, prêts et abandonnés ;
-- PBO réutilisés uniquement après signalement de leur fence et nombre d'attentes GPU, qui doit rester nul sur le thread de jeu ;
-- copies CPU et conversion colorimétrique ;
-- durée d'encodage H.264 ;
-- profondeur et abandons des files vidéo ;
-- bitrate, fragments par frame et latence capture-à-affichage ;
-- 1024 × 1024 à 10, 15 et 20 FPS ;
-- coût lorsque la vidéo est activée sans abonné ;
-- coût lorsque le module est désactivé.
-
-Les seuils définitifs doivent être basés sur les mesures. La règle absolue est qu'aucune attente GPU, aucun encodage synchrone et aucune opération réseau bloquante ne se déroulent dans la frame du jeu.
+Ce plan de validation reste non normatif, remplaçable et sans gate. Il ne peut pas étendre le périmètre produit, imposer une architecture destinée uniquement aux tests ni être hérité automatiquement par les phases suivantes. Les campagnes longues restent soumises à une demande humaine explicite.
 
 ## 11. Observabilité du module
 

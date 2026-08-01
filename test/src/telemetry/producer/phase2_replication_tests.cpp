@@ -9,8 +9,11 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <array>
+#include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <vector>
 
 namespace {
@@ -292,6 +295,101 @@ TEST(Phase2Replication, TST053ExactBaselineReturnRemovesTheMutation)
 	EXPECT_EQ(tracker.current(), applied);
 }
 
+TEST(Phase2Replication,
+	IncrementalDirtyIndicesRemainCumulativeAgainstTheImmutableBaseline)
+{
+	protocol::ProducerBaselineTracker tracker;
+	const auto base = image({
+		atom(1U, 0U, {1U}), atom(2U, 0U, {2U}),
+		atom(3U, 0U, {3U}), atom(4U, 0U, {4U})});
+	const std::vector<protocol::SnapshotCandidatePart> parts{
+		part(41U, 0x41414141U)};
+	ASSERT_EQ(protocol::ProducerBaselineResult::Applied,
+		tracker.initialize(base));
+	ASSERT_EQ(protocol::ProducerBaselineResult::Applied,
+		tracker.capture_snapshot(1U, 1U, base, parts, 100U));
+	ASSERT_EQ(protocol::ProducerBaselineResult::Applied,
+		tracker.acknowledge_snapshot_part(ack(parts[0]), 101U));
+
+	const std::array<std::uint16_t, 2U> first_dirty{{1U, 3U}};
+	ASSERT_EQ(protocol::ProducerBaselineResult::Applied,
+		tracker.replace_current_incremental(
+			image({
+				atom(1U, 0U, {1U}), atom(2U, 0U, {20U}),
+				atom(3U, 0U, {3U}), atom(4U, 0U, {40U})}),
+			first_dirty.data(), first_dirty.size()));
+	EXPECT_TRUE(tracker.incremental_record_set_compatible());
+	EXPECT_EQ(2U, tracker.active_dirty_record_count());
+	protocol::CumulativeStateDelta first;
+	ASSERT_EQ(protocol::ProducerBaselineResult::Applied,
+		tracker.emit_cumulative_delta(102U, first));
+	ASSERT_EQ(2U, first.mutation_count());
+	EXPECT_EQ(2U, first.mutations[0].atom.key.record_type);
+	EXPECT_EQ(4U, first.mutations[1].atom.key.record_type);
+
+	const std::array<std::uint16_t, 1U> second_dirty{{1U}};
+	const auto expected = image({
+		atom(1U, 0U, {1U}), atom(2U, 0U, {2U}),
+		atom(3U, 0U, {3U}), atom(4U, 0U, {40U})});
+	ASSERT_EQ(protocol::ProducerBaselineResult::Applied,
+		tracker.replace_current_incremental(
+			expected, second_dirty.data(), second_dirty.size()));
+	EXPECT_EQ(1U, tracker.active_dirty_record_count());
+	protocol::CumulativeStateDelta latest;
+	ASSERT_EQ(protocol::ProducerBaselineResult::Applied,
+		tracker.emit_cumulative_delta(103U, latest));
+	ASSERT_EQ(1U, latest.mutation_count());
+	EXPECT_EQ(4U, latest.mutations[0].atom.key.record_type);
+	protocol::StateImage applied;
+	ASSERT_EQ(protocol::StateDeltaApplyResult::Applied,
+		protocol::apply_cumulative_state_delta(
+			base, latest, nullptr, applied));
+	EXPECT_EQ(expected, applied);
+}
+
+TEST(Phase2Replication,
+	IncrementalDirtyIndicesTrackChangesWhileCandidateAwaitsApplied)
+{
+	protocol::ProducerBaselineTracker tracker;
+	const auto base = image({
+		atom(1U, 0U, {1U}), atom(2U, 0U, {2U})});
+	const std::vector<protocol::SnapshotCandidatePart> initial{
+		part(42U, 0x42424242U)};
+	ASSERT_EQ(protocol::ProducerBaselineResult::Applied,
+		tracker.initialize(base));
+	ASSERT_EQ(protocol::ProducerBaselineResult::Applied,
+		tracker.capture_snapshot(1U, 1U, base, initial, 100U));
+	ASSERT_EQ(protocol::ProducerBaselineResult::Applied,
+		tracker.acknowledge_snapshot_part(
+			ack(initial[0]), 101U));
+
+	const auto captured = image({
+		atom(1U, 0U, {10U}), atom(2U, 0U, {2U})});
+	ASSERT_EQ(protocol::ProducerBaselineResult::Applied,
+		tracker.replace_current(captured));
+	const std::vector<protocol::SnapshotCandidatePart> replacement{
+		part(43U, 0x43434343U)};
+	ASSERT_EQ(protocol::ProducerBaselineResult::Applied,
+		tracker.capture_snapshot(
+			2U, 1U, captured, replacement, 102U));
+	const std::array<std::uint16_t, 1U> dirty{{1U}};
+	const auto current = image({
+		atom(1U, 0U, {10U}), atom(2U, 0U, {22U})});
+	ASSERT_EQ(protocol::ProducerBaselineResult::Applied,
+		tracker.replace_current_incremental(
+			current, dirty.data(), dirty.size()));
+	EXPECT_EQ(1U, tracker.candidate_dirty_record_count());
+	ASSERT_EQ(protocol::ProducerBaselineResult::Applied,
+		tracker.acknowledge_snapshot_part(
+			ack(replacement[0]), 103U));
+	EXPECT_TRUE(tracker.incremental_record_set_compatible());
+	protocol::CumulativeStateDelta delta;
+	ASSERT_EQ(protocol::ProducerBaselineResult::Applied,
+		tracker.emit_cumulative_delta(104U, delta));
+	ASSERT_EQ(1U, delta.mutation_count());
+	EXPECT_EQ(2U, delta.mutations[0].atom.key.record_type);
+}
+
 TEST(Phase2Replication, TST054ListAndScalarChangesReplaceWholeAtomsWithoutPartial)
 {
 	const auto base = image({
@@ -376,6 +474,88 @@ TEST(Phase2Replication, TST054ListAndScalarChangesReplaceWholeAtomsWithoutPartia
 			break;
 		EXPECT_EQ(protocol::RecordFlagNone, record.record_flags);
 	}
+}
+
+TEST(Phase2Replication,
+	IncrementalDeltaPayloadCacheMatchesFullEncoding)
+{
+	protocol::ProducerBaselineTracker tracker;
+	const auto baseline = canonical_image(1.0F);
+	const auto parts =
+		std::vector<protocol::SnapshotCandidatePart>{
+			part(52U, 0x52525252U)};
+	ASSERT_EQ(protocol::ProducerBaselineResult::Applied,
+		tracker.initialize(baseline));
+	ASSERT_EQ(protocol::ProducerBaselineResult::Applied,
+		tracker.capture_snapshot(
+			1U, 1U, baseline, parts, 100U));
+	ASSERT_EQ(protocol::ProducerBaselineResult::Applied,
+		tracker.acknowledge_snapshot_part(
+			ack(parts[0]), 101U));
+
+	const auto first_current = canonical_image(2.0F);
+	std::vector<std::uint16_t> dirty_indices;
+	for (std::size_t index = 0U;
+		 index < first_current.records().size(); ++index) {
+		dirty_indices.push_back(
+			static_cast<std::uint16_t>(index));
+	}
+	ASSERT_EQ(protocol::ProducerBaselineResult::Applied,
+		tracker.replace_current_incremental(first_current,
+			dirty_indices.data(), dirty_indices.size()));
+
+	protocol::CumulativeStateDelta delta;
+	protocol::DeltaBuildChanges changes;
+	ASSERT_EQ(protocol::ProducerBaselineResult::Applied,
+		tracker.emit_cumulative_delta(
+			102U, delta, &changes));
+	EXPECT_TRUE(changes.layout_changed);
+
+	detail::Phase1DeltaEgress cached;
+	ASSERT_TRUE(cached.provision(protocol::MaxStateMessageSize));
+	const auto endpoint =
+		protocol::EndpointKey::from_ipv4(
+			{127U, 0U, 0U, 1U}, 4343U);
+	ASSERT_EQ(detail::Phase1DeltaReplaceResult::Replaced,
+		cached.replace_prevalidated_checked(
+			1U, endpoint, 1U, delta, changes));
+	ASSERT_TRUE(cached.service(1U, 103U));
+	cached.complete_output();
+	ASSERT_FALSE(cached.has_delta());
+
+	const auto second_current = canonical_image(3.0F);
+	ASSERT_EQ(protocol::ProducerBaselineResult::Applied,
+		tracker.replace_current_incremental(second_current,
+			dirty_indices.data(), dirty_indices.size()));
+	ASSERT_EQ(protocol::ProducerBaselineResult::Applied,
+		tracker.emit_cumulative_delta(
+			104U, delta, &changes));
+	ASSERT_FALSE(changes.layout_changed);
+	ASSERT_GT(changes.count, 0U);
+
+	detail::Phase1DeltaEgress reference;
+	ASSERT_TRUE(reference.provision(
+		protocol::MaxStateMessageSize));
+	ASSERT_EQ(detail::Phase1DeltaReplaceResult::Replaced,
+		cached.replace_prevalidated_checked(
+			1U, endpoint, 2U, delta, changes));
+	ASSERT_EQ(detail::Phase1DeltaReplaceResult::Replaced,
+		reference.replace_checked(
+			1U, endpoint, 2U, delta));
+	ASSERT_TRUE(cached.service(2U, 105U));
+	ASSERT_TRUE(reference.service(2U, 105U));
+
+	detail::Phase1DeltaDatagram cached_datagram;
+	detail::Phase1DeltaDatagram reference_datagram;
+	ASSERT_TRUE(cached.peek_output(cached_datagram));
+	ASSERT_TRUE(reference.peek_output(reference_datagram));
+	ASSERT_EQ(reference_datagram.size, cached_datagram.size);
+	EXPECT_TRUE(std::equal(
+		reference_datagram.bytes.begin(),
+		reference_datagram.bytes.begin() +
+			static_cast<std::ptrdiff_t>(
+				reference_datagram.size),
+		cached_datagram.bytes.begin()));
 }
 
 TEST(Phase2Replication, TST055AckIdentityIsExactAndDuplicatesCannotRegress)
@@ -493,6 +673,59 @@ TEST(Phase2Replication, TST057CapacityFallbackKeepsTheActiveBaseline)
 		fallback.cause);
 	EXPECT_EQ(protocol::SnapshotFlagPeriodicKeyframe,
 		fallback.flags);
+}
+
+TEST(Phase2Replication,
+	IncrementalMetadataMatchesExhaustiveAdoptionAndRejectsInvalidMappings)
+{
+	auto backing =
+		std::make_shared<std::vector<protocol::StateAtom>>(
+			std::initializer_list<protocol::StateAtom>{
+				atom(1U, 0U, {1U, 2U}),
+				atom(2U, 0U, {3U})});
+	protocol::StateImage incremental;
+	protocol::StateImageInvalidRecordReason reason =
+		protocol::StateImageInvalidRecordReason::None;
+	ASSERT_EQ(protocol::StateImageResult::Created,
+		protocol::StateImage::adopt_preallocated(
+			backing, incremental, reason));
+	const auto previous = *backing;
+	auto* mutable_records =
+		incremental.mutable_preallocated_records_if_unique();
+	ASSERT_NE(nullptr, mutable_records);
+	(*mutable_records)[1].value = {3U, 4U, 5U, 6U};
+	const std::array<std::uint16_t, 1U> canonical_indices{{1U}};
+	const std::array<std::uint16_t, 1U> previous_indices{{1U}};
+	ASSERT_EQ(protocol::StateImageResult::Created,
+		incremental.refresh_preallocated_metadata_incremental(
+			previous, canonical_indices.data(),
+			previous_indices.data(), canonical_indices.size(),
+			reason));
+
+	protocol::StateImage exhaustive;
+	ASSERT_EQ(protocol::StateImageResult::Created,
+		protocol::StateImage::adopt_preallocated(
+			backing, exhaustive, reason));
+	EXPECT_EQ(exhaustive.encoded_snapshot_records_size(),
+		incremental.encoded_snapshot_records_size());
+	EXPECT_EQ(exhaustive.retained_payload_bytes(),
+		incremental.retained_payload_bytes());
+
+	const auto encoded_before =
+		incremental.encoded_snapshot_records_size();
+	const auto retained_before =
+		incremental.retained_payload_bytes();
+	const std::array<std::uint16_t, 2U> duplicate_indices{{1U, 1U}};
+	const std::array<std::uint16_t, 2U> duplicate_previous{{1U, 1U}};
+	EXPECT_EQ(protocol::StateImageResult::InvalidRecord,
+		incremental.refresh_preallocated_metadata_incremental(
+			previous, duplicate_indices.data(),
+			duplicate_previous.data(), duplicate_indices.size(),
+			reason));
+	EXPECT_EQ(encoded_before,
+		incremental.encoded_snapshot_records_size());
+	EXPECT_EQ(retained_before,
+		incremental.retained_payload_bytes());
 }
 
 } // namespace

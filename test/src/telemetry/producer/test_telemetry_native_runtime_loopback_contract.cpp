@@ -23,7 +23,6 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
-#include <cstdlib>
 #include <cstring>
 #include <memory>
 #include <new>
@@ -37,12 +36,6 @@ namespace protocol = telemetry::protocol;
 constexpr std::size_t MaximumLoopbackAttempts = 16U;
 constexpr std::size_t MaximumPumpIterations = 4096U;
 constexpr auto MaximumPumpDuration = std::chrono::seconds(2);
-
-bool native_loopback_opted_in() noexcept
-{
-	const auto* value = std::getenv("FSO_TELEMETRY_RUN_NATIVE_LOOPBACK");
-	return value != nullptr && std::strcmp(value, "1") == 0;
-}
 
 class NativeSocketApiScope final {
   public:
@@ -756,7 +749,6 @@ testing::AssertionResult exercise_native_runtime_loopback(protocol::IpAddressFam
 
 TEST(TelemetryNativeRuntimeLoopbackContract, IPv4NegotiationHeartbeatAndShutdown)
 {
-	if (!native_loopback_opted_in()) GTEST_SKIP() << "set FSO_TELEMETRY_RUN_NATIVE_LOOPBACK=1 to run native loopback";
 	NativeSocketApiScope socket_api;
 	ASSERT_TRUE(socket_api.ready()) << "IPv4 loopback requires an available native socket API";
 	const auto probe = probe_server_port(protocol::IpAddressFamily::Ipv4);
@@ -767,7 +759,6 @@ TEST(TelemetryNativeRuntimeLoopbackContract, IPv4NegotiationHeartbeatAndShutdown
 
 TEST(TelemetryNativeRuntimeLoopbackContract, IPv6NegotiationHeartbeatAndShutdown)
 {
-	if (!native_loopback_opted_in()) GTEST_SKIP() << "set FSO_TELEMETRY_RUN_NATIVE_LOOPBACK=1 to run native loopback";
 	NativeSocketApiScope socket_api;
 	ASSERT_TRUE(socket_api.ready()) << "IPv6 WinSock bootstrap failed before family preflight";
 	const auto probe = probe_server_port(protocol::IpAddressFamily::Ipv6);

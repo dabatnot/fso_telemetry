@@ -142,7 +142,7 @@ jobs:
           if [ "$COMPILER" = "MinGW" ]; then
               cmake --build . --config "$CONFIGURATION"
           else
-              cmake --build . --config "$CONFIGURATION" -- /verbosity:minimal
+              cmake --build . --config "$CONFIGURATION" -- /m:1 /p:CL_MPCount=1 /verbosity:minimal
           fi
       - name: Run Tests
         working-directory: ./build
@@ -155,6 +155,11 @@ jobs:
              ./bin/unittests --gtest_shuffle
           else
               "./bin/$CONFIGURATION/unittests" --gtest_shuffle
+          fi
+          if [ "$CONFIGURATION" = "Release" ]; then
+              started=$SECONDS
+              ctest -C "$CONFIGURATION" -L telemetry-short --output-on-failure --timeout 60
+              test $((SECONDS - started)) -lt 300
           fi
 
   build_mac:

@@ -17,7 +17,7 @@ L'intégration du socle DOIT limiter les modifications de fichiers moteur exista
 
 Le placement après `psnet_init()` garantit que le runtime socket de la plateforme est disponible. Les callbacks enregistrés assurent le tick et la destruction avant `psnet_close()`. Aucune modification de `object`, `ship`, `physics_info`, `ai_info`, `cfile.cpp`, PSNET, Jansson ou du gestionnaire d'événements n'est autorisée en Phase 1.
 
-Les ajouts sous `code/telemetry/`, `test/` et `tools/` ne comptent pas comme seams upstream, mais restent soumis au périmètre de [07](07-livraison-et-tracabilite.md#2-arborescence-attendue).
+Les ajouts sous `code/telemetry/` et `tools/` restent dans le périmètre décrit par [07](07-livraison-et-tracabilite.md#1-contenu-livré).
 
 ## 3. Vue d'ensemble
 
@@ -157,7 +157,7 @@ CaptureStatus collect_player_kinematics(
     const EngineReadView&, PlayerKinematicsSample&) noexcept;
 ```
 
-`EngineReadView` est une façade de test ou un accès local au callback, jamais un objet conservé. La fonction valide `Player`, `Player_obj`, `Player_ship`, types, indices, valeurs finies et bornes avant copie. La conversion matrice vers quaternion DOIT être implémentée dans le module, testée contre un oracle et canonicalisée selon [04](04-modele-de-donnees-et-regles-metier.md#43-quaternion-canonique). `InvalidSource` force le comportement de discontinuité, jamais un échantillon partiel.
+`EngineReadView` est un accès local au callback, jamais un objet conservé. La fonction valide `Player`, `Player_obj`, `Player_ship`, types, indices, valeurs finies et bornes avant copie. La conversion matrice vers quaternion est implémentée dans le module et canonisée selon [04](04-modele-de-donnees-et-regles-metier.md#43-quaternion-canonique). `InvalidSource` force le comportement de discontinuité, jamais un échantillon partiel.
 
 ### 5.6 Réplication et protocole
 
@@ -296,4 +296,4 @@ Les frontières prévoient les phases suivantes sans les implémenter : un futur
 | `P1-REQ-036` | dépendances existantes et intégration CMake |
 | `P1-REQ-037`–`038` | teardown idempotent, ressources bornées et interfaces injectables |
 
-Les preuves restent celles de [07](07-livraison-et-tracabilite.md#11-preuves-à-produire) ; cette architecture ne les déclare pas acquises.
+Les critères de qualité associés sont regroupés dans [06](06-validation-securite-et-conformite.md).

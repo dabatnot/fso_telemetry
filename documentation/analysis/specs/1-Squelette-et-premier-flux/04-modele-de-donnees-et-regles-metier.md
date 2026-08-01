@@ -119,13 +119,13 @@ Le mapping de `physics_mode_flags` est fermé et ne recopie jamais directement l
 | `IMMOBILE` | `Player_obj->flags` contient `Object::Object_Flags::Immobile` ou `Dont_change_position` |
 | `ORIENTATION_LOCKED` | `Player_obj->flags` contient `Object::Object_Flags::Immobile` ou `Dont_change_orientation` |
 
-Tous les autres flags moteur sont sans représentation dans ce bitmap et sont ignorés. Les tests utilisent une table un-bit-à-la-fois, les combinaisons warp supercap et les deux verrous d'objet.
+Tous les autres flags moteur sont sans représentation dans ce bitmap et sont ignorés. Chaque bit, les combinaisons warp supercap et les deux verrous d'objet conservent le mapping défini ci-dessus.
 
 `speed`, `fspeed`, angles d'Euler, matrice, accélération calculée et valeurs graphiques NE DOIVENT PAS être ajoutés. Un client les dérive localement si nécessaire.
 
 ### 4.3 Quaternion canonique
 
-La conversion matrice-vers-quaternion est un composant pur testé séparément. Elle DOIT :
+La conversion matrice-vers-quaternion est un composant pur. Elle DOIT :
 
 1. refuser toute matrice non finie ;
 2. calculer le quaternion stable en sélectionnant la branche de trace ou de diagonale dominante ;
@@ -134,7 +134,7 @@ La conversion matrice-vers-quaternion est un composant pur testé séparément. 
 5. produire l'ordre wire `w,x,y,z` et la convention local-vers-monde ;
 6. vérifier après quantification une norme dans `[0.9999, 1.0001]`.
 
-Les tests couvrent l'identité, ±90°, les rotations de 180° autour de chaque axe, les matrices légèrement bruitées, l'équivalence `q/-q` et les entrées non finies.
+Elle traite l'identité, ±90°, les rotations de 180° autour de chaque axe, les matrices légèrement bruitées, l'équivalence `q/-q` et les entrées non finies.
 
 ### 4.4 Valeurs invalides
 
@@ -231,13 +231,12 @@ La phase 1 NE DOIT PAS :
 - publier une commande ou un accusé comme mutation de simulation ;
 - introduire un nouveau record cinématique redondant.
 
-## 9. Preuves minimales
+## 9. Critères de qualité des données
 
-Les preuves de ce document comprennent :
-
-- vecteurs valides 1.1 pour snapshot avec et sans joueur, et delta cumulatif ;
-- vecteurs invalides pour bit 10 sous 1.0, mauvais ID, mauvais type, record obligatoire manquant et option `FLIGHT_STATE` non couverte ;
-- tests source-vers-DTO, quaternion et non-finis ;
-- test de mutation pendant RTT de keyframe ;
-- test prouvant qu'un profil `CORE_SHIP` incomplet reste rejeté ;
-- non-régression des hashes et octets de tous les vecteurs FSTL 1.0.
+- les snapshots avec et sans joueur respectent le record-set FSTL 1.1 ;
+- le bit `PLAYER_KINEMATICS` est refusé sous FSTL 1.0 ;
+- ID, type, records obligatoires et présence `FLIGHT_STATE` sont cohérents ;
+- source moteur, DTO et représentation décodée portent les mêmes valeurs canoniques ;
+- les mutations survenues pendant l'acquittement d'une keyframe figurent dans le delta suivant ;
+- un profil `CORE_SHIP` incomplet est refusé ;
+- les octets de tous les vectors FSTL 1.0 restent inchangés.

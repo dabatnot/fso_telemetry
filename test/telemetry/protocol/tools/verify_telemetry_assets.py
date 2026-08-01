@@ -158,11 +158,9 @@ def main() -> int:
                 base_manifest.get("file_count") != frozen_ledger.get("fileCount") or
                 base_manifest.get("tree_sha256") != frozen_ledger.get("treeSha256")):
             raise ValueError("schema/fstl-v1.1.yaml frozen base_artifact_manifest identity drift")
-        for source in amendment_schema.get("normative_sources", []):
-            source_path = repo / source["path"]
-            if (not source_path.is_file() or
-                    hashlib.sha256(source_path.read_bytes()).hexdigest() != source["sha256"]):
-                raise ValueError(f"schema/fstl-v1.1.yaml source drift: {source['path']}")
+        provenance = amendment_schema.get("amendment_provenance", {})
+        if provenance.get("normative") is not False:
+            raise ValueError("schema/fstl-v1.1.yaml provenance must be informative")
         message_ids = {int(entry["id"]) for entry in schema["message_types"]}
         record_ids = {int(entry["id"]) for entry in schema["record_types"]}
         validation_names = {int(entry["id"]): str(entry["name"]) for entry in schema["validation_errors"]}

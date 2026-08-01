@@ -26,6 +26,14 @@ namespace telemetry::detail {
 enum class IoStatus : std::uint8_t;
 class SessionControllerTestAccess;
 
+constexpr std::size_t phase2_complete_delta_identity_capacity(
+	protocol::RecordType type) noexcept
+{
+	return type == protocol::RecordType::SubsystemState
+		? sizeof(std::uint64_t) + sizeof(std::uint32_t)
+		: sizeof(std::uint64_t);
+}
+
 enum class SessionControllerConfigureResult : std::uint8_t { Ready = 0, InvalidConfiguration, AllocationFailure };
 enum class SessionIngressDisposition : std::uint8_t {
 	Dropped = 0,
@@ -264,7 +272,16 @@ class SessionController final {
 	{
 		return m_phase1_allocation_observer.observed();
 	}
-	void note_phase1_runtime_allocation_for_test() noexcept { m_phase1_allocation_observer.note_growth(0U, 1U); }
+	std::uint64_t phase1_observed_allocation_count(
+		Phase1AllocationGrowthSource source) const noexcept
+	{
+		return m_phase1_allocation_observer.observed(source);
+	}
+	void note_phase1_runtime_allocation_for_test() noexcept
+	{
+		m_phase1_allocation_observer.note_growth(0U, 1U,
+			Phase1AllocationGrowthSource::TestProbe);
+	}
 	SessionPlayerMaterializationResult apply_player_observation(const CaptureResult& capture,
 		const PlayerObservationDto& observation) noexcept;
 	bool begin_initial_snapshot(std::size_t slot_index,
@@ -312,6 +329,22 @@ class SessionController final {
 	std::size_t service_initial_snapshot_egress(std::size_t datagram_budget, std::uint64_t now_us) noexcept;
 	protocol::ProducerBaselineResult replace_current_state(std::size_t slot_index,
 		const protocol::StateImage& image) noexcept;
+	protocol::ProducerBaselineResult replace_current_state_incremental(
+		std::size_t slot_index,
+		const protocol::StateImage& image,
+		const std::uint16_t* rebuilt_indices,
+		std::size_t rebuilt_index_count) noexcept;
+	protocol::ProducerBaselineResult take_current_state_for_incremental_patch(
+		std::size_t slot_index,
+		protocol::StateImage& image) noexcept;
+	protocol::ProducerBaselineResult restore_current_state_after_incremental_patch(
+		std::size_t slot_index,
+		protocol::StateImage&& image) noexcept;
+	protocol::ProducerBaselineResult commit_current_state_incremental_patch(
+		std::size_t slot_index,
+		protocol::StateImage&& image,
+		const std::uint16_t* rebuilt_indices,
+		std::size_t rebuilt_index_count) noexcept;
 	bool queue_cumulative_delta(std::size_t slot_index, std::uint64_t now_us) noexcept;
 	std::size_t service_delta_egress(std::size_t datagram_budget, std::uint64_t now_us) noexcept;
 	Phase1SnapshotProgress snapshot_progress(std::size_t slot_index) const noexcept;

@@ -186,6 +186,7 @@ Une capture est publiée seulement si `Player`, `Player_obj` et `Player_ship` so
 
 - `NoPlayer` avant la première source valide : snapshot complet pour la couverture annoncée, joueur observé absent, session cliente `Live` avec sous-vue joueur indisponible ;
 - disparition après une source valide : discontinuité ; invalider l'identité observée et forcer une nouvelle keyframe sans joueur ;
+- `SourceTemporarilyUnavailable` après une capture valide : conserver le dernier état canonique cohérent, le marquer stale et ne publier aucun fragment partiel ; ce statut ne ferme pas la session ;
 - `InvalidSource` : incrémenter la raison fermée, ne pas publier les champs invalides et appliquer la même discontinuité ;
 - réapparition : attribuer un nouvel `entity_id`, puis envoyer une keyframe récente.
 
@@ -330,4 +331,4 @@ sequenceDiagram
 | `P1-REQ-031`–`033` | 6, 10 et renvoi vers 05 |
 | `P1-REQ-037`–`038` | 4, 8, 10 et 11 |
 
-Les scénarios négatifs et les preuves mesurables sont détaillés dans [06](06-validation-securite-et-conformite.md). Ce document n'affirme pas qu'ils ont déjà réussi.
+Les comportements attendus en situation nominale ou dégradée sont résumés dans [06](06-validation-securite-et-conformite.md).

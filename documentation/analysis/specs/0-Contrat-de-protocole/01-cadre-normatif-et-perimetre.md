@@ -218,7 +218,7 @@ Une implémentation NE DOIT PAS accumuler des patches différentiels successifs 
 | `P0-F-003` | fournir un en-tête de 68 octets et des encodeurs/décodeurs sans padding implicite |
 | `P0-F-004` | fournir `PacketWriter` et `PacketReader` bornés, sans `reinterpret_cast` réseau |
 | `P0-F-005` | valider CRC, tailles, offsets et quotas avant allocation proportionnelle |
-| `P0-F-006` | implémenter et tester `HELLO`, `WELCOME`, `HEARTBEAT`, `ACK`, `NACK` et `RESYNC_REQUEST` hors moteur |
+| `P0-F-006` | implémenter `HELLO`, `WELCOME`, `HEARTBEAT`, `ACK`, `NACK` et `RESYNC_REQUEST` indépendamment du moteur |
 | `P0-F-007` | formaliser handshake, version/capability negotiation et synchronisation NTP-style |
 | `P0-F-008` | formaliser fenêtre fiable, backoff, expiration, déduplication et resync |
 | `P0-F-009` | formaliser snapshot candidat, `ACK APPLIED`, baseline immuable et delta cumulatif |
@@ -227,7 +227,7 @@ Une implémentation NE DOIT PAS accumuler des patches différentiels successifs 
 | `P0-F-012` | fournir golden vectors valides et invalides décodables sans FS2Open |
 | `P0-F-013` | fournir une matrice de compatibilité et d'évolution major/minor/record |
 | `P0-F-014` | fournir une taxonomie stable de rejets, drops et métriques |
-| `P0-F-015` | démontrer par tests qu'aucun message client ne peut atteindre une commande de simulation |
+| `P0-F-015` | garantir qu'aucun message client ne peut atteindre une commande de simulation |
 
 ## 9. Exigences non fonctionnelles
 
@@ -271,7 +271,7 @@ Toute valeur numérique citée dans l'analyse est classée par la spécification
 - **maximum FSTL 1.x** : peut être abaissé, jamais relevé sans évolution compatible explicite ;
 - **défaut d'implémentation** : configurable dans les bornes ;
 - **valeur négociée** : intersection des offres producteur/client ;
-- **recommandation de test** : ne change pas le wire.
+- **valeur d'observation** : utile pour qualifier une implémentation sans changer le wire.
 
 Le port `42042` est un défaut configurable, pas un identifiant de protocole. La découverte est désactivée par défaut. Une écoute non-loopback et `TrustedFullState` requièrent toutes deux une activation explicite et une allowlist non vide.
 
@@ -292,15 +292,11 @@ Sont explicitement hors FSTL 1.0 :
 - fusion automatique de plusieurs producteurs ;
 - conservation non bornée d'un historique pour replay.
 
-## 13. Condition d'approbation du cadre
-
-Ce cadre est approuvé lorsque les revues suivantes concluent sans réserve bloquante :
+## 13. Critères produit
 
 - **métier** : tous les domaines `A/C/D/E` sont couverts ou explicitement exclus ;
 - **transport** : chaque octet, limite et transition de session est déterministe ;
 - **interopérabilité** : les golden vectors sont décodés par deux implémentations indépendantes ;
 - **sécurité** : les allocations, débits, sources et capacités coûteuses sont bornés ;
-- **compatibilité** : les règles major/minor/record/capability sont testées ;
-- **architecture** : aucun type moteur ou comportement de phase ultérieure n'a fuité dans le contrat public.
-
-Les preuves et signataires attendus sont détaillés dans [07 — Livraison et traçabilité](07-livraison-et-tracabilite.md).
+- **compatibilité** : chaque combinaison major/minor/record/capability possède un résultat défini ;
+- **architecture** : le contrat public ne dépend d'aucun type moteur ni comportement d'une phase ultérieure.

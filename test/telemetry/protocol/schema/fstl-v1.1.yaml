@@ -1,31 +1,50 @@
 {
   "amendment_provenance": {
+    "normative": false,
     "phase1_minimal_profile": [
       {
         "document": "documentation/analysis/specs/1-Squelette-et-premier-flux/01-cadre-normatif-et-perimetre.md",
-        "section": "4.2-4.3"
+        "requirements": [
+          "P1-REQ-021",
+          "P1-REQ-022",
+          "P1-REQ-023"
+        ]
       },
       {
         "document": "documentation/analysis/specs/1-Squelette-et-premier-flux/04-modele-de-donnees-et-regles-metier.md",
-        "section": "2.2"
+        "requirements": [
+          "P1-REQ-021",
+          "P1-REQ-022",
+          "P1-REQ-023"
+        ]
       },
       {
         "document": "documentation/analysis/specs/1-Squelette-et-premier-flux/07-livraison-et-tracabilite.md",
-        "section": "6 / D1-003-D1-006"
+        "requirements": [
+          "P1-REQ-021",
+          "P1-REQ-022",
+          "P1-REQ-023"
+        ]
       }
     ],
     "player_kinematics": [
       {
         "document": "documentation/analysis/specs/1-Squelette-et-premier-flux/01-cadre-normatif-et-perimetre.md",
-        "section": "4.2"
+        "requirements": [
+          "P1-REQ-020"
+        ]
       },
       {
         "document": "documentation/analysis/specs/1-Squelette-et-premier-flux/04-modele-de-donnees-et-regles-metier.md",
-        "section": "2.1"
+        "requirements": [
+          "P1-REQ-020"
+        ]
       },
       {
         "document": "documentation/analysis/specs/1-Squelette-et-premier-flux/07-livraison-et-tracabilite.md",
-        "section": "6 / D1-002"
+        "requirements": [
+          "P1-REQ-020"
+        ]
       }
     ]
   },
@@ -2473,72 +2492,6 @@
         }
       },
       "symbol": "CAPABILITY_UPDATE"
-    }
-  ],
-  "normative_document_set": {
-    "documents": [
-      {
-        "path": "documentation/analysis/specs/1-Squelette-et-premier-flux/01-cadre-normatif-et-perimetre.md",
-        "sha256": "1113a3ec3e88db8a0c01069ec804cc382aad51e75c837e7f7842f909911c7dd0"
-      },
-      {
-        "path": "documentation/analysis/specs/1-Squelette-et-premier-flux/02-architecture-contrats-et-interfaces.md",
-        "sha256": "a328dabfcfd7d1317afdd81411598c60625636670e45923e1efa1cf1f91db51d"
-      },
-      {
-        "path": "documentation/analysis/specs/1-Squelette-et-premier-flux/03-flux-cycle-de-vie-et-concurrence.md",
-        "sha256": "f0a5a781181f102a067ecf232d14ea5830056bfc72ceff0b3bd2f830c45abd0a"
-      },
-      {
-        "path": "documentation/analysis/specs/1-Squelette-et-premier-flux/04-modele-de-donnees-et-regles-metier.md",
-        "sha256": "49925c53587069ddd78f1071cb415af863ecb26a811a3d50a0f0e7dcf89210da"
-      },
-      {
-        "path": "documentation/analysis/specs/1-Squelette-et-premier-flux/05-integration-configuration-et-observabilite.md",
-        "sha256": "dc3c7925298b12baa97a8b099690893b7e0c5ab0720a61ba0f6ac566bad11f69"
-      },
-      {
-        "path": "documentation/analysis/specs/1-Squelette-et-premier-flux/06-validation-securite-et-conformite.md",
-        "sha256": "6c73f775b123a81152d04696870300d5b9dce809c33714052c4376f8326f236d"
-      },
-      {
-        "path": "documentation/analysis/specs/1-Squelette-et-premier-flux/07-livraison-et-tracabilite.md",
-        "sha256": "d367a5464d34b67f98f880de7d3c9b14df36730aeb4d513e2913fd17ab8b548a"
-      }
-    ],
-    "file_count": 7,
-    "identity": "FSTL-1.1-AMENDMENT-NORMATIVE-DOCUMENTS",
-    "tree_sha256": "fd3660bdf7e7beb8261a67e0464136755e509d794755b27eee1b13f71a72d1ef",
-    "version": "1.1.0"
-  },
-  "normative_sources": [
-    {
-      "path": "documentation/analysis/specs/1-Squelette-et-premier-flux/01-cadre-normatif-et-perimetre.md",
-      "sha256": "1113a3ec3e88db8a0c01069ec804cc382aad51e75c837e7f7842f909911c7dd0"
-    },
-    {
-      "path": "documentation/analysis/specs/1-Squelette-et-premier-flux/02-architecture-contrats-et-interfaces.md",
-      "sha256": "a328dabfcfd7d1317afdd81411598c60625636670e45923e1efa1cf1f91db51d"
-    },
-    {
-      "path": "documentation/analysis/specs/1-Squelette-et-premier-flux/03-flux-cycle-de-vie-et-concurrence.md",
-      "sha256": "f0a5a781181f102a067ecf232d14ea5830056bfc72ceff0b3bd2f830c45abd0a"
-    },
-    {
-      "path": "documentation/analysis/specs/1-Squelette-et-premier-flux/04-modele-de-donnees-et-regles-metier.md",
-      "sha256": "49925c53587069ddd78f1071cb415af863ecb26a811a3d50a0f0e7dcf89210da"
-    },
-    {
-      "path": "documentation/analysis/specs/1-Squelette-et-premier-flux/05-integration-configuration-et-observabilite.md",
-      "sha256": "dc3c7925298b12baa97a8b099690893b7e0c5ab0720a61ba0f6ac566bad11f69"
-    },
-    {
-      "path": "documentation/analysis/specs/1-Squelette-et-premier-flux/06-validation-securite-et-conformite.md",
-      "sha256": "6c73f775b123a81152d04696870300d5b9dce809c33714052c4376f8326f236d"
-    },
-    {
-      "path": "documentation/analysis/specs/1-Squelette-et-premier-flux/07-livraison-et-tracabilite.md",
-      "sha256": "d367a5464d34b67f98f880de7d3c9b14df36730aeb4d513e2913fd17ab8b548a"
     }
   ],
   "numeric_registries": {

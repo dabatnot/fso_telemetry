@@ -1564,6 +1564,74 @@ TEST(TelemetryPhase1DeltaEgressContract, SaturatedHeartbeatProbesCannotPreemptOr
 		<< "A heartbeat that could not reserve a probe must not consume a packet sequence.";
 }
 
+TEST(TelemetryPhase1HeartbeatContract, ClockStaleTransitionReleasesLostProbeCapacityForRecovery)
+{
+	IdentityHarness ids{{{true, 0x7405U}}};
+	auto controller = make_controller(ids.allocator, nullptr, 1U, 5U);
+	activate_phase1_live_baseline(controller, 0x7405U);
+
+	for (std::size_t index = 0U;
+		 index < protocol::MaxInFlightProbes; ++index) {
+		controller.service_periodic(
+			controller.slot(0U).heartbeat.next_periodic_due_us);
+		const auto heartbeat = pop_output(controller);
+		ASSERT_EQ(protocol::MessageType::Heartbeat,
+			heartbeat.datagram.header.message_type);
+	}
+	ASSERT_EQ(protocol::MaxInFlightProbes,
+		controller.slot(0U).heartbeat.probes.in_flight_count());
+
+	const auto stale_at =
+		controller.slot(0U).heartbeat.last_valid_clock_response_us +
+		controller.slot(0U).heartbeat.stale_timeout_us;
+	controller.service_timeouts(stale_at);
+
+	EXPECT_TRUE(controller.slot(0U).heartbeat.clock_stale);
+	EXPECT_EQ(detail::ProducerSessionProgress::Stale,
+		controller.slot(0U).progress);
+	EXPECT_EQ(0U,
+		controller.slot(0U).heartbeat.probes.in_flight_count());
+	const auto recovery_due = std::max(
+		stale_at,
+		controller.slot(0U).heartbeat.next_periodic_due_us);
+	controller.service_periodic(recovery_due);
+	const auto recovery_heartbeat = pop_output(controller);
+	EXPECT_EQ(protocol::MessageType::Heartbeat,
+		recovery_heartbeat.datagram.header.message_type);
+	EXPECT_EQ(1U,
+		controller.slot(0U).heartbeat.probes.in_flight_count());
+
+	protocol::HeartbeatPayload request{};
+	ASSERT_EQ(protocol::ValidationError::None,
+		protocol::decode_heartbeat_payload(
+			recovery_heartbeat.datagram.payload, request));
+	protocol::HeartbeatPayload response = request;
+	response.kind = protocol::HeartbeatKind::Response;
+	response.receive_t1_us = recovery_due + 100U;
+	response.transmit_t2_us = recovery_due + 100U;
+	std::array<std::uint8_t, protocol::HeartbeatPayloadSize>
+		response_payload{};
+	std::size_t response_size = 0U;
+	ASSERT_EQ(protocol::ValidationError::None,
+		protocol::encode_heartbeat_payload(
+			response, mutable_view(response_payload), response_size));
+	auto response_header = recovery_heartbeat.datagram.header;
+	response_header.packet_sequence += 1U;
+	response_header.sent_time_us = response.transmit_t2_us;
+	response_header.message_size =
+		static_cast<std::uint32_t>(response_size);
+	response_header.message_crc32 = protocol::crc32_iso_hdlc(
+		{response_payload.data(), response_size});
+	const auto response_packet = encode_datagram(
+		response_header, {response_payload.data(), response_size});
+	EXPECT_EQ(detail::SessionIngressDisposition::ResponseQueued,
+		controller.ingest(endpoint(), view(response_packet.bytes),
+			recovery_due + 200U, 7U, true).disposition);
+	EXPECT_FALSE(controller.slot(0U).heartbeat.clock_stale);
+	EXPECT_EQ(detail::ProducerSessionProgress::ReadyForState,
+		controller.slot(0U).progress);
+}
+
 TEST(TelemetryPhase1DeltaEgressContract, LiveDeltaIsDecodableV11UnreliableAndReferencesTheActiveBaseline)
 {
 	IdentityHarness ids{{{true, 0x7401U}}};

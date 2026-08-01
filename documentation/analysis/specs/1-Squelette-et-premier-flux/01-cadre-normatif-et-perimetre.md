@@ -1,156 +1,130 @@
 # 01 — Cadre normatif et périmètre
 
-## 1. Objet et statut
+## 1. Objet
 
-Ce document spécifie le périmètre normatif de la **Phase 1 — Squelette et premier flux**. Il transforme la [Phase 1 de la feuille de route](../../04-implementation-roadmap.md#3-phase-1--squelette-et-premier-flux) en exigences vérifiables sans prétendre que le code, les tests ou les mesures existent déjà.
+Ce document transforme la [Phase 1 de la feuille de route](../../04-implementation-roadmap.md#3-phase-1--squelette-et-premier-flux) en exigences produit vérifiables.
 
-Les mots **DOIT**, **NE DOIT PAS**, **DEVRAIT**, **NE DEVRAIT PAS** et **PEUT** ont le sens normatif défini par le [contrat Phase 0](../0-Contrat-de-protocole/README.md). En cas d'écart avec une analyse, la Phase 0 reste normative pour FSTL 1.0 et les décisions FSTL 1.1 enregistrées dans [07](07-livraison-et-tracabilite.md#6-décisions-de-clarification) portent seules les extensions de cette phase.
-
-La livraison de ces documents ne ferme aucune gate d'implémentation. Toute preuve citée ci-dessous reste **à produire** jusqu'à son archivage selon [07](07-livraison-et-tracabilite.md#11-preuves-à-produire).
+Les mots **DOIT**, **NE DOIT PAS**, **DEVRAIT**, **NE DEVRAIT PAS** et **PEUT** ont le sens normatif défini par le [contrat Phase 0](../0-Contrat-de-protocole/README.md). La Phase 0 reste normative pour FSTL 1.0.
 
 ## 2. Résultat observable attendu
 
-À la sortie d'implémentation de la Phase 1, un client console indépendant DOIT pouvoir, sur une mission solo :
+Sur une mission solo, un client console indépendant peut :
 
-1. joindre un producteur explicitement configuré sur IPv4 ou IPv6 ;
-2. négocier FSTL 1.1 sans modifier les octets FSTL 1.0 ;
+1. joindre un producteur configuré sur IPv4 ou IPv6 ;
+2. négocier FSTL 1.1 sans modifier FSTL 1.0 ;
 3. recevoir un snapshot atomique du joueur observé ;
-4. afficher temps, identité stable, position, quaternion, vitesse linéaire et vitesse angulaire ;
-5. maintenir cet état avec des deltas cumulatifs contre une baseline acquittée par `ACK APPLIED` ;
-6. renouveler cette baseline et demander une resynchronisation ;
-7. rester borné et non bloquant sous perte, duplication, désordre, client lent et `WOULD_BLOCK` ;
-8. fonctionner trente minutes, puis libérer et recréer proprement toutes ses ressources lors d'un arrêt et d'une relance.
+4. afficher temps, identité, position, quaternion, vitesse linéaire et vitesse angulaire ;
+5. maintenir cet état avec des deltas cumulatifs ;
+6. renouveler sa baseline et demander une resynchronisation ;
+7. rester borné et non bloquant lorsque le réseau perd, duplique ou désordonne des datagrammes ;
+8. libérer et recréer ses ressources lors d'un arrêt, d'une transition de mission ou d'une relance.
 
-Le client demeure en lecture seule. Ce résultat ne constitue ni le vaisseau complet de Phase 2, ni le client distant applicatif de Phase 5.
+## 3. Acteurs et autorité
 
-## 3. Acteurs, autorité et frontière de confiance
-
-| Acteur | Autorité et responsabilité Phase 1 |
+| Acteur | Responsabilité |
 |---|---|
-| moteur FS2Open | source de vérité solo ; ses structures sont lues uniquement sur le thread principal |
-| producteur `code/telemetry` | copie, valide, canonicalise, sérialise et publie la vue cinématique |
-| transport UDP | transporte FSTL sur des sockets dédiés ; ne possède aucune autorité métier |
-| pair réseau | source non fiable de `HELLO`, `ACK`, `NACK`, `HEARTBEAT` et `RESYNC_REQUEST` uniquement |
-| décodeur indépendant | oracle d'interopérabilité sans réutilisation des structures C++ producteur |
-| client console | consommateur de preuve, lecture seule, sans préjuger du client Phase 5 |
+| moteur FS2Open | source de vérité solo, lue sur le thread principal |
+| producteur `code/telemetry` | copie, valide, canonise, sérialise et publie |
+| transport UDP | transporte FSTL sans autorité métier |
+| pair réseau | source non fiable des messages de contrôle autorisés |
+| décodeur indépendant | vérifie l'interopérabilité sans structures C++ du producteur |
+| client console | présente l'état reçu en lecture seule |
 
-Tout datagramme entrant est hostile jusqu'à validation complète. Une allowlist n'authentifie pas cryptographiquement le pair. FSTL 1.1 reste destiné à un LAN explicitement autorisé ; une exposition Internet exige un tunnel authentifié externe.
+FSTL 1.1 vise un LAN explicitement autorisé. Une exposition Internet emploie un tunnel authentifié externe.
 
-## 4. Extension compatible FSTL 1.1
+## 4. Extension FSTL 1.1
 
-### 4.1 Motif
-
-FSTL 1.0 impose `CORE_SHIP` à toute session d'état et rend alors obligatoires des records de coque, boucliers, sous-systèmes, énergie et propulsion réservés à la Phase 2. Un snapshot partiel est interdit. Anticiper `CORE_SHIP` violerait la feuille de route ; rester indéfiniment `Synchronizing` ne satisferait pas le premier flux.
-
-La Phase 1 introduit donc une extension mineure FSTL 1.1. Elle NE DOIT PAS modifier le layout, la valeur ou l'interprétation d'un octet FSTL 1.0.
-
-### 4.2 Domaine `PLAYER_KINEMATICS`
-
-Le bit `StateDomainCoverage.PLAYER_KINEMATICS = 0x0000000000000400` est défini en FSTL 1.1. Il suit `NAVIGATION = 0x0200` et n'est valide que si la version négociée est au moins 1.1.
+`StateDomainCoverage.PLAYER_KINEMATICS = 0x0000000000000400` est défini en FSTL 1.1.
 
 Dans un `FULL_SNAPSHOT` :
 
-- `SESSION_STATE` et `MISSION_STATE` sont toujours présents ;
-- si `SESSION_STATE.observed_player_entity_id` est présent, un unique `ENTITY_LIFECYCLE` de type `SHIP` et un unique `FLIGHT_STATE` portent exactement cet ID ;
-- `FLIGHT_STATE.presence` vaut `0` et seuls ses champs obligatoires sont émis ;
+- `SESSION_STATE` et `MISSION_STATE` sont présents ;
+- si un joueur est observé, un `ENTITY_LIFECYCLE` de type `SHIP` et un `FLIGHT_STATE` portent son ID ;
+- `FLIGHT_STATE.presence` vaut `0` ;
 - `required_manifest_id` vaut `0` ;
-- `SHIP_IDENTITY`, `CLASS_MANIFEST` et tous les records `CORE_SHIP` additionnels sont absents, sauf si un autre domaine négocié les exige dans une phase ultérieure ;
-- si aucun `Player_obj` valide n'existe, l'identifiant observé et les deux records joueur sont absents.
+- les records Phase 2 restent absents ;
+- sans joueur valide, l'identifiant observé et les records joueur sont absents.
 
-L'identité minimale du joueur est la relation entre `observed_player_entity_id`, `ENTITY_LIFECYCLE.entity_id` et `FLIGHT_STATE.entity_id`. Aucun nom, classe, callsign ou index moteur n'est inventé.
+Le producteur Phase 1 annonce FSTL 1.1. Un client limité à 1.0 reçoit `UnsupportedVersion` sans session durable. Tous les vectors FSTL 1.0 conservent leurs octets.
 
-### 4.3 Compatibilité
+## 5. Exigences produit
 
-Le producteur Phase 1 annonce uniquement FSTL 1.1. Un client limité à FSTL 1.0 reçoit un `WELCOME` portant `WelcomeStatus::UnsupportedVersion`, sans création de session durable. Le décodeur indépendant DOIT continuer à décoder tous les vectors FSTL 1.0 inchangés. Un pair NE DOIT jamais émettre `PLAYER_KINEMATICS` dans une session négociée 1.0.
+### 5.1 Périmètre et intégration
 
-## 5. Catalogue des exigences
+| ID | Exigence |
+|---|---|
+| `P1-REQ-001` | La Phase 1 conserve le contrat Phase 0 et les vectors FSTL 1.0 octet-identiques. |
+| `P1-REQ-002` | FSTL 1.1 est une extension additive ; aucun élément 1.1 n'est émis dans une session 1.0. |
+| `P1-REQ-003` | Le produit livré comprend un producteur solo, un décodeur indépendant et un client console. |
+| `P1-REQ-004` | Aucun message entrant ni callback de télémétrie ne modifie la simulation ou les structures métier existantes. |
+| `P1-REQ-005` | L'intégration au socle se limite au groupe `Telemetry` et à l'initialisation du module. |
 
-### 5.1 Gate, périmètre et intégration
+### 5.2 Configuration
 
-| ID | Exigence | Preuve minimale attendue |
-|---|---|---|
-| `P1-REQ-001` | La Phase 1 DOIT hériter de tout le contrat Phase 0 et conserver les vectors FSTL 1.0 octet-identiques. Seul `P1-WP-01` PEUT produire l'amendement 1.1 nécessaire à `G0-G` ; `P1-WP-02` et les lots suivants NE DOIVENT PAS commencer avant fermeture documentée de cette gate. | hashes des vectors, compte rendu des gates |
-| `P1-REQ-002` | FSTL 1.1 DOIT être une extension additive de même majeure ; le profil Phase 1 exige la négociation exacte 1.1 et n'émet aucun élément 1.1 dans une session 1.0. | matrice de compatibilité et tests croisés |
-| `P1-REQ-003` | Le périmètre exécutable se limite à un producteur solo, un décodeur indépendant et un client console de preuve. | revue d'arborescence et scénario nominal |
-| `P1-REQ-004` | Aucun message entrant ni callback de télémétrie NE DOIT modifier la simulation ou ajouter de champ à `object`, `ship`, `physics_info` ou `ai_info`. | revue statique et tests négatifs |
-| `P1-REQ-005` | Le seam du socle DOIT se limiter au groupe `Telemetry` dans `code/source_groups.cmake` et à l'include/appel `telemetry::initialize()` dans `freespace2/freespace.cpp`. | diff de portée et builds |
+| ID | Exigence |
+|---|---|
+| `P1-REQ-006` | `data/config/telemetry.json` est optionnel ; une configuration absente ou invalide laisse le module désactivé avant ouverture d'un socket. |
+| `P1-REQ-007` | Les défauts sont `enabled=false`, loopback IPv4/IPv6, port `42042`, découverte désactivée, `Cockpit`, `maxClients=1` et allowlist loopback. |
+| `P1-REQ-008` | `maxClients` vaut 1–4, `flightHz` 1–60, `keyframeSeconds` 1–5, heartbeat 200–5000 ms et `maxDatagramsPerTick` 1–256. |
+| `P1-REQ-009` | `producer_id` est non nul et persistant ; `session_id` est non nul, imprévisible et non réutilisé dans le processus. |
 
-### 5.2 Configuration et démarrage
+### 5.3 Transport et ressources
 
-| ID | Exigence | Preuve minimale attendue |
-|---|---|---|
-| `P1-REQ-006` | Le module DOIT lire le JSON optionnel `data/config/telemetry.json` avec Jansson. Absence, erreur syntaxique, type, borne ou clé inconnue DOIVENT laisser le module désactivé avant ouverture d'un socket et produire au plus un diagnostic de démarrage. | tests de table de configuration |
-| `P1-REQ-007` | Les défauts DOIVENT être `enabled=false`, loopback IPv4 et IPv6, port `42042`, découverte désactivée, `Cockpit`, `TrustedFullState=false`, `maxClients=1` et allowlist loopback. Toute écoute non-loopback exige une activation explicite et une allowlist non vide. | inspection de config effective et tests source |
-| `P1-REQ-008` | La configuration DOIT borner `maxClients` à 1–4, `flightHz` à 1–60 (défaut 30), `keyframeSeconds` à 1–5 (défaut 2), les heartbeats à 200–5000 ms (défauts 500 ms en mission et 1000 ms hors mission), et `maxDatagramsPerTick` à 1–256 (défaut 64). Elle n'est relue qu'au prochain démarrage en Phase 1. | tests limites et redémarrage |
-| `P1-REQ-009` | `producer_id` DOIT être un `u64` non nul persistant ; `session_id` DOIT être non nul, imprévisible et non réutilisé pendant le processus. Un échec d'entropie désactive le module. | fixture de profil et injection d'échec RNG |
+| ID | Exigence |
+|---|---|
+| `P1-REQ-010` | Le transport utilise des sockets UDP privés et non bloquants, indépendants du multijoueur, avec IPv4 et IPv6. |
+| `P1-REQ-011` | Chaque tick traite au plus `maxDatagramsPerTick` et ne boucle jamais sur un backlog non borné. |
+| `P1-REQ-012` | Les limites FSTL héritées sont respectées : datagramme 1200 octets, en-tête 68, payload 1132, message d'état 1 Mio, 1024 fragments, quatre réassemblages et 4 Mio par client. |
+| `P1-REQ-013` | Source, session, allowlist, anti-amplification et limites sont validées avant allocation proportionnelle ou mutation. |
+| `P1-REQ-014` | Chaque client possède une baseline active, au plus une candidate, un dernier delta remplaçable et des fenêtres bornées. |
 
-### 5.3 Transport, sécurité et ressources
+### 5.4 Cycle de vie
 
-| ID | Exigence | Preuve minimale attendue |
-|---|---|---|
-| `P1-REQ-010` | Le transport DOIT posséder ses sockets UDP dédiés et privés, non bloquants, sans `psnet_send()`, `multi_io_send()` ni socket multijoueur. Il DOIT fournir IPv4 et IPv6 par socket dual-stack sûr ou par deux sockets dédiés. | intégration loopback v4/v6 et revue API |
-| `P1-REQ-011` | Chaque tick traite au plus `maxDatagramsPerTick`. `WOULD_BLOCK` remplace ou abandonne l'état ancien sans attente ; aucune boucle ne dépend d'un backlog non borné. | harness `WOULD_BLOCK` et mesure de tick |
-| `P1-REQ-012` | Le producteur et les outils DOIVENT respecter les constantes FSTL héritées : datagramme 1200 octets, en-tête 68, payload 1132, little-endian, CRC-32/ISO-HDLC, message d'état 1 Mio, 1024 fragments, quatre réassemblages et 4 Mio par client. | golden vectors, limites et fuzzing |
-| `P1-REQ-013` | L'ordre de validation Phase 0, la liaison endpoint/session, l'allowlist, l'anti-amplification `3×` et les rate limits hérités DOIVENT précéder toute allocation proportionnelle ou mutation. | tests sécurité et compteurs de drops |
-| `P1-REQ-014` | Par client, il existe exactement une baseline active, au plus une candidate, un dernier delta remplaçable par baseline et des fenêtres bornées. Le produit `maxClients × budgets` DOIT être contrôlé sans overflow au démarrage. | test de saturation et pic mémoire |
+| ID | Exigence |
+|---|---|
+| `P1-REQ-015` | `telemetry::initialize()` est idempotent et enregistre une seule fois les callbacks requis. |
+| `P1-REQ-016` | Les globals moteur sont lus sur le thread principal ; seules des copies possédées survivent au tick. |
+| `P1-REQ-017` | Chargement, mission, menu et arrêt purgent ou renouvellent les ressources et identités selon leur portée. |
+| `P1-REQ-018` | Aucun état lourd n'est envoyé avant `ACK APPLIED` de `WELCOME`. |
+| `P1-REQ-019` | Le heartbeat conserve au plus huit sondes et échantillons et distingue horloge monotone et temps mission. |
 
-### 5.4 Cycle de vie et threading
+### 5.5 Données et réplication
 
-| ID | Exigence | Preuve minimale attendue |
-|---|---|---|
-| `P1-REQ-015` | `telemetry::initialize()` DOIT être idempotent, enregistrer exactement une fois `EngineUpdate`, `EngineShutdown`, `GameMissionLoad`, `GameEnterState` et `GameLeaveState`, puis retourner. | test double initialisation et compteur callbacks |
-| `P1-REQ-016` | Les globals moteur DOIVENT être lus uniquement sur le thread principal. Seules des copies sans pointeur, handle ou index local peuvent survivre au tick. | assertions de thread et revue DTO |
-| `P1-REQ-017` | Chargement, entrée/sortie de mission, retour menu et shutdown DOIVENT renouveler ou purger mission, baselines, sessions, sockets et IDs selon leur portée ; aucun état d'une ancienne session ne survit. | tests de cycle de vie et détecteur de fuite |
-| `P1-REQ-018` | Les machines producteur/client et les timeouts Phase 0 DOIVENT être respectés. Aucun manifeste, snapshot ou état lourd n'est envoyé avant `ACK APPLIED` de `WELCOME`. | transitions horodatées et tests timeout |
-| `P1-REQ-019` | Le heartbeat NTP-style DOIT conserver au plus huit sondes et huit échantillons, sélectionner le RTT minimal, lisser l'offset par huit et distinguer horloge monotone et temps mission. | tests d'horloge, overflow et pause |
+| ID | Exigence |
+|---|---|
+| `P1-REQ-020` | `PLAYER_KINEMATICS=0x0400` est valide uniquement en 1.1, reste stable pendant la session et ne signifie pas `CORE_SHIP`. |
+| `P1-REQ-021` | Le snapshot respecte exactement le record-set de la section 4 avec `required_manifest_id=0`. |
+| `P1-REQ-022` | `FLIGHT_STATE` publie ID, temps, position, quaternion, vitesse monde, vitesse angulaire locale, rayon et flags physiques. |
+| `P1-REQ-023` | L'identité joueur est la relation stable entre `observed_player_entity_id` et les records lifecycle/flight. |
+| `P1-REQ-024` | Les sources joueur sont validées avant lecture ; une valeur non finie ou hors borne n'est pas publiée comme valide. |
+| `P1-REQ-025` | `entity_id` est non nul, monotone dans la session et indépendant des pointeurs et indices moteur. |
+| `P1-REQ-026` | Un `FULL_SNAPSHOT` est fiable, transactionnel, atomique et idempotent après perte d'ACK. |
+| `P1-REQ-027` | Un `DELTA` est cumulatif depuis la baseline immuable ; le dernier delta reçu suffit à converger. |
+| `P1-REQ-028` | Une keyframe candidate est créée toutes les 1–5 s ; les mutations survenues pendant son acquittement figurent dans le premier delta suivant. |
+| `P1-REQ-029` | Une discontinuité de mission ou de joueur produit une keyframe ou une nouvelle session. |
+| `P1-REQ-030` | Une resynchronisation est dédupliquée, acquittée et produit une keyframe récente sans historique non borné. |
 
-### 5.5 Données, snapshot, delta et resynchronisation
+### 5.6 Observabilité et qualité
 
-| ID | Exigence | Preuve minimale attendue |
-|---|---|---|
-| `P1-REQ-020` | FSTL 1.1 DOIT définir `PLAYER_KINEMATICS=0x0400`, valide uniquement en 1.1 et immuable après `SESSION_BEGIN`. Il NE DOIT PAS signifier `CORE_SHIP`. | schéma, tables et vectors 1.1 |
-| `P1-REQ-021` | Un snapshot du domaine DOIT respecter exactement la cardinalité et le record-set de la section 4.2, avec `required_manifest_id=0`. | golden snapshot minimal et cas sans joueur |
-| `P1-REQ-022` | Le `FLIGHT_STATE` Phase 1 DOIT avoir `presence=0` et contenir ses champs obligatoires réels : ID, temps, position, quaternion, vitesse monde, vitesse angulaire locale, rayon et flags physiques. | comparaison source/JSON canonique |
-| `P1-REQ-023` | L'identité joueur DOIT être la relation stable entre l'ID observé et les records lifecycle/flight ; `SHIP_IDENTITY`, classe, nom et manifeste sont exclus. | test d'absence et unicité des IDs |
-| `P1-REQ-024` | `Player`, `Player_obj` et `Player_ship` DOIVENT être validés avant lecture. Position, quaternion local-vers-monde `(w,x,y,z)`, vitesse monde et rotation locale `(pitch,yaw,roll)` suivent les unités Phase 0. Une source non finie ou hors borne ne peut être tronquée ni publiée comme valide. | oracle moteur et cas source invalide |
-| `P1-REQ-025` | `entity_id` DOIT être un `u64` non nul, monotone dans la session et indépendant de `objnum`, `instance`, index et pointeurs. | test de réutilisation et changement session |
-| `P1-REQ-026` | Un `FULL_SNAPSHOT` DOIT être fiable, transactionnel et atomique ; la baseline ne change qu'après tous les `ACK APPLIED`. Un doublon après ACK perdu est réacquitté sans republication. | harness ACK perdu et commit unique |
-| `P1-REQ-027` | Un `DELTA` DOIT être cumulatif depuis la baseline immuable, remplaçable et non acquitté. Le dernier delta suffit ; baseline inconnue entraîne drop et resync limité. | scénario perte/désordre/delta récent |
-| `P1-REQ-028` | Une keyframe candidate est créée toutes les 1–5 secondes, défaut 2. L'ancienne baseline reste servie jusqu'à `APPLIED`; les mutations pendant l'aller-retour apparaissent dans le premier delta de la nouvelle baseline. | scénario de course déterministe |
-| `P1-REQ-029` | La Phase 1 NE DOIT PAS revendiquer d'`EVENT_BATCH` métier. Une discontinuité mission/joueur force une keyframe ou une nouvelle session ; mort, observer et respawn complets restent Phase 2. | test lifecycle et revue exclusion |
-| `P1-REQ-030` | Une resynchronisation DOIT être dédupliquée, acquittée `VALIDATED`, produire une keyframe récente et ne conserver aucun historique non borné. | resync répété et mesure mémoire |
+| ID | Exigence |
+|---|---|
+| `P1-REQ-031` | Les métriques de session, transport, validation, réplication, files et coût exposent leur unité et leur portée. |
+| `P1-REQ-032` | Les logs sont agrégés et ne contiennent ni payload complet, chemin absolu, secret ni donnée cachée. |
+| `P1-REQ-033` | Désactivé, le module n'ouvre aucun socket et ne produit aucun log récurrent ; actif, son travail reste court, déterministe, borné et non bloquant, sans seuil temporel de certification. |
+| `P1-REQ-034` | Le décodeur indépendant lit FSTL 1.0 et 1.1, produit le JSON canonique et rejette les mêmes invalides. |
+| `P1-REQ-035` | Le client console affiche session, mission, joueur, pose, vitesses, baseline, âge et état de synchronisation ; il envoie ACK/resync et s'arrête proprement. |
+| `P1-REQ-036` | Le module compile dans les variantes supportées sans nouvelle dépendance externe ; Jansson est réutilisé. |
+| `P1-REQ-037` | Une session représentative peut être arrêtée et relancée sans blocage ni croissance non bornée, avec renouvellement correct des identités. |
+| `P1-REQ-038` | Après la perte volontaire d'un unique delta, le client converge sur le delta cumulatif ou la keyframe suivante sans intervention ni historique non borné. |
 
-### 5.6 Observabilité, performance et outils
+## 6. Frontière
 
-| ID | Exigence | Preuve minimale attendue |
-|---|---|---|
-| `P1-REQ-031` | Les métriques de session, transport, validation, fragmentation, ACK/NACK, retransmission, resync, baseline, drops, files, réassemblage, collecte, diff, sérialisation et allocations définies dans [05](05-integration-configuration-et-observabilite.md) DOIVENT être exposées avec unité et scope de reset. | test d'incrément et export de métriques |
-| `P1-REQ-032` | Les logs DOIVENT être agrégés et ne contenir ni payload complet, dump par frame, chemin absolu, secret ni donnée cachée. | capture et scan des logs |
-| `P1-REQ-033` | Désactivé : zéro socket, allocation, syscall et log récurrent ; benchmark de 100 000 callbacks avec moyenne ≤0,01 ms, p99 ≤0,05 ms et écart de frame médiane <1 %. Actif hors première keyframe : collecte, diff, sérialisation et réseau du tick p99 ≤0,25 ms. | rapport benchmark reproductible |
-| `P1-REQ-034` | Un décodeur indépendant DOIT décoder les vectors 1.0 inchangés et 1.1, produire le JSON canonique, rejeter les mêmes invalides et participer au harness de contrôle. | rapport d'interopérabilité croisée |
-| `P1-REQ-035` | Le client console DOIT afficher session, mission, joueur, temps, pose, vitesses, baseline et âge, exposer `Synchronizing/Live/Stale`, envoyer ACK/resync et s'arrêter proprement. | transcript déterministe du client |
-| `P1-REQ-036` | Le groupe CMake et les tests DOIVENT compiler dans les variantes supportées sans dépendance externe nouvelle ; Jansson existant est réutilisé. | matrice de builds |
-| `P1-REQ-037` | Une mission solo DOIT être observée trente minutes, arrêtée et relancée dans le même processus puis après relance du processus, sans blocage, fuite détectée ni croissance non bornée. | rapport soak/leak et nouveaux IDs |
-| `P1-REQ-038` | Les tests reproductibles DOIVENT couvrir sérialisation, fuzz, IPv4/IPv6, pertes indépendante et en rafales 1/5/20 % pendant dix minutes par profil, duplication, désordre, jitter, coupure, fragments/ACK/delta perdus, `WOULD_BLOCK`, client lent et resync répété ; convergence `Live` ≤10 s après fin d'impairment. | seeds, traces et rapport d'intégration |
+Les états complets du vaisseau, ciblage, radar, réplication globale, communication visuelle, événements optimisés et vidéo de cible appartiennent aux phases suivantes.
 
-## 6. Exclusions et propriété des phases suivantes
+## 7. Invariants
 
-| Phase | Éléments explicitement exclus de Phase 1 |
-|---:|---|
-| 2 | `CORE_SHIP`, `SHIP_IDENTITY`, catalogues de classes, coque, boucliers, énergie, ETS, propulsion, afterburner complet, contrôles, armes, sous-systèmes, support, mort/observer/respawn |
-| 3 | cible, lead, locks, radar, contacts, menaces, cargo, navigation et validation multijoueur métier |
-| 4 | `ALL_ENTITIES`, `TrustedFullState`, graphe complet, join-in-progress et contrôle de bande passante avancé |
-| 5 | Talking Head, bundles, `ReplicaStore`, client graphique, API thread-safe et ESP32 |
-| 6 | hooks d'événements exacts, worker réseau/SPSC, quantification, compression et adaptation dynamique |
-| 7 | rendu cible, readback GPU, H.264, FFmpeg et QoS vidéo |
-
-La découverte réseau, le hot reload de configuration, l'authentification/chiffrement natifs, l'audio, le transfert de bundles et un historique de replay non borné sont également exclus.
-
-## 7. Invariants transversaux
-
-- Toute mémoire, file, fenêtre et boucle DOIT avoir une borne explicite.
-- Aucune entrée réseau ne peut provoquer une attente du thread principal.
-- Une valeur absente utilise uniquement les mécanismes Phase 0 ; jamais NaN, pointeur, index ou chaîne magique.
-- Une erreur de source ne doit jamais devenir une valeur filaire plausible mais fausse.
-- Le client ne publie jamais un état partiel comme `Live`.
-- Les checklists de [07](07-livraison-et-tracabilite.md#12-checklist-de-sortie) restent non cochées tant que les preuves réelles n'existent pas.
+- Toute mémoire, file, fenêtre et boucle possède une borne explicite.
+- Aucune entrée réseau n'attend le thread principal.
+- Une valeur absente utilise les mécanismes FSTL prévus.
+- Une erreur de source reste observable et ne devient pas une valeur plausible.
+- Le client expose `Live` uniquement après installation d'un état complet.

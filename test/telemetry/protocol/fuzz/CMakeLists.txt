@@ -47,7 +47,7 @@ if(MSVC)
 	else()
 		message(WARNING
 			"Telemetry fuzz sanitizer instrumentation is disabled. Corpus replay remains useful "
-			"as a deterministic smoke test, but is not sanitizer evidence for the Phase 0 gate.")
+			"as a deterministic short test, but is not sanitizer coverage.")
 	endif()
 elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang|AppleClang")
 	if(FSO_TELEMETRY_FUZZ_SANITIZERS)
@@ -173,8 +173,8 @@ set_target_properties(telemetry_fuzz_smoke PROPERTIES FOLDER "tests/telemetry/fu
 
 set(FSTL_PHASE2_FUZZ_CORPUS_DIR
 	"${CMAKE_SOURCE_DIR}/test/telemetry/producer/phase2/fuzz/corpus")
-set(FSTL_PHASE2_FUZZ_EVIDENCE_DIR
-	"${CMAKE_SOURCE_DIR}/test/telemetry/producer/phase2/reports/wp09-security/fuzz-artifacts")
+set(FSTL_PHASE2_FUZZ_RESULTS_DIR
+	"${CMAKE_BINARY_DIR}/telemetry-phase2-fuzz-results")
 
 set(FSTL_PHASE2_FUZZ_SANITIZER_ARGS)
 if(FSO_TELEMETRY_FUZZ_SANITIZERS)
@@ -200,7 +200,7 @@ add_custom_target(telemetry_phase2_fuzz_smoke
 		--seed 1345474380
 		--timeout 5
 		--rss-limit-mb 384
-		--evidence-dir "${FSTL_PHASE2_FUZZ_EVIDENCE_DIR}"
+		--evidence-dir "${FSTL_PHASE2_FUZZ_RESULTS_DIR}"
 		--dictionary "${CMAKE_CURRENT_SOURCE_DIR}/fstl.dict"
 		--target telemetry_phase2_packet_reader_fuzz
 		--target telemetry_phase2_state_validator_fuzz

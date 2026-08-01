@@ -1733,7 +1733,6 @@ add_file_folder("Telemetry"
 	telemetry/metrics.h
 	telemetry/native_session_runtime.cpp
 	telemetry/native_session_runtime.h
-	telemetry/native_session_runtime_test_seam.h
 	telemetry/phase1_snapshot_slot.cpp
 	telemetry/phase1_snapshot_slot.h
 	telemetry/phase1_snapshot_egress.cpp
@@ -1742,11 +1741,11 @@ add_file_folder("Telemetry"
 	telemetry/phase1_state_image.h
 	telemetry/phase2_closure.cpp
 	telemetry/phase2_closure.h
+	telemetry/phase2_catalog_projection.h
 	telemetry/phase2_manifest_builder.cpp
 	telemetry/phase2_manifest_builder.h
 	telemetry/phase2_observation.cpp
 	telemetry/phase2_observation.h
-	telemetry/phase2_gameplay_ab_test_seam.h
 	telemetry/phase2_profile_gate.cpp
 	telemetry/phase2_profile_gate.h
 	telemetry/phase2_runtime.cpp
@@ -1759,10 +1758,8 @@ add_file_folder("Telemetry"
 	telemetry/runtime.h
 	telemetry/runtime_adapter.cpp
 	telemetry/runtime_adapter.h
-	telemetry/runtime_adapter_test_seam.h
 	telemetry/session_controller.cpp
 	telemetry/session_controller.h
-	telemetry/session_controller_test_seam.h
 	telemetry/startup_budget.cpp
 	telemetry/startup_budget.h
 	telemetry/telemetry.cpp

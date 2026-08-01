@@ -1,4 +1,0 @@
-interface:
-  display_name: "Prepare Telemetry Phase Spec"
-  short_description: "Design risk-based telemetry phase contracts"
-  default_prompt: "Use $prepare-telemetry-phase-spec to prepare a risk-based telemetry phase specification."

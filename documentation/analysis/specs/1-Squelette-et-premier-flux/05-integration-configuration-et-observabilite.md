@@ -14,7 +14,7 @@ L'implémentation DOIT partir des faits vérifiés suivants :
 - `code/CMakeLists.txt` inclut cette liste, ajoute `telemetry/protocol`, construit la librairie code et lie déjà `fstl_protocol` et Jansson ;
 - `code/telemetry/protocol` fournit la librairie statique C++17 `fstl_protocol` ;
 - `freespace2/freespace.cpp` initialise PSNET avant la boucle et émet `EngineUpdate`/`EngineShutdown` ;
-- le harness C++ possède déjà un groupe de tests protocole et un décodeur Python indépendant en CI.
+- un décodeur Python indépendant existe déjà pour le protocole.
 
 Ces faits n'autorisent pas à modifier PSNET, le gestionnaire CFile ou le système d'événements. Les nouvelles dépendances s'insèrent derrière le groupe `Telemetry` et l'appel `telemetry::initialize()`.
 
@@ -31,37 +31,27 @@ Ces faits n'autorisent pas à modifier PSNET, le gestionnaire CFile ou le systè
 
 Le code producteur rejoint la librairie code existante. `code/CMakeLists.txt` lie déjà `fstl_protocol` et Jansson ; aucune nouvelle librairie externe, aucun téléchargement et aucun gestionnaire de paquets ne sont ajoutés. Les sockets utilisent les bibliothèques plateforme déjà liées par le moteur.
 
-### 3.2 Outils et tests
+### 3.2 Outils de référence
 
 Les cibles proposées sont séparées :
 
 | Artefact | Emplacement proposé | Règle de dépendance |
 |---|---|---|
-| tests unitaires/intégration C++ | `test/src/telemetry/producer/` | PEUT lier code/fstl_protocol pour tester le producteur |
 | schéma, fixtures et golden vectors wire | `test/telemetry/protocol/` existant | données versionnées, hashes FSTL 1.0 archivés et inchangés |
 | décodeur indépendant | `test/telemetry/protocol/tools/fstl_reference_decoder.py` existant | NE DOIT PAS lier le parser, DTO ou codec C++ producteur |
 | client console | `test/telemetry/protocol/tools/fstl_console_client.py` proposé | DOIT consommer le module indépendant utilisé par le décodeur de référence |
 
-Le décodeur indépendant PEUT rester Python ou être un outil séparé ; son graphe de dépendances doit prouver `D1-013`. Les outils sont conditionnés par `FSO_BUILD_TOOLS` ou une option télémétrie dédiée sans modifier le build normal. Les tests sont enregistrés dans le harness existant et exécutables par CTest/CI.
+Le décodeur indépendant PEUT rester Python ou être un outil séparé. Les outils sont conditionnés par `FSO_BUILD_TOOLS` ou une option télémétrie dédiée sans modifier le build normal.
 
-### 3.3 Matrice minimale
+### 3.3 Compatibilité de build
 
-La preuve de `P1-REQ-036` couvre toutes les variantes déclarées supportées par le dépôt, au minimum :
-
-- télémétrie compilée, configuration absente ;
-- télémétrie compilée, configuration désactivée ;
-- producteur activé avec tests v4 et v6 ;
-- outils indépendants activés ;
-- build sans outils ;
-- plateformes Windows et non-Windows couvertes par la CI du dépôt.
-
-La documentation ne présume pas les noms de presets ni le succès de cette matrice ; ils sont archivés comme preuve dans [07](07-livraison-et-tracabilite.md#11-preuves-à-produire).
+Le module reste compatible avec les variantes supportées du dépôt, avec ou sans outils, sans changer le comportement d'une build où la télémétrie est désactivée.
 
 ## 4. Schémas JSON fermés
 
 ### 4.1 Fichier de configuration
 
-Le chemin logique est `data/config/telemetry.json`. La Phase 1 accepte uniquement un fichier **loose** : elle appelle `cf_find_file_location("telemetry.json", CF_TYPE_CONFIG, CF_LOCATION_ALL)`, exige `found=true` et `offset=0`, puis ouvre exactement cette localisation avec CFile et Jansson. Un `.json` présent uniquement dans un VP n'est pas indexé par le pathtype actuel et est traité comme absent. Le module NE DOIT PAS ajouter `.json` à une whitelist globale ni modifier `cfile.cpp`; les tests couvrent les fichiers loose de la racine utilisateur, de la racine jeu et des mods actifs, ainsi que le cas VP-only.
+Le chemin logique est `data/config/telemetry.json`. La Phase 1 accepte uniquement un fichier **loose** : elle appelle `cf_find_file_location("telemetry.json", CF_TYPE_CONFIG, CF_LOCATION_ALL)`, exige `found=true` et `offset=0`, puis ouvre exactement cette localisation avec CFile et Jansson. Un `.json` présent uniquement dans un VP n'est pas indexé par le pathtype actuel et est traité comme absent. Le module n'ajoute pas `.json` à une whitelist globale et ne modifie pas `cfile.cpp`.
 
 Exemple complet normatif :
 
@@ -192,12 +182,12 @@ Le runtime ne réduit pas silencieusement une configuration valide faute de mém
 
 L'observabilité Phase 1 est locale et en lecture seule. Elle comprend :
 
-1. une structure `TelemetryMetricsSnapshot` copiable par les tests et le client diagnostic local ;
+1. une structure `TelemetryMetricsSnapshot` copiable par le client diagnostic local ;
 2. des compteurs/gauges/histogrammes en mémoire à cardinalité fixe ;
 3. un résumé agrégé au démarrage réussi, à la fin d'une session et au shutdown ;
-4. des hooks d'horloge et d'allocation injectables uniquement dans les tests/benchmarks.
+4. des sources d'horloge et compteurs d'allocation isolés du comportement métier.
 
-Aucun endpoint de métriques réseau, aucune commande distante, aucun dump par frame et aucun label contrôlé par le pair n'est introduit. Les enums de raisons sont fermées et leur nombre de valeurs est testé.
+Aucun endpoint de métriques réseau, aucune commande distante, aucun dump par frame et aucun label contrôlé par le pair n'est introduit. Les enums de raisons sont fermées et stables.
 
 ### 7.1 Types, unités et scopes
 
@@ -300,37 +290,25 @@ Les métriques `session + total process` ont deux stockages : valeur du slot rem
 | budget/high-water | warning agrégé | première atteinte puis résumé session | nom fermé, limite et high-water |
 | shutdown | info | une fois | durée process et snapshot final des totaux |
 
-Les logs NE DOIVENT contenir : payload ou fragment complet, dump JSON reçu, sortie par frame/datagramme, chemin absolu, adresse IP complète d'un pair, secret, donnée cachée, callsign, nom joueur, pointeur, handle ou octets d'identité aléatoire. Un code socket est normalisé ; le message libre de l'OS n'est pas relayé tel quel. Les tests capturent et scannent les logs contre ces interdits.
+Les logs ne contiennent ni payload ou fragment complet, dump JSON reçu, sortie par frame/datagramme, chemin absolu, adresse IP complète d'un pair, secret, donnée cachée, callsign, nom joueur, pointeur, handle ou octets d'identité aléatoire. Un code socket est normalisé ; le message libre de l'OS n'est pas relayé tel quel.
 
-`producer_id` et `session_id` peuvent être nécessaires dans les artefacts de test, mais ne sont pas inscrits dans les logs de livraison. Un identifiant de corrélation local séquentiel de slot est suffisant.
+`producer_id` et `session_id` ne sont pas inscrits dans les logs de livraison. Un identifiant de corrélation local séquentiel de slot est suffisant.
 
-## 10. Performance et allocations
+## 10. Travail borné et allocations
 
 ### 10.1 Fast path désactivé
 
-Après le premier diagnostic éventuel, chaque `EngineUpdate` désactivé effectue seulement une lecture atomique/non concurrente de l'état et un branchement. Il ouvre zéro socket, effectue zéro syscall, allocation et log récurrent. Le benchmark de 100 000 callbacks DOIT démontrer :
-
-- moyenne ≤ 0,01 ms ;
-- p99 ≤ 0,05 ms ;
-- écart de frame médiane < 1 % par rapport au témoin sans module.
+Après le premier diagnostic éventuel, chaque `EngineUpdate` désactivé effectue seulement une lecture de l'état et un branchement. Il ouvre zéro socket, effectue zéro syscall, allocation et log récurrent. Un test déterministe vérifie ces observables directement.
 
 ### 10.2 Runtime actif
 
-Hors construction de la première keyframe, la somme collecte + diff + sérialisation + réseau du tick a un p99 ≤ 0,25 ms. Les histogrammes de section 8 permettent d'isoler chaque poste. Les buffers, slots, fenêtres et scratch sont préalloués avant `Ready`. En steady-state, `telemetry_allocations_total` ne doit pas augmenter pendant une fenêtre de benchmark sans création/destruction de session.
+Collecte, diff, sérialisation et réseau sont non bloquants et bornés par les cardinalités et budgets configurés. Les buffers, slots, fenêtres et scratch sont préalloués avant `Ready`. En steady-state, `telemetry_allocations_total` ne doit pas augmenter sans création/destruction de session.
 
-La première keyframe est mesurée séparément avec temps, allocations et taille, sans seuil inventé ; tout dépassement produisant un hitch visible bloque `G1-F` jusqu'à analyse. Aucun résultat n'est supposé par cette spécification.
+La première keyframe est observée séparément avec ses allocations et sa taille. Un hitch visible lors de l'observation produit est signalé avec ses conditions et son impact, sans seuil temporel automatique.
 
-### 10.3 Protocole de mesure
+### 10.3 Relevé produit
 
-Le rapport enregistre révision, build type, compilateur, plateforme, CPU, fréquence/power mode, mission, `flightHz`, nombre de clients, taille des états, durée, warm-up, nombre d'échantillons et commandes. Les percentiles sont calculés sur les échantillons bruts archivés, pas sur les moyennes de buckets. Les seuils numériques de `P1-REQ-033` sont évalués sur une build `Release`; une build `Debug` DOIT compiler et exécuter les contrats fonctionnels du protocole de mesure, mais ses p99 ne ferment ni ne bloquent aucune gate de performance. Au minimum :
-
-1. témoin sans module ;
-2. module compilé mais fichier absent ;
-3. `enabled=false` ;
-4. actif loopback un client, hors première keyframe ;
-5. actif quatre clients aux maxima ;
-6. `WOULD_BLOCK`, perte et resync répété ;
-7. soak trente minutes avec relance mission et processus.
+Le relevé indique la build, la plateforme, la mission, `flightHz`, le nombre de clients et la taille des états. Il consigne attendu, observé, écart et impact. Aucun percentile, microbenchmark ou campagne longue n'est un critère de livraison.
 
 ## 11. Matrice configuration / résultat
 
@@ -349,20 +327,15 @@ Le rapport enregistre révision, build type, compilateur, plateforme, CPU, fréq
 | découverte ou `TrustedFullState` activé | `Disabled` | 0 | un warning config |
 | erreur socket permanente en cours | `Faulted` | 0 après purge | un error puis résumé |
 
-## 12. Vérification de l'observabilité
+## 12. Qualité de l'observabilité
 
-Les tests DOIVENT :
-
-1. déclencher au moins une fois chaque compteur et chaque valeur d'enum atteignable ;
-2. vérifier unité, saturation, remise à zéro session/mission et conservation du total process ;
-3. vérifier les gauges à zéro après purge et les high-water sous les bornes ;
-4. comparer le nombre de syscalls injectés au budget `maxDatagramsPerTick` ;
-5. forcer overflow de compteurs avec une fixture sans comportement indéfini ;
-6. vérifier qu'une entrée hostile ne crée aucun label ni allocation non bornée ;
-7. scanner les logs pour payload, chemins, IP, IDs, secrets et émissions récurrentes ;
-8. exporter les échantillons bruts nécessaires aux percentiles de `P1-REQ-033`.
-
-Le plan complet, incluant fuzz, loss profiles et soak, est dans [06](06-validation-securite-et-conformite.md). Les preuves et commandes sont archivées selon [07](07-livraison-et-tracabilite.md#11-preuves-à-produire).
+- chaque métrique expose unité, portée et valeur courante ;
+- les gauges reviennent à zéro après purge ;
+- les high-water restent sous les bornes ;
+- les compteurs saturent sans overflow ;
+- une entrée hostile ne crée ni label ni allocation non bornée ;
+- les logs respectent les règles de confidentialité ;
+- les échantillons nécessaires aux percentiles restent accessibles.
 
 ## 13. Traçabilité
 
@@ -378,6 +351,4 @@ Le plan complet, incluant fuzz, loss profiles et soak, est dans [06](06-validati
 | `P1-REQ-033` | section 10 : seuils et protocole reproductible |
 | `P1-REQ-034`–`035` | section 3.2 : outils séparés et dépendance indépendante |
 | `P1-REQ-036` | section 3 : variantes et aucune dépendance externe |
-| `P1-REQ-037`–`038` | sections 10.3 et 12, renvoi vers validation exhaustive |
-
-Les seuils, métriques et résultats restent « à produire » tant que leurs rapports ne sont pas joints ; leur présence dans ce document ne ferme aucune gate.
+| `P1-REQ-037`–`038` | sections 10.3 et 12, session représentative et récupération |

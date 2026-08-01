@@ -1,0 +1,390 @@
+HISTORIQUE, NON NORMATIF, NE PAS EXECUTER.
+# Phase 1 WP05 lifecycle test-first evidence
+
+Status: **the initial WP05 lifecycle contract was independently RED before
+production implementation; independent reviewer-strengthening oracles were also
+RED before their corrective production patches; final review is pending GREEN
+evidence**. This file distinguishes the initial structural RED from the later
+review RED instead of retroactively claiming that every strengthened oracle
+existed before the first production draft.
+
+`G1-D` remains OPEN. WP05 provides process/runtime and mission lifecycle
+foundations only; it does not implement WP06 negotiation, live client sessions,
+heartbeat, ACK/NACK, ingress policy, quotas, replication or Phase 2 events.
+
+## Frozen lifecycle interpretation
+
+The tests freeze the following decisions without changing the public API
+`void telemetry::initialize() noexcept`:
+
+1. `GameMissionLoad` discards its `const char*` argument at the wrapper boundary.
+   The runtime callback has no filename parameter. A poison pointer
+   `reinterpret_cast<const char*>(1)` is emitted by the isolated integration test;
+   it must not be read, copied, logged or forwarded. The callback immediately
+   blocks mission publication through a value latch, but physical purge occurs on
+   the next captured-main-thread `EngineUpdate`.
+2. Repeated loads before that tick coalesce into one purge and one generation.
+   `mission_generation` is `uint32_t`, begins at zero, becomes one on the first
+   applied load, and advances once per distinct applied load. Leave/reentry does
+   not increment it. Overflow must not wrap: it performs fail-closed resource
+   teardown and leaves the runtime terminal `Faulted`.
+3. Lifecycle callbacks retain only old/new integer values and bounded value
+   latches. Their side effects are delayed one frame because `EngineUpdate`
+   precedes game-sequence event processing. The latches preserve observation
+   order without a queue: Load then Terminal ends `Ready`, Terminal then Load
+   ends `MissionLoading`, and Terminal then Load then `GAME_PLAY` ends
+   `MissionActive`; each sequence performs one purge and applies at most one
+   coalesced load generation.
+4. `GAME_PLAY` is the sole active root and may activate only an already-open
+   `MissionLoading` generation. `Ready -> GAME_PLAY` is invalid and faults; no
+   loading/briefing/selection/sync screen may invent a mission without an applied
+   `GameMissionLoad`.
+5. A wrong-thread callback may perform only thread-identity comparison and a
+   defensive invariant latch. It invokes no service, engine global, diagnostic,
+   purge or transport hook. The test joins its worker, observes immediate
+   publication denial, then requires teardown and one diagnostic at the next
+   captured-main-thread update. An atomically readable callback-inert gate must
+   be checked before any non-atomic runtime-state fast path so callbacks racing
+   with `ShuttingDown` or arriving after `Stopped` cannot read mutable state or
+   arm the violation latch. The gate and relaxed violation latch are defensive
+   scalars, not a worker architecture, queue, mutex, condition variable or
+   functional cross-thread data path.
+6. Mission purge order is collection prohibition, mission/entity invalidation,
+   replication cancellation, session/store closure, then mission-scope reset.
+   Listener/transport and the process session-ID registry remain alive.
+7. Shutdown order is collection prohibition, sessions/stores, mission/entities,
+   transport, at most one final summary, runtime allocations, registry, then
+   `Stopped`. Fault cleanup follows the same resource order without the shutdown
+   summary and emits one diagnostic after cleanup. There is no drain, final ACK,
+   sleep or join.
+8. `RuntimeTransportStatus::Started` exists only for deterministic fakes in WP05.
+   The native adapter remains blocked by the incomplete startup-budget mask
+   `0x00fb`; WP05 must not bind a real socket or publish a client `session_id`.
+   The registered startup candidate is observable only by the fake, while
+   `published_session_id()` remains zero in `Ready` and `MissionActive`.
+
+## Exhaustive engine-state partition
+
+The ordinary unit test contains an array with exactly `GS_NUM_STATES == 56`
+entries and a compile-time guard. Adding or removing an engine state therefore
+requires an explicit lifecycle review.
+
+- `Invalid`: `GS_STATE_INVALID`, negative values and values greater than or equal
+  to `GS_NUM_STATES`; these fault without clamping or engine-global reads.
+- `ActiveRoot`: `GS_STATE_GAME_PLAY` only, and only from an applied loading
+  generation.
+- `PreserveContext`: `GAME_PAUSED`, `DEBUG_PAUSED`, `TRAINING_PAUSED`,
+  `MULTI_PAUSED`, `OPTIONS_MENU`, `HOTKEY_SCREEN`, `GAMEPLAY_HELP`,
+  `MISSION_LOG_SCROLLBACK`, `HUD_CONFIG`, `CONTROL_CONFIG`, `INGAME_OPTIONS`,
+  `SHOW_GOALS`, `DEATH_DIED`, `DEATH_BLEW_UP`, `EVENT_DEBUG`, `LAB` and
+  `SCRIPTING_MISSION`. These preserve the current `Ready`, `MissionLoading` or
+  `MissionActive` context and never promote it.
+- `LoadingPreserve`: `LOAD_MISSION_MENU`, `BRIEFING`, `CMD_BRIEF`, `LOOP_BRIEF`,
+  `SHIP_SELECT`, `WEAPON_SELECT`, `TEAM_SELECT`, `MULTI_MISSION_SYNC`,
+  `MULTI_START_GAME`, `INGAME_PRE_JOIN`, `RED_ALERT`, `FICTION_VIEWER`,
+  `MULTI_STD_WAIT`, `START_GAME` and `MULTI_HOST_OPTIONS`. These retain an
+  already-open load; from `Ready` they stay `Ready`, and from `MissionActive`
+  they cause a discontinuity and return to `Ready` unless a load is pending.
+- `Terminal`: all remaining named states; from a mission they purge to `Ready`.
+
+Death states are deliberately state-preserving and synthesize no business event.
+The services seam has a compile-time negative check for `emit_event_batch`; death,
+observer and respawn events remain Phase 2 under `D1-012`.
+
+## Test artifacts and IDs
+
+| Test ID | Oracle | Contract evidence |
+|---|---|---|
+| `WP05-LC-001` | fake `Started` completes the transaction into `Ready`, retains the registry, and never publishes candidate 42 as a client session | `P1-REQ-015`, WP05 boundary |
+| `WP05-LC-002` | all 56 states have one closed reviewed disposition; invalid old/new values on both Enter and Leave block immediately and fault on the next tick | `P1-REQ-016`–`017`, `D1-010` |
+| `WP05-LC-003` | contextual/loading screens cannot create a mission from `Ready`; `GAME_PLAY` requires applied load | `P1-REQ-017` |
+| `WP05-LC-004` | load blocks immediately, performs no service work in the callback, purges next tick, increments generation and retains listener/registry | `P1-REQ-016`–`017` |
+| `WP05-LC-005` | repeated pre-tick loads coalesce; distinct applied loads increment exactly once | `P1-REQ-017`, partial `P1-AC-016` |
+| `WP05-LC-006` | real Leave+Enter pairs for exit and reentry before the tick give one discontinuity/purge, coherent final active state and no generation increment; a normal terminal pair also purges once | `P1-REQ-017` |
+| `WP05-LC-007` | generation overflow cannot wrap and performs fault cleanup plus one diagnostic | `P1-REQ-017`, `P1-AC-016` partial |
+| `WP05-LC-008` | shutdown order converges from Cold, Starting, Disabled, Faulted, Ready, MissionLoading and MissionActive; reentrant ShuttingDown, double and late callbacks are inert and summary stays unique | `P1-REQ-015`–`017` |
+| `WP05-LC-009` | each of the five callbacks on a real worker in MissionActive invokes zero services, blocks publication through the invariant latch, then defers one fault cleanup/diagnostic to main update | `P1-REQ-016`, `D1-010` |
+| `WP05-LC-010` | no `EVENT_BATCH` service hook; death/observer/respawn remain state convergence only | `P1-REQ-029`, `D1-012` |
+| `WP05-LC-011` | marker order is preserved for Terminal/Load/`GAME_PLAY` permutations while repeated loads still coalesce without a queue | `P1-REQ-017`, specification 03 section 6.1 |
+| `WP05-LC-012` | shutdown injected from purge, fault cleanup, startup thread check, allocation/registration rollback and transport-failure stop/release dominates every returned hook; final state is uniquely `Stopped` with no outer mutation or diagnostic after it | `P1-REQ-015`–`017`, `P1-REQ-037` |
+| `WP05-LC-013` | all five callbacks invoked by a joined real worker from inside the first shutdown hook observe the atomic inert gate; they read no mutable runtime state, invoke no service and leave the violation latch false | `P1-REQ-016`, `D1-010` |
+| `WP05-CB-001` | isolated fake-Ready executable routes EngineUpdate, MissionLoad, Enter, Leave and Shutdown through one process-lifetime Runtime | `P1-REQ-015`–`017` |
+| `WP05-CB-002` | poison filename is never consumed; lifecycle callbacks do no service work until the next update | `P1-REQ-016`, `D1-010` |
+| `WP05-CB-003` | registrations remain exactly `{1,1,1,1,1}` and all wrappers are inert after `Stopped` | `P1-REQ-015` and preserved WP02 evidence |
+
+Files:
+
+- `test/src/telemetry/producer/test_telemetry_runtime_lifecycle_contract.cpp`;
+- `test/src/telemetry/producer/test_telemetry_lifecycle_callbacks_instrumented.cpp`;
+- `test/src/telemetry/producer/telemetry_runtime_ready_adapter.cpp`;
+- strengthened `test_telemetry_initialize_instrumented.cpp`,
+  `telemetry_initialize_failure_contract_tests.cpp`,
+  `telemetry_runtime_disabled_adapter.cpp`, and runtime startup fake;
+- build registration in `test/src/source_groups.cmake` and
+  `test/src/CMakeLists.txt`.
+
+## Preserved ordinary-unit RED
+
+Command executed from the repository root after the complete pre-production
+oracle was frozen:
+
+```powershell
+cmake --build build --config Debug --target unittests -- /m:1 /nr:false /v:minimal
+```
+
+Exit code: `1`. The existing production `code.lib` and GTest library completed
+before the new test translation unit failed. The first independent production
+dependencies were:
+
+```text
+test_telemetry_runtime_lifecycle_contract.cpp(115,7): error C3668: LifecycleServices::stop_collection: override did not override any base-class method
+test_telemetry_runtime_lifecycle_contract.cpp(120,7): error C3668: LifecycleServices::invalidate_mission_state_and_entities: override did not override any base-class method
+test_telemetry_runtime_lifecycle_contract.cpp(125,7): error C3668: LifecycleServices::cancel_replication: override did not override any base-class method
+test_telemetry_runtime_lifecycle_contract.cpp(130,7): error C3668: LifecycleServices::close_sessions_and_stores: override did not override any base-class method
+test_telemetry_runtime_lifecycle_contract.cpp(135,7): error C3668: LifecycleServices::reset_mission_scope: override did not override any base-class method
+test_telemetry_runtime_lifecycle_contract.cpp(140,7): error C3668: LifecycleServices::stop_transport: override did not override any base-class method
+test_telemetry_runtime_lifecycle_contract.cpp(146,7): error C3668: LifecycleServices::emit_runtime_summary: override did not override any base-class method
+test_telemetry_runtime_lifecycle_contract.cpp(151,7): error C3668: LifecycleServices::release_runtime_allocations: override did not override any base-class method
+test_telemetry_runtime_lifecycle_contract.cpp(112,42): error C2838/C2065: RuntimeTransportStatus::Started is undeclared
+test_telemetry_runtime_lifecycle_contract.cpp(194,2): error C2838/C2065: RuntimeState::Ready is undeclared
+test_telemetry_runtime_lifecycle_contract.cpp(206,30): error C2039: Runtime::on_game_mission_load is absent
+test_telemetry_runtime_lifecycle_contract.cpp(254,38): error C2039: RuntimeGameStateDisposition is not a member of telemetry::detail
+```
+
+The same compile also reported the expected missing `MissionLoading`,
+`MissionActive`, `Stopped`, `on_game_enter_state`, `on_game_leave_state`,
+`on_engine_shutdown`, `mission_generation`, `mission_publication_allowed`,
+`RuntimeLifecycleTestAccess`, `classify_runtime_game_state`, and
+`MissionGenerationOverflow` symbols. MSVC stopped at its 100-error cap because
+the intentionally absent closed disposition enum is referenced by all 56 rows.
+
+## Preserved isolated-wrapper RED
+
+Command:
+
+```powershell
+cmake --build build --config Debug --target telemetry_lifecycle_callback_contract_tests -- /m:1 /nr:false /v:minimal
+```
+
+Exit code: `1`. The isolated target compiled `runtime.cpp`, `telemetry.cpp`,
+`events.cpp`, the ready fake and the wrapper oracle. Its first errors were the
+eight absent lifecycle overrides and `RuntimeTransportStatus::Started`, followed
+by the missing `Ready`, `MissionLoading`, `MissionActive` and `Stopped` states in
+the wrapper state sequence. This is independent evidence that the production
+wrappers and runtime did not already satisfy WP05 before implementation.
+
+## Superseded WP03 wrong-thread interpretation
+
+The former WP03 test named `WrongThreadFaultsBeforeConfigurationAndNeverRetries`
+used `main_thread_matches=false` in a service fake and expected a service call and
+immediate diagnostic in the same invocation. WP05 supersedes that interpretation:
+a real worker must call no service and cleanup is deferred. The old test is
+renamed `StartupThreadServiceMismatchFaultsBeforeConfigurationAndNeverRetries`;
+it now covers only an inconsistent startup-service observation while the caller
+itself remains on the captured C++ thread. The real wrong-thread contract is
+`WP05-LC-009`.
+
+## Independent reviewer-strengthening RED
+
+The first production draft passed the original Debug oracle, but the independent
+Release run exposed a deterministic reentrant-shutdown defect:
+
+```powershell
+.\build\bin\Release\unittests.exe --gtest_color=no `
+  --gtest_filter=TelemetryRuntimeLifecycleContract.*:TelemetryRuntimeStartupContract.*
+```
+
+Exit code: `1`; `30/31` passed. The failing
+`ReentrantShutdownWhileShuttingDownIsANoopAndSummaryRemainsUnique` recorded two
+complete teardown tails and two runtime summaries. Production work was paused
+while the reviewer oracle was expanded.
+
+The expanded Debug filter then executed eight order/reentrance tests. Exit code:
+`1`; `2/8` passed and these six failed before corrective production changes:
+
+- Terminal then MissionLoad ended `Ready` instead of `MissionLoading`;
+- shutdown from `purge_mission` resumed four outer hooks, advanced the generation
+  and resurrected `MissionLoading`;
+- shutdown from fault cleanup resumed five outer hooks and emitted a diagnostic
+  after `Stopped`;
+- shutdown from the startup thread check, registry rollback for both allocation
+  and registration failure, and both transport-failure cleanup hooks resumed as
+  `Faulted` and emitted a diagnostic after `Stopped`.
+
+The separate real-worker oracle executed each callback from inside the first
+shutdown hook after the runtime had entered `ShuttingDown`:
+
+```powershell
+.\build\bin\Debug\unittests.exe --gtest_color=no `
+  --gtest_filter=TelemetryRuntimeLifecycleContract.EveryCallbackIsAtomicallyInertThroughoutShuttingDown
+```
+
+Exit code: `1`; `0/1` passed. MissionLoad, Enter and Leave (callback indices 2,
+3 and 4) armed the wrong-thread latch instead of observing an atomic inert gate.
+Update and Shutdown happened to return early, but did so through a non-atomic
+state read; the common gate is therefore required for all five callbacks.
+These results are the preserved reviewer RED boundary for `WP05-LC-011` through
+`WP05-LC-013`.
+
+Two subsequent order-composition filters were frozen before their respective
+corrective patches. Each exited `1` with `0/2` passing:
+
+- Terminal, ActiveRoot, then PreserveContext incorrectly ended `Ready` instead
+  of preserving the pending `MissionActive` destination; Load, Terminal, then
+  LoadingPreserve incorrectly resurrected `MissionLoading` instead of remaining
+  `Ready`;
+- Terminal, ActiveRoot, then LoadingPreserve incorrectly remained
+  `MissionActive` instead of converging `Ready`; from `Ready`, Load, Terminal,
+  then ActiveRoot incorrectly reused the closed historical load, published
+  `MissionActive` generation 1 and avoided the required
+  `InvalidLifecycleTransition` fault.
+
+The paired contrasts Terminal, Load, LoadingPreserve and Terminal, Load,
+ActiveRoot remain valid loading/active destinations. Together these cases close
+the bounded, queue-free destination summary required by specification 03 section
+6.1 rather than accepting a latest-state-plus-boolean approximation.
+
+The review then isolated the final continuity distinction in one table-driven
+oracle. Before its corrective patch the exact Debug filter exited `1`:
+
+- initial `MissionActive`, Load, Terminal, ActiveRoot incorrectly published a
+  second active generation instead of faulting with the original generation
+  unchanged;
+- initial `Ready`, Load, ActiveRoot, Terminal, ActiveRoot incorrectly faulted
+  instead of keeping the newly established active continuity and generation 1;
+- initial `MissionActive`, Load, ActiveRoot, Terminal, ActiveRoot and the no-load
+  Terminal/ActiveRoot reentry were already valid contrasts.
+
+This RED requires only a bounded pending destination plus a boolean recording
+whether ActiveRoot established continuity since the latest Load; Load clears it,
+a valid ActiveRoot sets it, and Terminal may preserve that same-tick evidence.
+It does not authorize a marker queue.
+
+Finally, the simulated-destination purge oracle started from stable
+`MissionLoading`, observed ActiveRoot then LoadingPreserve, with and without a
+final ActiveRoot reentry. Before correction both blocks reached the expected
+final state but recorded an empty service trace instead of exactly one
+`MissionPurgeOrder`; the focused Debug filter exited `1`. This RED proves that
+the discontinuity predicate must use the destination immediately before the
+LoadingPreserve marker, not the still-deferred stable `m_state`.
+
+## Contract disposition before GREEN
+
+| ID | Test-first state |
+|---|---|
+| `P1-REQ-015` | RED oracle present for all five callbacks, idempotence, shutdown and late inertness |
+| `P1-REQ-016` | RED oracle present for value-only markers, poison filename and deferred wrong-thread cleanup |
+| `P1-REQ-017` | RED oracle present for state machine, purge order, generation and cleanup scopes |
+| `P1-REQ-029` / `D1-012` | negative `EVENT_BATCH` boundary and state-preserving death dispositions frozen |
+| `D1-010` | main-thread service execution and defensive violation-latch behavior frozen; no functional worker path |
+| `P1-AC-016` | PARTIAL even after future GREEN: deterministic relaunch/generation/resource oracles do not replace the required 30-minute soak and process-restart evidence |
+| `G1-D` | OPEN: WP06 sessions/heartbeat and later soak/leak evidence remain absent |
+
+## Final independent GREEN verification
+
+Status: **the WP05 lifecycle slice is GREEN; final independent review is
+pending**. These results do not close the global Phase 1 requirements or gates
+listed under [Contract disposition](#contract-disposition).
+
+### Build and executable matrix
+
+The same five targets were built serially in Debug and Release:
+
+```powershell
+cmake --build build --config <Debug|Release> --target unittests `
+  telemetry_lifecycle_callback_contract_tests `
+  telemetry_initialize_contract_tests `
+  telemetry_initialize_failure_contract_tests `
+  telemetry_disabled_benchmark -- /m:1 /nr:false /v:minimal
+```
+
+Both builds exited `0`. The independent executable matrix was then run against
+each configuration:
+
+| Evidence | Debug | Release |
+|---|---:|---:|
+| lifecycle + startup filter | 45/45 passed | 45/45 passed |
+| isolated lifecycle callback executable | 1/1 passed | 1/1 passed |
+| initialize contract executable | 1/1 passed | 1/1 passed |
+| initialize-failure `probe`, then indices `0` through `4` | all PASS | all PASS |
+| complete `Telemetry*` regression filter | 534/534 passed | 534/534 passed |
+
+The complete regression filter contains 51 suites and reports two pre-existing
+disabled tests in each configuration. The failure-injection matrix confirms a
+`Cold` runtime with no lifecycle or service work for every injected registration
+failure.
+
+The three race-sensitive real-worker oracles were additionally executed with
+`--gtest_repeat=50 --gtest_break_on_failure` in both configurations. All 150
+test executions per configuration passed. Because each test iterates the five
+callbacks, this is 750 worker-callback invocations in Debug and 750 in Release
+without a late service call, resurrection or violation-latch mutation.
+
+### Disabled fast-path benchmark
+
+The Release benchmark used 10,000 warmup calls and 100,000 measured calls per
+mode. Both modes exited `0`, reported zero allocations and passed their internal
+timing checks. Independent calculation from the raw CSV samples gave:
+
+| Mode | Mean | Median | p99 | Allocations |
+|---|---:|---:|---:|---:|
+| baseline | 71.656 ns | 100 ns | 100 ns | 0 |
+| disabled | 82.405 ns | 100 ns | 200 ns | 0 |
+
+The median delta is exactly 0%. The disabled mean, p99 and median delta are all
+below the Phase 1 limits of 0.01 ms, 0.05 ms and 1%, respectively.
+
+### Frozen contracts and protocol assets
+
+All final freeze/amendment/schema/assets and specification commands exited `0`:
+
+- FSTL 1.0: 438 frozen files, tree SHA-256
+  `9baac6a20db33bcf350066ed533c5581b7117410899d7bc4a6dc24406e47856d`;
+- FSTL 1.1 amendment: 15 snapshots, 6 messages, 3 negotiations, 2 internal
+  oracles, with the same 438 Phase 0 artifacts and tree hash;
+- schema vectors: 20 messages, 28 records, 2,479 bytes, layout SHA-256
+  `d5e7ae20571bc0e08f1d123f7529fd6430466872ad0dd5cb22ea37b24128e0aa`
+  and encoded-probe SHA-256
+  `ee45ad75728442145aa2689211f237868f095a39a2735b89ae5868c3dbe95438`;
+- assets: 182 fixtures (54 valid, 128 invalid), 20/20 messages, 28/28
+  records, 126 invalid categories and 4 transport seeds;
+- Phase 0 and Phase 1 contract inspection passed (8 documents each; 27/38
+  requirements, 24/20 acceptance criteria, 12/11 work packages, 6/7 gates);
+- both complete eight-document Phase 0/1 specification validations passed.
+
+### Static boundary and hygiene evidence
+
+Final scans of the four production files found no `EVENT_BATCH`, ACK/NACK,
+drain, sleep, join, worker, SPSC, mutex, condition variable, functional thread
+object, queue or real network bind/send/receive path. The only thread operations
+are captured thread IDs and identity comparisons. The runtime contains exactly
+the intended atomic callback gate plus one atomic defensive violation boolean;
+all five callbacks check the common gate before their thread check and mutable
+state access. The native adapter remains `Unavailable` behind budget mask
+`0x00fb`, binds no transport and publishes no session ID. The mission filename
+is discarded at the wrapper boundary.
+
+`code/telemetry/telemetry.h` and frozen fixtures are unchanged. `git diff
+--check` exited `0` (only checkout line-ending notices), and the final trailing
+whitespace scan found no match.
+
+### Contract disposition
+
+| Scope | Final disposition |
+|---|---|
+| `P1-WP-05` lifecycle slice | **PASS**: callbacks, mission/menu convergence, generation, purge/fault/shutdown order, reentrance and late inertness are independently GREEN in Debug and Release |
+| `P1-REQ-016` globally | **PARTIAL**: WP05 value-only lifecycle and main-thread boundary pass; later DTO/collection work remains outside WP05 |
+| `P1-REQ-017` globally | **PARTIAL**: WP05 mission/runtime scopes pass; future live sessions, sockets and leak/soak evidence remain absent |
+| `P1-REQ-029` globally | **PARTIAL**: WP05 adds no business `EVENT_BATCH`; later Phase 1 snapshot/keyframe/session work and final exclusion review remain |
+| `P1-AC-016` | **PARTIAL**: deterministic generation/resource/relaunch oracles pass, but the required 30-minute soak, leak tooling and process restart have not been executed |
+| `G1-D` | **OPEN**: WP06 session and heartbeat behavior is not implemented by WP05 |
+
+No claim here closes WP06–WP11, the Phase 1 checklist or Phase 1 itself.
+
+## Independent final review
+
+Verdict: **APPROVE**. The independent reviewer reported no P0, P1 or P2
+findings for the WP05 lifecycle slice. This approval does not broaden the
+reviewed scope: `P1-AC-016` remains **PARTIAL** and `G1-D` remains **OPEN** for
+the missing soak/process-restart and WP06 session/heartbeat evidence described
+above.

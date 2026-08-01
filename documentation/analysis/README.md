@@ -1,8 +1,17 @@
 # Télémétrie et réplication distante de FS2Open
 
-## Statut de ce dossier
+## Statut et hiérarchie normative
 
-Ce dossier rassemble l'analyse et la proposition d'architecture pour exporter l'état de FS2Open et le répliquer sur un client distant. Il fixe les décisions communes et les invariants attendus, mais ne remplace pas le schéma binaire exhaustif et les vecteurs de référence qui doivent être produits en phase 0 avant toute implémentation interopérable.
+Ce dossier fixe les invariants communs et la terminologie partagée. Les documents de chaque phase sous [`specs`](specs) définissent uniquement les capacités introduites par cette phase. Les schémas wire versionnés, golden vectors et hashes associés restent l'autorité ultime pour l'encodage binaire.
+
+En cas de divergence, l'ordre de résolution est :
+
+1. schéma wire et golden vector pour les octets ;
+2. invariant racine pour les règles communes ;
+3. spécification de la phase qui introduit la capacité ;
+4. code, tests et exemples.
+
+La roadmap, les exemples prospectifs et le contenu de [`archive`](archive) sont non normatifs. Une divergence découverte pendant l'implémentation est corrigée d'abord dans la spécification canonique, puis dans le code et les tests du même lot.
 
 L'analyse a été réalisée sur la révision `2e57072b57f305716ba1f437b80008974d04849b` du dépôt. Les noms et emplacements internes cités peuvent évoluer avec le projet upstream ; le protocole public proposé ne doit donc jamais dépendre directement de la disposition mémoire de ces structures.
 
@@ -21,6 +30,32 @@ Le système doit permettre à un client distant de reconstruire une réplique co
 - cycle de vie des entités et événements importants.
 
 Cette réplique vise les tableaux de bord, radars, jauges, clients de visualisation, enregistrements et ESP32. Elle ne constitue pas une seconde simulation déterministe de FS2Open : reproduire exactement la simulation demanderait également les scripts de mission, les collisions, tous les projectiles, les entrées, l'autorité réseau et les états aléatoires.
+
+## Politique de validation produit
+
+Les spécifications de phase dérivées de ce dossier DOIVENT valider le comportement observable du produit, pas construire une procédure de certification autonome. Une phase est livrable lorsque le jeu fonctionne normalement et délivre la télémétrie attendue pendant une session de jeu représentative, avec les transitions directement concernées par son périmètre.
+
+Chaque phase possède une seule décision de livraison, fondée sur une checklist produit courte. Elle ne possède aucune gate intermédiaire de tests, de harness, de performance, de campagne ou de preuve. Les dépendances techniques entre composants restent de simples dépendances de développement et n'exigent pas de rapport de gate pour poursuivre.
+
+La décision de livraison utilise :
+
+- les tests unitaires et contractuels courts déjà utiles au développement ;
+- une vérification directe de démarrage, arrêt et transitions concernées ;
+- une session de jeu représentative démontrant que la télémétrie attendue est réellement délivrée ;
+- les golden vectors nécessaires à la compatibilité filaire et quelques entrées invalides représentatives ;
+- une observation simple de l'impact en jeu, sans exiger de microbenchmark ou de seuil produit uniquement par le harness.
+
+Lorsque le produit n'est pas encore exécutable, comme pendant la définition initiale du wire, la vérification directe porte sur l'artefact livré : schéma cohérent, golden vectors décodables et cas invalides rejetés. Elle ne crée pas une chaîne de gates pour les phases suivantes.
+
+### Frontière avec la validation de phase
+
+Lorsqu'une phase est spécifiée, ses livrables et critères produit sont définis en premier. Un plan de validation séparé choisit ensuite les observations et outils adaptés à ces livrables.
+
+Le relevé de validation présente les cibles, les résultats observés, les écarts et leur impact. L'humain décide de l'acceptation du produit, d'une correction ou de l'ouverture d'une issue.
+
+Un scénario de plus de cinq minutes est une campagne longue et requiert une demande humaine explicite. Ses découvertes alimentent le backlog produit.
+
+Les anciennes spécifications et pièces de certification sont conservées dans [`archive/legacy-certification-2026-07-31`](archive/legacy-certification-2026-07-31) à des fins historiques. Les spécifications actives sont celles de [`specs`](specs).
 
 ## Décisions actées
 

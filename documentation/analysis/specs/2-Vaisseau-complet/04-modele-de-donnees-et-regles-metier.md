@@ -6,7 +6,7 @@ Ce document fixe l’image canonique Phase 2, les politiques de présence, les m
 
 ## 2. Profils et ensembles exacts
 
-### 2.1 Gate `CoreGate`
+### 2.1 Profil cœur `CoreGate`
 
 Pour `state_domain_coverage=0x0401`, un snapshot avec joueur présent contient exactement :
 
@@ -39,7 +39,7 @@ Pour `state_domain_coverage=0x0583`, soit `K >= 1` le nombre de vaisseaux export
 
 Le total est `4 + 10K + N`. Le cas minimal `K=1` donne `14+N`. Un vaisseau sans banque conserve un `WEAPON_STATE` avec listes vides et sélecteurs zéro ; un vaisseau sans support/docking conserve des records en phase `NONE` et listes vides.
 
-Tout `support_entity_id`, `remote_entity_id`, leader de docking ou cible de scan non nul doit appartenir aux `K` lifecycle atoms. Comme `CORE_SHIP` et `WEAPONS` sont annoncés, chaque référence ship entraîne son état complet ; aucune exception opaque n’existe.
+Tout `support_entity_id` ou `remote_entity_id` de docking non nul doit appartenir aux `K` lifecycle atoms. Comme `CORE_SHIP` et `WEAPONS` sont annoncés, chaque référence ship publiée entraîne son état complet. Chef de groupe et cible cargo ne sont pas des arêtes de fermeture ; une cible cargo extérieure est omise et représentée par l'état masqué défini plus bas.
 
 ### 2.3 Joueur absent
 
@@ -67,21 +67,20 @@ Pour `CoreGate`, la fermeture de profil est exactement `{joueur}` et les défini
 
 1. le joueur ;
 2. le support assigné de chaque membre lorsqu’il existe ;
-3. tous les leaders de groupe et vaisseaux de la composante de docking atteints transitivement depuis chaque membre ;
-4. une cible de scan seulement si elle est déjà membre de cet ensemble et de l’allowlist `Cockpit` ;
-5. les classes de chacun de ces vaisseaux ;
-6. les classes d’armes de leurs banques, tourelles et contre-mesures ;
-7. toute définition statique référencée par les entrées précédentes.
+3. tous les vaisseaux atteints transitivement par les relations de docking depuis chaque membre ;
+4. les classes de chacun de ces vaisseaux ;
+5. les classes d’armes de leurs banques, tourelles et contre-mesures ;
+6. toute définition statique référencée par les entrées précédentes.
 
-La fermeture `CompleteShip` contient au plus 64 vaisseaux et 4096 sous-systèmes au total, sans dépasser 1024 par classe/vaisseau. Une relation vers un 65e vaisseau, un 4097e sous-système, une cible de scan extérieure ou un membre non autorisé fait perdre la capacité à produire ce profil : la session `CompleteShip` est terminée avant publication, sans troncature ni fuite, tandis qu’une projection `CoreGate` indépendante reste éligible si sa racine est valide.
+La fermeture `CompleteShip` contient au plus 64 vaisseaux et 4096 sous-systèmes au total, sans dépasser 1024 par classe/vaisseau. Une relation support/docking vers un 65e vaisseau, un 4097e sous-système ou un membre structurel non autorisé fait perdre la capacité à produire ce profil avant publication, sans troncature ni fuite, tandis qu’une projection `CoreGate` indépendante reste éligible si sa racine est valide. Une cible cargo extérieure ne suit pas cette règle : elle n'étend pas la fermeture et produit `NOT_SCANNABLE/HIDDEN` sans fin de session.
 
 ### 3.2 Politique `CLASS_MANIFEST`
 
-Les champs de base `manifest_generation`, `class_id`, `internal_name`, `species_id`, `ship_type_id`, `mass` et `center_of_mass` sont obligatoires et validés. `internal_name` copie `Ship_info[ship_info_index].name`; `species_id` et `ship_type_id` viennent des registres canoniques internes décrits en 3.4, jamais d’un index décalé ni d’un ID opaque. `mass` est la masse physique effective calculée par `physics_ship_init()`, soit la masse modèle (ou sa valeur de secours) multipliée par `ship_info::density`; `center_of_mass` vient du `polymodel` effectif. La matrice `INERTIA` est la valeur physique effective après application de la densité, convertie dans l’ordre FSTL. `density` et le choix modèle/secours sont conservés dans la provenance de l’oracle, mais seuls leurs résultats sérialisés canoniques participent au `ClassDescriptor` et au fingerprint. Deux chemins source donnant les mêmes octets sémantiques ne créent donc ni ID ni génération distincts. Un même nom peut apparaître dans plusieurs variantes de loadout, mais leurs `class_id` ne diffèrent que si leur descripteur canonique diffère.
+Les champs de base `manifest_generation`, `class_id`, `internal_name`, `species_id`, `ship_type_id`, `mass` et `center_of_mass` sont obligatoires et validés. `internal_name` copie `Ship_info[ship_info_index].name`; `species_id` et `ship_type_id` viennent des registres canoniques internes décrits en 3.4, jamais d’un index décalé ni d’un ID opaque. `mass` est la masse physique effective calculée par `physics_ship_init()`, soit la masse modèle (ou sa valeur de secours) multipliée par `ship_info::density`; `center_of_mass` vient du `polymodel` effectif. Malgré son nom wire historique, la matrice `INERTIA` publiée est l'inverse effectif du tenseur d'inertie du corps, lu directement depuis `phys_info.I_body_inv` après initialisation physique et converti dans l'ordre FSTL. Seuls les résultats sérialisés canoniques participent au `ClassDescriptor` et au fingerprint. Deux chemins source donnant les mêmes octets sémantiques ne créent donc ni ID ni génération distincts.
 
 | Groupe de présence | Politique Phase 2 |
 |---|---|
-| `INERTIA` | présent depuis la matrice physique effective initialisée à partir de `polymodel::moment_of_inertia / ship_info::density`, inversée/convertie selon la sémantique `ClassManifestV1`, dans l’ordre de matrice FSTL |
+| `INERTIA` | présent depuis `phys_info.I_body_inv`, inverse effectif du tenseur d'inertie du corps, validé fini et converti dans l'ordre de matrice FSTL ; le nom du champ wire ne change pas |
 | `DAMPING` | toujours absent : `damp/rotdamp` ne fournissent pas le vecteur local complet exigé par le groupe all-or-nothing |
 | `MOTION` | toujours présent depuis `ship_info::{max_vel,afterburner_max_vel,max_rotvel,max_rear_vel,forward_accel,afterburner_forward_accel,forward_decel,slide_accel,slide_decel}`; booster vaut le zéro canonique si absent |
 | `HULL` | toujours présent depuis `ship_info::max_hull_strength`, distinct du maximum dynamique d’état |
@@ -167,6 +166,8 @@ Les IDs publics suivent ces règles :
 Tous les champs d’un bloc portent le `producer_sample_time_us` du tick qui les a capturés. Une keyframe force tous les blocs au même tick. Un delta ordinaire peut combiner des atomes capturés à leurs cadences respectives ; chacun conserve son propre sample time, tandis que le préfixe du delta porte le maximum des samples inclus.
 
 Le collecteur copie d’abord les scalaires et les cardinalités, vérifie les relations, puis remplit les listes. Si une cardinalité change pendant la capture — cas impossible attendu sur un thread unique mais détectable par contrôle — le bloc entier est refusé.
+
+Hors keyframe, la capture reçoit un masque fermé `FlightControl` et/ou `Systems`. Elle ne parcourt et ne remet à zéro que les structures du masque. Les autres blocs conservent leur dernière valeur validée et leur sample time. Une keyframe, une variation de fermeture, lifecycle, manifeste ou identité publique force `All`; aucune valeur conservée d'une ancienne topologie ne peut alors survivre.
 
 ### 4.2 Flottants et temps
 
@@ -299,7 +300,7 @@ Chaque instance de la liste intrusive `ship::subsys_list` doit résoudre exactem
 | `TYPE_AGGREGATE` | présent si `!Subsystem_Flags::No_aggregate`, type borné et `ship::subsys_info[type].type_count>0`; valeurs depuis `aggregate_current_hits/aggregate_max_hits`, canonisées comme HP |
 | `TURRET` | présent pour le type tourelle avec la politique ci-dessous |
 
-Le type moteur est mappé sans heuristique de nom : `0→UNKNOWN`, `1..7→ENGINE/TURRET/RADAR/NAVIGATION/COMMUNICATION/WEAPONS/SENSORS`, `8..10→OTHER`, `11→UNKNOWN`; toute autre valeur refuse le record. Les `SubsystemFlags` proviennent exactement de : `PERTURBED=!timestamp_elapsed(disruption_timestamp)`, `TARGETABLE=!Untargetable`, `VISIBLE=submodel_instance_1 && !blown_off`, `REVEALED=Cargo_revealed`, `GUARDIAN=subsys_guardian_threshold>0`, `MOVEMENT_LOCKED=ship.flags[Subsystem_movement_locked]`, `BEAM_FREE/BEAM_LOCKED=ship_subsys::weapons.flags[Beam_Free/Turret_Lock]`. `No_SS_targeting` n’est pas réinterprété en `TARGETABLE`.
+Le type moteur est mappé sans heuristique de nom ni flags annexes : les types moteur 0 à 7 conservent leur correspondance directe ; `SUBSYSTEM_SOLAR→REACTOR`; `SUBSYSTEM_GAS_COLLECT` et `SUBSYSTEM_ACTIVATION→OTHER`; `SUBSYSTEM_NONE` et `SUBSYSTEM_UNKNOWN→UNKNOWN`. Toute autre valeur refuse le record. Les `SubsystemFlags` proviennent exactement de : `PERTURBED=!timestamp_elapsed(disruption_timestamp)`, `TARGETABLE=!Untargetable`, `VISIBLE=submodel_instance_1 && !blown_off`, `REVEALED=Cargo_revealed`, `GUARDIAN=subsys_guardian_threshold>0`, `MOVEMENT_LOCKED=ship.flags[Subsystem_movement_locked]`, `BEAM_FREE/BEAM_LOCKED=ship_subsys::weapons.flags[Beam_Free/Turret_Lock]`. `No_SS_targeting` n’est pas réinterprété en `TARGETABLE`.
 
 ### 8.3 Sous-ensemble tourelle
 
@@ -384,11 +385,11 @@ Le mapping fermé est :
 
 `elapsed_us = Player->cargo_inspect_time × 1000`. `required_us` vaut l’override strictement positif `model_subsystem::scan_time`, sinon `Ship_info[target].scan_time`, multiplié en double par `Ship_info[player].scanning_time_multiplier`, puis par 1000 ; un résultat nul/non positif refuse `TIMING` et classe la source `NOT_SCANNABLE`. La portée reprend exactement les formules rayon + `scan_range_normal/capital` + `scanning_range_multiplier` du helper gameplay et exige strictement `current_target_distance < scan_dist`. `IN_ANGLE` exige `dot >= CARGO_MIN_DOT_TO_REVEAL`. `LINE_OF_SIGHT` ne réencode jamais les capteurs : il vaut vrai pour un ship entier validé et, pour un sous-système, copie seulement le test géométrique extrait de `hud_targetbox_subsystem_in_view`. Les capteurs indisponibles donnent `IDLE` avec flags géométriques éventuellement tous vrais. Les trois bits sont présents même à zéro dès qu’une cible scannable et un timing valide existent.
 
-La progression et les resets reproduisent le gameplay existant : elle avance de `round(frametime×1000)` uniquement si portée, angle, capteurs et visibilité requise sont vrais ; angle faux ou sous-système hors vue remet le timer à zéro ; cargo révélé, completion ou changement de target dans le chemin HUD remet le timer à zéro ; hors portée, `Cannot_perform_scan_show_cargo` ou capteurs indisponibles le conservent. La completion utilise strictement `cargo_inspect_time > scan_time`, jamais `>=`. Pause ou frame sans appel historique ne mute ni timer ni autorité. Les fixtures couvrent chaque frontière `<`, `>=`, `>` et les resets asymétriques.
+La progression et les resets reproduisent le gameplay existant : elle avance de `round(frametime×1000)` uniquement si portée, angle, capteurs et visibilité requise sont vrais ; angle faux ou sous-système hors vue remet le timer à zéro ; cargo révélé, completion ou changement de target dans le chemin HUD remet le timer à zéro ; hors portée, `Cannot_perform_scan_show_cargo` ou capteurs indisponibles le conservent. La completion utilise strictement `cargo_inspect_time > scan_time`, jamais `>=`. Pause ou frame sans appel historique ne mute ni timer ni autorité.
 
 Si disclosure vaut `REVEALED`, `cargo_text` est construit sans localisation depuis les données gameplay : `none` pour index cargo zéro, sinon `Cargo_names[index]` après retrait d’un unique préfixe `#`; un `cargo_title` non vide et ne commençant pas par `#` préfixe `title + ": "`. UTF-8/511 octets sont validés sans troncature. `COMPLETED + HIDDEN` n’expose aucun texte. La Phase 2 ne fournit pas d’écran cargo ; le dashboard ne fait qu’afficher ces champs bruts.
 
-Une cible non nulle doit déjà appartenir à la closure service/docking avant le scan. Si le moteur commence ou conserve un scan vers un autre ship, la Phase 2 termine la session avant de publier ce `CARGO_SCAN_STATE`; elle n’ajoute pas la cible comme nouvelle racine et ne révèle pas son état complet. `target_subsystem_id` n’est présent que si le sous-système existe dans le manifeste déjà installé de cette cible.
+Une cible non nulle n'est publiée que si elle appartient déjà à la fermeture player/support/docking. Si le gameplay commence ou conserve un scan vers un autre ship, la télémétrie publie `NOT_SCANNABLE/HIDDEN`, omet cible, sous-système, timing, validity et texte, ne l'ajoute pas comme nouvelle racine et ne termine pas la session. `target_subsystem_id` n’est présent que si le sous-système existe dans le manifeste déjà installé de cette cible. Le scan étendu et son intégration targeting/sensors appartiennent à la Phase 3.
 
 ### 11.2 `DOCKING_STATE`
 
@@ -430,6 +431,8 @@ Chaque `StateAtom` conserve valeur sérialisée complète, lifecycle, clé et é
 
 `RecordFlag.PARTIAL` reste interdit. Un retour exact à la valeur de baseline supprime l’atome du delta cumulatif ; il ne produit pas une mutation artificielle.
 
+L'image courante peut être maintenue incrémentalement : une capture `FlightControl` remplace seulement les atomes flight/control concernés ; une capture `Systems` remplace seulement les atomes systèmes concernés. Le builder conserve les octets canoniques des autres atomes sans les réencoder. Le diff reçoit l'ensemble exact des clés reconstruites et ne rescane l'image entière que pour une reconstruction exhaustive, une cascade lifecycle, une variation de topologie/manifeste ou une vérification de keyframe. Cette optimisation ne modifie ni l'ordre canonique final, ni l'exhaustivité d'un snapshot, ni la sémantique cumulative contre baseline.
+
 Le premier snapshot d’une session utilise exactement `SnapshotFlagInitial`. Toute keyframe planifiée ou forcée par période, topology, catalogue, lifecycle ou support utilise exactement `SnapshotFlagPeriodicKeyframe`. `SnapshotFlagResync` est réservé à une demande/réparation de baseline Phase 0. Aucun snapshot ne combine ces bits et `SnapshotFlagNone` est interdit.
 
 ### 12.2 Diff et suppressions
@@ -454,7 +457,7 @@ Dans une même keyframe :
 
 Une incohérence refuse la candidate entière.
 
-## 13. Tableau de bord de preuve
+## 13. Tableau de bord de référence
 
 Le tableau de bord minimum comporte :
 
@@ -478,8 +481,8 @@ Les formules de référence, évaluées en `float64`, sont fermées :
 - la table de calcul producteur/oracle reste `E=[0/12,1/12,2/12,3/12,4/12,5/12,6/12,7/12,8/12,9/12,10/12,11/12,12/12]`, chaque rationnel étant évalué en `float64` sans lecture du HUD. Toutefois le fil Phase 2 ne porte pas le masque exact de `ets_properties`: un indice zéro peut être applicable et `has_shields` ne couvre pas `Intrinsic_no_shields`. Le client indépendant affiche donc les trois indices bruts mais marque **toutes** les `ets_share` indisponibles ; il ne devine jamais l’applicabilité depuis `SHIELD_STATE`, les groupes optionnels ou la valeur de l’indice ;
 - chaque ratio ammo/quantité/intégrité utilise `clamp(current/max,0,1)` si max>0 ; `subsystem_destroyed = (max_hits>0 && current_hits<=0)` ;
 - le libellé lifecycle mappe directement `SPAWNING/ACTIVE/DEPARTING/DYING/DESTROYED/REMOVED`; l’absence signifie uniquement qu’aucun lifecycle de cet ID n’existe après cascade ;
-- `block_period_us = ceil(1 000 000 / flightHz)` pour Flight/Control, `ceil(1 000 000 / systemsHz)` pour les systèmes et `missionHeartbeatMs×1000` pour les singletons. Le client calcule `estimated_producer_now_us = client_monotonic_time_us + smoothed_offset` avec le filtre NTP-style Phase 0, puis `age_us = estimated_producer_now_us-producer_sample_time_us`; un bloc est `stale` si `age_us > 3×block_period_us+100 000`. Filtre invalide, overflow ou âge négatif donnent âge/stale indisponibles et une erreur de preuve, jamais un âge clampé ;
-- le rapport de preuve marque `converged` seulement si le dernier manifeste requis et la dernière keyframe sont `APPLIED`, aucune candidate/reliable dependency n’est en attente, la baseline du delta est connue, la source/closure est stable et le hash canonique décodé égale celui de l’oracle moteur. Le dashboard sans oracle affiche seulement `synchronized` pour les quatre premières conditions.
+- `block_period_us = ceil(1 000 000 / flightHz)` pour Flight/Control, `ceil(1 000 000 / systemsHz)` pour les systèmes et `missionHeartbeatMs×1000` pour les singletons. Le client calcule `estimated_producer_now_us = client_monotonic_time_us + smoothed_offset` avec le filtre NTP-style Phase 0, puis `age_us = estimated_producer_now_us-producer_sample_time_us`; un bloc est `stale` si `age_us > 3×block_period_us+100 000`. Filtre invalide, overflow ou âge négatif rendent âge et statut indisponibles ;
+- le tableau de bord marque `converged` lorsque le dernier manifeste requis et la dernière keyframe sont `APPLIED`, qu'aucune dépendance fiable n'est en attente, que la baseline est connue, que la source est stable et que l'image décodée correspond à la source observée. Sans comparaison directe à la source, il affiche `synchronized`.
 
 Toute division exige un dénominateur strictement positif ; le clamp ne modifie que l’affichage, jamais la valeur brute. Une entrée ou un groupe absent donne « indisponible ».
 
@@ -487,19 +490,17 @@ Toute division exige un dénominateur strictement positif ; le clamp ne modifie 
 
 Sont explicitement absents : `LOCK_STATE`, `TARGET_STATE`, `RADAR_STATE`, `RADAR_CONTACTS`, `THREAT_STATE`, `NAVIGATION_STATE`, `EFFECT_STATE`, records `COMM_*`, vidéo et tout record d’entité globale. Les cibles de tourelle, cargo local de sous-système, icône radar et événements de tir exacts restent également absents.
 
-## 15. Preuves minimales
+## 15. Critères de qualité du modèle
 
-Le modèle est accepté seulement si les tests prouvent :
-
-- cardinalité `9+N` de la gate cœur et formule `4+10K+N` du profil complet, dont le minimum `14+N` ;
-- matrices de domaines positives et négatives ;
-- manifestes vides d’armes, mono/multi-banques et fermeture modifiée ;
-- zéro, une et 64 sections de bouclier, puis rejet à 65 ;
-- zéro, un et 1024 sous-systèmes, puis rejet au-delà ;
-- banques absentes, dynamiques, balistiques, énergétiques et tertiaires ;
-- `No_ets`, sans afterburner, sans support et support terminal ;
-- IDs statiques stables dans la génération et nouvel `entity_id` au respawn ;
-- cohérences croisées et refus de chaque incohérence ;
-- formules dérivées avec zéro/absence/non-fini et comparaison à l’oracle.
+- le profil cœur contient `9+N` records et le profil complet `4+10K+N`, avec un minimum de `14+N` pour un vaisseau ;
+- les domaines négociés déterminent exactement les records présents ;
+- les manifestes représentent les configurations sans arme, mono-banques et multi-banques ;
+- les boucliers acceptent de zéro à 64 segments ;
+- chaque vaisseau accepte jusqu'à 1024 sous-systèmes dans la limite agrégée ;
+- les banques absentes, dynamiques, balistiques, énergétiques et tertiaires conservent leur sémantique ;
+- `No_ets`, absence d'afterburner et transitions de support restent représentables ;
+- les IDs statiques restent stables dans une génération et le respawn reçoit un nouvel `entity_id` ;
+- toute incohérence croisée refuse l'image complète ;
+- chaque formule dérivée traite explicitement zéro, absence et valeur non finie.
 
 Ce document couvre principalement `P2-REQ-015` à `P2-REQ-033`, `P2-REQ-034`, `P2-REQ-036` à `P2-REQ-040` et `P2-REQ-047`.

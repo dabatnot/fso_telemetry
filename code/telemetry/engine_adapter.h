@@ -221,6 +221,9 @@ class FsoEngineReadView final : public EngineReadView, public Phase2EngineReadVi
 		Phase2CaptureLocalKey key, EngineEntityKey& output) const noexcept override;
 	SourceReadResult read_ship(
 		EngineEntityKey key, Phase2ShipSource& output) const noexcept override;
+	SourceReadResult read_ship_flight(
+		EngineEntityKey key,
+		ShipFlightObservation& output) const noexcept override;
 	SourceReadResult read_core_gate_ship(
 		EngineEntityKey key,
 		Phase2ShipSource& output) const noexcept override;

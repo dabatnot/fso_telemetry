@@ -6,7 +6,7 @@ Ce document fixe la portée, les acteurs, les profils FSTL et le catalogue compl
 
 La Phase 2 est additive : elle conserve les garanties des contrats [Phase 0](../0-Contrat-de-protocole/README.md) et [Phase 1](../1-Squelette-et-premier-flux/README.md). Elle NE DOIT modifier aucun octet, registre, golden vector ou comportement normatif FSTL 1.0.
 
-La gate prédécesseur `G1-G` DOIT être fermée par des preuves courantes avant intégration de la Phase 2. Les cases ouvertes dans les documents Phase 1 ne sont pas des preuves d’échec, mais elles NE DOIVENT PAS être considérées comme fermées sans artefact correspondant.
+La Phase 2 étend le produit livré en Phase 1 et conserve ses comportements et sa compatibilité FSTL.
 
 ## 2. Résultat observable attendu
 
@@ -17,7 +17,7 @@ Une session Phase 2 conforme expose en lecture seule l’état complet du vaisse
 - des `DELTA` cumulatifs contre la baseline de snapshot acquittée ;
 - les renouvellements de keyframe et resynchronisations hérités ;
 - un flux lifecycle cohérent pendant absence, apparition, mort, disparition et respawn ;
-- un client de preuve capable d’afficher valeurs brutes et dérivées et d’enregistrer leur provenance.
+- un client de référence capable d’afficher les valeurs brutes et dérivées et leur provenance.
 
 Les valeurs moteur capturées sont `A` ou `C` selon [01-telemetry-data-inventory.md](../../01-telemetry-data-inventory.md). Les ratios, pourcentages, progressions, ETA et états de jauge reproductibles sont `D` et NE DOIVENT PAS devenir une seconde vérité filaire.
 
@@ -27,11 +27,11 @@ Les valeurs moteur capturées sont `A` ou `C` selon [01-telemetry-data-inventory
 |---|---|
 | Moteur FS2Open | source de vérité lue sur le thread principal après validation de `Player`, `Player_obj` et `Player_ship` |
 | Producteur télémétrie | copie, valide, normalise, filtre `Cockpit`, diff, sérialise et transmet sans modifier la simulation |
-| Client de preuve | valide FSTL indépendamment, installe atomiquement manifeste/snapshot, applique les deltas et recompute les valeurs `D` |
-| Harness d’oracle | compare au même tick la copie moteur et l’état décodé ; il n’est pas livré comme API publique moteur |
+| Client de référence | valide FSTL indépendamment, installe atomiquement manifeste/snapshot, applique les deltas et recalcule les valeurs `D` |
+| Comparateur local | rapproche au même tick la copie moteur et l’état décodé sans ajouter d’API publique moteur |
 | Réseau local | transport non fiable et non authentifié ; loopback et allowlist hérités restent les défenses par défaut |
 
-Le périmètre de livraison obligatoire est `AuthorityMode.SOLO`, `VisibilityMode.COCKPIT`, `trustedFullState=false`. Les chemins `MULTIPLAYER_CLIENT` et `MULTIPLAYER_MASTER` doivent être préservés dans l’architecture et soumis à des tests de non-régression de validation, mais leur production métier complète est différée. `DEDICATED_SERVER` sans joueur de cockpit NE DOIT PAS annoncer le profil Phase 2.
+Le périmètre de livraison est `AuthorityMode.SOLO`, `VisibilityMode.COCKPIT`, `trustedFullState=false`. Les chemins `MULTIPLAYER_CLIENT` et `MULTIPLAYER_MASTER` restent compatibles avec l’architecture, tandis que leur production métier complète est différée. `DEDICATED_SERVER` sans joueur de cockpit n'annonce pas le profil Phase 2.
 
 Le client NE DOIT envoyer aucune commande de vol, arme, support ou mission. Aucun message reçu ne peut modifier un champ moteur.
 
@@ -49,11 +49,11 @@ Les registres suivants restent inchangés :
 - `WEAPONS=0x0080` ;
 - `CARGO_DOCK_SUPPORT=0x0100`.
 
-### 4.2 Gate cœur de vaisseau
+### 4.2 Profil cœur de vaisseau
 
 Le premier profil de promotion est exactement `0x0401 = PLAYER_KINEMATICS | CORE_SHIP`. Il DOIT contenir les singletons `SESSION_STATE` et `MISSION_STATE`, puis, si le joueur existe, un unique `ENTITY_LIFECYCLE`, `SHIP_IDENTITY`, `FLIGHT_STATE`, `DAMAGE_STATE`, `SHIELD_STATE`, tous les `SUBSYSTEM_STATE`, `ENERGY_STATE` et `PROPULSION_STATE` applicables.
 
-Ce profil NE DOIT contenir ni `CONTROL_STATE`, ni `WEAPON_STATE`, ni `SUPPORT_STATE`, car le validateur FSTL lie ces records à d’autres domaines. Il constitue une gate de construction, pas le profil final de livraison.
+Ce profil contient la cinématique et l'état structurel du joueur. `CONTROL_STATE`, `WEAPON_STATE` et `SUPPORT_STATE` appartiennent au profil final, car FSTL lie ces records à leurs domaines respectifs.
 
 ### 4.3 Profil final de livraison
 
@@ -66,7 +66,7 @@ Il ajoute :
 - un `CARGO_SCAN_STATE` pour le joueur ;
 - un `DOCKING_STATE` et un `SUPPORT_STATE` pour chaque vaisseau exporté, avec phase `NONE` et listes vides lorsque non applicables.
 
-Cette fermeture du domaine `CARGO_DOCK_SUPPORT` est imposée par la matrice et la validation référentielle Phase 0 : toute entité ship référencée DOIT posséder `ENTITY_LIFECYCLE`, puis tous les records `CORE_SHIP` et `WEAPONS`. La closure contient donc le joueur et la composante service/docking transitivement référencée et autorisée, sans devenir `ALL_ENTITIES`. Une cible de scan extérieure à cette closure provoque `SESSION_END` plutôt qu’une divulgation ; la Phase 3 conserve la propriété du scan/ciblage étendu et la Phase 4 celle du docking global.
+Cette fermeture du domaine `CARGO_DOCK_SUPPORT` est imposée par la matrice et la validation référentielle Phase 0 : toute entité ship publiée DOIT posséder `ENTITY_LIFECYCLE`, puis tous les records `CORE_SHIP` et `WEAPONS`. La fermeture contient donc le joueur et la composante support/docking transitivement référencée et autorisée, sans devenir `ALL_ENTITIES`. Une cible cargo extérieure n'est pas publiée comme entité : `CARGO_SCAN_STATE` devient `NOT_SCANNABLE/HIDDEN`, sans groupe optionnel, extension de fermeture ni fin de session. La Phase 3 conserve la propriété du scan/ciblage étendu et la Phase 4 celle du docking global.
 
 ### 4.4 Immutabilité et promotion
 
@@ -76,14 +76,14 @@ Le profil final DOIT annoncer `event_coverage_state_derived = ENTITY | DAMAGE (0
 
 ## 5. Catalogue des exigences
 
-### 5.1 Gate, compatibilité et périmètre
+### 5.1 Compatibilité et périmètre
 
 | ID | Exigence normative |
 |---|---|
-| `P2-REQ-001` | L’intégration DOIT commencer seulement après preuve de `G1-G` et DOIT conserver tous les tests et garanties Phase 1. |
+| `P2-REQ-001` | La Phase 2 conserve les comportements, limites et garanties produit de la Phase 1. |
 | `P2-REQ-002` | Les artefacts FSTL 1.0 DOIVENT rester byte-identical ; aucun type, champ, bit ou layout v1.0/1.1 existant ne peut changer. |
 | `P2-REQ-003` | Une session Phase 2 DOIT négocier exactement FSTL 1.1 et refuser tout intervalle sans minor 1. |
-| `P2-REQ-004` | La gate cœur DOIT utiliser exactement `0x0401` et le profil final exactement `0x0583`. Toute autre combinaison est hors contrat Phase 2. |
+| `P2-REQ-004` | Le profil cœur utilise exactement `0x0401` et le profil final exactement `0x0583`. |
 | `P2-REQ-005` | La couverture DOIT être figée avant `WELCOME`; toute promotion ou perte ultérieure exige une nouvelle session. |
 | `P2-REQ-006` | Le mode livré DOIT être `SOLO + COCKPIT`; `TrustedFullState`, headless et les autres autorités NE DOIVENT PAS être annoncés comme conformes Phase 2. |
 | `P2-REQ-007` | Le producteur DOIT rester strictement read-only et NE DOIT exposer aucune commande distante. |
@@ -93,12 +93,12 @@ Le profil final DOIT annoncer `event_coverage_state_derived = ENTITY | DAMAGE (0
 
 | ID | Exigence normative |
 |---|---|
-| `P2-REQ-009` | Toute lecture lourde et toute capture d’état publié DOIT se faire sur le thread principal dans `EngineUpdate`. Seuls les quatre seams main-thread bornés définis par le contrat — cleanup ship, transition support, choix contrôle ship/caméra et autorité cargo historique — peuvent copier hors de ce callback des scalaires, IDs et enums dans des latches possédés ; ils n’allouent, ne sérialisent, ne lisent le réseau et ne laissent aucune déréférence différée. |
+| `P2-REQ-009` | Toute lecture lourde et toute capture d’état publié DOIT se faire sur le thread principal dans `EngineUpdate`. Les autorités gameplay existantes peuvent déposer des faits scalaires bornés dans des latches possédés ; le produit NE DOIT exposer aucun seam de test ni injection de manifeste/catalogue et aucune déréférence moteur différée. |
 | `P2-REQ-010` | `Player`, `Player_obj`, `Player_ship`, types, instances, signatures et index DOIVENT être validés avant toute déréférence ; une incohérence produit un statut fermé et observable. |
 | `P2-REQ-011` | Le DTO Phase 2 DOIT posséder toutes ses chaînes et listes ; aucun pointeur, référence, itérateur ou index moteur ne survit à la capture. |
 | `P2-REQ-012` | La Phase 2 NE DOIT introduire ni worker, ni SPSC, ni lecture concurrente des tables moteur ; cette architecture reste Phase 6. |
 | `P2-REQ-013` | Le chemin actif DOIT être non bloquant, borné et préalloué en régime permanent ; aucun appel réseau bloquant n’est permis dans la frame. |
-| `P2-REQ-014` | Un tick de keyframe DOIT forcer une capture cohérente de tous les blocs Phase 2 au même `producer_sample_time_us`; les ticks ordinaires peuvent suivre leurs cadences configurées. |
+| `P2-REQ-014` | Un tick de keyframe DOIT forcer une capture cohérente de tous les blocs Phase 2 au même `producer_sample_time_us`. Un tick ordinaire DOIT capturer et reconstruire uniquement les blocs dus selon `flightHz`/`systemsHz`, conserver atomiquement les derniers atomes validés des blocs non dus avec leur sample time propre, et limiter le diff aux atomes reconstruits ou invalidés par un changement de topologie/lifecycle. |
 
 ### 5.3 Manifestes, identités et références
 
@@ -108,8 +108,8 @@ Le profil final DOIT annoncer `event_coverage_state_derived = ENTITY | DAMAGE (0
 | `P2-REQ-016` | Le manifeste DOIT être validé, installé atomiquement et acquitté `APPLIED` avant tout snapshot qui le référence. |
 | `P2-REQ-017` | Les IDs de classe, arme, sous-système et banque DOIVENT être non nuls, stables dans la génération de manifeste et indépendants des pointeurs ou indices bruts moteur. |
 | `P2-REQ-018` | Un changement de classe, de composition de loadout ou de descripteur sémantique canonique pré-ID qui modifie le fingerprint catalogue DOIT produire un `manifest_id` strictement supérieur, puis une keyframe ; un simple changement d’instance/topologie avec catalogue inchangé force seulement une keyframe. Aucun delta ne change `required_manifest_id`. |
-| `P2-REQ-019` | Pour `CompleteShip`, la fermeture DOIT être le plus petit point fixe partant du joueur et ajoutant, pour **chaque** membre déjà autorisé, son support assigné, l’unique leader de sa composante dockée et toutes ses relations de docking transitives, avec les définitions classes/armes nécessaires ; une cible de scan n’est référencée que si elle est déjà membre de cette fermeture, sinon la session se termine. `CoreGateClosure` reste exactement `{joueur}`. |
-| `P2-REQ-020` | Dans `CompleteShip`, toute référence d’entité non nulle DOIT résoudre un `ENTITY_LIFECYCLE` dans le snapshot et tout ship ainsi matérialisé DOIT recevoir la matrice complète `CORE_SHIP` et `WEAPONS`. Dans `CoreGate`, le seul ship matérialisé est le joueur. Une référence non autorisée provoque `SESSION_END`, jamais un ID opaque ou moteur brut. |
+| `P2-REQ-019` | Pour `CompleteShip`, la fermeture DOIT être le plus petit point fixe partant du joueur et ajoutant, pour chaque membre déjà autorisé, son support assigné et toutes ses relations de docking transitives, avec les définitions classes/armes nécessaires. Elle NE DOIT suivre ni chef de groupe, ni cible cargo. `CoreGateClosure` reste exactement `{joueur}`. |
+| `P2-REQ-020` | Dans `CompleteShip`, toute référence d’entité publiée non nulle DOIT résoudre un `ENTITY_LIFECYCLE` dans le snapshot et tout ship matérialisé DOIT recevoir la matrice complète `CORE_SHIP` et `WEAPONS`. Une cible cargo extérieure est omise et représentée `NOT_SCANNABLE/HIDDEN` sans ID opaque, extension de fermeture ni fin de session. Dans `CoreGate`, le seul ship matérialisé est le joueur. |
 
 ### 5.4 Données du vaisseau
 
@@ -125,9 +125,9 @@ Le profil final DOIT annoncer `event_coverage_state_derived = ENTITY | DAMAGE (0
 | `P2-REQ-028` | `CONTROL_STATE` DOIT reproduire les six axes, le mode, les flags et les groupes conditionnels v1 ; les compteurs sont des demandes du tick, pas des tirs. |
 | `P2-REQ-029` | Chaque vaisseau exporté DOIT posséder un `WEAPON_STATE` publiant les listes complètes et hétérogènes primaires/secondaires, le scalaire de banque tertiaire courante et la contre-mesure selon les bornes et présences v1. |
 | `P2-REQ-030` | Chaque vaisseau exporté DOIT posséder un `SUPPORT_STATE`; phase, flags et entité de support suivent la source, tandis que les quantités et délais bruts proviennent des autres records, jamais d’un pourcentage inventé. Le dernier terminal par entité DOIT être capturé avant nettoyage moteur, conservé dans une table bornée et publié par keyframe immuable ; plusieurs terminaux du même épisode sont coalescés selon une précédence fermée. |
-| `P2-REQ-031` | Le joueur DOIT posséder `CARGO_SCAN_STATE`; chaque vaisseau exporté DOIT posséder `DOCKING_STATE`. La closure service/docking est transitive, filtrée `Cockpit` avant diff et bornée à 64 vaisseaux. |
+| `P2-REQ-031` | Le joueur DOIT posséder le `CARGO_SCAN_STATE` minimal lu depuis l’autorité gameplay ; chaque vaisseau exporté DOIT posséder `DOCKING_STATE`. La fermeture player/support/docking est transitive, filtrée `Cockpit` avant diff et bornée à 64 vaisseaux. Une cible cargo extérieure publie `NOT_SCANNABLE/HIDDEN`, sans groupes optionnels ni fin de session. |
 | `P2-REQ-032` | Ratios, ETA, progressions, vitesses scalaires, angles d’affichage et coordonnées HUD DOIVENT être calculés côté client et absents du fil. |
-| `P2-REQ-033` | Tout flottant publié DOIT être fini, dans la borne FSTL, canonisé pour `-0`, et tout timer moteur DOIT être converti en durée microseconde bornée. |
+| `P2-REQ-033` | Tout flottant publié DOIT être fini et canonisé pour `-0`. Seules les quantités courantes finies de HP, boucliers, énergie et carburant PEUVENT être clampées dans `[0,max]`, avec compteur de normalisation séparé ; maximum invalide/non fini ou structure impossible est rejeté. Tout timer moteur est converti en durée microseconde bornée. |
 
 ### 5.5 Cycle de vie, snapshot et delta
 
@@ -139,21 +139,21 @@ Le profil final DOIT annoncer `event_coverage_state_derived = ENTITY | DAMAGE (0
 | `P2-REQ-037` | Chaque delta DOIT être cumulatif contre le dernier snapshot immuable acquitté ; il NE DOIT dépendre d’aucun delta précédent. Si son payload dépasse 1 Mio, il est remplacé par une keyframe exhaustive ; aucune troncature n’est permise. |
 | `P2-REQ-038` | L’unité de remplacement est l’atome FSTL complet ; listes de segments, banques, tourelles, animations et relations NE DOIVENT jamais être partielles. |
 | `P2-REQ-039` | Une suppression DOIT utiliser `DELETE` seulement pour les records qui l’autorisent ; les autres absences suivent leur sémantique de record et sont réparées par keyframe. |
-| `P2-REQ-040` | Après `APPLIED` du dernier manifeste requis, stabilisation de la fermeture/source et fin du scénario de perte normatif, le client DOIT converger en au plus `2 × keyframeSeconds + 1 s`. Le temps de transfert d’un manifeste nouveau n’est pas inclus dans cette borne. |
+| `P2-REQ-040` | Après `APPLIED` du dernier manifeste requis et la perte volontaire d’un unique delta, le client DOIT converger sur le delta cumulatif ou la keyframe suivante, sans dépendre d’un delta intermédiaire ni d’une campagne probabiliste. |
 
-### 5.6 Configuration, observabilité, performance et preuves
+### 5.6 Configuration, observabilité et performance
 
 | ID | Exigence normative |
 |---|---|
-| `P2-REQ-041` | Le schéma fermé de configuration DOIT ajouter `systemsHz`, entier `1..20`, défaut `10`; `CONTROL_STATE` reste cadencé par `flightHz` `1..60`, défaut `30`. |
-| `P2-REQ-042` | Les limites héritées de 1200 octets/datagramme, 1 Mio/message delta, 16 Mio/transaction fiable, 64 parts, 1024 fragments, 65 535 records **par message/part** et 32 Mio de candidates/client DOIVENT être appliquées avant allocation. La Phase 2 ajoute une limite d’implémentation de 65 535 records pour l’image complète, 64 ships, 1024 sous-systèmes par ship et 4096 agrégés. |
+| `P2-REQ-041` | Le schéma fermé conserve `systemsHz` entier `1..20`, défaut `10`, et `flightHz` entier `1..60`, défaut `30`. `schemaVersion=2` exige `phase2Profile` exactement `CoreGate` ou `CompleteShip`; la v1 interdit ce champ et migre explicitement vers `CompleteShip`. Le profil est choisi une fois avant bind et ne change qu’après redémarrage. |
+| `P2-REQ-042` | Les limites héritées de 1200 octets/datagramme, 1 Mio/message delta, 16 Mio/transaction fiable, 64 parts, 1024 fragments, 65 535 records par message/part et 32 Mio de candidates/client DOIVENT être appliquées avant allocation et avant cast. L’image contient au plus `9+N=1033` records en `CoreGate` et `4+10K+N=4740` en `CompleteShip`; aucune image artificielle de 65 535 entrées n’est exigée. |
 | `P2-REQ-043` | Les métriques DOIVENT distinguer collecte par bloc, construction manifeste, image, diff, sérialisation, baseline, événements, rejets, tailles, retransmissions et âge des données. |
 | `P2-REQ-044` | Les logs DOIVENT identifier profil, manifeste, cause de refus, transition lifecycle et resync sans exposer de secret, adresse non nécessaire ou contenu caché. |
-| `P2-REQ-045` | Le coût désactivé DOIT rester dans le budget Phase 1 ; en Release, le travail télémétrie ajouté sur un tick systèmes DOIT avoir un p99 inférieur ou égal à 0,75 ms sur la machine de référence. |
-| `P2-REQ-046` | La mémoire inclusive DOIT respecter simultanément 67 108 864 octets partagés, 83 886 080 octets par client et 402 653 184 octets process pour quatre clients, tout en conservant les sous-quotas hérités de candidates/réassemblage ; chaque borne est acceptée et `+1` refusé avant bind. Toute croissance/allocation en régime permanent après `Ready` est un échec de gate et ferme la session sans réallocation. |
-| `P2-REQ-047` | Un décodeur indépendant et un tableau de bord de preuve DOIVENT comparer chaque valeur `A/C` à l’oracle du même tick et chaque valeur `D` à sa recomputation documentée. |
-| `P2-REQ-048` | Les preuves DOIVENT couvrir sérialisation, goldens, bornes, cardinalités, lifecycle, manifestes, baseline, perte/duplication/réordre, sécurité, performance et endurance. |
-| `P2-REQ-049` | Les nouveaux fichiers source et tests DOIVENT être déclarés explicitement dans `code/source_groups.cmake` et `test/src/CMakeLists.txt`, sans glob implicite. |
+| `P2-REQ-045` | Désactivé, le module reste inerte. Activé, le travail ajouté DOIT rester déterministe, non bloquant et borné ; aucun seuil temporel ni campagne de performance ne conditionne la livraison. |
+| `P2-REQ-046` | La mémoire inclusive respecte simultanément 67 108 864 octets partagés, 83 886 080 octets par client et 402 653 184 octets process pour quatre clients, avec les sous-quotas hérités. Une croissance après `Ready` ferme proprement la session concernée sans réallocation non bornée. |
+| `P2-REQ-047` | Un décodeur indépendant et un tableau de bord de référence rapprochent chaque valeur `A/C` de la source du même tick et chaque valeur `D` de sa formule documentée. |
+| `P2-REQ-048` | Sérialisation, cardinalités, lifecycle, manifestes, baseline, récupération et ressources exposent les octets, IDs et transitions exacts nécessaires au relevé produit court. |
+| `P2-REQ-049` | Les nouveaux fichiers du produit sont déclarés explicitement dans `code/source_groups.cmake`, sans glob implicite. |
 | `P2-REQ-050` | Tout échec de source, budget, manifeste ou validation DOIT être observable et fail-closed ; aucune troncature ou dégradation silencieuse de couverture n’est admise. |
 
 ## 6. Exclusions et propriété des phases suivantes
@@ -163,7 +163,7 @@ Le profil final DOIT annoncer `event_coverage_state_derived = ENTITY | DAMAGE (0
 | cible, locks, lead, radar, contacts, AWACS, stealth, menaces, navigation | Phase 3 | aucun record 15–19 ou 23, aucune cible de tourelle publiée |
 | UI cargo/scan | Phase 3 | le record 20 n’est présent que pour fermer le domaine ; aucune vue applicative anticipée |
 | toutes les entités, projectiles, docking global | Phase 4 | seuls le joueur et le point fixe autorisé support/docking/leader sont matérialisés |
-| client applicatif, `ReplicaStore`, UI | Phase 5 | seulement un harness et tableau de bord de preuve |
+| client applicatif, `ReplicaStore`, UI | Phase 5 | seulement un client et tableau de bord de référence |
 | worker/SPSC, hooks exhaustifs des événements brefs, communication | Phase 6 | couverture exacte à zéro, aucun `COMM_*` |
 | rendu/encodage vidéo de cible | Phase 7 | aucune dépendance FFmpeg, render target ou H.264 |
 
@@ -176,4 +176,4 @@ Le profil final DOIT annoncer `event_coverage_state_derived = ENTITY | DAMAGE (0
 5. Une session ne survit pas à une modification de son bitmap de couverture.
 6. Les identités publiques sont monotones ou stables dans leur scope ; les indices locaux ne quittent jamais l’adaptateur.
 7. Un champ optionnel absent signifie exactement l’absence définie par le schéma, jamais zéro par commodité.
-8. Un résultat « conforme » exige la totalité des `P2-REQ-001` à `P2-REQ-050` et des critères `P2-AC-*`.
+8. La livraison exige la totalité des `P2-REQ-001` à `P2-REQ-050`, les preuves courtes de la table de traçabilité et une décision humaine ; aucun critère de certification séparé ne s'ajoute.

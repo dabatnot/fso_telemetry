@@ -913,33 +913,22 @@ Un message structurellement malformé suit la taxonomie de [06](06-validation-se
 
 Le bundle n'est jamais transféré automatiquement par UDP. Aucun chemin absolu reçu, aucun engine_message_id et aucun logical_name ne peut servir directement à ouvrir un fichier. Le chemin validé du manifeste est résolu sous une racine de bundle configurée.
 
-SUBSCRIBE, NACK, KEYFRAME_REQUEST, STOP, STATS et CAPABILITY_UPDATE sont liés à la session et à son endpoint validé. Ils ne modifient aucune structure de simulation. Avant preuve de retour du WELCOME, aucun manifeste ni flux vidéo n'est envoyé et aucune ressource vidéo lourde n'est réservée.
+SUBSCRIBE, NACK, KEYFRAME_REQUEST, STOP, STATS et CAPABILITY_UPDATE sont liés à la session et à son endpoint validé. Ils ne modifient aucune structure de simulation. Avant réception de `ACK APPLIED` pour `WELCOME`, aucun manifeste ni flux vidéo n'est envoyé et aucune ressource vidéo lourde n'est réservée.
 
 Les logs NE DOIVENT PAS contenir une access unit, un chemin absolu ou un dump par frame. Ils PEUVENT contenir stream_id, génération, tailles, profils, compteurs de pertes, raison de fallback et hash tronqué pour diagnostic.
 
-## 13. Golden vectors et critères de conformité
+## 13. Critères de qualité des vues spécialisées
 
-Les fixtures de [06](06-validation-securite-et-conformite.md) couvrent au minimum :
+- les capabilities réservées, offertes, sélectionnées et retirées possèdent un résultat déterministe ;
+- les offres de bundle distinguent version, hash, formats et absence de ressource ;
+- chemins, UTF-8, IDs, hashes, timings, alpha et cardinalités sont validés avant installation ;
+- `COMM_VIEW_STATE` représente activité, pause, vitesse, sens, offset et asset sans valeur non finie ;
+- les tailles des messages spécialisés correspondent exactement aux layouts de ce document ;
+- une configuration vidéo est acquittée avant la première IDR ;
+- une frame H.264 respecte Annex B, son profil, son niveau et la limite de 2 097 152 octets ;
+- une interframe incomplète expire à 200 ms et une IDR récupérable reste disponible au plus 500 ms ;
+- une frame de l'ancienne cible ou génération n'est jamais présentée ;
+- la télémétrie d'état conserve la priorité lorsque le budget vidéo est saturé ;
+- une connexion tardive reçoit la configuration puis une IDR.
 
-1. les cinq bits Capability, chaque paire acceptée/refusée et chaque bit réservé ignoré ;
-2. CommBundleOffer et CommBundleSelection pour bundle compatible, absent, ancien, hash différent et aucun format commun ;
-3. canonicalisation avec UTF-8 multioctet, u64 supérieur à 2 puissance 53, converterId/converterVersion, frameAssetId/placeholderAssetId, ordre d'assets et chemins invalides ;
-4. collision des huit octets tronqués de SHA-256 ;
-5. manifeste mono-record, multi-record, index troué, chevauché, flags/IDs globaux incohérents, alpha NONE/STRAIGHT/PREMULTIPLIED, timings intrinsèque/constant/par-frame, somme de durées erronée, taille d'entrée incohérente, record_length 65 535 et asset_count 4096 ;
-6. COMM_VIEW_STATE actif/inactif, pause, taux +64/-64, lecture inverse, durée différente du manifeste et f32 non fini ;
-7. START dupliqué, STOP retardé, état remplaçable immédiat et remplacement STOP puis START ;
-8. chaque résultat CONFIG et chaque combinaison profil/niveau/render profile, avec valeurs juste sous, égales et juste au-dessus de MaxFS, MaxMBPS et MaxBR ;
-9. les extensions bundle de 40 octets, CAPABILITY_UPDATE de 36 octets, COMM_ASSET_MANIFEST avec préfixes 64/72 octets, les records COMM_VIEW de 60/68 octets et les payloads vidéo SUBSCRIBE 44, CONFIG 36, FRAME préfixe 36, KEYFRAME_REQUEST 32, STOP 24 et STATS 72 octets ;
-10. CONFIG acquittée avant première IDR ;
-11. frame Annex B valide, SPS/PPS absents, start code non canonique, taille encodée incohérente, bitstream excédant le profil/niveau annoncé et flags réservés ;
-12. frame logique exactement à 2 097 152 octets et dépassement d'un octet rejeté avant allocation ;
-13. interframe incomplète abandonnée à 200 ms ;
-14. IDR récupérée par NACK avant 500 ms puis demande expirée sans retransmission ;
-15. changement de target_entity_id et config_generation sans présentation de l'ancienne frame ;
-16. STOP client retransmis, confirmation producteur et STOP producteur ;
-17. STATS dupliquées, anciennes, saturées et rate-limitées ;
-18. retrait de chacune des quatre capabilities visuelles par CAPABILITY_UPDATE ;
-19. saturation du budget vidéo démontrant qu'ACK, événements, snapshot et delta ne sont pas retardés ;
-20. connexion tardive CONFIG puis IDR.
-
-Une implémentation n'est conforme que si les offsets, tailles et valeurs numériques de ce document concordent avec le schéma machine-readable et si deux décodeurs indépendants acceptent et rejettent les mêmes vecteurs.
+Les offsets, tailles et valeurs numériques concordent avec le schéma machine-readable. Deux décodeurs indépendants produisent le même résultat pour les golden vectors canoniques.

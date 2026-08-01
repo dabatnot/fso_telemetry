@@ -1,5 +1,5 @@
 #include "telemetry/phase2_state_image.h"
-#include "telemetry/phase2_wp03_allocation_tracker.h"
+#include "telemetry/phase2_allocation_tracker.h"
 #include "telemetry/protocol/packet_reader.h"
 #include "telemetry/protocol/telemetry_business_records.h"
 
@@ -441,7 +441,7 @@ TEST(Phase2ControlTurret, ProjectionRoundTripsAndDoesNotGrowAfterReady)
 		EXPECT_EQ(ValidationError::None, validate_atom(value));
 	}
 	StateImage measured;
-	telemetry::test::wp03::GlobalAllocationScope allocations;
+	telemetry::test::phase2test::GlobalAllocationScope allocations;
 	const auto status =
 		build_phase2_wp05_projection_preallocated(fixture.input, pool, measured);
 	const auto growth = allocations.finish();
@@ -576,7 +576,7 @@ TEST(Phase2ControlTurret, ProjectionRoundTripsAndDoesNotGrowAfterReady)
 			aggregate.input, aggregate_pool, aggregate_warmup));
 	EXPECT_EQ(1026U, aggregate_warmup.records().size());
 	StateImage aggregate_measured;
-	telemetry::test::wp03::GlobalAllocationScope aggregate_allocations;
+	telemetry::test::phase2test::GlobalAllocationScope aggregate_allocations;
 	const auto aggregate_status =
 		build_phase2_wp05_projection_preallocated(
 			aggregate.input, aggregate_pool, aggregate_measured);

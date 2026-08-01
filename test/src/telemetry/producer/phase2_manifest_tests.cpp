@@ -2,8 +2,9 @@
 
 #include "telemetry/entity_id_registry.h"
 #include "telemetry/phase2_manifest_builder.h"
-#include "telemetry/phase2_wp03_allocation_tracker.h"
-#include "telemetry/phase2_wp03_test_support.h"
+#include "telemetry/phase2_allocation_tracker.h"
+#include "telemetry/phase2_manifest_test_support.h"
+#include "telemetry/protocol/packet_writer.h"
 #include "telemetry/protocol/telemetry_protocol_constants.h"
 #include "telemetry/protocol/telemetry_protocol_types.h"
 #include "telemetry/protocol/telemetry_records.h"
@@ -176,6 +177,32 @@ WireRecordStats wire_record_stats(const Phase2ManifestCandidate& candidate)
 	return stats;
 }
 
+bool class_manifest_wire_contains(const Phase2ManifestCandidate& candidate,
+	const std::array<float, 3>& values)
+{
+	std::array<std::uint8_t, 12> encoded{};
+	PacketWriter writer({encoded.data(), encoded.size()});
+	for (const auto value : values) {
+		if (!writer.write_f32(value)) return false;
+	}
+	for (std::uint16_t part_index = 0; part_index < candidate.part_count; ++part_index) {
+		const auto& part = candidate.parts[part_index];
+		RecordEnvelopeIterator iterator(part.records, part.record_count, RecordFlagPolicy::RequireNone);
+		for (;;) {
+			RecordEnvelopeView envelope{};
+			bool has_value = false;
+			if (iterator.next(envelope, has_value) != ValidationError::None) return false;
+			if (!has_value) break;
+			if (envelope.raw_record_type !=
+				static_cast<std::uint16_t>(RecordType::ClassManifest)) continue;
+			if (std::search(envelope.payload.begin(), envelope.payload.end(),
+					encoded.begin(), encoded.end()) != envelope.payload.end())
+				return true;
+		}
+	}
+	return false;
+}
+
 std::unique_ptr<Phase2ManifestSource> exact_max_class_record_source(bool plus_one)
 {
 	auto source = minimal_source();
@@ -214,7 +241,7 @@ TEST(Phase2Manifest, P2TST020FullRequiredContainsClassAndAnExplicitEmptyWeaponCa
 TEST(Phase2Manifest, P2REQ015CatalogsAreExhaustiveLeastPrivilegeAndRejectMissingOrDuplicateDefinitions)
 {
 	ProvisionedSlot provisioned;
-	auto source_storage = test::wp03::make_source(test::wp03::SourceCase::TwoClassesThreeWeaponsWithDecoys);
+	auto source_storage = test::phase2test::make_source(test::phase2test::SourceCase::TwoClassesThreeWeaponsWithDecoys);
 	auto& source = *source_storage;
 	ASSERT_EQ(Phase2ManifestError::None, provisioned.slot.rebuild(source));
 	const auto& candidate = provisioned.slot.staged_candidate();
@@ -223,22 +250,22 @@ TEST(Phase2Manifest, P2REQ015CatalogsAreExhaustiveLeastPrivilegeAndRejectMissing
 
 	auto missing_storage = std::make_unique<Phase2ManifestSource>(source);
 	auto& missing = *missing_storage;
-	test::wp03::erase_weapon_definition(missing, source.referenced_weapon_keys[1]);
+	test::phase2test::erase_weapon_definition(missing, source.referenced_weapon_keys[1]);
 	EXPECT_EQ(Phase2ManifestError::MissingRequiredDefinition, provisioned.slot.rebuild(missing));
 	EXPECT_EQ(candidate.manifest_id, provisioned.slot.staged_manifest_id());
 
 	auto duplicate_storage = std::make_unique<Phase2ManifestSource>(source);
 	auto& duplicate = *duplicate_storage;
-	test::wp03::duplicate_weapon_definition(duplicate, source.referenced_weapon_keys[1]);
+	test::phase2test::duplicate_weapon_definition(duplicate, source.referenced_weapon_keys[1]);
 	EXPECT_EQ(Phase2ManifestError::DuplicateDefinition, provisioned.slot.rebuild(duplicate));
 	EXPECT_EQ(candidate.manifest_id, provisioned.slot.staged_manifest_id());
 }
 
 TEST(Phase2Manifest, P2TST021CanonicalIdsAndWireBytesIgnoreEngineOrder)
 {
-	auto first = test::wp03::make_source(test::wp03::SourceCase::TwoClassesThreeWeaponsWithDecoys);
+	auto first = test::phase2test::make_source(test::phase2test::SourceCase::TwoClassesThreeWeaponsWithDecoys);
 	auto second = std::make_unique<Phase2ManifestSource>(*first);
-	test::wp03::reverse_engine_order(*second);
+	test::phase2test::reverse_engine_order(*second);
 	ProvisionedSlot a;
 	ProvisionedSlot b;
 	ASSERT_EQ(Phase2ManifestError::None, a.slot.rebuild(*first));
@@ -252,7 +279,7 @@ TEST(Phase2Manifest, P2TST021CanonicalIdsAndWireBytesIgnoreEngineOrder)
 
 TEST(Phase2Manifest, P2TST021CanonicalOrderingUsesCompleteDescriptorsWhenNamesAndShallowKeysCollide)
 {
-	auto first = test::wp03::make_source(test::wp03::SourceCase::TwoClassesThreeWeaponsWithDecoys);
+	auto first = test::phase2test::make_source(test::phase2test::SourceCase::TwoClassesThreeWeaponsWithDecoys);
 	first->ship_classes[0].name = "Colliding class";
 	first->ship_classes[1].name = "Colliding class";
 	first->ship_classes[0].effective_mass = 100.0F;
@@ -273,7 +300,7 @@ TEST(Phase2Manifest, P2TST021CanonicalOrderingUsesCompleteDescriptorsWhenNamesAn
 	first->weapons[1].damage = 20.0F;
 
 	auto reversed = std::make_unique<Phase2ManifestSource>(*first);
-	test::wp03::reverse_engine_order(*reversed);
+	test::phase2test::reverse_engine_order(*reversed);
 	ProvisionedSlot a;
 	ProvisionedSlot b;
 	ASSERT_EQ(Phase2ManifestError::None, a.slot.rebuild(*first));
@@ -333,12 +360,12 @@ TEST(Phase2Manifest, D2008IdsAreStableWithinGenerationAcrossOrderAndRespawnAndFo
 {
 	ProvisionedSlot provisioned;
 	auto source_storage =
-		test::wp03::make_source(test::wp03::SourceCase::CanonicalIdsWithHullTurretAndTertiaryBanks);
+		test::phase2test::make_source(test::phase2test::SourceCase::CanonicalIdsWithHullTurretAndTertiaryBanks);
 	auto& source = *source_storage;
 	ASSERT_EQ(Phase2ManifestError::None, provisioned.slot.rebuild(source));
 	const auto first = static_ids(provisioned.slot.staged_candidate());
 
-	test::wp03::reverse_engine_order(source);
+	test::phase2test::reverse_engine_order(source);
 	ASSERT_EQ(Phase2ManifestError::NoCatalogChange, provisioned.slot.rebuild(source));
 	const auto second = static_ids(provisioned.slot.staged_candidate());
 	EXPECT_EQ(first, second);
@@ -482,18 +509,18 @@ TEST(Phase2Manifest, P2TST027MinusOneMapsToZeroOnlyForExplicitAbsence)
 
 TEST(Phase2Manifest, P2TST023AcceptsAllExactSourceBoundsAndRejectsEveryPlusOneAtomically)
 {
-	for (const auto exact_case : {test::wp03::BoundaryCase::ClassBanks192}) {
+	for (const auto exact_case : {test::phase2test::BoundaryCase::ClassBanks192}) {
 		ProvisionedSlot accepted;
-		const auto exact = test::wp03::make_boundary_source(exact_case);
+		const auto exact = test::phase2test::make_boundary_source(exact_case);
 		ASSERT_EQ(Phase2ManifestError::None, accepted.slot.rebuild(*exact));
 	}
 
-	for (const auto overflow_case : {test::wp03::BoundaryCase::ClassBanks193}) {
+	for (const auto overflow_case : {test::phase2test::BoundaryCase::ClassBanks193}) {
 		ProvisionedSlot rejected;
 		auto baseline = minimal_source();
 		ASSERT_EQ(Phase2ManifestError::None, rejected.slot.rebuild(*baseline));
 		const auto sentinel_id = rejected.slot.staged_manifest_id();
-		const auto overflow = test::wp03::make_boundary_source(overflow_case);
+		const auto overflow = test::phase2test::make_boundary_source(overflow_case);
 		EXPECT_EQ(Phase2ManifestError::SourceLimitExceeded, rejected.slot.rebuild(*overflow));
 		EXPECT_EQ(sentinel_id, rejected.slot.staged_manifest_id());
 	}
@@ -540,7 +567,7 @@ TEST(Phase2Manifest, P2TST023ActualCatalogFieldsAcceptExactLimitsAndRejectEachPl
 
 	{
 		ProvisionedSlot provisioned;
-		auto source = test::wp03::make_source(test::wp03::SourceCase::MultipartFullRequired);
+		auto source = test::phase2test::make_source(test::phase2test::SourceCase::MultipartFullRequired);
 		ASSERT_EQ(Phase2ManifestLimits::MaxWeapons, source->weapon_count);
 		ASSERT_EQ(Phase2ManifestError::None, provisioned.slot.rebuild(*source));
 		EXPECT_EQ(1u + Phase2ManifestLimits::MaxWeapons,
@@ -581,16 +608,16 @@ TEST(Phase2Manifest, P2TST023ClassManifestRecordLength65535IsRealAndPlusOneFails
 TEST(Phase2Manifest, P2TST039UsesReal1025PerShipAnd4097AggregateCases)
 {
 	ProvisionedSlot provisioned;
-	auto exact = test::wp03::make_subsystem_source({1024, 1024, 1024, 1024});
+	auto exact = test::phase2test::make_subsystem_source({1024, 1024, 1024, 1024});
 	ASSERT_EQ(Phase2ManifestError::None, provisioned.slot.rebuild(*exact));
 	EXPECT_EQ(4096u, provisioned.slot.staged_candidate().aggregate_subsystem_count);
 	const auto sentinel = provisioned.slot.staged_manifest_id();
 
-	auto per_ship = test::wp03::make_subsystem_source({1025});
+	auto per_ship = test::phase2test::make_subsystem_source({1025});
 	EXPECT_EQ(Phase2ManifestError::TooManySubsystemsPerShip, provisioned.slot.rebuild(*per_ship));
 	EXPECT_EQ(sentinel, provisioned.slot.staged_manifest_id());
 
-	auto aggregate = test::wp03::make_subsystem_source({1024, 1024, 1024, 1024, 1});
+	auto aggregate = test::phase2test::make_subsystem_source({1024, 1024, 1024, 1024, 1});
 	EXPECT_EQ(Phase2ManifestError::TooManyAggregateSubsystems, provisioned.slot.rebuild(*aggregate));
 	EXPECT_EQ(sentinel, provisioned.slot.staged_manifest_id());
 }
@@ -598,7 +625,7 @@ TEST(Phase2Manifest, P2TST039UsesReal1025PerShipAnd4097AggregateCases)
 TEST(Phase2Manifest, P2TST039SubsystemCanonicalIndexAndSourceBijectionRejectAmbiguity)
 {
 	ProvisionedSlot provisioned;
-	auto source_storage = test::wp03::make_subsystem_source({1024});
+	auto source_storage = test::phase2test::make_subsystem_source({1024});
 	auto& source = *source_storage;
 	ASSERT_EQ(Phase2ManifestError::None, provisioned.slot.rebuild(source));
 	const auto& record = provisioned.slot.staged_candidate().class_records[0];
@@ -617,7 +644,7 @@ TEST(Phase2Manifest, P2TST039SubsystemCanonicalIndexAndSourceBijectionRejectAmbi
 TEST(Phase2Manifest, P2TST039ZeroMaximumRequiresZeroCurrentAndInstanceSystemInfoBijection)
 {
 	ProvisionedSlot provisioned;
-	auto source_storage = test::wp03::make_subsystem_source({1});
+	auto source_storage = test::phase2test::make_subsystem_source({1});
 	auto& source = *source_storage;
 	source.ship_classes[0].subsystems[0].max_hits = 0.0F;
 	source.ship_classes[0].subsystems[0].current_hits = 0.0F;
@@ -634,13 +661,13 @@ TEST(Phase2Manifest, P2TST039CoversZeroOneAnd1024AndDefinitionChangesRequireMani
 {
 	for (const std::uint32_t count : {0u, 1u, 1024u}) {
 		ProvisionedSlot provisioned;
-		auto source = test::wp03::make_subsystem_source({count});
+		auto source = test::phase2test::make_subsystem_source({count});
 		ASSERT_EQ(Phase2ManifestError::None, provisioned.slot.rebuild(*source));
 		EXPECT_EQ(count, provisioned.slot.staged_candidate().class_records[0].subsystem_count);
 	}
 
 	ProvisionedSlot provisioned;
-	auto source_storage = test::wp03::make_subsystem_source({1});
+	auto source_storage = test::phase2test::make_subsystem_source({1});
 	auto& source = *source_storage;
 	ASSERT_EQ(Phase2ManifestError::None, provisioned.slot.rebuild(source));
 	ASSERT_EQ(Phase2ManifestError::None, provisioned.slot.on_manifest_applied(1));
@@ -682,7 +709,7 @@ TEST(Phase2Manifest, P2TST047PublishesEffectiveMassInertiaAndExactAngleProvenanc
 TEST(Phase2Manifest, P2TST047AuxiliaryRegistriesUseCanonicalKeyOrderAndCountermeasureSemantics)
 {
 	ProvisionedSlot provisioned;
-	auto source_storage = test::wp03::make_source(test::wp03::SourceCase::AllAuxiliaryRegistries);
+	auto source_storage = test::phase2test::make_source(test::phase2test::SourceCase::AllAuxiliaryRegistries);
 	auto& source = *source_storage;
 	source.ship_classes[0].countermeasure_capacity = 10.0F;
 	source.ship_classes[0].countermeasure_cargo_size = 4.0F;
@@ -723,13 +750,13 @@ TEST(Phase2Manifest, P2TST047AuxiliaryRegistriesUseCanonicalKeyOrderAndCounterme
 
 TEST(Phase2Manifest, P2TST047BankOwnerAndAmmunitionSemanticsAreProjectedAndValidated)
 {
-	auto source = test::wp03::make_source(test::wp03::SourceCase::TwoClassesThreeWeaponsWithDecoys);
+	auto source = test::phase2test::make_source(test::phase2test::SourceCase::TwoClassesThreeWeaponsWithDecoys);
 	auto& ship_class = source->ship_classes[0];
 	ship_class.subsystem_count = 1;
 	ship_class.subsystems[0].source_key = 700;
 	ship_class.subsystems[0].system_info_key = 701;
 	ship_class.subsystems[0].name = "Missile turret";
-	ship_class.bank_count = 2;
+	ship_class.bank_count = 4;
 	ship_class.banks[0].family = WeaponFamily::Primary;
 	ship_class.banks[0].source_family = WeaponFamily::Primary;
 	ship_class.banks[0].bank_index = 0;
@@ -743,6 +770,24 @@ TEST(Phase2Manifest, P2TST047BankOwnerAndAmmunitionSemanticsAreProjectedAndValid
 	ship_class.banks[1].weapon_source_key = 102;
 	ship_class.banks[1].consumes_ammunition = true;
 	ship_class.banks[1].capacity = 12.0F;
+	ship_class.banks[2].family = WeaponFamily::Turret;
+	ship_class.banks[2].source_family = WeaponFamily::Primary;
+	ship_class.banks[2].bank_index = 0;
+	ship_class.banks[2].owner_subsystem_canonical_index = 0;
+	ship_class.banks[2].weapon_source_key = 101;
+	ship_class.banks[2].consumes_ammunition = false;
+	ship_class.banks[2].capacity = 99.0F;
+	ship_class.banks[2].fire_point_count = 1;
+	ship_class.banks[2].fire_points[0] = {17.25F, 18.5F, 19.75F};
+	ship_class.banks[3].family = WeaponFamily::Turret;
+	ship_class.banks[3].source_family = WeaponFamily::Secondary;
+	ship_class.banks[3].bank_index = 0;
+	ship_class.banks[3].owner_subsystem_canonical_index = 0;
+	ship_class.banks[3].weapon_source_key = 102;
+	ship_class.banks[3].consumes_ammunition = true;
+	ship_class.banks[3].capacity = 12.0F;
+	ship_class.banks[3].fire_point_count = 1;
+	ship_class.banks[3].fire_points[0] = {-27.25F, -28.5F, -29.75F};
 
 	ProvisionedSlot provisioned;
 	ASSERT_EQ(Phase2ManifestError::None, provisioned.slot.rebuild(*source));
@@ -752,19 +797,39 @@ TEST(Phase2Manifest, P2TST047BankOwnerAndAmmunitionSemanticsAreProjectedAndValid
 		return value.name == ship_class.name;
 	});
 	ASSERT_NE(class_end, record);
-	ASSERT_EQ(2u, record->bank_count);
+	ASSERT_EQ(4u, record->bank_count);
 	const auto primary = std::find_if(record->banks.begin(), record->banks.end(), [](const auto& bank) {
 		return bank.family == WeaponFamily::Primary;
 	});
 	const auto secondary = std::find_if(record->banks.begin(), record->banks.end(), [](const auto& bank) {
 		return bank.family == WeaponFamily::Secondary;
 	});
+	const auto turret_primary = std::find_if(record->banks.begin(), record->banks.end(), [](const auto& bank) {
+		return bank.family == WeaponFamily::Turret &&
+			bank.source_family == WeaponFamily::Primary;
+	});
+	const auto turret_secondary = std::find_if(record->banks.begin(), record->banks.end(), [](const auto& bank) {
+		return bank.family == WeaponFamily::Turret &&
+			bank.source_family == WeaponFamily::Secondary;
+	});
 	ASSERT_NE(record->banks.end(), primary);
 	ASSERT_NE(record->banks.end(), secondary);
+	ASSERT_NE(record->banks.end(), turret_primary);
+	ASSERT_NE(record->banks.end(), turret_secondary);
 	EXPECT_EQ(0u, primary->owner_subsystem_id);
 	EXPECT_EQ(WeaponFamily::Primary, primary->source_family);
 	EXPECT_EQ(1u, secondary->owner_subsystem_id);
 	EXPECT_EQ(WeaponFamily::Secondary, secondary->source_family);
+	EXPECT_EQ(WeaponFamily::Turret, turret_primary->family);
+	EXPECT_EQ(WeaponFamily::Primary, turret_primary->source_family);
+	EXPECT_EQ(0u, turret_primary->source_index);
+	EXPECT_EQ(1u, turret_primary->owner_subsystem_id);
+	EXPECT_EQ(WeaponFamily::Turret, turret_secondary->family);
+	EXPECT_EQ(WeaponFamily::Secondary, turret_secondary->source_family);
+	EXPECT_EQ(0u, turret_secondary->source_index);
+	EXPECT_EQ(1u, turret_secondary->owner_subsystem_id);
+	EXPECT_TRUE(class_manifest_wire_contains(candidate, {17.25F, 18.5F, 19.75F}));
+	EXPECT_TRUE(class_manifest_wire_contains(candidate, {-27.25F, -28.5F, -29.75F}));
 
 	auto invalid = std::make_unique<Phase2ManifestSource>(*source);
 	invalid->ship_classes[0].banks[1].owner_subsystem_canonical_index = 1;
@@ -853,7 +918,7 @@ TEST(Phase2Manifest, FingerprintsSeparateTopologyCatalogAndExcludeIdsAndGenerati
 
 TEST(Phase2Manifest, CatalogFingerprintUsesCompleteSemanticDescriptorsAndNotRawSourceKeys)
 {
-	auto source_storage = test::wp03::make_source(test::wp03::SourceCase::AllAuxiliaryRegistries);
+	auto source_storage = test::phase2test::make_source(test::phase2test::SourceCase::AllAuxiliaryRegistries);
 	auto& source = *source_storage;
 	ProvisionedSlot baseline;
 	ASSERT_EQ(Phase2ManifestError::None, baseline.slot.rebuild(source));
@@ -869,7 +934,7 @@ TEST(Phase2Manifest, CatalogFingerprintUsesCompleteSemanticDescriptorsAndNotRawS
 		}
 	}
 	raw_changed.engine_index += 99;
-	test::wp03::reverse_engine_order(raw_changed);
+	test::phase2test::reverse_engine_order(raw_changed);
 	ProvisionedSlot raw_slot;
 	ASSERT_EQ(Phase2ManifestError::None, raw_slot.slot.rebuild(raw_changed));
 	EXPECT_EQ(fingerprint, raw_slot.slot.staged_candidate().catalog_fingerprint);
@@ -891,7 +956,7 @@ TEST(Phase2Manifest, CatalogFingerprintUsesCompleteSemanticDescriptorsAndNotRawS
 
 TEST(Phase2Manifest, P2REQ018CatalogFingerprintIncludesAuxiliaryAssociationsAtConstantDefinitionSet)
 {
-	auto baseline = test::wp03::make_source(test::wp03::SourceCase::AllAuxiliaryRegistries);
+	auto baseline = test::phase2test::make_source(test::phase2test::SourceCase::AllAuxiliaryRegistries);
 	auto reassigned = std::make_unique<Phase2ManifestSource>(*baseline);
 	std::swap(reassigned->ship_classes[0].species_index, reassigned->ship_classes[1].species_index);
 	std::swap(reassigned->ship_classes[0].subsystems[0].armor_index,
@@ -912,7 +977,7 @@ TEST(Phase2Manifest, P2REQ018CatalogFingerprintIncludesAuxiliaryAssociationsAtCo
 		<< "Closure evidence is topological; the manifest catalog fingerprint owns descriptor associations.";
 
 	auto reordered = std::make_unique<Phase2ManifestSource>(*reassigned);
-	test::wp03::reverse_engine_order(*reordered);
+	test::phase2test::reverse_engine_order(*reordered);
 	std::reverse(reordered->auxiliary_entries.begin(),
 		reordered->auxiliary_entries.begin() + reordered->auxiliary_entry_count);
 	ProvisionedSlot canonical;
@@ -932,7 +997,7 @@ TEST(Phase2Manifest, P2REQ018CatalogFingerprintIncludesAuxiliaryAssociationsAtCo
 
 TEST(Phase2Manifest, P2REQ015UnreferencedAuxiliaryDefinitionsDoNotChangeTheLeastPrivilegeCatalog)
 {
-	auto source_storage = test::wp03::make_source(test::wp03::SourceCase::AllAuxiliaryRegistries);
+	auto source_storage = test::phase2test::make_source(test::phase2test::SourceCase::AllAuxiliaryRegistries);
 	auto& source = *source_storage;
 	ProvisionedSlot provisioned;
 	ASSERT_EQ(Phase2ManifestError::None, provisioned.slot.rebuild(source));
@@ -958,7 +1023,7 @@ TEST(Phase2Manifest, D2006NoAllocationAfterReadyUsesCallerOwnedTwoGenerationAren
 	static_assert(8u <= 192u && 4u <= 64u && 64u <= 256u);
 	static_assert(4096u <= 4096u);
 	ProvisionedSlot provisioned;
-	auto source_storage = test::wp03::make_source(test::wp03::SourceCase::NearMaxTransaction);
+	auto source_storage = test::phase2test::make_source(test::phase2test::SourceCase::NearMaxTransaction);
 	auto& source = *source_storage;
 	ASSERT_EQ(Phase2ManifestError::None, provisioned.slot.rebuild(source)); // warm/provision before Ready
 	ASSERT_EQ(Phase2ManifestError::None,
@@ -974,7 +1039,7 @@ TEST(Phase2Manifest, D2006NoAllocationAfterReadyUsesCallerOwnedTwoGenerationAren
 	EXPECT_GE(provisioned.slot.active_candidate().encoded_size, NearMaxLegalLowerBound);
 
 	source.ship_classes[0].effective_mass += 1.0F;
-	test::wp03::GlobalAllocationScope allocation_scope;
+	test::phase2test::GlobalAllocationScope allocation_scope;
 	const auto result = provisioned.slot.rebuild(source);
 	const auto global_allocations = allocation_scope.finish();
 	EXPECT_EQ(Phase2ManifestError::None, result);
@@ -1002,7 +1067,7 @@ TEST(Phase2Manifest, D2006NoAllocationAfterReadyUsesCallerOwnedTwoGenerationAren
 		provisioned.slot.on_dependent_snapshot_applied(2, provisioned.slot.staged_manifest_id()));
 	provisioned.slot.release_reliable_references(sentinel_id);
 	source.ship_classes[0].effective_mass += 1.0F;
-	test::wp03::GlobalAllocationScope reuse_scope;
+	test::phase2test::GlobalAllocationScope reuse_scope;
 	const auto reuse_result = provisioned.slot.rebuild(source);
 	const auto reuse_allocations = reuse_scope.finish();
 	EXPECT_EQ(Phase2ManifestError::None, reuse_result);
@@ -1024,7 +1089,7 @@ TEST(Phase2Manifest, D2006InsufficientCallerArenaAndThrowingFallbackFailAtomical
 	const auto sentinel = slot->staged_manifest_id();
 	const auto sentinel_hash = slot->staged_candidate().transaction_sha256;
 	fallback.fail = true;
-	auto multipart = test::wp03::make_source(test::wp03::SourceCase::MultipartFullRequired);
+	auto multipart = test::phase2test::make_source(test::phase2test::SourceCase::MultipartFullRequired);
 	const auto result = slot->rebuild(*multipart);
 	EXPECT_EQ(Phase2ManifestError::AllocationFailed, result);
 	EXPECT_EQ(sentinel, slot->staged_manifest_id());

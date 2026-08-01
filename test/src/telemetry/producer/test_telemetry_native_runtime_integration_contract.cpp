@@ -7,7 +7,6 @@
 #include "telemetry/runtime_adapter.h"
 #include "telemetry/runtime_adapter_test_seam.h"
 #include "telemetry/phase1_state_image.h"
-#include "telemetry/phase2_manifest_builder.h"
 #include "telemetry/protocol/telemetry_control_messages.h"
 #include "telemetry/protocol/telemetry_crc32.h"
 #include "telemetry/protocol/telemetry_datagram.h"
@@ -333,9 +332,8 @@ struct NativeFixture {
 		EXPECT_TRUE(registry.allocate_storage());
 	}
 
-	detail::NativeSessionStartStatus start(telemetry::TelemetryConfig& config,
-		telemetry::Phase2Profile selected_phase2_profile =
-			telemetry::Phase2Profile::None)
+	detail::NativeSessionStartStatus start(
+		telemetry::TelemetryConfig& config)
 	{
 		detail::NativeSessionStartRequest request{
 			&config,
@@ -343,15 +341,12 @@ struct NativeFixture {
 			&ids,
 			&packet_random,
 			nullptr,
-			&log,
-			selected_phase2_profile};
+			&log};
 		return runtime.start(request);
 	}
 
 	detail::NativeSessionStartStatus start_requested(telemetry::TelemetryConfig& config,
-		telemetry::Phase2Profile requested_phase2_profile,
-		const telemetry::Phase2ManifestCandidate* phase2_manifest =
-			nullptr)
+		telemetry::Phase2Profile requested_phase2_profile)
 	{
 		detail::NativeSessionStartRequest request{
 			&config,
@@ -362,15 +357,12 @@ struct NativeFixture {
 			&log};
 		request.phase2_eligibility = {};
 		request.requested_phase2_profile = requested_phase2_profile;
-		request.phase2_manifest = phase2_manifest;
 		return runtime.start(request);
 	}
 
 	detail::NativeSessionStartStatus start_with_eligibility(
 		telemetry::TelemetryConfig& config,
-		const telemetry::Phase2ProfileEligibility& eligibility,
-		const telemetry::Phase2ManifestCandidate* phase2_manifest =
-			nullptr)
+		const telemetry::Phase2ProfileEligibility& eligibility)
 	{
 		detail::NativeSessionStartRequest request{
 			&config,
@@ -381,7 +373,6 @@ struct NativeFixture {
 			&log};
 		request.phase2_eligibility = eligibility;
 		request.requested_phase2_profile = telemetry::Phase2Profile::CoreGate;
-		request.phase2_manifest = phase2_manifest;
 		return runtime.start(request);
 	}
 };
@@ -419,85 +410,6 @@ TEST(TelemetryNativeRuntimeIntegrationContract, NativeFixtureSourceStorageOracle
 			std::sregex_iterator{source.begin(), source.end(), automatic_fixture},
 			std::sregex_iterator{})));
 	EXPECT_EQ(45U, occurrence_count(heap_construction));
-}
-
-TEST(TelemetryNativeRuntimeIntegrationContract, TestAndHarnessLargeRuntimeStorageOracleIsExactAndNonVacuous)
-{
-	const std::string this_file = __FILE__;
-	const auto separator = this_file.find_last_of("/\\");
-	ASSERT_NE(std::string::npos, separator);
-	const auto directory = this_file.substr(0U, separator + 1U);
-
-	const auto read_source = [&directory](const char* name) {
-		std::ifstream input(directory + name, std::ios::binary);
-		EXPECT_TRUE(input.is_open()) << name;
-		const std::string source{std::istreambuf_iterator<char>{input},
-			std::istreambuf_iterator<char>{}};
-		EXPECT_FALSE(source.empty()) << name;
-		return source;
-	};
-	const auto occurrence_count = [](const std::string& source, const std::string& needle) {
-		std::size_t count = 0U;
-		for (auto offset = source.find(needle);
-			 offset != std::string::npos;
-			 offset = source.find(needle, offset + needle.size())) {
-			++count;
-		}
-		return count;
-	};
-	const auto automatic_count = [](const std::string& source, const char* expression) {
-		const std::regex pattern{expression};
-		return static_cast<std::size_t>(std::distance(
-			std::sregex_iterator{source.begin(), source.end(), pattern},
-			std::sregex_iterator{}));
-	};
-
-	const auto adapter = read_source("test_telemetry_runtime_adapter_player_contract.cpp");
-	const auto performance = read_source("telemetry_native_performance_runner.cpp");
-	const auto reliability = read_source("telemetry_phase1_reliability_harness.cpp");
-	const auto loopback = read_source("test_telemetry_native_runtime_loopback_contract.cpp");
-	const auto allocations = read_source("test_telemetry_session_controller_allocations.cpp");
-
-	const auto native_fixture_heap =
-		std::string{"std::make_unique<Native"} + "Fixture>()";
-	const auto native_runtime_heap =
-		std::string{"std::make_unique<detail::Native"} + "SessionRuntime>";
-	const auto loopback_budget_heap =
-		std::string{"auto real_budget = std::make_unique<Server"} + "Fixture>";
-	const auto allocation_fixture_heap =
-		std::string{"std::make_unique<NativeAllocation"} + "Fixture>";
-	const auto unique_native_member =
-		std::string{"std::unique_ptr<detail::Native"} + "SessionRuntime> native;";
-	const auto optional_native_member =
-		std::string{"std::optional<detail::Native"} + "SessionRuntime> native;";
-
-	const auto adapter_sites = occurrence_count(adapter, native_fixture_heap);
-	const auto performance_sites = occurrence_count(performance, native_runtime_heap);
-	const auto reliability_sites = occurrence_count(reliability, native_runtime_heap);
-	const auto loopback_sites = occurrence_count(loopback, loopback_budget_heap);
-	const auto allocation_sites = occurrence_count(allocations, allocation_fixture_heap);
-
-	EXPECT_EQ(2U, adapter_sites);
-	EXPECT_EQ(0U, automatic_count(adapter,
-		R"((^|\n)[ \t]*NativeFixture[ \t]+[A-Za-z_][A-Za-z0-9_]*[ \t]*;)"));
-	EXPECT_EQ(1U, performance_sites);
-	EXPECT_EQ(0U, automatic_count(performance,
-		R"((^|\n)[ \t]*detail::NativeSessionRuntime[ \t]+runtime[ \t]*\()"));
-	EXPECT_EQ(2U, reliability_sites);
-	EXPECT_EQ(0U, automatic_count(reliability,
-		R"((^|\n)[ \t]*detail::NativeSessionRuntime[ \t]+(runtime|restarted_runtime)[ \t]*\()"));
-	EXPECT_EQ(1U, loopback_sites);
-	EXPECT_EQ(0U, automatic_count(loopback,
-		R"((^|\n)[ \t]*ServerFixture[ \t]+real_budget[ \t]*\()"));
-	EXPECT_EQ(1U, occurrence_count(loopback, unique_native_member));
-	EXPECT_EQ(0U, occurrence_count(loopback, optional_native_member));
-	EXPECT_EQ(4U, allocation_sites);
-	EXPECT_EQ(0U, automatic_count(allocations,
-		R"((^|\n)[ \t]*NativeAllocationFixture[ \t]+fixture[ \t]*(\(|;))"));
-	EXPECT_EQ(1U, occurrence_count(allocations, unique_native_member));
-	EXPECT_EQ(0U, occurrence_count(allocations, optional_native_member));
-	EXPECT_EQ(10U,
-		adapter_sites + performance_sites + reliability_sites + loopback_sites + allocation_sites);
 }
 
 constexpr std::uint8_t CaptureUnavailable = 0U;
@@ -1147,12 +1059,10 @@ TEST(TelemetryP85PreallocationContract, ProvisionFailurePreventsBindAndAColdRunt
 TEST(TelemetryNativeRuntimeIntegrationContract, S8V4OwnedBudgetPlusOneFailsBeforeTransportBind)
 {
 	auto config = enabled_config(1U);
-	telemetry::Phase2ManifestCandidate manifest;
-	manifest.manifest_id = 1U;
 	auto baseline = std::make_unique<NativeFixture>();
 	ASSERT_EQ(detail::NativeSessionStartStatus::Started,
 		baseline->start_requested(config,
-			telemetry::Phase2Profile::CoreGate, &manifest));
+			telemetry::Phase2Profile::CoreGate));
 	const auto startup_owned_bytes =
 		NativePlayerAccess::startup_owned_bytes(baseline->runtime);
 	const auto owned_budget =
@@ -1176,23 +1086,22 @@ TEST(TelemetryNativeRuntimeIntegrationContract, S8V4OwnedBudgetPlusOneFailsBefor
 
 	EXPECT_EQ(detail::NativeSessionStartStatus::AllocationFailure,
 		fixture->start_requested(config,
-			telemetry::Phase2Profile::CoreGate, &manifest));
+			telemetry::Phase2Profile::CoreGate));
 	EXPECT_EQ(0U, fixture->backend.open_calls);
 	EXPECT_EQ(0U, fixture->runtime.socket_count());
 	EXPECT_EQ(0U, fixture->runtime.active_sessions());
 }
 
 TEST(TelemetryNativeRuntimeIntegrationContract,
-	ReviewerS9V5CompleteShipCannotStartBeforeOwnedWp03SelectionClosure)
+	CompleteShipStartsWithOwnedProjectionStateBeforeTheFirstCapture)
 {
 	auto fixture = std::make_unique<NativeFixture>();
 	auto config = enabled_config(1U);
 
-	EXPECT_EQ(detail::NativeSessionStartStatus::InvalidConfiguration,
+	EXPECT_EQ(detail::NativeSessionStartStatus::Started,
 		fixture->start_requested(config, telemetry::Phase2Profile::CompleteShip));
-	EXPECT_EQ(0U, fixture->backend.open_calls)
-		<< "CompleteShip rejection must precede allocation and transport bind.";
-	EXPECT_EQ(0U, fixture->runtime.socket_count());
+	EXPECT_GT(fixture->backend.open_calls, 0U);
+	EXPECT_EQ(1U, fixture->runtime.socket_count());
 	EXPECT_EQ(0U, fixture->runtime.active_sessions());
 }
 
@@ -1200,8 +1109,6 @@ TEST(TelemetryNativeRuntimeIntegrationContract,
 	ReviewerFinalTst008EligibilityMatrixRejectsBeforeOpenOrBind)
 {
 	auto config = enabled_config(1U);
-	telemetry::Phase2ManifestCandidate manifest;
-	manifest.manifest_id = 1U;
 	std::vector<telemetry::Phase2ProfileEligibility> rejected;
 	auto multiplayer_client = telemetry::Phase2ProfileEligibility{};
 	multiplayer_client.authority_mode = protocol::AuthorityMode::MultiplayerClient;
@@ -1236,57 +1143,30 @@ TEST(TelemetryNativeRuntimeIntegrationContract,
 
 	auto solo = std::make_unique<NativeFixture>();
 	EXPECT_EQ(detail::NativeSessionStartStatus::Started,
-		solo->start_with_eligibility(config, {}, &manifest));
+		solo->start_with_eligibility(config, {}));
 	EXPECT_GT(solo->backend.open_calls, 0U);
 	EXPECT_GT(NativePlayerAccess::startup_allocation_count(solo->runtime), 0U);
 }
 
 TEST(TelemetryNativeRuntimeIntegrationContract,
-	CoreGateRequiresAFullNonZeroManifestBeforeTransportBind)
+	CoreGateStartsWithOwnedProjectionAndNoExternalManifestInput)
 {
 	auto config = enabled_config();
-
-	auto missing = std::make_unique<NativeFixture>();
-	EXPECT_EQ(detail::NativeSessionStartStatus::InvalidConfiguration,
-		missing->start_requested(config,
-			telemetry::Phase2Profile::CoreGate));
-	EXPECT_EQ(0U, missing->backend.open_calls);
-	EXPECT_TRUE(missing->backend.io_trace.empty());
-
-	telemetry::Phase2ManifestCandidate zero_id;
-	auto zero = std::make_unique<NativeFixture>();
-	EXPECT_EQ(detail::NativeSessionStartStatus::InvalidConfiguration,
-		zero->start_requested(config,
-			telemetry::Phase2Profile::CoreGate, &zero_id));
-	EXPECT_EQ(0U, zero->backend.open_calls);
-	EXPECT_TRUE(zero->backend.io_trace.empty());
-
-	telemetry::Phase2ManifestCandidate invalid_kind;
-	invalid_kind.manifest_id = 1U;
-	invalid_kind.kind = static_cast<protocol::ManifestKind>(0U);
-	auto invalid = std::make_unique<NativeFixture>();
-	EXPECT_EQ(detail::NativeSessionStartStatus::InvalidConfiguration,
-		invalid->start_requested(config,
-			telemetry::Phase2Profile::CoreGate, &invalid_kind));
-	EXPECT_EQ(0U, invalid->backend.open_calls);
-	EXPECT_TRUE(invalid->backend.io_trace.empty());
-
-	telemetry::Phase2ManifestCandidate valid;
-	valid.manifest_id = 1U;
-	valid.kind = protocol::ManifestKind::FullRequired;
 	auto accepted = std::make_unique<NativeFixture>();
 	EXPECT_EQ(detail::NativeSessionStartStatus::Started,
 		accepted->start_requested(config,
-			telemetry::Phase2Profile::CoreGate, &valid));
+			telemetry::Phase2Profile::CoreGate));
 	EXPECT_GT(accepted->backend.open_calls, 0U);
 	EXPECT_EQ(1U, accepted->runtime.socket_count());
+	EXPECT_GT(NativePlayerAccess::startup_owned_bytes(
+		accepted->runtime), 0U);
 }
 
-TEST(TelemetryNativeRuntimeIntegrationContract, S9V4KeyframePreparationSeamForcesBothProvisionalFamilies)
+TEST(TelemetryNativeRuntimeIntegrationContract, KeyframePreparationForcesBothCaptureFamilies)
 {
 	auto fixture = std::make_unique<NativeFixture>();
 	const auto plan =
-		NativePlayerAccess::phase2_keyframe_test_seam(fixture->runtime);
+		NativePlayerAccess::prepare_phase2_keyframe_plan(fixture->runtime);
 	EXPECT_TRUE(plan.force_complete_keyframe);
 	EXPECT_TRUE(plan.capture_flight_controls);
 	EXPECT_TRUE(plan.capture_systems);

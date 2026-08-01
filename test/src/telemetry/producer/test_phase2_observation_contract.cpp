@@ -721,6 +721,7 @@ class FakePhase2EngineReadView final : public Phase2EngineReadView {
 	// authorized closure and must not derive it from global mission population.
 	std::size_t global_ship_count = 1U;
 	mutable std::size_t read_calls = 0U;
+	mutable std::size_t flight_read_calls = 0U;
 	mutable std::size_t core_gate_read_calls = 0U;
 	mutable std::size_t root_read_calls = 0U;
 	mutable std::size_t discovery_read_calls = 0U;
@@ -728,8 +729,11 @@ class FakePhase2EngineReadView final : public Phase2EngineReadView {
 	mutable std::size_t cargo_read_calls = 0U;
 	std::string internal_name = "owned-alpha";
 	std::size_t failing_read_index = std::numeric_limits<std::size_t>::max();
+	std::size_t failing_flight_read_index =
+		std::numeric_limits<std::size_t>::max();
 	bool duplicate_signatures = false;
 	bool controls_read_succeeds = true;
+	mutable bool fail_next_controls_read = false;
 	bool cargo_read_succeeds = true;
 	bool player_only_s8_relations = false;
 	bool use_discovery_node_sources = false;
@@ -870,6 +874,25 @@ class FakePhase2EngineReadView final : public Phase2EngineReadView {
 		copy_wp02_static_catalog(*selected_source, output);
 		return {Phase2SourceReadStatus::Valid};
 	}
+	SourceReadResult read_ship_flight(
+		EngineEntityKey key,
+		ShipFlightObservation& output) const noexcept override
+	{
+		++flight_read_calls;
+		if (key.object_signature == 0U)
+			return {Phase2SourceReadStatus::InvalidSource};
+		const auto index =
+			static_cast<std::size_t>(key.object_signature - 1U);
+		if (index >= ship_count ||
+			index == failing_flight_read_index)
+			return {Phase2SourceReadStatus::InvalidSource};
+		const auto* selected_source =
+			block_source_by_ship[index] != nullptr
+			? block_source_by_ship[index]
+			: block_source.get();
+		output = selected_source->flight;
+		return {Phase2SourceReadStatus::Valid};
+	}
 	SourceReadResult read_ship_diagnosed(EngineEntityKey key,
 		Phase2ShipSource& output,
 		Phase2CaptureDiagnostics& diagnostics) const noexcept override
@@ -893,6 +916,10 @@ class FakePhase2EngineReadView final : public Phase2EngineReadView {
 	bool read_player_controls(PlayerControlObservation& output) const noexcept override
 	{
 		++control_read_calls;
+		if (fail_next_controls_read) {
+			fail_next_controls_read = false;
+			return false;
+		}
 		output = control_source;
 		return controls_read_succeeds;
 	}
@@ -931,39 +958,32 @@ void reset_phase2_ship_source(Phase2ShipSource& source) noexcept
 	initialize_minimal_valid_phase2_ship_source(source);
 }
 
-class RecordingPhase2SeamDouble final : public Phase2SeamTestDouble {
-  public:
-	std::size_t cleanup_calls = 0U;
-	std::size_t support_calls = 0U;
-	std::size_t control_calls = 0U;
-	std::size_t cargo_calls = 0U;
-	std::size_t socket_calls = 0U;
-	ShipCleanupFact last_cleanup;
-	SupportTransitionFact last_support;
-	ControlTargetAuthority last_control = ControlTargetAuthority::Ship;
-	CargoAuthorityFact last_cargo;
+TEST(TelemetryPhase2ObservationContract,
+	LogicalShipSourceClearDropsCountsWithoutSweepingInactiveBacking)
+{
+	auto source = std::make_unique<Phase2ShipSource>();
+	source->subsystems.count = 1U;
+	source->subsystems.values[0].source_key.value = 71U;
+	source->raw_static_references.weapon_count = 1U;
+	source->raw_static_references.weapon_capture_keys[0] = 72U;
+	source->static_authority_input.subsystem_count = 1U;
+	source->static_authority_input.subsystems[0].subsystem_capture_key = 73U;
+	source->static_authority_input.bank_count = 1U;
+	source->static_authority_input.banks[0].bank_capture_key = 74U;
 
-	void on_ship_cleanup(const ShipCleanupFact& fact) noexcept override
-	{
-		++cleanup_calls;
-		last_cleanup = fact;
-	}
-	void on_support_transition(const SupportTransitionFact& fact) noexcept override
-	{
-		++support_calls;
-		last_support = fact;
-	}
-	void on_control_target(ControlTargetAuthority authority) noexcept override
-	{
-		++control_calls;
-		last_control = authority;
-	}
-	void on_cargo_authority(const CargoAuthorityFact& fact) noexcept override
-	{
-		++cargo_calls;
-		last_cargo = fact;
-	}
-};
+	clear_phase2_ship_source_logical(*source);
+
+	EXPECT_EQ(0U, source->subsystems.count);
+	EXPECT_EQ(0U, source->raw_static_references.weapon_count);
+	EXPECT_EQ(0U, source->static_authority_input.subsystem_count);
+	EXPECT_EQ(0U, source->static_authority_input.bank_count);
+	EXPECT_EQ(71U, source->subsystems.values[0].source_key.value);
+	EXPECT_EQ(72U, source->raw_static_references.weapon_capture_keys[0]);
+	EXPECT_EQ(73U,
+		source->static_authority_input.subsystems[0].subsystem_capture_key);
+	EXPECT_EQ(74U,
+		source->static_authority_input.banks[0].bank_capture_key);
+}
 
 static_assert(!std::is_pointer_v<decltype(Phase2ObservationDto{}.ships)>);
 static_assert(!std::is_pointer_v<decltype(Phase2ObservationDto{}.player_key)>);
@@ -1404,7 +1424,7 @@ TEST(TelemetryPhase2ObservationContract, ReviewerS8V3BufferGuardsPrecedeRootRead
 		const auto result = buffer->capture(source, 920U);
 		EXPECT_EQ(Phase2CaptureReason::WrongThread, result.reason);
 		EXPECT_EQ(0U, source.root_read_calls);
-		EXPECT_EQ(Phase2ObservationBufferState::FailedClosed, buffer->state());
+		EXPECT_EQ(Phase2ObservationBufferState::Ready, buffer->state());
 	}
 	{
 		auto buffer = ready_buffer();
@@ -1435,7 +1455,7 @@ TEST(TelemetryPhase2ObservationContract, ReviewerS8V3BufferGuardsPrecedeRootRead
 		const auto result = buffer->capture(source, 926U);
 		EXPECT_EQ(Phase2CaptureReason::PartialPlayerSource, result.reason);
 		EXPECT_EQ(0U, source.root_read_calls);
-		EXPECT_EQ(Phase2ObservationBufferState::FailedClosed, buffer->state());
+		EXPECT_EQ(Phase2ObservationBufferState::Ready, buffer->state());
 	}
 }
 
@@ -1484,7 +1504,7 @@ TEST(TelemetryPhase2ObservationContract, S9RepeatedReadyMaximumTicksAllocateNoth
 	EXPECT_EQ(0U, failure_allocations);
 	EXPECT_TRUE(buffer.observation().ships.empty());
 	EXPECT_EQ(0U, buffer.observation().producer_sample_time_us);
-	EXPECT_EQ(Phase2ObservationBufferState::FailedClosed, buffer.state());
+	EXPECT_EQ(Phase2ObservationBufferState::Ready, buffer.state());
 }
 
 TEST(TelemetryPhase2ObservationContract, CargoIdleAndScanningRequireTargetTimingAndValidityTogether)
@@ -1832,7 +1852,9 @@ TEST(TelemetryPhase2ObservationContract, EnergyEtsAndFiniteBoundariesAreClosed)
 	energy.presence = telemetry::protocol::EnergyStatePresenceFlagWeaponEnergy;
 	energy.weapon_energy_maximum = 100.0F;
 	energy.weapon_energy_current = 100.001F;
-	EXPECT_EQ(Phase2CaptureStatus::UnsupportedEngineState, capture(energy));
+	EXPECT_EQ(Phase2CaptureStatus::Valid, capture(energy));
+	energy.weapon_energy_current = -0.001F;
+	EXPECT_EQ(Phase2CaptureStatus::Valid, capture(energy));
 	energy.weapon_energy_current = std::numeric_limits<float>::quiet_NaN();
 	EXPECT_EQ(Phase2CaptureStatus::UnsupportedEngineState, capture(energy));
 	energy.weapon_energy_current = 50.0F;
@@ -1874,9 +1896,9 @@ TEST(TelemetryPhase2ObservationContract, AfterburnerPresenceFlagsValuesAndTimers
 
 	propulsion.afterburner_capacity = 100.0F;
 	propulsion.afterburner_fuel = -1.0F;
-	EXPECT_EQ(Phase2CaptureStatus::UnsupportedEngineState, capture(propulsion));
+	EXPECT_EQ(Phase2CaptureStatus::Valid, capture(propulsion));
 	propulsion.afterburner_fuel = 100.001F;
-	EXPECT_EQ(Phase2CaptureStatus::UnsupportedEngineState, capture(propulsion));
+	EXPECT_EQ(Phase2CaptureStatus::Valid, capture(propulsion));
 	propulsion.afterburner_fuel = std::numeric_limits<float>::quiet_NaN();
 	EXPECT_EQ(Phase2CaptureStatus::UnsupportedEngineState, capture(propulsion));
 	propulsion.afterburner_fuel = 25.0F;
@@ -1906,6 +1928,59 @@ TEST(TelemetryPhase2ObservationContract, AfterburnerPresenceFlagsValuesAndTimers
 		telemetry::protocol::PropulsionFlagAfterburnerLocked |
 		telemetry::protocol::PropulsionFlagAfterburnerActive;
 	EXPECT_EQ(Phase2CaptureStatus::UnsupportedEngineState, capture(propulsion));
+}
+
+TEST(TelemetryPhase2ObservationContract,
+	FiniteCurrentQuantitiesClampAndAreCountedSeparately)
+{
+	FakePhase2EngineReadView source;
+	source.block_source->damage.hull_maximum = 100.0F;
+	source.block_source->damage.hull_current = -1.0F;
+	source.block_source->shields.has_shields = true;
+	source.block_source->shields.segment_count = 1U;
+	source.block_source->shields.segment_maximum_hits[0] = 10.0F;
+	source.block_source->shields.segment_current_hits[0] = 11.0F;
+	source.block_source->shields.recharge_maximum = 10.0F;
+	source.block_source->energy.presence =
+		telemetry::protocol::EnergyStatePresenceFlagWeaponEnergy |
+		telemetry::protocol::EnergyStatePresenceFlagEngineIntegrity;
+	source.block_source->energy.weapon_energy_maximum = 20.0F;
+	source.block_source->energy.weapon_energy_current = 21.0F;
+	source.block_source->energy.engine_integrity_maximum = 30.0F;
+	source.block_source->energy.engine_integrity_current = -1.0F;
+	source.block_source->propulsion.presence =
+		telemetry::protocol::PropulsionStatePresenceFlagFuel |
+		telemetry::protocol::PropulsionStatePresenceFlagConsumption;
+	source.block_source->propulsion.propulsion_flags =
+		telemetry::protocol::PropulsionFlagAfterburnerAvailable;
+	source.block_source->propulsion.afterburner_capacity = 40.0F;
+	source.block_source->propulsion.afterburner_fuel = 41.0F;
+	source.block_source->subsystems.count = 1U;
+	auto& subsystem = source.block_source->subsystems.values[0];
+	subsystem.source_key.value = 1U;
+	subsystem.hits_maximum = 50.0F;
+	subsystem.hits_current = -1.0F;
+	subsystem.aggregate_maximum_hits = 60.0F;
+	subsystem.aggregate_current_hits = 61.0F;
+
+	auto buffer = std::make_unique<Phase2ObservationBuffer>();
+	ASSERT_TRUE(buffer->provision(Phase2ProvisioningMode::ValidEnabled));
+	ASSERT_TRUE(buffer->enter_ready());
+	ASSERT_EQ(Phase2CaptureStatus::Valid,
+		buffer->capture(source, 100U,
+			Phase2ObservationProjection::CompleteShip).status);
+
+	ASSERT_EQ(1U, buffer->observation().ships.size());
+	const auto& ship = buffer->observation().ships.front();
+	EXPECT_EQ(0.0F, ship.damage.hull_current);
+	EXPECT_EQ(10.0F, ship.shields.segment_current_hits[0]);
+	EXPECT_EQ(20.0F, ship.energy.weapon_energy_current);
+	EXPECT_EQ(0.0F, ship.energy.engine_integrity_current);
+	EXPECT_EQ(40.0F, ship.propulsion.afterburner_fuel);
+	EXPECT_EQ(0.0F, ship.subsystems.values[0].hits_current);
+	EXPECT_EQ(60.0F,
+		ship.subsystems.values[0].aggregate_current_hits);
+	EXPECT_EQ(7U, buffer->capture_diagnostics().normalization_count);
 }
 
 TEST(TelemetryPhase2ObservationContract, PlayerControlsAndCargoCopyExactlyOwnTextAndCanonicalizeZeros)
@@ -1984,6 +2059,33 @@ TEST(TelemetryPhase2ObservationContract, PlayerControlsAndCargoCopyExactlyOwnTex
 	EXPECT_EQ(1U, source.cargo_read_calls);
 	ASSERT_TRUE(source.cargo_source.cargo_text.assign("mutated after capture"));
 	EXPECT_EQ("medical supplies", observation.player_cargo_scan.cargo_text);
+}
+
+TEST(TelemetryPhase2ObservationContract,
+	CargoTargetOutsidePhase2ClosureIsHiddenWithoutCaptureFailure)
+{
+	FakePhase2EngineReadView source;
+	source.cargo_source.phase = CargoScanPhaseObservation::Completed;
+	source.cargo_source.presence =
+		telemetry::protocol::CargoScanStatePresenceFlagTarget |
+		telemetry::protocol::CargoScanStatePresenceFlagCargoText;
+	source.cargo_source.target_capture_key.value = 2U;
+	ASSERT_TRUE(source.cargo_source.cargo_text.assign("classified cargo"));
+
+	auto observation = std::make_unique<Phase2ObservationDto>();
+	ASSERT_EQ(Phase2CaptureStatus::Valid,
+		collect_fake_phase2_observation(source, 777U, *observation,
+			Phase2ObservationProjection::CompleteShip).status);
+	EXPECT_EQ(777U, observation->player_cargo_scan.sample_time_us);
+	EXPECT_EQ(CargoScanPhaseObservation::NotScannable,
+		observation->player_cargo_scan.phase);
+	EXPECT_EQ(telemetry::protocol::CargoScanStatePresenceFlagNone,
+		observation->player_cargo_scan.presence);
+	EXPECT_EQ(0U, observation->player_cargo_scan.target_capture_key.value);
+	EXPECT_EQ(0U,
+		observation->player_cargo_scan.target_subsystem_source_key.value);
+	EXPECT_TRUE(observation->player_cargo_scan.cargo_text.empty());
+	EXPECT_EQ(1U, observation->ships.size());
 }
 
 TEST(TelemetryPhase2ObservationContract, PlayerControlsAndCargoEnumsMasksAndValuesFailClosed)
@@ -2251,7 +2353,8 @@ TEST(TelemetryPhase2ObservationContract, RootReadsOccurExactlyOnceAndFailuresAre
 	EXPECT_EQ(0U, source.cargo_read_calls);
 }
 
-TEST(TelemetryPhase2ObservationContract, CargoHandoffIsIdenticalWithTestSeamOffAndOnAndResetIsMissionScoped)
+TEST(TelemetryPhase2ObservationContract,
+	CargoAuthorityStateKeepsTheLatestGameplayFactAndResetIsMissionScoped)
 {
 	CargoAuthorityFact fact;
 	fact.player_signature = 11U;
@@ -2266,27 +2369,21 @@ TEST(TelemetryPhase2ObservationContract, CargoHandoffIsIdenticalWithTestSeamOffA
 	ASSERT_TRUE(fact.cargo_text.assign("hidden cargo"));
 
 	reset_phase2_mission_observation_state();
-	telemetry::test_seam::set_phase2_seam_test_double(nullptr);
 	telemetry::OnCargoAuthority(fact);
-	const auto detached = phase2_seam_handoff_snapshot();
+	const auto first = phase2_seam_handoff_snapshot();
 
-	RecordingPhase2SeamDouble recorder;
-	reset_phase2_mission_observation_state();
-	telemetry::test_seam::set_phase2_seam_test_double(&recorder);
 	telemetry::OnCargoAuthority(fact);
-	telemetry::OnCargoAuthority(fact);
-	const auto attached = phase2_seam_handoff_snapshot();
-	telemetry::test_seam::set_phase2_seam_test_double(nullptr);
+	const auto second = phase2_seam_handoff_snapshot();
 
-	ASSERT_TRUE(detached.has_cargo_authority);
-	ASSERT_TRUE(attached.has_cargo_authority);
-	EXPECT_EQ(2U, recorder.cargo_calls);
-	EXPECT_EQ(detached.cargo_authority.player_signature,
-		attached.cargo_authority.player_signature);
-	EXPECT_EQ(detached.cargo_authority.target_signature,
-		attached.cargo_authority.target_signature);
-	EXPECT_EQ(detached.cargo_authority.elapsed_us, attached.cargo_authority.elapsed_us);
-	EXPECT_EQ(14U, attached.cargo_authority.elapsed_us);
+	ASSERT_TRUE(first.has_cargo_authority);
+	ASSERT_TRUE(second.has_cargo_authority);
+	EXPECT_EQ(first.cargo_authority.player_signature,
+		second.cargo_authority.player_signature);
+	EXPECT_EQ(first.cargo_authority.target_signature,
+		second.cargo_authority.target_signature);
+	EXPECT_EQ(first.cargo_authority.elapsed_us,
+		second.cargo_authority.elapsed_us);
+	EXPECT_EQ(14U, second.cargo_authority.elapsed_us);
 	reset_phase2_mission_observation_state();
 	const auto reset = phase2_seam_handoff_snapshot();
 	EXPECT_FALSE(reset.has_ship_cleanup);
@@ -2344,7 +2441,9 @@ TEST(TelemetryPhase2ObservationContract, HullAndGuardianBoundariesRejectWithoutP
 	damage = {};
 	damage.hull_maximum = 100.0F;
 	damage.hull_current = 100.001F;
-	EXPECT_EQ(Phase2CaptureStatus::UnsupportedEngineState, capture(damage));
+	EXPECT_EQ(Phase2CaptureStatus::Valid, capture(damage));
+	damage.hull_current = -0.001F;
+	EXPECT_EQ(Phase2CaptureStatus::Valid, capture(damage));
 	damage.hull_current = 50.0F;
 	damage.guardian_threshold = 100.001F;
 	EXPECT_EQ(Phase2CaptureStatus::UnsupportedEngineState, capture(damage));
@@ -2399,8 +2498,10 @@ TEST(TelemetryPhase2ObservationContract, ShieldCardinalityAndPhysicalMaximumBoun
 	shields.segment_count = 1U;
 	shields.segment_current_hits[0] = 10.001F;
 	shields.segment_maximum_hits[0] = 10.0F;
-	EXPECT_EQ(Phase2CaptureStatus::UnsupportedEngineState,
+	EXPECT_EQ(Phase2CaptureStatus::Valid,
 		capture(shields, observation).status);
+	ASSERT_EQ(1U, observation.ships.size());
+	EXPECT_EQ(10.0F, observation.ships.front().shields.segment_current_hits[0]);
 
 	shields.segment_current_hits[0] = 10.0F;
 	shields.recharge_maximum = 10.001F;
@@ -2435,17 +2536,19 @@ TEST(TelemetryPhase2ObservationContract, QuaternionMustBeFiniteUnitAndCanonicalS
 		capture({{1.0F, std::numeric_limits<float>::infinity(), 0.0F, 0.0F}}));
 }
 
-TEST(TelemetryPhase2ObservationContract, BufferTransitionsToFailedClosedOnUnsupportedEngineState)
+TEST(TelemetryPhase2ObservationContract, BufferRemainsReadyOnUnsupportedEngineState)
 {
 	auto buffer_storage = std::make_unique<Phase2ObservationBuffer>();
 	auto& buffer = *buffer_storage;
 	ASSERT_TRUE(buffer.provision(Phase2ProvisioningMode::ValidEnabled));
 	ASSERT_TRUE(buffer.enter_ready());
 	FakePhase2EngineReadView source;
+	ASSERT_EQ(Phase2CaptureStatus::Valid,
+		buffer.capture(source, 99U).status);
 	source.block_source->flight.radius = std::numeric_limits<float>::quiet_NaN();
 	const auto result = buffer.capture(source, 100U);
 	EXPECT_EQ(Phase2CaptureStatus::UnsupportedEngineState, result.status);
-	EXPECT_EQ(Phase2ObservationBufferState::FailedClosed, buffer.state());
+	EXPECT_EQ(Phase2ObservationBufferState::Ready, buffer.state());
 	EXPECT_TRUE(buffer.observation().ships.empty());
 	EXPECT_EQ(0U, buffer.observation().producer_sample_time_us);
 }
@@ -2603,55 +2706,37 @@ TEST(TelemetryPhase2ObservationContract, ReadyBufferCaptureDoesNotAllocateAfterP
 }
 
 TEST(TelemetryPhase2ObservationContract,
-	CleanupSupportControlAndCargoSeamsAreOffOnOffAndPreserveFacts)
+	GameplayAuthorityCallbacksPublishExactFactsWithoutAllocation)
 {
-	RecordingPhase2SeamDouble recorder;
-	telemetry::test_seam::set_phase2_seam_test_double(nullptr);
-	std::size_t detached_allocations = 0U;
-	{
-		AllocationWindow allocations;
-		telemetry::OnShipCleanup(90U, ShipCleanupMode::Departed);
-		telemetry::OnSupportTransition(91U, 92U, 93U, SupportTransitionReason::Abort, 94U);
-		telemetry::OnControlTarget(ControlTargetAuthority::Ship);
-		telemetry::OnCargoAuthority(CargoAuthorityFact{95U, 96U, 97U});
-		detached_allocations = allocations.count();
-	}
-	EXPECT_EQ(0U, detached_allocations);
-	EXPECT_EQ(0U, recorder.cleanup_calls);
-	EXPECT_EQ(0U, recorder.support_calls);
-	EXPECT_EQ(0U, recorder.control_calls);
-	EXPECT_EQ(0U, recorder.cargo_calls);
-
-	telemetry::test_seam::set_phase2_seam_test_double(&recorder);
-	std::size_t attached_allocations = 0U;
+	reset_phase2_seam_handoff();
+	std::size_t allocations_made = 0U;
 	{
 		AllocationWindow allocations;
 		telemetry::OnShipCleanup(1U, ShipCleanupMode::Destroyed);
 		telemetry::OnSupportTransition(1U, 2U, 3U, SupportTransitionReason::Complete, 4U);
 		telemetry::OnControlTarget(ControlTargetAuthority::Camera);
 		telemetry::OnCargoAuthority(CargoAuthorityFact{5U, 6U, 7U});
-		attached_allocations = allocations.count();
+		allocations_made = allocations.count();
 	}
-	telemetry::test_seam::set_phase2_seam_test_double(nullptr);
-	telemetry::OnShipCleanup(100U, ShipCleanupMode::Vanished);
+	const auto published = phase2_seam_handoff_snapshot();
 
-	EXPECT_EQ(0U, attached_allocations);
-	EXPECT_EQ(1U, recorder.cleanup_calls);
-	EXPECT_EQ(1U, recorder.support_calls);
-	EXPECT_EQ(1U, recorder.control_calls);
-	EXPECT_EQ(1U, recorder.cargo_calls);
-	EXPECT_EQ(0U, recorder.socket_calls);
-	EXPECT_EQ(1U, recorder.last_cleanup.object_signature);
-	EXPECT_EQ(ShipCleanupMode::Destroyed, recorder.last_cleanup.mode);
-	EXPECT_EQ(1U, recorder.last_support.assisted_signature);
-	EXPECT_EQ(2U, recorder.last_support.support_signature);
-	EXPECT_EQ(3U, recorder.last_support.episode_sequence);
-	EXPECT_EQ(SupportTransitionReason::Complete, recorder.last_support.reason);
-	EXPECT_EQ(4U, recorder.last_support.sample_time);
-	EXPECT_EQ(ControlTargetAuthority::Camera, recorder.last_control);
-	EXPECT_EQ(5U, recorder.last_cargo.player_signature);
-	EXPECT_EQ(6U, recorder.last_cargo.target_signature);
-	EXPECT_EQ(7U, recorder.last_cargo.elapsed_us);
+	EXPECT_EQ(0U, allocations_made);
+	ASSERT_TRUE(published.has_ship_cleanup);
+	EXPECT_EQ(1U, published.ship_cleanup.object_signature);
+	EXPECT_EQ(ShipCleanupMode::Destroyed, published.ship_cleanup.mode);
+	ASSERT_TRUE(published.has_support_transition);
+	EXPECT_EQ(1U, published.support_transition.assisted_signature);
+	EXPECT_EQ(2U, published.support_transition.support_signature);
+	EXPECT_EQ(3U, published.support_transition.episode_sequence);
+	EXPECT_EQ(SupportTransitionReason::Complete,
+		published.support_transition.reason);
+	EXPECT_EQ(4U, published.support_transition.sample_time);
+	ASSERT_TRUE(published.has_control_target);
+	EXPECT_EQ(ControlTargetAuthority::Camera, published.control_target);
+	ASSERT_TRUE(published.has_cargo_authority);
+	EXPECT_EQ(5U, published.cargo_authority.player_signature);
+	EXPECT_EQ(6U, published.cargo_authority.target_signature);
+	EXPECT_EQ(7U, published.cargo_authority.elapsed_us);
 }
 
 TEST(TelemetryPhase2ObservationContract, AbsentAndDisabledConfigurationOwnNoPhase2Buffers)
@@ -2704,7 +2789,7 @@ TEST(TelemetryPhase2ObservationContract, ReviewerS8V4ActualOwnedBudgetFitsShared
 }
 
 TEST(TelemetryPhase2ObservationContract,
-	ReviewerS8V4CoreGateIgnoresExtensionAuthoritiesWhileCompleteShipFailsClosed)
+	ReviewerS8V4CoreGateIgnoresExtensionAuthoritiesWhileCompleteShipReportsUnavailable)
 {
 	FakePhase2EngineReadView source;
 	source.discovery_status = Phase2SourceReadStatus::UnsupportedEngineState;
@@ -2740,7 +2825,7 @@ TEST(TelemetryPhase2ObservationContract,
 	EXPECT_EQ(0U, source.read_calls)
 		<< "The injected discovery error must fail before CompleteShip reads "
 		   "its broader ship authorities.";
-	EXPECT_EQ(Phase2ObservationBufferState::FailedClosed, complete.state());
+	EXPECT_EQ(Phase2ObservationBufferState::Ready, complete.state());
 }
 
 TEST(TelemetryPhase2ObservationContract, EnabledProvisioningReservesExactMaximumBeforeReady)
@@ -2788,16 +2873,16 @@ TEST(TelemetryPhase2ObservationContract, ReadyBufferIgnoresGlobalPopulationAndRe
 	}
 	EXPECT_EQ(Phase2CaptureStatus::SourceLimitExceeded, result.status);
 	EXPECT_TRUE(buffer.observation().ships.empty());
-	EXPECT_EQ(Phase2ObservationBufferState::FailedClosed, buffer.state());
+	EXPECT_EQ(Phase2ObservationBufferState::Ready, buffer.state());
 	EXPECT_EQ(provisioned_capacity, buffer.ship_capacity());
 	EXPECT_EQ(provisioned_bytes, buffer.owned_bytes());
 	EXPECT_EQ(0U, plus_one_allocations);
 }
 
-TEST(TelemetryPhase2ObservationContract, InvalidSeamEnumsAreIgnoredFailClosed)
+TEST(TelemetryPhase2ObservationContract,
+	InvalidGameplayAuthorityEnumsAreIgnoredFailClosed)
 {
-	RecordingPhase2SeamDouble recorder;
-	telemetry::test_seam::set_phase2_seam_test_double(&recorder);
+	reset_phase2_seam_handoff();
 
 	telemetry::OnShipCleanup(1U, ShipCleanupMode::Count);
 	telemetry::OnShipCleanup(1U, static_cast<ShipCleanupMode>(0xffU));
@@ -2807,18 +2892,17 @@ TEST(TelemetryPhase2ObservationContract, InvalidSeamEnumsAreIgnoredFailClosed)
 	telemetry::OnControlTarget(ControlTargetAuthority::Count);
 	telemetry::OnControlTarget(static_cast<ControlTargetAuthority>(0xffU));
 
-	telemetry::test_seam::set_phase2_seam_test_double(nullptr);
-	EXPECT_EQ(0U, recorder.cleanup_calls);
-	EXPECT_EQ(0U, recorder.support_calls);
-	EXPECT_EQ(0U, recorder.control_calls);
-	EXPECT_EQ(0U, recorder.cargo_calls);
+	const auto published = phase2_seam_handoff_snapshot();
+	EXPECT_FALSE(published.has_ship_cleanup);
+	EXPECT_FALSE(published.has_support_transition);
+	EXPECT_FALSE(published.has_control_target);
+	EXPECT_FALSE(published.has_cargo_authority);
 }
 
-TEST(TelemetryPhase2ObservationContract, EveryClosedSeamEnumCopiesExactFactsWithoutAllocation)
+TEST(TelemetryPhase2ObservationContract,
+	EveryClosedGameplayAuthorityEnumPublishesTheLatestExactFactWithoutAllocation)
 {
-	RecordingPhase2SeamDouble recorder;
-	telemetry::test_seam::set_phase2_seam_test_double(&recorder);
-
+	reset_phase2_seam_handoff();
 	std::size_t allocations_made = 0U;
 	{
 		AllocationWindow allocations;
@@ -2843,24 +2927,28 @@ TEST(TelemetryPhase2ObservationContract, EveryClosedSeamEnumCopiesExactFactsWith
 			std::numeric_limits<std::uint64_t>::max()});
 		allocations_made = allocations.count();
 	}
-	telemetry::test_seam::set_phase2_seam_test_double(nullptr);
+	const auto published = phase2_seam_handoff_snapshot();
 
 	EXPECT_EQ(0U, allocations_made);
-	EXPECT_EQ(static_cast<std::size_t>(ShipCleanupMode::Count), recorder.cleanup_calls);
-	EXPECT_EQ(static_cast<std::size_t>(SupportTransitionReason::Count), recorder.support_calls);
-	EXPECT_EQ(static_cast<std::size_t>(ControlTargetAuthority::Count), recorder.control_calls);
-	EXPECT_EQ(1U, recorder.cargo_calls);
-	EXPECT_EQ(12U, recorder.last_cleanup.object_signature);
-	EXPECT_EQ(ShipCleanupMode::Vanished, recorder.last_cleanup.mode);
-	EXPECT_EQ(27U, recorder.last_support.assisted_signature);
-	EXPECT_EQ(37U, recorder.last_support.support_signature);
-	EXPECT_EQ(47U, recorder.last_support.episode_sequence);
-	EXPECT_EQ(SupportTransitionReason::Complete, recorder.last_support.reason);
-	EXPECT_EQ(57U, recorder.last_support.sample_time);
-	EXPECT_EQ(ControlTargetAuthority::Camera, recorder.last_control);
-	EXPECT_EQ(std::numeric_limits<std::uint32_t>::max(), recorder.last_cargo.player_signature);
-	EXPECT_EQ(std::numeric_limits<std::uint32_t>::max() - 1U, recorder.last_cargo.target_signature);
-	EXPECT_EQ(std::numeric_limits<std::uint64_t>::max(), recorder.last_cargo.elapsed_us);
+	ASSERT_TRUE(published.has_ship_cleanup);
+	EXPECT_EQ(12U, published.ship_cleanup.object_signature);
+	EXPECT_EQ(ShipCleanupMode::Vanished, published.ship_cleanup.mode);
+	ASSERT_TRUE(published.has_support_transition);
+	EXPECT_EQ(27U, published.support_transition.assisted_signature);
+	EXPECT_EQ(37U, published.support_transition.support_signature);
+	EXPECT_EQ(47U, published.support_transition.episode_sequence);
+	EXPECT_EQ(SupportTransitionReason::Complete,
+		published.support_transition.reason);
+	EXPECT_EQ(57U, published.support_transition.sample_time);
+	ASSERT_TRUE(published.has_control_target);
+	EXPECT_EQ(ControlTargetAuthority::Camera, published.control_target);
+	ASSERT_TRUE(published.has_cargo_authority);
+	EXPECT_EQ(std::numeric_limits<std::uint32_t>::max(),
+		published.cargo_authority.player_signature);
+	EXPECT_EQ(std::numeric_limits<std::uint32_t>::max() - 1U,
+		published.cargo_authority.target_signature);
+	EXPECT_EQ(std::numeric_limits<std::uint64_t>::max(),
+		published.cargo_authority.elapsed_us);
 }
 
 TEST(TelemetryPhase2ObservationContract, KeyframeCaptureHasOneRootSampleTimeForEveryOwnedShipBlock)
@@ -2925,7 +3013,6 @@ TEST(TelemetryPhase2ObservationContract, FailedCaptureDeterministicallyResetsEve
 
 TEST(TelemetryPhase2ObservationContract, ProductionOwnedSeamHandoffCopiesLatestScalarsAndResetsDeterministically)
 {
-	telemetry::test_seam::set_phase2_seam_test_double(nullptr);
 	reset_phase2_seam_handoff();
 
 	std::size_t allocations_made = 0U;
@@ -2969,7 +3056,6 @@ TEST(TelemetryPhase2ObservationContract, ProductionOwnedSeamHandoffCopiesLatestS
 
 TEST(TelemetryPhase2ObservationContract, InvalidSeamEnumsLeaveProductionHandoffBitForBitUnchanged)
 {
-	telemetry::test_seam::set_phase2_seam_test_double(nullptr);
 	reset_phase2_seam_handoff();
 	telemetry::OnShipCleanup(11U, ShipCleanupMode::Departed);
 	telemetry::OnSupportTransition(
@@ -3784,6 +3870,112 @@ TEST(TelemetryPhase2ObservationContract,
 	auto source = std::make_unique<FakePhase2EngineReadView>();
 	auto buffer = std::make_unique<Phase2ObservationBuffer>();
 	exercise_wp02_maximum_catalog_noalloc(*source, *buffer);
+}
+
+TEST(TelemetryPhase2ObservationContract,
+	FlightOnlyRefreshRetainsSystemsAndSkipsDiscoveryAndFullShipReads)
+{
+	auto source = std::make_unique<FakePhase2EngineReadView>();
+	auto buffer = std::make_unique<Phase2ObservationBuffer>();
+	ASSERT_TRUE(buffer->provision(Phase2ProvisioningMode::ValidEnabled));
+	ASSERT_TRUE(buffer->enter_ready());
+	ASSERT_EQ(Phase2CaptureStatus::Valid,
+		collect_phase2_observation(*buffer, *source, 700U,
+			Phase2ObservationProjection::CompleteShip).status);
+	ASSERT_EQ(1U, buffer->observation().ships.size());
+	const auto full_reads = source->read_calls;
+	const auto discovery_reads = source->discovery_read_calls;
+	const auto old_damage_sample =
+		buffer->observation().ships[0].damage.sample_time_us;
+	const auto old_damage =
+		buffer->observation().ships[0].damage.hull_current;
+	source->block_source->flight.position_world[0] = 42.0F;
+	source->block_source->damage.hull_current = 1.0F;
+	source->control_source.pitch = 0.25F;
+
+	AllocationWindow allocation_window;
+	const auto partial = collect_phase2_observation(*buffer, *source, 701U,
+		Phase2ObservationProjection::CompleteShip,
+		Phase2ObservationRefresh::FlightControls);
+	EXPECT_EQ(Phase2CaptureStatus::Valid, partial.status);
+	EXPECT_EQ(0U, allocation_window.count());
+	EXPECT_EQ(full_reads, source->read_calls);
+	EXPECT_EQ(discovery_reads, source->discovery_read_calls);
+	EXPECT_EQ(1U, source->flight_read_calls);
+	EXPECT_FLOAT_EQ(
+		42.0F, buffer->observation().ships[0].flight.position_world[0]);
+	EXPECT_EQ(701U,
+		buffer->observation().ships[0].flight.sample_time_us);
+	EXPECT_FLOAT_EQ(
+		old_damage, buffer->observation().ships[0].damage.hull_current);
+	EXPECT_EQ(old_damage_sample,
+		buffer->observation().ships[0].damage.sample_time_us);
+	EXPECT_FLOAT_EQ(0.25F, buffer->observation().player_controls.pitch);
+	EXPECT_EQ(701U,
+		buffer->observation().player_controls.sample_time_us);
+	const auto attempted = buffer->capture_diagnostics().attempted_mask;
+	EXPECT_EQ(static_cast<std::uint8_t>(
+			(1U << static_cast<std::uint8_t>(Phase2CaptureBlock::Flight)) |
+			(1U << static_cast<std::uint8_t>(Phase2CaptureBlock::Control))),
+		attempted);
+	EXPECT_EQ(Phase2ObservationRefresh::FlightControls,
+		buffer->capture_diagnostics().completed_refresh);
+}
+
+TEST(TelemetryPhase2ObservationContract,
+	FlightOnlyRefreshFallsBackTransactionallyBeforeCacheAndOnStaleReads)
+{
+	auto source = std::make_unique<FakePhase2EngineReadView>();
+	auto buffer = std::make_unique<Phase2ObservationBuffer>();
+	ASSERT_TRUE(buffer->provision(Phase2ProvisioningMode::ValidEnabled));
+	ASSERT_TRUE(buffer->enter_ready());
+
+	ASSERT_EQ(Phase2CaptureStatus::Valid,
+		collect_phase2_observation(*buffer, *source, 700U,
+			Phase2ObservationProjection::CompleteShip,
+			Phase2ObservationRefresh::FlightControls).status);
+	EXPECT_EQ(1U, source->read_calls);
+	EXPECT_EQ(0U, source->flight_read_calls);
+	EXPECT_EQ(Phase2ObservationRefresh::All,
+		buffer->capture_diagnostics().completed_refresh);
+
+	source->block_source->flight.position_world[0] = 42.0F;
+	source->failing_flight_read_index = 0U;
+	ASSERT_EQ(Phase2CaptureStatus::Valid,
+		collect_phase2_observation(*buffer, *source, 701U,
+			Phase2ObservationProjection::CompleteShip,
+			Phase2ObservationRefresh::FlightControls).status);
+	EXPECT_EQ(2U, source->read_calls);
+	EXPECT_EQ(1U, source->flight_read_calls);
+	EXPECT_EQ(Phase2ObservationRefresh::All,
+		buffer->capture_diagnostics().completed_refresh);
+	EXPECT_FLOAT_EQ(
+		42.0F, buffer->observation().ships[0].flight.position_world[0]);
+	EXPECT_EQ(701U,
+		buffer->observation().ships[0].flight.sample_time_us);
+
+	source->failing_flight_read_index =
+		std::numeric_limits<std::size_t>::max();
+	source->block_source->flight.position_world[0] = 43.0F;
+	source->fail_next_controls_read = true;
+	const auto controls_before = source->control_read_calls;
+	ASSERT_EQ(Phase2CaptureStatus::Valid,
+		collect_phase2_observation(*buffer, *source, 702U,
+			Phase2ObservationProjection::CompleteShip,
+			Phase2ObservationRefresh::FlightControls).status);
+	EXPECT_EQ(3U, source->read_calls);
+	EXPECT_EQ(2U, source->flight_read_calls);
+	EXPECT_EQ(controls_before + 2U, source->control_read_calls);
+	EXPECT_EQ(Phase2ObservationRefresh::All,
+		buffer->capture_diagnostics().completed_refresh);
+	EXPECT_FLOAT_EQ(
+		43.0F, buffer->observation().ships[0].flight.position_world[0]);
+	EXPECT_EQ(702U,
+		buffer->observation().ships[0].flight.sample_time_us);
+	EXPECT_NE(0U, buffer->capture_diagnostics().attempted_mask &
+		static_cast<std::uint8_t>(
+			1U << static_cast<std::uint8_t>(
+				Phase2CaptureBlock::Identity)));
 }
 
 template <typename Source, typename Buffer>

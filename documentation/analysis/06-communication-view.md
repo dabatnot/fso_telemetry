@@ -1,5 +1,7 @@
 # Réplication de la vue de communication
 
+> **Document prospectif, non normatif.** Les exemples de ce document ne sont pas des configurations produit et ne doivent pas être chargés par le runtime actif.
+
 ## 1. Périmètre
 
 Ce document décrit uniquement la fenêtre animée affichée par le gauge `Talking Head` pendant une communication.
@@ -135,9 +137,10 @@ Le moteur ne réalise aucune conversion au lancement d'une communication.
 
 ### 4.3 Manifeste
 
-Exemple non normatif :
+Exemple prospectif explicitement non chargeable :
 
-```json
+```text
+NON_CHARGEABLE_COMMUNICATION_EXAMPLE
 {
   "bundleVersion": 1,
   "sourceRevision": "2e57072b57f305716ba1f437b80008974d04849b",
@@ -317,7 +320,7 @@ Contraintes du hook :
 | Connexion en cours de lecture | seek depuis `COMM_VIEW_STATE` |
 | Changement de mission | arrêt local et invalidation de l'ancien état |
 
-## 10. Validation
+## 10. Critères produit de livraison
 
 La fonctionnalité est considérée valide lorsque :
 
@@ -331,12 +334,4 @@ La fonctionnalité est considérée valide lorsque :
 - aucune lecture de fichier, conversion ou opération réseau bloquante n'est effectuée dans la frame du jeu ;
 - la fonctionnalité désactivée n'ajoute qu'un test rapide dans le gauge.
 
-Mesures utiles :
-
-- nombre de communications démarrées, terminées et remplacées ;
-- nombre d'assets inconnus ;
-- incompatibilités de bundle ;
-- retard entre `producer_sample_time_us` et l'affichage ;
-- corrections d'offset ;
-- taille et retransmissions du manifeste ;
-- coût CPU du hook activé et désactivé.
+La méthode et l'outillage employés pour vérifier ces critères seront choisis lors de la spécification de la phase qui les livre. Aucune lecture prolongée, matrice de bundles ou campagne de perte longue n'est nécessaire à la livraison. Une campagne de durée supérieure à cinq minutes ne peut être lancée que sur demande humaine explicite et ses découvertes alimentent des issues séparées.

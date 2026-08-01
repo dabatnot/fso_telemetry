@@ -6,11 +6,34 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 
 namespace telemetry::detail {
 
 class SessionControllerTestAccess final {
   public:
+	static bool defer_due_keyframe(SessionController& controller,
+		std::size_t slot_index,
+		std::uint64_t now_us,
+		std::uint64_t duration_us) noexcept
+	{
+		if (!controller.m_ready ||
+			slot_index >= controller.m_config.max_clients ||
+			!controller.m_slots ||
+			now_us >
+				std::numeric_limits<std::uint64_t>::max() -
+					duration_us) {
+			return false;
+		}
+		auto& slot = controller.m_slots[slot_index];
+		if (slot.progress !=
+			ProducerSessionProgress::ReadyForState)
+			return false;
+		slot.keyframe_due = false;
+		slot.next_keyframe_due_us = now_us + duration_us;
+		return true;
+	}
+
 	static bool seed_last_allocated_entity_id(SessionController& controller,
 		std::size_t slot_index,
 		std::uint64_t last_id) noexcept

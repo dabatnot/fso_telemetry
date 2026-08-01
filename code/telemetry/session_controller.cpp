@@ -49,7 +49,8 @@ bool provision_phase2_complete_delta_scratch(
 					atom.key.record_type =
 						static_cast<std::uint16_t>(type);
 					atom.key.identity.reserve(
-						sizeof(std::uint64_t));
+						phase2_complete_delta_identity_capacity(
+							type));
 					atom.value.reserve(value_capacity);
 					atom.cascade_owner.identity.reserve(
 						sizeof(std::uint64_t));
@@ -1337,10 +1338,14 @@ SessionIngressResult SessionController::ingest_resync_request(const protocol::En
 {
 	stage(SessionIngressStage::RateLimit);
 	const auto index = find_slot(endpoint, decoded.header.session_id);
-	if (index == InvalidIndex || m_slots[index].progress != ProducerSessionProgress::ReadyForState) {
+	if (index == InvalidIndex ||
+		(m_slots[index].progress != ProducerSessionProgress::ReadyForState &&
+			m_slots[index].progress != ProducerSessionProgress::Stale)) {
 		return dropped(SessionIngressDropReason::EndpointSessionMismatch);
 	}
 	auto& slot = m_slots[index];
+	const auto recovering_from_stale =
+		slot.progress == ProducerSessionProgress::Stale;
 	protocol::ResyncRequestPayload request;
 	stage(SessionIngressStage::AntiAmplification);
 	stage(SessionIngressStage::Payload);
@@ -1364,6 +1369,13 @@ SessionIngressResult SessionController::ingest_resync_request(const protocol::En
 	}
 	if (!queue_resync_validated_ack(index, decoded, now_us)) {
 		return dropped(SessionIngressDropReason::OutputBusy);
+	}
+	// Stale is a recoverable clock/liveness state. Restore state egress only
+	// after the request is fully validated and its ACK owns the output slot, so
+	// malformed, rate-limited, or output-blocked requests cannot mutate the
+	// session. The accepted ResyncRequest then drives the replacement snapshot.
+	if (recovering_from_stale) {
+		slot.progress = ProducerSessionProgress::ReadyForState;
 	}
 	if (protocol::producer_resync_result_starts_candidate(accepted)) {
 		// A resync is a concrete recovery request, not a request to wait behind a
@@ -1467,6 +1479,9 @@ SessionIngressResult SessionController::ingest_heartbeat(const protocol::Endpoin
 		slot.heartbeat.last_valid_clock_response_us = now_us;
 	}
 	slot.heartbeat.clock_stale = false;
+	if (slot.progress == ProducerSessionProgress::Stale) {
+		slot.progress = ProducerSessionProgress::ReadyForState;
+	}
 	stage(SessionIngressStage::SessionMutation);
 	return {SessionIngressDisposition::ResponseQueued, SessionIngressDropReason::None};
 }
@@ -1853,6 +1868,12 @@ bool SessionController::service_timeouts_impl(std::uint64_t now_us) noexcept
 			slot.progress = ProducerSessionProgress::Stale;
 			slot.heartbeat.clock_filter.invalidate();
 			slot.heartbeat.clock_stale = true;
+			// Outstanding probes can all have been lost during the same
+			// impairment that made the clock stale. Keeping those eight slots
+			// occupied would permanently suppress the recovery heartbeat.
+			// Delayed responses remain fail-closed because correlation also
+			// requires the original timestamp, not only the recycled id.
+			(void)slot.heartbeat.probes.reset_session(slot.session_id);
 			m_heartbeat_cursor = (index + 1U) % m_config.max_clients;
 			if (m_has_output && m_output_owner_slot == index && m_output_heartbeat_pending) {
 				if (m_output_heartbeat_owns_probe) {
@@ -2575,12 +2596,16 @@ bool SessionController::queue_cumulative_delta(std::size_t slot_index, std::uint
 		return false;
 	}
 	auto& delta = slot.delta_scratch;
-	if (slot.snapshot.emit_cumulative_delta(now_us, delta) !=
+	protocol::DeltaBuildChanges delta_changes;
+	if (slot.snapshot.emit_cumulative_delta(
+			now_us, delta, &delta_changes) !=
 		protocol::ProducerBaselineResult::Applied) {
 		return false;
 	}
-	const auto replaced = slot.delta_egress.replace_checked(
-		slot.session_id, slot.endpoint, slot.next_message_id, delta);
+	const auto replaced =
+		slot.delta_egress.replace_prevalidated_checked(
+		slot.session_id, slot.endpoint, slot.next_message_id,
+		delta, delta_changes);
 	if (replaced == Phase1DeltaReplaceResult::CapacityExceeded) {
 		if (m_config.phase2_profile !=
 			Phase2Profile::None)
@@ -2608,6 +2633,72 @@ protocol::ProducerBaselineResult SessionController::replace_current_state(std::s
 		return protocol::ProducerBaselineResult::InvalidArgument;
 	}
 	return m_slots[slot_index].snapshot.replace_current(image);
+}
+
+protocol::ProducerBaselineResult
+SessionController::replace_current_state_incremental(
+	std::size_t slot_index,
+	const protocol::StateImage& image,
+	const std::uint16_t* rebuilt_indices,
+	std::size_t rebuilt_index_count) noexcept
+{
+	if (!m_ready || m_faulted ||
+		slot_index >= m_config.max_clients ||
+		m_slots[slot_index].progress !=
+			ProducerSessionProgress::ReadyForState) {
+		return protocol::ProducerBaselineResult::InvalidArgument;
+	}
+	return m_slots[slot_index].snapshot.replace_current_incremental(
+		image, rebuilt_indices, rebuilt_index_count);
+}
+
+protocol::ProducerBaselineResult
+SessionController::take_current_state_for_incremental_patch(
+	std::size_t slot_index,
+	protocol::StateImage& image) noexcept
+{
+	if (!m_ready || m_faulted ||
+		slot_index >= m_config.max_clients ||
+		m_slots[slot_index].progress !=
+			ProducerSessionProgress::ReadyForState) {
+		return protocol::ProducerBaselineResult::InvalidArgument;
+	}
+	return m_slots[slot_index].snapshot
+		.take_current_for_incremental_patch(image);
+}
+
+protocol::ProducerBaselineResult
+SessionController::restore_current_state_after_incremental_patch(
+	std::size_t slot_index,
+	protocol::StateImage&& image) noexcept
+{
+	if (!m_ready || m_faulted ||
+		slot_index >= m_config.max_clients ||
+		m_slots[slot_index].progress !=
+			ProducerSessionProgress::ReadyForState) {
+		return protocol::ProducerBaselineResult::InvalidArgument;
+	}
+	return m_slots[slot_index].snapshot
+		.restore_current_after_incremental_patch(
+			std::move(image));
+}
+
+protocol::ProducerBaselineResult
+SessionController::commit_current_state_incremental_patch(
+	std::size_t slot_index,
+	protocol::StateImage&& image,
+	const std::uint16_t* rebuilt_indices,
+	std::size_t rebuilt_index_count) noexcept
+{
+	if (!m_ready || m_faulted ||
+		slot_index >= m_config.max_clients ||
+		m_slots[slot_index].progress !=
+			ProducerSessionProgress::ReadyForState) {
+		return protocol::ProducerBaselineResult::InvalidArgument;
+	}
+	return m_slots[slot_index].snapshot
+		.commit_current_incremental_patch(std::move(image),
+			rebuilt_indices, rebuilt_index_count);
 }
 
 std::size_t SessionController::service_initial_snapshot_egress(std::size_t datagram_budget,

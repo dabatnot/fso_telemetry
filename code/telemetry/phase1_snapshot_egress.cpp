@@ -360,7 +360,9 @@ Phase1SnapshotEgressResult Phase1SnapshotEgress::queue_snapshot(std::uint64_t se
 			if (m_allocation_observer != nullptr)
 				m_allocation_observer->note_growth(
 					allocations_before,
-					m_window.allocation_events());
+					m_window.allocation_events(),
+					Phase1AllocationGrowthSource::
+						SnapshotEgressReliable);
 			if (retained_result !=
 				protocol::ReliableRetainResult::Retained) {
 				m_window.clear();
@@ -381,9 +383,15 @@ Phase1SnapshotEgressResult Phase1SnapshotEgress::queue_snapshot(std::uint64_t se
 		return Phase1SnapshotEgressResult::AllocationFailure;
 	}
 	if (m_allocation_observer != nullptr) {
-		m_allocation_observer->note_growth(records_capacity_before, records.capacity());
-		m_allocation_observer->note_growth(payload_capacity_before, payload.capacity());
-		m_allocation_observer->note_growth(parts_capacity_before, m_parts.capacity());
+		m_allocation_observer->note_growth(records_capacity_before,
+			records.capacity(),
+			Phase1AllocationGrowthSource::SnapshotEgressScratch);
+		m_allocation_observer->note_growth(payload_capacity_before,
+			payload.capacity(),
+			Phase1AllocationGrowthSource::SnapshotEgressScratch);
+		m_allocation_observer->note_growth(parts_capacity_before,
+			m_parts.capacity(),
+			Phase1AllocationGrowthSource::SnapshotEgressScratch);
 	}
 	m_endpoint = endpoint;
 	m_session_id = session_id;
@@ -540,11 +548,14 @@ Phase1SnapshotEgress::queue_manifest(
 	}
 	if (m_allocation_observer != nullptr) {
 		m_allocation_observer->note_growth(
-			records_capacity_before, m_records.capacity());
+			records_capacity_before, m_records.capacity(),
+			Phase1AllocationGrowthSource::SnapshotEgressScratch);
 		m_allocation_observer->note_growth(
-			payload_capacity_before, m_payload.capacity());
+			payload_capacity_before, m_payload.capacity(),
+			Phase1AllocationGrowthSource::SnapshotEgressScratch);
 		m_allocation_observer->note_growth(
-			parts_capacity_before, m_parts.capacity());
+			parts_capacity_before, m_parts.capacity(),
+			Phase1AllocationGrowthSource::SnapshotEgressScratch);
 	}
 	m_endpoint = endpoint;
 	m_session_id = session_id;

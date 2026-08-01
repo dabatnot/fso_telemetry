@@ -65,6 +65,9 @@ void expect_safe_defaults(const ConfigLoadResult& result)
 	ipv6_loopback[15] = 1U;
 
 	EXPECT_FALSE(result.effective.enabled);
+	EXPECT_EQ(1U, result.effective.schema_version);
+	EXPECT_EQ(telemetry::Phase2Profile::CompleteShip,
+		result.effective.phase2_profile);
 	EXPECT_EQ(2U, result.effective.bind_addresses.size());
 	EXPECT_EQ(telemetry::protocol::IpAddressFamily::Ipv4, result.effective.bind_addresses[0].family());
 	EXPECT_EQ(ipv4_loopback, result.effective.bind_addresses[0].bytes());
@@ -83,6 +86,7 @@ void expect_safe_defaults(const ConfigLoadResult& result)
 	EXPECT_FALSE(result.effective.trusted_full_state);
 	EXPECT_EQ(1U, result.effective.max_clients);
 	EXPECT_EQ(30U, result.effective.flight_hz);
+	EXPECT_EQ(10U, result.effective.systems_hz);
 	EXPECT_EQ(2U, result.effective.keyframe_seconds);
 	EXPECT_EQ(500U, result.effective.mission_heartbeat_ms);
 	EXPECT_EQ(1000U, result.effective.idle_heartbeat_ms);
@@ -123,6 +127,49 @@ TEST(TelemetryConfigContract, MinimalObjectAppliesEveryFailClosedDefault)
 	ASSERT_EQ(ConfigStatus::ValidDisabled, result.status);
 	EXPECT_EQ(0, enum_value(result.error));
 	expect_safe_defaults(result);
+}
+
+TEST(TelemetryConfigContract, VersionOneMigratesExplicitlyToCompleteShipAndRejectsProfileField)
+{
+	const auto migrated = parse(R"({"schemaVersion":1})");
+	ASSERT_EQ(ConfigStatus::ValidDisabled, migrated.status);
+	EXPECT_EQ(1U, migrated.effective.schema_version);
+	EXPECT_EQ(telemetry::Phase2Profile::CompleteShip,
+		migrated.effective.phase2_profile);
+
+	const auto forbidden =
+		parse(R"({"schemaVersion":1,"phase2Profile":"CoreGate"})");
+	EXPECT_EQ(ConfigStatus::Invalid, forbidden.status);
+	EXPECT_EQ(telemetry::ConfigError::Phase2ProfileNotAllowed,
+		forbidden.error);
+}
+
+TEST(TelemetryConfigContract, VersionTwoRequiresOneClosedPhase2Profile)
+{
+	const auto core =
+		parse(R"({"schemaVersion":2,"phase2Profile":"CoreGate"})");
+	ASSERT_EQ(ConfigStatus::ValidDisabled, core.status);
+	EXPECT_EQ(2U, core.effective.schema_version);
+	EXPECT_EQ(telemetry::Phase2Profile::CoreGate,
+		core.effective.phase2_profile);
+
+	const auto complete =
+		parse(R"({"schemaVersion":2,"phase2Profile":"CompleteShip"})");
+	ASSERT_EQ(ConfigStatus::ValidDisabled, complete.status);
+	EXPECT_EQ(telemetry::Phase2Profile::CompleteShip,
+		complete.effective.phase2_profile);
+
+	const auto missing = parse(R"({"schemaVersion":2})");
+	EXPECT_EQ(ConfigStatus::Invalid, missing.status);
+	EXPECT_EQ(telemetry::ConfigError::MissingPhase2Profile, missing.error);
+	for (const auto input : {
+			 R"({"schemaVersion":2,"phase2Profile":"coregate"})",
+			 R"({"schemaVersion":2,"phase2Profile":"Complete"})",
+			 R"({"schemaVersion":2,"phase2Profile":null})",
+			 R"({"schemaVersion":2,"phase2Profile":2})"}) {
+		SCOPED_TRACE(input);
+		expect_invalid(input);
+	}
 }
 
 TEST(TelemetryConfigContract, EnabledMinimalObjectUsesTheLoopbackOnlyProfile)
@@ -319,7 +366,7 @@ TEST(TelemetryConfigContract, IntegerBoundsAcceptMinAndMaxAndRejectTheirNeighbou
 	}
 }
 
-TEST(TelemetryConfigContract, PhaseOneOnlyValuesAreClosed)
+TEST(TelemetryConfigContract, ConfigurationValuesAreClosed)
 {
 	expect_valid_disabled(object_with("discoveryEnabled", "false"));
 	expect_invalid(object_with("discoveryEnabled", "true"));
@@ -329,7 +376,7 @@ TEST(TelemetryConfigContract, PhaseOneOnlyValuesAreClosed)
 	expect_valid_disabled(object_with("trustedFullState", "false"));
 	expect_invalid(object_with("trustedFullState", "true"));
 	expect_invalid(object_with("schemaVersion", "0"));
-	expect_invalid(object_with("schemaVersion", "2"));
+	expect_invalid(object_with("schemaVersion", "3"));
 }
 
 TEST(TelemetryConfigContract, BindAddressArrayIsBoundedNumericAndUniqueAfterBinaryCanonicalization)

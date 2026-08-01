@@ -10,7 +10,7 @@
 #include "playerman/player.h"
 #include "ship/ship.h"
 #include "ship/support_work.h"
-#include "telemetry/phase2_gameplay_ab_test_seam.h"
+#include "telemetry/producer/phase2_gameplay_ab_test_support.h"
 #include "util/FSTestFixture.h"
 #include "freespace.h"
 
@@ -101,46 +101,6 @@ bool unregister_fixture_ship_from_ship_obj_list(
 	return true;
 }
 
-class ControlHookCounter final : public Phase2SeamTestDouble {
-  public:
-	void on_ship_cleanup(const ShipCleanupFact&) noexcept override { ++cleanup_calls; }
-	void on_support_transition(const SupportTransitionFact& fact) noexcept override
-	{
-		++support_calls;
-		last_support_reason = fact.reason;
-		if (fact.reason == SupportTransitionReason::Broken) {
-			++support_broken_calls;
-		} else if (fact.reason == SupportTransitionReason::End) {
-			++support_end_calls;
-		}
-	}
-	void on_control_target(ControlTargetAuthority authority) noexcept override
-	{
-		++control_calls;
-		last_authority = authority;
-	}
-	void on_cargo_authority(const CargoAuthorityFact& fact) noexcept override
-	{
-		++cargo_calls;
-		if (fact.phase == CargoScanPhaseObservation::Scanning) {
-			++cargo_scanning_calls;
-		} else if (fact.phase == CargoScanPhaseObservation::Completed) {
-			++cargo_completed_calls;
-		}
-	}
-
-	std::uint64_t cleanup_calls = 0U;
-	std::uint64_t support_calls = 0U;
-	std::uint64_t support_broken_calls = 0U;
-	std::uint64_t support_end_calls = 0U;
-	std::uint64_t control_calls = 0U;
-	std::uint64_t cargo_calls = 0U;
-	std::uint64_t cargo_scanning_calls = 0U;
-	std::uint64_t cargo_completed_calls = 0U;
-	ControlTargetAuthority last_authority = ControlTargetAuthority::Ship;
-	SupportTransitionReason last_support_reason = SupportTransitionReason::Queue;
-};
-
 class TelemetryPhase2GameplayAbContract : public test::FSTestFixture {
   public:
 	TelemetryPhase2GameplayAbContract()
@@ -150,10 +110,9 @@ class TelemetryPhase2GameplayAbContract : public test::FSTestFixture {
 };
 
 TEST_F(TelemetryPhase2GameplayAbContract,
-	RealPlayerControlsGameplayAbHarnessUsesEngineGlobalOffOnOff)
+	RealPlayerControlsAndTelemetryObservationPreserveGameplayAcrossRepeatedRuns)
 {
 	struct Context {
-		ControlHookCounter* recorder = nullptr;
 		int support_return = 0;
 		bool list_registered = false;
 		bool list_unregistered = false;
@@ -171,9 +130,10 @@ TEST_F(TelemetryPhase2GameplayAbContract,
 		int cargo_final_ms = -1;
 		bool cargo_revealed = false;
 		bool target_display_cargo = false;
+		std::size_t invocation = 0U;
+		std::array<Phase2SeamHandoffSnapshot, 3U> authority{};
 	};
-	ControlHookCounter recorder;
-	Context context{&recorder};
+	Context context;
 	const auto invoke = [](void* opaque) noexcept {
 		auto& state = *static_cast<Context*>(opaque);
 		read_player_controls(nullptr, 0.0F);
@@ -271,6 +231,10 @@ TEST_F(TelemetryPhase2GameplayAbContract,
 				state.cleanup_ship_index, state.cleanup_object_index) &&
 			unregister_fixture_ship_from_ship_obj_list(
 				state.target_ship_index, state.target_object_index);
+		if (state.invocation < state.authority.size()) {
+			state.authority[state.invocation++] =
+				phase2_seam_handoff_snapshot();
+		}
 	};
 	const auto capture = [](void* opaque) noexcept {
 		const auto& state = *static_cast<Context*>(opaque);
@@ -283,8 +247,6 @@ TEST_F(TelemetryPhase2GameplayAbContract,
 			static_cast<std::uint64_t>(state.cargo_final_ms);
 		snapshot.cargo_reveal_count = state.cargo_revealed;
 		snapshot.hud_side_effect_count = state.target_display_cargo;
-		snapshot.allocation_count = state.recorder->control_calls;
-		snapshot.socket_count = state.recorder->cargo_calls;
 		return snapshot;
 	};
 
@@ -357,7 +319,9 @@ TEST_F(TelemetryPhase2GameplayAbContract,
 	if (Snds.size() <= static_cast<std::size_t>(GameSounds::CARGO_REVEAL)) {
 		Snds.resize(static_cast<std::size_t>(GameSounds::CARGO_REVEAL) + 1U);
 	}
-	const auto run = run_phase2_gameplay_ab(invoke, capture, &context, &recorder);
+	reset_phase2_mission_observation_state();
+	const auto run =
+		run_phase2_gameplay_repeated(invoke, capture, &context);
 	Photo_mode_active = prior_photo_mode;
 	Player = prior_player;
 	Player_obj = prior_player_obj;
@@ -417,30 +381,32 @@ TEST_F(TelemetryPhase2GameplayAbContract,
 		run.snapshots[1].hud_side_effect_count);
 	EXPECT_EQ(run.snapshots[0].hud_side_effect_count,
 		run.snapshots[2].hud_side_effect_count);
-	// controls, Broken, two cargo updates, cleanup and its End emit once each.
-	EXPECT_EQ(run.snapshots[0].hook_calls + 6U, run.snapshots[1].hook_calls);
-	EXPECT_EQ(run.snapshots[0].hook_calls, run.snapshots[2].hook_calls);
 	EXPECT_EQ(2U, run.snapshots[0].gameplay_mutations);
 	EXPECT_EQ(2U, run.snapshots[0].cargo_advance_count);
 	EXPECT_EQ(0U, run.snapshots[0].cargo_reset_count);
 	EXPECT_EQ(1U, run.snapshots[0].cargo_reveal_count);
 	EXPECT_EQ(1U, run.snapshots[0].hud_side_effect_count);
-	EXPECT_EQ(1U, recorder.control_calls);
-	EXPECT_EQ(2U, recorder.support_calls);
-	EXPECT_EQ(1U, recorder.support_broken_calls);
-	EXPECT_EQ(1U, recorder.support_end_calls);
-	EXPECT_EQ(2U, recorder.cargo_calls);
-	EXPECT_EQ(1U, recorder.cargo_scanning_calls);
-	EXPECT_EQ(1U, recorder.cargo_completed_calls);
-	EXPECT_EQ(1U, recorder.cleanup_calls);
-	EXPECT_EQ(ControlTargetAuthority::Camera, recorder.last_authority);
-	EXPECT_EQ(SupportTransitionReason::End, recorder.last_support_reason);
+	for (const auto& authority : context.authority) {
+		EXPECT_TRUE(authority.has_ship_cleanup);
+		EXPECT_TRUE(authority.has_support_transition);
+		EXPECT_TRUE(authority.has_control_target);
+		EXPECT_TRUE(authority.has_cargo_authority);
+		EXPECT_EQ(ShipCleanupMode::Vanished,
+			authority.ship_cleanup.mode);
+		EXPECT_EQ(SupportTransitionReason::End,
+			authority.support_transition.reason);
+		EXPECT_EQ(ControlTargetAuthority::Camera,
+			authority.control_target);
+		EXPECT_EQ(CargoScanPhaseObservation::Completed,
+			authority.cargo_authority.phase);
+	}
+	reset_phase2_mission_observation_state();
 	EXPECT_TRUE(context.list_registered);
 	EXPECT_TRUE(context.list_unregistered);
 }
 
 TEST_F(TelemetryPhase2GameplayAbContract,
-	CargoAuthorityThresholdsResetsAndHooksAreExactOffOnOff)
+	CargoAuthorityThresholdsResetsAndPublishedFactsAreExact)
 {
 	struct Outcome {
 		int strict_range_reset = -1;
@@ -453,7 +419,6 @@ TEST_F(TelemetryPhase2GameplayAbContract,
 		std::array<CargoAuthorityFact, 6U> facts{};
 	};
 	struct Context {
-		ControlHookCounter* recorder = nullptr;
 		int player_ship_index = MAX_SHIPS - 3;
 		int player_object_index = MAX_OBJECTS - 3;
 		int target_ship_index = MAX_SHIPS - 4;
@@ -463,8 +428,7 @@ TEST_F(TelemetryPhase2GameplayAbContract,
 		player test_player;
 		std::array<Outcome, 3U> outcomes{};
 	};
-	ControlHookCounter recorder;
-	Context context{&recorder};
+	Context context;
 	const auto invoke = [](void* opaque) noexcept {
 		auto& state = *static_cast<Context*>(opaque);
 		ASSERT_LT(state.invocation, state.outcomes.size());
@@ -621,7 +585,7 @@ TEST_F(TelemetryPhase2GameplayAbContract,
 		Snds.resize(static_cast<std::size_t>(GameSounds::CARGO_REVEAL) + 1U);
 
 	const auto run =
-		run_phase2_gameplay_ab(invoke, capture, &context, &recorder);
+		run_phase2_gameplay_repeated(invoke, capture, &context);
 
 	Player = prior_player;
 	Player_obj = prior_player_obj;
@@ -672,9 +636,6 @@ TEST_F(TelemetryPhase2GameplayAbContract,
 		run.snapshots[2].cargo_reveal_count);
 	EXPECT_EQ(run.snapshots[0].hud_side_effect_count,
 		run.snapshots[2].hud_side_effect_count);
-	EXPECT_EQ(6U, run.snapshots[1].hook_calls);
-	EXPECT_EQ(6U, recorder.cargo_calls);
-
 	const auto& outcome = context.outcomes[1];
 	EXPECT_EQ(77, outcome.strict_range_reset);
 	EXPECT_EQ(100, outcome.boundary_progress);

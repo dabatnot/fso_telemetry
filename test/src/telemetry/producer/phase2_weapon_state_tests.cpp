@@ -1,5 +1,5 @@
 #include "telemetry/phase2_state_image.h"
-#include "telemetry/phase2_wp03_allocation_tracker.h"
+#include "telemetry/phase2_allocation_tracker.h"
 #include "telemetry/protocol/packet_reader.h"
 #include "telemetry/protocol/telemetry_business_records.h"
 
@@ -709,7 +709,7 @@ TEST(Phase2WeaponState, P2TST036To038RoundtripMissingMappingAndReadyPoolAreAtomi
 	const auto bytes = pool.owned_backing_bytes();
 	ASSERT_EQ(Phase2StateImageBuildStatus::Created,
 		build_phase2_wp06_weapon_projection_preallocated(fixture.input, pool, image));
-	telemetry::test::wp03::GlobalAllocationScope allocations;
+	telemetry::test::phase2test::GlobalAllocationScope allocations;
 	EXPECT_EQ(Phase2StateImageBuildStatus::Created,
 		build_phase2_wp06_weapon_projection_preallocated(fixture.input, pool, image));
 	EXPECT_EQ(0U, allocations.finish());

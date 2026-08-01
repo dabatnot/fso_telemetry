@@ -121,6 +121,7 @@ add_file_folder("Telemetry\\\\Producer"
 	telemetry/producer/telemetry_native_session_runtime_player_test_access.h
 	telemetry/producer/telemetry_runtime_adapter_player_test_access.h
 	telemetry/producer/telemetry_session_controller_player_test_access.h
+	telemetry/producer/phase2_gameplay_ab_test_support.h
 	telemetry/producer/test_telemetry_capture_scheduler_contract.cpp
 	telemetry/producer/test_telemetry_config_contract.cpp
 	telemetry/producer/test_telemetry_datagram_scheduler_contract.cpp
@@ -132,10 +133,8 @@ add_file_folder("Telemetry\\\\Producer"
 	telemetry/producer/test_telemetry_logging_contract.cpp
 	telemetry/producer/test_telemetry_metrics_contract.cpp
 	telemetry/producer/test_telemetry_native_runtime_integration_contract.cpp
-	telemetry/producer/test_phase2_engine_integration_source_contract.cpp
 	telemetry/producer/test_support_work_contract.cpp
 	telemetry/producer/test_telemetry_runtime_adapter_player_contract.cpp
-	telemetry/producer/test_telemetry_native_runtime_loopback_contract.cpp
 	telemetry/producer/test_telemetry_player_observation_slot_contract.cpp
 	telemetry/producer/test_telemetry_phase1_state_image_contract.cpp
 	telemetry/producer/test_telemetry_phase1_snapshot_slot_contract.cpp

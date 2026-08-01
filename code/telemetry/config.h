@@ -1,5 +1,6 @@
 #pragma once
 
+#include "telemetry/phase2_profile_gate.h"
 #include "telemetry/protocol/telemetry_security.h"
 
 #include <array>
@@ -75,6 +76,10 @@ class BindAddressList final {
 struct TelemetryConfig {
 	TelemetryConfig() noexcept;
 
+	std::uint8_t schema_version = 1;
+	// schemaVersion 1 is migrated explicitly to CompleteShip. Version 2
+	// requires an explicit value and never falls back silently.
+	Phase2Profile phase2_profile = Phase2Profile::CompleteShip;
 	bool enabled = false;
 	BindAddressList bind_addresses;
 	std::uint16_t bind_port = protocol::DefaultTelemetryPort;
@@ -109,6 +114,9 @@ enum class ConfigError : std::uint8_t {
 	RootNotObject,
 	UnknownKey,
 	MissingSchemaVersion,
+	MissingPhase2Profile,
+	Phase2ProfileNotAllowed,
+	InvalidPhase2Profile,
 	InvalidType,
 	OutOfRange,
 	InvalidAddress,

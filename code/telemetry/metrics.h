@@ -132,6 +132,7 @@ enum class TelemetryMetricCounter : std::uint8_t {
 	Nacks,
 	Retransmissions,
 	ResyncRequests,
+	SourceNormalizations,
 	CaptureAttempts,
 	PlayerDiscontinuities,
 	SnapshotsCreated,

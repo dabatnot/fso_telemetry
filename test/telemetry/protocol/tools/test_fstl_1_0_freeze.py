@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Independent RED contract for the frozen FSTL 1.0 / additive 1.1 split.
+"""Independent contract for the frozen FSTL 1.0 / additive 1.1 split.
 
-This test deliberately owns its Phase 0 hashes.  Production generators and
-verifiers must not be able to refresh these oracles from the working tree.
+This test owns independent hashes for the machine-readable wire artifacts.
+Product Markdown remains editable and is not used as a protocol oracle.
 """
 
 from __future__ import annotations
@@ -20,46 +20,17 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 PROTOCOL_ROOT = REPO_ROOT / "test" / "telemetry" / "protocol"
-PHASE0_DOC_ROOT = REPO_ROOT / "documentation" / "analysis" / "specs" / "0-Contrat-de-protocole"
-
-FROZEN_DOCS: dict[str, tuple[int, str]] = {
-    "01-cadre-normatif-et-perimetre.md": (
-        17_950,
-        "0043bf66b424c4faff191b2bfa5189074e9f4c8070bd411bace05dc2f53ee628",
-    ),
-    "02-format-filaire-et-registres.md": (
-        41_063,
-        "841ae4054865c8db0152e7f14251fbd2c6b534aedd01a1db2342861f1708d522",
-    ),
-    "03-session-horloges-fiabilite.md": (
-        42_371,
-        "1b2e2e6974c4d0f6d7aefda8c51991e271ed68e7b9114bd99a38c32812f76188",
-    ),
-    "04-modele-de-donnees-v1.md": (
-        106_090,
-        "3b9df71ec9798576e289208974556cebf3e02c81f5702fb24eb78a9f60ab278d",
-    ),
-    "05-capabilities-et-vues-specialisees.md": (
-        62_754,
-        "721a34836f4fe369ea5d7daf203883ae32da1fb32a85782d3eaad4d0738ba9e4",
-    ),
-    "06-validation-securite-et-conformite.md": (
-        29_154,
-        "304cfaf8cc78692e2d9994fffbfad97fc1eea68b44148925aeb0ff095d7b3e01",
-    ),
-    "07-livraison-et-tracabilite.md": (
-        23_695,
-        "08ddedd9a27759a015f0c678fc06ac3d9610a0eaa7b2d78dc8c75b3a56a7798a",
-    ),
-}
 
 FROZEN_SCHEMA_BYTES = 499_786
 FROZEN_SCHEMA_SHA256 = "1d89c4a95a121c178bf85570cd616568fd939942b8d053835069b2d7d6a1f0d4"
-FROZEN_DOCS_TREE_SHA256 = "7773604cb8c591f567b582b7fa29fc2fe4721d56e94c1a14e677bb4260aa9136"
 FROZEN_MACHINE_FILE_COUNT = 430
 FROZEN_MACHINE_TREE_SHA256 = "6174ef30453a25ff4810e7253343c84fcce787e445361f1aeb7b1d8964f5a2eb"
+FROZEN_IMMUTABLE_FILE_COUNT = 431
+FROZEN_IMMUTABLE_TREE_SHA256 = "5ebf2554e5e71b1e33f093b808fa6296a8e33c48d402c8762a68ec910083ef71"
 FROZEN_FULL_FILE_COUNT = 438
 FROZEN_FULL_TREE_SHA256 = "9baac6a20db33bcf350066ed533c5581b7117410899d7bc4a6dc24406e47856d"
+FROZEN_LEDGER_BYTES = 131_635
+FROZEN_LEDGER_SHA256 = "4a437ee1300e86319ebd07a2fc4910cba96c4d15387a30eba5354eec49d1242f"
 FROZEN_LAYOUT_SHA256 = "d5e7ae20571bc0e08f1d123f7529fd6430466872ad0dd5cb22ea37b24128e0aa"
 FROZEN_ENCODED_PROBE_SHA256 = "ee45ad75728442145aa2689211f237868f095a39a2735b89ae5868c3dbe95438"
 FROZEN_LEDGER = PROTOCOL_ROOT / "fstl-1.0-artifacts.manifest.json"
@@ -82,10 +53,6 @@ def relative(path: Path) -> str:
     return path.relative_to(REPO_ROOT).as_posix()
 
 
-def frozen_doc_entries() -> list[tuple[str, bytes]]:
-    return [(relative(PHASE0_DOC_ROOT / name), (PHASE0_DOC_ROOT / name).read_bytes()) for name in FROZEN_DOCS]
-
-
 def machine_entries() -> list[tuple[str, bytes]]:
     entries: list[tuple[str, bytes]] = []
     for root_name in ("vectors", "expected"):
@@ -105,7 +72,7 @@ def machine_entries() -> list[tuple[str, bytes]]:
 
 def all_frozen_entries() -> list[tuple[str, bytes]]:
     schema = PROTOCOL_ROOT / "schema" / "fstl-v1.yaml"
-    return sorted(frozen_doc_entries() + [(relative(schema), schema.read_bytes())] + machine_entries())
+    return sorted([(relative(schema), schema.read_bytes())] + machine_entries())
 
 
 def copy_frozen_contract(destination: Path) -> None:
@@ -133,14 +100,10 @@ def run_freeze_verifier(repo: Path) -> subprocess.CompletedProcess[str]:
 class FstlFrozenContractRedTest(unittest.TestCase):
     maxDiff = None
 
-    def test_frz_001_phase0_documents_are_byte_frozen(self) -> None:
-        entries = frozen_doc_entries()
-        for name, (expected_size, expected_hash) in FROZEN_DOCS.items():
-            with self.subTest(document=name):
-                data = (PHASE0_DOC_ROOT / name).read_bytes()
-                self.assertEqual(len(data), expected_size, f"P0.13 byte length drift: {name}")
-                self.assertEqual(sha256(data), expected_hash, f"P0.13 SHA-256 drift: {name}")
-        self.assertEqual(canonical_tree_sha256(entries), FROZEN_DOCS_TREE_SHA256)
+    def test_frz_001_historical_v10_ledger_is_byte_frozen(self) -> None:
+        data = FROZEN_LEDGER.read_bytes()
+        self.assertEqual(len(data), FROZEN_LEDGER_BYTES)
+        self.assertEqual(sha256(data), FROZEN_LEDGER_SHA256)
 
     def test_frz_002_phase0_schema_is_exact_frozen_artifact(self) -> None:
         path = PROTOCOL_ROOT / "schema" / "fstl-v1.yaml"
@@ -151,19 +114,14 @@ class FstlFrozenContractRedTest(unittest.TestCase):
         self.assertEqual(schema.get("wire_version"), "1.0")
         self.assertNotIn("PLAYER_KINEMATICS", data.decode("utf-8"))
 
-    def test_frz_003_normative_sources_pin_the_seven_frozen_documents(self) -> None:
+    def test_frz_003_v10_retains_its_historical_document_provenance(self) -> None:
         schema = json.loads((PROTOCOL_ROOT / "schema" / "fstl-v1.yaml").read_bytes())
-        expected = [
-            {
-                "path": relative(PHASE0_DOC_ROOT / name),
-                "sha256": expected_hash,
-            }
-            for name, (_, expected_hash) in FROZEN_DOCS.items()
-        ]
-        self.assertEqual(schema.get("normative_sources"), expected)
-        for entry in expected:
-            with self.subTest(source=entry["path"]):
-                self.assertEqual(sha256((REPO_ROOT / entry["path"]).read_bytes()), entry["sha256"])
+        sources = schema.get("normative_sources")
+        self.assertIsInstance(sources, list)
+        self.assertEqual(len(sources), 7)
+        for entry in sources:
+            with self.subTest(source=entry):
+                self.assertRegex(entry.get("sha256", ""), r"^[0-9a-f]{64}$")
 
     def test_frz_004_machine_artifact_set_is_complete_and_frozen(self) -> None:
         entries = machine_entries()
@@ -184,7 +142,7 @@ class FstlFrozenContractRedTest(unittest.TestCase):
         self.assertEqual(layout.group(1), FROZEN_LAYOUT_SHA256)
         self.assertEqual(encoded.group(1), FROZEN_ENCODED_PROBE_SHA256)
 
-    def test_frz_006_v11_has_distinct_schema_and_normative_document_set(self) -> None:
+    def test_frz_006_v11_has_distinct_schema_and_informative_provenance(self) -> None:
         v10_path = PROTOCOL_ROOT / "schema" / "fstl-v1.yaml"
         v11_path = PROTOCOL_ROOT / "schema" / "fstl-v1.1.yaml"
         self.assertTrue(v11_path.is_file(), "P0.13 requires a distinct schema/fstl-v1.1.yaml")
@@ -194,19 +152,25 @@ class FstlFrozenContractRedTest(unittest.TestCase):
         schema = json.loads(v11_data)
         self.assertEqual(schema.get("wire_version"), "1.1")
         self.assertIn("PLAYER_KINEMATICS", v11_data.decode("utf-8"))
-        sources = schema.get("normative_sources")
-        self.assertIsInstance(sources, list)
-        self.assertEqual(len(sources), 7, "the 1.1 schema must own a complete versioned normative set")
-        frozen_paths = {relative(PHASE0_DOC_ROOT / name) for name in FROZEN_DOCS}
-        source_paths = [entry.get("path") for entry in sources]
-        self.assertTrue(frozen_paths.isdisjoint(source_paths), "1.1 must not rewrite/reuse canonical 1.0 documents")
-        for entry in sources:
-            with self.subTest(source=entry):
-                path = REPO_ROOT / entry["path"]
-                self.assertTrue(path.is_file())
-                self.assertEqual(sha256(path.read_bytes()), entry["sha256"])
+        self.assertNotIn("normative_sources", schema)
+        self.assertNotIn("normative_document_set", schema)
+        provenance = schema.get("amendment_provenance")
+        self.assertIsInstance(provenance, dict)
+        self.assertIs(provenance.get("normative"), False)
+        entries = [
+            entry
+            for group, values in provenance.items()
+            if group != "normative"
+            for entry in values
+        ]
+        self.assertTrue(entries)
+        for entry in entries:
+            with self.subTest(provenance=entry):
+                self.assertIn("document", entry)
+                self.assertIn("requirements", entry)
+                self.assertNotIn("sha256", entry)
 
-    def test_frz_007_versioned_ledger_covers_the_complete_v10_artifact_set(self) -> None:
+    def test_frz_007_versioned_ledger_covers_the_immutable_v10_artifacts(self) -> None:
         self.assertTrue(FROZEN_LEDGER.is_file(), "missing in-tree FSTL 1.0 frozen-artifact ledger")
         manifest = json.loads(FROZEN_LEDGER.read_bytes())
         self.assertEqual(manifest.get("schema"), "FSTL-1.0-FROZEN-ARTIFACTS")
@@ -221,36 +185,36 @@ class FstlFrozenContractRedTest(unittest.TestCase):
         self.assertEqual(len(paths), len(set(paths)), "ledger paths must be unique")
 
         expected = {path: data for path, data in all_frozen_entries()}
-        self.assertEqual(set(paths), set(expected), "ledger omission/addition in the frozen artifact set")
-        for entry in files:
-            with self.subTest(artifact=entry["path"]):
-                data = expected[entry["path"]]
-                self.assertEqual(entry.get("bytes"), len(data))
-                self.assertEqual(entry.get("sha256"), sha256(data))
+        declared = {entry["path"]: entry for entry in files}
+        self.assertTrue(set(expected).issubset(declared), "immutable artifact missing from historical ledger")
+        for path, data in expected.items():
+            with self.subTest(artifact=path):
+                self.assertEqual(declared[path].get("bytes"), len(data))
+                self.assertEqual(declared[path].get("sha256"), sha256(data))
 
         entries = sorted(expected.items())
-        self.assertEqual(len(entries), FROZEN_FULL_FILE_COUNT)
-        self.assertEqual(canonical_tree_sha256(entries), FROZEN_FULL_TREE_SHA256)
+        self.assertEqual(len(entries), FROZEN_IMMUTABLE_FILE_COUNT)
+        self.assertEqual(canonical_tree_sha256(entries), FROZEN_IMMUTABLE_TREE_SHA256)
 
     def test_frz_008_freeze_verifier_owns_an_independent_pinned_oracle(self) -> None:
         self.assertTrue(FREEZE_VERIFIER.is_file(), "missing production verify_fstl_1_0_freeze.py")
         self.assertTrue(FROZEN_LEDGER.is_file(), "missing in-tree FSTL 1.0 ledger")
         source = FREEZE_VERIFIER.read_text(encoding="utf-8")
         self.assertIn(
-            FROZEN_FULL_TREE_SHA256,
+            FROZEN_IMMUTABLE_TREE_SHA256,
             source,
             "the verifier must pin an oracle independent of the mutable ledger/current tree",
         )
+        self.assertIn(FROZEN_LEDGER_SHA256, source)
         result = run_freeze_verifier(REPO_ROOT)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn(str(FROZEN_FULL_FILE_COUNT), result.stdout)
-        self.assertIn(FROZEN_FULL_TREE_SHA256, result.stdout)
+        self.assertIn(str(FROZEN_IMMUTABLE_FILE_COUNT), result.stdout)
+        self.assertIn(FROZEN_IMMUTABLE_TREE_SHA256, result.stdout)
 
     def test_frz_009_freeze_verifier_rejects_each_artifact_class_and_inventory_drift(self) -> None:
         self.assertTrue(FREEZE_VERIFIER.is_file(), "missing production verify_fstl_1_0_freeze.py")
         self.assertTrue(FROZEN_LEDGER.is_file(), "missing in-tree FSTL 1.0 ledger")
         mutation_paths = (
-            "documentation/analysis/specs/0-Contrat-de-protocole/04-modele-de-donnees-v1.md",
             "test/telemetry/protocol/schema/fstl-v1.yaml",
             "test/telemetry/protocol/vectors/valid/messages/ack/ack.bin",
             "test/telemetry/protocol/expected/messages/ack.json",
@@ -293,7 +257,7 @@ class FstlFrozenContractRedTest(unittest.TestCase):
             removed.parent.mkdir(parents=True, exist_ok=True)
             removed.write_bytes(original)
             self.assertNotEqual(result.returncode, 0, "missing frozen file escaped verifier")
-            self.assertIn("test/telemetry/protocol/expected/messages/ack.json", result.stdout + result.stderr)
+            self.assertIn("immutable FSTL 1.0 artifact drift", result.stdout + result.stderr)
 
     def test_frz_010_colluding_tree_and_ledger_update_cannot_refresh_the_oracle(self) -> None:
         self.assertTrue(FREEZE_VERIFIER.is_file(), "missing production verify_fstl_1_0_freeze.py")
@@ -321,9 +285,9 @@ class FstlFrozenContractRedTest(unittest.TestCase):
 
             result = run_freeze_verifier(root)
             self.assertNotEqual(result.returncode, 0, "tree+ledger collusion refreshed the frozen oracle")
-            self.assertIn(FROZEN_FULL_TREE_SHA256, result.stdout + result.stderr)
+            self.assertIn(FROZEN_LEDGER_SHA256, result.stdout + result.stderr)
 
-    def test_frz_011_ledger_rejects_duplicate_and_traversal_paths(self) -> None:
+    def test_frz_011_mutated_ledger_is_rejected_before_use(self) -> None:
         self.assertTrue(FREEZE_VERIFIER.is_file(), "missing production verify_fstl_1_0_freeze.py")
         self.assertTrue(FROZEN_LEDGER.is_file(), "missing in-tree FSTL 1.0 ledger")
         for label, injected in (
@@ -340,7 +304,7 @@ class FstlFrozenContractRedTest(unittest.TestCase):
                 ledger_path.write_text(json.dumps(ledger, indent=2, sort_keys=True) + "\n", encoding="utf-8")
                 result = run_freeze_verifier(root)
                 self.assertNotEqual(result.returncode, 0, f"{label} ledger path escaped verifier")
-                self.assertIn(label, (result.stdout + result.stderr).lower())
+                self.assertIn("frozen ledger identity drift", (result.stdout + result.stderr).lower())
 
     def test_frz_012_amendment_manifest_references_the_complete_v10_ledger(self) -> None:
         amendment = json.loads((PROTOCOL_ROOT / "fstl-1.1-vectors.manifest.json").read_bytes())
@@ -410,15 +374,6 @@ class FstlFrozenContractRedTest(unittest.TestCase):
 
             catalogue_sources = REPO_ROOT / "test/src/telemetry/protocol"
             shutil.copytree(catalogue_sources, root / relative(catalogue_sources))
-
-            source_paths = {relative(PHASE0_DOC_ROOT / name) for name in FROZEN_DOCS}
-            v11 = json.loads(v11_schema.read_bytes())
-            source_paths.update(entry["path"] for entry in v11["normative_sources"])
-            for name in source_paths:
-                source = REPO_ROOT / name
-                target = root / name
-                target.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copyfile(source, target)
 
             commands = (
                 (

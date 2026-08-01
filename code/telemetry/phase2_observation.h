@@ -602,6 +602,7 @@ enum class ShipSubsystemKind : std::uint8_t {
 	Sensors,
 	Communication,
 	Navigation,
+	Reactor,
 	Count,
 };
 
@@ -770,6 +771,10 @@ struct Phase2ShipSource {
 	Phase2StaticAuthorityInput static_authority_input;
 };
 
+// Clears logical contents without touching inactive fixed-capacity storage.
+// Readers must initialize each entry before increasing its associated count.
+void clear_phase2_ship_source_logical(Phase2ShipSource& source) noexcept;
+
 enum class Phase2CaptureBlock : std::uint8_t {
 	Identity = 0,
 	Flight,
@@ -782,15 +787,26 @@ enum class Phase2CaptureBlock : std::uint8_t {
 	Count,
 };
 
+enum class Phase2ObservationRefresh : std::uint8_t {
+	All = 0,
+	FlightControls,
+	Count,
+};
+
 struct Phase2CaptureDiagnostics {
 	std::array<std::uint64_t,
 		static_cast<std::size_t>(Phase2CaptureBlock::Count)> duration_ns{};
 	std::uint8_t attempted_mask = 0U;
 	std::array<std::uint32_t, MaximumPhase2ObservationShips>
 		source_signatures{};
+	std::array<std::int32_t, MaximumPhase2ObservationShips>
+		source_object_indices{};
 	std::size_t source_count = 0U;
+	std::uint64_t normalization_count = 0U;
 	bool duration_overflow = false;
 	Phase2CaptureBlock primary_failed_block = Phase2CaptureBlock::Count;
+	Phase2ObservationRefresh completed_refresh =
+		Phase2ObservationRefresh::Count;
 };
 
 class Phase2EngineReadView {
@@ -818,6 +834,13 @@ class Phase2EngineReadView {
 	}
 	virtual SourceReadResult read_ship(
 		EngineEntityKey key, Phase2ShipSource& output) const noexcept = 0;
+	// Cadence-only flight refresh. Production implementations must avoid
+	// traversing systems, static catalogues and subsystem lists here.
+	virtual SourceReadResult read_ship_flight(
+		EngineEntityKey, ShipFlightObservation&) const noexcept
+	{
+		return {Phase2SourceReadStatus::UnsupportedEngineState};
+	}
 	// CoreGate owns only the validated player root and the CORE_SHIP blocks.
 	// The default fails closed without delegating to the broader read_ship()
 	// seam, so an implementation cannot accidentally make extension
@@ -874,7 +897,9 @@ class Phase2ObservationBuffer {
 	Phase2CaptureResult capture(const Phase2EngineReadView& source,
 		std::uint64_t producer_sample_time_us,
 		Phase2ObservationProjection projection =
-			Phase2ObservationProjection::DiscoveryExtension) noexcept;
+			Phase2ObservationProjection::DiscoveryExtension,
+		Phase2ObservationRefresh refresh =
+			Phase2ObservationRefresh::All) noexcept;
 
 	Phase2ObservationBufferState state() const noexcept;
 	std::size_t ship_capacity() const noexcept;
@@ -922,7 +947,9 @@ Phase2CaptureResult collect_phase2_observation(Phase2ObservationBuffer& buffer,
 	const Phase2EngineReadView& source,
 	std::uint64_t producer_sample_time_us,
 	Phase2ObservationProjection projection =
-		Phase2ObservationProjection::DiscoveryExtension) noexcept;
+		Phase2ObservationProjection::DiscoveryExtension,
+	Phase2ObservationRefresh refresh =
+		Phase2ObservationRefresh::All) noexcept;
 
 bool canonicalize_phase2_float(float value, float absolute_limit, float& output) noexcept;
 bool phase2_timestamp_remaining_us(std::int64_t now_ms,
@@ -1129,16 +1156,6 @@ bool phase2_wp07_seam_overflowed() noexcept;
 void capture_phase2_main_thread_authority() noexcept;
 bool phase2_current_thread_is_main() noexcept;
 
-class Phase2SeamTestDouble {
-  public:
-	virtual ~Phase2SeamTestDouble() = default;
-
-	virtual void on_ship_cleanup(const ShipCleanupFact& fact) noexcept = 0;
-	virtual void on_support_transition(const SupportTransitionFact& fact) noexcept = 0;
-	virtual void on_control_target(ControlTargetAuthority authority) noexcept = 0;
-	virtual void on_cargo_authority(const CargoAuthorityFact& fact) noexcept = 0;
-};
-
 } // namespace telemetry::detail
 
 namespace telemetry {
@@ -1156,10 +1173,4 @@ void OnSupportTransition(std::uint32_t assisted_signature,
 	std::uint64_t sample_time) noexcept;
 void OnControlTarget(ControlTargetAuthority authority) noexcept;
 void OnCargoAuthority(const CargoAuthorityFact& fact) noexcept;
-
-namespace test_seam {
-
-void set_phase2_seam_test_double(detail::Phase2SeamTestDouble* test_double) noexcept;
-
-} // namespace test_seam
 } // namespace telemetry

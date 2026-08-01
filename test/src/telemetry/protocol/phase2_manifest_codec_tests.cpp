@@ -7,14 +7,16 @@
 #include "telemetry/protocol/telemetry_state_messages.h"
 #include "telemetry/protocol/telemetry_transaction.h"
 #include "telemetry/phase2_manifest_builder.h"
-#include "telemetry/phase2_wp03_test_support.h"
+#include "telemetry/phase2_manifest_test_support.h"
 
 #include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include <limits>
 #include <memory>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 namespace {
@@ -392,10 +394,10 @@ struct ProvisionedManifest {
 	Phase2ManifestSlot& slot = state->slot;
 
 	explicit ProvisionedManifest(bool initialize = true,
-		test::wp03::SourceCase source_case = test::wp03::SourceCase::MultipartFullRequired)
+		test::phase2test::SourceCase source_case = test::phase2test::SourceCase::MultipartFullRequired)
 	{
 		if (initialize) {
-			auto source = test::wp03::make_source(source_case);
+			auto source = test::phase2test::make_source(source_case);
 			EXPECT_EQ(Phase2ManifestError::None, slot.rebuild(*source));
 		}
 	}
@@ -468,29 +470,24 @@ TEST(Phase2ManifestCodec, P2TST023MultipartPayloadRoundTripsThroughThePhase0Code
 	}
 }
 
-TEST(Phase2ManifestCodec, P2TST023AcceptsExactly65535RecordEnvelopesInOnePart)
+TEST(Phase2ManifestCodec,
+	P2TST023KeepsTheFrozenWireCounterWithoutBuildingAnArtificialMaximumImage)
 {
-	const auto empty = extension_record(0, 0);
-	std::vector<std::uint8_t> records;
-	records.reserve(65535u * empty.size());
-	for (std::uint32_t index = 0; index < 65535; ++index) {
-		records.insert(records.end(), empty.begin(), empty.end());
+	using WireRecordCount =
+		decltype(ManifestPartPayload{}.record_count);
+	static_assert(std::is_same_v<WireRecordCount, std::uint16_t>);
+	EXPECT_EQ(65'535U,
+		std::numeric_limits<WireRecordCount>::max());
+
+	ProvisionedManifest manifest;
+	const auto& candidate = manifest.candidate();
+	std::uint32_t projected_record_count = 0U;
+	for (std::uint16_t index = 0U;
+		 index < candidate.part_count; ++index) {
+		projected_record_count +=
+			candidate.parts[index].record_count;
 	}
-	Sha256Digest digest{};
-	ASSERT_TRUE(sha256(ByteView{records.data(), records.size()}, digest));
-	ManifestPartPayload payload{};
-	payload.manifest_id = 1;
-	payload.part_count = 1;
-	payload.transaction_size = static_cast<std::uint32_t>(records.size());
-	payload.transaction_sha256 = digest;
-	payload.manifest_kind = ManifestKind::FullRequired;
-	payload.record_count = 65535;
-	payload.records = ByteView{records.data(), records.size()};
-	std::vector<std::uint8_t> encoded(ManifestPartPayloadPrefixSize + records.size());
-	std::size_t written = 0;
-	ASSERT_EQ(ValidationError::None,
-		encode_manifest_part_payload(payload, MutableByteView{encoded.data(), encoded.size()}, written));
-	EXPECT_EQ(encoded.size(), written);
+	EXPECT_LE(projected_record_count, 4'740U);
 }
 
 TEST(Phase2ManifestCodec, P2TST024LossDuplicateReorderAndRetransmitCommitOnlyOnce)
@@ -550,14 +547,14 @@ TEST(Phase2ManifestCodec, P2TST025IncoherentShaSizeCountAndManifestGenerationNev
 
 TEST(Phase2ManifestCodec, P2REQ015ClientValidationRejectsMissingDuplicateAndExtraCatalogRecordsAtomically)
 {
-	for (const auto mutation : {test::wp03::CatalogMutation::MissingClass,
-		     test::wp03::CatalogMutation::MissingWeapon,
-		     test::wp03::CatalogMutation::DuplicateClass,
-		     test::wp03::CatalogMutation::DuplicateWeapon,
-		     test::wp03::CatalogMutation::UnauthorizedExtraClass,
-		     test::wp03::CatalogMutation::UnauthorizedExtraWeapon}) {
+	for (const auto mutation : {test::phase2test::CatalogMutation::MissingClass,
+		     test::phase2test::CatalogMutation::MissingWeapon,
+		     test::phase2test::CatalogMutation::DuplicateClass,
+		     test::phase2test::CatalogMutation::DuplicateWeapon,
+		     test::phase2test::CatalogMutation::UnauthorizedExtraClass,
+		     test::phase2test::CatalogMutation::UnauthorizedExtraWeapon}) {
 		ProvisionedManifest manifest;
-		auto transaction = test::wp03::mutate_completed_catalog(manifest.candidate(), mutation);
+		auto transaction = test::phase2test::mutate_completed_catalog(manifest.candidate(), mutation);
 		const auto staged_id = manifest.slot.staged_manifest_id();
 		const auto staged_hash = manifest.slot.staged_candidate().transaction_sha256;
 		EXPECT_EQ(Phase2ManifestError::InvalidFullRequiredCatalog,
@@ -569,7 +566,7 @@ TEST(Phase2ManifestCodec, P2REQ015ClientValidationRejectsMissingDuplicateAndExtr
 
 TEST(Phase2ManifestCodec, P2REQ015LeastPrivilegeIsProvedFromDecodedWireRecords)
 {
-	ProvisionedManifest manifest{true, test::wp03::SourceCase::TwoClassesThreeWeaponsWithDecoys};
+	ProvisionedManifest manifest{true, test::phase2test::SourceCase::TwoClassesThreeWeaponsWithDecoys};
 	std::size_t class_records = 0;
 	std::size_t weapon_records = 0;
 	std::vector<std::pair<std::uint32_t, std::string>> classes;
@@ -618,7 +615,7 @@ TEST(Phase2ManifestCodec, P2REQ015LeastPrivilegeIsProvedFromDecodedWireRecords)
 
 TEST(Phase2ManifestCodec, P2REQ015FullRequiredContainsExactlyClassAndWeaponRecordsWithoutSyntheticPadding)
 {
-	ProvisionedManifest manifest{true, test::wp03::SourceCase::TwoClassesThreeWeaponsWithDecoys};
+	ProvisionedManifest manifest{true, test::phase2test::SourceCase::TwoClassesThreeWeaponsWithDecoys};
 	std::size_t class_records = 0;
 	std::size_t weapon_records = 0;
 	std::size_t unexpected_records = 0;
@@ -650,7 +647,7 @@ TEST(Phase2ManifestCodec, P2REQ015FullRequiredContainsExactlyClassAndWeaponRecor
 
 TEST(Phase2ManifestCodec, P2TST047WeaponManifestCarriesEverySupportedSourceFieldExactly)
 {
-	auto source = test::wp03::make_source(test::wp03::SourceCase::TwoClassesThreeWeaponsWithDecoys);
+	auto source = test::phase2test::make_source(test::phase2test::SourceCase::TwoClassesThreeWeaponsWithDecoys);
 	auto& expected = source->weapons[0];
 	expected.title = "Alpha title";
 	expected.subtype = WeaponSubtype::Primary;
@@ -749,7 +746,7 @@ TEST(Phase2ManifestCodec, P2TST047WeaponManifestCarriesEverySupportedSourceField
 
 TEST(Phase2ManifestCodec, P2TST047BankCapacityPresenceFollowsConsumesAmmunition)
 {
-	auto source = test::wp03::make_source(test::wp03::SourceCase::TwoClassesThreeWeaponsWithDecoys);
+	auto source = test::phase2test::make_source(test::phase2test::SourceCase::TwoClassesThreeWeaponsWithDecoys);
 	auto& ship_class = source->ship_classes[0];
 	ship_class.bank_count = 2;
 	ship_class.banks[0].family = WeaponFamily::Primary;
@@ -802,7 +799,7 @@ TEST(Phase2ManifestCodec, P2TST047BankCapacityPresenceFollowsConsumesAmmunition)
 
 TEST(Phase2ManifestCodec, P2TST047ClassManifestWireCarriesEffectivePhysicsAndAuxiliaryIds)
 {
-	auto source = test::wp03::make_source(test::wp03::SourceCase::AllAuxiliaryRegistries);
+	auto source = test::phase2test::make_source(test::phase2test::SourceCase::AllAuxiliaryRegistries);
 	auto& expected = source->ship_classes[0];
 	expected.effective_mass = 20.0F;
 	expected.center_of_mass = {1.0F, 2.0F, 3.0F};

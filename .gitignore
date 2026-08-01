@@ -263,10 +263,11 @@ CMakePresets.json
 CMakeFiles/cmake.check_cache
 CMakeCache.txt
 
-# Local telemetry campaign artifacts.  Raw measurements and fuzz builds are
+# Local telemetry campaign artifacts.  Raw measurements and build trees are
 # reproducible outputs; archive certification evidence outside the worktree or
 # add a deliberately reviewed final report with `git add -f`.
-/build-fuzz*/
+/build-*/
+/data/cache/
 /test/telemetry/producer/performance/raw-*/
 /test/telemetry/producer/performance/reports/phase1-performance*.json
 /test/telemetry/producer/reliability/reports/wp11-debug-*/

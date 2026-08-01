@@ -439,10 +439,9 @@ def main() -> int:
             base_manifest.get("file_count") != frozen_count or
             base_manifest.get("tree_sha256") != frozen_tree):
         errors.append("contract: schema/fstl-v1.1.yaml base_artifact_manifest identity drift")
-    for source in schema.get("normative_sources", []):
-        source_path = REPO / source["path"]
-        if not source_path.is_file() or sha(source_path.read_bytes()) != source["sha256"]:
-            errors.append(f"contract: schema/fstl-v1.1.yaml source drift: {source['path']}")
+    provenance = schema.get("amendment_provenance", {})
+    if provenance.get("normative") is not False:
+        errors.append("contract: schema/fstl-v1.1.yaml provenance must be informative")
     coverage_values = schema["numeric_registries"]["StateDomainCoverage"]["values"]
     if not any(value.get("name") == "PLAYER_KINEMATICS" and value.get("value") == 1024 for value in coverage_values):
         errors.append("contract: schema does not define PLAYER_KINEMATICS=0x400")

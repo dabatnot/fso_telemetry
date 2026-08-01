@@ -818,6 +818,112 @@ TEST(Phase2Runtime,
 }
 
 TEST(Phase2Runtime,
+	StaleSessionAcceptsValidatedResyncAndStartsRecovery)
+{
+	ControllerIdentity identity;
+	auto controller = make_controller(identity);
+	const auto peer = endpoint(2U, 42043U);
+	establish_ready(controller, peer, 0x4f0U, 1'000U, 0U);
+
+	auto manifests = std::make_unique<ManifestPair>();
+	ASSERT_TRUE(manifests->initialize());
+	ASSERT_EQ(detail::Phase2RuntimeResult::ManifestRequired,
+		controller.stage_phase2_manifest(
+			0U, *manifests->first, 1'500U));
+	ASSERT_EQ(1U, controller.service_phase2_manifest_egress(
+		0U, 1'501U));
+	detail::SessionControllerOutput manifest_output;
+	ASSERT_TRUE(controller.pop_output(manifest_output));
+	const auto manifest_ack = applied_ack(
+		decode_output(manifest_output), 0x4f1U);
+	ASSERT_EQ(detail::SessionIngressDisposition::ResponseQueued,
+		controller.ingest(peer, view(manifest_ack), 1'502U, 1U,
+			true).disposition);
+
+	ASSERT_TRUE(controller.begin_phase2_snapshot(
+		0U, delta_compatible_image(1.0F, 2'000U),
+		detail::Phase2RuntimeSnapshotCause::Initial, 2'000U));
+	ASSERT_EQ(1U, controller.service_initial_snapshot_egress(
+		1U, 2'001U));
+	detail::SessionControllerOutput initial_output;
+	ASSERT_TRUE(controller.pop_output(initial_output));
+	const auto initial_view = decode_output(initial_output);
+	const auto initial_ack = applied_ack(initial_view, 0x4f2U);
+	ASSERT_EQ(detail::SessionIngressDisposition::ResponseQueued,
+		controller.ingest(peer, view(initial_ack), 2'002U, 1U,
+			true).disposition);
+	ASSERT_TRUE(controller.slot(0U).snapshot.has_active_baseline());
+
+	const auto stale_at =
+		controller.slot(0U).heartbeat.last_valid_clock_response_us +
+		controller.slot(0U).heartbeat.stale_timeout_us;
+	controller.service_timeouts(stale_at);
+	ASSERT_EQ(detail::ProducerSessionProgress::Stale,
+		controller.slot(0U).progress);
+
+	protocol::ResyncRequestPayload request{
+		1U, protocol::ResyncReason::SessionStale,
+		protocol::ResyncRequestFlagRequireFullSnapshot,
+		controller.slot(0U).snapshot.active_snapshot_id(),
+		0U, stale_at};
+	std::array<std::uint8_t,
+		protocol::ResyncRequestPayloadSize> request_payload{};
+	std::size_t request_payload_size = 0U;
+	ASSERT_EQ(protocol::ValidationError::None,
+		protocol::encode_resync_request_payload(request,
+			mutable_view(request_payload), request_payload_size));
+	protocol::TelemetryDatagramHeader request_header;
+	request_header.version_minor = protocol::VersionMinorV1_1;
+	request_header.message_type = protocol::MessageType::ResyncRequest;
+	request_header.flags = protocol::MessageFlagAckRequired;
+	request_header.session_id = controller.slot(0U).session_id;
+	request_header.packet_sequence = 0x4f3U;
+	request_header.sent_time_us = stale_at;
+	request_header.message_id = 0x4f3U;
+	request_header.fragment_count = 1U;
+	request_header.message_size =
+		static_cast<std::uint32_t>(request_payload_size);
+	request_header.message_crc32 = protocol::crc32_iso_hdlc(
+		{request_payload.data(), request_payload_size});
+	std::vector<std::uint8_t> encoded_request(
+		protocol::HeaderSizeV1 + request_payload_size);
+	std::size_t encoded_request_size = 0U;
+	ASSERT_EQ(protocol::ValidationError::None,
+		protocol::encode_datagram(request_header,
+			{protocol::VersionMinorV1_1,
+			 protocol::VersionMinorV1_1},
+			{request_payload.data(), request_payload_size},
+			mutable_view(encoded_request), encoded_request_size));
+
+	const auto result = controller.ingest(
+		peer, view(encoded_request), stale_at + 1U, 1U, true);
+	ASSERT_EQ(detail::SessionIngressDisposition::ResponseQueued,
+		result.disposition);
+	ASSERT_TRUE(result.has_phase2_resync);
+	EXPECT_EQ(protocol::ProducerResyncResult::AcceptedNewCandidate,
+		result.phase2_resync_result);
+	EXPECT_EQ(0U, result.phase2_resync_slot);
+	EXPECT_EQ(detail::ProducerSessionProgress::ReadyForState,
+		controller.slot(0U).progress);
+	EXPECT_EQ(detail::Phase2RuntimeSnapshotCause::Resync,
+		controller.slot(0U).phase2_runtime.last_started_snapshot_cause());
+
+	detail::SessionControllerOutput ack_output;
+	ASSERT_TRUE(controller.pop_output(ack_output));
+	const auto ack_view = decode_output(ack_output);
+	ASSERT_EQ(protocol::MessageType::Ack,
+		ack_view.header.message_type);
+	protocol::AckPayload ack{};
+	ASSERT_EQ(protocol::ValidationError::None,
+		protocol::decode_ack_payload(ack_view.payload, ack));
+	EXPECT_EQ(protocol::MessageType::ResyncRequest,
+		ack.target_message_type);
+	EXPECT_EQ(request_header.message_id, ack.target_message_id);
+	EXPECT_EQ(static_cast<std::uint8_t>(protocol::AckFlag::Validated),
+		ack.ack_flags);
+}
+
+TEST(Phase2Runtime,
 	TST050StaleSessionContinuesFullSnapshotReliabilityToTerminalPolicy)
 {
 	ControllerIdentity identity;

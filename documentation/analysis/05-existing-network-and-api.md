@@ -137,7 +137,7 @@ Une grande partie du vaisseau est déjà lisible via l'API de scripting :
 
 Lua permettrait un prototype rapide, mais ne couvre pas proprement tout le domaine requis : contenu cargo, contacts radar autoritairement filtrés, locks complets et plusieurs états internes. Le RPC Lua existant est également limité au réseau multijoueur interne et à la taille `MAX_PACKET_SIZE`.
 
-Le module C++ sera donc retenu pour la version complète. L'API Lua restera utile comme référence de sémantique et comme oracle de test pour certaines valeurs.
+Le module C++ sera donc retenu pour la version complète. L'API Lua restera utile comme référence de sémantique pour certaines valeurs.
 
 ## 10. Éléments à réutiliser conceptuellement
 

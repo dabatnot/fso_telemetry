@@ -62,17 +62,8 @@ struct NativeSessionStartRequest {
 	RandomSource* packet_sequences = nullptr;
 	TelemetryMetrics* metrics = nullptr;
 	TelemetryStructuredLog* log = nullptr;
-	// Deprecated compatibility input. NativeSessionRuntime::start never trusts
-	// this as a prevalidated selection; it derives selection from the facts and
-	// requested profile below.
-	Phase2Profile selected_phase2_profile = Phase2Profile::None;
 	Phase2ProfileEligibility phase2_eligibility{};
 	Phase2Profile requested_phase2_profile = Phase2Profile::None;
-	const Phase2ObservationSelection* phase2_selection = nullptr;
-	// The manifest is immutable for the lifetime of the runtime. Its generation
-	// is still gated per client by MANIFEST APPLIED before any dependent image
-	// can enter the snapshot machinery.
-	const Phase2ManifestCandidate* phase2_manifest = nullptr;
 };
 
 struct NativeSessionTickContext {
@@ -220,6 +211,12 @@ class NativeSessionRuntime final : private DatagramIoWork {
 	void refresh_performance_resource_sample() noexcept;
 	void observe_phase2_support_transitions() noexcept;
 	void reset_phase2_support_tracker() noexcept;
+	bool provision_phase2_manifest_state() noexcept;
+	bool refresh_owned_phase2_manifest(
+		const Phase2ObservationDto& observation,
+		Phase2ManifestError& result) noexcept;
+	void release_unreferenced_phase2_manifest_generation() noexcept;
+	void release_phase2_manifest_state() noexcept;
 	std::uint64_t state_image_pool_allocation_count() const noexcept;
 	std::size_t state_image_pool_backing_bytes() const noexcept;
 
@@ -234,7 +231,6 @@ class NativeSessionRuntime final : private DatagramIoWork {
 	Phase2CaptureResult m_last_phase2_capture_result{};
 	Phase2Profile m_selected_phase2_profile = Phase2Profile::None;
 	bool m_phase2_enabled = false;
-	bool m_phase2_keyframe_test_seam = false;
 	CurrentPlayerCapture m_current_player_capture;
 	SessionPlayerMaterializationResult m_last_player_materialization;
 	NativeSessionTickContext m_tick_context{};
@@ -273,6 +269,11 @@ class NativeSessionRuntime final : private DatagramIoWork {
 	std::array<Phase2StateImagePool, 4U>
 		m_phase2_core_gate_image_pools{};
 	std::array<Phase2CompleteDomainPool, 4U> m_phase2_image_pools{};
+	std::unique_ptr<std::uint8_t[]> m_phase2_manifest_backing;
+	std::unique_ptr<Phase2ManifestSource> m_phase2_manifest_source;
+	std::unique_ptr<Phase2ManifestStorage> m_phase2_manifest_storage;
+	std::unique_ptr<Phase2ManifestSlot> m_phase2_manifest_slot;
+	std::size_t m_phase2_manifest_backing_bytes = 0U;
 	const Phase2ManifestCandidate* m_phase2_manifest = nullptr;
 	TelemetryMetrics* m_metrics = nullptr;
 	TelemetryStructuredLog* m_log = nullptr;

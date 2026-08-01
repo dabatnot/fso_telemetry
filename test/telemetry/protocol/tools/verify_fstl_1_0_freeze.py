@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
-"""Verify the complete, byte-frozen FSTL 1.0 artifact set.
+"""Verify the immutable machine-readable FSTL 1.0 contract.
 
-The immutable tree oracle lives in this verifier as well as in the versioned
-ledger.  Check mode never derives or refreshes the expected root from the tree
-being checked, so changing artifacts and the ledger together still fails.
+The historical ledger remains byte-frozen, including its documentary inventory,
+but mutable product documents are not reopened or used as protocol gates.
 """
 
 from __future__ import annotations
@@ -20,18 +19,12 @@ EXPECTED_SCHEMA = "FSTL-1.0-FROZEN-ARTIFACTS"
 EXPECTED_WIRE_VERSION = "1.0"
 EXPECTED_FILE_COUNT = 438
 EXPECTED_TREE_SHA256 = "9baac6a20db33bcf350066ed533c5581b7117410899d7bc4a6dc24406e47856d"
+EXPECTED_LEDGER_BYTES = 131_635
+EXPECTED_LEDGER_SHA256 = "4a437ee1300e86319ebd07a2fc4910cba96c4d15387a30eba5354eec49d1242f"
+EXPECTED_IMMUTABLE_FILE_COUNT = 431
+EXPECTED_IMMUTABLE_TREE_SHA256 = "5ebf2554e5e71b1e33f093b808fa6296a8e33c48d402c8762a68ec910083ef71"
 
 LEDGER_RELATIVE_PATH = Path("test/telemetry/protocol/fstl-1.0-artifacts.manifest.json")
-PHASE0_DOCUMENT_ROOT = Path("documentation/analysis/specs/0-Contrat-de-protocole")
-PHASE0_DOCUMENTS = (
-    "01-cadre-normatif-et-perimetre.md",
-    "02-format-filaire-et-registres.md",
-    "03-session-horloges-fiabilite.md",
-    "04-modele-de-donnees-v1.md",
-    "05-capabilities-et-vues-specialisees.md",
-    "06-validation-securite-et-conformite.md",
-    "07-livraison-et-tracabilite.md",
-)
 PROTOCOL_ROOT = Path("test/telemetry/protocol")
 MACHINE_ROOTS = (PROTOCOL_ROOT / "vectors", PROTOCOL_ROOT / "expected")
 MACHINE_FILES = (
@@ -65,8 +58,7 @@ def canonical_relative_path(path: Path) -> str:
 
 
 def frozen_paths(repo: Path) -> list[Path]:
-    paths = [PHASE0_DOCUMENT_ROOT / name for name in PHASE0_DOCUMENTS]
-    paths.append(FROZEN_SCHEMA)
+    paths = [FROZEN_SCHEMA]
     for root in MACHINE_ROOTS:
         absolute_root = repo / root
         if absolute_root.is_dir():
@@ -134,6 +126,12 @@ def load_ledger(repo: Path) -> tuple[dict[str, Any], list[dict[str, Any]]]:
 
 
 def verify(repo: Path) -> tuple[int, str]:
+    ledger_data = (repo / LEDGER_RELATIVE_PATH).read_bytes()
+    if len(ledger_data) != EXPECTED_LEDGER_BYTES or sha256(ledger_data) != EXPECTED_LEDGER_SHA256:
+        raise FreezeError(
+            "frozen ledger identity drift: "
+            f"expected {EXPECTED_LEDGER_BYTES} bytes and SHA-256 {EXPECTED_LEDGER_SHA256}"
+        )
     manifest, ledger_files = load_ledger(repo)
     if manifest.get("schema") != EXPECTED_SCHEMA:
         raise FreezeError(f"frozen ledger schema drift: {manifest.get('schema')!r}")
@@ -153,12 +151,9 @@ def verify(repo: Path) -> tuple[int, str]:
     actual_entries = read_frozen_entries(repo)
     actual = {path: data for path, data in actual_entries}
     declared = {entry["path"]: entry for entry in ledger_files}
-    missing = sorted(set(declared) - set(actual))
-    unexpected = sorted(set(actual) - set(declared))
-    if missing or unexpected:
-        details = [*(f"missing frozen artifact: {path}" for path in missing),
-                   *(f"unexpected frozen artifact: {path}" for path in unexpected)]
-        raise FreezeError("\n".join(details))
+    undeclared = sorted(set(actual) - set(declared))
+    if undeclared:
+        raise FreezeError("\n".join(f"unexpected frozen artifact: {path}" for path in undeclared))
 
     drift: list[str] = []
     for path in sorted(actual):
@@ -173,9 +168,11 @@ def verify(repo: Path) -> tuple[int, str]:
         raise FreezeError("\n".join(drift))
 
     actual_tree = canonical_tree_sha256(actual_entries)
-    if actual_tree != manifest["treeSha256"] or actual_tree != EXPECTED_TREE_SHA256:
+    if len(actual_entries) != EXPECTED_IMMUTABLE_FILE_COUNT or actual_tree != EXPECTED_IMMUTABLE_TREE_SHA256:
         raise FreezeError(
-            f"frozen artifact tree SHA-256 drift: {actual_tree}; expected {EXPECTED_TREE_SHA256}"
+            "immutable FSTL 1.0 artifact drift: "
+            f"{len(actual_entries)} files and tree SHA-256 {actual_tree}; "
+            f"expected {EXPECTED_IMMUTABLE_FILE_COUNT} files and {EXPECTED_IMMUTABLE_TREE_SHA256}"
         )
     return len(actual_entries), actual_tree
 

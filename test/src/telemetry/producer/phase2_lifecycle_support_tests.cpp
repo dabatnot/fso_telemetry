@@ -1,5 +1,5 @@
 #include "telemetry/phase2_state_image.h"
-#include "telemetry/phase2_wp03_allocation_tracker.h"
+#include "telemetry/phase2_allocation_tracker.h"
 #include "telemetry/protocol/packet_reader.h"
 #include "telemetry/protocol/telemetry_business_records.h"
 #include "telemetry/protocol/telemetry_business_state_validation.h"
@@ -367,7 +367,7 @@ TEST(Phase2LifecycleSupport,
 	const auto backing_bytes = pool.owned_backing_bytes();
 	StateImage preallocated;
 	StateImage retained;
-	telemetry::test::wp03::GlobalAllocationScope allocations;
+	telemetry::test::phase2test::GlobalAllocationScope allocations;
 	const auto preallocated_status =
 		build_phase2_complete_domain_preallocated(
 			fixture.input, pool, preallocated);
@@ -1192,7 +1192,7 @@ TEST(Phase2LifecycleSupport, P2TST070K1K2OrderOmissionsAndReadyPoolNoGrowthAreDe
 	ASSERT_EQ(4U + 10U * 64U + 4096U,
 		maximum.records().size());
 	const auto bytes = pool.owned_backing_bytes();
-	telemetry::test::wp03::GlobalAllocationScope allocations;
+	telemetry::test::phase2test::GlobalAllocationScope allocations;
 	StateImage measured;
 	EXPECT_EQ(Phase2StateImageBuildStatus::Created,
 		build_phase2_complete_domain_preallocated(
@@ -1243,8 +1243,27 @@ TEST(Phase2LifecycleSupport,
 	P2REQ019030046PreallocatedFastPathGrowsToSupportAndPublishesRepairingThenRearming)
 {
 	Fixture fixture;
+	auto& ship_class = fixture.manifest->class_records[0];
+	ship_class.subsystem_count = 1U;
+	ship_class.subsystems = {
+		fixture.manifest->subsystem_records.data(), 1U};
+	fixture.manifest->subsystem_records[0] = {
+		1'001U, 2'001U, 0U, 0U};
+	fixture.manifest->aggregate_subsystem_count = 1U;
+	auto configure_subsystem = [&](std::size_t ship_index) {
+		auto& ship = fixture.observation->ships[ship_index];
+		ship.subsystems.count = 1U;
+		auto& subsystem = ship.subsystems.values[0];
+		subsystem.source_key.value = 1'001U;
+		subsystem.sample_time_us =
+			fixture.observation->producer_sample_time_us;
+		subsystem.kind = ShipSubsystemKind::Generic;
+		subsystem.hits_current = 80.0F;
+		subsystem.hits_maximum = 100.0F;
+	};
+	configure_subsystem(0U);
 	Phase2CompleteDomainPool pool;
-	ASSERT_TRUE(pool.provision(2U, 0U, 0U, 2U));
+	ASSERT_TRUE(pool.provision(2U, 2U, 0U, 2U));
 	const auto backing_bytes = pool.owned_backing_bytes();
 
 	StateImage one_ship;
@@ -1255,6 +1274,7 @@ TEST(Phase2LifecycleSupport,
 
 	fixture.observation->ships.resize(2U);
 	fixture.add_ship(1U, 12U, 101U, 9002U);
+	configure_subsystem(1U);
 	fixture.input.subject_count = 2U;
 	auto& root_support = fixture.observation->ships[0].support;
 	root_support.presence = SupportStatePresenceFlagSupportEntity;
@@ -1264,7 +1284,7 @@ TEST(Phase2LifecycleSupport,
 
 	StateImage repairing;
 	StateImage rearming;
-	telemetry::test::wp03::GlobalAllocationScope allocations;
+	telemetry::test::phase2test::GlobalAllocationScope allocations;
 	const auto repairing_status =
 		build_phase2_complete_domain_preallocated(
 			fixture.input, pool, repairing);
@@ -1324,8 +1344,31 @@ TEST(Phase2LifecycleSupport,
 	P2REQ019030046RetainedStatePreservesEveryNonDueAtomAcrossSystemsAndFlightTicks)
 {
 	Fixture fixture;
+	auto& retained_ship_class =
+		fixture.manifest->class_records[0];
+	retained_ship_class.subsystem_count = 1U;
+	retained_ship_class.subsystems = {
+		fixture.manifest->subsystem_records.data(), 1U};
+	fixture.manifest->subsystem_records[0] = {
+		1'001U, 2'001U, 0U, 0U};
+	fixture.manifest->aggregate_subsystem_count = 1U;
+	auto configure_retained_subsystem =
+		[&](std::size_t ship_index) {
+			auto& ship =
+				fixture.observation->ships[ship_index];
+			ship.subsystems.count = 1U;
+			auto& subsystem =
+				ship.subsystems.values[0];
+			subsystem.source_key.value = 1'001U;
+			subsystem.sample_time_us =
+				fixture.observation->producer_sample_time_us;
+			subsystem.kind = ShipSubsystemKind::Generic;
+			subsystem.hits_current = 80.0F;
+			subsystem.hits_maximum = 100.0F;
+		};
+	configure_retained_subsystem(0U);
 	Phase2CompleteDomainPool pool;
-	ASSERT_TRUE(pool.provision(2U, 0U, 0U, 2U));
+	ASSERT_TRUE(pool.provision(2U, 2U, 0U, 2U));
 	const auto backing_bytes = pool.owned_backing_bytes();
 
 	StateImage one_ship;
@@ -1335,6 +1378,7 @@ TEST(Phase2LifecycleSupport,
 
 	fixture.observation->ships.resize(2U);
 	fixture.add_ship(1U, 12U, 101U, 9002U);
+	configure_retained_subsystem(1U);
 	fixture.input.subject_count = 2U;
 	auto& root = fixture.observation->ships[0];
 	root.support.presence =
@@ -1352,8 +1396,12 @@ TEST(Phase2LifecycleSupport,
 		std::uint64_t entity) {
 		const auto* expected_atom = atom(expected, type, entity);
 		const auto* actual_atom = atom(actual, type, entity);
-		ASSERT_NE(nullptr, expected_atom);
-		ASSERT_NE(nullptr, actual_atom);
+		ASSERT_NE(nullptr, expected_atom)
+			<< "type=" << static_cast<std::uint16_t>(type)
+			<< " entity=" << entity;
+		ASSERT_NE(nullptr, actual_atom)
+			<< "type=" << static_cast<std::uint16_t>(type)
+			<< " entity=" << entity;
 		EXPECT_EQ(expected_atom->key, actual_atom->key);
 		EXPECT_EQ(expected_atom->record_version,
 			actual_atom->record_version);
@@ -1375,12 +1423,16 @@ TEST(Phase2LifecycleSupport,
 	fixture.input.refresh_systems = true;
 	StateImage systems_only;
 	StateImage flight_only;
-	telemetry::test::wp03::GlobalAllocationScope allocations;
+	Phase2StateImageRebuildSet systems_rebuilt{};
+	Phase2StateImageRebuildSet flight_rebuilt{};
+	telemetry::test::phase2test::GlobalAllocationScope allocations;
 	const auto systems_status =
 		build_phase2_complete_domain_preallocated(
-			fixture.input, pool, systems_only);
+			fixture.input, pool, systems_only, nullptr,
+			&systems_rebuilt);
 
 	root.flight.position_world[0] += 1.0F;
+	root.subsystems.values[0].hits_current = 1.0F;
 	root.flight.sample_time_us =
 		fixture.observation->producer_sample_time_us + 100'000U;
 	fixture.observation->player_controls.pitch = 0.5F;
@@ -1393,13 +1445,44 @@ TEST(Phase2LifecycleSupport,
 	fixture.input.refresh_systems = false;
 	const auto flight_status =
 		build_phase2_complete_domain_preallocated(
-			fixture.input, pool, flight_only);
+			fixture.input, pool, flight_only, nullptr,
+			&flight_rebuilt);
 	const auto allocation_count = allocations.finish();
 
 	ASSERT_EQ(Phase2StateImageBuildStatus::Created, systems_status);
 	ASSERT_EQ(Phase2StateImageBuildStatus::Created, flight_status);
 	EXPECT_EQ(0U, allocation_count);
 	EXPECT_EQ(backing_bytes, pool.owned_backing_bytes());
+	EXPECT_FALSE(systems_rebuilt.exhaustive);
+	EXPECT_FALSE(flight_rebuilt.exhaustive);
+	for (std::size_t dirty = 0U;
+		 dirty < systems_rebuilt.count; ++dirty) {
+		const auto type = static_cast<RecordType>(
+			systems_only.records()[
+				systems_rebuilt.canonical_indices[dirty]]
+				.key.record_type);
+		EXPECT_NE(RecordType::FlightState, type);
+		EXPECT_NE(RecordType::ControlState, type);
+	}
+	for (std::size_t dirty = 0U;
+		 dirty < flight_rebuilt.count; ++dirty) {
+		const auto type = static_cast<RecordType>(
+			flight_only.records()[
+				flight_rebuilt.canonical_indices[dirty]]
+				.key.record_type);
+		switch (type) {
+		case RecordType::SessionState:
+		case RecordType::MissionState:
+		case RecordType::EntityLifecycle:
+		case RecordType::FlightState:
+		case RecordType::ControlState:
+			break;
+		default:
+			ADD_FAILURE()
+				<< "non-flight atom marked rebuilt: "
+				<< static_cast<std::uint16_t>(type);
+		}
+	}
 	for (const auto entity : {9001U, 9002U})
 		expect_exact_atom(repairing, systems_only,
 			RecordType::FlightState, entity);
@@ -1411,6 +1494,7 @@ TEST(Phase2LifecycleSupport,
 				 RecordType::ShipIdentity,
 				 RecordType::DamageState,
 				 RecordType::ShieldState,
+				 RecordType::SubsystemState,
 				 RecordType::EnergyState,
 				 RecordType::PropulsionState,
 				 RecordType::WeaponState,
@@ -1434,6 +1518,130 @@ TEST(Phase2LifecycleSupport,
 	ASSERT_TRUE(reader.read_u8(phase));
 	EXPECT_EQ(static_cast<std::uint8_t>(
 		SupportPhase::Rearming), phase);
+
+	const auto retained_support_value = support->value;
+	const auto previous_flight_value =
+		atom(systems_only, RecordType::FlightState, 9001U)->value;
+	repairing = {};
+	systems_only = {};
+	root.flight.position_world[1] += 2.0F;
+	root.flight.sample_time_us += 100'000U;
+	fixture.observation->player_controls.heading = 0.25F;
+	fixture.observation->player_controls.sample_time_us =
+		root.flight.sample_time_us;
+	fixture.observation->producer_sample_time_us =
+		root.flight.sample_time_us;
+	fixture.input.retained_state = &flight_only;
+	fixture.input.refresh_flight_controls = true;
+	fixture.input.refresh_systems = false;
+	StateImage before_patch;
+	ASSERT_EQ(StateImageResult::Created,
+		StateImage::create(
+			std::vector<StateAtom>(
+				flight_only.records().begin(),
+				flight_only.records().end()),
+			before_patch));
+	Phase2StateImageRebuildSet patched_rebuilt;
+	telemetry::test::phase2test::GlobalAllocationScope patch_allocations;
+	const auto patched_status =
+		build_phase2_complete_domain_patch_preallocated(
+			fixture.input, pool, flight_only, patched_rebuilt);
+	const auto patch_allocation_count =
+		patch_allocations.finish();
+	ASSERT_EQ(Phase2StateImageBuildStatus::Created,
+		patched_status);
+	EXPECT_EQ(0U, patch_allocation_count);
+	EXPECT_FALSE(patched_rebuilt.exhaustive);
+	const auto* patched_support =
+		atom(flight_only, RecordType::SupportState, 9001U);
+	ASSERT_NE(nullptr, patched_support);
+	EXPECT_EQ(retained_support_value, patched_support->value);
+	const auto* patched_flight =
+		atom(flight_only, RecordType::FlightState, 9001U);
+	ASSERT_NE(nullptr, patched_flight);
+	EXPECT_NE(previous_flight_value, patched_flight->value);
+	ASSERT_TRUE(
+		rollback_phase2_complete_domain_patch_preallocated(
+			pool, flight_only, patched_rebuilt));
+	EXPECT_EQ(before_patch, flight_only);
+	Phase2StateImageRebuildSet reapplied_rebuilt;
+	telemetry::test::phase2test::GlobalAllocationScope
+		reapply_allocations;
+	ASSERT_EQ(Phase2StateImageBuildStatus::Created,
+		build_phase2_complete_domain_patch_preallocated(
+			fixture.input, pool, flight_only,
+			reapplied_rebuilt));
+	EXPECT_EQ(0U, reapply_allocations.finish());
+
+	StateImage oracle;
+	ASSERT_EQ(StateImageResult::Created,
+		StateImage::create(
+			std::vector<StateAtom>(
+				flight_only.records().begin(),
+				flight_only.records().end()),
+			oracle));
+	std::uint64_t long_patch_allocations = 0U;
+	for (std::size_t tick = 1U; tick <= 300U; ++tick) {
+		const auto systems_tick = tick % 3U == 0U;
+		root.flight.position_world[0] += 0.25F;
+		root.flight.sample_time_us += 33'333U;
+		root.subsystems.values[0].hits_current =
+			static_cast<float>(tick % 100U);
+		root.subsystems.values[0].sample_time_us =
+			root.flight.sample_time_us;
+		fixture.observation->player_controls.pitch += 0.001F;
+		fixture.observation->player_controls.sample_time_us =
+			root.flight.sample_time_us;
+		fixture.observation->producer_sample_time_us =
+			root.flight.sample_time_us;
+		fixture.input.refresh_flight_controls = true;
+		fixture.input.refresh_systems = systems_tick;
+
+		auto oracle_input = fixture.input;
+		oracle_input.retained_state = &oracle;
+		StateImage next_oracle;
+		ASSERT_EQ(Phase2StateImageBuildStatus::Created,
+			build_phase2_complete_domain(
+				oracle_input, next_oracle))
+			<< "tick=" << tick;
+
+		auto patch_input = fixture.input;
+		patch_input.retained_state = &flight_only;
+		StateImage candidate_share =
+			tick % 60U == 1U ? flight_only : StateImage{};
+		Phase2StateImageRebuildSet long_rebuilt{};
+		telemetry::test::phase2test::GlobalAllocationScope
+			long_patch_allocation_scope;
+		if (!candidate_share.empty()) {
+			StateImage replacement;
+			ASSERT_EQ(Phase2StateImageBuildStatus::Created,
+				build_phase2_complete_domain_preallocated(
+					patch_input, pool, replacement, nullptr,
+					&long_rebuilt))
+				<< "tick=" << tick;
+			flight_only = std::move(replacement);
+		} else {
+			ASSERT_EQ(Phase2StateImageBuildStatus::Created,
+				build_phase2_complete_domain_patch_preallocated(
+					patch_input, pool, flight_only,
+					long_rebuilt))
+				<< "tick=" << tick;
+			EXPECT_FALSE(long_rebuilt.exhaustive)
+				<< "tick=" << tick;
+		}
+		long_patch_allocations +=
+			long_patch_allocation_scope.finish();
+		ASSERT_EQ(next_oracle, flight_only)
+			<< "tick=" << tick;
+		EXPECT_EQ(next_oracle.encoded_snapshot_records_size(),
+			flight_only.encoded_snapshot_records_size())
+			<< "tick=" << tick;
+		EXPECT_EQ(next_oracle.retained_payload_bytes(),
+			flight_only.retained_payload_bytes())
+			<< "tick=" << tick;
+		oracle = std::move(next_oracle);
+	}
+	EXPECT_EQ(0U, long_patch_allocations);
 }
 
 TEST(Phase2LifecycleSupport,
@@ -1456,7 +1664,7 @@ TEST(Phase2LifecycleSupport,
 	const auto backing_bytes = pool.owned_backing_bytes();
 	StateImage without_retained;
 	StateImage with_retained;
-	telemetry::test::wp03::GlobalAllocationScope allocations;
+	telemetry::test::phase2test::GlobalAllocationScope allocations;
 	const auto without_status =
 		build_phase2_complete_domain_preallocated(
 			fixture.input, pool, without_retained);

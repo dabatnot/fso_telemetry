@@ -3,10 +3,12 @@
 #include "telemetry/phase1_state_image.h"
 #include "telemetry/native_session_runtime_test_seam.h"
 #include "telemetry/logging.h"
+#include "telemetry/phase2_catalog_projection.h"
 #include "telemetry/protocol/telemetry_protocol_constants.h"
 #include "telemetry/startup_budget.h"
 
 #include <chrono>
+#include <cmath>
 #include <limits>
 #include <memory>
 #include <new>
@@ -213,7 +215,494 @@ TelemetryLogDrop log_drop_reason(SessionIngressDropReason reason) noexcept
 	}
 }
 
+std::uint64_t seconds_to_microseconds(float seconds) noexcept
+{
+	if (!std::isfinite(seconds) || seconds <= 0.0F) return 0U;
+	const auto value = static_cast<double>(seconds) * 1'000'000.0;
+	return value >= static_cast<double>(
+			std::numeric_limits<std::uint64_t>::max())
+		? std::numeric_limits<std::uint64_t>::max()
+		: static_cast<std::uint64_t>(value);
+}
+
+WeaponFamily manifest_weapon_family(std::uint8_t value) noexcept
+{
+	switch (value) {
+	case 1U: return WeaponFamily::Primary;
+	case 2U: return WeaponFamily::Secondary;
+	case 3U: return WeaponFamily::Tertiary;
+	case 4U: return WeaponFamily::Turret;
+	default: return WeaponFamily::Primary;
+	}
+}
+
+bool project_weapon_subtype(const Phase2RawWeaponDefinition& source,
+	protocol::WeaponSubtype& output) noexcept
+{
+	if ((source.raw_class_flags &
+		 protocol::WeaponClassFlagCountermeasure) != 0U) {
+		output = protocol::WeaponSubtype::Countermeasure;
+		return true;
+	}
+	if ((source.raw_class_flags & protocol::WeaponClassFlagBeam) != 0U ||
+		source.weapon_subtype_source == 2U) {
+		output = protocol::WeaponSubtype::Beam;
+		return true;
+	}
+	if (source.weapon_subtype_source == 0U) {
+		output = protocol::WeaponSubtype::Primary;
+		return true;
+	}
+	if (source.weapon_subtype_source == 1U) {
+		output = protocol::WeaponSubtype::Missile;
+		return true;
+	}
+	return false;
+}
+
+bool project_subsystem_type(std::uint8_t source,
+	protocol::SubsystemType& output) noexcept
+{
+	switch (source) {
+	case 1U:
+		output = protocol::SubsystemType::Engine;
+		return true;
+	case 2U:
+		output = protocol::SubsystemType::Turret;
+		return true;
+	case 3U:
+		output = protocol::SubsystemType::Radar;
+		return true;
+	case 4U:
+		output = protocol::SubsystemType::Navigation;
+		return true;
+	case 5U:
+		output = protocol::SubsystemType::Communication;
+		return true;
+	case 6U:
+		output = protocol::SubsystemType::Weapons;
+		return true;
+	case 7U:
+		output = protocol::SubsystemType::Sensors;
+		return true;
+	case 8U:
+		output = protocol::SubsystemType::Reactor;
+		return true;
+	case 9U:
+	case 10U:
+		output = protocol::SubsystemType::Other;
+		return true;
+	case 0U:
+	case 11U:
+		output = protocol::SubsystemType::Unknown;
+		return true;
+	default:
+		return false;
+	}
+}
+
+std::int32_t auxiliary_engine_index(std::uint32_t capture_key) noexcept
+{
+	return capture_key == 0U ||
+		capture_key > static_cast<std::uint32_t>(
+			std::numeric_limits<std::int32_t>::max())
+		? -1
+		: static_cast<std::int32_t>(capture_key - 1U);
+}
+
+float observed_subsystem_hits(const Phase2ObservationDto& observation,
+	std::uint32_t class_key, std::uint32_t subsystem_key,
+	float fallback) noexcept
+{
+	for (const auto& ship : observation.ships) {
+		if (ship.raw_static_references.class_capture_key != class_key)
+			continue;
+		for (std::uint32_t index = 0U;
+			 index < ship.subsystems.count; ++index)
+			if (ship.subsystems.values[index].source_key.value ==
+				subsystem_key)
+				return ship.subsystems.values[index].hits_current;
+	}
+	return fallback;
+}
+
+Phase2CatalogProjectionStatus project_phase2_catalog_impl(
+	const Phase2ObservationDto& observation,
+	Phase2ManifestSource& output) noexcept
+{
+	const auto& raw = observation.raw_static_catalog;
+	if (raw.class_count > output.ship_classes.size() ||
+		raw.weapon_count > output.weapons.size() ||
+		raw.auxiliary_count > output.auxiliary_entries.size())
+		return Phase2CatalogProjectionStatus::SourceLimitExceeded;
+
+	// Phase2ManifestSource is intentionally much larger than the native thread
+	// stack. Reset only the bounded entries selected by this projection instead
+	// of materializing a full aggregate temporary on the stack.
+	output.ship_class_count = 0U;
+	output.weapon_count = 0U;
+	output.referenced_ship_class_count = 0U;
+	output.referenced_weapon_count = 0U;
+	output.auxiliary_entry_count = 0U;
+	output.metadata = {};
+	output.player_instance_signature = 0U;
+	output.engine_index = 0U;
+	output.manifest_generation = 0U;
+	output.topology_fingerprint = {};
+	output.referenced_ship_class_keys.fill(0U);
+	output.referenced_weapon_keys.fill(0U);
+	for (std::uint32_t index = 0U; index < raw.class_count; ++index)
+		output.ship_classes[index] = {};
+	for (std::uint32_t index = 0U; index < raw.weapon_count; ++index)
+		output.weapons[index] = {};
+	for (std::uint32_t index = 0U; index < raw.auxiliary_count; ++index)
+		output.auxiliary_entries[index] = {};
+
+	for (std::uint32_t index = 0U; index < raw.auxiliary_count;
+		 ++index) {
+		const auto& source = raw.auxiliary_entries[index];
+		auto& target = output.auxiliary_entries[index];
+		if (source.registry >= Phase2RawAuxiliaryRegistry::Count)
+			return Phase2CatalogProjectionStatus::InvalidSource;
+		target.registry = static_cast<AuxiliaryRegistry>(
+			source.registry);
+		target.engine_index =
+			source.registry == Phase2RawAuxiliaryRegistry::Pattern
+			? static_cast<std::int32_t>(
+				source.firing_pattern_source_code)
+			: auxiliary_engine_index(source.capture_key);
+		target.name.assign(source.name.view());
+	}
+
+	for (std::uint32_t index = 0U; index < raw.weapon_count;
+		 ++index) {
+		const auto& source = raw.weapon_definitions[index];
+		auto& target = output.weapons[index];
+		target.source_key = source.weapon_capture_key;
+		target.name.assign(source.internal_name.view());
+		target.title.assign(source.title.view());
+		target.damage_type_index =
+			auxiliary_engine_index(source.damage_type_capture_key);
+		if (!project_weapon_subtype(source, target.subtype))
+			return Phase2CatalogProjectionStatus::InvalidSource;
+		target.class_flags = source.raw_class_flags;
+		target.max_speed = source.max_speed;
+		target.mass = source.mass;
+		target.gravity_constant = source.gravity_constant;
+		target.velocity_inherit_amount =
+			source.velocity_inherit_amount;
+		target.lifetime_us =
+			seconds_to_microseconds(source.lifetime_seconds);
+		target.effect_flags = source.raw_effect_flags;
+		target.guidance_type = source.guidance_type_source;
+		target.has_acceleration =
+			source.acceleration_time_seconds > 0.0F;
+		target.has_ranges = source.maximum_range > 0.0F;
+		target.has_fire = source.fire_wait_seconds > 0.0F;
+		target.has_damage = source.damage > 0.0F;
+		target.has_guidance = source.guidance_type_source != 0U;
+		target.has_lock = source.lock_time_seconds > 0.0F;
+		target.has_cargo_rearm = source.cargo_size > 0.0F;
+		if (source.burst_shots < 0 ||
+			source.burst_shots >= 4096 ||
+			source.shots_source < 1 ||
+			source.shots_source > 4096 ||
+			source.swarm_count_source < 0 ||
+			source.swarm_count_source > 4096)
+			return Phase2CatalogProjectionStatus::SourceLimitExceeded;
+		const auto burst_count = source.burst_shots + 1;
+		const auto swarm_count = source.swarm_count_source > 0
+			? source.swarm_count_source
+			: source.shots_source;
+		target.has_burst = burst_count > 1;
+		target.has_swarm =
+			source.swarm_count_source > 0 ||
+			source.shots_source > 1;
+		target.acceleration_time_us = seconds_to_microseconds(
+			source.acceleration_time_seconds);
+		target.fire_wait_us =
+			seconds_to_microseconds(source.fire_wait_seconds);
+		target.lock_time_us =
+			seconds_to_microseconds(source.lock_time_seconds);
+		target.rearm_time_us =
+			seconds_to_microseconds(source.rearm_rate_seconds);
+		target.burst_interval_us =
+			seconds_to_microseconds(source.burst_delay_seconds);
+		target.minimum_range = source.minimum_range;
+		target.optimal_range = source.optimal_range;
+		target.maximum_range = source.maximum_range;
+		target.energy_consumed = source.energy_consumed;
+		target.damage = source.damage;
+		target.guidance_fov_rad = source.guidance_type_source == 0U
+			? 0.0F
+			: std::acos(source.guidance_fov_source_cosine);
+		target.lock_fov_rad = source.lock_time_seconds <= 0.0F
+			? 0.0F
+			: std::acos(source.lock_fov_source_cosine);
+		target.cargo_size = source.cargo_size;
+		target.reloaded_per_batch = source.reloaded_per_batch;
+		target.burst_count =
+			static_cast<std::uint16_t>(burst_count);
+		target.swarm_count =
+			static_cast<std::uint16_t>(swarm_count);
+		target.shots_per_trigger = static_cast<std::uint16_t>(
+			source.shots_source);
+		output.referenced_weapon_keys[index] =
+			source.weapon_capture_key;
+	}
+
+	for (std::uint32_t index = 0U; index < raw.class_count;
+		 ++index) {
+		const auto& source = raw.class_definitions[index];
+		auto& target = output.ship_classes[index];
+		if (source.subsystem_count > target.subsystems.size() ||
+			source.bank_count > target.banks.size() ||
+			source.subsystem_offset >
+				raw.subsystem_storage.size() ||
+			source.subsystem_count >
+				raw.subsystem_storage.size() -
+					source.subsystem_offset ||
+			source.bank_offset > raw.bank_storage.size() ||
+			source.bank_count > raw.bank_storage.size() -
+				source.bank_offset)
+			return Phase2CatalogProjectionStatus::InvalidSource;
+		target.source_key = source.class_capture_key;
+		target.name.assign(source.internal_name.view());
+		target.model_mass = source.model_mass;
+		target.density_provenance = source.density;
+		target.effective_mass = source.effective_mass;
+		target.model_inertia = {source.model_inertia[0],
+			source.model_inertia[4], source.model_inertia[8]};
+		target.effective_inertia = {source.effective_inertia[0],
+			source.effective_inertia[4],
+			source.effective_inertia[8]};
+		target.effective_inertia_matrix =
+			source.effective_inertia;
+		target.center_of_mass = {source.center_of_mass.x,
+			source.center_of_mass.y, source.center_of_mass.z};
+		target.max_velocity = {source.max_velocity.x,
+			source.max_velocity.y, source.max_velocity.z};
+		target.afterburner_max_velocity = {
+			source.afterburner_max_velocity.x,
+			source.afterburner_max_velocity.y,
+			source.afterburner_max_velocity.z};
+		target.booster_max_velocity = {
+			source.booster_max_velocity.x,
+			source.booster_max_velocity.y,
+			source.booster_max_velocity.z};
+		target.max_rotational_velocity = {
+			source.max_rotational_velocity.x,
+			source.max_rotational_velocity.y,
+			source.max_rotational_velocity.z};
+		target.max_rear_velocity = source.max_rear_velocity;
+		target.forward_accel_time = source.forward_accel_time;
+		target.afterburner_forward_accel_time =
+			source.afterburner_forward_accel_time;
+		target.booster_forward_accel_time =
+			source.booster_forward_accel_time;
+		target.forward_decel_time = source.forward_decel_time;
+		target.slide_accel_time = source.slide_accel_time;
+		target.slide_decel_time = source.slide_decel_time;
+		target.max_hull_strength = source.max_hull_strength;
+		target.max_shield_strength = source.max_shield_strength;
+		target.has_afterburner = source.has_afterburner;
+		target.afterburner_fuel_capacity =
+			source.afterburner_fuel_capacity;
+		target.afterburner_burn_rate =
+			source.afterburner_burn_rate;
+		target.afterburner_recover_rate =
+			source.afterburner_recover_rate;
+		target.afterburner_min_start_fuel =
+			source.afterburner_min_start_fuel;
+		target.afterburner_cooldown_us =
+			seconds_to_microseconds(
+				source.afterburner_cooldown_seconds);
+		target.has_scan = source.has_scan;
+		target.scan_required_time_us = source.scan_time_ms <= 0
+			? 0U : static_cast<std::uint64_t>(
+				source.scan_time_ms) * 1000U;
+		target.scan_max_distance = std::max(
+			source.scan_range_normal,
+			source.scan_range_capital) *
+			source.scanning_range_multiplier;
+		target.scan_max_angle_rad =
+			static_cast<float>(std::acos(0.95));
+		target.has_glide = source.has_glide;
+		target.glide_cap = source.glide_cap;
+		target.has_autoaim = source.has_autoaim;
+		target.autoaim_fov_rad = source.autoaim_fov_rad;
+		target.species_index =
+			auxiliary_engine_index(source.species_capture_key);
+		target.ship_type_index =
+			auxiliary_engine_index(source.ship_type_capture_key);
+		target.iff_index =
+			auxiliary_engine_index(source.iff_capture_key);
+		target.wing_index =
+			auxiliary_engine_index(source.wing_capture_key);
+		target.armor_index =
+			auxiliary_engine_index(source.armor_capture_key);
+		target.damage_type_index =
+			auxiliary_engine_index(
+				source.damage_type_capture_key);
+		target.required_model_index = 0;
+		target.countermeasure_capacity =
+			source.countermeasure_capacity;
+		target.countermeasure_cargo_size =
+			source.countermeasure_cargo_size;
+		target.countermeasure_uses_capacity =
+			source.countermeasure_uses_capacity;
+		target.countermeasure_weapon_source_key =
+			source.countermeasure_weapon_capture_key;
+		target.countermeasure_firewait_ms =
+			source.countermeasure_firewait_ms;
+		target.subsystem_count = source.subsystem_count;
+		for (std::uint32_t subsystem = 0U;
+			 subsystem < source.subsystem_count; ++subsystem) {
+			const auto& raw_subsystem =
+				raw.subsystem_storage[
+					source.subsystem_offset + subsystem];
+			auto& mapped = target.subsystems[subsystem];
+			mapped.source_key =
+				raw_subsystem.subsystem_capture_key;
+			mapped.system_info_key =
+				raw_subsystem.subsystem_capture_key;
+			mapped.name.assign(
+				raw_subsystem.internal_name.view());
+			mapped.alt_name.assign(
+				raw_subsystem.alt_name.view());
+			mapped.hud_name.assign(
+				raw_subsystem.hud_name.view());
+			mapped.max_hits = raw_subsystem.max_hits;
+			const auto observed_hits = observed_subsystem_hits(
+				observation, source.class_capture_key,
+				raw_subsystem.subsystem_capture_key,
+				raw_subsystem.max_hits);
+			if (!std::isfinite(mapped.max_hits) ||
+				mapped.max_hits < 0.0F ||
+				!std::isfinite(observed_hits))
+				return Phase2CatalogProjectionStatus::InvalidSource;
+			mapped.current_hits = std::clamp(
+				observed_hits, 0.0F, mapped.max_hits);
+			mapped.armor_index = auxiliary_engine_index(
+				raw_subsystem.armor_capture_key);
+			if (!project_subsystem_type(
+					raw_subsystem.subsystem_type_source,
+					mapped.type))
+				return Phase2CatalogProjectionStatus::InvalidSource;
+			mapped.local_position = {
+				raw_subsystem.local_position.x,
+				raw_subsystem.local_position.y,
+				raw_subsystem.local_position.z};
+			mapped.radius = raw_subsystem.radius;
+			mapped.static_flags =
+				raw_subsystem.raw_static_flags;
+		}
+		target.bank_count = source.bank_count;
+		for (std::uint32_t bank = 0U;
+			 bank < source.bank_count; ++bank) {
+			const auto& raw_bank =
+				raw.bank_storage[source.bank_offset + bank];
+			auto& mapped = target.banks[bank];
+			mapped.family =
+				manifest_weapon_family(raw_bank.family_source);
+			mapped.source_family =
+				manifest_weapon_family(raw_bank.source_family);
+			mapped.bank_index = raw_bank.bank_index;
+			mapped.weapon_source_key =
+				raw_bank.weapon_capture_key;
+			mapped.firing_pattern_source_code =
+				raw_bank.firing_pattern_source_code;
+			mapped.consumes_ammunition =
+				raw_bank.consumes_ammunition;
+			mapped.capacity = raw_bank.has_capacity
+				? raw_bank.capacity : 0.0F;
+			mapped.fire_point_count =
+				raw_bank.fire_point_count;
+			if (mapped.fire_point_count >
+				mapped.fire_points.size())
+				return Phase2CatalogProjectionStatus::
+					SourceLimitExceeded;
+			for (std::uint32_t point = 0U;
+				 point < raw_bank.fire_point_count; ++point)
+				mapped.fire_points[point] = {
+					raw_bank.fire_points[point].x,
+					raw_bank.fire_points[point].y,
+					raw_bank.fire_points[point].z};
+			if (raw_bank.owner_subsystem_capture_key != 0U) {
+				mapped.owner_subsystem_canonical_index =
+					UINT16_MAX;
+				for (std::uint32_t subsystem = 0U;
+					 subsystem < source.subsystem_count;
+					 ++subsystem)
+					if (raw.subsystem_storage[
+							source.subsystem_offset +
+							subsystem]
+							.subsystem_capture_key ==
+						raw_bank
+							.owner_subsystem_capture_key)
+						mapped
+							.owner_subsystem_canonical_index =
+							static_cast<std::uint16_t>(
+								subsystem);
+				if (mapped.owner_subsystem_canonical_index ==
+					UINT16_MAX)
+					return Phase2CatalogProjectionStatus::
+						InvalidSource;
+			}
+		}
+		output.referenced_ship_class_keys[index] =
+			source.class_capture_key;
+	}
+
+	protocol::Sha256 topology;
+	const auto add = [&](const auto& value) noexcept {
+		return topology.update({reinterpret_cast<const std::uint8_t*>(
+			&value), sizeof(value)});
+	};
+	if (!add(observation.player_key.value) ||
+		!add(observation.discovery_count))
+		return Phase2CatalogProjectionStatus::InvalidSource;
+	for (std::uint32_t index = 0U;
+		 index < observation.discovery_count; ++index) {
+		const auto& node = observation.discovery_nodes[index];
+		if (!add(node.capture_key.value) ||
+			!add(node.support_capture_key.value) ||
+			!add(node.direct_docking_count))
+			return Phase2CatalogProjectionStatus::InvalidSource;
+		for (std::uint32_t relation = 0U;
+			 relation < node.direct_docking_count; ++relation)
+			if (!add(node.direct_docking_capture_keys[
+					relation].value))
+				return Phase2CatalogProjectionStatus::
+					InvalidSource;
+	}
+	if (!topology.finalize(output.topology_fingerprint))
+		return Phase2CatalogProjectionStatus::InvalidSource;
+	output.ship_class_count = raw.class_count;
+	output.weapon_count = raw.weapon_count;
+	output.referenced_ship_class_count = raw.class_count;
+	output.referenced_weapon_count = raw.weapon_count;
+	output.auxiliary_entry_count = raw.auxiliary_count;
+	output.player_instance_signature =
+		observation.player_key.value;
+	output.manifest_generation = 1U;
+	return Phase2CatalogProjectionStatus::Success;
+}
+
 } // namespace
+
+Phase2CatalogProjectionStatus project_phase2_catalog(
+	const Phase2ObservationDto& observation,
+	Phase2ManifestSource& output) noexcept
+{
+	if (observation.capture.status == Phase2CaptureStatus::NoPlayer)
+		return Phase2CatalogProjectionStatus::
+			SourceTemporarilyUnavailable;
+	if (observation.capture.status != Phase2CaptureStatus::Valid ||
+		observation.capture.reason != Phase2CaptureReason::None)
+		return Phase2CatalogProjectionStatus::InvalidSource;
+	return project_phase2_catalog_impl(observation, output);
+}
 
 void NativeOutputCompletionForwarder::complete(SessionController& controller, IoStatus status) noexcept
 {
@@ -241,11 +730,6 @@ NativeSessionStartStatus NativeSessionRuntime::start(const NativeSessionStartReq
 		return NativeSessionStartStatus::InvalidConfiguration;
 	}
 	Phase2Profile selected_phase2_profile = Phase2Profile::None;
-	if (request.selected_phase2_profile != Phase2Profile::None) {
-		// A caller cannot bypass the runtime gate by supplying a supposedly
-		// prevalidated profile.
-		return NativeSessionStartStatus::InvalidConfiguration;
-	}
 	const auto profile_error =
 		request.requested_phase2_profile != Phase2Profile::None
 		? select_phase2_profile(request.phase2_eligibility,
@@ -262,25 +746,6 @@ NativeSessionStartStatus NativeSessionRuntime::start(const NativeSessionStartReq
 				phase2_profile_coverage(
 					request.requested_phase2_profile));
 		// This rejection precedes controller/DTO allocation, bind and WELCOME.
-		return NativeSessionStartStatus::InvalidConfiguration;
-	}
-	if ((selected_phase2_profile != Phase2Profile::None &&
-		 (request.phase2_manifest == nullptr ||
-		  request.phase2_manifest->manifest_id == 0U ||
-		  request.phase2_manifest->kind !=
-			  protocol::ManifestKind::FullRequired)) ||
-		(selected_phase2_profile == Phase2Profile::CompleteShip &&
-		 request.phase2_selection == nullptr)) {
-		if (request.metrics != nullptr)
-			request.metrics->record_phase2_profile_rejection(
-				TelemetryPhase2ProfileRejection::
-					ManifestUnavailable);
-		if (request.log != nullptr)
-			request.log->phase2_profile_rejected(
-				TelemetryPhase2ProfileRejection::
-					ManifestUnavailable,
-				phase2_profile_coverage(
-					selected_phase2_profile));
 		return NativeSessionStartStatus::InvalidConfiguration;
 	}
 	m_startup_allocation_count = 0U;
@@ -357,6 +822,11 @@ NativeSessionStartStatus NativeSessionRuntime::start(const NativeSessionStartReq
 		release_state_image_pools();
 		return NativeSessionStartStatus::AllocationFailure;
 	}
+	if (selected_phase2_profile != Phase2Profile::None &&
+		!provision_phase2_manifest_state()) {
+		release_state_image_pools();
+		return NativeSessionStartStatus::AllocationFailure;
+	}
 	++m_startup_allocation_count;
 	std::size_t startup_owned_bytes = 0U;
 	Phase2OwnedBudget phase2_budget{};
@@ -387,6 +857,9 @@ NativeSessionStartStatus NativeSessionRuntime::start(const NativeSessionStartReq
 					sizeof(m_phase2_fanout_scratch) +
 					sizeof(m_phase2_support_tracker) +
 					sizeof(m_phase2_support_seen_scratch),
+				shared_owned) &&
+			checked_add_size(shared_owned,
+				m_phase2_manifest_backing_bytes,
 				shared_owned) &&
 			clients != 0U &&
 			owned.client_slots == clients &&
@@ -497,7 +970,6 @@ NativeSessionStartStatus NativeSessionRuntime::start(const NativeSessionStartReq
 	m_last_phase2_capture_result = {};
 	m_selected_phase2_profile = selected_phase2_profile;
 	m_phase2_enabled = selected_phase2_profile != Phase2Profile::None;
-	m_phase2_manifest = request.phase2_manifest;
 	reset_phase2_support_tracker();
 	clear_player_capture();
 	m_fault_status = NativeSessionTickStatus::Unavailable;
@@ -537,7 +1009,6 @@ NativeSessionTickStatus NativeSessionRuntime::service_tick(const NativeSessionTi
 	}
 	if (m_phase2_enabled) {
 		auto& event_batch = m_phase2_event_batch_scratch;
-		event_batch = {};
 		const auto prepared = prepare_phase2_global_events(
 			m_phase2_observation.accepted_capture_map(), event_batch);
 		if (m_metrics != nullptr) {
@@ -720,7 +1191,10 @@ NativeSessionTickStatus NativeSessionRuntime::service_tick(const NativeSessionTi
 	}
 	if (m_phase2_enabled && phase2_view != nullptr &&
 		(m_phase2_capture_plan.capture_flight_controls ||
-			m_phase2_capture_plan.capture_systems)) {
+		 m_phase2_capture_plan.capture_systems)) {
+		const auto phase2_capture_started = measure_performance
+			? std::chrono::steady_clock::now()
+			: std::chrono::steady_clock::time_point{};
 		const auto projection =
 			m_selected_phase2_profile == Phase2Profile::CoreGate
 			? Phase2ObservationProjection::CoreGate
@@ -729,7 +1203,16 @@ NativeSessionTickStatus NativeSessionRuntime::service_tick(const NativeSessionTi
 			m_phase2_observation,
 			*phase2_view,
 			m_phase2_capture_plan.producer_sample_time_us,
-			projection);
+			projection,
+			m_phase2_capture_plan.capture_systems ||
+					m_phase2_capture_plan.force_complete_keyframe
+				? Phase2ObservationRefresh::All
+				: Phase2ObservationRefresh::FlightControls);
+		if (measure_performance)
+			m_last_performance_sample.collect_duration_ns +=
+				elapsed_nanoseconds(
+					phase2_capture_started,
+					std::chrono::steady_clock::now());
 		m_last_phase2_capture_result = phase2_capture;
 		m_last_phase2_failure_diagnostic.capture_observed_this_tick =
 			true;
@@ -743,7 +1226,12 @@ NativeSessionTickStatus NativeSessionRuntime::service_tick(const NativeSessionTi
 			? TelemetryPhase2Block::Identity
 			: static_cast<TelemetryPhase2Block>(
 				diagnostics.primary_failed_block);
-		if (m_metrics != nullptr)
+		if (m_metrics != nullptr) {
+			if (diagnostics.normalization_count != 0U)
+				m_metrics->increment_mission(
+					TelemetryMetricCounter::
+						SourceNormalizations,
+					diagnostics.normalization_count);
 			for (std::size_t block = 0U;
 				 block < static_cast<std::size_t>(
 					 Phase2CaptureBlock::Count); ++block)
@@ -752,6 +1240,7 @@ NativeSessionTickStatus NativeSessionRuntime::service_tick(const NativeSessionTi
 					m_metrics->observe_phase2_capture(
 						static_cast<TelemetryPhase2Block>(block),
 						diagnostics.duration_ns[block] / 1000U);
+		}
 		switch (phase2_capture.status) {
 		case Phase2CaptureStatus::Valid:
 		case Phase2CaptureStatus::NoPlayer:
@@ -801,14 +1290,33 @@ NativeSessionTickStatus NativeSessionRuntime::service_tick(const NativeSessionTi
 				m_log->phase2_source_rejected(primary_block,
 					TelemetryPhase2CaptureFailure::InvalidEnum,
 					context.now_us);
-			[[fallthrough]];
+			m_phase2_capture_plan.capture_flight_controls = false;
+			m_phase2_capture_plan.capture_systems = false;
+			m_phase2_capture_plan.force_complete_keyframe = false;
+			break;
 		default:
+			m_phase2_capture_plan.capture_flight_controls = false;
+			m_phase2_capture_plan.capture_systems = false;
+			m_phase2_capture_plan.force_complete_keyframe = false;
+			break;
+		}
+		if ((phase2_capture.status == Phase2CaptureStatus::Valid ||
+			 phase2_capture.status == Phase2CaptureStatus::NoPlayer) &&
+			diagnostics.completed_refresh ==
+			Phase2ObservationRefresh::Count) {
 			m_phase2_observation.reset_observation_and_clear_phase2();
 			m_controller.clear_player_observations();
 			clear_player_capture();
-			fail_capture(NativePlayerCaptureStatus::CaptureInvariantFailure);
-			return NativeSessionTickStatus::PermanentCaptureFailure;
+			fail_capture(
+				NativePlayerCaptureStatus::
+					CaptureInvariantFailure);
+			return NativeSessionTickStatus::
+				PermanentCaptureFailure;
 		}
+		m_phase2_capture_plan.capture_flight_controls = true;
+		if (diagnostics.completed_refresh ==
+			Phase2ObservationRefresh::All)
+			m_phase2_capture_plan.capture_systems = true;
 		if (m_phase2_capture_plan.capture_systems) {
 			if (phase2_capture.status == Phase2CaptureStatus::Valid)
 				observe_phase2_support_transitions();
@@ -822,7 +1330,7 @@ NativeSessionTickStatus NativeSessionRuntime::service_tick(const NativeSessionTi
 	PlayerObservationDto observation;
 	const auto capture = collect_player_kinematics(engine_view, context.now_us, observation);
 	if (measure_performance) {
-		m_last_performance_sample.collect_duration_ns = elapsed_nanoseconds(capture_started, std::chrono::steady_clock::now());
+		m_last_performance_sample.collect_duration_ns += elapsed_nanoseconds(capture_started, std::chrono::steady_clock::now());
 	}
 	const auto diff_started = measure_performance ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
 	m_applying_engine_capture = true;
@@ -916,6 +1424,113 @@ void NativeSessionRuntime::reset_phase2_support_tracker() noexcept
 	m_phase2_support_seen_scratch = {};
 }
 
+bool NativeSessionRuntime::provision_phase2_manifest_state() noexcept
+{
+	constexpr auto backing_bytes =
+		protocol::MaxTransactionSize * 2U;
+	auto backing = std::unique_ptr<std::uint8_t[]>(
+		new (std::nothrow) std::uint8_t[backing_bytes]);
+	auto source = std::unique_ptr<Phase2ManifestSource>(
+		new (std::nothrow) Phase2ManifestSource());
+	if (backing == nullptr || source == nullptr) return false;
+	auto storage = std::unique_ptr<Phase2ManifestStorage>(
+		new (std::nothrow) Phase2ManifestStorage(
+			protocol::MutableByteView{
+				backing.get(), backing_bytes}));
+	if (storage == nullptr) return false;
+	auto slot = std::unique_ptr<Phase2ManifestSlot>(
+		new (std::nothrow) Phase2ManifestSlot(*storage));
+	if (slot == nullptr) return false;
+	m_phase2_manifest_backing = std::move(backing);
+	m_phase2_manifest_source = std::move(source);
+	m_phase2_manifest_storage = std::move(storage);
+	m_phase2_manifest_slot = std::move(slot);
+	m_phase2_manifest_backing_bytes =
+		backing_bytes + sizeof(Phase2ManifestSource) +
+		sizeof(Phase2ManifestStorage) +
+		sizeof(Phase2ManifestSlot);
+	return true;
+}
+
+bool NativeSessionRuntime::refresh_owned_phase2_manifest(
+	const Phase2ObservationDto& observation,
+	Phase2ManifestError& result) noexcept
+{
+	result = Phase2ManifestError::InvalidSource;
+	if (m_phase2_manifest_source == nullptr ||
+		m_phase2_manifest_slot == nullptr)
+		return m_phase2_manifest != nullptr;
+	const auto projection = project_phase2_catalog(
+		observation, *m_phase2_manifest_source);
+	if (projection ==
+		Phase2CatalogProjectionStatus::SourceTemporarilyUnavailable) {
+		result = Phase2ManifestError::NoCatalogChange;
+		return m_phase2_manifest != nullptr;
+	}
+	if (projection ==
+		Phase2CatalogProjectionStatus::SourceLimitExceeded) {
+		result = Phase2ManifestError::SourceLimitExceeded;
+		return false;
+	}
+	if (projection != Phase2CatalogProjectionStatus::Success)
+		return false;
+	release_unreferenced_phase2_manifest_generation();
+	result = m_phase2_manifest_slot->rebuild(
+		*m_phase2_manifest_source);
+	if (result == Phase2ManifestError::None) {
+		const auto id =
+			m_phase2_manifest_slot->staged_manifest_id();
+		if (id == 0U ||
+			m_phase2_manifest_slot->on_manifest_applied(id) !=
+				Phase2ManifestError::None ||
+			m_phase2_manifest_slot
+					->on_dependent_snapshot_applied(1U, id) !=
+				Phase2ManifestError::None)
+			return false;
+		m_phase2_manifest =
+			&m_phase2_manifest_slot->active_candidate();
+		return true;
+	}
+	if (result == Phase2ManifestError::NoCatalogChange ||
+		result == Phase2ManifestError::TopologyOnly ||
+		result == Phase2ManifestError::RebuildCoalesced) {
+		m_phase2_manifest =
+			&m_phase2_manifest_slot->active_candidate();
+		return m_phase2_manifest->manifest_id != 0U;
+	}
+	return false;
+}
+
+void NativeSessionRuntime::
+	release_unreferenced_phase2_manifest_generation() noexcept
+{
+	if (m_phase2_manifest_slot == nullptr) return;
+	const auto previous_id =
+		m_phase2_manifest_slot->previous_manifest_id();
+	if (previous_id == 0U) return;
+	for (std::size_t index = 0U;
+		 index < m_controller.owned_capacity().client_slots; ++index) {
+		const auto& slot = m_controller.slot(index);
+		const auto& state = slot.phase2_runtime.manifest_state();
+		if (slot.required_manifest_id == previous_id ||
+			state.active_id == previous_id ||
+			state.staged_id == previous_id)
+			return;
+	}
+	m_phase2_manifest_slot->release_reliable_references(
+		previous_id);
+}
+
+void NativeSessionRuntime::release_phase2_manifest_state() noexcept
+{
+	m_phase2_manifest = nullptr;
+	m_phase2_manifest_slot.reset();
+	m_phase2_manifest_storage.reset();
+	m_phase2_manifest_source.reset();
+	m_phase2_manifest_backing.reset();
+	m_phase2_manifest_backing_bytes = 0U;
+}
+
 void NativeSessionRuntime::prepare_phase2_keyframe(Phase2CapturePlan& plan) noexcept
 {
 	if (!m_phase2_enabled) {
@@ -924,7 +1539,6 @@ void NativeSessionRuntime::prepare_phase2_keyframe(Phase2CapturePlan& plan) noex
 	plan.force_complete_keyframe = true;
 	plan.capture_flight_controls = true;
 	plan.capture_systems = true;
-	m_phase2_keyframe_test_seam = true;
 }
 
 void NativeSessionRuntime::stop_collection() noexcept
@@ -989,7 +1603,6 @@ void NativeSessionRuntime::shutdown() noexcept
 	reset_phase2_observation_buffer_in_place(m_phase2_observation);
 	m_selected_phase2_profile = Phase2Profile::None;
 	m_phase2_enabled = false;
-	m_phase2_keyframe_test_seam = false;
 	m_systems_capture_cadence.reset();
 	m_phase2_owned_budget = {};
 	m_phase2_event_batch_scratch = {};
@@ -1322,6 +1935,32 @@ NativeSessionTickStatus NativeSessionRuntime::apply_collected_player_capture(con
 	if (!m_applying_engine_capture || !m_tick_context.mission_active) {
 		return NativeSessionTickStatus::Complete;
 	}
+	if (m_selected_phase2_profile != Phase2Profile::None) {
+		const auto& phase2 = m_phase2_observation.observation();
+		const auto phase2_valid =
+			phase2.capture.status == Phase2CaptureStatus::Valid;
+		const auto phase2_no_player =
+			phase2.capture.status == Phase2CaptureStatus::NoPlayer &&
+			phase2.capture.reason == Phase2CaptureReason::None;
+		if (!phase2_valid && !phase2_no_player)
+			return NativeSessionTickStatus::Complete;
+		if (phase2_valid &&
+			(m_phase2_capture_plan.capture_systems ||
+			 m_phase2_manifest == nullptr)) {
+			Phase2ManifestError manifest_result{};
+			if (!refresh_owned_phase2_manifest(
+					phase2, manifest_result)) {
+				if (m_metrics != nullptr)
+					m_metrics->record_phase2_manifest(
+						0U,
+						TelemetryPhase2ManifestResult::Rejected,
+						0U, 0U, 0U);
+				return NativeSessionTickStatus::Complete;
+			}
+		}
+		if (m_phase2_manifest == nullptr)
+			return NativeSessionTickStatus::Complete;
+	}
 	const auto mission_generation = m_tick_context.mission_generation == 0U ? 1U : m_tick_context.mission_generation;
 	for (std::size_t index = 0U; index < m_controller.owned_capacity().client_slots; ++index) {
 		const auto& slot = m_controller.slot(index);
@@ -1341,8 +1980,7 @@ NativeSessionTickStatus NativeSessionRuntime::apply_collected_player_capture(con
 				phase2.capture.reason == Phase2CaptureReason::None &&
 				phase2.player_key.value == 0U &&
 				phase2.ships.empty();
-			if (m_phase2_manifest == nullptr ||
-				(!complete_ship_capture_valid &&
+			if ((!complete_ship_capture_valid &&
 				 !complete_ship_no_player) ||
 				phase2.ships.size() >
 					MaximumPhase2ObservationShips) {
@@ -1468,6 +2106,9 @@ NativeSessionTickStatus NativeSessionRuntime::apply_collected_player_capture(con
 			const auto manifest_duration_us =
 				elapsed_nanoseconds(manifest_started,
 					std::chrono::steady_clock::now()) / 1000U;
+			if (m_performance_observation_active)
+				m_last_performance_sample.state_image_build_duration_ns +=
+					manifest_duration_us * 1000U;
 			if (m_metrics != nullptr) {
 				m_metrics->set_phase2_closure(
 					m_phase2_manifest->class_record_count,
@@ -1534,6 +2175,25 @@ NativeSessionTickStatus NativeSessionRuntime::apply_collected_player_capture(con
 			// apply_phase2_manifest(), no dependent snapshot is emitted.
 			if (!slot.required_manifest_applied)
 				continue;
+			const auto* installed_manifest =
+				m_phase2_manifest_slot->candidate_for_id(
+					slot.required_manifest_id);
+			if (installed_manifest == nullptr ||
+				installed_manifest->manifest_id !=
+					slot.required_manifest_id) {
+				if (auto* diagnostic =
+						begin_phase2_failure_diagnostic(
+							NativePhase2FailureStage::
+								Manifest);
+					diagnostic != nullptr)
+					diagnostic->runtime_result =
+						Phase2RuntimeResult::InvalidInput;
+				fail_capture(
+					NativePlayerCaptureStatus::
+						CaptureInvariantFailure);
+				return NativeSessionTickStatus::
+					PermanentCaptureFailure;
+			}
 			std::uint64_t player_entity_id = 0U;
 			for (std::size_t subject = 0U;
 				 subject < phase2.ships.size(); ++subject)
@@ -1591,7 +2251,7 @@ NativeSessionTickStatus NativeSessionRuntime::apply_collected_player_capture(con
 				m_phase2_capture_plan.capture_systems ||
 				m_phase2_capture_plan.force_complete_keyframe;
 			phase2_input.installed_manifest =
-				m_phase2_manifest;
+				installed_manifest;
 			phase2_input.subjects = bindings.data();
 			phase2_input.subject_count =
 				phase2.ships.size();
@@ -1648,19 +2308,73 @@ NativeSessionTickStatus NativeSessionRuntime::apply_collected_player_capture(con
 			}
 			protocol::StateImage image;
 			Phase2StateImageBuildDiagnostic image_diagnostic{};
+			Phase2StateImageRebuildSet rebuilt_atoms;
+			const auto incremental_tick =
+				phase2_input.retained_state != nullptr &&
+				!m_phase2_capture_plan.force_complete_keyframe;
+			auto used_in_place_patch = false;
+			if (incremental_tick &&
+				m_controller
+						.take_current_state_for_incremental_patch(
+							index, image) ==
+					protocol::ProducerBaselineResult::Applied) {
+				phase2_input.retained_state = &image;
+				used_in_place_patch = true;
+			}
 			const auto image_started =
 				std::chrono::steady_clock::now();
-			const auto image_status =
-				build_phase2_complete_domain_preallocated(
-					phase2_input,
-					m_phase2_image_pools[index], image,
-					&image_diagnostic);
+			auto image_status = used_in_place_patch
+				? build_phase2_complete_domain_patch_preallocated(
+					  phase2_input,
+					  m_phase2_image_pools[index], image,
+					  rebuilt_atoms, &image_diagnostic)
+				: build_phase2_complete_domain_preallocated(
+					  phase2_input,
+					  m_phase2_image_pools[index], image,
+					  &image_diagnostic, &rebuilt_atoms);
+			if (used_in_place_patch &&
+				(image_status ==
+					 Phase2StateImageBuildStatus::
+						 AllocationFailed ||
+				 image_status ==
+					 Phase2StateImageBuildStatus::
+						 CapacityExceeded ||
+				 image_status ==
+					 Phase2StateImageBuildStatus::
+						 SourceMappingMissing)) {
+				(void)m_controller
+					.restore_current_state_after_incremental_patch(
+						index, std::move(image));
+				used_in_place_patch = false;
+				phase2_input.retained_state =
+					&slot.snapshot.current_state();
+				image_diagnostic = {};
+				image_status =
+					build_phase2_complete_domain_preallocated(
+						phase2_input,
+						m_phase2_image_pools[index], image,
+						&image_diagnostic, &rebuilt_atoms);
+			}
+			if (m_performance_observation_active)
+				m_last_performance_sample.state_image_fill_duration_ns +=
+					elapsed_nanoseconds(
+						image_started,
+						std::chrono::steady_clock::now());
 			if (image_status ==
 				Phase2StateImageBuildStatus::
-					AllocationFailed)
+					AllocationFailed) {
+				if (used_in_place_patch)
+					(void)m_controller
+						.restore_current_state_after_incremental_patch(
+							index, std::move(image));
 				continue;
+			}
 			if (image_status !=
 				Phase2StateImageBuildStatus::Created) {
+				if (used_in_place_patch)
+					(void)m_controller
+						.restore_current_state_after_incremental_patch(
+							index, std::move(image));
 				if (auto* diagnostic =
 						begin_phase2_failure_diagnostic(
 							NativePhase2FailureStage::
@@ -1706,10 +2420,38 @@ NativeSessionTickStatus NativeSessionRuntime::apply_collected_player_capture(con
 					m_tick_context.now_us);
 				continue;
 			}
-			const auto baseline_result =
-				m_controller.replace_current_state(index, image);
+			const auto delta_started = m_performance_observation_active
+				? std::chrono::steady_clock::now()
+				: std::chrono::steady_clock::time_point{};
+			auto baseline_result =
+				used_in_place_patch
+				? m_controller
+					  .commit_current_state_incremental_patch(
+						  index, std::move(image),
+						  rebuilt_atoms.canonical_indices.data(),
+						  rebuilt_atoms.count)
+				: m_controller.replace_current_state_incremental(
+					  index, image,
+					  rebuilt_atoms.canonical_indices.data(),
+					  rebuilt_atoms.count);
+			if (!used_in_place_patch &&
+				rebuilt_atoms.exhaustive &&
+				baseline_result ==
+					protocol::ProducerBaselineResult::
+						InvalidArgument)
+				baseline_result =
+					m_controller.replace_current_state(
+						index, image);
 			if (baseline_result !=
 				protocol::ProducerBaselineResult::Applied) {
+				if (used_in_place_patch && !image.empty()) {
+					(void)rollback_phase2_complete_domain_patch_preallocated(
+						m_phase2_image_pools[index],
+						image, rebuilt_atoms);
+					(void)m_controller
+						.restore_current_state_after_incremental_patch(
+							index, std::move(image));
+				}
 				if (auto* diagnostic =
 						begin_phase2_failure_diagnostic(
 							NativePhase2FailureStage::
@@ -1733,6 +2475,11 @@ NativeSessionTickStatus NativeSessionRuntime::apply_collected_player_capture(con
 			if (slot.snapshot.has_active_baseline())
 				(void)m_controller.queue_cumulative_delta(
 					index, m_tick_context.now_us);
+			if (m_performance_observation_active)
+				m_last_performance_sample.delta_build_duration_ns +=
+					elapsed_nanoseconds(
+						delta_started,
+						std::chrono::steady_clock::now());
 			continue;
 		}
 		if (m_selected_phase2_profile ==
@@ -1860,6 +2607,25 @@ NativeSessionTickStatus NativeSessionRuntime::apply_collected_player_capture(con
 			// and therefore waits for its reliable APPLIED transition.
 			if (!slot.required_manifest_applied)
 				continue;
+			const auto* installed_manifest =
+				m_phase2_manifest_slot->candidate_for_id(
+					slot.required_manifest_id);
+			if (installed_manifest == nullptr ||
+				installed_manifest->manifest_id !=
+					slot.required_manifest_id) {
+				if (auto* diagnostic =
+						begin_phase2_failure_diagnostic(
+							NativePhase2FailureStage::
+								Manifest);
+					diagnostic != nullptr)
+					diagnostic->runtime_result =
+						Phase2RuntimeResult::InvalidInput;
+				fail_capture(
+					NativePlayerCaptureStatus::
+						CaptureInvariantFailure);
+				return NativeSessionTickStatus::
+					PermanentCaptureFailure;
+			}
 			Phase2CoreGateStateImageInput phase2_input;
 			phase2_input.producer_id = m_producer_id;
 			phase2_input.negotiated_capability_generation = 1U;
@@ -1878,7 +2644,7 @@ NativeSessionTickStatus NativeSessionRuntime::apply_collected_player_capture(con
 			phase2_input.mission.time_compression = 1.0F;
 			phase2_input.player_entity_id = player_entity_id;
 			phase2_input.observation = &phase2;
-			phase2_input.installed_manifest = m_phase2_manifest;
+			phase2_input.installed_manifest = installed_manifest;
 			phase2_input.required_manifest_id =
 				slot.required_manifest_id;
 			phase2_input.manifest_applied =
@@ -2141,7 +2907,7 @@ void NativeSessionRuntime::release_state_image_pools() noexcept
 	m_state_image_pool_backing_bytes = 0U;
 	m_phase2_core_gate_image_pool_backing_bytes = 0U;
 	m_phase2_image_pool_backing_bytes = 0U;
-	m_phase2_manifest = nullptr;
+	release_phase2_manifest_state();
 }
 
 std::uint64_t NativeSessionRuntime::state_image_pool_allocation_count() const noexcept
@@ -2252,7 +3018,7 @@ std::uint64_t NativeSessionRuntimeTestAccess::startup_allocation_count(
 	return runtime.m_startup_allocation_count;
 }
 
-Phase2CapturePlan NativeSessionRuntimeTestAccess::phase2_keyframe_test_seam(
+Phase2CapturePlan NativeSessionRuntimeTestAccess::prepare_phase2_keyframe_plan(
 	NativeSessionRuntime& runtime) noexcept
 {
 	Phase2CapturePlan plan;
@@ -2308,6 +3074,15 @@ std::uint64_t NativeSessionRuntimeTestAccess::steady_state_allocation_count(
 	const NativeSessionRuntime& runtime) noexcept
 {
 	return runtime.m_controller_ready ? runtime.m_controller.phase1_observed_allocation_count() : 0U;
+}
+
+std::uint64_t NativeSessionRuntimeTestAccess::steady_state_allocation_count(
+	const NativeSessionRuntime& runtime,
+	Phase1AllocationGrowthSource source) noexcept
+{
+	return runtime.m_controller_ready
+		? runtime.m_controller.phase1_observed_allocation_count(source)
+		: 0U;
 }
 
 void NativeSessionRuntimeTestAccess::force_steady_state_allocation_for_tests(NativeSessionRuntime& runtime) noexcept

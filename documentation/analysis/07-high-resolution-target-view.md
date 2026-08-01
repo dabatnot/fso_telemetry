@@ -1,5 +1,7 @@
 # Vue de cible 3D haute résolution
 
+> **Document prospectif, non normatif.** Les exemples de ce document ne sont pas des configurations produit et ne doivent pas être chargés par le runtime actif.
+
 ## 1. Décision et périmètre
 
 La première implémentation de la vue de cible 3D utilise `RemoteRenderedFrame` : FS2Open rend la cible dans une texture hors écran à la résolution demandée par le client, encode cette image en H.264 basse latence et la transporte dans le protocole UDP de télémétrie.
@@ -304,9 +306,10 @@ Le gauge existant et `telemetry_target_capture` appellent cette fonction. Elle r
 
 Cette extraction modifie un fichier d'implémentation HUD et son header, sans ajouter de champ aux structures `object`, `ship` ou `ship_info` et sans faire dépendre le renderer du réseau.
 
-## 13. Configuration proposée
+## 13. Configuration prospective non chargeable
 
-```json
+```text
+NON_CHARGEABLE_TARGET_VIDEO_EXAMPLE
 {
   "targetVideo": {
     "enabled": true,
@@ -343,19 +346,9 @@ Ordres de grandeur pour 1024 × 1024 à 15 FPS :
 
 Ces valeurs dépendent du modèle, des textures, du mouvement, du profil et de l'encodeur. Le fond noir et la caméra relativement stable rendent cette scène favorable à la compression inter-frame.
 
-À 4 Mbit/s et 15 FPS, une frame moyenne contient environ 33 ko, soit une trentaine de fragments après les en-têtes. Abandonner systématiquement une frame dès qu'un fragment manque ne suffit donc pas aux tests à 5 % ou 20 % de pertes. La retransmission sélective bornée des IDR garantit un point de reprise sans transformer toutes les frames en trafic fiable ; les frames inter restent sacrifiables.
+À 4 Mbit/s et 15 FPS, une frame moyenne contient environ 33 ko, soit une trentaine de fragments après les en-têtes. Abandonner systématiquement une frame dès qu'un fragment manque ne permet donc pas une reprise fiable sous perte UDP. La retransmission sélective bornée des IDR garantit un point de reprise sans transformer toutes les frames en trafic fiable ; les frames inter restent sacrifiables.
 
-Le budget de performance doit mesurer séparément :
-
-- temps GPU du second rendu ;
-- délai et abandons du readback ;
-- copie CPU et conversion colorimétrique ;
-- temps d'encodage ;
-- profondeur des files ;
-- bitrate réel et nombre de fragments ;
-- fragments IDR NACKés, retransmis et expirés ;
-- latence capture-à-affichage ;
-- impact lorsque le flux est désactivé ou sans abonné.
+Le produit doit rendre observables les erreurs et dégradations nécessaires à son exploitation, tout en garantissant l'absence de blocage de la frame, le bornage des files et la continuité de la télémétrie numérique. Les métriques et l'outillage employés pour vérifier ces propriétés seront choisis lors de la spécification de cette phase.
 
 ## 15. Cas d'erreur
 
@@ -374,7 +367,7 @@ Le budget de performance doit mesurer séparément :
 | Client lent | baisse de résolution/FPS ou frames abandonnées |
 | Producteur headless | capability vidéo absente |
 
-## 16. Validation
+## 16. Critères produit de livraison
 
 La première version est validée lorsque :
 
@@ -389,17 +382,7 @@ La première version est validée lorsque :
 - la vidéo désactivée ou sans abonné n'effectue aucun second rendu ;
 - les overlays locaux restent nets et synchronisés avec `TARGET_STATE`.
 
-Tests de charge minimaux :
-
-- 1024 × 1024 à 10, 15 et 20 FPS ;
-- 2, 4 et 8 Mbit/s ;
-- pertes UDP de 1 %, 5 % et 20 % ;
-- changements rapides de cible ;
-- modèles fortement texturés et nombreux sous-modèles ;
-- fenêtre minimisée, pause, changement de mission et retour au menu ;
-- client absent, lent, déconnecté puis reconnecté.
-
-Critères sous pertes indépendantes simulées :
+Comportement attendu sous perte UDP :
 
 - à 1 %, session et télémétrie restent `Live`, aucune file vidéo ne dépasse 500 ms et une demande d'IDR retrouve une frame décodable en 500 ms au plus ;
 - à 5 %, session et télémétrie restent `Live`, le trafic d'état n'est jamais privé de bande passante et la vidéo récupère sur une IDR complète en 1 s au plus ;

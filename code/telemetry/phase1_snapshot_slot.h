@@ -48,8 +48,21 @@ class Phase1SnapshotSlot final {
 	// These remain thin forwarding seams: ProducerBaselineTracker is the sole
 	// owner of the current image, active baseline, candidate and delta sequence.
 	protocol::ProducerBaselineResult replace_current(const protocol::StateImage& current) noexcept;
+	protocol::ProducerBaselineResult replace_current_incremental(
+		const protocol::StateImage& current,
+		const std::uint16_t* rebuilt_indices,
+		std::size_t rebuilt_index_count) noexcept;
+	protocol::ProducerBaselineResult take_current_for_incremental_patch(
+		protocol::StateImage& current) noexcept;
+	protocol::ProducerBaselineResult restore_current_after_incremental_patch(
+		protocol::StateImage&& current) noexcept;
+	protocol::ProducerBaselineResult commit_current_incremental_patch(
+		protocol::StateImage&& current,
+		const std::uint16_t* rebuilt_indices,
+		std::size_t rebuilt_index_count) noexcept;
 	protocol::ProducerBaselineResult emit_cumulative_delta(std::uint64_t producer_sample_time_us,
-		protocol::CumulativeStateDelta& delta) noexcept;
+		protocol::CumulativeStateDelta& delta,
+		protocol::DeltaBuildChanges* changes = nullptr) noexcept;
 
 	// The initial candidate has no active baseline yet.  Clearing it therefore
 	// cannot expose a partially published state.

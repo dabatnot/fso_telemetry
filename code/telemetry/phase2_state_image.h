@@ -253,9 +253,31 @@ struct Phase2CompleteDomainInput {
 		const Phase2CompleteDomainInput&, protocol::StateImage&) noexcept;
 	friend Phase2StateImageBuildStatus build_phase2_complete_domain_preallocated(
 		const Phase2CompleteDomainInput&, class Phase2CompleteDomainPool&,
-		protocol::StateImage&, Phase2StateImageBuildDiagnostic*) noexcept;
+		protocol::StateImage&, Phase2StateImageBuildDiagnostic*,
+		struct Phase2StateImageRebuildSet*) noexcept;
+	friend Phase2StateImageBuildStatus
+	build_phase2_complete_domain_patch_preallocated(
+		const Phase2CompleteDomainInput&,
+		class Phase2CompleteDomainPool&,
+		protocol::StateImage&,
+		struct Phase2StateImageRebuildSet&,
+		Phase2StateImageBuildDiagnostic*) noexcept;
 	mutable std::uint32_t m_last_consumed_cargo_generation = 0U;
 	mutable std::uint32_t m_cargo_authority_consume_count = 0U;
+};
+
+constexpr std::size_t Phase2CompleteDomainMaximumRecords =
+	4U + 10U * detail::MaximumPhase2ObservationShips +
+	Phase2ManifestLimits::MaxAggregateSubsystems;
+
+struct Phase2StateImageRebuildSet {
+	std::array<std::uint16_t,
+		Phase2CompleteDomainMaximumRecords> canonical_indices;
+	std::size_t count = 0U;
+	std::uint8_t patch_pool_slot = 0xffU;
+	std::uint8_t patch_layout_mask = 0U;
+	bool patch_applied = false;
+	bool exhaustive = false;
 };
 
 class Phase2CompleteDomainPool final {
@@ -272,11 +294,32 @@ class Phase2CompleteDomainPool final {
   private:
 	friend Phase2StateImageBuildStatus build_phase2_complete_domain_preallocated(
 		const Phase2CompleteDomainInput&, Phase2CompleteDomainPool&,
-		protocol::StateImage&, Phase2StateImageBuildDiagnostic*) noexcept;
+		protocol::StateImage&, Phase2StateImageBuildDiagnostic*,
+		Phase2StateImageRebuildSet*) noexcept;
+	friend Phase2StateImageBuildStatus
+	build_phase2_complete_domain_patch_preallocated(
+		const Phase2CompleteDomainInput&,
+		Phase2CompleteDomainPool&,
+		protocol::StateImage&,
+		Phase2StateImageRebuildSet&,
+		Phase2StateImageBuildDiagnostic*) noexcept;
+	friend bool rollback_phase2_complete_domain_patch_preallocated(
+		Phase2CompleteDomainPool&, protocol::StateImage&,
+		Phase2StateImageRebuildSet&) noexcept;
 	struct Slot {
 		std::shared_ptr<std::vector<protocol::StateAtom>> records;
 		std::vector<protocol::StateAtom> spares;
 		std::size_t spare_count = 0U;
+		std::size_t patch_layout_record_count = 0U;
+		std::size_t patch_mapping_count = 0U;
+		std::array<std::uint16_t,
+			Phase2CompleteDomainMaximumRecords>
+			patch_canonical_indices{};
+		std::array<std::uint16_t,
+			Phase2CompleteDomainMaximumRecords>
+			patch_source_indices{};
+		std::uint8_t patch_layout_mask = 0U;
+		bool patch_layout_ready = false;
 	};
 	std::array<Slot, SlotCount> m_slots{};
 	std::size_t m_maximum_subjects = 0U;
@@ -294,6 +337,18 @@ Phase2StateImageBuildStatus build_phase2_complete_domain_preallocated(
 	const Phase2CompleteDomainInput& input,
 	Phase2CompleteDomainPool& pool,
 	protocol::StateImage& image,
+	Phase2StateImageBuildDiagnostic* diagnostic = nullptr,
+	Phase2StateImageRebuildSet* rebuilt = nullptr) noexcept;
+Phase2StateImageBuildStatus
+build_phase2_complete_domain_patch_preallocated(
+	const Phase2CompleteDomainInput& input,
+	Phase2CompleteDomainPool& pool,
+	protocol::StateImage& image,
+	Phase2StateImageRebuildSet& rebuilt,
 	Phase2StateImageBuildDiagnostic* diagnostic = nullptr) noexcept;
+bool rollback_phase2_complete_domain_patch_preallocated(
+	Phase2CompleteDomainPool& pool,
+	protocol::StateImage& image,
+	Phase2StateImageRebuildSet& rebuilt) noexcept;
 
 } // namespace telemetry

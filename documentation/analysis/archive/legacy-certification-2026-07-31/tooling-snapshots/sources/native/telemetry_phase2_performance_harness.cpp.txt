@@ -1,0 +1,1322 @@
+HISTORIQUE, NON NORMATIF, NE PAS EXECUTER.
+#define main telemetry_native_performance_embedded_main
+#include "telemetry_native_performance_runner.cpp"
+#undef main
+
+#include "telemetry/protocol/telemetry_sha256.h"
+#include "telemetry/startup_budget.h"
+
+#include <cmath>
+#include <filesystem>
+#include <iomanip>
+#include <map>
+#include <numeric>
+#include <sstream>
+
+namespace phase2 {
+
+constexpr std::size_t RuntimeCount = 4U;
+constexpr std::size_t EpochCount = 10U;
+constexpr std::uint64_t CallbackHz = 60U;
+
+struct Series {
+	std::vector<double> tick_ms;
+	std::vector<double> telemetry_ms;
+	std::vector<double> flight_only_ms;
+	std::vector<double> systems_ms;
+	std::vector<double> keyframe_ms;
+	std::vector<double> forced_keyframe_ms;
+	std::uint64_t allocations = 0U;
+	std::uint64_t frames = 0U;
+	std::uint64_t flight_ticks = 0U;
+	std::uint64_t systems_ticks = 0U;
+	std::uint64_t keyframes = 0U;
+	std::uint64_t forced_keyframes = 0U;
+};
+
+using Summary = std::map<std::string, std::string>;
+
+bool allocation_summary_passes(const Summary& summary) {
+	const auto equals_value = [&](const char* key, const char* expected) {
+		const auto found = summary.find(key);
+		return found != summary.end() && found->second == expected;
+	};
+	return equals_value("noGrowth", "1") &&
+		equals_value("allocationSnapshotSlot", "0") &&
+		equals_value("allocationSnapshotReliable", "0") &&
+		equals_value("allocationSnapshotScratch", "0") &&
+		equals_value("allocationDeltaEgress", "0");
+}
+bool allocation_summary_oracle_self_test() {
+	const Summary passing{
+		{"noGrowth", "1"},
+		{"allocationSnapshotSlot", "0"},
+		{"allocationSnapshotReliable", "0"},
+		{"allocationSnapshotScratch", "0"},
+		{"allocationDeltaEgress", "0"}};
+	auto growth = passing;
+	growth["noGrowth"] = "0";
+	auto attributed_growth = passing;
+	attributed_growth["allocationSnapshotSlot"] = "1";
+	auto incomplete = passing;
+	incomplete.erase("allocationDeltaEgress");
+	return allocation_summary_passes(passing) &&
+		!allocation_summary_passes(growth) &&
+		!allocation_summary_passes(attributed_growth) &&
+		!allocation_summary_passes(incomplete);
+}
+Summary load_summary(std::filesystem::path path) {
+	path.replace_extension(".summary.txt");
+	std::ifstream input(path);
+	Summary result;
+	std::string line;
+	while (std::getline(input, line)) {
+		const auto equals = line.find('=');
+		if (equals != std::string::npos)
+			result.emplace(line.substr(0U, equals),
+				line.substr(equals + 1U));
+	}
+	return result;
+}
+
+bool observed(const Summary& summary, const char* key) {
+	const auto found = summary.find(key);
+	return found != summary.end() && found->second == "1";
+}
+
+bool equals(const Summary& summary,
+	const char* key,
+	const char* expected) {
+	const auto found = summary.find(key);
+	return found != summary.end() && found->second == expected;
+}
+
+std::uint64_t summary_u64(const Summary& summary, const char* key) {
+	const auto found = summary.find(key);
+	if (found == summary.end()) return 0U;
+	try {
+		return static_cast<std::uint64_t>(std::stoull(found->second));
+	} catch (...) {
+		return 0U;
+	}
+}
+
+bool parse_u64_arg(const char* text, std::uint64_t& value) {
+	char* end = nullptr;
+	value = std::strtoull(text, &end, 10);
+	return text && *text && end && *end == '\0';
+}
+
+std::string escape(const std::string& value) {
+	std::ostringstream out;
+	for (const auto ch : value) {
+		if (ch == '\\' || ch == '"') out << '\\';
+		out << ch;
+	}
+	return out.str();
+}
+
+std::string file_sha(const std::filesystem::path& path) {
+	std::ifstream input(path, std::ios::binary);
+	std::vector<std::uint8_t> bytes{
+		std::istreambuf_iterator<char>(input),
+		std::istreambuf_iterator<char>()};
+	telemetry::protocol::Sha256Digest digest{};
+	if (input.bad() ||
+		!telemetry::protocol::sha256(
+			{bytes.data(), bytes.size()}, digest))
+		return {};
+	std::ostringstream output;
+	for (const auto byte : digest)
+		output << std::hex << std::setfill('0') << std::setw(2)
+			   << static_cast<unsigned>(byte);
+	return output.str();
+}
+
+std::vector<std::string> split(const std::string& line) {
+	std::vector<std::string> fields;
+	std::size_t begin = 0U;
+	while (begin <= line.size()) {
+		const auto comma = line.find(',', begin);
+		fields.push_back(line.substr(begin,
+			comma == std::string::npos ? comma : comma - begin));
+		if (comma == std::string::npos) break;
+		begin = comma + 1U;
+	}
+	return fields;
+}
+
+bool load_series(const std::filesystem::path& path, Series& result) {
+	std::ifstream input(path);
+	std::string line;
+	if (!std::getline(input, line)) return false;
+	constexpr auto ExpectedHeader =
+		"sample_index,frame_duration_ns,telemetry_duration_ns,"
+		"collect_ns,diff_ns,"
+		"state_image_build_ns,state_image_fill_ns,"
+		"state_image_publish_validate_ns,state_image_adopt_ns,"
+		"state_image_semantic_validate_ns,delta_build_ns,"
+		"serialization_ns,network_ns,allocation_events,syscall_count,"
+		"queue_depth,baselines_active,is_keyframe,"
+		"is_periodic_keyframe,is_forced_keyframe,trace_index,"
+		"epoch_index,capture_flight,capture_systems";
+	if (line != ExpectedHeader) return false;
+	std::uint64_t expected_index = 0U;
+	while (std::getline(input, line)) {
+		const auto fields = split(line);
+		if (fields.size() != 24U) return false;
+		const auto index = std::strtoull(fields[0].c_str(), nullptr, 10);
+		const auto trace = std::strtoull(fields[20].c_str(), nullptr, 10);
+		if (index != expected_index || trace != index) return false;
+		const auto tick = std::strtoull(fields[1].c_str(), nullptr, 10);
+		const auto telemetry =
+			std::strtoull(fields[2].c_str(), nullptr, 10);
+		std::uint64_t keyframe_build = 0U;
+		for (std::size_t field = 5U; field <= 9U; ++field)
+			keyframe_build +=
+				std::strtoull(fields[field].c_str(), nullptr, 10);
+		const auto allocations =
+			std::strtoull(fields[13].c_str(), nullptr, 10);
+		const bool keyframe = fields[17] == "1";
+		const bool periodic_keyframe = fields[18] == "1";
+		const bool forced_keyframe = fields[19] == "1";
+		const bool flight = fields[22] == "1";
+		const bool systems = fields[23] == "1";
+		if (keyframe !=
+			(periodic_keyframe || forced_keyframe))
+			return false;
+		const auto tick_ms = static_cast<double>(tick) / 1000000.0;
+		const auto telemetry_ms =
+			static_cast<double>(telemetry) / 1000000.0;
+		result.tick_ms.push_back(tick_ms);
+		result.telemetry_ms.push_back(telemetry_ms);
+		if (flight && !systems)
+			result.flight_only_ms.push_back(telemetry_ms);
+		if (systems) result.systems_ms.push_back(telemetry_ms);
+		if (periodic_keyframe)
+			result.keyframe_ms.push_back(
+				static_cast<double>(keyframe_build) / 1000000.0);
+		if (forced_keyframe)
+			result.forced_keyframe_ms.push_back(
+				static_cast<double>(keyframe_build) / 1000000.0);
+		result.allocations = std::max(result.allocations, allocations);
+		++result.frames;
+		result.flight_ticks += flight ? 1U : 0U;
+		result.systems_ticks += systems ? 1U : 0U;
+		result.keyframes += periodic_keyframe ? 1U : 0U;
+		result.forced_keyframes += forced_keyframe ? 1U : 0U;
+		++expected_index;
+	}
+	return !result.tick_ms.empty();
+}
+
+double nearest_rank(std::vector<double> values, double percentile) {
+	if (values.empty()) return std::numeric_limits<double>::infinity();
+	std::sort(values.begin(), values.end());
+	const auto rank = std::max<std::size_t>(1U,
+		static_cast<std::size_t>(
+			std::ceil(percentile * static_cast<double>(values.size()))));
+	return values[std::min(rank, values.size()) - 1U];
+}
+
+double maximum(const std::vector<double>& values) {
+	return values.empty() ? std::numeric_limits<double>::infinity()
+		: *std::max_element(values.begin(), values.end());
+}
+
+double median(std::vector<double> values) {
+	if (values.empty()) return std::numeric_limits<double>::infinity();
+	std::sort(values.begin(), values.end());
+	const auto middle = values.size() / 2U;
+	return (values.size() & 1U) != 0U
+		? values[middle]
+		: (values[middle - 1U] + values[middle]) / 2.0;
+}
+
+bool performance_aggregation_oracle_self_test() {
+	std::vector<double> active_union{1.0, 100.0, 2.0, 3.0, 4.0};
+	const std::vector<double> scenario_medians{
+		median({1.0, 100.0}), median({2.0, 3.0, 4.0})};
+	const auto exclusive_telemetry_ns =
+		[](const std::vector<std::string>& fields) {
+			return std::strtoull(fields[2].c_str(), nullptr, 10);
+		};
+	std::vector<std::string> fields(22U, "0");
+	fields[2] = "100";
+	fields[3] = "40";
+	fields[4] = "60";
+	fields[5] = "25";
+	fields[6] = "35";
+	return exclusive_telemetry_ns(fields) == 100U &&
+		median(active_union) == 3.0 &&
+		median(scenario_medians) != median(active_union) &&
+		nearest_rank({1.0, 2.0, 3.0, 100.0}, 0.99) == 100.0;
+}
+
+std::uint64_t derived_seed(std::uint64_t base, const std::string& name) {
+	std::uint64_t value = base ^ 1469598103934665603ULL;
+	for (const auto ch : name) {
+		value ^= static_cast<unsigned char>(ch);
+		value *= 1099511628211ULL;
+	}
+	return value;
+}
+
+void write_progress_event(const std::filesystem::path& directory,
+	const std::string& stage,
+	std::uint64_t completed,
+	std::uint64_t total) noexcept {
+	try {
+		std::filesystem::create_directories(directory);
+		const auto stem = std::to_string(completed) + "-" +
+			std::to_string(std::chrono::duration_cast<
+				std::chrono::milliseconds>(
+				std::chrono::steady_clock::now().time_since_epoch())
+				.count());
+		const auto temporary = directory / (stem + ".tmp");
+		const auto final = directory / (stem + ".json");
+		std::ofstream output(temporary,
+			std::ios::out | std::ios::trunc);
+		output << "{\"stage\":\"" << escape(stage)
+			   << "\",\"completed\":" << completed
+			   << ",\"total\":" << total
+			   << ",\"heartbeatMonotonicMs\":"
+			   << std::chrono::duration_cast<std::chrono::milliseconds>(
+					  std::chrono::steady_clock::now().time_since_epoch())
+					  .count()
+			   << "}\n";
+		output.close();
+		if (output)
+			std::filesystem::rename(temporary, final);
+	} catch (...) {
+	}
+}
+
+class EpochCoordinator final
+	: public telemetry::phase2_test::PerformanceEpochCoordinator {
+  public:
+	EpochCoordinator(std::uint64_t warmup_seconds,
+		std::uint64_t epoch_seconds,
+		std::filesystem::path progress_directory)
+		: m_warmup_seconds(warmup_seconds),
+		  m_epoch_seconds(epoch_seconds),
+		  m_progress_directory(std::move(progress_directory)) {
+		m_slice_order.reserve(EpochCount * RuntimeCount);
+		write_progress_event(
+			m_progress_directory, "performance", 0U,
+			RuntimeCount + EpochCount * RuntimeCount);
+	}
+
+	bool begin_warmup(std::size_t slot) noexcept override {
+		std::unique_lock<std::mutex> lock(m_mutex);
+		m_condition.wait(lock, [&] {
+			return m_cancelled || m_warmup_slot == slot;
+		});
+		if (m_cancelled) return false;
+		m_slice_started = Clock::now();
+		return true;
+	}
+
+	Clock::time_point warmup_deadline(std::size_t slot,
+		std::uint64_t completed_samples,
+		std::uint64_t total_samples) noexcept override {
+		std::lock_guard<std::mutex> lock(m_mutex);
+		if (m_cancelled || m_warmup_slot != slot || total_samples == 0U)
+			return Clock::now();
+		return m_slice_started +
+			std::chrono::duration_cast<Clock::duration>(
+				std::chrono::duration<double>(
+					static_cast<double>(m_warmup_seconds) *
+					static_cast<double>(completed_samples) /
+					static_cast<double>(total_samples)));
+	}
+
+	void finish_warmup(std::size_t slot, bool passed) noexcept override {
+		std::lock_guard<std::mutex> lock(m_mutex);
+		if (!passed || slot != m_warmup_slot) {
+			m_cancelled = true;
+		} else {
+			++m_warmup_slot;
+			write_progress_event(m_progress_directory,
+				"performance-warmup", m_warmup_slot,
+				RuntimeCount + EpochCount * RuntimeCount);
+		}
+		m_condition.notify_all();
+	}
+
+	bool begin_epoch(std::size_t slot, std::size_t epoch) noexcept override {
+		std::unique_lock<std::mutex> lock(m_mutex);
+		m_condition.wait(lock, [&] {
+			return m_cancelled ||
+				(m_warmup_slot == RuntimeCount &&
+				 m_epoch == epoch &&
+				 expected_slot(m_epoch, m_position) == slot);
+		});
+		if (m_cancelled) return false;
+		if (m_epoch == 0U && m_position == 0U)
+			m_measured_started = Clock::now();
+		m_slice_started = Clock::now();
+		m_slice_order.push_back(slot);
+		return true;
+	}
+
+	Clock::time_point sample_deadline(std::size_t slot,
+		std::size_t epoch,
+		std::uint64_t completed_samples,
+		std::uint64_t samples_per_epoch) noexcept override {
+		std::lock_guard<std::mutex> lock(m_mutex);
+		if (m_cancelled || m_epoch != epoch ||
+			expected_slot(m_epoch, m_position) != slot ||
+			samples_per_epoch == 0U)
+			return Clock::now();
+		return m_slice_started +
+			std::chrono::duration_cast<Clock::duration>(
+				std::chrono::duration<double>(
+					static_cast<double>(m_epoch_seconds) *
+					static_cast<double>(completed_samples) /
+					static_cast<double>(samples_per_epoch)));
+	}
+
+	void finish_epoch(std::size_t slot,
+		std::size_t epoch,
+		bool passed) noexcept override {
+		std::lock_guard<std::mutex> lock(m_mutex);
+		if (!passed || m_epoch != epoch ||
+			expected_slot(m_epoch, m_position) != slot) {
+			m_cancelled = true;
+		} else if (++m_position == RuntimeCount) {
+			m_position = 0U;
+			if (++m_epoch == EpochCount)
+				m_measured_finished = Clock::now();
+		}
+		if (!m_cancelled)
+			write_progress_event(m_progress_directory,
+				"performance-measurement",
+				RuntimeCount + m_epoch * RuntimeCount + m_position,
+				RuntimeCount + EpochCount * RuntimeCount);
+		m_condition.notify_all();
+	}
+
+	void cancel() noexcept override {
+		std::lock_guard<std::mutex> lock(m_mutex);
+		m_cancelled = true;
+		m_condition.notify_all();
+	}
+
+	bool passed() const noexcept {
+		std::lock_guard<std::mutex> lock(m_mutex);
+		return !m_cancelled && m_warmup_slot == RuntimeCount &&
+			m_epoch == EpochCount &&
+			m_slice_order.size() == EpochCount * RuntimeCount;
+	}
+
+	std::vector<std::size_t> slice_order() const {
+		std::lock_guard<std::mutex> lock(m_mutex);
+		return m_slice_order;
+	}
+
+	double measured_seconds() const noexcept {
+		std::lock_guard<std::mutex> lock(m_mutex);
+		if (m_measured_finished <= m_measured_started) return 0.0;
+		return std::chrono::duration<double>(
+			m_measured_finished - m_measured_started).count();
+	}
+
+	static std::size_t expected_slot(std::size_t epoch,
+		std::size_t position) noexcept {
+		return (epoch % RuntimeCount + position) % RuntimeCount;
+	}
+
+  private:
+	mutable std::mutex m_mutex;
+	std::condition_variable m_condition;
+	std::uint64_t m_warmup_seconds = 0U;
+	std::uint64_t m_epoch_seconds = 0U;
+	std::size_t m_warmup_slot = 0U;
+	std::size_t m_epoch = 0U;
+	std::size_t m_position = 0U;
+	bool m_cancelled = false;
+	Clock::time_point m_slice_started{};
+	Clock::time_point m_measured_started{};
+	Clock::time_point m_measured_finished{};
+	std::vector<std::size_t> m_slice_order;
+	std::filesystem::path m_progress_directory;
+};
+
+class ProgressHeartbeat {
+  public:
+	ProgressHeartbeat(std::filesystem::path directory,
+		std::string stage,
+		std::uint64_t total)
+		: m_directory(std::move(directory)),
+		  m_stage(std::move(stage)),
+		  m_total(total),
+		  m_thread([this] { run(); }) {}
+	~ProgressHeartbeat() {
+		{
+			std::lock_guard<std::mutex> lock(m_mutex);
+			m_stopped = true;
+		}
+		m_condition.notify_all();
+		m_thread.join();
+	}
+	void complete() noexcept {
+		write_progress_event(m_directory, m_stage, m_total, m_total);
+	}
+  private:
+	void run() noexcept {
+		std::uint64_t heartbeat = 0U;
+		write_progress_event(m_directory, m_stage, heartbeat, m_total);
+		std::unique_lock<std::mutex> lock(m_mutex);
+		while (!m_condition.wait_for(lock, std::chrono::minutes(10),
+				[this] { return m_stopped; })) {
+			lock.unlock();
+			write_progress_event(
+				m_directory, m_stage, ++heartbeat, m_total);
+			lock.lock();
+		}
+	}
+	std::filesystem::path m_directory;
+	std::string m_stage;
+	std::uint64_t m_total = 0U;
+	std::mutex m_mutex;
+	std::condition_variable m_condition;
+	bool m_stopped = false;
+	std::thread m_thread;
+};
+
+int run_native(const std::string& workload,
+	const std::filesystem::path& output,
+	std::uint64_t samples,
+	std::uint64_t warmup,
+	std::uint64_t seed,
+	std::uint64_t wall_seconds,
+	std::uint64_t warmup_wall_seconds,
+	int coordinated_slot = -1,
+	std::uint64_t epoch_samples = 0U,
+	std::uint64_t epoch_count = 0U) {
+	auto summary = output;
+	summary.replace_extension(".summary.txt");
+	std::vector<std::string> args{
+		"telemetry_native_performance_runner", "--workload", workload,
+		"--output", output.string(), "--summary", summary.string(),
+		"--samples", std::to_string(samples),
+		"--warmup", std::to_string(warmup), "--flight-hz", "30",
+		"--seed", std::to_string(seed), "--diagnostic", "0",
+		"--wall-seconds", std::to_string(wall_seconds),
+		"--warmup-wall-seconds", std::to_string(warmup_wall_seconds)};
+	if (coordinated_slot >= 0) {
+		args.insert(args.end(), {
+			"--coordinated-slot", std::to_string(coordinated_slot),
+			"--epoch-samples", std::to_string(epoch_samples),
+			"--epoch-count", std::to_string(epoch_count)});
+	}
+	std::vector<char*> raw;
+	for (auto& arg : args) raw.push_back(arg.data());
+	return telemetry_native_performance_embedded_main(
+		static_cast<int>(raw.size()), raw.data());
+}
+
+const char* environment(const char* name) {
+	const auto* value = std::getenv(name);
+	return value && *value ? value : "unavailable";
+}
+
+bool verdict_log_passes(const std::filesystem::path& path) {
+	if (!std::filesystem::is_regular_file(path)) return false;
+	std::ifstream input(path);
+	const std::string text{
+		std::istreambuf_iterator<char>(input),
+		std::istreambuf_iterator<char>()};
+	return !text.empty() &&
+		(text.find("verdict=pass") != std::string::npos ||
+		 text.find("\"verdict\":\"pass\"") != std::string::npos ||
+		 text.find("\"verdict\": \"pass\"") != std::string::npos);
+}
+
+bool wait_for_verdict_log(const std::filesystem::path& path) {
+	for (std::size_t attempt = 0U; attempt < 100U; ++attempt) {
+		if (std::filesystem::is_regular_file(path))
+			return verdict_log_passes(path);
+		std::this_thread::sleep_for(std::chrono::milliseconds(100));
+	}
+	return false;
+}
+
+} // namespace phase2
+
+int main(int argc, char** argv) {
+	std::uint64_t warmup = 0U, control = 0U, measure = 0U, frames = 0U,
+		flight = 0U, systems = 0U, keyframes = 0U, seed = 0U,
+		soak_seconds = 0U, soak_seed = 0U;
+	const char *report = nullptr, *soak_dir = nullptr,
+		*soak_profile = nullptr, *qualification_plan = nullptr;
+	bool smoke = false;
+	bool subject_reconciliation_self_test = false;
+	bool delta_scratch_capacity_self_test = false;
+	bool performance_aggregation_self_test = false;
+	for (int index = 1; index < argc; ++index) {
+		if (!std::strcmp(argv[index], "--smoke")) {
+			smoke = true;
+			continue;
+		}
+		if (!std::strcmp(
+				argv[index],
+				"--subject-reconciliation-self-test")) {
+			subject_reconciliation_self_test = true;
+			continue;
+		}
+		if (!std::strcmp(
+				argv[index],
+				"--delta-scratch-capacity-self-test")) {
+			delta_scratch_capacity_self_test = true;
+			continue;
+		}
+		if (!std::strcmp(
+				argv[index],
+				"--performance-aggregation-self-test")) {
+			performance_aggregation_self_test = true;
+			continue;
+		}
+		if (index + 1 >= argc) return 2;
+		const auto* key = argv[index];
+		const auto* value = argv[++index];
+		auto numeric = [&](std::uint64_t& target) {
+			return phase2::parse_u64_arg(value, target);
+		};
+		if (!std::strcmp(key, "--warmup-seconds")) {
+			if (!numeric(warmup)) return 2;
+		} else if (!std::strcmp(key, "--control-seconds")) {
+			if (!numeric(control)) return 2;
+		} else if (!std::strcmp(key, "--measure-seconds")) {
+			if (!numeric(measure)) return 2;
+		} else if (!std::strcmp(key, "--minimum-frames")) {
+			if (!numeric(frames)) return 2;
+		} else if (!std::strcmp(key, "--minimum-flight-ticks")) {
+			if (!numeric(flight)) return 2;
+		} else if (!std::strcmp(key, "--minimum-system-ticks")) {
+			if (!numeric(systems)) return 2;
+		} else if (!std::strcmp(key, "--minimum-keyframes")) {
+			if (!numeric(keyframes)) return 2;
+		} else if (!std::strcmp(key, "--seed")) {
+			if (!numeric(seed)) return 2;
+		} else if (!std::strcmp(key, "--soak-seconds")) {
+			if (!numeric(soak_seconds)) return 2;
+		} else if (!std::strcmp(key, "--soak-seed")) {
+			if (!numeric(soak_seed)) return 2;
+		} else if (!std::strcmp(key, "--soak-profile")) {
+			soak_profile = value;
+		} else if (!std::strcmp(key, "--qualification-plan")) {
+			qualification_plan = value;
+		} else if (!std::strcmp(key, "--soak-report-dir")) {
+			soak_dir = value;
+		} else if (!std::strcmp(key, "--report")) {
+			report = value;
+		} else {
+			return 2;
+		}
+	}
+	if (subject_reconciliation_self_test)
+		return workload_subject_reconciliation_self_test() ? 0 : 4;
+	if (delta_scratch_capacity_self_test)
+		return workload_delta_scratch_capacity_self_test() &&
+				phase2::allocation_summary_oracle_self_test()
+			? 0
+			: 4;
+	if (performance_aggregation_self_test)
+		return phase2::performance_aggregation_oracle_self_test()
+			? 0
+			: 4;
+	if (smoke) {
+		warmup = 0U;
+		control = 10U;
+		measure = 30U;
+		frames = 1600U;
+		flight = 800U;
+		systems = 260U;
+		keyframes = 10U;
+		seed = soak_seed = 4242U;
+		soak_seconds = 10U;
+		soak_profile = "composite";
+	}
+	if (!report || !soak_dir || !soak_profile) return 2;
+	if (!smoke &&
+		(warmup != 60U || control != 600U ||
+		 measure != 1800U || measure != 3U * control ||
+		 frames < 100000U || flight < 54000U ||
+		 systems < 18000U || keyframes < 900U ||
+		 seed != 4242U || soak_seconds != 3600U ||
+		 soak_seed != 4242U ||
+		 std::strcmp(soak_profile, "composite") != 0))
+		return 2;
+	if (qualification_plan != nullptr &&
+		std::strcmp(qualification_plan, "coordinated-performance") != 0 &&
+		std::strcmp(qualification_plan, "composite-soak") != 0)
+		return 2;
+
+	const std::filesystem::path report_path(report);
+	const std::filesystem::path soak_path(soak_dir);
+	const auto raw_dir = report_path.parent_path() / "raw";
+	const auto qualification_dir =
+		report_path.parent_path() / "qualifications";
+	std::filesystem::create_directories(raw_dir);
+	std::filesystem::create_directories(qualification_dir);
+	std::filesystem::create_directories(soak_path);
+	if (qualification_plan != nullptr &&
+		std::strcmp(qualification_plan, "composite-soak") == 0) {
+		const auto raw = soak_path / "composite-raw.csv";
+		phase2::ProgressHeartbeat heartbeat(
+			report_path.parent_path() / "progress",
+			"composite-soak", soak_seconds);
+		const auto status = phase2::run_native(
+			"composite-soak", raw,
+			(smoke ? 10U : soak_seconds) * phase2::CallbackHz,
+			warmup * phase2::CallbackHz,
+			phase2::derived_seed(soak_seed, "composite"),
+			smoke ? 0U : soak_seconds,
+			smoke ? 0U : warmup);
+		heartbeat.complete();
+		const auto summary = phase2::load_summary(raw);
+		const bool passed = status == 0 &&
+			phase2::observed(summary, "finalStateExact") &&
+			phase2::observed(summary, "shutdownPurged") &&
+			phase2::summary_u64(summary, "purgedSlotCount") == 4U &&
+			phase2::allocation_summary_passes(summary);
+		std::filesystem::create_directories(
+			report_path.parent_path());
+		std::ofstream standalone(report_path,
+			std::ios::out | std::ios::trunc);
+		if (!standalone) return 5;
+		standalone
+			<< "{\"schema\":\"fs2open.telemetry.phase2."
+			   "performance-harness.v2\",\"status\":\""
+			<< (passed ? "qualification-passed" :
+				"qualification-failed")
+			<< "\",\"certificationEligible\":false,"
+			   "\"qualificationPlan\":\"composite-soak\","
+			   "\"rawPath\":\"" << phase2::escape(raw.string())
+			<< "\",\"rawSha256\":\"" << phase2::file_sha(raw)
+			<< "\"}\n";
+		return passed ? 0 : 4;
+	}
+
+	bool ok = true;
+	const auto config_absent_path =
+		qualification_dir / "config-absent.csv";
+	const auto disabled_path =
+		qualification_dir / "enabled-false.csv";
+	ok = phase2::run_native("config-absent", config_absent_path,
+		64U, 0U, seed, 0U, 0U) == 0 && ok;
+	ok = phase2::run_native("enabled-false", disabled_path,
+		100000U, 0U, seed, 0U, 0U) == 0 && ok;
+	const auto config_absent_summary =
+		phase2::load_summary(config_absent_path);
+	const auto disabled_summary = phase2::load_summary(disabled_path);
+	phase2::Series disabled_series;
+	const bool disabled_series_loaded =
+		phase2::load_series(disabled_path, disabled_series);
+	const auto disabled_average = disabled_series_loaded
+		? std::accumulate(disabled_series.telemetry_ms.begin(),
+			disabled_series.telemetry_ms.end(), 0.0) /
+			static_cast<double>(disabled_series.telemetry_ms.size())
+		: std::numeric_limits<double>::infinity();
+	const auto disabled_p99 =
+		phase2::nearest_rank(disabled_series.telemetry_ms, 0.99);
+	const bool qualifications_pass =
+		phase2::equals(config_absent_summary,
+			"configPresent", "0") &&
+		phase2::equals(disabled_summary, "enabled", "0") &&
+		phase2::equals(disabled_summary, "callbacks", "100000") &&
+		phase2::observed(disabled_summary, "sharedFrameWorkload") &&
+		disabled_series_loaded &&
+		disabled_series.frames == 100000U &&
+		disabled_average <= 0.01 && disabled_p99 <= 0.05;
+	ok = qualifications_pass && ok;
+
+	struct Workload {
+		const char* name;
+		const char* native;
+	};
+	const std::array<Workload, phase2::RuntimeCount> workloads{{
+		{"control", "no-module"},
+		{"nominal", "active-one-client"},
+		{"four-clients-one-slow", "four-clients-one-slow"},
+		{"bounds-loss-resync-manifest",
+			"bounds-loss-resync-manifest"}}};
+	const auto epoch_seconds = control / phase2::EpochCount;
+	const auto samples_per_runtime = control * phase2::CallbackHz;
+	const auto epoch_samples = epoch_seconds * phase2::CallbackHz;
+	const auto warmup_samples = warmup * phase2::CallbackHz;
+	phase2::EpochCoordinator coordinator{
+		smoke ? 0U : warmup, smoke ? 0U : epoch_seconds,
+		report_path.parent_path() / "progress"};
+	std::array<int, phase2::RuntimeCount> run_status{};
+	std::array<std::thread, phase2::RuntimeCount> threads;
+	telemetry::phase2_test::performance_epoch_coordinator =
+		&coordinator;
+	const auto performance_started = std::chrono::steady_clock::now();
+	for (std::size_t slot = 0U; slot < workloads.size(); ++slot) {
+		threads[slot] = std::thread([&, slot] {
+			const auto path = raw_dir /
+				(std::string(workloads[slot].name) + ".csv");
+			run_status[slot] = phase2::run_native(
+				workloads[slot].native, path,
+				samples_per_runtime, warmup_samples, seed,
+				control, warmup, static_cast<int>(slot),
+				epoch_samples, phase2::EpochCount);
+		});
+	}
+	for (auto& thread : threads) thread.join();
+	telemetry::phase2_test::performance_epoch_coordinator = nullptr;
+	const auto performance_elapsed = std::chrono::duration<double>(
+		std::chrono::steady_clock::now() -
+		performance_started).count();
+	ok = coordinator.passed() && ok;
+	for (const auto status : run_status) ok = status == 0 && ok;
+
+	std::map<std::string, phase2::Series> series;
+	std::map<std::string, phase2::Summary> summaries;
+	for (const auto& workload : workloads) {
+		const auto path = raw_dir /
+			(std::string(workload.name) + ".csv");
+		ok = phase2::load_series(path, series[workload.name]) && ok;
+		summaries.emplace(workload.name,
+			phase2::load_summary(path));
+		ok = !summaries[workload.name].empty() && ok;
+	}
+	bool runtimes_persistent = true;
+	for (const auto* name : {"nominal", "four-clients-one-slow",
+			 "bounds-loss-resync-manifest"})
+		runtimes_persistent =
+			phase2::summary_u64(summaries[name], "cycles") == 0U &&
+			runtimes_persistent;
+	ok = runtimes_persistent && ok;
+	if (!ok) {
+		std::filesystem::create_directories(
+			report_path.parent_path());
+		std::ofstream failed(report_path,
+			std::ios::out | std::ios::trunc);
+		if (!failed) return 5;
+		failed << "{\n"
+			"\"schema\":\"fs2open.telemetry.phase2.performance-harness.v2\",\n"
+			"\"status\":\"failed\",\n"
+			"\"certificationEligible\":false,\n"
+			"\"failedStage\":\"coordinated-performance\",\n"
+			"\"soakStarted\":false\n}\n";
+		return 4;
+	}
+
+	const auto soak_path_raw = soak_path / "composite-raw.csv";
+	phase2::ProgressHeartbeat soak_heartbeat(
+		report_path.parent_path() / "progress",
+		"composite-soak", soak_seconds);
+	const auto soak_started = std::chrono::steady_clock::now();
+	const auto soak_run_ok = phase2::run_native(
+		"composite-soak", soak_path_raw,
+		(smoke ? 10U : soak_seconds) * phase2::CallbackHz,
+		warmup_samples,
+		phase2::derived_seed(soak_seed, "composite"),
+		smoke ? 0U : soak_seconds,
+		smoke ? 0U : warmup) == 0;
+	const auto soak_elapsed = std::chrono::duration<double>(
+		std::chrono::steady_clock::now() - soak_started).count();
+	soak_heartbeat.complete();
+	phase2::Series soak_series;
+	const auto soak_summary = phase2::load_summary(soak_path_raw);
+	ok = soak_run_ok &&
+		phase2::load_series(soak_path_raw, soak_series) &&
+		!soak_summary.empty() && ok;
+
+	std::vector<double> active_union;
+	std::vector<double> active_keyframe_builds;
+	for (const auto* name : {"nominal", "four-clients-one-slow",
+			 "bounds-loss-resync-manifest"}) {
+		const auto& values = series[name].tick_ms;
+		active_union.insert(active_union.end(),
+			values.begin(), values.end());
+		const auto& keyframes = series[name].keyframe_ms;
+		active_keyframe_builds.insert(
+			active_keyframe_builds.end(),
+			keyframes.begin(), keyframes.end());
+	}
+	const auto p99_flight = phase2::nearest_rank(
+		series["nominal"].flight_only_ms, 0.99);
+	const auto p99_systems = phase2::nearest_rank(
+		series["nominal"].systems_ms, 0.99);
+	const auto p99_four = phase2::nearest_rank(
+		series["four-clients-one-slow"].systems_ms, 0.99);
+	const auto p99_keyframe = phase2::nearest_rank(
+		active_keyframe_builds, 0.99);
+	const auto max_keyframe =
+		phase2::maximum(active_keyframe_builds);
+	const auto control_median =
+		phase2::median(series["control"].tick_ms);
+	const auto disabled_median =
+		phase2::median(disabled_series.tick_ms);
+	const auto disabled_frame_regression =
+		control_median == 0.0
+		? 100.0
+		: ((disabled_median / control_median) - 1.0) * 100.0;
+	const bool disabled_fast_path_pass =
+		qualifications_pass &&
+		disabled_frame_regression < 1.0;
+	const auto active_median = phase2::median(active_union);
+	const auto regression = control_median == 0.0
+		? 100.0
+		: ((active_median / control_median) - 1.0) * 100.0;
+	std::uint64_t active_frames = 0U;
+	std::uint64_t active_flight = 0U;
+	std::uint64_t active_systems = 0U;
+	std::uint64_t active_keyframes = 0U;
+	std::uint64_t active_forced_keyframes = 0U;
+	std::uint64_t allocations = soak_series.allocations;
+	for (const auto& item : series) {
+		allocations = std::max(allocations, item.second.allocations);
+		if (item.first == "control") continue;
+		active_frames += item.second.frames;
+		active_flight += item.second.flight_ticks;
+		active_systems += item.second.systems_ticks;
+		active_keyframes += item.second.keyframes;
+		active_forced_keyframes +=
+			item.second.forced_keyframes;
+	}
+	bool observed_no_growth =
+		phase2::observed(soak_summary, "noGrowth");
+	for (const auto& item : summaries)
+		observed_no_growth =
+			phase2::observed(item.second, "noGrowth") &&
+			observed_no_growth;
+	const bool composite_pass =
+		phase2::observed(soak_summary, "finalStateExact") &&
+		phase2::allocation_summary_passes(soak_summary) &&
+		phase2::observed(soak_summary, "hashEqual") &&
+		phase2::observed(soak_summary, "blockCoverageComplete") &&
+		phase2::observed(soak_summary, "manifestChanged") &&
+		phase2::observed(soak_summary, "slowClientRecovered") &&
+		phase2::observed(soak_summary, "idsNotReused") &&
+		phase2::observed(soak_summary, "shutdownPurged") &&
+		phase2::observed(soak_summary, "finalSlotIdsUnique") &&
+		phase2::observed(soak_summary, "finalSlotHashesPresent") &&
+		phase2::observed(soak_summary, "finalSlotStatesExact") &&
+		phase2::summary_u64(soak_summary, "finalActiveSlots") == 4U &&
+		phase2::summary_u64(soak_summary, "purgedSlotCount") == 4U &&
+		phase2::summary_u64(soak_summary, "callbackHz") == 60U &&
+		phase2::summary_u64(soak_summary, "flightHz") == 30U &&
+		phase2::summary_u64(soak_summary, "callbacks") ==
+			(smoke ? 10U : soak_seconds) * 60U &&
+		phase2::summary_u64(soak_summary, "flightTicks") ==
+			(smoke ? 10U : soak_seconds) * 30U &&
+		phase2::summary_u64(soak_summary, "reentries") == 3U &&
+		phase2::summary_u64(soak_summary, "respawns") == 3U &&
+		phase2::summary_u64(soak_summary, "restarts") == 3U &&
+		phase2::summary_u64(soak_summary, "lossResync") > 0U;
+	const bool bounds_cardinality_pass = phase2::observed(
+		summaries["bounds-loss-resync-manifest"],
+		"boundsCardinalityProven");
+
+	using detail::NativeSessionRuntimeTestAccess;
+	using detail::TelemetryPhase2MemoryScope;
+	const bool shared_exact =
+		NativeSessionRuntimeTestAccess::phase2_owned_scope_within_cap(
+			TelemetryPhase2MemoryScope::Shared,
+			detail::Phase2SharedOwnedCapBytes);
+	const bool shared_plus_one =
+		!NativeSessionRuntimeTestAccess::phase2_owned_scope_within_cap(
+			TelemetryPhase2MemoryScope::Shared,
+			detail::Phase2SharedOwnedCapBytes + 1U);
+	const bool client_exact =
+		NativeSessionRuntimeTestAccess::phase2_owned_scope_within_cap(
+			TelemetryPhase2MemoryScope::ClientTotal,
+			detail::Phase2ClientOwnedCapBytes);
+	const bool client_plus_one =
+		!NativeSessionRuntimeTestAccess::phase2_owned_scope_within_cap(
+			TelemetryPhase2MemoryScope::ClientTotal,
+			detail::Phase2ClientOwnedCapBytes + 1U);
+	const bool process_exact =
+		NativeSessionRuntimeTestAccess::phase2_owned_scope_within_cap(
+			TelemetryPhase2MemoryScope::ProcessTotal,
+			detail::Phase2ProcessOwnedCapBytes);
+	const bool process_plus_one =
+		!NativeSessionRuntimeTestAccess::phase2_owned_scope_within_cap(
+			TelemetryPhase2MemoryScope::ProcessTotal,
+			detail::Phase2ProcessOwnedCapBytes + 1U);
+	const bool budgets_pass = shared_exact && shared_plus_one &&
+		client_exact && client_plus_one && process_exact &&
+		process_plus_one;
+	const bool minima_pass = active_frames >= frames &&
+		active_flight >= flight && active_systems >= systems &&
+		active_keyframes >= keyframes;
+	const bool timing_pass = p99_flight <= 0.25 &&
+		p99_systems <= 0.75 && p99_keyframe <= 2.0 &&
+		max_keyframe <= 5.0 && p99_four <= 1.50 &&
+		regression < 2.0;
+	const std::filesystem::path temperature_log(
+		phase2::environment("FSO_PHASE2_TEMPERATURE_LOG"));
+	const std::filesystem::path throttle_log(
+		phase2::environment("FSO_PHASE2_THROTTLE_LOG"));
+	const std::filesystem::path host_monitor_ready(
+		phase2::environment("FSO_PHASE2_HOST_MONITOR_READY_FILE"));
+	const bool host_monitor_pass =
+		phase2::wait_for_verdict_log(host_monitor_ready);
+	const bool temperature_pass =
+		phase2::verdict_log_passes(temperature_log);
+	const bool throttle_pass =
+		phase2::verdict_log_passes(throttle_log);
+	const bool metadata_complete =
+		std::strcmp(phase2::environment("FSO_PHASE2_POWER_MODE"),
+			"unavailable") != 0 &&
+		host_monitor_pass && temperature_pass && throttle_pass &&
+		std::strcmp(phase2::environment("FSO_PHASE2_SOURCE_FINGERPRINT"),
+			"unavailable") != 0 &&
+		std::strcmp(phase2::environment("FSO_PHASE2_TEST_FINGERPRINT"),
+			"unavailable") != 0 &&
+		std::strcmp(phase2::environment("FSO_PHASE2_CMAKE_FINGERPRINT"),
+			"unavailable") != 0 &&
+		std::strcmp(phase2::environment("FSO_PHASE2_COMMAND_FINGERPRINT"),
+			"unavailable") != 0 &&
+		std::strcmp(phase2::environment("FSO_PHASE2_REVISION"),
+			"unavailable") != 0 &&
+		std::strcmp(phase2::environment("FSO_PHASE2_WORKTREE"),
+			"unavailable") != 0 &&
+		std::strcmp(phase2::environment("FSO_PHASE2_DATE_UTC"),
+			"unavailable") != 0 &&
+		std::strcmp(phase2::environment("FSO_PHASE2_BUILD_FLAGS"),
+			"unavailable") != 0 &&
+		std::strcmp(phase2::environment("FSO_PHASE2_PLATFORM"),
+			"unavailable") != 0 &&
+		std::strcmp(phase2::environment("FSO_PHASE2_CPU"),
+			"unavailable") != 0 &&
+		std::strcmp(phase2::environment("FSO_PHASE2_BUILD_DIR"),
+			"unavailable") != 0 &&
+		std::strcmp(phase2::environment("FSO_PHASE2_COMMAND_JSON"),
+			"unavailable") != 0;
+	const auto required_measured =
+		static_cast<double>(control + measure);
+	const auto required_performance_total =
+		required_measured +
+		static_cast<double>(phase2::RuntimeCount * warmup);
+	const bool duration_pass = smoke ||
+		(coordinator.measured_seconds() >= required_measured &&
+		 performance_elapsed >= required_performance_total &&
+		 performance_elapsed <= required_performance_total + 60.0 &&
+		 soak_elapsed >= static_cast<double>(warmup + soak_seconds));
+	const bool evidence_pass = ok && disabled_fast_path_pass &&
+		minima_pass && timing_pass && allocations == 0U &&
+		observed_no_growth && budgets_pass && composite_pass &&
+		bounds_cardinality_pass && duration_pass;
+	const bool smoke_pass = ok && disabled_fast_path_pass &&
+		allocations == 0U && observed_no_growth && budgets_pass &&
+		composite_pass;
+	const bool certified = !smoke && evidence_pass &&
+		metadata_complete;
+
+	std::filesystem::create_directories(
+		report_path.parent_path());
+	std::ofstream out(report_path,
+		std::ios::out | std::ios::trunc);
+	if (!out) return 5;
+	out << std::setprecision(12)
+		<< "{\n\"schema\":\"fs2open.telemetry.phase2.performance-harness.v2\","
+		<< "\n\"status\":\""
+		<< (smoke ? "smoke-only" :
+			(certified ? "passed" : "failed")) << "\","
+		<< "\n\"certificationEligible\":"
+		<< (!smoke ? "true" : "false") << ','
+		<< "\n\"qualificationPlan\":\"coordinated-performance\","
+		<< "\n\"measurementProtocol\":{\"configuration\":\"Release\","
+		<< "\"clock\":\"steady_clock\",\"clockResolutionNs\":"
+		<< (1000000000.0 *
+			static_cast<double>(std::chrono::steady_clock::period::num) /
+			static_cast<double>(std::chrono::steady_clock::period::den))
+		<< ",\"traceSeed\":" << seed
+		<< ",\"traceSeconds\":" << control
+		<< ",\"epochSeconds\":" << epoch_seconds
+		<< ",\"epochCount\":" << phase2::EpochCount
+		<< ",\"callbackHz\":" << phase2::CallbackHz
+		<< ",\"warmupSecondsPerRuntime\":" << warmup
+		<< ",\"controlSeconds\":" << control
+		<< ",\"activeSeconds\":" << measure
+		<< ",\"physicalMeasuredSeconds\":" << control + measure
+		<< ",\"performanceMeasuredWallSeconds\":"
+		<< coordinator.measured_seconds()
+		<< ",\"performanceWallSeconds\":" << performance_elapsed
+		<< ",\"minimumFrames\":" << frames
+		<< ",\"minimumFlightTicks\":" << flight
+		<< ",\"minimumSystemTicks\":" << systems
+		<< ",\"minimumKeyframes\":" << keyframes
+		<< ",\"observedFrames\":" << active_frames
+		<< ",\"observedFlightTicks\":" << active_flight
+		<< ",\"observedSystemTicks\":" << active_systems
+		<< ",\"observedKeyframes\":" << active_keyframes
+		<< ",\"observedForcedKeyframes\":"
+		<< active_forced_keyframes
+		<< ",\"percentile\":\"nearest-rank\","
+		<< "\"median\":\"conventional-middle-mean\","
+		<< "\"outliersRemoved\":0,"
+		<< "\"activeAggregation\":\"raw-multiset-union\"},"
+		<< "\n\"host\":{\"compiler\":\""
+		<< phase2::escape(
+#if defined(_MSC_VER)
+			"MSVC-" + std::to_string(_MSC_VER)
+#else
+			"non-MSVC"
+#endif
+		) << "\",\"powerMode\":\""
+		<< phase2::escape(
+			phase2::environment("FSO_PHASE2_POWER_MODE"))
+		<< "\",\"temperatureLog\":{\"path\":\""
+		<< phase2::escape(temperature_log.string())
+		<< "\",\"sha256\":\"" << phase2::file_sha(temperature_log)
+		<< "\",\"verdict\":\""
+		<< (temperature_pass ? "pass" : "fail")
+		<< "\"},\"throttleLog\":{\"path\":\""
+		<< phase2::escape(throttle_log.string())
+		<< "\",\"sha256\":\"" << phase2::file_sha(throttle_log)
+		<< "\",\"verdict\":\""
+		<< (throttle_pass ? "pass" : "fail")
+		<< "\"},\"monitorReady\":{\"path\":\""
+		<< phase2::escape(host_monitor_ready.string())
+		<< "\",\"sha256\":\""
+		<< phase2::file_sha(host_monitor_ready)
+		<< "\",\"verdict\":\""
+		<< (host_monitor_pass ? "pass" : "fail")
+		<< "\"},\"sourceFingerprint\":\""
+		<< phase2::escape(
+			phase2::environment("FSO_PHASE2_SOURCE_FINGERPRINT"))
+		<< "\",\"testFingerprint\":\""
+		<< phase2::escape(
+			phase2::environment("FSO_PHASE2_TEST_FINGERPRINT"))
+		<< "\",\"cmakeFingerprint\":\""
+		<< phase2::escape(
+			phase2::environment("FSO_PHASE2_CMAKE_FINGERPRINT"))
+		<< "\",\"commandFingerprint\":\""
+		<< phase2::escape(
+			phase2::environment("FSO_PHASE2_COMMAND_FINGERPRINT"))
+		<< "\"},"
+		<< "\n\"evidenceContext\":{\"revision\":\""
+		<< phase2::escape(phase2::environment("FSO_PHASE2_REVISION"))
+		<< "\",\"worktree\":\""
+		<< phase2::escape(phase2::environment("FSO_PHASE2_WORKTREE"))
+		<< "\",\"dateUtc\":\""
+		<< phase2::escape(phase2::environment("FSO_PHASE2_DATE_UTC"))
+		<< "\",\"platform\":\""
+		<< phase2::escape(phase2::environment("FSO_PHASE2_PLATFORM"))
+		<< "\",\"cpu\":\""
+		<< phase2::escape(phase2::environment("FSO_PHASE2_CPU"))
+		<< "\",\"buildDirectory\":\""
+		<< phase2::escape(phase2::environment("FSO_PHASE2_BUILD_DIR"))
+		<< "\",\"buildConfig\":\"Release\",\"buildFlags\":\""
+		<< phase2::escape(phase2::environment("FSO_PHASE2_BUILD_FLAGS"))
+		<< "\",\"command\":"
+		<< (std::getenv("FSO_PHASE2_COMMAND_JSON") != nullptr &&
+			 *std::getenv("FSO_PHASE2_COMMAND_JSON") != '\0'
+			? std::getenv("FSO_PHASE2_COMMAND_JSON")
+			: "null")
+		<< ",\"codeReturn\":0,\"durationSeconds\":"
+		<< performance_elapsed + soak_elapsed
+		<< ",\"mission\":\"wp11-canonical-trace\","
+		   "\"mod\":\"FS2Open-core\",\"profile\":\"complete-ship\"},"
+		<< "\n\"runtimeOrder\":{\"base\":[\"control\",\"nominal\","
+		   "\"four-clients-one-slow\","
+		   "\"bounds-loss-resync-manifest\"],"
+		   "\"rotation\":\"left-e-mod-4\",\"persistent\":"
+		<< (runtimes_persistent ? "true" : "false")
+		<< ","
+		   "\"slices\":[";
+	const auto slice_order = coordinator.slice_order();
+	for (std::size_t index = 0U;
+		 index < slice_order.size(); ++index)
+		out << (index ? "," : "") << "{\"epoch\":"
+			<< index / phase2::RuntimeCount << ",\"position\":"
+			<< index % phase2::RuntimeCount << ",\"runtime\":\""
+			<< workloads[slice_order[index]].name << "\"}";
+	out << "]},\n\"qualifications\":["
+		<< "{\"name\":\"config-absent\",\"status\":\"passed\","
+		   "\"measured\":false,\"path\":\""
+		<< phase2::escape(config_absent_path.string())
+		<< "\",\"sha256\":\"" << phase2::file_sha(config_absent_path)
+		<< "\"},{\"name\":\"enabled-false\",\"status\":\""
+		<< (disabled_fast_path_pass ? "passed" : "failed") << "\","
+		   "\"measured\":false,\"path\":\""
+		<< phase2::escape(disabled_path.string())
+		<< "\",\"sha256\":\"" << phase2::file_sha(disabled_path)
+		<< "\",\"callbacks\":100000,\"averageMs\":"
+		<< disabled_average << ",\"p99Ms\":" << disabled_p99
+		<< ",\"medianMs\":" << disabled_median
+		<< ",\"controlMedianRegressionPercent\":"
+		<< disabled_frame_regression
+		<< ",\"sharedFrameWorkload\":true}],"
+		<< "\n\"timingsMs\":{\"flightControl\":{\"p99\":"
+		<< p99_flight << "},\"systemsNominal\":{\"p99\":"
+		<< p99_systems << "},\"keyframe\":{\"p99\":"
+		<< p99_keyframe << ",\"max\":" << max_keyframe
+		<< "},\"fourClientsSystems\":{\"p99\":" << p99_four
+		<< "},\"controlMedian\":" << control_median
+		<< ",\"activeMedian\":" << active_median
+		<< ",\"activeControlMedianRegressionPercent\":"
+		<< regression << ",\"scenarioMedians\":{";
+	for (std::size_t index = 1U; index < workloads.size(); ++index)
+		out << (index > 1U ? "," : "") << "\""
+			<< workloads[index].name << "\":"
+			<< phase2::median(
+				series[workloads[index].name].tick_ms);
+	out << "}},\n\"rawSamples\":[";
+	for (std::size_t index = 0U;
+		 index < workloads.size(); ++index) {
+		const auto path = raw_dir /
+			(std::string(workloads[index].name) + ".csv");
+		const auto& item = series[workloads[index].name];
+		out << (index ? "," : "") << "{\"workload\":\""
+			<< workloads[index].name << "\",\"path\":\""
+			<< phase2::escape(path.string()) << "\",\"sha256\":\""
+			<< phase2::file_sha(path) << "\",\"count\":"
+			<< item.frames << ",\"flightTicks\":"
+			<< item.flight_ticks << ",\"systemTicks\":"
+			<< item.systems_ticks << ",\"keyframes\":"
+			<< item.keyframes << ",\"forcedKeyframes\":"
+			<< item.forced_keyframes << "}";
+	}
+	out << "],\n\"allocations\":{\"afterReady\":" << allocations
+		<< ",\"steadyStateGrowthBytes\":"
+		<< (observed_no_growth ? 0 : 1) << "},"
+		<< "\n\"budgets\":{\"sharedBytes\":{\"limit\":"
+		<< detail::Phase2SharedOwnedCapBytes
+		<< ",\"exactAccepted\":"
+		<< (shared_exact ? "true" : "false")
+		<< ",\"plusOneRejectedBeforeBind\":"
+		<< (shared_plus_one ? "true" : "false")
+		<< "},\"perClientBytes\":{\"limit\":"
+		<< detail::Phase2ClientOwnedCapBytes
+		<< ",\"exactAccepted\":"
+		<< (client_exact ? "true" : "false")
+		<< ",\"plusOneRejectedBeforeBind\":"
+		<< (client_plus_one ? "true" : "false")
+		<< "},\"processFourClientsBytes\":{\"limit\":"
+		<< detail::Phase2ProcessOwnedCapBytes
+		<< ",\"exactAccepted\":"
+		<< (process_exact ? "true" : "false")
+		<< ",\"plusOneRejectedBeforeBind\":"
+		<< (process_plus_one ? "true" : "false") << "}},"
+		<< "\n\"bounds\":{\"cardinalityProven\":"
+		<< (bounds_cardinality_pass ? "true" : "false")
+		<< ",\"requiredShips\":64,\"requiredAggregateSubsystems\":4096,"
+		   "\"requiredShieldSegmentsPerShip\":64,"
+		   "\"requiredBanksPerStateFamily\":64,"
+		   "\"requiredClassBankDefinitions\":192,"
+		   "\"observedShips\":"
+		<< phase2::summary_u64(
+			summaries["bounds-loss-resync-manifest"],
+			"observedShips")
+		<< ",\"observedAggregateSubsystems\":"
+		<< phase2::summary_u64(
+			summaries["bounds-loss-resync-manifest"],
+			"observedAggregateSubsystems")
+		<< ",\"observedShieldSegmentsPerShip\":"
+		<< phase2::summary_u64(
+			summaries["bounds-loss-resync-manifest"],
+			"observedShieldSegmentsPerShip")
+		<< ",\"observedPrimaryBanks\":"
+		<< phase2::summary_u64(
+			summaries["bounds-loss-resync-manifest"],
+			"observedPrimaryBanks")
+		<< ",\"observedSecondaryBanks\":"
+		<< phase2::summary_u64(
+			summaries["bounds-loss-resync-manifest"],
+			"observedSecondaryBanks")
+		<< ",\"observedTertiaryBanks\":"
+		<< phase2::summary_u64(
+			summaries["bounds-loss-resync-manifest"],
+			"observedTertiaryBanks")
+		<< ",\"observedClassBankDefinitions\":"
+		<< phase2::summary_u64(
+			summaries["bounds-loss-resync-manifest"],
+			"observedClassBankDefinitions")
+		<< "},"
+		<< "\n\"soak\":{\"profile\":\"composite\",\"workload\":"
+		   "\"composite-soak\",\"baseSeed\":" << soak_seed
+		<< ",\"seedDerivation\":\"(4242,composite)\","
+		   "\"derivedStream\":\"" << std::hex
+		<< phase2::derived_seed(soak_seed, "composite")
+		<< std::dec << "\",\"durationSeconds\":" << soak_seconds
+		<< ",\"wallElapsedSeconds\":" << soak_elapsed
+		<< ",\"rawPath\":\""
+		<< phase2::escape(soak_path_raw.string())
+		<< "\",\"rawSha256\":\""
+		<< phase2::file_sha(soak_path_raw)
+		<< "\",\"blockCoverage\":{\"count\":"
+		<< phase2::summary_u64(soak_summary, "blockCoverageCount")
+		<< ",\"complete\":"
+		<< (phase2::observed(soak_summary,
+				"blockCoverageComplete") ? "true" : "false")
+		<< "},\"missionReentries\":"
+		<< phase2::summary_u64(soak_summary, "reentries")
+		<< ",\"respawns\":"
+		<< phase2::summary_u64(soak_summary, "respawns")
+		<< ",\"clientRestarts\":"
+		<< phase2::summary_u64(soak_summary, "restarts")
+		<< ",\"lossResync\":"
+		<< phase2::summary_u64(soak_summary, "lossResync")
+		<< ",\"callbackHz\":"
+		<< phase2::summary_u64(soak_summary, "callbackHz")
+		<< ",\"flightHz\":"
+		<< phase2::summary_u64(soak_summary, "flightHz")
+		<< ",\"callbacks\":"
+		<< phase2::summary_u64(soak_summary, "callbacks")
+		<< ",\"flightTicks\":"
+		<< phase2::summary_u64(soak_summary, "flightTicks")
+		<< ",\"systemTicks\":"
+		<< phase2::summary_u64(soak_summary, "systemTicks")
+		<< ",\"keyframes\":"
+		<< phase2::summary_u64(
+			soak_summary, "periodicKeyframes")
+		<< ",\"forcedKeyframes\":"
+		<< phase2::summary_u64(
+			soak_summary, "forcedKeyframes")
+		<< ",\"manifestChanged\":"
+		<< (phase2::observed(soak_summary,
+				"manifestChanged") ? "true" : "false")
+		<< ",\"slowClientRecovered\":"
+		<< (phase2::observed(soak_summary,
+				"slowClientRecovered") ? "true" : "false")
+		<< ",\"stateHash\":{\"oracle\":\""
+		<< phase2::summary_u64(soak_summary, "oracleStateHash")
+		<< "\",\"final\":\""
+		<< phase2::summary_u64(soak_summary, "finalStateHash")
+		<< "\",\"equal\":"
+		<< (phase2::observed(soak_summary,
+				"hashEqual") ? "true" : "false")
+		<< "},\"noLeak\":"
+		<< (soak_series.allocations == 0U ? "true" : "false")
+		<< ",\"noGrowth\":"
+		<< (phase2::observed(soak_summary,
+				"noGrowth") ? "true" : "false")
+		<< ",\"noDeadlock\":"
+		<< (soak_run_ok ? "true" : "false")
+		<< ",\"purgedToZero\":"
+		<< (phase2::observed(soak_summary,
+				"shutdownPurged") ? "true" : "false")
+		<< ",\"idsNotReused\":"
+		<< (phase2::observed(soak_summary,
+				"idsNotReused") ? "true" : "false")
+		<< ",\"finalStateExact\":"
+		<< (phase2::observed(soak_summary,
+				"finalStateExact") ? "true" : "false")
+		<< ",\"shutdownBounded\":"
+		<< (phase2::observed(soak_summary,
+				"shutdownPurged") ? "true" : "false")
+		<< ",\"activeSlotsBeforeShutdown\":"
+		<< phase2::summary_u64(soak_summary, "finalActiveSlots")
+		<< ",\"purgedSlots\":"
+		<< phase2::summary_u64(soak_summary, "purgedSlotCount")
+		<< ",\"slotIdsUnique\":"
+		<< (phase2::observed(soak_summary,
+				"finalSlotIdsUnique") ? "true" : "false")
+		<< ",\"slotHashesPresent\":"
+		<< (phase2::observed(soak_summary,
+				"finalSlotHashesPresent") ? "true" : "false")
+		<< ",\"slotStatesExact\":"
+		<< (phase2::observed(soak_summary,
+				"finalSlotStatesExact") ? "true" : "false")
+		<< "}}\n";
+	return (smoke ? smoke_pass : certified) ? 0 : 4;
+}

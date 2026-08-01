@@ -2,6 +2,7 @@
 
 #include <array>
 #include <limits>
+#include <utility>
 
 namespace telemetry::detail {
 
@@ -79,8 +80,43 @@ protocol::ProducerBaselineResult Phase1SnapshotSlot::replace_current(const proto
 	return m_baseline.replace_current(current);
 }
 
+protocol::ProducerBaselineResult Phase1SnapshotSlot::replace_current_incremental(
+	const protocol::StateImage& current,
+	const std::uint16_t* rebuilt_indices,
+	std::size_t rebuilt_index_count) noexcept
+{
+	return m_baseline.replace_current_incremental(
+		current, rebuilt_indices, rebuilt_index_count);
+}
+
+protocol::ProducerBaselineResult
+Phase1SnapshotSlot::take_current_for_incremental_patch(
+	protocol::StateImage& current) noexcept
+{
+	return m_baseline.take_current_for_incremental_patch(current);
+}
+
+protocol::ProducerBaselineResult
+Phase1SnapshotSlot::restore_current_after_incremental_patch(
+	protocol::StateImage&& current) noexcept
+{
+	return m_baseline.restore_current_after_incremental_patch(
+		std::move(current));
+}
+
+protocol::ProducerBaselineResult
+Phase1SnapshotSlot::commit_current_incremental_patch(
+	protocol::StateImage&& current,
+	const std::uint16_t* rebuilt_indices,
+	std::size_t rebuilt_index_count) noexcept
+{
+	return m_baseline.commit_current_incremental_patch(
+		std::move(current), rebuilt_indices, rebuilt_index_count);
+}
+
 protocol::ProducerBaselineResult Phase1SnapshotSlot::emit_cumulative_delta(std::uint64_t producer_sample_time_us,
-	protocol::CumulativeStateDelta& delta) noexcept
+	protocol::CumulativeStateDelta& delta,
+	protocol::DeltaBuildChanges* changes) noexcept
 {
 	// A discontinuity is represented only by the future keyframe. In
 	// particular, never let a caller bypass the controller's record-set gate
@@ -89,18 +125,50 @@ protocol::ProducerBaselineResult Phase1SnapshotSlot::emit_cumulative_delta(std::
 		return protocol::ProducerBaselineResult::KeyframeRequired;
 	}
 	const auto mutations_capacity_before = delta.mutations.capacity();
-	std::array<std::size_t, 4U> identity_capacities{};
-	std::array<std::size_t, 4U> value_capacities{};
-	for (std::size_t index = 0U; index < delta.mutations.size() && index < identity_capacities.size(); ++index) {
-		identity_capacities[index] = delta.mutations[index].atom.key.identity.capacity();
-		value_capacities[index] = delta.mutations[index].atom.value.capacity();
+	std::size_t identity_capacity_before = 0U;
+	std::size_t value_capacity_before = 0U;
+	std::size_t owner_identity_capacity_before = 0U;
+	if (m_allocation_observer != nullptr &&
+		m_allocation_observer->active()) {
+		for (const auto& mutation : delta.mutations) {
+			identity_capacity_before +=
+				mutation.atom.key.identity.capacity();
+			value_capacity_before += mutation.atom.value.capacity();
+			owner_identity_capacity_before +=
+				mutation.atom.cascade_owner.identity.capacity();
+		}
 	}
-	const auto result = m_baseline.emit_cumulative_delta(producer_sample_time_us, delta);
+	const auto result = m_baseline.emit_cumulative_delta(
+		producer_sample_time_us, delta, changes);
 	if (m_allocation_observer != nullptr) {
-		m_allocation_observer->note_growth(mutations_capacity_before, delta.mutations.capacity());
-		for (std::size_t index = 0U; index < delta.mutations.size() && index < identity_capacities.size(); ++index) {
-			m_allocation_observer->note_growth(identity_capacities[index], delta.mutations[index].atom.key.identity.capacity());
-			m_allocation_observer->note_growth(value_capacities[index], delta.mutations[index].atom.value.capacity());
+		m_allocation_observer->note_growth(mutations_capacity_before,
+			delta.mutations.capacity(),
+			Phase1AllocationGrowthSource::SnapshotSlotDeltaScratch);
+		if (m_allocation_observer->active()) {
+			std::size_t identity_capacity_after = 0U;
+			std::size_t value_capacity_after = 0U;
+			std::size_t owner_identity_capacity_after = 0U;
+			for (const auto& mutation : delta.mutations) {
+				identity_capacity_after +=
+					mutation.atom.key.identity.capacity();
+				value_capacity_after +=
+					mutation.atom.value.capacity();
+				owner_identity_capacity_after +=
+					mutation.atom.cascade_owner.identity.capacity();
+			}
+			m_allocation_observer->note_growth(
+				identity_capacity_before, identity_capacity_after,
+				Phase1AllocationGrowthSource::
+					SnapshotSlotDeltaScratch);
+			m_allocation_observer->note_growth(
+				value_capacity_before, value_capacity_after,
+				Phase1AllocationGrowthSource::
+					SnapshotSlotDeltaScratch);
+			m_allocation_observer->note_growth(
+				owner_identity_capacity_before,
+				owner_identity_capacity_after,
+				Phase1AllocationGrowthSource::
+					SnapshotSlotDeltaScratch);
 		}
 	}
 	if (result == protocol::ProducerBaselineResult::KeyframeRequired) {
@@ -113,6 +181,9 @@ bool Phase1SnapshotSlot::current_record_set_compatible_with_active_baseline() no
 {
 	if (!m_baseline.has_active_baseline()) {
 		return false;
+	}
+	if (m_baseline.incremental_record_set_compatible()) {
+		return true;
 	}
 	const auto& current = m_baseline.current().records();
 	const auto& baseline = m_baseline.active_baseline().records();

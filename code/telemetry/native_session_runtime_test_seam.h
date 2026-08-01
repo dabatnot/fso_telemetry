@@ -24,7 +24,7 @@ class NativeSessionRuntimeTestAccess final {
 		const NativeSessionRuntime& runtime) noexcept;
 	static std::uint64_t startup_allocation_count(
 		const NativeSessionRuntime& runtime) noexcept;
-	static Phase2CapturePlan phase2_keyframe_test_seam(
+	static Phase2CapturePlan prepare_phase2_keyframe_plan(
 		NativeSessionRuntime& runtime) noexcept;
 	static Phase2CapturePlan phase2_capture_plan(
 		const NativeSessionRuntime& runtime) noexcept;
@@ -39,6 +39,9 @@ class NativeSessionRuntimeTestAccess final {
 		std::size_t owned_bytes) noexcept;
 	static void begin_steady_state_allocation_tracking(NativeSessionRuntime& runtime) noexcept;
 	static std::uint64_t steady_state_allocation_count(const NativeSessionRuntime& runtime) noexcept;
+	static std::uint64_t steady_state_allocation_count(
+		const NativeSessionRuntime& runtime,
+		Phase1AllocationGrowthSource source) noexcept;
 	static void force_steady_state_allocation_for_tests(NativeSessionRuntime& runtime) noexcept;
 	// The P9.3 runner enables this only after native startup/warm-up and reads a
 	// bounded copy after each real service_tick. No timing hook is active in a

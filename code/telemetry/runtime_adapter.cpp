@@ -177,6 +177,9 @@ TelemetryLogReason map_config_log_reason(ConfigError error) noexcept
 	case ConfigError::RootNotObject:
 	case ConfigError::UnknownKey:
 	case ConfigError::MissingSchemaVersion:
+	case ConfigError::MissingPhase2Profile:
+	case ConfigError::Phase2ProfileNotAllowed:
+	case ConfigError::InvalidPhase2Profile:
 	case ConfigError::InvalidType:
 	default:
 		return TelemetryLogReason::ConfigSchema;
@@ -277,9 +280,8 @@ class NativeRuntimeStartupServices final : public RuntimeStartupServices {
 			&m_random,
 			&m_metrics,
 			&m_log,
-			Phase2Profile::None,
 			current_phase2_profile_eligibility(m_effective_config),
-			Phase2Profile::None};
+			m_effective_config.phase2_profile};
 		if (native->start(request) != NativeSessionStartStatus::Started) {
 			return RuntimeTransportStatus::Unavailable;
 		}

@@ -1,4 +1,4 @@
-name: Telemetry protocol conformance
+name: Telemetry short product validation
 
 on:
   pull_request:
@@ -6,125 +6,87 @@ on:
       - '.github/workflows/telemetry-protocol.yaml'
       - 'CMakeLists.txt'
       - 'code/CMakeLists.txt'
-      - 'code/telemetry/protocol/**'
-      - 'documentation/analysis/specs/0-Contrat-de-protocole/**'
-      - 'documentation/analysis/specs/1-Squelette-et-premier-flux/**'
+      - 'code/telemetry/**'
+      - 'documentation/analysis/**'
+      - 'test/src/CMakeLists.txt'
       - 'test/src/source_groups.cmake'
-      - 'test/src/telemetry/protocol/**'
-      - 'test/telemetry/protocol/**'
+      - 'test/src/telemetry/**'
+      - 'test/telemetry/**'
   push:
     branches: [master, 'codex/**']
     paths:
       - '.github/workflows/telemetry-protocol.yaml'
       - 'CMakeLists.txt'
       - 'code/CMakeLists.txt'
-      - 'code/telemetry/protocol/**'
-      - 'documentation/analysis/specs/0-Contrat-de-protocole/**'
-      - 'documentation/analysis/specs/1-Squelette-et-premier-flux/**'
+      - 'code/telemetry/**'
+      - 'documentation/analysis/**'
+      - 'test/src/CMakeLists.txt'
       - 'test/src/source_groups.cmake'
-      - 'test/src/telemetry/protocol/**'
-      - 'test/telemetry/protocol/**'
+      - 'test/src/telemetry/**'
+      - 'test/telemetry/**'
   workflow_dispatch:
-    inputs:
-      candidate_sha:
-        description: Full lowercase 40-character commit SHA to validate and fuzz for 1800 seconds per target
-        required: true
-        type: string
 
 permissions:
   contents: read
 
 jobs:
-  schema_vectors:
-    name: Schema, vectors and coverage
+  contract_assets:
+    name: Frozen wire assets and independent decoder
     runs-on: ubuntu-latest
     steps:
-      - name: Validate candidate SHA
-        if: github.event_name == 'workflow_dispatch'
-        shell: bash
-        env:
-          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
-        run: |
-          if [[ ! "$CANDIDATE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
-            echo "candidate_sha must be a full lowercase 40-character commit SHA" >&2
-            exit 2
-          fi
       - uses: actions/checkout@v7
         with:
           submodules: true
-          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.candidate_sha || github.sha }}
           persist-credentials: false
       - uses: actions/setup-python@v6
         with:
           python-version: '3.11'
-      - name: Verify fuzz evidence runner
-        run: python -B test/telemetry/protocol/fuzz/test_run_fuzz_smoke.py
-      - name: Verify frozen FSTL 1.0 artifacts
+      - name: Reject retired certification references
+        run: python -B test/telemetry/tools/check_no_legacy_certification.py .
+      - name: Verify frozen FSTL 1.0 bytes and hashes
         run: >-
           python -B test/telemetry/protocol/tools/verify_fstl_1_0_freeze.py
           --check --repo .
-      - name: Exercise frozen FSTL 1.0 mutation guards
+      - name: Exercise FSTL 1.0 mutation guards
         run: python -B test/telemetry/protocol/tools/test_fstl_1_0_freeze.py
-      - name: Verify versioned schemas and numeric registries
-        run: python -B test/telemetry/protocol/tools/fstl_schema.py --self-test
-      - name: Verify FSTL 1.0 schema layouts against golden bytes
-        run: python -B test/telemetry/protocol/tools/verify_schema_vectors.py --check
-      - name: Verify FSTL 1.1 schema layouts against frozen golden bytes
-        run: >-
+      - name: Verify FSTL schemas and exact profile masks
+        run: |
+          python -B test/telemetry/protocol/tools/fstl_schema.py --self-test
           python -B test/telemetry/protocol/tools/verify_schema_vectors.py --check
-          --schema test/telemetry/protocol/schema/fstl-v1.1.yaml
-      - name: Verify additive FSTL 1.1 amendment
-        run: >-
-          python -B test/telemetry/protocol/tools/verify_fstl_1_1_amendment.py
-          --check --repo .
-      - name: Verify transport vectors
-        run: python -B test/telemetry/protocol/tools/generate_transport_vectors.py --check
-      - name: Verify message and record vectors
-        run: python -B test/telemetry/protocol/tools/generate_protocol_vectors.py --check
-      - name: Verify independent decoder
-        run: python -B test/telemetry/protocol/tools/fstl_reference_decoder.py --check --repo .
-      - name: Publish automatic protocol coverage
-        run: >-
-          python -B test/telemetry/protocol/tools/verify_telemetry_assets.py
-          --require-complete --report telemetry-coverage.json
-      - name: Verify vector-seeded fuzz corpus
+          python -B test/telemetry/protocol/tools/verify_schema_vectors.py --check --schema test/telemetry/protocol/schema/fstl-v1.1.yaml
+          python -B test/telemetry/protocol/tools/verify_fstl_1_1_amendment.py --check --repo .
+      - name: Verify transport and business vectors
+        run: |
+          python -B test/telemetry/protocol/tools/generate_transport_vectors.py --check
+          python -B test/telemetry/protocol/tools/generate_protocol_vectors.py --check
+          python -B test/telemetry/protocol/tools/fstl_reference_decoder.py --check --repo .
+          python -B test/telemetry/protocol/tools/verify_telemetry_assets.py --require-complete
+      - name: Test the independent observation client
+        run: python -B test/telemetry/protocol/tools/test_fstl_console_client_contract.py
+      - name: Prepare the bounded fuzz corpus
         run: >-
           python -B test/telemetry/protocol/fuzz/prepare_fuzz_corpus.py
           --vectors test/telemetry/protocol/vectors
           --output telemetry-fuzz-corpus
       - uses: actions/upload-artifact@v7
         with:
-          name: telemetry-protocol-reports
-          path: |
-            telemetry-coverage.json
-            telemetry-fuzz-corpus/manifest.json
-            test/telemetry/protocol/protocol-coverage.json
+          name: telemetry-short-corpus
+          path: telemetry-fuzz-corpus/manifest.json
 
-  cpp_unittests_linux:
-    name: C++ protocol unit tests (Linux)
+  telemetry_short_linux:
+    name: Release product path and loopback (x64 Linux)
     runs-on: ubuntu-latest
     container: ghcr.io/scp-fs2open/linux_build:sha-ab87451
     steps:
-      - name: Validate candidate SHA
-        if: github.event_name == 'workflow_dispatch'
-        shell: bash
-        env:
-          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
-        run: |
-          if [[ ! "$CANDIDATE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
-            echo "candidate_sha must be a full lowercase 40-character commit SHA" >&2
-            exit 2
-          fi
       - uses: actions/checkout@v7
         with:
           submodules: true
-          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.candidate_sha || github.sha }}
           persist-credentials: false
       - name: Set workspace as safe
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
-      - name: Configure protocol unit tests
+      - name: Configure Release tests
         run: >-
-          cmake -S . -B build-telemetry-tests -G Ninja
+          cmake -S . -B build-telemetry-short -G Ninja
           -DCMAKE_BUILD_TYPE=Release
           -DFSO_BUILD_TESTS=ON
           -DFSO_BUILD_QTFRED=OFF
@@ -138,16 +100,65 @@ jobs:
           -DFSO_BUILD_INCLUDED_LIBS=ON
           -DFSO_USE_LTO=OFF
           -DENABLE_COTIRE=OFF
-      - name: Build protocol unit tests
-        run: cmake --build build-telemetry-tests --target unittests
-      - name: Run protocol unit tests
+      - name: Build short telemetry tests and product integration tests
         run: >-
-          ./build-telemetry-tests/bin/unittests
-          --gtest_filter='TelemetryProtocol*'
-          --gtest_color=no
+          cmake --build build-telemetry-short --target
+          unittests telemetry_phase2_unit_tests
+          telemetry_phase2_protocol_tests telemetry_phase2_integration_tests
+          telemetry_native_runtime_loopback_contract_tests
+      - name: Run telemetry-short in under five minutes
+        shell: bash
+        run: |
+          started=$SECONDS
+          ctest --test-dir build-telemetry-short -C Release -L telemetry-short --output-on-failure --timeout 60
+          elapsed=$((SECONDS - started))
+          test "$elapsed" -lt 300
+      - name: Document architecture scope
+        run: echo "ARM is excluded from native loopback until an ARM runner is explicitly supported."
 
-  fuzz_unix:
-    name: Fuzz smoke (${{ matrix.os }})
+  telemetry_short_windows:
+    name: Release product path and loopback (x64 Windows)
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: true
+          persist-credentials: false
+      - name: Configure Release tests
+        shell: pwsh
+        run: >-
+          cmake -S . -B build-telemetry-short -A x64
+          -DFSO_BUILD_TESTS=ON
+          -DFSO_BUILD_QTFRED=OFF
+          -DFSO_BUILD_FRED2=OFF
+          -DFSO_USE_SPEECH=OFF
+          -DFSO_USE_VOICEREC=OFF
+          -DFSO_BUILD_WITH_FFMPEG=OFF
+          -DFSO_BUILD_WITH_DISCORD=OFF
+          -DFSO_BUILD_WITH_OPENGL=OFF
+          -DFSO_BUILD_WITH_OPENXR=OFF
+          -DFSO_BUILD_INCLUDED_LIBS=ON
+          -DFSO_USE_LTO=OFF
+          -DENABLE_COTIRE=OFF
+      - name: Build short telemetry tests with one compiler
+        shell: pwsh
+        run: >-
+          cmake --build build-telemetry-short --config Release --target
+          unittests telemetry_phase2_unit_tests
+          telemetry_phase2_protocol_tests telemetry_phase2_integration_tests
+          telemetry_native_runtime_loopback_contract_tests --
+          /m:1 /p:CL_MPCount=1 /verbosity:minimal
+      - name: Run telemetry-short in under five minutes
+        shell: pwsh
+        run: |
+          $started = Get-Date
+          ctest --test-dir build-telemetry-short -C Release -L telemetry-short --output-on-failure --timeout 60
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (((Get-Date) - $started).TotalSeconds -ge 300) {
+            throw 'telemetry-short exceeded five minutes'
+          }
+  fuzz_smoke:
+    name: Bounded fuzz smoke (${{ matrix.os }})
     strategy:
       fail-fast: false
       matrix:
@@ -158,37 +169,18 @@ jobs:
             standalone: 'ON'
     runs-on: ${{ matrix.os }}
     steps:
-      - name: Validate candidate SHA
-        if: github.event_name == 'workflow_dispatch'
-        shell: bash
-        env:
-          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
-        run: |
-          if [[ ! "$CANDIDATE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
-            echo "candidate_sha must be a full lowercase 40-character commit SHA" >&2
-            exit 2
-          fi
       - uses: actions/checkout@v7
         with:
           submodules: true
-          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.candidate_sha || github.sha }}
           persist-credentials: false
-      - uses: actions/setup-python@v6
-        with:
-          python-version: '3.11'
-      - name: Install libudev on Ubuntu
-        if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install --yes libudev-dev
-      - name: Install Ninja on macOS
-        if: runner.os == 'macOS'
-        run: brew install ninja
-      - name: Select Clang
-        shell: bash
+      - name: Install platform dependencies
         run: |
-          echo "CC=clang" >> "$GITHUB_ENV"
-          echo "CXX=clang++" >> "$GITHUB_ENV"
-      - name: Configure optional fuzz targets
-        shell: bash
+          if [ "${{ runner.os }}" = "Linux" ]; then sudo apt-get update && sudo apt-get install --yes libudev-dev ninja-build; fi
+          if [ "${{ runner.os }}" = "macOS" ]; then brew install ninja; fi
+      - name: Configure bounded fuzz targets
+        env:
+          CC: clang
+          CXX: clang++
         run: >-
           cmake -S . -B build-telemetry-fuzz -G Ninja
           -DCMAKE_BUILD_TYPE=Debug
@@ -197,48 +189,23 @@ jobs:
           -DFSO_BUILD_TESTS=OFF
           -DFSO_BUILD_QTFRED=OFF
           -DFSO_BUILD_FRED2=OFF
-          -DFSO_USE_SPEECH=OFF
-          -DFSO_USE_VOICEREC=OFF
           -DFSO_BUILD_WITH_FFMPEG=OFF
-          -DFSO_BUILD_WITH_DISCORD=OFF
           -DFSO_BUILD_WITH_OPENGL=OFF
-          -DFSO_BUILD_WITH_OPENXR=OFF
           -DFSO_BUILD_INCLUDED_LIBS=ON
           -DFSO_USE_LTO=OFF
           -DENABLE_COTIRE=OFF
-      - name: Build and run ASan/UBSan fuzz smoke
+      - name: Build and run the short corpus
         run: cmake --build build-telemetry-fuzz --target telemetry_fuzz_smoke
-      - uses: actions/upload-artifact@v7
-        if: always()
-        with:
-          name: telemetry-fuzz-${{ matrix.os }}
-          path: |
-            build-telemetry-fuzz/telemetry-fuzz-corpus/manifest.json
-            build-telemetry-fuzz/telemetry-fuzz-artifacts/**
-          if-no-files-found: ignore
 
-  fuzz_windows:
-    name: Fuzz corpus replay (Windows ASan)
+  fuzz_smoke_windows:
+    name: Bounded fuzz corpus replay (x64 Windows)
     runs-on: windows-2022
     steps:
-      - name: Validate candidate SHA
-        if: github.event_name == 'workflow_dispatch'
-        shell: pwsh
-        env:
-          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
-        run: |
-          if ($env:CANDIDATE_SHA -cnotmatch '^[0-9a-f]{40}$') {
-            throw 'candidate_sha must be a full lowercase 40-character commit SHA'
-          }
       - uses: actions/checkout@v7
         with:
           submodules: true
-          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.candidate_sha || github.sha }}
           persist-credentials: false
-      - uses: actions/setup-python@v6
-        with:
-          python-version: '3.11'
-      - name: Configure optional replay targets
+      - name: Configure bounded replay targets
         shell: pwsh
         run: >-
           cmake -S . -B build-telemetry-fuzz -A x64
@@ -247,380 +214,14 @@ jobs:
           -DFSO_BUILD_TESTS=OFF
           -DFSO_BUILD_QTFRED=OFF
           -DFSO_BUILD_FRED2=OFF
-          -DFSO_USE_SPEECH=OFF
-          -DFSO_USE_VOICEREC=OFF
           -DFSO_BUILD_WITH_FFMPEG=OFF
-          -DFSO_BUILD_WITH_DISCORD=OFF
           -DFSO_BUILD_WITH_OPENGL=OFF
-          -DFSO_BUILD_WITH_OPENXR=OFF
           -DFSO_BUILD_INCLUDED_LIBS=ON
           -DFSO_USE_LTO=OFF
           -DENABLE_COTIRE=OFF
-      - name: Build and replay corpus under ASan
+      - name: Build and replay with one compiler
         shell: pwsh
         run: >-
           cmake --build build-telemetry-fuzz --config Release
-          --target telemetry_fuzz_smoke -- /verbosity:minimal
-      - uses: actions/upload-artifact@v7
-        if: always()
-        with:
-          name: telemetry-fuzz-windows
-          path: |
-            build-telemetry-fuzz/telemetry-fuzz-corpus/manifest.json
-            build-telemetry-fuzz/telemetry-fuzz-artifacts/**
-          if-no-files-found: ignore
-
-  fuzz_freeze:
-    name: Freeze fuzz (${{ matrix.target }})
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'push' && contains(github.event.head_commit.message, '[telemetry-fuzz-freeze]'))
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-    strategy:
-      fail-fast: false
-      max-parallel: 8
-      matrix:
-        include:
-          - target: fuzz_packet_reader
-            seed: 1001
-          - target: fuzz_datagram
-            seed: 1002
-          - target: fuzz_reassembler
-            seed: 1003
-          - target: fuzz_control_payloads
-            seed: 1004
-          - target: fuzz_records
-            seed: 1005
-          - target: fuzz_transactions
-            seed: 1006
-          - target: fuzz_comm_views
-            seed: 1007
-          - target: fuzz_video_payloads
-            seed: 1008
-    env:
-      CANDIDATE_SHA: ${{ github.event_name == 'workflow_dispatch' && inputs.candidate_sha || github.sha }}
-      FUZZ_TARGET: ${{ matrix.target }}
-      FUZZ_SEED: ${{ matrix.seed }}
-      CC: clang
-      CXX: clang++
-      ASAN_OPTIONS: abort_on_error=1:detect_leaks=1:strict_string_checks=1
-      UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
-    steps:
-      - name: Validate candidate SHA
-        shell: bash
-        run: |
-          if [[ ! "$CANDIDATE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
-            echo "candidate_sha must be a full lowercase 40-character commit SHA" >&2
-            exit 2
-          fi
-      - uses: actions/checkout@v7
-        with:
-          submodules: true
-          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.candidate_sha || github.sha }}
-          persist-credentials: false
-      - name: Verify exact candidate checkout
-        shell: bash
-        run: |
-          actual_sha="$(git rev-parse HEAD)"
-          if [[ "$actual_sha" != "$CANDIDATE_SHA" ]]; then
-            echo "checked out $actual_sha instead of $CANDIDATE_SHA" >&2
-            exit 2
-          fi
-      - uses: actions/setup-python@v6
-        with:
-          python-version: '3.11'
-      - name: Install Linux build dependencies
-        run: sudo apt-get update && sudo apt-get install --yes libudev-dev ninja-build
-      - name: Configure Clang ASan/UBSan fuzz build
-        shell: bash
-        run: |
-          set -o pipefail
-          evidence_dir="build/telemetry-fuzz-evidence/$FUZZ_TARGET"
-          mkdir -p "$evidence_dir"
-          cmake -S . -B build/telemetry-freeze -G Ninja \
-            -DCMAKE_BUILD_TYPE=Debug \
-            -DCMAKE_C_COMPILER=clang \
-            -DCMAKE_CXX_COMPILER=clang++ \
-            -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
-            -DFSO_BUILD_TELEMETRY_FUZZERS=ON \
-            -DFSO_TELEMETRY_FUZZ_STANDALONE=OFF \
-            -DFSO_TELEMETRY_FUZZ_SANITIZERS=ON \
-            -DFSO_BUILD_TESTS=OFF \
-            -DFSO_BUILD_QTFRED=OFF \
-            -DFSO_BUILD_FRED2=OFF \
-            -DFSO_USE_SPEECH=OFF \
-            -DFSO_USE_VOICEREC=OFF \
-            -DFSO_BUILD_WITH_FFMPEG=OFF \
-            -DFSO_BUILD_WITH_DISCORD=OFF \
-            -DFSO_BUILD_WITH_OPENGL=OFF \
-            -DFSO_BUILD_WITH_OPENXR=OFF \
-            -DFSO_BUILD_INCLUDED_LIBS=ON \
-            -DFSO_USE_LTO=OFF \
-            -DENABLE_COTIRE=OFF 2>&1 | tee "$evidence_dir/configure.log"
-      - name: Build selected fuzzer and seeded corpus
-        shell: bash
-        run: |
-          set -o pipefail
-          cmake --build build/telemetry-freeze \
-            --target "$FUZZ_TARGET" telemetry_fuzz_corpus 2>&1 \
-            | tee "build/telemetry-fuzz-evidence/$FUZZ_TARGET/build.log"
-      - name: Run 30-minute ASan/UBSan campaign
-        shell: bash
-        run: >-
-          python -B test/telemetry/protocol/fuzz/run_fuzz_smoke.py
-          --binary-dir build/telemetry-freeze/bin
-          --corpus build/telemetry-freeze/telemetry-fuzz-corpus
-          --artifacts build/telemetry-freeze/telemetry-fuzz-artifacts
-          --max-total-time 1800
-          --max-len 2097220
-          --dictionary test/telemetry/protocol/fuzz/fstl.dict
-          --target "$FUZZ_TARGET"
-          --seed "$FUZZ_SEED"
-          --evidence-dir build/telemetry-fuzz-evidence
-          --expected-sha "$CANDIDATE_SHA"
-      - name: Collect build metadata and checksums
-        if: always()
-        shell: bash
-        run: |
-          target_dir="build/telemetry-fuzz-evidence/$FUZZ_TARGET"
-          mkdir -p "$target_dir"
-          {
-            echo "candidate_sha=$CANDIDATE_SHA"
-            echo "target=$FUZZ_TARGET"
-            echo "seed=$FUZZ_SEED"
-            echo "max_total_time_seconds=1800"
-            echo "run_url=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
-          } > "$target_dir/job-context.txt"
-          git rev-parse HEAD > "$target_dir/checked-out-sha.txt" 2>&1 || true
-          git submodule status --recursive > "$target_dir/submodules.txt" 2>&1 || true
-          for build_file in CMakeCache.txt compile_commands.json; do
-            if [[ -f "build/telemetry-freeze/$build_file" ]]; then
-              cp "build/telemetry-freeze/$build_file" "$target_dir/$build_file"
-            fi
-          done
-          (
-            cd "$target_dir"
-            find . -type f ! -name SHA256SUMS -print0 \
-              | sort -z \
-              | xargs -0 -r sha256sum > SHA256SUMS
-          )
-      - name: Upload target evidence
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: >-
-            telemetry-fuzz-freeze-${{ matrix.target }}-${{ github.event_name == 'workflow_dispatch' && inputs.candidate_sha || github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
-          path: build/telemetry-fuzz-evidence/${{ matrix.target }}
-          if-no-files-found: error
-          retention-days: 90
-
-  fuzz_freeze_bundle:
-    name: Validate and bundle freeze evidence
-    if: >-
-      always() &&
-      (github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'push' && contains(github.event.head_commit.message, '[telemetry-fuzz-freeze]')))
-    needs:
-      - schema_vectors
-      - cpp_unittests_linux
-      - fuzz_unix
-      - fuzz_windows
-      - fuzz_freeze
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    env:
-      CANDIDATE_SHA: ${{ github.event_name == 'workflow_dispatch' && inputs.candidate_sha || github.sha }}
-      SCHEMA_VECTORS_RESULT: ${{ needs.schema_vectors.result }}
-      CPP_UNITTESTS_LINUX_RESULT: ${{ needs.cpp_unittests_linux.result }}
-      FUZZ_UNIX_RESULT: ${{ needs.fuzz_unix.result }}
-      FUZZ_WINDOWS_RESULT: ${{ needs.fuzz_windows.result }}
-      FUZZ_FREEZE_RESULT: ${{ needs.fuzz_freeze.result }}
-    steps:
-      - name: Validate candidate SHA
-        shell: bash
-        run: |
-          if [[ ! "$CANDIDATE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
-            echo "candidate_sha must be a full lowercase 40-character commit SHA" >&2
-            exit 2
-          fi
-      - uses: actions/setup-python@v6
-        with:
-          python-version: '3.11'
-      - name: Download target evidence
-        continue-on-error: true
-        uses: actions/download-artifact@v8
-        with:
-          pattern: >-
-            telemetry-fuzz-freeze-*-${{ github.event_name == 'workflow_dispatch' && inputs.candidate_sha || github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
-          path: build/telemetry-fuzz-campaign
-      - name: Verify target checksums
-        continue-on-error: true
-        shell: bash
-        run: |
-          root="build/telemetry-fuzz-campaign"
-          failed=0
-          targets=(
-            fuzz_packet_reader
-            fuzz_datagram
-            fuzz_reassembler
-            fuzz_control_payloads
-            fuzz_records
-            fuzz_transactions
-            fuzz_comm_views
-            fuzz_video_payloads
-          )
-          for target in "${targets[@]}"; do
-            artifact="$root/telemetry-fuzz-freeze-$target-$CANDIDATE_SHA-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
-            if [[ -f "$artifact/SHA256SUMS" ]] && (
-              cd "$artifact" && sha256sum -c SHA256SUMS > CHECKSUM-VERIFICATION.log 2>&1
-            ); then
-              echo passed > "$artifact/CHECKSUM-VERIFICATION.status"
-            else
-              mkdir -p "$artifact"
-              echo failed > "$artifact/CHECKSUM-VERIFICATION.status"
-              failed=1
-            fi
-          done
-          exit "$failed"
-      - name: Validate campaign reports and prerequisite jobs
-        shell: bash
-        run: |
-          python - <<'PY'
-          import json
-          import os
-          from pathlib import Path
-
-          candidate = os.environ["CANDIDATE_SHA"]
-          root = Path("build/telemetry-fuzz-campaign")
-          targets = {
-              "fuzz_packet_reader": 1001,
-              "fuzz_datagram": 1002,
-              "fuzz_reassembler": 1003,
-              "fuzz_control_payloads": 1004,
-              "fuzz_records": 1005,
-              "fuzz_transactions": 1006,
-              "fuzz_comm_views": 1007,
-              "fuzz_video_payloads": 1008,
-          }
-          jobs = {
-              "schema_vectors": os.environ["SCHEMA_VECTORS_RESULT"],
-              "cpp_unittests_linux": os.environ["CPP_UNITTESTS_LINUX_RESULT"],
-              "fuzz_unix": os.environ["FUZZ_UNIX_RESULT"],
-              "fuzz_windows": os.environ["FUZZ_WINDOWS_RESULT"],
-              "fuzz_freeze": os.environ["FUZZ_FREEZE_RESULT"],
-          }
-          errors = [f"job {name} finished with {result}" for name, result in jobs.items() if result != "success"]
-          reports = {}
-          for target, seed in targets.items():
-              artifact = root / (
-                  f"telemetry-fuzz-freeze-{target}-{candidate}-"
-                  f"{os.environ['GITHUB_RUN_ID']}-{os.environ['GITHUB_RUN_ATTEMPT']}"
-              )
-              checksum_status = artifact / "CHECKSUM-VERIFICATION.status"
-              if not checksum_status.is_file() or checksum_status.read_text(encoding="utf-8").strip() != "passed":
-                  errors.append(f"checksum verification failed for {target}")
-              report_path = artifact / "report.json"
-              if not report_path.is_file():
-                  errors.append(f"missing report.json for {target}")
-                  continue
-              try:
-                  report = json.loads(report_path.read_text(encoding="utf-8"))
-              except (OSError, json.JSONDecodeError) as error:
-                  errors.append(f"invalid report.json for {target}: {error}")
-                  continue
-              reports[target] = report
-              configuration = report.get("configuration", {})
-              environment = configuration.get("environment", {})
-              timing = report.get("timing", {})
-              statistics = report.get("statistics", {})
-              binary = report.get("binary", {})
-              dictionary = report.get("dictionary") or {}
-              corpus = report.get("corpus", {})
-              initial_corpus = corpus.get("initial") or {}
-              final_corpus = corpus.get("final") or {}
-              artifacts = report.get("artifacts") or {}
-              sha256 = lambda value: isinstance(value, str) and len(value) == 64 and all(
-                  character in "0123456789abcdef" for character in value
-              )
-              checks = {
-                  "status": report.get("status") == "passed",
-                  "target": report.get("target") == target,
-                  "mode": report.get("mode") == "libFuzzer",
-                  "candidate SHA": report.get("revision", {}).get("actualSha") == candidate,
-                  "expected SHA": report.get("revision", {}).get("expectedSha") == candidate,
-                  "requested duration": timing.get("requestedMaxTotalTimeSeconds") == 1800,
-                  "elapsed duration": isinstance(timing.get("elapsedSeconds"), (int, float))
-                  and timing["elapsedSeconds"] >= 1800,
-                  "executed units": isinstance(statistics.get("number_of_executed_units"), int)
-                  and statistics["number_of_executed_units"] > 0,
-                  "exit code": report.get("exitCode") == 0,
-                  "seed": configuration.get("seed") == seed,
-                  "ASan configuration": environment.get("ASAN_OPTIONS")
-                  == "abort_on_error=1:detect_leaks=1:strict_string_checks=1",
-                  "UBSan configuration": environment.get("UBSAN_OPTIONS")
-                  == "halt_on_error=1:print_stacktrace=1",
-                  "binary hash": sha256(binary.get("sha256")),
-                  "dictionary hash": sha256(dictionary.get("sha256")),
-                  "initial corpus": initial_corpus.get("fileCount", 0) > 0
-                  and initial_corpus.get("totalBytes", 0) > 0
-                  and sha256(initial_corpus.get("treeSha256")),
-                  "final corpus": final_corpus.get("fileCount", 0) > 0
-                  and final_corpus.get("totalBytes", 0) > 0
-                  and sha256(final_corpus.get("treeSha256")),
-                  "empty crash artifacts": artifacts.get("fileCount") == 0,
-              }
-              for required_file in ("configure.log", "build.log", "CMakeCache.txt", "compile_commands.json"):
-                  checks[f"evidence file {required_file}"] = (artifact / required_file).is_file()
-              errors.extend(f"{target}: invalid {label}" for label, passed in checks.items() if not passed)
-
-          campaign = {
-              "schema": "FSTL-fuzz-campaign-v1",
-              "candidateSha": candidate,
-              "durationPerTargetSeconds": 1800,
-              "jobs": jobs,
-              "targets": {target: {"seed": seed, "status": reports.get(target, {}).get("status", "missing")} for target, seed in targets.items()},
-              "passed": not errors,
-              "errors": errors,
-              "runUrl": f"{os.environ['GITHUB_SERVER_URL']}/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
-          }
-          root.mkdir(parents=True, exist_ok=True)
-          (root / "campaign-report.json").write_text(
-              json.dumps(campaign, indent=2, sort_keys=True) + "\n", encoding="utf-8"
-          )
-          with Path(os.environ["GITHUB_STEP_SUMMARY"]).open("a", encoding="utf-8") as summary:
-              summary.write(f"## FSTL freeze fuzz campaign\n\nCandidate: `{candidate}`\n\n")
-              summary.write(f"Status: **{'PASS' if not errors else 'FAIL'}**\n")
-              if errors:
-                  summary.write("\n" + "\n".join(f"- {error}" for error in errors) + "\n")
-          if errors:
-              raise SystemExit("campaign evidence validation failed")
-          PY
-      - name: Create campaign manifest and bundle
-        if: always()
-        shell: bash
-        run: |
-          campaign_dir="build/telemetry-fuzz-campaign"
-          bundle="build/telemetry-fuzz-freeze-$CANDIDATE_SHA-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.tar.gz"
-          mkdir -p "$campaign_dir"
-          (
-            cd "$campaign_dir"
-            find . -type f ! -name CAMPAIGN_SHA256SUMS -print0 \
-              | sort -z \
-              | xargs -0 -r sha256sum > CAMPAIGN_SHA256SUMS
-          )
-          tar -czf "$bundle" -C "$campaign_dir" .
-          sha256sum "$bundle" > "$bundle.sha256"
-      - name: Upload campaign bundle
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: >-
-            telemetry-fuzz-freeze-bundle-${{ github.event_name == 'workflow_dispatch' && inputs.candidate_sha || github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
-          path: |
-            build/telemetry-fuzz-campaign/campaign-report.json
-            build/telemetry-fuzz-campaign/CAMPAIGN_SHA256SUMS
-            build/telemetry-fuzz-freeze-${{ github.event_name == 'workflow_dispatch' && inputs.candidate_sha || github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}.tar.gz
-            build/telemetry-fuzz-freeze-${{ github.event_name == 'workflow_dispatch' && inputs.candidate_sha || github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}.tar.gz.sha256
-          if-no-files-found: error
-          retention-days: 90
+          --target telemetry_fuzz_smoke --
+          /m:1 /p:CL_MPCount=1 /verbosity:minimal
