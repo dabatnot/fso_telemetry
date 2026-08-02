@@ -2785,7 +2785,7 @@ TEST(TelemetryPhase2ObservationContract, ReviewerS8V4ActualOwnedBudgetFitsShared
 			sizeof(Phase2ShipSource),
 		measured_owned_bytes);
 	EXPECT_LE(measured_owned_bytes, SharedStartupBudgetBytes) <<
-		"Phase 2 maximum owned storage must share the frozen 64 MiB startup cap.";
+		"Phase 2 observation storage keeps its explicit 64 MiB component budget.";
 }
 
 TEST(TelemetryPhase2ObservationContract,
@@ -4118,6 +4118,16 @@ void initialize_wp02_merge_source(Phase2ShipSource& source,
 	ship_class.class_capture_key = 11U;
 	ASSERT_TRUE(ship_class.internal_name.assign("same-class-name"));
 	ship_class.model_mass = class_mass;
+	ship_class.subsystem_count = 1U;
+	catalog.aggregate_subsystem_count = 1U;
+	auto& subsystem = catalog.subsystem_storage[0];
+	subsystem.subsystem_capture_key = 31U;
+	ASSERT_TRUE(subsystem.internal_name.assign("same-subsystem"));
+	subsystem.max_hits = 100.0F;
+	source.subsystems.count = 1U;
+	source.subsystems.values[0].source_key.value = 31U;
+	source.subsystems.values[0].hits_current = 100.0F;
+	source.subsystems.values[0].hits_maximum = 100.0F;
 	auto& weapon = catalog.weapon_definitions[0];
 	weapon.weapon_capture_key = 21U;
 	weapon.reloaded_per_batch = 1U;
@@ -4193,6 +4203,10 @@ TEST(TelemetryPhase2ObservationContract,
 		observation->ships[1].raw_static_references.weapon_capture_keys[0])
 		<< "Arbitrary source keys must remap deterministically without "
 		   "collisions; trailing bytes and signed zero are non-semantic.";
+	EXPECT_EQ(1U,
+		observation->ships[0].subsystems.values[0].source_key.value);
+	EXPECT_EQ(1U,
+		observation->ships[1].subsystems.values[0].source_key.value);
 
 	initialize_wp02_merge_source(*second, 11.0F, 21.0F);
 	ASSERT_EQ(Phase2CaptureStatus::Valid,
@@ -4202,6 +4216,12 @@ TEST(TelemetryPhase2ObservationContract,
 		<< "Same name with a distinct class descriptor is a variant.";
 	EXPECT_EQ(2U, observation->raw_static_catalog.weapon_count)
 		<< "Same name with a distinct weapon descriptor is a variant.";
+	EXPECT_EQ(1U,
+		observation->ships[0].subsystems.values[0].source_key.value);
+	EXPECT_EQ(2U,
+		observation->ships[1].subsystems.values[0].source_key.value)
+		<< "Instance subsystem keys must follow the merged catalog, not "
+		   "their per-class local ordinals.";
 	expect_wp02_variant_diagnostic(*observation);
 }
 
@@ -4469,6 +4489,8 @@ TEST(TelemetryPhase2ObservationContract,
 		};
 	initialize_weapon(input->weapon_info, 101U,
 		"exhaustive-primary", "Primary", 30.0F);
+	input->weapon_info.swarm_count_source = -1;
+	input->weapon_info.shots_source = 1;
 	input->weapon_info.additional_count = 1U;
 	initialize_weapon(input->weapon_info.additional_definitions[0], 102U,
 		"exhaustive-secondary", "Secondary", 50.0F);

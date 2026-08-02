@@ -750,13 +750,13 @@ TEST(Phase2ManifestCodec, P2TST047BankCapacityPresenceFollowsConsumesAmmunition)
 	auto& ship_class = source->ship_classes[0];
 	ship_class.bank_count = 2;
 	ship_class.banks[0].family = WeaponFamily::Primary;
-	ship_class.banks[0].source_family = WeaponFamily::Primary;
+	ship_class.banks[0].source_family = WeaponFamily::None;
 	ship_class.banks[0].bank_index = 0;
 	ship_class.banks[0].weapon_source_key = 101;
 	ship_class.banks[0].consumes_ammunition = false;
 	ship_class.banks[0].capacity = 99.0F;
 	ship_class.banks[1].family = WeaponFamily::Secondary;
-	ship_class.banks[1].source_family = WeaponFamily::Secondary;
+	ship_class.banks[1].source_family = WeaponFamily::None;
 	ship_class.banks[1].bank_index = 0;
 	ship_class.banks[1].weapon_source_key = 102;
 	ship_class.banks[1].consumes_ammunition = true;

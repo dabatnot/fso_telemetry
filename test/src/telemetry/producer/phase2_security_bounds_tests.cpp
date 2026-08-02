@@ -179,15 +179,31 @@ TEST(Phase2SecurityBounds, P2TST005And006BuildSurfaceAndCMakeInventoryAreExplici
 
 TEST(Phase2SecurityBounds, P2TST049ExactOwnedCapsPassAndEveryPlusOneFailsBeforeBind)
 {
-	const detail::Phase2OwnedBudgetRequest exact{
+	const detail::Phase2OwnedBudgetRequest shared_and_process_exact{
 		detail::Phase2SharedOwnedCapBytes,
+		(detail::Phase2ProcessOwnedCapBytes -
+			detail::Phase2SharedOwnedCapBytes) /
+			detail::TelemetryMetricsMaxClients,
+		detail::TelemetryMetricsMaxClients};
+	const auto shared_accepted =
+		detail::calculate_phase2_owned_budget(shared_and_process_exact);
+	ASSERT_EQ(detail::StartupBudgetError::None, shared_accepted.error);
+	EXPECT_EQ(134'217'728U, shared_accepted.shared_owned_bytes);
+	EXPECT_EQ(67'108'864U, shared_accepted.client_owned_bytes);
+	EXPECT_EQ(402'653'184U, shared_accepted.process_owned_bytes);
+
+	const detail::Phase2OwnedBudgetRequest client_and_process_exact{
+		detail::Phase2ProcessOwnedCapBytes -
+			detail::TelemetryMetricsMaxClients *
+				detail::Phase2ClientOwnedCapBytes,
 		detail::Phase2ClientOwnedCapBytes,
 		detail::TelemetryMetricsMaxClients};
-	const auto accepted = detail::calculate_phase2_owned_budget(exact);
-	ASSERT_EQ(detail::StartupBudgetError::None, accepted.error);
-	EXPECT_EQ(67'108'864U, accepted.shared_owned_bytes);
-	EXPECT_EQ(83'886'080U, accepted.client_owned_bytes);
-	EXPECT_EQ(402'653'184U, accepted.process_owned_bytes);
+	const auto client_accepted =
+		detail::calculate_phase2_owned_budget(client_and_process_exact);
+	ASSERT_EQ(detail::StartupBudgetError::None, client_accepted.error);
+	EXPECT_EQ(67'108'864U, client_accepted.shared_owned_bytes);
+	EXPECT_EQ(83'886'080U, client_accepted.client_owned_bytes);
+	EXPECT_EQ(402'653'184U, client_accepted.process_owned_bytes);
 
 	for (const auto scope : {
 			 detail::TelemetryPhase2MemoryScope::Shared,

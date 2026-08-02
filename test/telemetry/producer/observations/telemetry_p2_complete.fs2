@@ -1,18 +1,20 @@
 #Mission Info
 
 $Version: 0.10
-$Name:  XSTR("Telemetry Phase 2 Observation", -1)
+$Name:  XSTR("Telemetry Phase 2 CompleteShip Observation", -1)
 $Author: FS2Open telemetry observation fixture
 $Created: 08/01/26 at 12:00:00
-$Modified: 08/01/26 at 12:00:00
+$Modified: 08/01/26 at 19:00:00
 $Notes:
 Short Release observation fixture. The player is protected, support is
 available on demand, and an external cargo container remains outside the
-Phase 2 support/docking closure. This mission is loaded by the real product.
+Phase 2 support/docking closure. The real product loads the mission and
+publishes the representative CompleteShip state without scripted catalog
+mutations.
 $End Notes:
 
 $Mission Desc:
- XSTR("A quiet solo observation mission with one external cargo target. Request support during the CompleteShip run and wait for docking.", -1)
+ XSTR("Request support, target External Cargo 1, and remain in mission for the CompleteShip observation.", -1)
 $end_multi_text
 
 +Game Type Flags: 1
@@ -75,7 +77,7 @@ $Determination: 10
 +Score: 0
 
 $Name: External Cargo 1		;! Object #1
-$Class: Cargo Container
+$Class: TC 2
 $Team: Friendly
 $Location: 0.000000, 0.000000, 900.000000
 $Orientation:
@@ -87,7 +89,7 @@ $Cargo 1:  XSTR("Observation Cargo", -1)
 +Initial Velocity: 0
 +Initial Hull: 100
 $Arrival Location: Hyperspace
-$Arrival Cue: ( false )
+$Arrival Cue: ( true )
 $Departure Location: Hyperspace
 $Departure Cue: ( false )
 $Determination: 10
@@ -101,13 +103,13 @@ $Determination: 10
 $Name: Alpha
 $Waves: 1
 $Wave Threshold: 0
-$Special Ship: 0		;! Telemetry Observer 1
+$Special Ship: 0
 
 $Arrival Location: Hyperspace
 $Arrival Cue: ( true )
 $Departure Location: Hyperspace
 $Departure Cue: ( false )
-$Ships: (		;! 1 total
+$Ships: (	;! 1 total
 	"Telemetry Observer 1"
 )
 $AI Goals: ( goals )

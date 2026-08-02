@@ -187,6 +187,10 @@ TEST(TelemetryPhase2CatalogProjection,
 	ASSERT_TRUE(ship_class.internal_name.assign("ProjectionShip"));
 	ship_class.subsystem_count = 6U;
 	ship_class.subsystem_offset = 0U;
+	ship_class.bank_count = 2U;
+	ship_class.bank_offset = 0U;
+	ship_class.primary_bank_count = 1U;
+	ship_class.secondary_bank_count = 1U;
 	ship_class.has_scan = true;
 	for (std::size_t index = 0U; index < 6U; ++index) {
 		auto& subsystem = raw.subsystem_storage[index];
@@ -219,8 +223,22 @@ TEST(TelemetryPhase2CatalogProjection,
 		protocol::WeaponClassFlagBeam;
 	raw.weapon_definitions[2].weapon_subtype_source = 0U;
 	raw.weapon_definitions[2].burst_shots = 3;
+	raw.weapon_definitions[2].swarm_count_source = -1;
 	raw.weapon_definitions[2].shots_source = 2;
 	raw.weapon_definitions[3].weapon_subtype_source = 1U;
+	for (std::size_t index = 0U; index < 2U; ++index) {
+		auto& bank = raw.bank_storage[index];
+		bank.bank_capture_key =
+			static_cast<std::uint32_t>(index + 1U);
+		bank.family_source =
+			static_cast<std::uint8_t>(index + 1U);
+		bank.source_family = 0U;
+		bank.bank_index = 0U;
+		bank.weapon_capture_key =
+			static_cast<std::uint32_t>(index + 1U);
+		bank.fire_point_count = 1U;
+		bank.fire_points[0] = {0.0F, 0.0F, 0.0F};
+	}
 
 	auto projected =
 		std::make_unique<Phase2ManifestSource>();
@@ -240,6 +258,15 @@ TEST(TelemetryPhase2CatalogProjection,
 	EXPECT_TRUE(projected->weapons[2].has_swarm);
 	EXPECT_EQ(2U, projected->weapons[2].swarm_count);
 	EXPECT_EQ(2U, projected->weapons[2].shots_per_trigger);
+	ASSERT_EQ(2U, projected->ship_classes[0].bank_count);
+	EXPECT_EQ(protocol::WeaponFamily::Primary,
+		projected->ship_classes[0].banks[0].family);
+	EXPECT_EQ(protocol::WeaponFamily::None,
+		projected->ship_classes[0].banks[0].source_family);
+	EXPECT_EQ(protocol::WeaponFamily::Secondary,
+		projected->ship_classes[0].banks[1].family);
+	EXPECT_EQ(protocol::WeaponFamily::None,
+		projected->ship_classes[0].banks[1].source_family);
 	EXPECT_NEAR(static_cast<float>(std::acos(0.95)),
 		projected->ship_classes[0].scan_max_angle_rad,
 		1.0e-6F);

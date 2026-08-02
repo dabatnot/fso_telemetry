@@ -418,18 +418,13 @@ class NativeRuntimeStartupServices final : public RuntimeStartupServices {
 			const auto& record = snapshot.records[m_emitted_log_records++];
 			// The delivery format is intentionally numeric and closed. No field is
 			// sourced from a packet, endpoint, engine identity or OS error string.
-			mprintf(("telemetry event=%u level=%u reason=%u family=%u budget=%u fault=%u slot=%u port=%u version=%u.%u code=%u value=%llu limit=%llu high_water=%llu drops=%llu,%llu,%llu,%llu,%llu,%llu\n",
-				static_cast<unsigned>(record.event), static_cast<unsigned>(record.level),
-				static_cast<unsigned>(record.reason), static_cast<unsigned>(record.family),
-				static_cast<unsigned>(record.budget), static_cast<unsigned>(record.fault),
-				static_cast<unsigned>(record.correlation_slot), static_cast<unsigned>(record.port),
-				static_cast<unsigned>(record.protocol_major), static_cast<unsigned>(record.protocol_minor),
-				static_cast<unsigned>(record.platform_code),
-				static_cast<unsigned long long>(record.value), static_cast<unsigned long long>(record.limit),
-				static_cast<unsigned long long>(record.high_water),
-				static_cast<unsigned long long>(record.drops[0]), static_cast<unsigned long long>(record.drops[1]),
-				static_cast<unsigned long long>(record.drops[2]), static_cast<unsigned long long>(record.drops[3]),
-				static_cast<unsigned long long>(record.drops[4]), static_cast<unsigned long long>(record.drops[5])));
+			std::array<char, TelemetryLogLineCapacity> line{};
+			if (format_telemetry_log_record(record, line)) {
+				mprintf(("%s", line.data()));
+			} else {
+				mprintf(("telemetry log_format_error event=%u\n",
+					static_cast<unsigned>(record.event)));
+			}
 		}
 	}
 	std::uint64_t process_session_total() const noexcept

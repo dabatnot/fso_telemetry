@@ -228,11 +228,12 @@ std::uint64_t seconds_to_microseconds(float seconds) noexcept
 WeaponFamily manifest_weapon_family(std::uint8_t value) noexcept
 {
 	switch (value) {
+	case 0U: return WeaponFamily::None;
 	case 1U: return WeaponFamily::Primary;
 	case 2U: return WeaponFamily::Secondary;
 	case 3U: return WeaponFamily::Tertiary;
 	case 4U: return WeaponFamily::Turret;
-	default: return WeaponFamily::Primary;
+	default: return WeaponFamily::None;
 	}
 }
 
@@ -407,7 +408,7 @@ Phase2CatalogProjectionStatus project_phase2_catalog_impl(
 			source.burst_shots >= 4096 ||
 			source.shots_source < 1 ||
 			source.shots_source > 4096 ||
-			source.swarm_count_source < 0 ||
+			source.swarm_count_source < -1 ||
 			source.swarm_count_source > 4096)
 			return Phase2CatalogProjectionStatus::SourceLimitExceeded;
 		const auto burst_count = source.burst_shots + 1;
@@ -603,6 +604,10 @@ Phase2CatalogProjectionStatus project_phase2_catalog_impl(
 			const auto& raw_bank =
 				raw.bank_storage[source.bank_offset + bank];
 			auto& mapped = target.banks[bank];
+			if (raw_bank.family_source < 1U ||
+				raw_bank.family_source > 4U ||
+				raw_bank.source_family > 2U)
+				return Phase2CatalogProjectionStatus::InvalidSource;
 			mapped.family =
 				manifest_weapon_family(raw_bank.family_source);
 			mapped.source_family =
@@ -763,7 +768,7 @@ NativeSessionStartStatus NativeSessionRuntime::start(const NativeSessionStartReq
 	if (!make_controller_config(*request.config, request.producer_id, controller_config)) {
 		return NativeSessionStartStatus::InvalidConfiguration;
 	}
-	if (selected_phase2_profile == Phase2Profile::CompleteShip)
+	if (selected_phase2_profile != Phase2Profile::None)
 		controller_config.delta_payload_capacity =
 			Phase2CompleteShipDeltaBytes;
 	controller_config.phase2_profile = selected_phase2_profile;
@@ -1489,13 +1494,25 @@ bool NativeSessionRuntime::refresh_owned_phase2_manifest(
 			return false;
 		m_phase2_manifest =
 			&m_phase2_manifest_slot->active_candidate();
+		m_phase2_catalog_projection_pending = false;
 		return true;
 	}
 	if (result == Phase2ManifestError::NoCatalogChange ||
-		result == Phase2ManifestError::TopologyOnly ||
-		result == Phase2ManifestError::RebuildCoalesced) {
+		result == Phase2ManifestError::TopologyOnly) {
 		m_phase2_manifest =
 			&m_phase2_manifest_slot->active_candidate();
+		m_phase2_catalog_projection_pending = false;
+		return m_phase2_manifest->manifest_id != 0U;
+	}
+	if (result == Phase2ManifestError::RebuildCoalesced) {
+		m_phase2_manifest =
+			&m_phase2_manifest_slot->active_candidate();
+		m_phase2_catalog_projection_pending =
+			!m_phase2_manifest_slot->source_catalog_matches_active(
+				*m_phase2_manifest_source) ||
+			m_phase2_manifest->topology_fingerprint !=
+				m_phase2_manifest_source
+					->topology_fingerprint;
 		return m_phase2_manifest->manifest_id != 0U;
 	}
 	return false;
@@ -1529,6 +1546,7 @@ void NativeSessionRuntime::release_phase2_manifest_state() noexcept
 	m_phase2_manifest_source.reset();
 	m_phase2_manifest_backing.reset();
 	m_phase2_manifest_backing_bytes = 0U;
+	m_phase2_catalog_projection_pending = false;
 }
 
 void NativeSessionRuntime::prepare_phase2_keyframe(Phase2CapturePlan& plan) noexcept
@@ -2000,6 +2018,44 @@ NativeSessionTickStatus NativeSessionRuntime::apply_collected_player_capture(con
 				return NativeSessionTickStatus::
 					PermanentCaptureFailure;
 			}
+			if (m_phase2_catalog_projection_pending) {
+				const auto manifest_state =
+					m_controller.stage_phase2_manifest(
+						index, *m_phase2_manifest,
+						m_tick_context.now_us);
+				if (manifest_state ==
+						Phase2RuntimeResult::InvalidInput ||
+					manifest_state ==
+						Phase2RuntimeResult::Stale ||
+					manifest_state ==
+						Phase2RuntimeResult::CounterExhausted) {
+					if (auto* diagnostic =
+							begin_phase2_failure_diagnostic(
+								NativePhase2FailureStage::
+									Manifest);
+						diagnostic != nullptr) {
+						diagnostic->runtime_result =
+							manifest_state;
+						diagnostic->ship_count =
+							phase2.ships.size();
+						diagnostic->player_key =
+							phase2.player_key.value;
+						diagnostic->global_manifest_id =
+							m_phase2_manifest->manifest_id;
+						diagnostic->required_manifest_id =
+							slot.required_manifest_id;
+						diagnostic->client_slot = index;
+						diagnostic->required_manifest_applied =
+							slot.required_manifest_applied;
+					}
+					fail_capture(
+						NativePlayerCaptureStatus::
+							CaptureInvariantFailure);
+					return NativeSessionTickStatus::
+						PermanentCaptureFailure;
+				}
+				continue;
+			}
 			std::array<Phase2CaptureLocalKey,
 				MaximumPhase2ObservationShips> signatures{};
 			std::array<Phase2Wp05SubjectBinding,
@@ -2173,7 +2229,9 @@ NativeSessionTickStatus NativeSessionRuntime::apply_collected_player_capture(con
 			// A staged manifest is deliberately not treated as installed.
 			// Until its reliable APPLIED transition reaches
 			// apply_phase2_manifest(), no dependent snapshot is emitted.
-			if (!slot.required_manifest_applied)
+			if (slot.required_manifest_id !=
+					m_phase2_manifest->manifest_id ||
+				!slot.required_manifest_applied)
 				continue;
 			const auto* installed_manifest =
 				m_phase2_manifest_slot->candidate_for_id(
@@ -2216,6 +2274,13 @@ NativeSessionTickStatus NativeSessionRuntime::apply_collected_player_capture(con
 						phase2.player_key.value;
 					diagnostic->player_entity_id =
 						player_entity_id;
+					diagnostic->global_manifest_id =
+						m_phase2_manifest->manifest_id;
+					diagnostic->required_manifest_id =
+						slot.required_manifest_id;
+					diagnostic->client_slot = index;
+					diagnostic->required_manifest_applied =
+						slot.required_manifest_applied;
 				}
 				fail_capture(
 					NativePlayerCaptureStatus::

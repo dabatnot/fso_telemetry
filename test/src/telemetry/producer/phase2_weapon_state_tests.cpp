@@ -244,7 +244,7 @@ struct Fixture {
 	{
 		auto& bank = manifest->bank_records[slot];
 		bank.family = family;
-		bank.source_family = family;
+		bank.source_family = WeaponFamily::None;
 		bank.canonical_index = index;
 		bank.source_index = index;
 		bank.bank_id = bank_id;

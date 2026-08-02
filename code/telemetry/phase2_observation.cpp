@@ -287,7 +287,7 @@ bool validate_raw_static_catalog_bounds(
 			value.reloaded_per_batch>1'000'000U||
 			value.burst_shots<0||
 			value.burst_delay_seconds<0.0F||
-			value.swarm_count_source<0||
+			value.swarm_count_source < -1 ||
 			value.shots_source<0)return false;
 		if(value.guidance_type_source!=0U&&
 			(value.guidance_fov_source_cosine < -1.0F ||
@@ -1909,9 +1909,7 @@ static Phase2CaptureResult collect_phase2_observation_with_scratch(
 	Phase2ObservationProjection projection,
 	Phase2CaptureDiagnostics* diagnostics = nullptr) noexcept
 {
-	auto reusable_ships = std::move(output.ships);
 	reset_observation(output);
-	output.ships = std::move(reusable_ships);
 	if (!source.current_thread_is_main()) {
 		return capture_failure(output, Phase2CaptureStatus::InvalidSource, Phase2CaptureReason::WrongThread);
 	}
@@ -2153,6 +2151,77 @@ static Phase2CaptureResult collect_phase2_observation_with_scratch(
 			copy_static_references_logical(
 				source_ship.raw_static_references,
 				ship.raw_static_references);
+			const Phase2RawClassDefinition* source_class = nullptr;
+			for (std::uint32_t class_index = 0U;
+				 class_index <
+					 source_ship.raw_static_catalog.class_count;
+				 ++class_index)
+				if (source_ship.raw_static_catalog
+						.class_definitions[class_index]
+						.class_capture_key ==
+					source_ship.identity.class_source_key.value) {
+					source_class =
+						&source_ship.raw_static_catalog
+							 .class_definitions[class_index];
+					break;
+				}
+			const Phase2RawClassDefinition* merged_class = nullptr;
+			for (std::uint32_t class_index = 0U;
+				 class_index < output.raw_static_catalog.class_count;
+				 ++class_index)
+				if (output.raw_static_catalog
+						.class_definitions[class_index]
+						.class_capture_key ==
+					ship.identity.class_source_key.value) {
+					merged_class =
+						&output.raw_static_catalog
+							 .class_definitions[class_index];
+					break;
+				}
+			if (source_class != nullptr &&
+				merged_class != nullptr &&
+				source_class->subsystem_count ==
+					ship.subsystems.count &&
+				merged_class->subsystem_count ==
+					ship.subsystems.count) {
+				bool source_order_matches = true;
+				for (std::size_t subsystem = 0U;
+					 subsystem < ship.subsystems.count;
+					 ++subsystem)
+					source_order_matches =
+						source_order_matches &&
+						ship.subsystems.values[subsystem]
+								.source_key.value ==
+							source_ship.raw_static_catalog
+								.subsystem_storage[
+									source_class
+											->subsystem_offset +
+									subsystem]
+								.subsystem_capture_key;
+				if (source_order_matches)
+					for (std::size_t subsystem = 0U;
+						 subsystem < ship.subsystems.count;
+						 ++subsystem) {
+						const auto& merged_definition =
+							output.raw_static_catalog
+								.subsystem_storage[
+									merged_class
+											->subsystem_offset +
+									subsystem];
+						if (merged_definition
+									.subsystem_capture_key ==
+								0U)
+							return capture_failure(output,
+								Phase2CaptureStatus::
+									UnsupportedEngineState,
+								Phase2CaptureReason::
+									UnsupportedShipBlock);
+						ship.subsystems.values[subsystem]
+							.source_key.value =
+							merged_definition
+								.subsystem_capture_key;
+					}
+			}
 			const auto remap_auxiliary_key =
 				[&](Phase2CaptureLocalKey& key) noexcept {
 					if (key.value == 0U) return true;

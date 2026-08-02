@@ -43,7 +43,7 @@ struct Phase2SubsystemSource {
 	std::uint32_t static_flags=0;
 };
 struct Phase2BankSource {
-	WeaponFamily family = WeaponFamily::Primary, source_family = WeaponFamily::Primary;
+	WeaponFamily family = WeaponFamily::Primary, source_family = WeaponFamily::None;
 	std::uint16_t bank_index = 0;
 	std::uint16_t owner_subsystem_canonical_index=UINT16_MAX;
 	std::uint32_t weapon_source_key = 0;
@@ -138,7 +138,7 @@ struct Phase2BankRecord {
 	std::uint32_t bank_id=0, weapon_class_id=0;
 	std::uint32_t owner_subsystem_id=0;
 	telemetry::WeaponFamily family=telemetry::WeaponFamily::Primary;
-	telemetry::WeaponFamily source_family=telemetry::WeaponFamily::Primary;
+	telemetry::WeaponFamily source_family=telemetry::WeaponFamily::None;
 	std::uint16_t canonical_index=0, source_index=0;
 	float capacity=0;
 	std::uint32_t fire_point_count=0;
@@ -246,6 +246,8 @@ class Phase2ManifestSlot {
 	bool has_rebuild_intent() const noexcept { return m_rebuild_intent; }
 	bool rebuild_intent_scheduled() const noexcept { return m_rebuild_scheduled; }
 	const protocol::Sha256Digest& catalog_fingerprint() const noexcept;
+	bool source_catalog_matches_active(
+		const Phase2ManifestSource& source) const noexcept;
   private:
 	Phase2ManifestStorage& m_storage;
 	std::array<Phase2ManifestCandidate,2> m_candidates;

@@ -1,6 +1,7 @@
 #include "telemetry/phase2_runtime.h"
 #include "telemetry/phase2_session_transition.h"
 #include "telemetry/phase1_state_image.h"
+#include "telemetry/logging.h"
 #include "telemetry/protocol/telemetry_control_messages.h"
 #include "telemetry/protocol/telemetry_crc32.h"
 #include "telemetry/protocol/telemetry_datagram.h"
@@ -14,13 +15,77 @@
 #include <cstddef>
 #include <cstdint>
 #include <initializer_list>
+#include <limits>
 #include <memory>
+#include <string_view>
 #include <vector>
 
 namespace {
 
 namespace detail = telemetry::detail;
 namespace protocol = telemetry::protocol;
+
+TEST(TelemetryPhase2Runtime, DeliveredLogsExposeProfileManifestAndCaptureCause)
+{
+	detail::TelemetryStructuredLog log;
+	std::array<char, detail::TelemetryLogLineCapacity> line{};
+
+	log.phase2_profile_selected(
+		0U, detail::TelemetryPhase2Profile::CompleteShip, 0x0583U);
+	auto snapshot = log.snapshot();
+	ASSERT_EQ(1U, snapshot.count);
+	ASSERT_TRUE(detail::format_telemetry_log_record(
+		snapshot.records[0], line));
+	const std::string_view profile{line.data()};
+	EXPECT_NE(std::string_view::npos, profile.find("event=12"));
+	EXPECT_NE(std::string_view::npos, profile.find("p2_profile=2"));
+	EXPECT_NE(std::string_view::npos, profile.find("value=1411"));
+
+	log.phase2_manifest(0U,
+		detail::TelemetryLogEvent::Phase2ManifestInstalled,
+		7U, 33U, 2U, 2048U, 123U);
+	snapshot = log.snapshot();
+	ASSERT_EQ(2U, snapshot.count);
+	ASSERT_TRUE(detail::format_telemetry_log_record(
+		snapshot.records[1], line));
+	const std::string_view manifest{line.data()};
+	EXPECT_NE(std::string_view::npos, manifest.find("event=15"));
+	EXPECT_NE(std::string_view::npos, manifest.find("generation=7"));
+	EXPECT_NE(std::string_view::npos, manifest.find("records=33"));
+	EXPECT_NE(std::string_view::npos, manifest.find("parts=2"));
+	EXPECT_NE(std::string_view::npos, manifest.find("bytes=2048"));
+	EXPECT_NE(std::string_view::npos, manifest.find("duration_us=123"));
+
+	log.phase2_source_rejected(
+		detail::TelemetryPhase2Block::DamageShield,
+		detail::TelemetryPhase2CaptureFailure::NonFinite,
+		1'000'000U);
+	snapshot = log.snapshot();
+	ASSERT_EQ(3U, snapshot.count);
+	ASSERT_TRUE(detail::format_telemetry_log_record(
+		snapshot.records[2], line));
+	const std::string_view rejection{line.data()};
+	EXPECT_NE(std::string_view::npos, rejection.find("event=20"));
+	EXPECT_NE(std::string_view::npos, rejection.find("p2_block=3"));
+	EXPECT_NE(std::string_view::npos,
+		rejection.find("p2_capture_failure=1"));
+	EXPECT_NE(std::string_view::npos, rejection.find("value=1"));
+
+	detail::TelemetryLogRecord maximum{};
+	maximum.platform_code = std::numeric_limits<std::uint32_t>::max();
+	maximum.local_generation = std::numeric_limits<std::uint32_t>::max();
+	maximum.record_count = std::numeric_limits<std::uint32_t>::max();
+	maximum.part_count = std::numeric_limits<std::uint16_t>::max();
+	maximum.bytes = std::numeric_limits<std::uint64_t>::max();
+	maximum.duration_us = std::numeric_limits<std::uint64_t>::max();
+	maximum.value = std::numeric_limits<std::uint64_t>::max();
+	maximum.limit = std::numeric_limits<std::uint64_t>::max();
+	maximum.high_water = std::numeric_limits<std::uint64_t>::max();
+	maximum.drops.fill(std::numeric_limits<std::uint64_t>::max());
+	ASSERT_TRUE(detail::format_telemetry_log_record(maximum, line));
+	EXPECT_LT(std::string_view{line.data()}.size(),
+		detail::TelemetryLogLineCapacity);
+}
 
 protocol::Sha256Digest digest(std::uint8_t value)
 {

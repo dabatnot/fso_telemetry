@@ -151,7 +151,7 @@ La Phase 2 remplace le plafond provisoire Phase 1 de 256 Mio par le plafond comp
 
 | Scope inclusif | Plafond | Contenu maximal |
 |---|---:|---|
-| partagé process/mission | 67 108 864 octets | DTO/closure/scratch pré-ID préalloués, descripteurs de catalogue partagés, rings, registres sources et métriques |
+| partagé process/mission | 134 217 728 octets | DTO/closure/scratch pré-ID préalloués, descripteurs de catalogue partagés, rings, registres sources et métriques |
 | par client | 83 886 080 octets | rétention fiable 33 554 432, réassemblage 4 194 304, image courante et baseline jusqu’à 16 777 216 chacune, delta jusqu’à 1 048 576, egress/latches/manifest IDs/métadonnées dans le solde |
 | process total | `shared + maxClients × perClient <= 402 653 184` | avec `maxClients<=4`, arithmétique vérifiée avant bind |
 

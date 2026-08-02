@@ -420,6 +420,7 @@ add_executable(telemetry_phase2_runtime_tests
 	telemetry/producer/phase2_runtime_tests.cpp
 	telemetry/producer/phase2_session_identity_test_support.cpp
 	${CMAKE_SOURCE_DIR}/code/telemetry/entity_id_registry.cpp
+	${CMAKE_SOURCE_DIR}/code/telemetry/logging.cpp
 	${CMAKE_SOURCE_DIR}/code/telemetry/phase1_snapshot_egress.cpp
 	${CMAKE_SOURCE_DIR}/code/telemetry/phase1_snapshot_slot.cpp
 	${CMAKE_SOURCE_DIR}/code/telemetry/phase1_state_image.cpp

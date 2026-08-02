@@ -120,12 +120,17 @@ struct TelemetryLogRecord {
 };
 
 constexpr std::size_t TelemetryLogRecordCapacity = 32U;
+constexpr std::size_t TelemetryLogLineCapacity = 1024U;
 
 struct TelemetryLogSnapshot {
 	std::array<TelemetryLogRecord, TelemetryLogRecordCapacity> records{};
 	std::size_t count = 0U;
 	std::uint64_t dropped_records = 0U;
 };
+
+bool format_telemetry_log_record(
+	const TelemetryLogRecord& record,
+	std::array<char, TelemetryLogLineCapacity>& output) noexcept;
 
 class TelemetryStructuredLog final {
   public:

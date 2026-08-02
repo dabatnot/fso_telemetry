@@ -1,5 +1,7 @@
 #include "telemetry/logging.h"
 
+#include <cstdio>
+
 namespace telemetry::detail {
 namespace {
 constexpr std::uint64_t DropSummaryPeriodUs = 1'000'000U;
@@ -9,6 +11,53 @@ bool valid_reason(TelemetryLogReason reason) noexcept
 	return static_cast<std::size_t>(reason) < static_cast<std::size_t>(TelemetryLogReason::Count);
 }
 } // namespace
+
+bool format_telemetry_log_record(
+	const TelemetryLogRecord& record,
+	std::array<char, TelemetryLogLineCapacity>& output) noexcept
+{
+	const auto written = std::snprintf(output.data(), output.size(),
+		"telemetry event=%u level=%u reason=%u family=%u budget=%u fault=%u "
+		"slot=%u port=%u version=%u.%u code=%u "
+		"p2_profile=%u p2_profile_rejection=%u p2_block=%u "
+		"p2_capture_failure=%u p2_lifecycle=%u p2_support=%u p2_resync=%u "
+		"generation=%u records=%u parts=%u bytes=%llu duration_us=%llu "
+		"value=%llu limit=%llu high_water=%llu "
+		"drops=%llu,%llu,%llu,%llu,%llu,%llu\n",
+		static_cast<unsigned>(record.event),
+		static_cast<unsigned>(record.level),
+		static_cast<unsigned>(record.reason),
+		static_cast<unsigned>(record.family),
+		static_cast<unsigned>(record.budget),
+		static_cast<unsigned>(record.fault),
+		static_cast<unsigned>(record.correlation_slot),
+		static_cast<unsigned>(record.port),
+		static_cast<unsigned>(record.protocol_major),
+		static_cast<unsigned>(record.protocol_minor),
+		static_cast<unsigned>(record.platform_code),
+		static_cast<unsigned>(record.phase2_profile),
+		static_cast<unsigned>(record.phase2_profile_rejection),
+		static_cast<unsigned>(record.phase2_block),
+		static_cast<unsigned>(record.phase2_capture_failure),
+		static_cast<unsigned>(record.phase2_lifecycle),
+		static_cast<unsigned>(record.phase2_support),
+		static_cast<unsigned>(record.phase2_resync),
+		static_cast<unsigned>(record.local_generation),
+		static_cast<unsigned>(record.record_count),
+		static_cast<unsigned>(record.part_count),
+		static_cast<unsigned long long>(record.bytes),
+		static_cast<unsigned long long>(record.duration_us),
+		static_cast<unsigned long long>(record.value),
+		static_cast<unsigned long long>(record.limit),
+		static_cast<unsigned long long>(record.high_water),
+		static_cast<unsigned long long>(record.drops[0]),
+		static_cast<unsigned long long>(record.drops[1]),
+		static_cast<unsigned long long>(record.drops[2]),
+		static_cast<unsigned long long>(record.drops[3]),
+		static_cast<unsigned long long>(record.drops[4]),
+		static_cast<unsigned long long>(record.drops[5]));
+	return written >= 0 && static_cast<std::size_t>(written) < output.size();
+}
 
 void TelemetryStructuredLog::append(TelemetryLogRecord record) noexcept
 {

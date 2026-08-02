@@ -25,12 +25,15 @@ from pathlib import Path
 
 TOOLS = Path(__file__).resolve().parent
 CONSOLE = TOOLS / "fstl_console_client.py"
+SCENARIO = TOOLS / "fstl_phase2_scenario_client.py"
 REPO = TOOLS.parents[3]
 V11 = REPO / "test" / "telemetry" / "protocol" / "vectors-v1.1"
+OBSERVATIONS = REPO / "test" / "telemetry" / "producer" / "observations"
 
 sys.path.insert(0, str(TOOLS))
 import fstl_reference_decoder as reference
 import fstl_console_client as console
+import fstl_phase2_scenario_client as scenario
 
 
 def packet(message_type: int, payload: bytes, *, session_id: int, sequence: int, sent_us: int,
@@ -41,6 +44,20 @@ def packet(message_type: int, payload: bytes, *, session_id: int, sequence: int,
         "<IBBBBHHQIIqQIHHIII",
         0x4C545346, 1, 1, message_type, flags, 68, len(payload), session_id,
         sequence, 0, 0, sent_us, sequence if message_id is None else message_id, 0, 1, len(payload), 0, message_crc,
+    )
+    crc = reference.crc32_iso_hdlc(prefix + bytes(4) + payload)
+    return prefix + struct.pack("<I", crc) + payload
+
+
+def incomplete_fragment(message_id: int) -> bytes:
+    """Build fragment zero of a valid two-fragment logical message."""
+    payload = bytes(reference.MAX_FRAGMENT_PAYLOAD)
+    message_size = reference.MAX_FRAGMENT_PAYLOAD + 1
+    prefix = struct.pack(
+        "<IBBBBHHQIIqQIHHIII",
+        0x4C545346, 1, 1, 7, 0, 68, len(payload), 1,
+        message_id, 0, 0, message_id, message_id, 0, 2,
+        message_size, 0, 0,
     )
     crc = reference.crc32_iso_hdlc(prefix + bytes(4) + payload)
     return prefix + struct.pack("<I", crc) + payload
@@ -85,6 +102,29 @@ def session_end_payload() -> bytes:
     return (REPO / "test/telemetry/protocol/vectors/valid/messages/session_end/session_end.bin").read_bytes()
 
 
+def phase2_manifest_payload(manifest_id: int) -> bytes:
+    payload = bytearray(
+        (REPO / "test/telemetry/protocol/vectors/valid/messages/manifest/manifest.bin").read_bytes()
+    )
+    struct.pack_into("<I", payload, 0, manifest_id)
+    struct.pack_into("<I", payload, 62, manifest_id)
+    payload[12:44] = hashlib.sha256(payload[56:]).digest()
+    return bytes(payload)
+
+
+def phase2_snapshot_payload(snapshot_id: int, manifest_id: int) -> bytes:
+    payload = bytearray(v11_payload("phase2-promotion", ".bin"))
+    struct.pack_into("<I", payload, 0, snapshot_id)
+    struct.pack_into("<I", payload, 52, manifest_id)
+    return bytes(payload)
+
+
+def delta_payload(name: str, baseline_snapshot_id: int) -> bytes:
+    payload = bytearray(v11_payload(name, ".payload.bin"))
+    struct.pack_into("<I", payload, 0, baseline_snapshot_id)
+    return bytes(payload)
+
+
 def with_snapshot_transaction_size(payload: bytes, size: int, snapshot_id: int | None = None) -> bytes:
     updated = bytearray(payload)
     if snapshot_id is not None:
@@ -112,6 +152,560 @@ def receive_message_type(server: socket.socket, message_type: int) -> tuple[byte
 
 
 class FstlConsoleClientContractTest(unittest.TestCase):
+    def test_reference_decoder_accepts_optional_groups_for_phase2_ship_records(self) -> None:
+        def text(value: str) -> bytes:
+            encoded = value.encode("utf-8")
+            return struct.pack("<H", len(encoded)) + encoded
+
+        def record(record_type: int, payload: bytes) -> dict[str, object]:
+            encoded = struct.pack("<HBBH", record_type, 1, 0, len(payload)) + payload
+            return reference.decode_record(encoded)["fields"]
+
+        control = (
+            struct.pack("<QQQ6fBI", 1, 0x07, 100, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0, 0x3F)
+            + struct.pack("<fHHH4f", 50.0, 1, 2, 3, 0.1, -0.1, 0.5, 0.2)
+        )
+        self.assertEqual("7", record(8, control)["presence"])
+
+        damage = (
+            struct.pack("<QQQffH", 1, 0x3F, 100, 90.0, 100.0, 0x07)
+            + struct.pack("<fIffQI", 95.0, 2, 10.0, 25.0, 0, 0)
+            + struct.pack("<HBH", 1, 1, 20)
+            + struct.pack("<QII f", 0, 0, 0, 25.0)
+        )
+        self.assertEqual(1, len(record(9, damage)["contributors"]))
+
+        shield = (
+            struct.pack("<QQQBHH", 1, 0x07, 100, 1, 1, 0)
+            + struct.pack("<5f", 50.0, 100.0, 100.0, 5.0, -2.0)
+        )
+        self.assertEqual(5.0, record(10, shield)["regeneration_per_s"])
+
+        animation_payload = struct.pack("<HHBBfffQ", 0x0005, 1, 1, 0, 0.1, 0.2, 0.3, 10)
+        animation = struct.pack("<BH", 1, len(animation_payload)) + animation_payload
+        turret_bank_payload = struct.pack("<HBBHIII fQ", 1, 0, 0, 0, 5, 6, 7, 8.0, 9)
+        turret_bank = struct.pack("<BH", 1, len(turret_bank_payload)) + turret_bank_payload
+        subsystem = (
+            struct.pack("<QIQ QHBffI", 1, 2, 0xFF, 100, 0, 2, 50.0, 100.0, 1)
+            + text("turret")
+            + text("")
+            + text("")
+            + struct.pack("<IQ3f4fH", 3, 10, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1)
+            + animation
+            + struct.pack("<B", 1)
+            + text("Cargo")
+            + struct.pack("<ff", 50.0, 100.0)
+            + struct.pack("<IQI", 0x1FFF, 9, 2)
+            + struct.pack("<3f", 1.0, 0.0, 0.0)
+            + struct.pack("<3f3f", 1.0, 2.0, 3.0, 0.0, 0.0, 0.0)
+            + struct.pack("<HHQQf", 1, 0, 10, 20, 100.0)
+            + struct.pack("<hHff", 2, 0, 0.1, 1.0)
+            + struct.pack("<BQH", 1, 30, 1)
+            + turret_bank
+            + struct.pack("<HIff", 2, 5, 1.0, 2.0)
+        )
+        decoded_subsystem = record(11, subsystem)
+        self.assertEqual(1, len(decoded_subsystem["animations"]))
+        self.assertEqual(1, len(decoded_subsystem["turret"]["banks"]))
+
+        energy = (
+            struct.pack("<QQQ5B", 1, 0x3F, 100, 1, 4, 4, 4, 0)
+            + struct.pack("<11f", 50.0, 100.0, 5.0, 6.0, -1.0, 1.0,
+                          2.0, 70.0, 3.0, 40.0, 80.0)
+        )
+        self.assertEqual(50.0, record(12, energy)["weapon_energy_current"])
+
+        propulsion = (
+            struct.pack("<QQQHH", 1, 0x3F, 100, 0x0005, 0)
+            + struct.pack("<4f", 50.0, 100.0, 5.0, 2.0)
+            + struct.pack("<fQQf", 25.0, 10, 20, 70.0)
+            + struct.pack("<f3f", 0.7, 0.0, 0.0, 150.0)
+            + struct.pack("<f3f", 1.0, 0.0, 0.0, 0.5)
+        )
+        self.assertEqual(50.0, record(13, propulsion)["fuel_current"])
+
+    def test_reference_decoder_accepts_every_ship_identity_optional_group(self) -> None:
+        def text(value: str) -> bytes:
+            encoded = value.encode("utf-8")
+            return struct.pack("<H", len(encoded)) + encoded
+
+        payload = (
+            struct.pack("<QQQI", 7, 0x1F, 1_000_000, 3)
+            + text("Alpha 1")
+            + text("GTF Ulysses")
+            + text("Maverick")
+            + struct.pack("<IIIHf", 1, 2, 3, 0x000F, 16.0)
+            + struct.pack("<IH", 4, 0)
+            + text("Alpha")
+            + struct.pack("<fH", 18.0, 0x000F)
+        )
+        encoded = struct.pack("<HBBH", 6, 1, 0, len(payload)) + payload
+
+        decoded = reference.decode_record(encoded)
+        fields = decoded["fields"]
+
+        self.assertEqual("7", fields["entity_id"])
+        self.assertEqual("31", fields["presence"])
+        self.assertEqual("GTF Ulysses", fields["display_name"])
+        self.assertEqual("Maverick", fields["callsign"])
+        self.assertEqual(
+            {"wing_id": 4, "wing_name": "Alpha", "wing_position": 0},
+            fields["wing"],
+        )
+        self.assertEqual(18.0, fields["logical_size"])
+        self.assertEqual(0x000F, fields["sensor_visibility_flags"])
+
+    def test_phase2_scenario_tool_is_external_and_keeps_the_neutral_console_unchanged(self) -> None:
+        self.assertTrue(SCENARIO.is_file())
+        tree = ast.parse(SCENARIO.read_text(encoding="utf-8"))
+        imports = {
+            alias.name
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Import)
+            for alias in node.names
+        }
+        imported_modules = imports | {
+            node.module or ""
+            for node in ast.walk(tree)
+            if isinstance(node, ast.ImportFrom)
+        }
+        self.assertIn("fstl_console_client", imports)
+        self.assertIn("fstl_reference_decoder", imports)
+        self.assertFalse(
+            any(
+                name.startswith(("telemetry", "code", "producer"))
+                for name in imported_modules
+            )
+        )
+
+    def test_phase2_scenario_state_transcript_is_compact_and_keeps_final_human_evidence(self) -> None:
+        client = scenario.ScenarioConsoleClient(
+            None, 3_000_000, "fast", lambda event: None
+        )
+        client.state.status = "Live"
+        client.state.session_id = 0x1234
+        client.state.manifest_id = 7
+        client.state.required_manifest_id = 7
+        client.state.manifest_applied = True
+        client.state.keyframe_applied = True
+        client.state.baseline = 9
+        client.state.delta_sequence = 11
+        client.state.records = {
+            "SESSION_STATE": {"observed_player_entity_id": "1"},
+            "MISSION_STATE": {"mission_generation": 3},
+        }
+        client.state.record_instances = {
+            "CLASS_MANIFEST/manifest_generation=7/class_id=1": {
+                "recordName": "CLASS_MANIFEST",
+                "fields": {"manifest_generation": 7, "class_id": 1, "large": "x" * 100_000},
+            },
+            "SUPPORT_STATE/entity_id=2": {
+                "recordName": "SUPPORT_STATE",
+                "fields": {"entity_id": "2", "phase": 3},
+            },
+        }
+
+        event = scenario._compact_state_event(
+            client, 1_000_000, "2026-08-02T12:00:00.000000Z"
+        )
+        encoded = json.dumps(event, separators=(",", ":"))
+        self.assertLess(len(encoded), 1024)
+        self.assertNotIn("dashboard", event)
+        self.assertNotIn("records", event)
+        self.assertTrue(event["synchronized"])
+        self.assertEqual(3, event["missionGeneration"])
+        self.assertEqual("1", event["playerEntityId"])
+
+        facts = client.facts()
+        self.assertEqual(
+            [{
+                "identity": "SUPPORT_STATE/entity_id=2",
+                "recordName": "SUPPORT_STATE",
+                "fields": {"entity_id": "2", "phase": 3},
+            }],
+            facts["evidenceRecords"],
+        )
+
+    def test_phase2_scenario_drains_every_available_datagram_per_ready_socket(self) -> None:
+        class ReadySocket:
+            def __init__(self) -> None:
+                self.datagrams = [bytes([index]) for index in range(8)]
+
+            def recv(self, maximum: int) -> bytes:
+                self.asserted_maximum = maximum
+                if not self.datagrams:
+                    raise BlockingIOError()
+                return self.datagrams.pop(0)
+
+        class RecordingClient:
+            def __init__(self) -> None:
+                self.received: list[bytes] = []
+
+            def receive(self, data: bytes, at_us: int, at_utc: str) -> bool:
+                self.received.append(data)
+                return False
+
+        ready = ReadySocket()
+        client = RecordingClient()
+        self.assertEqual(8, scenario._drain_socket(ready, client))
+        self.assertEqual([bytes([index]) for index in range(8)], client.received)
+        self.assertEqual(console.MAX_DATAGRAM, ready.asserted_maximum)
+
+    def test_incomplete_reassemblies_expire_before_the_bounded_quota_is_reused(self) -> None:
+        client = console.ConsoleClient(None, 1_000_000)
+        for message_id in range(1, 5):
+            self.assertFalse(
+                client.receive(
+                    incomplete_fragment(message_id),
+                    message_id,
+                    "2026-08-02T12:00:00.000000Z",
+                )
+            )
+        self.assertEqual(4, len(client.fragments))
+
+        self.assertFalse(
+            client.receive(
+                incomplete_fragment(5),
+                client.state.reliable_reassembly_timeout_us + 4,
+                "2026-08-02T12:00:05.000000Z",
+            )
+        )
+        self.assertEqual([(1, 5)], list(client.fragments))
+
+    def test_two_client_applied_policy_holds_one_new_manifest_snapshot_and_releases_bounded_acks(self) -> None:
+        events: list[dict[str, object]] = []
+        independent = scenario.AppliedSnapshotHold(10_000, events.append, "independent")
+        slow = scenario.AppliedSnapshotHold(10_000, events.append, "slow")
+
+        def header(message_id: int) -> dict[str, int]:
+            return {
+                "message_type": 6,
+                "message_id": message_id,
+                "message_crc32": 0x10203040 + message_id,
+                "fragment_count": 2,
+            }
+
+        self.assertFalse(
+            independent.route(header(1), console.ACK_APPLIED, 1, 10, 1_000)
+        )
+        self.assertFalse(
+            slow.route(header(1), console.ACK_APPLIED, 1, 10, 1_000)
+        )
+        self.assertTrue(
+            slow.route(header(2), console.ACK_APPLIED, 2, 11, 2_000)
+        )
+        self.assertTrue(
+            slow.route(header(3), console.ACK_APPLIED, 2, 11, 2_100)
+        )
+        self.assertEqual(2, len(slow.held))
+        self.assertFalse(independent.hold_started)
+        self.assertTrue(slow.hold_active)
+        with self.assertRaisesRegex(ValueError, "second snapshot transaction"):
+            slow.route(header(5), console.ACK_APPLIED, 2, 12, 2_200)
+
+        slow.observe_manifest(3, 2_300)
+        sent: list[tuple[int, int]] = []
+        self.assertFalse(
+            slow.release_due(
+                11_999,
+                lambda ack_header, flags: sent.append((ack_header["message_id"], flags)),
+            )
+        )
+        self.assertTrue(
+            slow.release_due(
+                12_000,
+                lambda ack_header, flags: sent.append((ack_header["message_id"], flags)),
+            )
+        )
+        self.assertEqual(
+            [(2, console.ACK_APPLIED), (3, console.ACK_APPLIED)], sent
+        )
+        self.assertFalse(slow.hold_active)
+        self.assertEqual([3], slow.manifests_during_hold)
+        self.assertFalse(
+            slow.route(header(4), console.ACK_APPLIED, 3, 12, 13_000),
+            "the deterministic policy holds exactly one logical snapshot transaction",
+        )
+        self.assertEqual(
+            1,
+            sum(event.get("event") == "snapshot-applied-held" for event in events),
+        )
+        self.assertEqual(
+            1,
+            sum(event.get("event") == "snapshot-applied-released" for event in events),
+        )
+
+    def test_phase2_scenario_cli_rejects_invalid_bounds_before_opening_sockets(self) -> None:
+        for arguments in (
+            ("--port", "0"),
+            ("--seconds", "0"),
+            ("--stale-ms", "0"),
+            ("--slow-hold-ms", "0"),
+        ):
+            result = subprocess.run(
+                [sys.executable, "-B", str(SCENARIO), *arguments],
+                capture_output=True,
+                text=True,
+                timeout=3,
+            )
+            self.assertNotEqual(0, result.returncode)
+            self.assertIn("invalid port, duration, stale timeout or slow hold", result.stderr)
+
+    def test_slow_client_sends_validated_holds_applied_and_releases_before_n_plus_two(self) -> None:
+        class Sender:
+            def __init__(self) -> None:
+                self.packets: list[bytes] = []
+
+            def send(self, packet_bytes: bytes) -> None:
+                self.packets.append(packet_bytes)
+
+        events: list[dict[str, object]] = []
+        sender = Sender()
+        client = scenario.ScenarioConsoleClient(
+            sender, 3_000_000, "slow", events.append, applied_hold_us=80_000
+        )
+        client.state.welcomed = True
+        client.state.session_begun = True
+        client.state.session_id = 0x2200
+        client.state.required_manifest_id = 1
+        client.state.manifest_applied = False
+        observed_at_utc = "2026-08-01T12:00:00.000000Z"
+        sequence = 1
+
+        def receive(message_type: int, payload: bytes, at_us: int) -> None:
+            nonlocal sequence
+            client.receive(
+                packet(
+                    message_type,
+                    payload,
+                    session_id=client.state.session_id,
+                    sequence=sequence,
+                    sent_us=at_us,
+                    flags=2,
+                ),
+                at_us,
+                observed_at_utc,
+            )
+            sequence += 1
+
+        def ack_flags_since(index: int) -> list[int]:
+            result: list[int] = []
+            for ack_packet in sender.packets[index:]:
+                ack_header = reference.read_header(ack_packet)
+                if ack_header["message_type"] != 10:
+                    continue
+                decoded = reference.decode_message(
+                    10, ack_header["flags"], ack_packet[68:], {}
+                )
+                result.append(int(decoded["fields"]["ack_flags"]))
+            return result
+
+        receive(5, phase2_manifest_payload(1), 1_000_000)
+        receive(6, phase2_snapshot_payload(1, 1), 1_100_000)
+        sender.packets.clear()
+
+        receive(5, phase2_manifest_payload(2), 2_000_000)
+        sender.packets.clear()
+        receive(6, phase2_snapshot_payload(2, 2), 2_100_000)
+        self.assertEqual([console.ACK_VALIDATED], ack_flags_since(0))
+        self.assertTrue(client.hold and client.hold.hold_active)
+        self.assertEqual(
+            ["ack-sent", "snapshot-applied-held", "ack-held", "snapshot-committed"],
+            [event["event"] for event in events[-4:]],
+        )
+        self.assertTrue(
+            all("observedAtMonotonicUs" in event and "observedAtUtc" in event for event in events[-4:])
+        )
+        held_ack = next(event for event in events if event["event"] == "ack-held")
+        self.assertEqual(client.state.session_id, held_ack["sessionId"])
+        self.assertRegex(str(held_ack["targetMessageCrc32"]), r"^0x[0-9a-f]{8}$")
+
+        before_release = len(sender.packets)
+        client.poll_scenario(2_179_999)
+        self.assertEqual([], ack_flags_since(before_release))
+        client.poll_scenario(2_180_000)
+        self.assertEqual([console.ACK_APPLIED], ack_flags_since(before_release))
+        self.assertFalse(client.hold and client.hold.hold_active)
+        released_ack = next(event for event in events if event["event"] == "ack-released")
+        self.assertEqual(held_ack["targetMessageId"], released_ack["targetMessageId"])
+        self.assertEqual(held_ack["targetMessageCrc32"], released_ack["targetMessageCrc32"])
+
+        sender.packets.clear()
+        receive(5, phase2_manifest_payload(3), 2_200_000)
+        receive(6, phase2_snapshot_payload(3, 3), 2_300_000)
+        self.assertIn(console.ACK_APPLIED, ack_flags_since(0))
+        self.assertEqual([1, 2, 3], client.manifest_ids)
+        self.assertEqual([1, 2, 3], client.snapshot_ids)
+        self.assertEqual([], client.hold.manifests_during_hold if client.hold else None)
+
+    def test_fast_scenario_client_reports_one_delta_drop_then_cumulative_convergence(self) -> None:
+        class Sender:
+            def __init__(self) -> None:
+                self.packets: list[bytes] = []
+
+            def send(self, packet_bytes: bytes) -> None:
+                self.packets.append(packet_bytes)
+
+        events: list[dict[str, object]] = []
+        client = scenario.ScenarioConsoleClient(
+            Sender(),
+            3_000_000,
+            "fast",
+            events.append,
+            drop_once_delta=True,
+        )
+        client.state.welcomed = True
+        client.state.session_begun = True
+        client.state.session_id = 0x3300
+        client.state.required_manifest_id = 1
+        observed_at_utc = "2026-08-01T12:00:00.000000Z"
+
+        for sequence, (message_type, payload) in enumerate(
+            (
+                (5, phase2_manifest_payload(1)),
+                (6, phase2_snapshot_payload(1, 1)),
+                (7, delta_payload("delta-player-kinematics-cumulative", 1)),
+                (7, delta_payload("delta-player-return-baseline", 1)),
+            ),
+            start=1,
+        ):
+            client.receive(
+                packet(
+                    message_type,
+                    payload,
+                    session_id=client.state.session_id,
+                    sequence=sequence,
+                    sent_us=1_000_000 + sequence,
+                    flags=2 if message_type in (5, 6) else 0,
+                ),
+                1_000_000 + sequence,
+                observed_at_utc,
+            )
+
+        self.assertEqual(1, client.delta_dropped_count)
+        self.assertEqual(1, client.delta_applied_count)
+        self.assertEqual(0, client.delta_rejected_count)
+        self.assertEqual(3, client.state.delta_sequence)
+        self.assertEqual(
+            ["delta-dropped", "delta-applied"],
+            [event["event"] for event in events if str(event.get("event", "")).startswith("delta-")],
+        )
+        delta_events = [
+            event for event in events if str(event.get("event", "")).startswith("delta-")
+        ]
+        self.assertEqual([1, 1], [event["receivedBaselineSnapshotId"] for event in delta_events])
+        self.assertEqual([2, 3], [event["receivedDeltaSequence"] for event in delta_events])
+        self.assertEqual([0, 3], [event["resultingDeltaSequence"] for event in delta_events])
+        self.assertEqual(
+            [{"action": "drop-once", "message": "delta", "message_id": 3}],
+            client.state.injections,
+        )
+
+    def test_phase2_scenario_opens_two_independent_udp_sessions(self) -> None:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as server:
+            server.bind(("127.0.0.1", 0))
+            server.settimeout(2)
+            process = subprocess.Popen(
+                [
+                    sys.executable,
+                    "-B",
+                    str(SCENARIO),
+                    "--host",
+                    "127.0.0.1",
+                    "--port",
+                    str(server.getsockname()[1]),
+                    "--seconds",
+                    "0.4",
+                    "--slow-hold-ms",
+                    "10",
+                ],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            peers: dict[tuple[str, int], tuple[bytes, int]] = {}
+            while len(peers) < 2:
+                datagram, peer = server.recvfrom(1200)
+                if reference.read_header(datagram)["message_type"] == 2:
+                    peers.setdefault(peer, (datagram, 0x1000 + len(peers)))
+            first, second = snapshot_parts()
+            for peer, (hello, session_id) in peers.items():
+                server.sendto(
+                    packet(
+                        3,
+                        welcome_for(hello),
+                        session_id=session_id,
+                        sequence=1,
+                        sent_us=1_000_000,
+                        flags=2,
+                    ),
+                    peer,
+                )
+                server.sendto(
+                    packet(
+                        4,
+                        session_begin_payload(),
+                        session_id=session_id,
+                        sequence=2,
+                        sent_us=1_000_001,
+                        flags=2,
+                    ),
+                    peer,
+                )
+                server.sendto(
+                    packet(
+                        6,
+                        first,
+                        session_id=session_id,
+                        sequence=3,
+                        sent_us=1_000_002,
+                        flags=2,
+                    ),
+                    peer,
+                )
+                server.sendto(
+                    packet(
+                        6,
+                        second,
+                        session_id=session_id,
+                        sequence=4,
+                        sent_us=1_000_003,
+                        flags=2,
+                    ),
+                    peer,
+                )
+            stdout, stderr = process.communicate(timeout=3)
+
+        self.assertEqual(0, process.returncode, stderr + stdout)
+        lines = [json.loads(line) for line in stdout.splitlines()]
+        summary = next(line for line in lines if line["kind"] == "scenario-summary")
+        self.assertNotEqual(summary["fast"]["sessionId"], summary["slow"]["sessionId"])
+        self.assertEqual("Live", summary["fast"]["finalStatus"])
+        self.assertEqual("Live", summary["slow"]["finalStatus"])
+
+    def test_complete_ship_fixture_is_neutral_and_spawns_external_cargo(self) -> None:
+        mission_path = OBSERVATIONS / "telemetry_p2_complete.fs2"
+        mission = mission_path.read_text(encoding="utf-8")
+        config = json.loads(
+            (OBSERVATIONS / "complete-ship.telemetry.json").read_text(encoding="utf-8")
+        )
+        self.assertLess(len(mission_path.stem), 28)
+        self.assertEqual(1, config["maxClients"])
+        cargo = mission.split("$Name: External Cargo 1", 1)[1].split("#Wings", 1)[0]
+        self.assertIn("$Class: TC 2", cargo)
+        self.assertNotIn("$Class: Cargo Container", cargo)
+        self.assertIn("$Arrival Cue: ( true )", cargo)
+        self.assertNotIn("( change-ship-class ", mission)
+
+    def test_core_gate_fixture_is_listable_and_spawns_external_cargo(self) -> None:
+        mission_path = OBSERVATIONS / "telemetry_p2_core.fs2"
+        mission = mission_path.read_text(encoding="utf-8")
+        self.assertLess(len(mission_path.stem), 28)
+        cargo = mission.split("$Name: External Cargo 1", 1)[1].split("#Wings", 1)[0]
+        self.assertIn("$Class: TC 2", cargo)
+        self.assertNotIn("$Class: Cargo Container", cargo)
+        self.assertIn("$Arrival Cue: ( true )", cargo)
+
     def test_phase2_dashboard_formulas_are_explicit_and_fail_closed(self) -> None:
         decoded = reference.decode_message(
             6, 0, v11_payload("phase2-complete-ship", ".bin"), {}
@@ -272,6 +866,84 @@ class FstlConsoleClientContractTest(unittest.TestCase):
         self.assertEqual(0, second_header["flags"] & 0x02, "HELLO retry must not request an ACK")
         self.assertNotEqual(0, second_header["flags"] & 0x10, "retry carries RETRANSMISSION")
         self.assertGreater(second_header["packet_sequence"], first_header["packet_sequence"])
+
+    def test_retransmitted_welcome_and_session_begin_are_applied_once_and_acked_idempotently(self) -> None:
+        class Sender:
+            def __init__(self) -> None:
+                self.packets: list[bytes] = []
+
+            def send(self, packet_bytes: bytes) -> None:
+                self.packets.append(packet_bytes)
+
+        sender = Sender()
+        client = console.ConsoleClient(sender, 3_000_000)
+        client.begin()
+        hello = sender.packets.pop()
+        session_id = 0x1122334455667788
+        welcome_payload = welcome_for(hello)
+        begin_payload = session_begin_payload()
+
+        def deliver(
+            message_type: int,
+            payload: bytes,
+            sequence: int,
+            message_id: int,
+            flags: int,
+        ) -> bool:
+            return client.receive(
+                packet(
+                    message_type,
+                    payload,
+                    session_id=session_id,
+                    sequence=sequence,
+                    sent_us=1_000_000 + sequence,
+                    message_id=message_id,
+                    flags=flags,
+                ),
+                2_000_000 + sequence,
+                "2026-08-02T12:00:00.000000Z",
+            )
+
+        self.assertTrue(deliver(3, welcome_payload, 1, 1, console.ACK_REQUIRED))
+        self.assertTrue(deliver(4, begin_payload, 2, 2, console.ACK_REQUIRED))
+        self.assertFalse(
+            deliver(
+                3,
+                welcome_payload,
+                3,
+                1,
+                console.ACK_REQUIRED | console.RETRANSMISSION,
+            )
+        )
+        self.assertFalse(
+            deliver(
+                4,
+                begin_payload,
+                4,
+                2,
+                console.ACK_REQUIRED | console.RETRANSMISSION,
+            )
+        )
+        self.assertTrue(client.state.session_begun)
+        acknowledgements = [
+            reference.decode_message(
+                10,
+                reference.read_header(ack)["flags"],
+                ack[68:],
+                {},
+            )["fields"]
+            for ack in sender.packets
+            if reference.read_header(ack)["message_type"] == 10
+        ]
+        self.assertEqual(4, len(acknowledgements))
+        self.assertTrue(all(
+            fields["ack_flags"] == console.ACK_APPLIED
+            for fields in acknowledgements
+        ))
+        self.assertEqual(
+            [1, 2, 1, 2],
+            [fields["target_message_id"] for fields in acknowledgements],
+        )
 
     def test_heartbeat_requests_receive_correlated_responses_and_keep_the_udp_session_alive(self) -> None:
         session_id = 0x1122334455667788

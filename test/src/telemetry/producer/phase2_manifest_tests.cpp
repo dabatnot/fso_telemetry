@@ -330,7 +330,7 @@ TEST(Phase2Manifest, P2TST021BankDescriptorsUseTheFullLexicographicTopology)
 	for (std::uint32_t index = 0; index < ship_class.bank_count; ++index) {
 		auto& bank = ship_class.banks[index];
 		bank.family = WeaponFamily::Tertiary;
-		bank.source_family = WeaponFamily::Tertiary;
+		bank.source_family = WeaponFamily::None;
 		bank.bank_index = 0;
 		bank.owner_subsystem_canonical_index = static_cast<std::uint16_t>(1 - index);
 	}
@@ -350,8 +350,8 @@ TEST(Phase2Manifest, P2TST021BankDescriptorsUseTheFullLexicographicTopology)
 	ASSERT_EQ(2u, left.class_records[0].bank_count);
 	EXPECT_EQ(1u, left.class_records[0].banks[0].owner_subsystem_id);
 	EXPECT_EQ(2u, left.class_records[0].banks[1].owner_subsystem_id);
-	EXPECT_EQ(WeaponFamily::Tertiary, left.class_records[0].banks[0].source_family);
-	EXPECT_EQ(WeaponFamily::Tertiary, left.class_records[0].banks[1].source_family);
+	EXPECT_EQ(WeaponFamily::None, left.class_records[0].banks[0].source_family);
+	EXPECT_EQ(WeaponFamily::None, left.class_records[0].banks[1].source_family);
 	EXPECT_EQ(1u, left.class_records[0].banks[0].bank_id);
 	EXPECT_EQ(2u, left.class_records[0].banks[1].bank_id);
 }
@@ -447,7 +447,7 @@ TEST(Phase2Manifest, P2REQ017BankIdsAreNonZeroAndDistinctAcrossTheWholeManifestG
 		auto& ship_class = source.ship_classes[class_index];
 		ship_class.bank_count = 1;
 		ship_class.banks[0].family = telemetry::WeaponFamily::Tertiary;
-		ship_class.banks[0].source_family = telemetry::WeaponFamily::Tertiary;
+		ship_class.banks[0].source_family = telemetry::WeaponFamily::None;
 		ship_class.banks[0].bank_index = 0;
 	}
 
@@ -758,13 +758,13 @@ TEST(Phase2Manifest, P2TST047BankOwnerAndAmmunitionSemanticsAreProjectedAndValid
 	ship_class.subsystems[0].name = "Missile turret";
 	ship_class.bank_count = 4;
 	ship_class.banks[0].family = WeaponFamily::Primary;
-	ship_class.banks[0].source_family = WeaponFamily::Primary;
+	ship_class.banks[0].source_family = WeaponFamily::None;
 	ship_class.banks[0].bank_index = 0;
 	ship_class.banks[0].weapon_source_key = 101;
 	ship_class.banks[0].consumes_ammunition = false;
 	ship_class.banks[0].capacity = 99.0F;
 	ship_class.banks[1].family = WeaponFamily::Secondary;
-	ship_class.banks[1].source_family = WeaponFamily::Secondary;
+	ship_class.banks[1].source_family = WeaponFamily::None;
 	ship_class.banks[1].bank_index = 0;
 	ship_class.banks[1].owner_subsystem_canonical_index = 0;
 	ship_class.banks[1].weapon_source_key = 102;
@@ -817,9 +817,9 @@ TEST(Phase2Manifest, P2TST047BankOwnerAndAmmunitionSemanticsAreProjectedAndValid
 	ASSERT_NE(record->banks.end(), turret_primary);
 	ASSERT_NE(record->banks.end(), turret_secondary);
 	EXPECT_EQ(0u, primary->owner_subsystem_id);
-	EXPECT_EQ(WeaponFamily::Primary, primary->source_family);
+	EXPECT_EQ(WeaponFamily::None, primary->source_family);
 	EXPECT_EQ(1u, secondary->owner_subsystem_id);
-	EXPECT_EQ(WeaponFamily::Secondary, secondary->source_family);
+	EXPECT_EQ(WeaponFamily::None, secondary->source_family);
 	EXPECT_EQ(WeaponFamily::Turret, turret_primary->family);
 	EXPECT_EQ(WeaponFamily::Primary, turret_primary->source_family);
 	EXPECT_EQ(0u, turret_primary->source_index);
@@ -860,18 +860,21 @@ TEST(Phase2Manifest, P2TST026KeepsActiveAndStagedUntilDependentSnapshotApplied)
 	EXPECT_TRUE(provisioned.slot.retains_generation(1));
 	EXPECT_TRUE(provisioned.slot.retains_generation(2));
 
-	source.ship_classes[0].effective_mass = 102.0F;
-	EXPECT_EQ(Phase2ManifestError::RebuildCoalesced, provisioned.slot.rebuild(source));
-	EXPECT_TRUE(provisioned.slot.has_rebuild_intent());
-	EXPECT_EQ(2u, provisioned.slot.resident_generation_count());
-
 	ASSERT_EQ(Phase2ManifestError::None, provisioned.slot.on_dependent_snapshot_applied(101, 2));
 	EXPECT_EQ(2u, provisioned.slot.active_manifest_id());
 	EXPECT_EQ(0u, provisioned.slot.staged_manifest_id());
 	EXPECT_TRUE(provisioned.slot.retains_generation(1)); // reliable references still hold N
+	EXPECT_TRUE(provisioned.slot.source_catalog_matches_active(source));
+
+	source.ship_classes[0].effective_mass = 102.0F;
+	EXPECT_FALSE(provisioned.slot.source_catalog_matches_active(source));
+	EXPECT_EQ(Phase2ManifestError::RebuildCoalesced, provisioned.slot.rebuild(source));
+	EXPECT_TRUE(provisioned.slot.has_rebuild_intent());
+	EXPECT_EQ(1u, provisioned.slot.resident_generation_count());
+
 	provisioned.slot.release_reliable_references(1);
 	EXPECT_FALSE(provisioned.slot.retains_generation(1));
-	EXPECT_TRUE(provisioned.slot.rebuild_intent_scheduled());
+	EXPECT_FALSE(provisioned.slot.rebuild_intent_scheduled());
 	ASSERT_EQ(Phase2ManifestError::None, provisioned.slot.rebuild(source));
 	EXPECT_EQ(3u, provisioned.slot.staged_manifest_id());
 	EXPECT_EQ(2u, provisioned.slot.resident_generation_count());

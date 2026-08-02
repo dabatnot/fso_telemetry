@@ -125,6 +125,9 @@ struct NativePhase2FailureDiagnostic {
 	std::size_t first_zero_block = Phase2RuntimeSlot::BlockCount;
 	std::uint64_t player_entity_id = 0U;
 	std::uint32_t player_key = 0U;
+	std::uint32_t global_manifest_id = 0U;
+	std::uint32_t required_manifest_id = 0U;
+	std::size_t client_slot = 0U;
 	NativePhase2FailureStage stage = NativePhase2FailureStage::None;
 	CaptureStatus player_capture_status = CaptureStatus::Count;
 	CaptureReason player_capture_reason = CaptureReason::Count;
@@ -135,6 +138,7 @@ struct NativePhase2FailureDiagnostic {
 	protocol::ProducerBaselineResult baseline_result =
 		protocol::ProducerBaselineResult::InvalidArgument;
 	bool capture_observed_this_tick = false;
+	bool required_manifest_applied = false;
 };
 
 class NativeOutputCompletionPort {
@@ -275,6 +279,7 @@ class NativeSessionRuntime final : private DatagramIoWork {
 	std::unique_ptr<Phase2ManifestSlot> m_phase2_manifest_slot;
 	std::size_t m_phase2_manifest_backing_bytes = 0U;
 	const Phase2ManifestCandidate* m_phase2_manifest = nullptr;
+	bool m_phase2_catalog_projection_pending = false;
 	TelemetryMetrics* m_metrics = nullptr;
 	TelemetryStructuredLog* m_log = nullptr;
 	std::array<bool, TelemetryMetricsMaxClients> m_metrics_session_active{};

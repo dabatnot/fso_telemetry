@@ -3788,8 +3788,17 @@ Phase2StateImageBuildStatus fill_complete_domain(
 					: retain_record_or_write_key(input, sparse_patch,
 						RecordType::SubsystemState,
 						subject.entity_id, subsystem_record,
-						definition->subsystem_id)))
+						definition->subsystem_id))) {
+				if (diagnostic != nullptr) {
+					diagnostic->stage =
+						Phase2StateImageBuildStage::FillBusiness;
+					diagnostic->record_type =
+						static_cast<std::uint16_t>(
+							RecordType::SubsystemState);
+					diagnostic->record_index = subsystem;
+				}
 				return Phase2StateImageBuildStatus::SourceMappingMissing;
+			}
 		}
 		Phase2Wp06WeaponProjectionInput weapon_input{};
 		weapon_input.observation = input.observation;
@@ -3802,8 +3811,17 @@ Phase2StateImageBuildStatus fill_complete_domain(
 					weapon_input, weapon_subject, weapon_record)
 				: retain_record_or_write_key(input, sparse_patch,
 					RecordType::WeaponState,
-					subject.entity_id, weapon_record)))
+					subject.entity_id, weapon_record))) {
+			if (diagnostic != nullptr) {
+				diagnostic->stage =
+					Phase2StateImageBuildStage::FillBusiness;
+				diagnostic->record_type =
+					static_cast<std::uint16_t>(
+						RecordType::WeaponState);
+				diagnostic->record_index = subject_index;
+			}
 			return Phase2StateImageBuildStatus::SourceMappingMissing;
+		}
 		auto& docking_record = records[cursor++];
 		auto& support_record = records[cursor++];
 		if (!(input.refresh_systems

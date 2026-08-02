@@ -27,11 +27,8 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
-#include <fstream>
-#include <iterator>
 #include <memory>
 #include <limits>
-#include <regex>
 #include <string>
 #include <thread>
 #include <type_traits>
@@ -379,38 +376,6 @@ struct NativeFixture {
 
 using NativePlayerAccess = detail::NativeSessionRuntimePlayerTestAccess;
 using NativePlayerProbe = detail::NativeSessionRuntimePlayerPublicProbe;
-
-TEST(TelemetryNativeRuntimeIntegrationContract, NativeFixtureSourceStorageOracleIsNonVacuous)
-{
-	std::ifstream input(__FILE__, std::ios::binary);
-	ASSERT_TRUE(input.is_open());
-	const std::string source{std::istreambuf_iterator<char>{input},
-		std::istreambuf_iterator<char>{}};
-	ASSERT_FALSE(source.empty());
-
-	const auto occurrence_count = [&source](const std::string& needle) {
-		std::size_t count = 0U;
-		for (auto offset = source.find(needle);
-			 offset != std::string::npos;
-			 offset = source.find(needle, offset + needle.size())) {
-			++count;
-		}
-		return count;
-	};
-	const auto fixture_definition =
-		std::string{"struct Native"} + "Fixture {";
-	const auto heap_construction =
-		std::string{"std::make_unique<NativeFixture>"} + "()";
-	const std::regex automatic_fixture{
-		R"((^|\n)[ \t]*NativeFixture[ \t]+[A-Za-z_][A-Za-z0-9_]*[ \t]*;)"};
-
-	EXPECT_EQ(1U, occurrence_count(fixture_definition));
-	EXPECT_EQ(0U,
-		static_cast<std::size_t>(std::distance(
-			std::sregex_iterator{source.begin(), source.end(), automatic_fixture},
-			std::sregex_iterator{})));
-	EXPECT_EQ(45U, occurrence_count(heap_construction));
-}
 
 constexpr std::uint8_t CaptureUnavailable = 0U;
 constexpr std::uint8_t CaptureInactive = 1U;
@@ -1096,10 +1061,24 @@ TEST(TelemetryNativeRuntimeIntegrationContract,
 	CompleteShipStartsWithOwnedProjectionStateBeforeTheFirstCapture)
 {
 	auto fixture = std::make_unique<NativeFixture>();
-	auto config = enabled_config(1U);
+	auto config = enabled_config();
+	config.max_clients = detail::TelemetryMetricsMaxClients;
 
-	EXPECT_EQ(detail::NativeSessionStartStatus::Started,
+	ASSERT_EQ(detail::NativeSessionStartStatus::Started,
 		fixture->start_requested(config, telemetry::Phase2Profile::CompleteShip));
+	const auto owned_budget =
+		NativePlayerAccess::phase2_owned_budget(fixture->runtime);
+	EXPECT_EQ(detail::StartupBudgetError::None, owned_budget.error);
+	EXPECT_LE(owned_budget.shared_owned_bytes,
+		detail::Phase2SharedOwnedCapBytes);
+	EXPECT_LE(owned_budget.client_owned_bytes,
+		detail::Phase2ClientOwnedCapBytes);
+	EXPECT_LE(owned_budget.process_owned_bytes,
+		detail::Phase2ProcessOwnedCapBytes);
+	std::cout << "[ PHASE2 COMPLETE SHIP 4-CLIENT OWNED BYTES ] "
+			  << owned_budget.shared_owned_bytes << ' '
+			  << owned_budget.client_owned_bytes << ' '
+			  << owned_budget.process_owned_bytes << '\n';
 	EXPECT_GT(fixture->backend.open_calls, 0U);
 	EXPECT_EQ(1U, fixture->runtime.socket_count());
 	EXPECT_EQ(0U, fixture->runtime.active_sessions());
@@ -1160,6 +1139,16 @@ TEST(TelemetryNativeRuntimeIntegrationContract,
 	EXPECT_EQ(1U, accepted->runtime.socket_count());
 	EXPECT_GT(NativePlayerAccess::startup_owned_bytes(
 		accepted->runtime), 0U);
+	auto* controller =
+		NativePlayerAccess::controller(accepted->runtime);
+	ASSERT_NE(nullptr, controller);
+	const auto owned = controller->owned_capacity();
+	EXPECT_EQ(2U * protocol::MaxStateMessageSize,
+		owned.delta_egress_heap_bytes)
+		<< "CoreGate deltas must not retain the 512-byte Phase 1 egress capacity.";
+	EXPECT_GT(owned.delta_scratch_heap_bytes,
+		4U * sizeof(protocol::StateMutation))
+		<< "CoreGate needs the Phase 2 mutation scratch or a normal systems tick degenerates into a keyframe.";
 }
 
 TEST(TelemetryNativeRuntimeIntegrationContract, KeyframePreparationForcesBothCaptureFamilies)

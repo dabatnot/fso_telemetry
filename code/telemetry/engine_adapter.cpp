@@ -202,6 +202,10 @@ SourceReadResult extract_production_static_authorities(const object& ship_object
 	std::uint32_t referenced_weapon_count = 0U;
 	std::array<std::uint32_t, MaximumPhase2SubsystemsPerShip>
 		instance_subsystem_armor_capture_keys{};
+	const auto primary_bank_count =
+		core_gate ? 0 : ship_instance.weapons.num_primary_banks;
+	const auto secondary_bank_count =
+		core_gate ? 0 : ship_instance.weapons.num_secondary_banks;
 	const auto collected = [&]() noexcept -> SourceReadResult {
 	if (ship_class.model_num < 0 || ship_class.n_subsystems < 0 ||
 		ship_class.n_subsystems >
@@ -211,7 +215,11 @@ SourceReadResult extract_production_static_authorities(const object& ship_object
 		  ship_class.num_primary_banks > MAX_SHIP_PRIMARY_BANKS ||
 		  ship_class.num_secondary_banks < 0 ||
 		  ship_class.num_secondary_banks >
-			  MAX_SHIP_SECONDARY_BANKS))) {
+			  MAX_SHIP_SECONDARY_BANKS ||
+		  primary_bank_count < 0 ||
+		  primary_bank_count > ship_class.num_primary_banks ||
+		  secondary_bank_count < 0 ||
+		  secondary_bank_count > ship_class.num_secondary_banks))) {
 		return {Phase2SourceReadStatus::UnsupportedEngineState};
 	}
 	auto* model = model_get(ship_class.model_num);
@@ -299,14 +307,14 @@ SourceReadResult extract_production_static_authorities(const object& ship_object
 				protocol::ClassSubsystemStaticFlagAwacs;
 	}
 
-	input.bank_count = core_gate ? 0U : static_cast<std::uint32_t>(
-		ship_class.num_primary_banks + ship_class.num_secondary_banks);
+	input.bank_count = static_cast<std::uint32_t>(
+		primary_bank_count + secondary_bank_count);
 	for (std::uint32_t index = 0U; index < input.bank_count; ++index) {
 		const auto primary =
-			index < static_cast<std::uint32_t>(ship_class.num_primary_banks);
+			index < static_cast<std::uint32_t>(primary_bank_count);
 		const auto family_index = primary
 			? index
-			: index - static_cast<std::uint32_t>(ship_class.num_primary_banks);
+			: index - static_cast<std::uint32_t>(primary_bank_count);
 		const auto& source = primary ? model->gun_banks[family_index]
 									: model->missile_banks[family_index];
 		if (source.num_slots <= 0 ||
@@ -575,12 +583,10 @@ SourceReadResult extract_production_static_authorities(const object& ship_object
 			}
 		}
 	}
-	raw_class.primary_bank_count = core_gate ? 0U
-		: static_cast<std::uint32_t>(
-			ship_class.num_primary_banks);
-	raw_class.secondary_bank_count = core_gate ? 0U
-		: static_cast<std::uint32_t>(
-			ship_class.num_secondary_banks);
+	raw_class.primary_bank_count =
+		static_cast<std::uint32_t>(primary_bank_count);
+	raw_class.secondary_bank_count =
+		static_cast<std::uint32_t>(secondary_bank_count);
 	raw_class.tertiary_bank_count =
 		static_cast<std::uint32_t>(tertiary_count);
 	raw_class.turret_bank_count = turret_bank_count;
@@ -719,7 +725,7 @@ SourceReadResult extract_production_static_authorities(const object& ship_object
 		}
 	}
 	for (int bank = 0;
-		 !core_gate && bank < ship_class.num_primary_banks; ++bank) {
+		 bank < primary_bank_count; ++bank) {
 		const auto weapon_index =
 			ship_instance.weapons.primary_bank_weapons[bank];
 		auto pattern = Weapon_info[weapon_index].firing_pattern;
@@ -1754,10 +1760,16 @@ SourceReadResult FsoEngineReadView::read_ship_for_projection(
 	output.weapons.remote_detonaters_active =
 		static_cast<std::uint32_t>(
 			std::max(source_weapons.remote_detonaters_active, 0));
-	const auto remote_remaining_ms =
-		std::max(timestamp_until(source_weapons.detonate_weapon_time), 0);
-	if (remote_remaining_ms > 3'600'000) {
-		return {Phase2SourceReadStatus::UnsupportedEngineState};
+	auto remote_remaining_ms = 0;
+	if (output.weapons.remote_detonaters_active > 0U) {
+		if (!timestamp_valid(source_weapons.detonate_weapon_time)) {
+			return {Phase2SourceReadStatus::UnsupportedEngineState};
+		}
+		remote_remaining_ms =
+			std::max(timestamp_until(source_weapons.detonate_weapon_time), 0);
+		if (remote_remaining_ms > 3'600'000) {
+			return {Phase2SourceReadStatus::UnsupportedEngineState};
+		}
 	}
 	output.weapons.remote_detonation_remaining_us =
 		static_cast<std::uint64_t>(remote_remaining_ms) * 1000U;
@@ -2072,12 +2084,11 @@ SourceReadResult FsoEngineReadView::read_ship_for_projection(
 			: SourceReadResult{Phase2SourceReadStatus::UnsupportedEngineState};
 	}
 	output.subsystems.count = static_cast<std::uint16_t>(ship_class.n_subsystems);
-	if (output.subsystems.count > 0U && Player_ship->subsys_list_indexer == nullptr) {
-		return {Phase2SourceReadStatus::UnsupportedEngineState};
-	}
-	for (std::size_t source_key = 0U; source_key < output.subsystems.count; ++source_key) {
-		auto* subsystem = Player_ship->subsys_list_indexer[source_key];
-		if (subsystem == nullptr ||
+	auto* subsystem = GET_FIRST(&Player_ship->subsys_list);
+	for (std::size_t source_key = 0U;
+		 source_key < output.subsystems.count;
+		 ++source_key, subsystem = GET_NEXT(subsystem)) {
+		if (subsystem == END_OF_LIST(&Player_ship->subsys_list) ||
 			subsystem->system_info != &ship_class.subsystems[source_key]) {
 			return {Phase2SourceReadStatus::UnsupportedEngineState};
 		}

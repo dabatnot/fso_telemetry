@@ -259,7 +259,7 @@ SessionControllerConfigureResult SessionController::configure(const SessionContr
 				Phase1DeltaScratchBytes &&
 		 config.delta_payload_capacity !=
 				Phase2CompleteShipDeltaBytes) ||
-		(config.phase2_profile == Phase2Profile::CompleteShip &&
+		(config.phase2_profile != Phase2Profile::None &&
 		 config.delta_payload_capacity !=
 			Phase2CompleteShipDeltaBytes) ||
 		(config.phase2_profile != Phase2Profile::None &&
@@ -425,7 +425,7 @@ bool SessionController::initialize_slot(std::size_t index) noexcept
 	}
 	try {
 		auto& scratch = m_slots[index].delta_scratch;
-		if (m_config.phase2_profile == Phase2Profile::CompleteShip) {
+		if (m_config.phase2_profile != Phase2Profile::None) {
 			if (!provision_phase2_complete_delta_scratch(scratch))
 				return false;
 		} else {

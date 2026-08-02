@@ -282,6 +282,74 @@ struct CanonicalDescriptorRef {
 	Sha256Digest digest{};
 };
 
+Phase2ManifestError canonical_catalog_fingerprint(
+	const Phase2ManifestSource& source,
+	std::array<CanonicalDescriptorRef<Phase2ClassSource>,
+		Phase2ManifestLimits::MaxClasses>& classes,
+	std::array<CanonicalDescriptorRef<Phase2WeaponSource>,
+		Phase2ManifestLimits::MaxWeapons>& weapons,
+	Sha256Digest& catalog) noexcept
+{
+	for(std::uint32_t r=0;r<source.referenced_ship_class_count;++r) {
+		const Phase2ClassSource* found=nullptr;
+		for(std::uint32_t i=0;i<source.ship_class_count;++i)
+			if(source.ship_classes[i].source_key==source.referenced_ship_class_keys[r]) {
+				if(found)return Phase2ManifestError::DuplicateDefinition;
+				found=&source.ship_classes[i];
+			}
+		if(!found)return Phase2ManifestError::MissingRequiredDefinition;
+		classes[r].value=found;
+		if(!class_descriptor_digest(source,*found,classes[r].digest))
+			return Phase2ManifestError::InvalidSource;
+	}
+	for(std::uint32_t r=0;r<source.referenced_weapon_count;++r) {
+		const Phase2WeaponSource* found=nullptr;
+		for(std::uint32_t i=0;i<source.weapon_count;++i)
+			if(source.weapons[i].source_key==source.referenced_weapon_keys[r]) {
+				if(found)return Phase2ManifestError::DuplicateDefinition;
+				found=&source.weapons[i];
+			}
+		if(!found)return Phase2ManifestError::MissingRequiredDefinition;
+		weapons[r].value=found;
+		if(!weapon_descriptor_digest(source,*found,weapons[r].digest))
+			return Phase2ManifestError::InvalidSource;
+	}
+	std::sort(classes.begin(),classes.begin()+source.referenced_ship_class_count,[](auto a,auto b){
+		if(a.value->name!=b.value->name)return a.value->name<b.value->name;
+		return a.digest<b.digest;
+	});
+	std::sort(weapons.begin(),weapons.begin()+source.referenced_weapon_count,[](auto a,auto b){
+		if(a.value->name!=b.value->name)return a.value->name<b.value->name;
+		return a.digest<b.digest;
+	});
+	Sha256 semantic_hash;
+	bool semantic_ok=hash_scalar(semantic_hash,source.referenced_ship_class_count)&&
+		hash_scalar(semantic_hash,source.referenced_weapon_count);
+	for(std::uint32_t i=0;i<source.referenced_ship_class_count&&semantic_ok;++i)
+		semantic_ok=semantic_hash.update(ByteView{classes[i].digest.data(),classes[i].digest.size()});
+	for(std::uint32_t i=0;i<source.referenced_weapon_count&&semantic_ok;++i)
+		semantic_ok=semantic_hash.update(ByteView{weapons[i].digest.data(),weapons[i].digest.size()});
+	std::array<const Phase2AuxiliaryEntry*,Phase2ManifestLimits::MaxAuxiliaryEntries> aux{};
+	std::uint32_t auxiliary_count=0;
+	for(std::uint32_t i=0;i<source.auxiliary_entry_count;++i)
+		if(auxiliary_entry_referenced(source,source.auxiliary_entries[i]))
+			aux[auxiliary_count++]=&source.auxiliary_entries[i];
+	std::sort(aux.begin(),aux.begin()+auxiliary_count,[](auto a,auto b){
+		if(a->registry!=b->registry)return a->registry<b->registry;
+		return a->registry==AuxiliaryRegistry::Pattern
+			? a->engine_index<b->engine_index : a->name<b->name;});
+	semantic_ok=semantic_ok&&hash_scalar(semantic_hash,auxiliary_count);
+	for(std::uint32_t i=0;i<auxiliary_count&&semantic_ok;++i)
+		semantic_ok=hash_scalar(semantic_hash,aux[i]->registry)&&
+			(aux[i]->registry==AuxiliaryRegistry::Pattern
+				? hash_scalar(semantic_hash,aux[i]->engine_index)
+				: hash_string(semantic_hash,aux[i]->name));
+	if(!semantic_ok)return Phase2ManifestError::AllocationFailed;
+	if(!semantic_hash.finalize(catalog))
+		return Phase2ManifestError::InvalidSource;
+	return Phase2ManifestError::None;
+}
+
 std::size_t estimated_class_payload(const Phase2ClassSource& value) noexcept
 {
 	std::size_t result=42+value.name.size();
@@ -540,34 +608,11 @@ Phase2ManifestError Phase2ManifestSlot::rebuild(const Phase2ManifestSource& sour
 
 	std::array<CanonicalDescriptorRef<Phase2ClassSource>,Phase2ManifestLimits::MaxClasses> classes{};
 	std::array<CanonicalDescriptorRef<Phase2WeaponSource>,Phase2ManifestLimits::MaxWeapons> weapons{};
-	for(std::uint32_t r=0;r<source.referenced_ship_class_count;++r) {
-		const Phase2ClassSource* found=nullptr;
-		for(std::uint32_t i=0;i<source.ship_class_count;++i) if(source.ship_classes[i].source_key==source.referenced_ship_class_keys[r]) {
-			if(found) return Phase2ManifestError::DuplicateDefinition; found=&source.ship_classes[i];
-		}
-		if(!found) return Phase2ManifestError::MissingRequiredDefinition;
-		classes[r].value=found;
-		if(!class_descriptor_digest(source,*found,classes[r].digest))
-			return Phase2ManifestError::InvalidSource;
-	}
-	for(std::uint32_t r=0;r<source.referenced_weapon_count;++r) {
-		const Phase2WeaponSource* found=nullptr;
-		for(std::uint32_t i=0;i<source.weapon_count;++i) if(source.weapons[i].source_key==source.referenced_weapon_keys[r]) {
-			if(found) return Phase2ManifestError::DuplicateDefinition; found=&source.weapons[i];
-		}
-		if(!found) return Phase2ManifestError::MissingRequiredDefinition;
-		weapons[r].value=found;
-		if(!weapon_descriptor_digest(source,*found,weapons[r].digest))
-			return Phase2ManifestError::InvalidSource;
-	}
-	std::sort(classes.begin(),classes.begin()+source.referenced_ship_class_count,[](auto a,auto b){
-		if(a.value->name!=b.value->name)return a.value->name<b.value->name;
-		return a.digest<b.digest;
-	});
-	std::sort(weapons.begin(),weapons.begin()+source.referenced_weapon_count,[](auto a,auto b){
-		if(a.value->name!=b.value->name)return a.value->name<b.value->name;
-		return a.digest<b.digest;
-	});
+	Sha256Digest catalog{};
+	const auto fingerprint_result=canonical_catalog_fingerprint(
+		source,classes,weapons,catalog);
+	if(fingerprint_result!=Phase2ManifestError::None)
+		return fingerprint_result;
 	const auto previous_staged_index=m_staged_index;
 	auto index=m_staged&&!m_active
 		? static_cast<std::uint8_t>(m_staged_index^1U)
@@ -575,31 +620,6 @@ Phase2ManifestError Phase2ManifestSlot::rebuild(const Phase2ManifestSource& sour
 	auto& candidate=m_candidates[index];
 	auto arena=m_storage.arenas[index];
 	if(arena.data==nullptr || arena.size==0) return Phase2ManifestError::AllocationFailed;
-	Sha256 semantic_hash;
-	bool semantic_ok=hash_scalar(semantic_hash,source.referenced_ship_class_count)&&
-		hash_scalar(semantic_hash,source.referenced_weapon_count);
-	for(std::uint32_t i=0;i<source.referenced_ship_class_count&&semantic_ok;++i)
-		semantic_ok=semantic_hash.update(ByteView{classes[i].digest.data(),classes[i].digest.size()});
-	for(std::uint32_t i=0;i<source.referenced_weapon_count&&semantic_ok;++i)
-		semantic_ok=semantic_hash.update(ByteView{weapons[i].digest.data(),weapons[i].digest.size()});
-	std::array<const Phase2AuxiliaryEntry*,Phase2ManifestLimits::MaxAuxiliaryEntries> aux{};
-	std::uint32_t auxiliary_count=0;
-	for(std::uint32_t i=0;i<source.auxiliary_entry_count;++i)
-		if(auxiliary_entry_referenced(source,source.auxiliary_entries[i]))
-			aux[auxiliary_count++]=&source.auxiliary_entries[i];
-	std::sort(aux.begin(),aux.begin()+auxiliary_count,[](auto a,auto b){
-		if(a->registry!=b->registry)return a->registry<b->registry;
-		return a->registry==AuxiliaryRegistry::Pattern
-			? a->engine_index<b->engine_index : a->name<b->name;});
-	semantic_ok=semantic_ok&&hash_scalar(semantic_hash,auxiliary_count);
-	for(std::uint32_t i=0;i<auxiliary_count&&semantic_ok;++i)
-		semantic_ok=hash_scalar(semantic_hash,aux[i]->registry)&&
-			(aux[i]->registry==AuxiliaryRegistry::Pattern
-				? hash_scalar(semantic_hash,aux[i]->engine_index)
-				: hash_string(semantic_hash,aux[i]->name));
-	if(!semantic_ok)return Phase2ManifestError::AllocationFailed;
-	Sha256Digest catalog{};
-	if(!semantic_hash.finalize(catalog))return Phase2ManifestError::InvalidSource;
 	std::size_t offset=0;
 	candidate.class_record_count=source.referenced_ship_class_count;
 	candidate.weapon_record_count=source.referenced_weapon_count;
@@ -669,10 +689,11 @@ Phase2ManifestError Phase2ManifestSlot::rebuild(const Phase2ManifestSource& sour
 			const auto& source_bank=src.banks[b];
 			if(source_bank.firing_pattern_source_code>5U)
 				return Phase2ManifestError::InvalidSource;
-			const auto family_mapping_valid=source_bank.family==source_bank.source_family ||
-				(source_bank.family==telemetry::WeaponFamily::Turret &&
-					(source_bank.source_family==telemetry::WeaponFamily::Primary ||
-					 source_bank.source_family==telemetry::WeaponFamily::Secondary));
+			const auto family_mapping_valid=
+				source_bank.family==telemetry::WeaponFamily::Turret
+				? source_bank.source_family==telemetry::WeaponFamily::Primary ||
+					source_bank.source_family==telemetry::WeaponFamily::Secondary
+				: source_bank.source_family==telemetry::WeaponFamily::None;
 			if(!family_mapping_valid ||
 				source_bank.fire_point_count>Phase2ManifestLimits::MaxFirePoints ||
 				source_bank.bank_index>63||!std::isfinite(source_bank.capacity)||source_bank.capacity<0)
@@ -869,5 +890,25 @@ bool Phase2ManifestSlot::retains_generation(std::uint32_t id) const noexcept
 { return is_active(id)||is_staged(id)||(m_retain_previous&&m_previous_id==id); }
 const Sha256Digest& Phase2ManifestSlot::catalog_fingerprint() const noexcept
 { return m_active?active_candidate().catalog_fingerprint:staged_candidate().catalog_fingerprint; }
+
+bool Phase2ManifestSlot::source_catalog_matches_active(
+	const Phase2ManifestSource& source) const noexcept
+{
+	if(!m_active ||
+		source.ship_class_count>Phase2ManifestLimits::MaxClasses ||
+		source.weapon_count>Phase2ManifestLimits::MaxWeapons ||
+		source.referenced_ship_class_count>Phase2ManifestLimits::MaxClasses ||
+		source.referenced_weapon_count>Phase2ManifestLimits::MaxWeapons ||
+		source.auxiliary_entry_count>Phase2ManifestLimits::MaxAuxiliaryEntries)
+		return false;
+	std::array<CanonicalDescriptorRef<Phase2ClassSource>,
+		Phase2ManifestLimits::MaxClasses> classes{};
+	std::array<CanonicalDescriptorRef<Phase2WeaponSource>,
+		Phase2ManifestLimits::MaxWeapons> weapons{};
+	Sha256Digest catalog{};
+	return canonical_catalog_fingerprint(
+		source,classes,weapons,catalog)==Phase2ManifestError::None &&
+		same_digest(active_candidate().catalog_fingerprint,catalog);
+}
 
 } // namespace telemetry

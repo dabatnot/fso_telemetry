@@ -116,6 +116,7 @@ def resync_payload(request_id: int, baseline: int, delta: int, sent_us: int) -> 
 class FragmentSet:
     header: dict[str, int]
     pieces: dict[int, bytes] = field(default_factory=dict)
+    first_seen_us: int = 0
 
 
 @dataclass
@@ -557,6 +558,7 @@ class ConsoleState:
     manifest_applied: bool = False
     keyframe_applied: bool = False
     reliable_dependency_pending: bool = False
+    reliable_reassembly_timeout_us: int = 5_000_000
 
     def invalidate_clock_filter(self, reason: str) -> None:
         self.clock_samples.clear()
@@ -643,6 +645,9 @@ class ConsoleState:
                 raise ValueError("WELCOME without session")
             self.invalidate_clock_filter("session-changed")
             self.session_id, self.welcomed, self.ended = header["session_id"], True, False
+            self.reliable_reassembly_timeout_us = (
+                int(fields["reliable_reassembly_timeout_ms"]) * 1000
+            )
             self.add_clock_sample(
                 int(fields["client_send_t0_us"]),
                 int(fields["producer_receive_t1_us"]),
@@ -880,6 +885,12 @@ class ConsoleClient:
         self.hello_attempt = 0
         self.pending_resync: PendingReliable | None = None
         self.drop_once_delta = drop_once_delta
+        # WELCOME and SESSION_BEGIN are reliable lifecycle messages.  Keep only
+        # their active-session identities so exact retransmissions can be
+        # acknowledged idempotently after their state transition was applied.
+        self.applied_control_messages: dict[
+            int, tuple[int, int, int, int]
+        ] = {}
 
     def _send(self, data: bytes) -> None:
         if self.sender is not None:
@@ -1026,8 +1037,19 @@ class ConsoleClient:
             raise ValueError("datagram CRC")
         if header["message_size"] > MAX_STATE_MESSAGE or header["fragment_count"] > MAX_FRAGMENTS:
             raise ValueError("state resource limit")
+        expired = [
+            fragment_key
+            for fragment_key, fragment_set in self.fragments.items()
+            if at_us >= fragment_set.first_seen_us
+            and at_us - fragment_set.first_seen_us
+            >= self.state.reliable_reassembly_timeout_us
+        ]
+        for fragment_key in expired:
+            self.fragments.pop(fragment_key, None)
         key = (header["session_id"], header["message_id"])
-        group = self.fragments.setdefault(key, FragmentSet(header))
+        group = self.fragments.setdefault(
+            key, FragmentSet(header, first_seen_us=at_us)
+        )
         identity_fields = ("message_type", "flags", "session_id", "frame_id", "mission_time_us", "message_id", "fragment_count", "message_size", "message_crc32")
         if any(group.header[field] != header[field] for field in identity_fields):
             raise ValueError("inconsistent fragment identity")
@@ -1043,6 +1065,20 @@ class ConsoleClient:
         self.fragments.pop(key, None)
         decoded = reference.decode_message(header["message_type"], header["flags"], payload,
                                            {"senderRole": "producer", "allowedSenderRoles": ["producer"]})
+        control_identity = (
+            header["session_id"],
+            header["message_id"],
+            header["message_crc32"],
+            header["fragment_count"],
+        )
+        if (
+            header["message_type"] in (3, 4)
+            and self.applied_control_messages.get(header["message_type"])
+            == control_identity
+        ):
+            if header["flags"] & ACK_REQUIRED:
+                self._ack(header, ACK_APPLIED)
+            return False
         if header["message_type"] == 10:
             if self.state.session_id and header["session_id"] != self.state.session_id:
                 raise ValueError("ACK outside active session")
@@ -1071,6 +1107,10 @@ class ConsoleClient:
             return True
         changed, validated_headers, applied_headers = self.state.apply(
             header["message_type"], decoded["fields"], payload, header, at_us, at_utc)
+        if changed and header["message_type"] in (3, 4):
+            if header["message_type"] == 3:
+                self.applied_control_messages.clear()
+            self.applied_control_messages[header["message_type"]] = control_identity
         for ack_header in validated_headers:
             if ack_header["flags"] & ACK_REQUIRED:
                 self._ack(ack_header, ACK_VALIDATED)
@@ -1080,6 +1120,7 @@ class ConsoleClient:
         if header["message_type"] == 13 and changed:
             # No fragment/reassembly survives a validated terminal publication.
             self.fragments.clear()
+            self.applied_control_messages.clear()
             self.session_end_tombstone = (header["session_id"], header["message_id"],
                                           header["message_crc32"], at_us + SESSION_END_TOMBSTONE_US)
             self.terminal_published = True

@@ -323,6 +323,7 @@ enum class WeaponFamily : std::uint8_t {
 	Secondary = 1,
 	Tertiary = 2,
 	Turret = 3,
+	None = 0xff,
 };
 
 enum class ValueTrend : std::uint8_t {

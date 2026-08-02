@@ -928,7 +928,7 @@ void reset_phase2_observation_buffer_in_place(
 static_assert(sizeof(Phase2ObservationBuffer) +
 		MaximumPhase2ObservationShips * sizeof(ShipObservationDto) +
 		sizeof(Phase2ShipSource) <= MaximumPhase2OwnedBytes,
-	"Phase 2 owned maximum must remain inside the shared 64 MiB startup cap");
+	"Phase 2 observation storage must remain inside its 64 MiB component budget");
 
 Phase2CaptureResult collect_phase2_observation(const Phase2EngineReadView& source,
 	const Phase2ObservationSelection& selection,

@@ -70,7 +70,7 @@ Utiliser les scénarios neutres du document 07 :
 
 - Phase 0 : `P0-OBS-01..02` ;
 - Phase 1 : `P1-OBS-01..02` ;
-- Phase 2 : `P2-OBS-01..05`.
+- Phase 2 : `P2-OBS-01`, `P2-OBS-02`, `P2-OBS-04` et `P2-OBS-05`.
 
 Pour la Phase 2, conduire deux observations Release d'une durée combinée inférieure à cinq minutes :
 

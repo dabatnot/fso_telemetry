@@ -152,7 +152,7 @@ std::unique_ptr<Phase2ManifestSource> make_source(SourceCase source_case)
 			for (std::uint32_t bank_index = 0; bank_index < ship_class.bank_count; ++bank_index) {
 				auto& bank = ship_class.banks[bank_index];
 				bank.family = bank_index < 4 ? WeaponFamily::Primary : WeaponFamily::Secondary;
-				bank.source_family = bank.family;
+				bank.source_family = WeaponFamily::None;
 				bank.bank_index = static_cast<std::uint16_t>(bank_index % 4);
 				bank.weapon_source_key = 1001 + ((class_index * 8 + bank_index) % 4096);
 				bank.capacity = bank.family == WeaponFamily::Secondary ? 100.0F : 0.0F;

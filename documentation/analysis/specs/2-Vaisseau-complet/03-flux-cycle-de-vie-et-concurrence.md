@@ -283,11 +283,11 @@ Cette règle conserve les transitions signalées par le seam sans créer de nouv
 En profil `0x0583` :
 
 - `CARGO_SCAN_STATE` du joueur est toujours présent et suit la vérité moteur/visibilité ;
-- la closure commence au joueur, suit le support assigné, chaque `group_leader_entity_id` et toutes les relations de docking transitives ;
+- la closure commence au joueur, suit le support assigné et toutes les relations de docking transitives ; `group_leader_entity_id` décrit un membre déjà retenu et ne constitue pas une arête d’expansion ;
 - chaque ship membre reçoit un `entity_id` stable, `ENTITY_LIFECYCLE`, la matrice complète `CORE_SHIP`, `WEAPON_STATE`, `DOCKING_STATE` et `SUPPORT_STATE` ;
 - chaque `DOCKING_STATE` contient la topologie complète de son sujet et toute relation inverse publiée est exacte ;
 - la closure contient au plus 64 ships et tous doivent appartenir à l’allowlist `Cockpit` calculée avant copie publique ;
-- une cible de scan est référencée seulement si elle appartient déjà à cette closure ; sinon la session se termine avant publication du nouvel état ;
+- une cible de scan est référencée seulement si elle appartient déjà à cette closure ; sinon `CARGO_SCAN_STATE` publie `NOT_SCANNABLE/HIDDEN`, sans groupe optionnel, sans élargissement de closure et sans terminer la session ;
 - aucun `support_entity_id`, `remote_entity_id` ou `target_entity_id` non nul ne reste une référence opaque.
 
 Si une référence obligatoire ne peut être matérialisée avec son état complet sans élargir la visibilité, la session Phase 2 est terminée et purgée. Elle NE DOIT ni omettre un bit requis, ni substituer un ID zéro, ni exporter une entité cachée.

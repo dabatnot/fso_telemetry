@@ -150,7 +150,7 @@ Le profil final DOIT annoncer `event_coverage_state_derived = ENTITY | DAMAGE (0
 | `P2-REQ-043` | Les métriques DOIVENT distinguer collecte par bloc, construction manifeste, image, diff, sérialisation, baseline, événements, rejets, tailles, retransmissions et âge des données. |
 | `P2-REQ-044` | Les logs DOIVENT identifier profil, manifeste, cause de refus, transition lifecycle et resync sans exposer de secret, adresse non nécessaire ou contenu caché. |
 | `P2-REQ-045` | Désactivé, le module reste inerte. Activé, le travail ajouté DOIT rester déterministe, non bloquant et borné ; aucun seuil temporel ni campagne de performance ne conditionne la livraison. |
-| `P2-REQ-046` | La mémoire inclusive respecte simultanément 67 108 864 octets partagés, 83 886 080 octets par client et 402 653 184 octets process pour quatre clients, avec les sous-quotas hérités. Une croissance après `Ready` ferme proprement la session concernée sans réallocation non bornée. |
+| `P2-REQ-046` | La mémoire inclusive respecte simultanément 134 217 728 octets partagés, 83 886 080 octets par client et 402 653 184 octets process pour quatre clients, avec les sous-quotas hérités. Une croissance après `Ready` ferme proprement la session concernée sans réallocation non bornée. |
 | `P2-REQ-047` | Un décodeur indépendant et un tableau de bord de référence rapprochent chaque valeur `A/C` de la source du même tick et chaque valeur `D` de sa formule documentée. |
 | `P2-REQ-048` | Sérialisation, cardinalités, lifecycle, manifestes, baseline, récupération et ressources exposent les octets, IDs et transitions exacts nécessaires au relevé produit court. |
 | `P2-REQ-049` | Les nouveaux fichiers du produit sont déclarés explicitement dans `code/source_groups.cmake`, sans glob implicite. |

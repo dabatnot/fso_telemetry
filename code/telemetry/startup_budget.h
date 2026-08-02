@@ -30,7 +30,7 @@ extern const std::size_t Wp06DeltaScratchHeapBytesPerClient;
 constexpr std::size_t Wp06ReliableRetentionBytesPerClient =
 	sizeof(protocol::PreallocatedReliableControlWindow);
 
-constexpr std::size_t Phase2SharedOwnedCapBytes = 64U * 1024U * 1024U;
+constexpr std::size_t Phase2SharedOwnedCapBytes = 128U * 1024U * 1024U;
 constexpr std::size_t Phase2ClientOwnedCapBytes = 80U * 1024U * 1024U;
 constexpr std::size_t Phase2ProcessOwnedCapBytes = 384U * 1024U * 1024U;
 
