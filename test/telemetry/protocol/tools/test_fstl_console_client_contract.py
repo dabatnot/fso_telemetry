@@ -749,6 +749,450 @@ class FstlConsoleClientContractTest(unittest.TestCase):
         self.assertFalse(age["available"])
         self.assertEqual("invalid-or-missing-clock-offset", age["reason"])
 
+    def test_integrity_dashboard_derivations_cover_damage_shields_and_subsystems(self) -> None:
+        def record(name: str, fields: dict[str, object]) -> dict[str, object]:
+            return {
+                "recordName": name,
+                "recordVersion": 1,
+                "fields": fields,
+            }
+
+        state = console.ConsoleState()
+        state.record_instances = {
+            "DAMAGE_STATE/entity_id=1": record(
+                "DAMAGE_STATE",
+                {
+                    "entity_id": "1",
+                    "hull_strength": 25.0,
+                    "dynamic_max_hull": 100.0,
+                    "guardian_threshold": 10.0,
+                },
+            ),
+            "SHIELD_STATE/entity_id=1": record(
+                "SHIELD_STATE",
+                {
+                    "entity_id": "1",
+                    "has_shields": 1,
+                    "segment_current_hits": [0.0, 25.0, 100.0],
+                    "segment_max_hits": [100.0, 50.0, 100.0],
+                    "regeneration_per_s": 25.0,
+                },
+            ),
+            "SUBSYSTEM_STATE/entity_id=1/subsystem_id=2": record(
+                "SUBSYSTEM_STATE",
+                {
+                    "entity_id": "1",
+                    "subsystem_id": 2,
+                    "current_hits": 0.0,
+                    "max_hits": 100.0,
+                },
+            ),
+            "SUBSYSTEM_STATE/entity_id=1/subsystem_id=3": record(
+                "SUBSYSTEM_STATE",
+                {
+                    "entity_id": "1",
+                    "subsystem_id": 3,
+                    "current_hits": 0.0,
+                    "max_hits": 0.0,
+                },
+            ),
+        }
+
+        def derived() -> dict[str, dict[str, object]]:
+            return console.DashboardProjection(
+                state, at_us=1_000_000
+            ).build()["derived"]
+
+        values = derived()
+        self.assertEqual(0.25, values["entities.1.hull_ratio"]["value"])
+        self.assertEqual(75.0, values["entities.1.hull_missing_hits"]["value"])
+        self.assertEqual(0.75, values["entities.1.hull_damage_ratio"]["value"])
+        self.assertEqual(15.0, values["entities.1.guardian_margin"]["value"])
+        self.assertEqual(125.0, values["entities.1.shield_current_total"]["value"])
+        self.assertEqual(250.0, values["entities.1.shield_max_total"]["value"])
+        self.assertEqual(0.5, values["entities.1.shield_ratio"]["value"])
+        self.assertEqual(
+            [0.0, 0.5, 1.0],
+            values["entities.1.shield_segment_ratios"]["value"],
+        )
+        self.assertEqual(0, values["entities.1.shield_weakest_segment_index"]["value"])
+        self.assertEqual(0.0, values["entities.1.shield_weakest_segment_ratio"]["value"])
+        self.assertEqual(125.0, values["entities.1.shield_deficit"]["value"])
+        self.assertEqual(5.0, values["entities.1.shield_recharge_eta_s"]["value"])
+        self.assertTrue(values["entities.1.subsystems.2.destroyed"]["value"])
+        self.assertEqual(100.0, values["entities.1.subsystems.2.missing_hits"]["value"])
+        self.assertFalse(values["entities.1.subsystems.3.destroyed"]["value"])
+        self.assertFalse(values["entities.1.subsystems.3.integrity_ratio"]["available"])
+        self.assertEqual(0.0, values["entities.1.subsystems.3.missing_hits"]["value"])
+
+        damage = state.record_instances["DAMAGE_STATE/entity_id=1"]["fields"]
+        damage["hull_strength"] = 0.0
+        damage.pop("guardian_threshold")
+        zero_hull = derived()
+        self.assertEqual(0.0, zero_hull["entities.1.hull_ratio"]["value"])
+        self.assertEqual(1.0, zero_hull["entities.1.hull_damage_ratio"]["value"])
+        self.assertFalse(zero_hull["entities.1.guardian_margin"]["available"])
+        self.assertEqual(
+            "guardian-absent",
+            zero_hull["entities.1.guardian_margin"]["reason"],
+        )
+
+        shield = state.record_instances["SHIELD_STATE/entity_id=1"]["fields"]
+        shield["segment_current_hits"] = [100.0, 50.0, 100.0]
+        shield["regeneration_per_s"] = 0.0
+        full = derived()
+        self.assertEqual(0.0, full["entities.1.shield_recharge_eta_s"]["value"])
+
+        shield["segment_current_hits"] = [0.0, 0.0, 0.0]
+        blocked = derived()
+        self.assertFalse(blocked["entities.1.shield_recharge_eta_s"]["available"])
+        self.assertEqual(
+            "shield-regeneration-unavailable",
+            blocked["entities.1.shield_recharge_eta_s"]["reason"],
+        )
+
+        shield.update({
+            "has_shields": 0,
+            "segment_current_hits": [],
+            "segment_max_hits": [],
+        })
+        absent = derived()
+        for suffix in (
+            "shield_current_total",
+            "shield_max_total",
+            "shield_ratio",
+            "shield_segment_ratios",
+            "shield_deficit",
+            "shield_recharge_eta_s",
+        ):
+            self.assertFalse(absent[f"entities.1.{suffix}"]["available"])
+            self.assertEqual("shields-absent", absent[f"entities.1.{suffix}"]["reason"])
+
+    def test_energy_dashboard_derivations_use_propulsion_and_fail_closed(self) -> None:
+        def record(name: str, fields: dict[str, object]) -> dict[str, object]:
+            return {
+                "recordName": name,
+                "recordVersion": 1,
+                "fields": fields,
+            }
+
+        state = console.ConsoleState()
+        state.record_instances = {
+            "SHIP_IDENTITY/entity_id=1": record(
+                "SHIP_IDENTITY", {"entity_id": "1", "ship_class_id": 7}
+            ),
+            "ENERGY_STATE/entity_id=1": record(
+                "ENERGY_STATE",
+                {
+                    "entity_id": "1",
+                    "weapon_energy_current": 40.0,
+                    "weapon_energy_max": 80.0,
+                    "aggregate_engine_current_hits": 30.0,
+                    "aggregate_engine_max_hits": 60.0,
+                },
+            ),
+            "PROPULSION_STATE/entity_id=1": record(
+                "PROPULSION_STATE",
+                {
+                    "entity_id": "1",
+                    "propulsion_flags": 0x0001,
+                    "fuel_current": 40.0,
+                    "fuel_max": 100.0,
+                    "consumption_per_s": 10.0,
+                    "recovery_per_s": 5.0,
+                    "cooldown_remaining_us": "2000000",
+                },
+            ),
+        }
+        state.manifest_records = {
+            "CLASS_MANIFEST/class_id=7": record(
+                "CLASS_MANIFEST",
+                {
+                    "class_id": 7,
+                    "afterburner": {
+                        "minimum_start_fuel": 50.0,
+                        "burn_rate": 10.0,
+                        "recover_rate": 5.0,
+                    },
+                },
+            )
+        }
+
+        def values() -> dict[str, dict[str, object]]:
+            projection = console.DashboardProjection(state, at_us=1_000_000).build()
+            return {
+                path: projection["derived"][f"entities.1.{path}"]
+                for path in (
+                    "weapon_energy_ratio",
+                    "engine_integrity_ratio",
+                    "fuel_ratio",
+                    "afterburner_autonomy_s",
+                    "afterburner_recharge_s",
+                    "afterburner_usable_fuel",
+                    "afterburner_ready_delay_s",
+                    "afterburner_readiness",
+                )
+            }
+
+        result = values()
+        self.assertEqual(0.5, result["weapon_energy_ratio"]["value"])
+        self.assertEqual(0.5, result["engine_integrity_ratio"]["value"])
+        self.assertEqual(0.4, result["fuel_ratio"]["value"])
+        self.assertEqual(4.0, result["afterburner_autonomy_s"]["value"])
+        self.assertEqual(12.0, result["afterburner_recharge_s"]["value"])
+        self.assertEqual(0.0, result["afterburner_usable_fuel"]["value"])
+        self.assertEqual(2.0, result["afterburner_ready_delay_s"]["value"])
+        self.assertEqual("ATTENTE", result["afterburner_readiness"]["value"])
+
+        state.record_instances["PROPULSION_STATE/entity_id=1"]["fields"]["propulsion_flags"] = 0x0005
+        active = values()
+        self.assertEqual("ACTIF", active["afterburner_readiness"]["value"])
+        self.assertFalse(active["afterburner_recharge_s"]["available"])
+        self.assertEqual("afterburner-active", active["afterburner_recharge_s"]["reason"])
+
+        state.record_instances["PROPULSION_STATE/entity_id=1"]["fields"]["propulsion_flags"] = 0x0003
+        locked = values()
+        self.assertEqual("VERROUILLÉ", locked["afterburner_readiness"]["value"])
+        self.assertFalse(locked["afterburner_ready_delay_s"]["available"])
+        self.assertEqual("afterburner-locked", locked["afterburner_ready_delay_s"]["reason"])
+
+        propulsion = state.record_instances["PROPULSION_STATE/entity_id=1"]["fields"]
+        propulsion["propulsion_flags"] = 0x0001
+        propulsion["fuel_current"] = 0.0
+        propulsion["recovery_per_s"] = 0.0
+        blocked = values()
+        self.assertFalse(blocked["afterburner_readiness"]["available"])
+        self.assertEqual(
+            "below-minimum-without-recovery",
+            blocked["afterburner_readiness"]["reason"],
+        )
+        self.assertEqual(0.0, blocked["fuel_ratio"]["value"])
+
+        propulsion["propulsion_flags"] = 0
+        unavailable = values()
+        self.assertFalse(unavailable["afterburner_readiness"]["available"])
+        self.assertEqual("afterburner-unavailable", unavailable["afterburner_readiness"]["reason"])
+
+    def test_weapon_dashboard_derivations_use_decoded_shapes_and_fail_closed(self) -> None:
+        def record(name: str, fields: dict[str, object]) -> dict[str, object]:
+            return {"recordName": name, "recordVersion": 1, "fields": fields}
+
+        state = console.ConsoleState()
+        state.record_instances = {
+            "WEAPON_STATE/entity_id=1": record(
+                "WEAPON_STATE",
+                {
+                    "entity_id": "1",
+                    "weapon_flags": 0,
+                    "primary_banks": [
+                        {
+                            "bank_id": 11,
+                            "weapon_class_id": 101,
+                            "cooldown_remaining_us": "500000",
+                            "ammunition": {
+                                "current": 20,
+                                "initial": 40,
+                                "rearm_remaining_us": "2000000",
+                            },
+                        },
+                        {
+                            "bank_id": 12,
+                            "weapon_class_id": 102,
+                            "cooldown_remaining_us": "0",
+                        },
+                    ],
+                    "secondary_banks": [
+                        {
+                            "bank_id": 21,
+                            "weapon_class_id": 201,
+                            "cooldown_remaining_us": "0",
+                            "ammunition": {"current": 0, "initial": 8},
+                        }
+                    ],
+                    "tertiary": {
+                        "bank_id": 31,
+                        "ammunition_current": 3,
+                        "ammunition_initial": 6,
+                        "cooldown_remaining_us": "1000000",
+                        "rearm_remaining_us": "3000000",
+                    },
+                    "countermeasure": {
+                        "flags": 0,
+                        "current": 2,
+                        "maximum": 4,
+                        "cooldown_remaining_us": "250000",
+                    },
+                },
+            )
+        }
+        state.manifest_records = {
+            "WEAPON_MANIFEST/weapon_class_id=101": record(
+                "WEAPON_MANIFEST",
+                {"weapon_class_id": 101, "fire": {"wait_us": "250000"}},
+            ),
+            "WEAPON_MANIFEST/weapon_class_id=102": record(
+                "WEAPON_MANIFEST",
+                {"weapon_class_id": 102},
+            ),
+        }
+
+        def projection() -> dict[str, dict[str, object]]:
+            return console.DashboardProjection(
+                state, at_us=1_000_000
+            ).build()["derived"]
+
+        values = projection()
+        self.assertEqual(0.5, values["entities.1.primary_banks[0].ammo_ratio"]["value"])
+        self.assertEqual(0.5, values["entities.1.primary_banks[0].cooldown_s"]["value"])
+        self.assertEqual(2.0, values["entities.1.primary_banks[0].rearm_s"]["value"])
+        self.assertEqual("RECHARGE", values["entities.1.primary_banks[0].state"]["value"])
+        self.assertFalse(values["entities.1.primary_banks[1].ammo_ratio"]["available"])
+        self.assertEqual(
+            "bank-does-not-use-ammunition",
+            values["entities.1.primary_banks[1].ammo_ratio"]["reason"],
+        )
+        self.assertEqual("DISPONIBLE", values["entities.1.primary_banks[1].state"]["value"])
+        self.assertEqual(0.0, values["entities.1.secondary_banks[0].ammo_ratio"]["value"])
+        self.assertEqual("VIDE", values["entities.1.secondary_banks[0].state"]["value"])
+        self.assertEqual(0.5, values["entities.1.tertiary.ammo_ratio"]["value"])
+        self.assertEqual(1.0, values["entities.1.tertiary.cooldown_s"]["value"])
+        self.assertEqual(3.0, values["entities.1.tertiary.rearm_s"]["value"])
+        self.assertEqual("RECHARGE", values["entities.1.tertiary.state"]["value"])
+        self.assertEqual(
+            0.5, values["entities.1.countermeasure.quantity_ratio"]["value"]
+        )
+        self.assertEqual(
+            "RECHARGE", values["entities.1.countermeasure.state"]["value"]
+        )
+        self.assertEqual(
+            0.25, values["entities.1.countermeasure.cooldown_s"]["value"]
+        )
+        self.assertEqual(4.0, values["weapon_classes.101.nominal_rate_hz"]["value"])
+        self.assertFalse(values["weapon_classes.102.nominal_rate_hz"]["available"])
+
+        weapon = state.record_instances["WEAPON_STATE/entity_id=1"]["fields"]
+        weapon["weapon_flags"] = 0x0010
+        weapon["countermeasure"]["flags"] = 0x0002
+        locked = projection()
+        self.assertEqual(
+            "VERROUILLÃ‰E", locked["entities.1.primary_banks[0].state"]["value"]
+        )
+        self.assertEqual(
+            "VERROUILLÃ‰E", locked["entities.1.countermeasure.state"]["value"]
+        )
+
+    def test_support_and_cargo_dashboard_derivations_are_geometric_not_predictive(self) -> None:
+        def record(name: str, fields: dict[str, object]) -> dict[str, object]:
+            return {"recordName": name, "recordVersion": 1, "fields": fields}
+
+        state = console.ConsoleState()
+        state.record_instances = {
+            "CARGO_SCAN_STATE/entity_id=1": record(
+                "CARGO_SCAN_STATE",
+                {
+                    "entity_id": "1",
+                    "scan_phase": 2,
+                    "elapsed_us": "2500000",
+                    "required_us": "10000000",
+                },
+            ),
+            "SUPPORT_STATE/entity_id=1": record(
+                "SUPPORT_STATE",
+                {"entity_id": "1", "phase": 2, "support_entity_id": "2"},
+            ),
+            "FLIGHT_STATE/entity_id=1": record(
+                "FLIGHT_STATE",
+                {
+                    "entity_id": "1",
+                    "position_world": [0.0, 0.0, 0.0],
+                    "velocity_world": [0.0, 0.0, 0.0],
+                    "orientation_local_to_world": [1.0, 0.0, 0.0, 0.0],
+                },
+            ),
+            "FLIGHT_STATE/entity_id=2": record(
+                "FLIGHT_STATE",
+                {
+                    "entity_id": "2",
+                    "position_world": [300.0, 400.0, 0.0],
+                    "velocity_world": [-30.0, -40.0, 0.0],
+                    "orientation_local_to_world": [1.0, 0.0, 0.0, 0.0],
+                },
+            ),
+        }
+
+        def projection() -> dict[str, dict[str, object]]:
+            return console.DashboardProjection(
+                state, at_us=1_000_000
+            ).build()["derived"]
+
+        values = projection()
+        self.assertEqual(0.25, values["entities.1.cargo.progress_ratio"]["value"])
+        self.assertEqual(
+            7_500_000.0, values["entities.1.cargo.remaining_us"]["value"]
+        )
+        self.assertEqual(500.0, values["entities.1.support.distance"]["value"])
+        self.assertEqual(
+            50.0, values["entities.1.support.relative_speed"]["value"]
+        )
+        self.assertEqual(
+            50.0, values["entities.1.support.closing_speed"]["value"]
+        )
+        inventory = console.DashboardProjection(
+            state, at_us=1_000_000
+        ).build()["inventory"]
+        closing_inventory = next(
+            item for item in inventory
+            if item["path"] == "entities.1.support.closing_speed"
+        )
+        cargo_inventory = next(
+            item for item in inventory
+            if item["path"] == "entities.1.cargo.progress_ratio"
+        )
+        self.assertEqual(
+            "p2.dashboard.support-closing-speed.v1",
+            closing_inventory["formulaId"],
+        )
+        self.assertIn(
+            "wire:SUPPORT_STATE.support_entity_id",
+            closing_inventory["provenance"],
+        )
+        self.assertEqual(
+            "p2.dashboard.cargo-progress-ratio.v1",
+            cargo_inventory["formulaId"],
+        )
+        self.assertFalse(values["dashboard.support_eta_us"]["available"])
+
+        cargo = state.record_instances["CARGO_SCAN_STATE/entity_id=1"]["fields"]
+        cargo.pop("required_us")
+        missing_timing = projection()
+        self.assertFalse(
+            missing_timing["entities.1.cargo.progress_ratio"]["available"]
+        )
+        self.assertFalse(
+            missing_timing["entities.1.cargo.remaining_us"]["available"]
+        )
+
+        support = state.record_instances["SUPPORT_STATE/entity_id=1"]["fields"]
+        support.pop("support_entity_id")
+        missing_support = projection()
+        self.assertFalse(
+            missing_support["entities.1.support.distance"]["available"]
+        )
+        self.assertEqual(
+            "support-entity-absent",
+            missing_support["entities.1.support.distance"]["reason"],
+        )
+
+        support["support_entity_id"] = "1"
+        self_support = projection()
+        self.assertEqual(0.0, self_support["entities.1.support.distance"]["value"])
+        self.assertEqual(
+            0.0, self_support["entities.1.support.relative_speed"]["value"]
+        )
+        self.assertEqual(
+            0.0, self_support["entities.1.support.closing_speed"]["value"]
+        )
+
     def test_console_tool_exists_and_does_not_import_producer_cpp_bindings(self) -> None:
         self.assertTrue(
             CONSOLE.is_file(),

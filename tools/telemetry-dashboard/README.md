@@ -1,0 +1,139 @@
+# FSO Simpit Telemetry Lab
+
+Dashboard local de validation des données FSTL destinées à un futur simpit.
+L’interface ne modifie ni FS2Open ni le protocole : un bridge Python joue le
+rôle d’un client FSTL normal et sert l’application web sur loopback.
+
+## Lancement live
+
+Activez la télémétrie dans la configuration chargée par FS2Open, démarrez le
+jeu, puis exécutez depuis la racine du dépôt :
+
+```powershell
+.\tools\telemetry-dashboard\start-dashboard.ps1 `
+  -TelemetryHost 127.0.0.1 `
+  -TelemetryPort 42042 `
+  -TelemetryConfig "D:\Games\GOG Galaxy\Games\Freespace 2\data\config\telemetry.json"
+```
+
+Le premier lancement installe les dépendances dans `build/telemetry-dashboard`,
+construit l’interface et ouvre `http://127.0.0.1:43100`. Le bridge et le serveur
+web n’écoutent que sur `127.0.0.1`.
+
+## Captures et replay
+
+Le bouton **Capturer** écrit des datagrammes bruts horodatés dans
+`build/telemetry-dashboard/captures`. Une capture utilise le format JSONL
+`FSTL-dashboard-capture-v1` et repasse par le même décodeur que le mode live.
+
+```powershell
+.\tools\telemetry-dashboard\start-dashboard.ps1 `
+  -Replay "build\telemetry-dashboard\captures\telemetry-YYYYMMDD-HHMMSS.fstlcap.jsonl"
+```
+
+Le bouton **Exporter** produit dans `build/telemetry-dashboard/exports` :
+
+- le snapshot et les mesures de la session en JSON ;
+- l’historique des échantillons par canal en CSV ;
+- les instruments ND et interruptions observées en JSON.
+
+Ces exports ne donnent aucun verdict d’aptitude au simpit.
+
+## États des instruments
+
+| État | Signification |
+|---|---|
+| `LIVE` | valeur autoritaire reçue et fraîche |
+| `ND` | donnée prévue, mais source non produite actuellement |
+| `—` | source connue mais sans objet pour l’entité actuelle |
+| `STALE` | dernière valeur conservée après silence du producteur |
+| `ERR` | valeur reçue mais invalide |
+| `EN ATTENTE` | négociation ou keyframe initiale non terminée |
+
+Une vraie valeur zéro reste toujours affichée comme `0`.
+
+## Onglet Pilotage
+
+La sphère centrale projette le quaternion `orientation_local_to_world` dans un
+repère inertiel synthétique de mission (`+Y` vertical, plan `XZ` horizontal).
+Elle ne représente donc pas un horizon gravitationnel ou planétaire. Le
+marqueur de trajectoire utilise la vitesse locale et affiche `—` lorsque la
+vitesse est quasi nulle.
+
+Les compteurs primaire, secondaire et contre-mesure représentent les demandes
+du tick source, pas des tirs confirmés. Les modes physiques et aides au contrôle
+sont décodés depuis les registres fermés FSTL ; leur valeur brute reste visible
+dans le panneau d’inspection. Sous 1450 pixels de large, l’onglet se replie et
+autorise le défilement vertical. La cible 1920×1080 reste sans défilement.
+
+## Onglet Propulsion & énergie
+
+La vue principale regroupe les réserves d’énergie armes et de carburant
+afterburner, les trois indices ETS et les états de propulsion. Les autonomies,
+temps de recharge et délais avant disponibilité sont des valeurs dérivées
+explicitement à partir des quantités et taux FSTL.
+
+Le bandeau de performances utilise les valeurs nominales du `CLASS_MANIFEST`;
+il ne représente jamais la puissance ou la vitesse maximale dynamique du
+vaisseau courant. Ces dernières restent `ND`, comme la poussée effective, les
+charges énergétiques instantanées et le RCS. Une absence de réservoir
+afterburner ou de ressource énergétique compatible affiche `—`, pas zéro.
+
+## Onglet Intégrité
+
+La vue centrale adopte pour la V1 la disposition standard FS2Open à quatre
+quadrants : droite, avant, arrière et gauche pour les indices moteur 0 à 3.
+Chaque quadrant est normalisé avec son propre maximum ; le quadrant le plus
+faible et les totaux restent visibles séparément. Une session présentant un
+autre nombre de segments affiche une configuration non prise en charge.
+
+Le plafond rechargeable est affiché en HP. Le débit de régénération instantané
+est la seule valeur exprimée en HP/s et le temps de recharge est une estimation
+au taux courant. La matrice principale est limitée aux douze sous-systèmes les
+plus critiques du joueur ; le panneau d’inspection donne accès à la liste
+exhaustive. Un cooldown de tourelle nul signifie seulement que son délai est
+écoulé, pas qu’elle possède une cible ou une autorisation de tir.
+
+## Onglet Armement
+
+La vue spécialisée résout les banques du joueur vers leur `WEAPON_MANIFEST`.
+Les armes primaire et secondaire sélectionnées affichent leurs munitions ou
+coût énergétique, cooldown, portée, dégâts, cadence, guidage, verrouillage,
+burst et swarm nominaux. Ces caractéristiques décrivent la classe installée :
+elles ne constituent ni un DPS réel, ni une promesse qu’un tir sera accepté.
+
+Les racks principaux sont limités à six banques par famille, en conservant
+toujours la banque sélectionnée ; la liste exhaustive reste accessible depuis
+le panneau d’inspection. Les tourelles n’occupent une zone que lorsqu’elles
+existent. Les compteurs de commande restent des intentions, jamais des tirs
+confirmés. La progression du lock, la solution de tir, les événements exacts
+et l’animation normalisée des banques restent explicitement `ND`.
+
+## Onglet Support · Docking · Cargo
+
+La vue reste centrée sur le joueur. Une affectation de support est représentée
+par une liaison pointillée et ne devient une relation d’amarrage pleine que
+lorsque `DOCKING_STATE` publie réellement cette relation. Le diagramme conserve
+le joueur, le support assigné et les relations directes parmi les huit entités
+visibles ; la composante exhaustive reste inspectable au clavier.
+
+Les états coque, boucliers, sous-systèmes, banques et contre-mesures sont
+présentés séparément. Aucun score global de remise en état n’est créé. Distance,
+vitesse relative et rapprochement sont des mesures géométriques et ne servent
+jamais à inventer une ETA. Le scanner cargo utilise sa durée autoritaire
+`required_us`; une cible extérieure volontairement masquée affiche `— cible non
+exposée`, pas `ND`. Le retour du support à `NONE` n’est pas présenté comme une
+preuve de réussite.
+
+## Développement et tests
+
+```powershell
+python -B test\telemetry\protocol\tools\test_fstl_console_client_contract.py
+python -B tools\telemetry-dashboard\backend\test_dashboard_runtime.py
+
+Set-Location tools\telemetry-dashboard\frontend
+npm ci
+npm test
+npm run build
+npx playwright test
+```
