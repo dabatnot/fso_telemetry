@@ -3724,7 +3724,7 @@ def build_fstl_v1_1_schema() -> dict[str, object]:
         "nature": "A",
         "position": "26",
         "presence_condition": {"bits": [15], "selector": "presence"},
-        "semantics": "bit 15; exact Target Box second-line label for non-ship HUD targets",
+        "semantics": "bit 15; exact second line rendered by the FSO Target Box",
         "wire": "utf8-string",
     })
     for index, field in enumerate(target_v2_fields, start=1):

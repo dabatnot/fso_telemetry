@@ -565,32 +565,48 @@ Phase3EngineCollectStatus collect_target_and_locks(
 				const auto* installed = installed_ship_class(
 					installed_manifest,
 					target_ship.ship_info_index);
-				// TARGET_STATE has one all-or-nothing identity group.  A
-				// visible track does not authorize publishing a partial group
-				// whose class has not yet been installed by the manifest.
-				if (installed == nullptr) {
-					// The target track itself remains public; only its optional
-					// identity attributes are absent until APPLIED.
-				} else {
-				std::size_t name_size = 0U;
-				while (name_size < sizeof(target_ship.ship_name) &&
-					target_ship.ship_name[name_size] != '\0')
-					++name_size;
-				if (name_size == sizeof(target_ship.ship_name) ||
-					!output.target.revealed_name.assign(
-						target_ship.ship_name, name_size)) {
+				// Capture exactly the two strings rendered by
+				// HudGaugeTargetBox::renderTargetShipInfo().  Target selection is
+				// its own HUD disclosure and does not require a radar contact or a
+				// CLASS_MANIFEST entry merely to reproduce visible text.
+				char hud_name[NAME_LENGTH * 2 + 3]{};
+				char hud_class[NAME_LENGTH]{};
+				char hud_callsign[NAME_LENGTH]{};
+				hud_stuff_ship_name(hud_name, &target_ship);
+				hud_stuff_ship_class(hud_class, &target_ship);
+				hud_stuff_ship_callsign(hud_callsign, &target_ship);
+				auto name_size = std::strlen(hud_name);
+				const auto callsign_size = std::strlen(hud_callsign);
+				if (callsign_size != 0U) {
+					if (name_size == 0U) {
+						std::memcpy(hud_name, hud_callsign, callsign_size + 1U);
+						name_size = callsign_size;
+					} else if (name_size + callsign_size + 3U < sizeof(hud_name)) {
+						hud_name[name_size++] = ' ';
+						hud_name[name_size++] = '(';
+						std::memcpy(hud_name + name_size, hud_callsign, callsign_size);
+						name_size += callsign_size;
+						hud_name[name_size++] = ')';
+						hud_name[name_size] = '\0';
+					}
+				}
+				const auto class_size = std::strlen(hud_class);
+				if (name_size == 0U || class_size == 0U ||
+					!output.target.revealed_name.assign(hud_name, name_size) ||
+					!output.target.hud_type_label.assign(hud_class, class_size)) {
 					return Phase3EngineCollectStatus::
 						SourceLimitExceeded;
 				}
-					output.target.presence |=
-						protocol::TargetStatePresenceFlagRevealedIdentity;
-					output.target.revealed_object_type =
-						object_type(target.type);
+				output.target.presence |=
+					protocol::TargetStatePresenceFlagRevealedIdentity |
+					protocol::TargetStatePresenceFlagHudTypeLabel;
+				output.target.revealed_object_type = object_type(target.type);
+				if (installed != nullptr) {
 					output.target.revealed_class_id =
 						installed->class_id;
-					output.target.revealed_team_id = 0U;
 					output.target.revealed_iff_id = installed->iff_id;
 				}
+				output.target.revealed_team_id = 0U;
 			} else {
 				const auto* label = target_box_type_label(target.type);
 				if (label != nullptr &&

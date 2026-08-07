@@ -16368,7 +16368,7 @@
                 ],
                 "selector": "presence"
               },
-              "semantics": "bit 15; exact Target Box second-line label for non-ship HUD targets",
+              "semantics": "bit 15; exact second line rendered by the FSO Target Box",
               "wire": "utf8-string"
             }
           ],

@@ -146,7 +146,7 @@ cible. `producer_sample_time_us` est l’instant de la décision de ciblage.
 | `ATTACKER`, `DANGEROUS_WEAPON`, `NEAREST_LOCKED` | présents seulement si la référence est autorisée et résoluble dans l’espace public |
 | `EXACT_HUD_DISTANCE` | valeur D visible : `Player_ai->current_target_distance` après multiplicateur HUD |
 | `EXACT_HUD_SPEED` | v2 seulement ; valeur S visible calculée comme le target box, y compris le fallback docké et le multiplicateur HUD |
-| `HUD_TYPE_LABEL` | v3 seulement ; seconde ligne exacte du Target Box pour une arme, un débris, un astéroïde ou un jump node ; aucune classe de vaisseau n’est inventée |
+| `HUD_TYPE_LABEL` | v3 seulement ; seconde ligne exacte du Target Box, y compris la classe affichée d’un vaisseau ciblé même si aucune entrée `CLASS_MANIFEST` ne lui est encore applicable ; aucune classe n’est inventée côté client |
 
 Si la cible vaut zéro, tous les groupes sont absents sauf `PREVIOUS_TARGET`,
 comme l’impose FSTL.

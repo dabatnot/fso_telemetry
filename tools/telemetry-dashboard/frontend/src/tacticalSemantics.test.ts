@@ -260,6 +260,17 @@ describe("tactical display semantics", () => {
     expect(targetHudTypeLabel(value)).toBe("impact: 4.0 sec");
   });
 
+  it("keeps the authoritative v3 ship class label when its manifest entry is absent", () => {
+    const value = snapshot();
+    value.records.TARGET_STATE[0].revealed_identity = {
+      name: "Alpha 2", class_id: 0
+    };
+    value.records.TARGET_STATE[0].hud_type_label = "GTF Myrmidon";
+    expect(targetDisplayName(value)).toBe("Alpha 2");
+    expect(targetClassDisplayName(value)).toBeNull();
+    expect(targetHudTypeLabel(value)).toBe("GTF Myrmidon");
+  });
+
   it("preserves live zero, stale, waiting and ND states", () => {
     const definitions = catalog.filter((item) => item.tab === "tactical") as InstrumentDefinition[];
     const targetDefinition = definitions.find((item) => item.id === "tactical-target")!;

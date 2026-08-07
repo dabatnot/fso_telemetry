@@ -295,7 +295,7 @@ export function targetClassDisplayName(snapshot: DashboardSnapshot | null): stri
   return typeof name === "string" && name.trim() ? name.trim() : null;
 }
 
-/** The second Target Box line for HUD-only non-ship targets (TARGET_STATE v3). */
+/** The exact second Target Box line captured by TARGET_STATE v3. */
 export function targetHudTypeLabel(snapshot: DashboardSnapshot | null): string | null {
   const label = targetState(snapshot)?.hud_type_label;
   return typeof label === "string" && label.trim() ? label.trim() : null;
