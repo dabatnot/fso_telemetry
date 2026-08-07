@@ -4,6 +4,9 @@
 #include "telemetry/native_session_runtime.h"
 #include "telemetry/config.h"
 #include "telemetry/engine_adapter.h"
+#include "telemetry/phase3_engine_collector.h"
+#include "telemetry/phase3_identity_registry.h"
+#include "telemetry/phase3_state_image.h"
 #include "telemetry/runtime_adapter.h"
 #include "telemetry/runtime_adapter_test_seam.h"
 #include "telemetry/phase1_state_image.h"
@@ -13,6 +16,13 @@
 #include "telemetry/session_controller.h"
 #include "telemetry/startup_budget.h"
 #include "telemetry/transport.h"
+#include "ai/ai.h"
+#include "autopilot/autopilot.h"
+#include "globalincs/systemvars.h"
+#include "hud/hudconfig.h"
+#include "object/object.h"
+#include "playerman/player.h"
+#include "ship/ship.h"
 #include "telemetry_native_session_runtime_player_test_access.h"
 #include "telemetry_runtime_adapter_player_test_access.h"
 #define FSO_HAS_NATIVE_SESSION_RUNTIME 1
@@ -34,6 +44,11 @@
 #include <type_traits>
 #include <utility>
 #include <vector>
+
+#if defined(_WIN32)
+#include <process.h>
+#include <windows.h>
+#endif
 
 namespace {
 
@@ -475,6 +490,185 @@ struct CountingEngineReadView final : detail::EngineReadView {
 	mutable std::size_t read_calls = 0U;
 	mutable std::thread::id last_read_thread{};
 };
+
+// This is intentionally limited to the authorized Phase 2 capture surface.
+// Phase 3 itself still reads the live FS2 player globals below; the split keeps
+// the cadence oracle from accidentally using a synthetic Phase 3 projection.
+struct MinimalPhase2EngineReadView final : detail::Phase2EngineReadView {
+	MinimalPhase2EngineReadView()
+		: source(std::make_unique<detail::Phase2ShipSource>())
+	{
+		source->identity.class_source_key.value = 1U;
+		source->raw_static_references.class_capture_key = 1U;
+		source->raw_static_catalog.class_count = 1U;
+		auto& ship_class = source->raw_static_catalog.class_definitions[0U];
+		ship_class.class_capture_key = 1U;
+		(void)ship_class.internal_name.assign("phase3-runtime-fixture");
+		ship_class.model_mass = 100.0F;
+		ship_class.density = 1.0F;
+		ship_class.effective_mass = 100.0F;
+		auto& alternate_ship_class = source->raw_static_catalog.class_definitions[1U];
+		alternate_ship_class.class_capture_key = 2U;
+		(void)alternate_ship_class.internal_name.assign("phase3-runtime-fixture-alternate");
+		alternate_ship_class.model_mass = 200.0F;
+		alternate_ship_class.density = 1.0F;
+		alternate_ship_class.effective_mass = 200.0F;
+		source->raw_static_catalog.class_count = 2U;
+	}
+
+	bool current_thread_is_main() const noexcept override { return true; }
+	bool in_mission() const noexcept override { return true; }
+	bool player_exists() const noexcept override { return true; }
+	bool player_object_exists() const noexcept override { return true; }
+	bool player_ship_exists() const noexcept override { return true; }
+	bool player_source_is_consistent() const noexcept override { return true; }
+	detail::SourceReadResult read_player_root_key(detail::EngineEntityKey& output) const noexcept override
+	{
+		output.object_signature = 42U;
+		return {detail::Phase2SourceReadStatus::Valid};
+	}
+	detail::SourceReadResult read_discovery_node(
+		detail::EngineEntityKey key, detail::Phase2DiscoveryNode& output) const noexcept override
+	{
+		if (key.object_signature != 42U) return {detail::Phase2SourceReadStatus::InvalidSource};
+		output = {};
+		output.capture_key.value = 42U;
+		return {detail::Phase2SourceReadStatus::Valid};
+	}
+	detail::SourceReadResult read_ship(
+		detail::EngineEntityKey key, detail::Phase2ShipSource& output) const noexcept override
+	{
+		if (key.object_signature != 42U) return {detail::Phase2SourceReadStatus::InvalidSource};
+		output = *source;
+		return {detail::Phase2SourceReadStatus::Valid};
+	}
+	detail::SourceReadResult read_ship_flight(
+		detail::EngineEntityKey key, detail::ShipFlightObservation& output) const noexcept override
+	{
+		if (key.object_signature != 42U) return {detail::Phase2SourceReadStatus::InvalidSource};
+		output = source->flight;
+		return {detail::Phase2SourceReadStatus::Valid};
+	}
+	bool read_player_controls(detail::PlayerControlObservation& output) const noexcept override
+	{
+		output = controls;
+		return true;
+	}
+	bool read_player_cargo_scan(detail::PlayerCargoScanObservation& output) const noexcept override
+	{
+		output = cargo;
+		return true;
+	}
+
+	std::unique_ptr<detail::Phase2ShipSource> source;
+	detail::PlayerControlObservation controls{};
+	detail::PlayerCargoScanObservation cargo{};
+};
+
+// The collector must read real engine authorities.  Reserve high, otherwise
+// unused slots and restore all pointer/global selections when the test exits.
+struct Phase3EngineGlobalsScope final {
+	static constexpr int ObjectIndex = MAX_OBJECTS - 2;
+	static constexpr int ShipIndex = MAX_SHIPS - 2;
+	static constexpr int AiIndex = MAX_AI_INFO - 2;
+
+	Phase3EngineGlobalsScope()
+		: prior_player(Player), prior_player_object(Player_obj),
+		  prior_player_ship(Player_ship), prior_player_ai(Player_ai),
+		  prior_game_mode(Game_mode), prior_current_nav(CurrentNav),
+		  prior_see_all(See_all),
+		  prior_autopilot_engaged(AutoPilotEngaged), prior_hud_config(HUD_config),
+		  prior_used_list_next(obj_used_list.next), prior_used_list_prev(obj_used_list.prev),
+		  prior_missile_list_next(Missile_obj_list.next),
+		  prior_missile_list_prev(Missile_obj_list.prev),
+		  prior_waypoint_lists(Waypoint_lists)
+	{
+		std::copy(std::begin(Navs), std::end(Navs), prior_navs.begin());
+		for (auto& nav : Navs) nav.clear();
+		Waypoint_lists.clear();
+		Player = &local_player;
+		Player_obj = &Objects[ObjectIndex];
+		Player_ship = &Ships[ShipIndex];
+		Player_ai = &Ai_info[AiIndex];
+		Game_mode |= GM_IN_MISSION;
+		CurrentNav = -1;
+		AutoPilotEngaged = false;
+		HUD_config.rp_dist = RR_SHORT;
+		See_all = 0;
+
+		Player_obj->clear();
+		Player_obj->type = OBJ_SHIP;
+		Player_obj->instance = ShipIndex;
+		Player_obj->signature = 42;
+		Player_obj->orient = vmd_identity_matrix;
+		list_init(&obj_used_list);
+		list_init(&Missile_obj_list);
+		Player_ship->clear();
+		list_init(&Player_ship->subsys_list);
+		Player_ship->weapons.clear();
+		Player_ship->objnum = ObjectIndex;
+		Player_ship->ai_index = AiIndex;
+		*Player_ai = ai_info{};
+		Player_ai->shipnum = ShipIndex;
+		Player_ai->target_objnum = -1;
+		Player_ai->previous_target_objnum = -1;
+		Player_ai->attacker_objnum = -1;
+		Player_ai->danger_weapon_objnum = -1;
+		Player_ai->nearest_locked_object = -1;
+	}
+
+	~Phase3EngineGlobalsScope()
+	{
+		Player = prior_player;
+		Player_obj = prior_player_object;
+		Player_ship = prior_player_ship;
+		Player_ai = prior_player_ai;
+		Game_mode = prior_game_mode;
+		CurrentNav = prior_current_nav;
+		See_all = prior_see_all;
+		AutoPilotEngaged = prior_autopilot_engaged;
+		HUD_config = prior_hud_config;
+		obj_used_list.next = prior_used_list_next;
+		obj_used_list.prev = prior_used_list_prev;
+		Missile_obj_list.next = prior_missile_list_next;
+		Missile_obj_list.prev = prior_missile_list_prev;
+		std::copy(prior_navs.begin(), prior_navs.end(), std::begin(Navs));
+		Waypoint_lists = std::move(prior_waypoint_lists);
+	}
+
+	::player local_player{};
+	player* prior_player = nullptr;
+	object* prior_player_object = nullptr;
+	ship* prior_player_ship = nullptr;
+	ai_info* prior_player_ai = nullptr;
+	int prior_game_mode = 0;
+	int prior_current_nav = -1;
+	int prior_see_all = 0;
+	bool prior_autopilot_engaged = false;
+	HUD_CONFIG_TYPE prior_hud_config{};
+	object* prior_used_list_next = nullptr;
+	object* prior_used_list_prev = nullptr;
+	missile_obj* prior_missile_list_next = nullptr;
+	missile_obj* prior_missile_list_prev = nullptr;
+	std::array<NavPoint, MAX_NAVPOINTS> prior_navs{};
+	SCP_vector<waypoint_list> prior_waypoint_lists;
+};
+
+std::uint64_t phase3_sample_time(const protocol::StateImage& image,
+	protocol::RecordType type)
+{
+	for (const auto& atom : image.records()) {
+		if (atom.key.record_type != static_cast<std::uint16_t>(type)) continue;
+		EXPECT_GE(atom.value.size(), 24U);
+		if (atom.value.size() < 24U) return 0U;
+		std::uint64_t value = 0U;
+		for (std::size_t offset = 0U; offset < 8U; ++offset)
+			value |= static_cast<std::uint64_t>(atom.value[16U + offset]) << (offset * 8U);
+		return value;
+	}
+	ADD_FAILURE() << "Missing Phase 3 singleton record " << static_cast<std::uint16_t>(type);
+	return 0U;
+}
 
 detail::PlayerObservationDto observation(std::uint32_t signature, std::uint64_t time_us, float marker = 1.0f) noexcept
 {
@@ -1084,6 +1278,40 @@ TEST(TelemetryNativeRuntimeIntegrationContract,
 	EXPECT_EQ(0U, fixture->runtime.active_sessions());
 }
 
+TEST(TelemetryPhase3ResourceContract,
+	CockpitSensorsPreallocatesWithinAllThreeCapsAndPlusOneFailsBeforeBind)
+{
+	auto config = enabled_config();
+	config.max_clients = detail::TelemetryMetricsMaxClients;
+	auto baseline = std::make_unique<NativeFixture>();
+	ASSERT_EQ(detail::NativeSessionStartStatus::Started,
+		baseline->start_requested(config,
+			telemetry::Phase2Profile::CockpitSensors));
+	const auto owned =
+		NativePlayerAccess::phase2_owned_budget(baseline->runtime);
+	ASSERT_EQ(detail::StartupBudgetError::None, owned.error);
+	EXPECT_EQ(NativePlayerAccess::startup_owned_bytes(baseline->runtime),
+		owned.process_owned_bytes);
+	EXPECT_LE(owned.shared_owned_bytes,
+		detail::Phase3SharedOwnedCapBytes);
+	EXPECT_LE(owned.client_owned_bytes,
+		detail::Phase3ClientOwnedCapBytes);
+	EXPECT_LE(owned.process_owned_bytes,
+		detail::Phase3ProcessOwnedCapBytes);
+	EXPECT_EQ(0U, baseline->runtime.active_sessions());
+
+	auto plus_one = std::make_unique<NativeFixture>();
+	NativePlayerAccess::set_startup_owned_budget_adjustment(
+		plus_one->runtime,
+		detail::Phase3SharedOwnedCapBytes -
+			owned.shared_owned_bytes + 1U);
+	EXPECT_EQ(detail::NativeSessionStartStatus::AllocationFailure,
+		plus_one->start_requested(config,
+			telemetry::Phase2Profile::CockpitSensors));
+	EXPECT_EQ(0U, plus_one->backend.open_calls);
+	EXPECT_EQ(0U, plus_one->runtime.socket_count());
+}
+
 TEST(TelemetryNativeRuntimeIntegrationContract,
 	ReviewerFinalTst008EligibilityMatrixRejectsBeforeOpenOrBind)
 {
@@ -1159,6 +1387,1161 @@ TEST(TelemetryNativeRuntimeIntegrationContract, KeyframePreparationForcesBothCap
 	EXPECT_TRUE(plan.force_complete_keyframe);
 	EXPECT_TRUE(plan.capture_flight_controls);
 	EXPECT_TRUE(plan.capture_systems);
+}
+
+TEST(TelemetryPhase3CaptureContract,
+	EngineCollectorRefusesOffMainThreadBeforeReadingEngineAuthorities)
+{
+	// The capture authority belongs to this test's main thread.  Invoke the
+	// actual collector from a worker: its first product check must reject the
+	// call before it can inspect any mutable engine global.
+	detail::capture_phase2_main_thread_authority();
+	auto identities = std::make_unique<detail::Phase3IdentityRegistry>();
+	auto output = std::make_unique<telemetry::Phase3Projection>();
+	auto scratch = std::make_unique<telemetry::Phase3Projection>();
+	detail::Phase3EngineCollectStatus status =
+		detail::Phase3EngineCollectStatus::Collected;
+	std::thread worker([&] {
+		status = detail::collect_phase3_engine_projection(
+			{}, *identities, *output, *scratch);
+	});
+	worker.join();
+
+	EXPECT_EQ(detail::Phase3EngineCollectStatus::NotMainThread, status);
+	EXPECT_FALSE(identities->transaction_active());
+}
+
+#if defined(_WIN32)
+struct LowStackPhase3CollectContext {
+	detail::Phase3IdentityRegistry* identities = nullptr;
+	telemetry::Phase3Projection* output = nullptr;
+	telemetry::Phase3Projection* scratch = nullptr;
+	detail::Phase3EngineCollectStatus status =
+		detail::Phase3EngineCollectStatus::Collected;
+};
+
+unsigned __stdcall run_low_stack_phase3_collect(void* opaque) noexcept
+{
+	auto* context = static_cast<LowStackPhase3CollectContext*>(opaque);
+	context->status = detail::collect_phase3_engine_projection(
+		{}, *context->identities, *context->output, *context->scratch);
+	return 0U;
+}
+#endif
+
+TEST(TelemetryPhase3CaptureContract,
+	EngineCollectorEntryFitsTheProductionWindowsThreadStack)
+{
+#if defined(_WIN32)
+	// The monolithic test runner reserves 8 MiB, which previously hid a
+	// 2.17 MiB aggregate temporary created by the Phase 3 collector. Exercise
+	// the real entry point on a deliberately smaller stack than the 1 MiB
+	// production engine thread. The off-main-thread gate is the expected
+	// semantic result; reaching it proves function entry did not overflow.
+	detail::capture_phase2_main_thread_authority();
+	auto identities = std::make_unique<detail::Phase3IdentityRegistry>();
+	auto output = std::make_unique<telemetry::Phase3Projection>();
+	auto scratch = std::make_unique<telemetry::Phase3Projection>();
+	LowStackPhase3CollectContext context{
+		identities.get(), output.get(), scratch.get()};
+	const auto thread = reinterpret_cast<HANDLE>(_beginthreadex(
+		nullptr, 512U * 1024U, &run_low_stack_phase3_collect,
+		&context, 0U, nullptr));
+	ASSERT_NE(nullptr, thread);
+	ASSERT_EQ(WAIT_OBJECT_0, WaitForSingleObject(thread, 10'000U));
+	CloseHandle(thread);
+	EXPECT_EQ(detail::Phase3EngineCollectStatus::NotMainThread,
+		context.status);
+	EXPECT_FALSE(identities->transaction_active());
+#else
+	GTEST_SKIP() << "Windows stack-reservation regression.";
+#endif
+}
+
+TEST(TelemetryPhase3Visibility,
+	NonCockpitTrackTargetDoesNotAllocateAHiddenSensorIdentity)
+{
+	auto engine_globals = std::make_unique<Phase3EngineGlobalsScope>();
+	detail::capture_phase2_main_thread_authority();
+	constexpr int TargetObjectIndex = MAX_OBJECTS - 3;
+	auto& target = Objects[TargetObjectIndex];
+	target.clear();
+	// An asteroid is a valid live target selection but not a cockpit radar
+	// track in the authorized collector surface.
+	target.type = OBJ_ASTEROID;
+	target.signature = 77;
+	list_append(&obj_used_list, &target);
+	Player_ai->target_objnum = TargetObjectIndex;
+	Player_ai->target_signature = target.signature;
+
+	auto phase2 = std::make_unique<detail::Phase2ObservationDto>();
+	phase2->ships.resize(1U);
+	phase2->ships[0].capture_key.value =
+		static_cast<std::uint32_t>(Player_obj->signature);
+	const telemetry::Phase2Wp05SubjectBinding binding{
+		phase2->ships[0].capture_key, 1U};
+	detail::Phase3IdentityRegistry identities;
+	ASSERT_EQ(detail::Phase3IdentityProvisionStatus::Ready,
+		identities.provision());
+	auto output = std::make_unique<telemetry::Phase3Projection>();
+	auto scratch = std::make_unique<telemetry::Phase3Projection>();
+	EXPECT_EQ(detail::Phase3EngineCollectStatus::Collected,
+		detail::collect_phase3_engine_projection(
+			{64U, 1U, phase2.get(), &binding, 1U, nullptr, true, false},
+			identities, *output, *scratch));
+	EXPECT_EQ(0U, output->target.current_target_entity_id);
+	EXPECT_EQ(0U, output->target.presence);
+	EXPECT_EQ(1U, identities.identity_count())
+		<< "Only the reconciled Phase 2 player may exist; the hidden target must not allocate an ID.";
+}
+
+TEST(TelemetryPhase3Targeting,
+	StaleTargetSignatureRefusesOnlyTheCurrentTargetBlock)
+{
+	auto engine_globals = std::make_unique<Phase3EngineGlobalsScope>();
+	detail::capture_phase2_main_thread_authority();
+	constexpr int TargetObjectIndex = MAX_OBJECTS - 3;
+	auto& target = Objects[TargetObjectIndex];
+	target.clear();
+	// The game can replace a target between the index and signature updates.
+	// That transient pair must suppress TARGET_STATE, not fault the telemetry
+	// runtime or allocate an identity for the stale object.
+	target.type = OBJ_ASTEROID;
+	target.signature = 77;
+	list_append(&obj_used_list, &target);
+	Player_ai->target_objnum = TargetObjectIndex;
+	Player_ai->target_signature = 78;
+
+	auto phase2 = std::make_unique<detail::Phase2ObservationDto>();
+	phase2->ships.resize(1U);
+	phase2->ships[0].capture_key.value =
+		static_cast<std::uint32_t>(Player_obj->signature);
+	const telemetry::Phase2Wp05SubjectBinding binding{
+		phase2->ships[0].capture_key, 1U};
+	detail::Phase3IdentityRegistry identities;
+	ASSERT_EQ(detail::Phase3IdentityProvisionStatus::Ready,
+		identities.provision());
+	auto output = std::make_unique<telemetry::Phase3Projection>();
+	auto scratch = std::make_unique<telemetry::Phase3Projection>();
+
+	EXPECT_EQ(detail::Phase3EngineCollectStatus::Collected,
+		detail::collect_phase3_engine_projection(
+			{64U, 1U, phase2.get(), &binding, 1U, nullptr, true, false},
+			identities, *output, *scratch));
+	EXPECT_EQ(0U, output->target.current_target_entity_id);
+	EXPECT_EQ(0U, output->target.presence);
+	EXPECT_EQ(1U, identities.identity_count());
+}
+
+TEST(TelemetryPhase3Targeting,
+	RetainedStealthObservationUsesTheRealVisibleCockpitTrack)
+{
+	auto engine_globals = std::make_unique<Phase3EngineGlobalsScope>();
+	detail::capture_phase2_main_thread_authority();
+	// Primitive sensors keep the normal radar projection deterministic without
+	// substituting a telemetry visibility source.  See_all permits the retained
+	// engine track to cross the same radar boundary even when AWACS has not run.
+	Player_ship->flags.set(Ship::Ship_Flags::Primitive_sensors);
+	Player_ship->primitive_sensor_range = 1'000;
+	See_all = 1;
+	const auto ship_info_count = Ship_info.size();
+	Ship_info.emplace_back();
+	Player_ship->ship_info_index = static_cast<int>(ship_info_count);
+	constexpr int TargetObjectIndex = MAX_OBJECTS - 3;
+	constexpr int TargetShipIndex = MAX_SHIPS - 3;
+	auto& target = Objects[TargetObjectIndex];
+	auto& target_ship = Ships[TargetShipIndex];
+	target.clear();
+	target.type = OBJ_SHIP;
+	target.instance = TargetShipIndex;
+	target.signature = 88;
+	target.orient = vmd_identity_matrix;
+	target.pos.xyz.z = 100.0F;
+	target_ship.clear();
+	target_ship.objnum = TargetObjectIndex;
+	target_ship.team = Player_ship->team;
+	target_ship.ship_info_index = static_cast<int>(ship_info_count);
+	list_append(&obj_used_list, &target);
+	Player_ai->target_objnum = TargetObjectIndex;
+	Player_ai->target_signature = target.signature;
+	Player_ai->stealth_last_visible_stamp = 1;
+	Player_ai->stealth_last_pos.xyz = {10.0F, 20.0F, 30.0F};
+	Player_ai->stealth_velocity.xyz = {1.0F, 2.0F, 3.0F};
+
+	auto phase2 = std::make_unique<detail::Phase2ObservationDto>();
+	phase2->ships.resize(1U);
+	phase2->ships[0].capture_key.value =
+		static_cast<std::uint32_t>(Player_obj->signature);
+	// Deliberately make the independently sampled FLIGHT_STATE pose disagree
+	// with the live cockpit eye frame. Radar projection must not consume it.
+	phase2->ships[0].flight.orientation_local_to_world =
+		{{0.0F, 0.0F, 1.0F, 0.0F}};
+	const telemetry::Phase2Wp05SubjectBinding binding{
+		phase2->ships[0].capture_key, 1U};
+	detail::Phase3IdentityRegistry identities;
+	ASSERT_EQ(detail::Phase3IdentityProvisionStatus::Ready,
+		identities.provision());
+	auto output = std::make_unique<telemetry::Phase3Projection>();
+	auto scratch = std::make_unique<telemetry::Phase3Projection>();
+	const auto status = detail::collect_phase3_engine_projection(
+		{64U, 1U, phase2.get(), &binding, 1U, nullptr, true, false},
+		identities, *output, *scratch);
+	telemetry::Phase2ManifestCandidate manifest;
+	manifest.class_record_count = 1U;
+	manifest.class_records[0].source_key =
+		static_cast<std::uint32_t>(ship_info_count) + 1U;
+	manifest.class_records[0].class_id = 9001U;
+	const auto weapon_info_count = Weapon_info.size();
+	Weapon_info.emplace_back();
+	Weapon_info.back().max_speed = 100.0F;
+	Weapon_info.back().lifetime = 10.0F;
+	Weapon_info.back().weapon_range = 1'000.0F;
+	Player_ship->weapons.num_primary_banks = 1;
+	Player_ship->weapons.current_primary_bank = 0;
+	Player_ship->weapons.primary_bank_weapons[0] =
+		static_cast<int>(weapon_info_count);
+	manifest.class_records[0].banks.data = manifest.bank_records.data();
+	manifest.class_records[0].banks.capacity = 1U;
+	manifest.class_records[0].bank_count = 1U;
+	manifest.bank_records[0].bank_id = 7001U;
+	manifest.bank_records[0].owner_subsystem_id = 0U;
+	manifest.bank_records[0].canonical_index = 0U;
+	manifest.bank_records[0].family = telemetry::WeaponFamily::Primary;
+	auto revealed_output = std::make_unique<telemetry::Phase3Projection>();
+	auto revealed_scratch = std::make_unique<telemetry::Phase3Projection>();
+	const auto revealed_status = detail::collect_phase3_engine_projection(
+		{65U, 1U, phase2.get(), &binding, 1U, &manifest, true, false},
+		identities, *revealed_output, *revealed_scratch);
+	auto moved_output = std::make_unique<telemetry::Phase3Projection>();
+	auto moved_scratch = std::make_unique<telemetry::Phase3Projection>();
+	Player_obj->pos.xyz.z = 25.0F;
+	const auto moved_status = detail::collect_phase3_engine_projection(
+		{66U, 1U, phase2.get(), &binding, 1U, &manifest, false, true},
+		identities, *moved_output, *moved_scratch);
+	auto out_of_range_output = std::make_unique<telemetry::Phase3Projection>();
+	auto out_of_range_scratch = std::make_unique<telemetry::Phase3Projection>();
+	Player_obj->pos = vmd_zero_vector;
+	target.pos.xyz.z = Radar_ranges[HUD_config.rp_dist] + 1.0F;
+	const auto out_of_range_status =
+		detail::collect_phase3_engine_projection(
+			{67U, 1U, phase2.get(), &binding, 1U, &manifest, false, true},
+			identities, *out_of_range_output, *out_of_range_scratch);
+
+	list_remove(&obj_used_list, &target);
+	target_ship.clear();
+	target.clear();
+	Ship_info.resize(ship_info_count);
+	Weapon_info.resize(weapon_info_count);
+
+	ASSERT_EQ(detail::Phase3EngineCollectStatus::Collected, status);
+	ASSERT_EQ(detail::Phase3EngineCollectStatus::Collected, revealed_status);
+	ASSERT_EQ(detail::Phase3EngineCollectStatus::Collected, moved_status);
+	ASSERT_EQ(detail::Phase3EngineCollectStatus::Collected,
+		out_of_range_status);
+	// The contact list is built only by walking the real HUD radar projection.
+	// The single authorized live ship above must therefore appear exactly once,
+	// with the projection's observed world position rather than a telemetry
+	// reconstruction or an unrelated object-list entry.
+	ASSERT_EQ(1U, output->contact_count);
+	EXPECT_EQ(output->target.current_target_entity_id,
+		output->contacts[0].entity_id);
+	EXPECT_EQ(protocol::RadarVisibility::Visible,
+		output->contacts[0].visibility);
+	EXPECT_FLOAT_EQ(100.0F, output->contacts[0].position_world[2]);
+	EXPECT_FLOAT_EQ(100.0F,
+		output->contacts[0].radar_local_position[2]);
+	EXPECT_FLOAT_EQ(100.0F,
+		output->contacts[0].radar_projection_distance);
+	ASSERT_EQ(1U, moved_output->contact_count);
+	EXPECT_FLOAT_EQ(75.0F,
+		moved_output->contacts[0].radar_local_position[2]);
+	EXPECT_FLOAT_EQ(75.0F,
+		moved_output->contacts[0].radar_projection_distance);
+	EXPECT_FLOAT_EQ(100.0F,
+		output->contacts[0].radar_local_position[2])
+		<< "The previous tick remains atomically self-consistent.";
+	EXPECT_EQ(0U, out_of_range_output->contact_count);
+	EXPECT_NE(0U, output->target.current_target_entity_id);
+	EXPECT_NE(0U, output->target.presence &
+		protocol::TargetStatePresenceFlagLastStealthObservation);
+	EXPECT_FLOAT_EQ(10.0F, output->target.last_stealth_position[0]);
+	EXPECT_FLOAT_EQ(30.0F, output->target.last_stealth_position[2]);
+	EXPECT_FLOAT_EQ(1.0F, output->target.last_stealth_velocity[0]);
+	EXPECT_FLOAT_EQ(3.0F, output->target.last_stealth_velocity[2]);
+	EXPECT_NE(0U, revealed_output->target.presence &
+		protocol::TargetStatePresenceFlagRevealedIdentity);
+	EXPECT_EQ(9001U, revealed_output->target.revealed_class_id);
+	EXPECT_NE(0U, revealed_output->target.presence &
+		protocol::TargetStatePresenceFlagLead);
+	EXPECT_EQ(7001U, revealed_output->target.lead_bank_id);
+}
+
+TEST(TelemetryPhase3Locks, RealVisibleCockpitTrackProducesAuthorizedLock)
+{
+	auto engine_globals = std::make_unique<Phase3EngineGlobalsScope>();
+	detail::capture_phase2_main_thread_authority();
+	Player_ship->flags.set(Ship::Ship_Flags::Primitive_sensors);
+	Player_ship->primitive_sensor_range = 1'000;
+	See_all = 1;
+	const auto ship_info_count = Ship_info.size();
+	Ship_info.emplace_back();
+	constexpr int TargetObjectIndex = MAX_OBJECTS - 3;
+	constexpr int TargetShipIndex = MAX_SHIPS - 3;
+	auto& target = Objects[TargetObjectIndex];
+	auto& target_ship = Ships[TargetShipIndex];
+	target.clear();
+	target.type = OBJ_SHIP;
+	target.instance = TargetShipIndex;
+	target.signature = 89;
+	target.orient = vmd_identity_matrix;
+	target.pos.xyz.z = 100.0F;
+	target_ship.clear();
+	target_ship.objnum = TargetObjectIndex;
+	target_ship.team = Player_ship->team;
+	target_ship.ship_info_index = static_cast<int>(ship_info_count);
+	list_append(&obj_used_list, &target);
+	lock_info lock{};
+	lock.obj = &target;
+	lock.locked = false;
+	lock.target_in_lock_cone = true;
+	lock.time_to_lock = 2.0F;
+	lock.world_pos = target.pos;
+	Player_ship->missile_locks.push_back(lock);
+
+	auto phase2 = std::make_unique<detail::Phase2ObservationDto>();
+	phase2->ships.resize(1U);
+	phase2->ships[0].capture_key.value =
+		static_cast<std::uint32_t>(Player_obj->signature);
+	const telemetry::Phase2Wp05SubjectBinding binding{
+		phase2->ships[0].capture_key, 1U};
+	detail::Phase3IdentityRegistry identities;
+	ASSERT_EQ(detail::Phase3IdentityProvisionStatus::Ready,
+		identities.provision());
+	auto output = std::make_unique<telemetry::Phase3Projection>();
+	auto scratch = std::make_unique<telemetry::Phase3Projection>();
+	const auto status = detail::collect_phase3_engine_projection(
+		{64U, 1U, phase2.get(), &binding, 1U, nullptr, true, false},
+		identities, *output, *scratch);
+
+	Player_ship->missile_locks.clear();
+	list_remove(&obj_used_list, &target);
+	target_ship.clear();
+	target.clear();
+	Ship_info.resize(ship_info_count);
+
+	ASSERT_EQ(detail::Phase3EngineCollectStatus::Collected, status);
+	ASSERT_EQ(1U, output->lock_count);
+	const auto& projected = output->locks[0];
+	EXPECT_NE(0U, projected.target_entity_id);
+	EXPECT_FALSE(projected.locked);
+	EXPECT_TRUE(projected.target_in_lock_cone);
+	EXPECT_NE(0U, projected.presence &
+		protocol::LockItemPresenceFlagLockAttempt);
+	EXPECT_EQ(2'000'000U, projected.time_to_lock_remaining_us);
+}
+
+TEST(TelemetryPhase3SensorState,
+	EmpIntensityAndRemainingTimeComeFromTheLivePlayerShip)
+{
+	auto engine_globals = std::make_unique<Phase3EngineGlobalsScope>();
+	detail::capture_phase2_main_thread_authority();
+	Player_ship->emp_intensity = 0.5F;
+	Player_ship->emp_decr = 0.25F;
+
+	auto phase2 = std::make_unique<detail::Phase2ObservationDto>();
+	phase2->ships.resize(1U);
+	phase2->ships[0].capture_key.value =
+		static_cast<std::uint32_t>(Player_obj->signature);
+	const telemetry::Phase2Wp05SubjectBinding binding{
+		phase2->ships[0].capture_key, 1U};
+	detail::Phase3IdentityRegistry identities;
+	ASSERT_EQ(detail::Phase3IdentityProvisionStatus::Ready,
+		identities.provision());
+	auto output = std::make_unique<telemetry::Phase3Projection>();
+	auto scratch = std::make_unique<telemetry::Phase3Projection>();
+	ASSERT_EQ(detail::Phase3EngineCollectStatus::Collected,
+		detail::collect_phase3_engine_projection(
+			{64U, 1U, phase2.get(), &binding, 1U, nullptr, false, true},
+			identities, *output, *scratch));
+	EXPECT_NE(0U, output->radar.presence &
+		protocol::RadarStatePresenceFlagEmp);
+	EXPECT_FLOAT_EQ(0.5F, output->radar.emp_intensity);
+	EXPECT_EQ(2'000'000U, output->radar.emp_remaining_us);
+}
+
+TEST(TelemetryPhase3SensorState,
+	PrimitiveSensorRangeComesFromTheLivePlayerShip)
+{
+	auto engine_globals = std::make_unique<Phase3EngineGlobalsScope>();
+	detail::capture_phase2_main_thread_authority();
+	Player_ship->flags.set(Ship::Ship_Flags::Primitive_sensors);
+	Player_ship->primitive_sensor_range = 1234;
+
+	auto phase2 = std::make_unique<detail::Phase2ObservationDto>();
+	phase2->ships.resize(1U);
+	phase2->ships[0].capture_key.value =
+		static_cast<std::uint32_t>(Player_obj->signature);
+	const telemetry::Phase2Wp05SubjectBinding binding{
+		phase2->ships[0].capture_key, 1U};
+	detail::Phase3IdentityRegistry identities;
+	ASSERT_EQ(detail::Phase3IdentityProvisionStatus::Ready,
+		identities.provision());
+	auto output = std::make_unique<telemetry::Phase3Projection>();
+	auto scratch = std::make_unique<telemetry::Phase3Projection>();
+	ASSERT_EQ(detail::Phase3EngineCollectStatus::Collected,
+		detail::collect_phase3_engine_projection(
+			{64U, 1U, phase2.get(), &binding, 1U, nullptr, false, true},
+			identities, *output, *scratch));
+	EXPECT_NE(0U, output->radar.presence &
+		protocol::RadarStatePresenceFlagPrimitiveRange);
+	EXPECT_FLOAT_EQ(1234.0F, output->radar.primitive_range);
+}
+
+TEST(TelemetryPhase3Navigation,
+	EngineCollectorKeepsMissionOrderCurrentDestinationAndWaypointRoute)
+{
+	auto engine_globals = std::make_unique<Phase3EngineGlobalsScope>();
+	detail::capture_phase2_main_thread_authority();
+	vec3d first{};
+	first.xyz.x = 10.0F;
+	vec3d second{};
+	second.xyz.y = 20.0F;
+	Waypoint_lists.emplace_back("Route");
+	auto& waypoints = Waypoint_lists.back().get_waypoints();
+	waypoints.emplace_back(&first);
+	waypoints.emplace_back(&second);
+	Navs[0].flags = NP_WAYPOINT | NP_VISITED;
+	Navs[0].target_index = 0;
+	Navs[0].waypoint_num = 0;
+	Navs[0].m_NavName[0] = 'R';
+	Navs[0].m_NavName[1] = 'o';
+	Navs[0].m_NavName[2] = 'u';
+	Navs[0].m_NavName[3] = 't';
+	Navs[0].m_NavName[4] = 'e';
+	CurrentNav = 0;
+
+	auto phase2 = std::make_unique<detail::Phase2ObservationDto>();
+	phase2->ships.resize(1U);
+	phase2->ships[0].capture_key.value =
+		static_cast<std::uint32_t>(Player_obj->signature);
+	const telemetry::Phase2Wp05SubjectBinding binding{
+		phase2->ships[0].capture_key, 1U};
+	detail::Phase3IdentityRegistry identities;
+	ASSERT_EQ(detail::Phase3IdentityProvisionStatus::Ready,
+		identities.provision());
+	auto output = std::make_unique<telemetry::Phase3Projection>();
+	auto scratch = std::make_unique<telemetry::Phase3Projection>();
+	ASSERT_EQ(detail::Phase3EngineCollectStatus::Collected,
+		detail::collect_phase3_engine_projection(
+			{64U, 1U, phase2.get(), &binding, 1U, nullptr, false, true},
+			identities, *output, *scratch));
+	ASSERT_EQ(1U, output->navigation.navpoint_count);
+	const auto& navpoint = output->navigation.navpoints[0];
+	EXPECT_EQ(1U, navpoint.navpoint_id);
+	EXPECT_NE(0U, navpoint.presence &
+		protocol::NavPointPresenceFlagWaypointLink);
+	EXPECT_EQ(1U, navpoint.waypoint_list_id);
+	EXPECT_EQ(0U, navpoint.waypoint_index);
+	EXPECT_NE(0U, output->navigation.presence &
+		protocol::NavigationStatePresenceFlagCurrentNavpoint);
+	EXPECT_EQ(navpoint.navpoint_id,
+		output->navigation.current_navpoint_id);
+	EXPECT_NE(0U, output->navigation.presence &
+		protocol::NavigationStatePresenceFlagWaypointRoute);
+	ASSERT_EQ(2U, output->navigation.route_waypoint_count);
+	EXPECT_EQ(1U, output->navigation.route_waypoints[0].waypoint_list_id);
+	EXPECT_EQ(0U, output->navigation.route_waypoints[0].waypoint_index);
+	EXPECT_EQ(1U, output->navigation.route_waypoints[1].waypoint_index);
+}
+
+TEST(TelemetryPhase3Navigation,
+	NoCurrentNavPublishesClosedRefusalWithoutMutatingControls)
+{
+	auto engine_globals = std::make_unique<Phase3EngineGlobalsScope>();
+	detail::capture_phase2_main_thread_authority();
+	ASSERT_EQ(-1, CurrentNav);
+	ASSERT_FALSE(AutoPilotEngaged);
+
+	auto phase2 = std::make_unique<detail::Phase2ObservationDto>();
+	phase2->ships.resize(1U);
+	phase2->ships[0].capture_key.value =
+		static_cast<std::uint32_t>(Player_obj->signature);
+	const telemetry::Phase2Wp05SubjectBinding binding{
+		phase2->ships[0].capture_key, 1U};
+	detail::Phase3IdentityRegistry identities;
+	ASSERT_EQ(detail::Phase3IdentityProvisionStatus::Ready,
+		identities.provision());
+	auto output = std::make_unique<telemetry::Phase3Projection>();
+	auto scratch = std::make_unique<telemetry::Phase3Projection>();
+	ASSERT_EQ(detail::Phase3EngineCollectStatus::Collected,
+		detail::collect_phase3_engine_projection(
+			{64U, 1U, phase2.get(), &binding, 1U, nullptr, false, true},
+			identities, *output, *scratch));
+	EXPECT_EQ(protocol::AutopilotState::Refused,
+		output->navigation.autopilot_state);
+	EXPECT_NE(0U, output->navigation.presence &
+		protocol::NavigationStatePresenceFlagAutopilotRefusal);
+	EXPECT_EQ(protocol::AutopilotRefusal::NoValidNav,
+		output->navigation.autopilot_refusal);
+	EXPECT_EQ(-1, CurrentNav);
+	EXPECT_FALSE(AutoPilotEngaged);
+}
+
+TEST(TelemetryPhase3Cargo,
+	ScanTargetOutsideCompleteShipClosureReceivesOnlyItsPublicReference)
+{
+	auto engine_globals = std::make_unique<Phase3EngineGlobalsScope>();
+	detail::capture_phase2_main_thread_authority();
+	// Keep the radar list inert: cargo disclosure is independently authorized
+	// by the scanner, so this test verifies that it does not depend on radar or
+	// CompleteShip membership.
+	Game_mode |= GM_STANDALONE_SERVER;
+	constexpr int TargetObjectIndex = MAX_OBJECTS - 3;
+	auto& target = Objects[TargetObjectIndex];
+	target.clear();
+	target.type = OBJ_SHIP;
+	target.signature = 77;
+	list_append(&obj_used_list, &target);
+	Player_ai->target_objnum = TargetObjectIndex;
+	Player_ai->target_signature = target.signature;
+
+	auto phase2 = std::make_unique<detail::Phase2ObservationDto>();
+	phase2->ships.resize(1U);
+	phase2->ships[0].capture_key.value =
+		static_cast<std::uint32_t>(Player_obj->signature);
+	phase2->player_cargo_scan.phase =
+		detail::CargoScanPhaseObservation::Scanning;
+	phase2->player_cargo_scan.presence =
+		protocol::CargoScanStatePresenceFlagTarget;
+	phase2->player_cargo_scan.target_capture_key.value =
+		static_cast<std::uint32_t>(target.signature);
+	const telemetry::Phase2Wp05SubjectBinding binding{
+		phase2->ships[0].capture_key, 1U};
+	detail::Phase3IdentityRegistry identities;
+	ASSERT_EQ(detail::Phase3IdentityProvisionStatus::Ready,
+		identities.provision());
+	auto output = std::make_unique<telemetry::Phase3Projection>();
+	auto scratch = std::make_unique<telemetry::Phase3Projection>();
+	ASSERT_EQ(detail::Phase3EngineCollectStatus::Collected,
+		detail::collect_phase3_engine_projection(
+			{64U, 1U, phase2.get(), &binding, 1U, nullptr, false, true},
+			identities, *output, *scratch));
+	EXPECT_NE(0U, output->cargo.target_entity_id);
+	EXPECT_NE(0U, output->cargo.presence &
+		protocol::CargoScanStatePresenceFlagTarget);
+	EXPECT_EQ(0U, output->contact_count)
+		<< "The scan must not materialize a RADAR_CONTACTS track.";
+	EXPECT_EQ(static_cast<std::uint8_t>(protocol::DisclosureState::Hidden),
+		output->cargo.disclosure)
+		<< "A target authorization alone must not disclose cargo text.";
+	EXPECT_EQ(0U, output->cargo.cargo_text.size);
+	EXPECT_EQ(2U, identities.identity_count())
+		<< "Only the Phase 2 player and the independently authorized scan target are public.";
+}
+
+TEST(TelemetryPhase3Cargo,
+	CompletedRevealedScanPreservesPhaseTimingValidityAndText)
+{
+	auto engine_globals = std::make_unique<Phase3EngineGlobalsScope>();
+	detail::capture_phase2_main_thread_authority();
+	Game_mode |= GM_STANDALONE_SERVER;
+	constexpr int TargetObjectIndex = MAX_OBJECTS - 3;
+	auto& target = Objects[TargetObjectIndex];
+	target.clear();
+	target.type = OBJ_SHIP;
+	target.signature = 77;
+	list_append(&obj_used_list, &target);
+	Player_ai->target_objnum = TargetObjectIndex;
+	Player_ai->target_signature = target.signature;
+
+	auto phase2 = std::make_unique<detail::Phase2ObservationDto>();
+	phase2->ships.resize(1U);
+	phase2->ships[0].capture_key.value =
+		static_cast<std::uint32_t>(Player_obj->signature);
+	auto& scan = phase2->player_cargo_scan;
+	scan.phase = detail::CargoScanPhaseObservation::Completed;
+	scan.presence = protocol::CargoScanStatePresenceFlagTarget |
+		protocol::CargoScanStatePresenceFlagTiming |
+		protocol::CargoScanStatePresenceFlagValidity |
+		protocol::CargoScanStatePresenceFlagCargoText;
+	scan.target_capture_key.value = static_cast<std::uint32_t>(target.signature);
+	scan.elapsed_us = 10U;
+	scan.required_us = 10U;
+	scan.validity_flags = protocol::ScanValidityFlagNone;
+	ASSERT_TRUE(scan.cargo_text.assign("Recovered cargo"));
+	const telemetry::Phase2Wp05SubjectBinding binding{
+		phase2->ships[0].capture_key, 1U};
+	detail::Phase3IdentityRegistry identities;
+	ASSERT_EQ(detail::Phase3IdentityProvisionStatus::Ready,
+		identities.provision());
+	auto output = std::make_unique<telemetry::Phase3Projection>();
+	auto scratch = std::make_unique<telemetry::Phase3Projection>();
+	ASSERT_EQ(detail::Phase3EngineCollectStatus::Collected,
+		detail::collect_phase3_engine_projection(
+			{64U, 1U, phase2.get(), &binding, 1U, nullptr, false, true},
+			identities, *output, *scratch));
+	EXPECT_EQ(static_cast<std::uint8_t>(protocol::DisclosureState::Revealed),
+		output->cargo.disclosure);
+	EXPECT_EQ(10U, output->cargo.elapsed_us);
+	EXPECT_EQ(10U, output->cargo.required_us);
+	EXPECT_EQ(0U, output->cargo.validity_flags);
+	EXPECT_EQ("Recovered cargo", std::string_view(output->cargo.cargo_text.bytes.data(),
+		output->cargo.cargo_text.size));
+}
+
+TEST(TelemetryPhase3Threat,
+	EngineThreatFlagsUseAuthoritativePriorityWithoutInventingReferences)
+{
+	auto engine_globals = std::make_unique<Phase3EngineGlobalsScope>();
+	detail::capture_phase2_main_thread_authority();
+	// These are the native Player::threat_flags bits used by the HUD threat
+	// authority: dumbfire, lock attempt, then acquired lock in increasing
+	// severity.  No attacker or weapon object is installed in this fixture.
+	Player->threat_flags = (1 << 0) | (1 << 1) | (1 << 2);
+
+	auto phase2 = std::make_unique<detail::Phase2ObservationDto>();
+	phase2->ships.resize(1U);
+	phase2->ships[0].capture_key.value =
+		static_cast<std::uint32_t>(Player_obj->signature);
+	const telemetry::Phase2Wp05SubjectBinding binding{
+		phase2->ships[0].capture_key, 1U};
+	detail::Phase3IdentityRegistry identities;
+	ASSERT_EQ(detail::Phase3IdentityProvisionStatus::Ready,
+		identities.provision());
+	auto output = std::make_unique<telemetry::Phase3Projection>();
+	auto scratch = std::make_unique<telemetry::Phase3Projection>();
+	ASSERT_EQ(detail::Phase3EngineCollectStatus::Collected,
+		detail::collect_phase3_engine_projection(
+			{64U, 1U, phase2.get(), &binding, 1U, nullptr, false, true},
+			identities, *output, *scratch));
+	EXPECT_EQ(protocol::ThreatLevel::LockAcquired,
+		output->threat.threat_level);
+	EXPECT_EQ(0U, output->threat.presence);
+	EXPECT_EQ(0U, output->threat.nearest_attacker_entity_id);
+	EXPECT_EQ(0U, output->threat.dangerous_weapon_entity_id);
+	EXPECT_EQ(0U, output->threat.nearest_homing_entity_id);
+}
+
+TEST(TelemetryPhase3Threat,
+	IncomingHomingMissileUsesTheInstalledManifestClassAndPublicIdentity)
+{
+	auto engine_globals = std::make_unique<Phase3EngineGlobalsScope>();
+	detail::capture_phase2_main_thread_authority();
+	constexpr int MissileObjectIndex = MAX_OBJECTS - 4;
+	constexpr int MissileWeaponIndex = MAX_WEAPONS - 2;
+	const auto weapon_info_count = Weapon_info.size();
+	Weapon_info.emplace_back();
+
+	auto& missile_object = Objects[MissileObjectIndex];
+	missile_object.clear();
+	missile_object.type = OBJ_WEAPON;
+	missile_object.instance = MissileWeaponIndex;
+	missile_object.signature = 91;
+	missile_object.orient = vmd_identity_matrix;
+	missile_object.pos.xyz.z = 100.0F;
+	list_append(&obj_used_list, &missile_object);
+
+	auto& missile = Weapons[MissileWeaponIndex];
+	missile = weapon{};
+	missile.objnum = MissileObjectIndex;
+	missile.weapon_info_index = static_cast<int>(weapon_info_count);
+	missile.homing_object = Player_obj;
+	missile_obj missile_list_entry{};
+	missile_list_entry.objnum = MissileObjectIndex;
+	list_append(&Missile_obj_list, &missile_list_entry);
+
+	auto phase2 = std::make_unique<detail::Phase2ObservationDto>();
+	phase2->ships.resize(1U);
+	phase2->ships[0].capture_key.value =
+		static_cast<std::uint32_t>(Player_obj->signature);
+	const telemetry::Phase2Wp05SubjectBinding binding{
+		phase2->ships[0].capture_key, 1U};
+	detail::Phase3CatalogDependencies dependencies;
+	ASSERT_EQ(detail::Phase3EngineCollectStatus::Collected,
+		detail::discover_phase3_catalog_dependencies(*phase2, dependencies));
+	EXPECT_EQ(0U, dependencies.ship_class_count);
+	ASSERT_EQ(1U, dependencies.weapon_count);
+	EXPECT_EQ(static_cast<std::uint32_t>(weapon_info_count) + 1U,
+		dependencies.weapon_source_keys[0]);
+	telemetry::Phase2ManifestCandidate manifest;
+	manifest.weapon_record_count = 1U;
+	manifest.weapon_records[0].source_key =
+		static_cast<std::uint32_t>(weapon_info_count) + 1U;
+	manifest.weapon_records[0].weapon_class_id = 9001U;
+	detail::Phase3IdentityRegistry identities;
+	ASSERT_EQ(detail::Phase3IdentityProvisionStatus::Ready,
+		identities.provision());
+	auto output = std::make_unique<telemetry::Phase3Projection>();
+	auto scratch = std::make_unique<telemetry::Phase3Projection>();
+	ASSERT_EQ(detail::Phase3EngineCollectStatus::Collected,
+		detail::collect_phase3_engine_projection(
+			{64U, 1U, phase2.get(), &binding, 1U, &manifest, false, true},
+			identities, *output, *scratch));
+	ASSERT_EQ(1U, output->threat.incoming_missile_count);
+	const auto& incoming = output->threat.incoming_missiles[0];
+	EXPECT_NE(0U, incoming.entity_id);
+	EXPECT_EQ(9001U, incoming.weapon_class_id);
+	EXPECT_EQ(100.0F, incoming.position_world[2]);
+	EXPECT_EQ(protocol::RadarVisibility::NotVisible, incoming.radar_visibility);
+
+	list_remove(&Missile_obj_list, &missile_list_entry);
+	list_remove(&obj_used_list, &missile_object);
+	missile = weapon{};
+	missile_object.clear();
+	Weapon_info.resize(weapon_info_count);
+}
+
+TEST(TelemetryPhase3Bounds,
+	NativeLockSourceAtMaximumPlusOneFailsBeforeAnyProjectionIsPublished)
+{
+	auto engine_globals = std::make_unique<Phase3EngineGlobalsScope>();
+	detail::capture_phase2_main_thread_authority();
+	Player_ship->missile_locks.resize(telemetry::MaximumPhase3Locks + 1U);
+
+	auto phase2 = std::make_unique<detail::Phase2ObservationDto>();
+	phase2->ships.resize(1U);
+	phase2->ships[0].capture_key.value =
+		static_cast<std::uint32_t>(Player_obj->signature);
+	const telemetry::Phase2Wp05SubjectBinding binding{
+		phase2->ships[0].capture_key, 1U};
+	detail::Phase3IdentityRegistry identities;
+	ASSERT_EQ(detail::Phase3IdentityProvisionStatus::Ready,
+		identities.provision());
+	auto output = std::make_unique<telemetry::Phase3Projection>();
+	auto scratch = std::make_unique<telemetry::Phase3Projection>();
+	EXPECT_EQ(detail::Phase3EngineCollectStatus::SourceLimitExceeded,
+		detail::collect_phase3_engine_projection(
+			{64U, 1U, phase2.get(), &binding, 1U, nullptr, true, false},
+			identities, *output, *scratch));
+	EXPECT_EQ(0U, output->lock_count);
+}
+
+TEST(TelemetryPhase3Bounds,
+	NativeIncomingMissilesAtMaximumPlusOneFailBeforeAnyProjectionIsPublished)
+{
+	auto engine_globals = std::make_unique<Phase3EngineGlobalsScope>();
+	detail::capture_phase2_main_thread_authority();
+	constexpr auto count = telemetry::MaximumPhase3IncomingMissiles + 1U;
+	static_assert(MAX_OBJECTS > static_cast<int>(count) + 4);
+	static_assert(MAX_WEAPONS > static_cast<int>(count) + 4);
+	std::array<missile_obj, count> entries{};
+	for (std::size_t index = 0U; index < count; ++index) {
+		const auto object_index = MAX_OBJECTS - 4 - static_cast<int>(index);
+		const auto weapon_index = MAX_WEAPONS - 2 - static_cast<int>(index);
+		auto& missile_object = Objects[object_index];
+		missile_object.clear();
+		missile_object.type = OBJ_WEAPON;
+		missile_object.instance = weapon_index;
+		missile_object.signature = static_cast<int>(100U + index);
+		list_append(&obj_used_list, &missile_object);
+		auto& missile = Weapons[weapon_index];
+		missile = weapon{};
+		missile.objnum = object_index;
+		missile.homing_object = Player_obj;
+		entries[index].objnum = object_index;
+		list_append(&Missile_obj_list, &entries[index]);
+	}
+
+	auto phase2 = std::make_unique<detail::Phase2ObservationDto>();
+	phase2->ships.resize(1U);
+	phase2->ships[0].capture_key.value =
+		static_cast<std::uint32_t>(Player_obj->signature);
+	const telemetry::Phase2Wp05SubjectBinding binding{
+		phase2->ships[0].capture_key, 1U};
+	detail::Phase3IdentityRegistry identities;
+	EXPECT_EQ(detail::Phase3IdentityProvisionStatus::Ready, identities.provision());
+	telemetry::Phase3Projection output{};
+	telemetry::Phase3Projection scratch{};
+	EXPECT_EQ(detail::Phase3EngineCollectStatus::SourceLimitExceeded,
+		detail::collect_phase3_engine_projection(
+			{64U, 1U, phase2.get(), &binding, 1U, nullptr, false, true},
+			identities, output, scratch));
+	EXPECT_EQ(0U, output.threat.incoming_missile_count);
+	EXPECT_EQ(0U, output.contact_count);
+
+	for (std::size_t index = 0U; index < count; ++index) {
+		const auto object_index = MAX_OBJECTS - 4 - static_cast<int>(index);
+		const auto weapon_index = MAX_WEAPONS - 2 - static_cast<int>(index);
+		list_remove(&Missile_obj_list, &entries[index]);
+		list_remove(&obj_used_list, &Objects[object_index]);
+		Weapons[weapon_index] = weapon{};
+		Objects[object_index].clear();
+	}
+}
+
+TEST(TelemetryPhase3CaptureContract,
+	OutOfRangeTargetIsRejectedBeforeAnyPartialCockpitStateIsPublished)
+{
+	REQUIRE_NATIVE_PLAYER_D3();
+	auto engine_globals = std::make_unique<Phase3EngineGlobalsScope>();
+	detail::capture_phase2_main_thread_authority();
+	auto fixture_storage = std::make_unique<NativeFixture>();
+	auto& fixture = *fixture_storage;
+	auto config = enabled_config();
+	config.flight_hz = 1U;
+	config.systems_hz = 20U;
+	config.keyframe_seconds = 1U;
+	ASSERT_EQ(detail::NativeSessionStartStatus::Started,
+		fixture.start_requested(config, telemetry::Phase2Profile::CockpitSensors));
+	const auto endpoint = peer(92U);
+	ASSERT_NE(0U, establish_ready(fixture, endpoint, 92U, 100U, 920U, 1U, true));
+	CountingEngineReadView player_view;
+	MinimalPhase2EngineReadView phase2_view;
+	constexpr std::uint64_t initial_sample = 1'000'000U;
+	ASSERT_EQ(detail::NativeSessionTickStatus::Complete,
+		fixture.runtime.service_tick({initial_sample, 1U, true}, player_view, &phase2_view));
+	constexpr std::uint64_t bootstrap_sample = initial_sample + 50'000U;
+	const auto sends_before_manifest = fixture.backend.sent.size();
+	ASSERT_EQ(detail::NativeSessionTickStatus::Complete,
+		fixture.runtime.service_tick({bootstrap_sample, 1U, true}, player_view, &phase2_view));
+	ASSERT_NE(nullptr, slot(fixture));
+	ASSERT_NE(0U, slot(fixture)->required_manifest_id);
+	ASSERT_EQ(detail::NativeSessionTickStatus::Complete,
+		fixture.runtime.service_tick({bootstrap_sample + 1U, 1U, true}, player_view, &phase2_view));
+	std::size_t manifest_datagram = fixture.backend.sent.size();
+	for (std::size_t index = sends_before_manifest;
+		index < fixture.backend.sent.size(); ++index) {
+		if (sent_type(fixture.backend, index) == protocol::MessageType::Manifest) {
+			manifest_datagram = index;
+			break;
+		}
+	}
+	ASSERT_LT(manifest_datagram, fixture.backend.sent.size());
+	fixture.backend.receives.push_back({detail::IoStatus::Complete,
+		ack_for(fixture.backend.sent[manifest_datagram], endpoint, 925U)});
+	ASSERT_EQ(detail::NativeSessionTickStatus::Complete,
+		fixture.runtime.service_tick({bootstrap_sample + 2U, 1U, true}, player_view, &phase2_view));
+	const auto sends_before_initial_egress = fixture.backend.sent.size();
+	ASSERT_EQ(detail::NativeSessionTickStatus::Complete,
+		fixture.runtime.service_tick({bootstrap_sample + 3U, 1U, true}, player_view, &phase2_view));
+	ASSERT_EQ(detail::NativeSessionTickStatus::Complete,
+		fixture.runtime.service_tick({bootstrap_sample + 4U, 1U, true}, player_view, &phase2_view));
+	std::size_t initial_snapshot = fixture.backend.sent.size();
+	for (std::size_t index = sends_before_initial_egress;
+		index < fixture.backend.sent.size(); ++index) {
+		if (sent_type(fixture.backend, index) == protocol::MessageType::FullSnapshot) {
+			initial_snapshot = index;
+			break;
+		}
+	}
+	ASSERT_LT(initial_snapshot, fixture.backend.sent.size());
+	fixture.backend.receives.push_back({detail::IoStatus::Complete,
+		ack_for(fixture.backend.sent[initial_snapshot], endpoint, 926U)});
+	ASSERT_EQ(detail::NativeSessionTickStatus::Complete,
+		fixture.runtime.service_tick({bootstrap_sample + 5U, 1U, true}, player_view, &phase2_view));
+	ASSERT_NE(nullptr, slot(fixture));
+	ASSERT_EQ(detail::Phase1SnapshotProgress::Live, slot(fixture)->snapshot.progress());
+
+	// Promotion to the reliable baseline needs one complete refresh.  ACK it so
+	// the invalid Phase 3 source below is the only outstanding state change.
+	const auto sends_before_settle = fixture.backend.sent.size();
+	ASSERT_EQ(detail::NativeSessionTickStatus::Complete,
+		fixture.runtime.service_tick({bootstrap_sample + 6U, 1U, true}, player_view, &phase2_view));
+	ASSERT_EQ(detail::NativeSessionTickStatus::Complete,
+		fixture.runtime.service_tick({bootstrap_sample + 7U, 1U, true}, player_view, &phase2_view));
+	ASSERT_EQ(detail::NativeSessionTickStatus::Complete,
+		fixture.runtime.service_tick({bootstrap_sample + 8U, 1U, true}, player_view, &phase2_view));
+	std::size_t settle_snapshot = fixture.backend.sent.size();
+	for (std::size_t index = sends_before_settle;
+		index < fixture.backend.sent.size(); ++index) {
+		if (sent_type(fixture.backend, index) == protocol::MessageType::FullSnapshot) {
+			settle_snapshot = index;
+			break;
+		}
+	}
+	ASSERT_LT(settle_snapshot, fixture.backend.sent.size());
+	fixture.backend.receives.push_back({detail::IoStatus::Complete,
+		ack_for(fixture.backend.sent[settle_snapshot], endpoint, 927U)});
+	ASSERT_EQ(detail::NativeSessionTickStatus::Complete,
+		fixture.runtime.service_tick({bootstrap_sample + 9U, 1U, true}, player_view, &phase2_view));
+
+	ASSERT_NE(nullptr, Player_ai);
+	Player_ai->target_objnum = MAX_OBJECTS;
+	Player_ai->target_signature = 42;
+	const auto sends_before_capture = fixture.backend.sent.size();
+	EXPECT_EQ(detail::NativeSessionTickStatus::PermanentCaptureFailure,
+		fixture.runtime.service_tick({bootstrap_sample + 1'000'000U, 1U, true}, player_view, &phase2_view));
+
+	// The invalid engine index is rejected before dereferencing Objects[] and
+	// before the Phase 3 image can enter snapshot or delta publication.  The
+	// runtime then fails closed, which deliberately tears down the affected
+	// session rather than retaining a partial cockpit baseline.
+	EXPECT_EQ(0U, fixture.runtime.active_sessions());
+	for (std::size_t index = sends_before_capture;
+		index < fixture.backend.sent.size(); ++index) {
+		EXPECT_NE(protocol::MessageType::Manifest, sent_type(fixture.backend, index));
+		EXPECT_NE(protocol::MessageType::FullSnapshot, sent_type(fixture.backend, index));
+		EXPECT_NE(protocol::MessageType::Delta, sent_type(fixture.backend, index));
+	}
+}
+
+TEST(TelemetryPhase3CaptureSchedule,
+	NativeRuntimeSeparatesCadencesAndKeyframesUseOneCompleteSample)
+{
+	REQUIRE_NATIVE_PLAYER_D3();
+	auto engine_globals = std::make_unique<Phase3EngineGlobalsScope>();
+	detail::capture_phase2_main_thread_authority();
+	auto fixture_storage = std::make_unique<NativeFixture>();
+	auto& fixture = *fixture_storage;
+	auto config = enabled_config();
+	config.flight_hz = 1U;
+	config.systems_hz = 20U;
+	config.keyframe_seconds = 1U;
+	ASSERT_EQ(detail::NativeSessionStartStatus::Started,
+		fixture.start_requested(config, telemetry::Phase2Profile::CockpitSensors));
+	const auto endpoint = peer(91U);
+	ASSERT_NE(0U, establish_ready(fixture, endpoint, 91U, 100U, 910U, 1U, true));
+	CountingEngineReadView player_view;
+	MinimalPhase2EngineReadView phase2_view;
+	constexpr std::uint64_t initial_sample = 1'000'000U;
+	ASSERT_EQ(detail::NativeSessionTickStatus::Complete,
+		fixture.runtime.service_tick({initial_sample, 1U, true}, player_view, &phase2_view));
+	// The first capture materializes the canonical player binding. The next
+	// systems deadline can then reconcile the Phase 2 closure and stage the
+	// manifest against that same public identity.
+	constexpr std::uint64_t bootstrap_sample = initial_sample + 50'000U;
+	const auto sends_before_manifest = fixture.backend.sent.size();
+	ASSERT_EQ(detail::NativeSessionTickStatus::Complete,
+		fixture.runtime.service_tick({bootstrap_sample, 1U, true}, player_view, &phase2_view));
+	auto* controller = NativePlayerAccess::controller(fixture.runtime);
+	ASSERT_NE(nullptr, controller);
+	ASSERT_NE(nullptr, slot(fixture));
+	const auto phase2_capture =
+		NativePlayerAccess::last_phase2_capture_result(fixture.runtime);
+	ASSERT_EQ(detail::Phase2CaptureStatus::Valid, phase2_capture.status)
+		<< "reason="
+		<< static_cast<unsigned>(phase2_capture.reason);
+	const auto manifest_id = slot(fixture)->required_manifest_id;
+	ASSERT_NE(0U, manifest_id);
+	EXPECT_FALSE(slot(fixture)->required_manifest_applied);
+	ASSERT_EQ(detail::NativeSessionTickStatus::Complete,
+		fixture.runtime.service_tick({bootstrap_sample + 1U, 1U, true}, player_view, &phase2_view));
+	std::size_t manifest_datagram = fixture.backend.sent.size();
+	for (std::size_t index = sends_before_manifest;
+		index < fixture.backend.sent.size(); ++index) {
+		if (sent_type(fixture.backend, index) == protocol::MessageType::Manifest) {
+			manifest_datagram = index;
+			break;
+		}
+	}
+	ASSERT_LT(manifest_datagram, fixture.backend.sent.size());
+	fixture.backend.receives.push_back({detail::IoStatus::Complete,
+		ack_for(fixture.backend.sent[manifest_datagram], endpoint, 915U)});
+
+	// The APPLIED manifest ACK consumes the staged intent, performs
+	// a complete capture and starts the initial snapshot.  Its egress/ACK stays
+	// on the normal transport path so periodic scheduling begins only once Live.
+	ASSERT_EQ(detail::NativeSessionTickStatus::Complete,
+		fixture.runtime.service_tick({bootstrap_sample + 2U, 1U, true}, player_view, &phase2_view));
+	ASSERT_NE(nullptr, slot(fixture));
+	EXPECT_TRUE(slot(fixture)->required_manifest_applied);
+	EXPECT_EQ(manifest_id, slot(fixture)->required_manifest_id);
+	const auto sends_before_initial_egress = fixture.backend.sent.size();
+	ASSERT_EQ(detail::NativeSessionTickStatus::Complete,
+		fixture.runtime.service_tick({bootstrap_sample + 3U, 1U, true}, player_view, &phase2_view));
+	ASSERT_EQ(detail::NativeSessionTickStatus::Complete,
+		fixture.runtime.service_tick({bootstrap_sample + 4U, 1U, true}, player_view, &phase2_view));
+	std::size_t initial_snapshot = fixture.backend.sent.size();
+	for (std::size_t index = sends_before_initial_egress;
+		index < fixture.backend.sent.size(); ++index) {
+		if (sent_type(fixture.backend, index) == protocol::MessageType::FullSnapshot) {
+			initial_snapshot = index;
+			break;
+		}
+	}
+	ASSERT_LT(initial_snapshot, fixture.backend.sent.size());
+	fixture.backend.receives.push_back({detail::IoStatus::Complete,
+		ack_for(fixture.backend.sent[initial_snapshot], endpoint, 920U)});
+	ASSERT_EQ(detail::NativeSessionTickStatus::Complete,
+		fixture.runtime.service_tick({bootstrap_sample + 5U, 1U, true}, player_view, &phase2_view));
+	ASSERT_NE(nullptr, slot(fixture));
+	ASSERT_EQ(detail::Phase1SnapshotProgress::Live, slot(fixture)->snapshot.progress());
+
+	// Promotion of a reliable baseline dirties the session state. Let that
+	// forced complete refresh settle, then ACK its delta so it cannot mask the
+	// independent cadence checks below.
+	const auto sends_before_settle = fixture.backend.sent.size();
+	ASSERT_EQ(detail::NativeSessionTickStatus::Complete,
+		fixture.runtime.service_tick({bootstrap_sample + 6U, 1U, true}, player_view, &phase2_view));
+	EXPECT_TRUE(NativePlayerAccess::phase2_capture_plan(fixture.runtime)
+		.force_complete_keyframe);
+	ASSERT_EQ(detail::NativeSessionTickStatus::Complete,
+		fixture.runtime.service_tick({bootstrap_sample + 7U, 1U, true}, player_view, &phase2_view));
+	ASSERT_EQ(detail::NativeSessionTickStatus::Complete,
+		fixture.runtime.service_tick({bootstrap_sample + 8U, 1U, true}, player_view, &phase2_view));
+	std::size_t settle_snapshot = fixture.backend.sent.size();
+	for (std::size_t index = sends_before_settle;
+		index < fixture.backend.sent.size(); ++index) {
+		if (sent_type(fixture.backend, index) == protocol::MessageType::FullSnapshot) {
+			settle_snapshot = index;
+			break;
+		}
+	}
+	ASSERT_LT(settle_snapshot, fixture.backend.sent.size());
+	fixture.backend.receives.push_back({detail::IoStatus::Complete,
+		ack_for(fixture.backend.sent[settle_snapshot], endpoint, 921U)});
+	ASSERT_EQ(detail::NativeSessionTickStatus::Complete,
+		fixture.runtime.service_tick({bootstrap_sample + 9U, 1U, true}, player_view, &phase2_view));
+	// systemsHz fires before flightHz.  Targeting must retain its flight sample,
+	// while every systems-owned Phase 3 singleton receives the systems sample.
+	constexpr std::uint64_t systems_sample = bootstrap_sample + 50'000U;
+	const auto sends_before_systems_delta = fixture.backend.sent.size();
+	ASSERT_EQ(detail::NativeSessionTickStatus::Complete,
+		fixture.runtime.service_tick({systems_sample, 1U, true}, player_view, &phase2_view));
+	// A systems-owned Phase 3 refresh changes the captured radar/system sample,
+	// not its manifest closure.  In particular it must not re-stage a manifest
+	// merely because the current track state was refreshed.
+	for (std::size_t index = sends_before_systems_delta;
+		index < fixture.backend.sent.size(); ++index)
+		EXPECT_NE(protocol::MessageType::Manifest,
+			sent_type(fixture.backend, index));
+	EXPECT_EQ(manifest_id, slot(fixture)->required_manifest_id);
+	EXPECT_TRUE(slot(fixture)->required_manifest_applied);
+	const auto systems_plan = NativePlayerAccess::phase2_capture_plan(fixture.runtime);
+	EXPECT_FALSE(systems_plan.phase3_refresh_targeting);
+	EXPECT_TRUE(systems_plan.phase3_refresh_systems);
+	ASSERT_NE(nullptr, slot(fixture));
+	const auto& after_systems = slot(fixture)->snapshot.current_state();
+	const auto baseline_sample = bootstrap_sample + 6U;
+	EXPECT_EQ(baseline_sample,
+		phase3_sample_time(after_systems, protocol::RecordType::LockState));
+	EXPECT_EQ(baseline_sample,
+		phase3_sample_time(after_systems, protocol::RecordType::TargetState));
+	for (const auto type : {protocol::RecordType::RadarState,
+			 protocol::RecordType::ThreatState,
+			 protocol::RecordType::CargoScanState,
+			 protocol::RecordType::NavigationState})
+		EXPECT_EQ(systems_sample, phase3_sample_time(after_systems, type));
+	ASSERT_EQ(detail::NativeSessionTickStatus::Complete,
+		fixture.runtime.service_tick({systems_sample + 1U, 1U, true}, player_view, &phase2_view));
+	ASSERT_EQ(detail::NativeSessionTickStatus::Complete,
+		fixture.runtime.service_tick({systems_sample + 2U, 1U, true}, player_view, &phase2_view));
+	std::size_t systems_delta = fixture.backend.sent.size();
+	for (std::size_t index = sends_before_systems_delta;
+		index < fixture.backend.sent.size(); ++index) {
+		if (sent_type(fixture.backend, index) == protocol::MessageType::Delta) {
+			systems_delta = index;
+			break;
+		}
+	}
+	ASSERT_LT(systems_delta, fixture.backend.sent.size());
+	fixture.backend.receives.push_back({detail::IoStatus::Complete,
+		ack_for(fixture.backend.sent[systems_delta], endpoint, 922U)});
+	ASSERT_EQ(detail::NativeSessionTickStatus::Complete,
+		fixture.runtime.service_tick({systems_sample + 3U, 1U, true}, player_view, &phase2_view));
+
+	constexpr std::uint64_t flight_sample = bootstrap_sample + 1'000'000U;
+	const auto sends_before_flight_delta = fixture.backend.sent.size();
+	ASSERT_EQ(detail::NativeSessionTickStatus::Complete,
+		fixture.runtime.service_tick({flight_sample, 1U, true}, player_view, &phase2_view));
+	ASSERT_NE(nullptr, slot(fixture));
+	const auto keyframe_sample = slot(fixture)->next_keyframe_due_us;
+	ASSERT_GT(keyframe_sample, flight_sample);
+	ASSERT_LT(keyframe_sample, flight_sample + 1'000'000U);
+	ASSERT_EQ(detail::NativeSessionTickStatus::Complete,
+		fixture.runtime.service_tick({flight_sample + 1U, 1U, true}, player_view, &phase2_view));
+	ASSERT_EQ(detail::NativeSessionTickStatus::Complete,
+		fixture.runtime.service_tick({flight_sample + 2U, 1U, true}, player_view, &phase2_view));
+	std::size_t flight_delta = fixture.backend.sent.size();
+	for (std::size_t index = sends_before_flight_delta;
+		index < fixture.backend.sent.size(); ++index) {
+		if (sent_type(fixture.backend, index) == protocol::MessageType::Delta) {
+			flight_delta = index;
+			break;
+		}
+	}
+	ASSERT_LT(flight_delta, fixture.backend.sent.size());
+	fixture.backend.receives.push_back({detail::IoStatus::Complete,
+		ack_for(fixture.backend.sent[flight_delta], endpoint, 923U)});
+	ASSERT_EQ(detail::NativeSessionTickStatus::Complete,
+		fixture.runtime.service_tick({flight_sample + 3U, 1U, true}, player_view, &phase2_view));
+	const auto sends_before_keyframe = fixture.backend.sent.size();
+	ASSERT_EQ(detail::NativeSessionTickStatus::Complete,
+		fixture.runtime.service_tick({keyframe_sample, 1U, true}, player_view, &phase2_view));
+	const auto keyframe_plan = NativePlayerAccess::phase2_capture_plan(fixture.runtime);
+	EXPECT_TRUE(keyframe_plan.force_complete_keyframe);
+	EXPECT_TRUE(keyframe_plan.phase3_refresh_targeting);
+	EXPECT_TRUE(keyframe_plan.phase3_refresh_systems);
+	ASSERT_NE(nullptr, slot(fixture));
+	EXPECT_TRUE(slot(fixture)->snapshot.has_candidate());
+	const auto& captured_keyframe = slot(fixture)->snapshot.current_state();
+	for (const auto type : {protocol::RecordType::LockState,
+			 protocol::RecordType::TargetState,
+			 protocol::RecordType::RadarState,
+			 protocol::RecordType::ThreatState,
+			 protocol::RecordType::CargoScanState,
+			 protocol::RecordType::NavigationState})
+		EXPECT_EQ(keyframe_sample, phase3_sample_time(captured_keyframe, type));
+
+	ASSERT_EQ(detail::NativeSessionTickStatus::Complete,
+		fixture.runtime.service_tick({keyframe_sample + 1U, 1U, true}, player_view, &phase2_view));
+	ASSERT_EQ(detail::NativeSessionTickStatus::Complete,
+		fixture.runtime.service_tick({keyframe_sample + 2U, 1U, true}, player_view, &phase2_view));
+	std::size_t keyframe_snapshot = fixture.backend.sent.size();
+	for (std::size_t index = sends_before_keyframe;
+		index < fixture.backend.sent.size(); ++index) {
+		if (sent_type(fixture.backend, index) == protocol::MessageType::FullSnapshot) {
+			keyframe_snapshot = index;
+			break;
+		}
+	}
+	ASSERT_LT(keyframe_snapshot, fixture.backend.sent.size());
+	fixture.backend.receives.push_back({detail::IoStatus::Complete,
+		ack_for(fixture.backend.sent[keyframe_snapshot], endpoint, 930U)});
+	ASSERT_EQ(detail::NativeSessionTickStatus::Complete,
+		fixture.runtime.service_tick({keyframe_sample + 3U, 1U, true}, player_view, &phase2_view));
+	ASSERT_NE(nullptr, slot(fixture));
+	ASSERT_EQ(detail::Phase1SnapshotProgress::Live, slot(fixture)->snapshot.progress());
+
+	// A newly revealed class is a real catalog transition.  It must allocate a
+	// strictly newer manifest and only publish the dependent keyframe after the
+	// transport ACK has installed that manifest.
+	phase2_view.source->identity.class_source_key.value = 2U;
+	phase2_view.source->raw_static_references.class_capture_key = 2U;
+	const auto definition_sample = keyframe_sample + 50'000U;
+	const auto sends_before_definition = fixture.backend.sent.size();
+	ASSERT_EQ(detail::NativeSessionTickStatus::Complete,
+		fixture.runtime.service_tick({definition_sample, 1U, true}, player_view, &phase2_view));
+	ASSERT_NE(nullptr, slot(fixture));
+	const auto definition_manifest_id = slot(fixture)->required_manifest_id;
+	ASSERT_GT(definition_manifest_id, manifest_id);
+	EXPECT_FALSE(slot(fixture)->required_manifest_applied);
+	ASSERT_EQ(detail::NativeSessionTickStatus::Complete,
+		fixture.runtime.service_tick({definition_sample + 1U, 1U, true}, player_view, &phase2_view));
+	ASSERT_EQ(detail::NativeSessionTickStatus::Complete,
+		fixture.runtime.service_tick({definition_sample + 2U, 1U, true}, player_view, &phase2_view));
+	ASSERT_EQ(detail::NativeSessionTickStatus::Complete,
+		fixture.runtime.service_tick({definition_sample + 3U, 1U, true}, player_view, &phase2_view));
+	ASSERT_EQ(detail::NativeSessionTickStatus::Complete,
+		fixture.runtime.service_tick({definition_sample + 4U, 1U, true}, player_view, &phase2_view));
+	std::size_t definition_manifest = fixture.backend.sent.size();
+	for (std::size_t index = sends_before_definition;
+		index < fixture.backend.sent.size(); ++index) {
+		if (sent_type(fixture.backend, index) == protocol::MessageType::Manifest) {
+			definition_manifest = index;
+			break;
+		}
+	}
+	ASSERT_LT(definition_manifest, fixture.backend.sent.size());
+	fixture.backend.receives.push_back({detail::IoStatus::Complete,
+		ack_for(fixture.backend.sent[definition_manifest], endpoint, 931U)});
+	ASSERT_EQ(detail::NativeSessionTickStatus::Complete,
+		fixture.runtime.service_tick({definition_sample + 5U, 1U, true}, player_view, &phase2_view));
+	ASSERT_NE(nullptr, slot(fixture));
+	EXPECT_TRUE(slot(fixture)->required_manifest_applied);
+	EXPECT_EQ(definition_manifest_id, slot(fixture)->required_manifest_id);
+	ASSERT_EQ(detail::NativeSessionTickStatus::Complete,
+		fixture.runtime.service_tick({definition_sample + 6U, 1U, true}, player_view, &phase2_view));
+	ASSERT_EQ(detail::NativeSessionTickStatus::Complete,
+		fixture.runtime.service_tick({definition_sample + 7U, 1U, true}, player_view, &phase2_view));
+	bool definition_keyframe_sent = false;
+	for (std::size_t index = definition_manifest + 1U;
+		index < fixture.backend.sent.size(); ++index) {
+		definition_keyframe_sent = definition_keyframe_sent ||
+			(sent_type(fixture.backend, index) == protocol::MessageType::FullSnapshot);
+	}
+	EXPECT_TRUE(definition_keyframe_sent);
+
 }
 
 TEST(TelemetryP91RuntimeMetricsContract, MetricsProvisionFailureFaultsBeforeBindAndSuccessfulRetryPublishesCallbacks)

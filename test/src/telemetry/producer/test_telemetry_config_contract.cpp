@@ -142,6 +142,12 @@ TEST(TelemetryConfigContract, VersionOneMigratesExplicitlyToCompleteShipAndRejec
 	EXPECT_EQ(ConfigStatus::Invalid, forbidden.status);
 	EXPECT_EQ(telemetry::ConfigError::Phase2ProfileNotAllowed,
 		forbidden.error);
+
+	const auto phase3_forbidden =
+		parse(R"({"schemaVersion":1,"profile":"CockpitSensors"})");
+	EXPECT_EQ(ConfigStatus::Invalid, phase3_forbidden.status);
+	EXPECT_EQ(telemetry::ConfigError::UnknownKey,
+		phase3_forbidden.error);
 }
 
 TEST(TelemetryConfigContract, VersionTwoRequiresOneClosedPhase2Profile)
@@ -169,6 +175,59 @@ TEST(TelemetryConfigContract, VersionTwoRequiresOneClosedPhase2Profile)
 			 R"({"schemaVersion":2,"phase2Profile":2})"}) {
 		SCOPED_TRACE(input);
 		expect_invalid(input);
+	}
+
+	const auto phase3_key =
+		parse(R"({"schemaVersion":2,"phase2Profile":"CoreGate","profile":"CockpitSensors"})");
+	EXPECT_EQ(ConfigStatus::Invalid, phase3_key.status);
+	EXPECT_EQ(telemetry::ConfigError::UnknownKey, phase3_key.error);
+}
+
+TEST(TelemetryConfigContract, VersionThreeRequiresOneClosedProfile)
+{
+	struct ValidCase {
+		const char* name;
+		telemetry::Phase2Profile expected;
+	};
+	constexpr std::array<ValidCase, 3> valid_cases{{
+		{"CoreGate", telemetry::Phase2Profile::CoreGate},
+		{"CompleteShip", telemetry::Phase2Profile::CompleteShip},
+		{"CockpitSensors", telemetry::Phase2Profile::CockpitSensors},
+	}};
+	for (const auto& test_case : valid_cases) {
+		const auto input = std::string{R"({"schemaVersion":3,"profile":")"} +
+			test_case.name + R"("})";
+		const auto result = parse(input);
+		SCOPED_TRACE(test_case.name);
+		ASSERT_EQ(ConfigStatus::ValidDisabled, result.status);
+		EXPECT_EQ(3U, result.effective.schema_version);
+		EXPECT_EQ(test_case.expected, result.effective.phase2_profile);
+	}
+
+	const auto missing = parse(R"({"schemaVersion":3})");
+	EXPECT_EQ(ConfigStatus::Invalid, missing.status);
+	EXPECT_EQ(telemetry::ConfigError::MissingProfile, missing.error);
+
+	const auto legacy = parse(
+		R"({"schemaVersion":3,"phase2Profile":"CompleteShip","profile":"CockpitSensors"})");
+	EXPECT_EQ(ConfigStatus::Invalid, legacy.status);
+	EXPECT_EQ(telemetry::ConfigError::Phase2ProfileNotAllowed, legacy.error);
+
+	for (const auto input : {
+			 R"({"schemaVersion":3,"profile":"cockpitsensors"})",
+			 R"({"schemaVersion":3,"profile":"Complete"})"}) {
+		SCOPED_TRACE(input);
+		const auto result = parse(input);
+		EXPECT_EQ(ConfigStatus::Invalid, result.status);
+		EXPECT_EQ(telemetry::ConfigError::InvalidProfile, result.error);
+	}
+	for (const auto input : {
+			 R"({"schemaVersion":3,"profile":null})",
+			 R"({"schemaVersion":3,"profile":3})"}) {
+		SCOPED_TRACE(input);
+		const auto result = parse(input);
+		EXPECT_EQ(ConfigStatus::Invalid, result.status);
+		EXPECT_EQ(telemetry::ConfigError::InvalidType, result.error);
 	}
 }
 
@@ -376,7 +435,7 @@ TEST(TelemetryConfigContract, ConfigurationValuesAreClosed)
 	expect_valid_disabled(object_with("trustedFullState", "false"));
 	expect_invalid(object_with("trustedFullState", "true"));
 	expect_invalid(object_with("schemaVersion", "0"));
-	expect_invalid(object_with("schemaVersion", "3"));
+	expect_invalid(object_with("schemaVersion", "4"));
 }
 
 TEST(TelemetryConfigContract, BindAddressArrayIsBoundedNumericAndUniqueAfterBinaryCanonicalization)

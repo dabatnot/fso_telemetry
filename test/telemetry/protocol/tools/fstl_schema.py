@@ -3546,6 +3546,10 @@ def build_fstl_v1_1_schema() -> dict[str, object]:
     p1_doc01_path = phase1_provenance_path(0)
     p1_doc04_path = phase1_provenance_path(3)
     p1_doc07_path = phase1_provenance_path(6)
+    p3_doc04_path = (
+        "documentation/analysis/specs/3-Ciblage-et-capteurs/"
+        "04-modele-de-donnees-et-regles-metier.md"
+    )
     schema["amendment_provenance"] = {
         "normative": False,
         "player_kinematics": [
@@ -3560,6 +3564,10 @@ def build_fstl_v1_1_schema() -> dict[str, object]:
              "requirements": ["P1-REQ-021", "P1-REQ-022", "P1-REQ-023"]},
             {"document": p1_doc07_path,
              "requirements": ["P1-REQ-021", "P1-REQ-022", "P1-REQ-023"]},
+        ],
+        "phase3_radar_projection": [
+            {"document": p3_doc04_path,
+             "requirements": ["P3-REQ-024", "P3-REQ-025", "P3-REQ-033"]},
         ],
     }
 
@@ -3640,6 +3648,45 @@ def build_fstl_v1_1_schema() -> dict[str, object]:
         "domaines garantis complets par rapport au mode ; CORE_SHIP obligatoire en FSTL 1.0 ; "
         "PLAYER_KINEMATICS obligatoire en FSTL 1.1 et peut être le seul domaine du profil Phase 1"
     )
+    radar_contacts = next(record for record in records if int(record["id"]) == 18)
+    radar_v1_fields = json.loads(json.dumps(radar_contacts["fields"]))
+    radar_v2_fields = json.loads(json.dumps(radar_v1_fields))
+    velocity_index = next(
+        index for index, field in enumerate(radar_v2_fields)
+        if field["name"] == "velocity_world"
+    )
+    radar_v2_fields[velocity_index + 1:velocity_index + 1] = [
+        {
+            "constraint": "position locale bornée",
+            "name": "radar_local_position",
+            "nature": "A",
+            "position": "10",
+            "semantics": (
+                "contact dans le repère du radar standard capturé au même "
+                "tick que radar_project_contact"
+            ),
+            "wire": "vec3f",
+        },
+        {
+            "constraint": "[0;1,0e12] wu",
+            "name": "radar_projection_distance",
+            "nature": "A",
+            "position": "11",
+            "semantics": "RadarContactProjection.distance du même tick",
+            "wire": "float32",
+        },
+    ]
+    for index, field in enumerate(radar_v2_fields, start=1):
+        field["position"] = str(index)
+    radar_contacts["versions"] = [
+        {"version": 1, "compatibility": "frozen FSTL 1.0 layout",
+         "fields": radar_v1_fields},
+        {"version": 2, "minimum_minor": 1,
+         "required_profile": "CockpitSensors",
+         "compatibility": "explicit; no v1/v2 payload autodetection",
+         "fields": radar_v2_fields},
+    ]
+    radar_contacts["phase3_live_record_version"] = 2
 
     correspondence = schema.get("cpp_correspondence")
     if not isinstance(correspondence, dict):

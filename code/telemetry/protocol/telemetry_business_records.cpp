@@ -122,6 +122,7 @@ ValidationError validate_container_and_flags(RecordType type,
 }
 
 ValidationError validate_payload(RecordType type,
+	std::uint8_t record_version,
 	ByteView payload,
 	BusinessRecordContainer container,
 	std::uint8_t protocol_minor) noexcept
@@ -131,7 +132,8 @@ ValidationError validate_payload(RecordType type,
 		return detail::validate_business_record_1_10(type, payload, protocol_minor);
 	}
 	if (value >= 11 && value <= 18) {
-		return detail::validate_business_record_11_18(type, payload);
+		return detail::validate_business_record_11_18(
+			type, record_version, payload);
 	}
 	if (value >= 19 && value <= 24) {
 		return detail::validate_business_record_19_24(type, payload);
@@ -195,7 +197,11 @@ ValidationError validate_business_record(const RecordEnvelopeView& record,
 	if (!business_record_metadata(record.raw_record_type, candidate)) {
 		return record.raw_record_type == 0 ? ValidationError::OutOfRange : ValidationError::None;
 	}
-	if (record.record_version != 1) {
+	const auto radar_contacts_v2 =
+		candidate.type == RecordType::RadarContacts &&
+		record.record_version == 2U &&
+		protocol_minor >= VersionMinorV1_1;
+	if (record.record_version != 1U && !radar_contacts_v2) {
 		return ValidationError::UnsupportedRecordVersion;
 	}
 	if (const auto error = validate_record_flags_v1(record.record_flags, RecordFlagPolicy::AllowV1Mutations);
@@ -210,7 +216,9 @@ ValidationError validate_business_record(const RecordEnvelopeView& record,
 		if (record.payload.size != candidate.key_size || (record.payload.size != 0 && record.payload.data == nullptr)) {
 			return ValidationError::BadRecordLength;
 		}
-	} else if (const auto error = validate_payload(candidate.type, record.payload, container, protocol_minor);
+	} else if (const auto error = validate_payload(candidate.type,
+				   record.record_version, record.payload, container,
+				   protocol_minor);
 			   error != ValidationError::None) {
 		return error;
 	}

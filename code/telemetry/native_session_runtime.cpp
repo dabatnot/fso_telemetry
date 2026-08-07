@@ -4,6 +4,7 @@
 #include "telemetry/native_session_runtime_test_seam.h"
 #include "telemetry/logging.h"
 #include "telemetry/phase2_catalog_projection.h"
+#include "telemetry/phase3_engine_collector.h"
 #include "telemetry/protocol/telemetry_protocol_constants.h"
 #include "telemetry/startup_budget.h"
 
@@ -24,6 +25,16 @@ std::uint64_t elapsed_nanoseconds(std::chrono::steady_clock::time_point started,
 	return elapsed <= 0 ? 0U : static_cast<std::uint64_t>(elapsed);
 }
 
+void reset_phase3_projection(Phase3Projection& projection) noexcept
+{
+	// Phase3Projection contains the fixed 4,096-contact and navigation
+	// workspaces. Reconstruct it directly in its preallocated storage: assigning
+	// a value-initialized temporary would reserve that whole workspace on the
+	// engine update stack even when this reset branch is not taken.
+	projection.~Phase3Projection();
+	new (&projection) Phase3Projection();
+}
+
 TelemetryPhase2Profile telemetry_profile(
 	Phase2Profile profile) noexcept
 {
@@ -32,6 +43,8 @@ TelemetryPhase2Profile telemetry_profile(
 		return TelemetryPhase2Profile::CoreGate;
 	case Phase2Profile::CompleteShip:
 		return TelemetryPhase2Profile::CompleteShip;
+	case Phase2Profile::CockpitSensors:
+		return TelemetryPhase2Profile::CockpitSensors;
 	case Phase2Profile::None:
 	default:
 		return TelemetryPhase2Profile::None;
@@ -694,6 +707,99 @@ Phase2CatalogProjectionStatus project_phase2_catalog_impl(
 	return Phase2CatalogProjectionStatus::Success;
 }
 
+bool append_phase3_manifest_weapon(Phase2ManifestSource& output,
+	std::uint32_t source_key) noexcept
+{
+	if (source_key == 0U) return true;
+	for (std::uint32_t index = 0U;
+		 index < output.referenced_weapon_count; ++index)
+		if (output.referenced_weapon_keys[index] == source_key)
+			return true;
+	if (output.referenced_weapon_count >=
+		output.referenced_weapon_keys.size())
+		return false;
+	for (std::uint32_t index = 0U; index < output.weapon_count; ++index)
+		if (output.weapons[index].source_key == source_key) {
+			output.referenced_weapon_keys[
+				output.referenced_weapon_count++] = source_key;
+			return true;
+		}
+	return false;
+}
+
+bool append_phase3_manifest_class(Phase2ManifestSource& output,
+	std::uint32_t source_key) noexcept
+{
+	if (source_key == 0U) return false;
+	for (std::uint32_t index = 0U;
+		 index < output.referenced_ship_class_count; ++index)
+		if (output.referenced_ship_class_keys[index] == source_key)
+			return true;
+	if (output.referenced_ship_class_count >=
+		output.referenced_ship_class_keys.size())
+		return false;
+	const Phase2ClassSource* selected = nullptr;
+	for (std::uint32_t index = 0U; index < output.ship_class_count;
+		 ++index)
+		if (output.ship_classes[index].source_key == source_key) {
+			selected = &output.ship_classes[index];
+			break;
+		}
+	if (selected == nullptr) return false;
+	output.referenced_ship_class_keys[
+		output.referenced_ship_class_count++] = source_key;
+	for (std::uint32_t bank = 0U; bank < selected->bank_count; ++bank)
+		if (!append_phase3_manifest_weapon(output,
+			selected->banks[bank].weapon_source_key))
+			return false;
+	return append_phase3_manifest_weapon(output,
+		selected->countermeasure_weapon_source_key);
+}
+
+bool select_phase3_manifest_references(const Phase2ManifestSource& raw,
+	const Phase2ObservationDto& observation,
+	const Phase2Wp05SubjectBinding* bindings,
+	std::size_t binding_count,
+	const Phase3CatalogDependencies& dependencies,
+	Phase2ManifestSource& output) noexcept
+{
+	if (bindings == nullptr || binding_count != observation.ships.size() ||
+		raw.ship_class_count > output.ship_classes.size() ||
+		raw.weapon_count > output.weapons.size())
+		return false;
+	// Copying remains private and bounded.  Only referenced_* is serializable;
+	// raw definitions not selected below cannot enter the client manifest.
+	output = raw;
+	output.referenced_ship_class_count = 0U;
+	output.referenced_weapon_count = 0U;
+	output.referenced_ship_class_keys.fill(0U);
+	output.referenced_weapon_keys.fill(0U);
+	for (std::size_t subject = 0U; subject < binding_count; ++subject) {
+		if (bindings[subject].entity_id == 0U) continue;
+		const auto class_key = static_cast<std::uint32_t>(
+			observation.ships[subject].identity.class_source_key.value);
+		if (!append_phase3_manifest_class(output, class_key))
+			return false;
+	}
+	for (std::uint32_t index = 0U;
+		 index < dependencies.ship_class_count; ++index) {
+		// TARGET_STATE and CARGO_SCAN depend on independently disclosed
+		// identities.  A target can legitimately belong to a class absent from
+		// the Phase 2 catalog captured for this sample.  That must suppress only
+		// the optional detailed identity group; failing the whole manifest here
+		// used to close the live dashboard session as soon as a new target was
+		// selected.
+		(void)append_phase3_manifest_class(output,
+			dependencies.ship_class_source_keys[index]);
+	}
+	for (std::uint32_t index = 0U;
+		 index < dependencies.weapon_count; ++index)
+		if (!append_phase3_manifest_weapon(output,
+			dependencies.weapon_source_keys[index]))
+			return false;
+	return true;
+}
+
 } // namespace
 
 Phase2CatalogProjectionStatus project_phase2_catalog(
@@ -777,8 +883,8 @@ NativeSessionStartStatus NativeSessionRuntime::start(const NativeSessionStartReq
 		// Keep State::Cold so clearing the test-only failpoint permits a retry.
 		return NativeSessionStartStatus::AllocationFailure;
 	}
-	SessionController controller;
 	++m_startup_allocation_count;
+	SessionController controller;
 	const auto configured = SessionController::configure(controller_config,
 		*request.session_ids,
 		*request.packet_sequences,
@@ -822,13 +928,46 @@ NativeSessionStartStatus NativeSessionRuntime::start(const NativeSessionStartReq
 		release_state_image_pools();
 		return NativeSessionStartStatus::AllocationFailure;
 	}
-	if (selected_phase2_profile == Phase2Profile::CompleteShip &&
+	if ((selected_phase2_profile == Phase2Profile::CompleteShip ||
+		 selected_phase2_profile == Phase2Profile::CockpitSensors) &&
 		!provision_phase2_image_pools(request.config->max_clients)) {
 		release_state_image_pools();
 		return NativeSessionStartStatus::AllocationFailure;
 	}
+	std::array<std::unique_ptr<Phase3Projection>, 4U>
+		phase3_projections{};
+	std::array<std::unique_ptr<Phase3Projection>, 4U>
+		phase3_projection_scratch{};
+	std::array<std::unique_ptr<Phase3IdentityRegistry>, 4U>
+		phase3_identity_registries{};
+	if (selected_phase2_profile == Phase2Profile::CockpitSensors) {
+		for (std::size_t index = 0U;
+			 index < request.config->max_clients; ++index) {
+			phase3_projections[index].reset(
+				new (std::nothrow) Phase3Projection());
+			phase3_projection_scratch[index].reset(
+				new (std::nothrow) Phase3Projection());
+			phase3_identity_registries[index].reset(
+				new (std::nothrow) Phase3IdentityRegistry());
+			if (phase3_projections[index] == nullptr ||
+				phase3_projection_scratch[index] == nullptr ||
+				phase3_identity_registries[index] == nullptr ||
+				phase3_identity_registries[index]->provision() !=
+					Phase3IdentityProvisionStatus::Ready) {
+				release_state_image_pools();
+				return NativeSessionStartStatus::AllocationFailure;
+			}
+		}
+	}
 	if (selected_phase2_profile != Phase2Profile::None &&
-		!provision_phase2_manifest_state()) {
+		!(selected_phase2_profile == Phase2Profile::CockpitSensors
+			? provision_phase2_catalog_source()
+			: provision_phase2_manifest_state())) {
+		release_state_image_pools();
+		return NativeSessionStartStatus::AllocationFailure;
+	}
+	if (selected_phase2_profile == Phase2Profile::CockpitSensors &&
+		!provision_phase3_manifest_states(request.config->max_clients)) {
 		release_state_image_pools();
 		return NativeSessionStartStatus::AllocationFailure;
 	}
@@ -866,6 +1005,24 @@ NativeSessionStartStatus NativeSessionRuntime::start(const NativeSessionStartReq
 			checked_add_size(shared_owned,
 				m_phase2_manifest_backing_bytes,
 				shared_owned) &&
+			checked_add_size(shared_owned,
+				m_phase3_manifest_backing_bytes,
+				shared_owned) &&
+			(selected_phase2_profile !=
+					Phase2Profile::CockpitSensors ||
+				(phase3_projections[0] != nullptr &&
+				 phase3_projection_scratch[0] != nullptr &&
+				 phase3_identity_registries[0] != nullptr &&
+				 checked_add_size(per_client_owned,
+					 2U * sizeof(Phase3Projection),
+					 per_client_owned) &&
+				 checked_add_size(per_client_owned,
+					 sizeof(Phase3IdentityRegistry),
+					 per_client_owned) &&
+					checked_add_size(per_client_owned,
+						phase3_identity_registries[0]->
+							provisioned_bytes(),
+						per_client_owned))) &&
 			clients != 0U &&
 			owned.client_slots == clients &&
 			owned.client_slot_bytes % clients == 0U &&
@@ -925,8 +1082,13 @@ NativeSessionStartStatus NativeSessionRuntime::start(const NativeSessionStartReq
 			release_state_image_pools();
 			return NativeSessionStartStatus::AllocationFailure;
 		}
-		phase2_budget = calculate_phase2_owned_budget(
-			{shared_owned, per_client_owned, clients});
+		phase2_budget =
+			selected_phase2_profile ==
+					Phase2Profile::CockpitSensors
+			? calculate_phase3_owned_budget(
+				{shared_owned, per_client_owned, clients})
+			: calculate_phase2_owned_budget(
+				{shared_owned, per_client_owned, clients});
 		if (phase2_budget.error != StartupBudgetError::None) {
 			release_state_image_pools();
 			return NativeSessionStartStatus::AllocationFailure;
@@ -975,6 +1137,11 @@ NativeSessionStartStatus NativeSessionRuntime::start(const NativeSessionStartReq
 	m_last_phase2_capture_result = {};
 	m_selected_phase2_profile = selected_phase2_profile;
 	m_phase2_enabled = selected_phase2_profile != Phase2Profile::None;
+	m_phase3_projections = std::move(phase3_projections);
+	m_phase3_projection_scratch =
+		std::move(phase3_projection_scratch);
+	m_phase3_identity_registries =
+		std::move(phase3_identity_registries);
 	reset_phase2_support_tracker();
 	clear_player_capture();
 	m_fault_status = NativeSessionTickStatus::Unavailable;
@@ -1120,6 +1287,13 @@ NativeSessionTickStatus NativeSessionRuntime::service_tick(const NativeSessionTi
 		}
 	}
 
+	// Network ingress, reliability and the global Phase 2 event transaction may
+	// all request a replacement snapshot during this EngineUpdate. Observe the
+	// coalesced intent only after those paths have run, then force one complete
+	// Phase 3 sample before any keyframe candidate is materialized.
+	m_capture_for_phase3_keyframe =
+		m_capture_for_phase3_keyframe ||
+		m_controller.phase3_complete_capture_required();
 	const auto cadence =
 		m_capture_cadence.poll(context.now_us, context.mission_active);
 	const auto systems_cadence = m_phase2_enabled
@@ -1169,10 +1343,15 @@ NativeSessionTickStatus NativeSessionRuntime::service_tick(const NativeSessionTi
 
 	const auto flight_controls_cadence =
 		cadence.status == CaptureCadenceStatus::Due ||
-		m_capture_after_ready_transition;
+		m_capture_after_ready_transition ||
+		m_capture_for_phase3_keyframe;
 	const auto systems_capture_due =
 		systems_cadence.status == CaptureCadenceStatus::Due ||
-		m_capture_after_ready_transition;
+		m_capture_after_ready_transition ||
+		m_capture_for_phase3_keyframe;
+	// Phase 2's All refresh necessarily refreshes flight controls as part of a
+	// coherent observation. That must not promote the Phase 3 targeting cadence:
+	// target and locks remain flightHz-owned even when systemsHz is higher.
 	if (!flight_controls_cadence && !systems_capture_due) {
 		m_phase2_capture_plan = {};
 		m_last_player_materialization = {};
@@ -1189,7 +1368,13 @@ NativeSessionTickStatus NativeSessionRuntime::service_tick(const NativeSessionTi
 		m_phase2_enabled && flight_controls_cadence;
 	m_phase2_capture_plan.capture_systems =
 		m_phase2_enabled && systems_capture_due;
-	m_phase2_capture_plan.force_complete_keyframe = m_capture_after_ready_transition;
+	m_phase2_capture_plan.force_complete_keyframe =
+		m_capture_after_ready_transition ||
+		m_capture_for_phase3_keyframe;
+	m_phase2_capture_plan.phase3_refresh_targeting =
+		m_phase2_enabled && flight_controls_cadence;
+	m_phase2_capture_plan.phase3_refresh_systems =
+		m_phase2_enabled && systems_capture_due;
 	m_phase2_capture_plan.producer_sample_time_us = context.now_us;
 	if (m_phase2_capture_plan.force_complete_keyframe) {
 		prepare_phase2_keyframe(m_phase2_capture_plan);
@@ -1298,11 +1483,15 @@ NativeSessionTickStatus NativeSessionRuntime::service_tick(const NativeSessionTi
 			m_phase2_capture_plan.capture_flight_controls = false;
 			m_phase2_capture_plan.capture_systems = false;
 			m_phase2_capture_plan.force_complete_keyframe = false;
+			m_phase2_capture_plan.phase3_refresh_targeting = false;
+			m_phase2_capture_plan.phase3_refresh_systems = false;
 			break;
 		default:
 			m_phase2_capture_plan.capture_flight_controls = false;
 			m_phase2_capture_plan.capture_systems = false;
 			m_phase2_capture_plan.force_complete_keyframe = false;
+			m_phase2_capture_plan.phase3_refresh_targeting = false;
+			m_phase2_capture_plan.phase3_refresh_systems = false;
 			break;
 		}
 		if ((phase2_capture.status == Phase2CaptureStatus::Valid ||
@@ -1457,13 +1646,66 @@ bool NativeSessionRuntime::provision_phase2_manifest_state() noexcept
 	return true;
 }
 
+bool NativeSessionRuntime::provision_phase2_catalog_source() noexcept
+{
+	auto source = std::unique_ptr<Phase2ManifestSource>(
+		new (std::nothrow) Phase2ManifestSource());
+	if (source == nullptr) return false;
+	m_phase2_manifest_source = std::move(source);
+	m_phase2_manifest_backing_bytes = sizeof(Phase2ManifestSource);
+	return true;
+}
+
+bool NativeSessionRuntime::provision_phase3_manifest_states(
+	std::size_t client_count) noexcept
+{
+	if (client_count == 0U ||
+		client_count > m_phase3_manifest_states.size())
+		return false;
+	constexpr auto backing_bytes = protocol::MaxTransactionSize * 2U;
+	auto workspace = std::unique_ptr<std::uint8_t[]>(
+		new (std::nothrow) std::uint8_t[backing_bytes]);
+	if (workspace == nullptr) return false;
+	auto selection_source = std::unique_ptr<Phase2ManifestSource>(
+		new (std::nothrow) Phase2ManifestSource());
+	if (selection_source == nullptr) return false;
+	std::size_t total_bytes = backing_bytes + sizeof(Phase2ManifestSource);
+	for (std::size_t index = 0U; index < client_count; ++index) {
+		auto storage = std::unique_ptr<Phase2ManifestStorage>(
+			new (std::nothrow) Phase2ManifestStorage(
+				protocol::MutableByteView{workspace.get(), backing_bytes}));
+		if (storage == nullptr) {
+			release_phase3_manifest_states();
+			return false;
+		}
+		auto slot = std::unique_ptr<Phase2ManifestSlot>(
+			new (std::nothrow) Phase2ManifestSlot(*storage));
+		if (slot == nullptr ||
+			!checked_add_size(total_bytes,
+				sizeof(Phase2ManifestStorage) +
+					sizeof(Phase2ManifestSlot),
+				total_bytes)) {
+			release_phase3_manifest_states();
+			return false;
+		}
+		auto& state = m_phase3_manifest_states[index];
+		state.storage = std::move(storage);
+		state.slot = std::move(slot);
+	}
+	m_phase3_manifest_selection_source = std::move(selection_source);
+	m_phase3_manifest_workspace = std::move(workspace);
+	m_phase3_manifest_backing_bytes = total_bytes;
+	return true;
+}
+
 bool NativeSessionRuntime::refresh_owned_phase2_manifest(
 	const Phase2ObservationDto& observation,
 	Phase2ManifestError& result) noexcept
 {
 	result = Phase2ManifestError::InvalidSource;
 	if (m_phase2_manifest_source == nullptr ||
-		m_phase2_manifest_slot == nullptr)
+		(m_selected_phase2_profile != Phase2Profile::CockpitSensors &&
+		 m_phase2_manifest_slot == nullptr))
 		return m_phase2_manifest != nullptr;
 	const auto projection = project_phase2_catalog(
 		observation, *m_phase2_manifest_source);
@@ -1479,6 +1721,10 @@ bool NativeSessionRuntime::refresh_owned_phase2_manifest(
 	}
 	if (projection != Phase2CatalogProjectionStatus::Success)
 		return false;
+	if (m_selected_phase2_profile == Phase2Profile::CockpitSensors) {
+		result = Phase2ManifestError::NoCatalogChange;
+		return true;
+	}
 	release_unreferenced_phase2_manifest_generation();
 	result = m_phase2_manifest_slot->rebuild(
 		*m_phase2_manifest_source);
@@ -1518,6 +1764,75 @@ bool NativeSessionRuntime::refresh_owned_phase2_manifest(
 	return false;
 }
 
+bool NativeSessionRuntime::refresh_phase3_manifest(
+	std::size_t client_slot,
+	const Phase2ObservationDto& observation,
+	const Phase2Wp05SubjectBinding* bindings,
+	std::size_t binding_count,
+	Phase2ManifestError& result) noexcept
+{
+	result = Phase2ManifestError::InvalidSource;
+	if (client_slot >= m_phase3_manifest_states.size() ||
+		m_phase2_manifest_source == nullptr)
+		return false;
+	auto& state = m_phase3_manifest_states[client_slot];
+	if (m_phase3_manifest_selection_source == nullptr || state.slot == nullptr)
+		return false;
+	const auto previous_manifest_id = state.slot->previous_manifest_id();
+	if (previous_manifest_id != 0U &&
+		client_slot < m_controller.owned_capacity().client_slots) {
+		const auto& client = m_controller.slot(client_slot);
+		const auto& manifest = client.phase2_runtime.manifest_state();
+		if (client.required_manifest_id != previous_manifest_id &&
+			manifest.active_id != previous_manifest_id &&
+			manifest.staged_id != previous_manifest_id)
+			state.slot->release_reliable_references(previous_manifest_id);
+	}
+	Phase3CatalogDependencies dependencies;
+	if (discover_phase3_catalog_dependencies(observation, dependencies) !=
+		Phase3EngineCollectStatus::Collected)
+		return false;
+	if (!select_phase3_manifest_references(*m_phase2_manifest_source,
+		observation, bindings, binding_count, dependencies,
+		*m_phase3_manifest_selection_source))
+		return false;
+	if (m_phase3_manifest_workspace_owner !=
+			m_phase3_manifest_states.size() &&
+		m_phase3_manifest_workspace_owner != client_slot)
+		return false;
+	m_phase3_manifest_workspace_owner = client_slot;
+	result = state.slot->rebuild(*m_phase3_manifest_selection_source);
+	if (result == Phase2ManifestError::None) {
+		const auto id = state.slot->staged_manifest_id();
+		if (id == 0U ||
+			state.slot->on_manifest_applied(id) !=
+				Phase2ManifestError::None ||
+			state.slot->on_dependent_snapshot_applied(1U, id) !=
+				Phase2ManifestError::None)
+			return false;
+		state.manifest = &state.slot->active_candidate();
+		state.catalog_projection_pending = false;
+		return true;
+	}
+	if (result == Phase2ManifestError::NoCatalogChange ||
+		result == Phase2ManifestError::TopologyOnly) {
+		state.manifest = &state.slot->active_candidate();
+		state.catalog_projection_pending = false;
+		return state.manifest->manifest_id != 0U;
+	}
+	if (result == Phase2ManifestError::RebuildCoalesced) {
+		state.manifest = &state.slot->active_candidate();
+		state.catalog_projection_pending =
+			!state.slot->source_catalog_matches_active(
+				*m_phase3_manifest_selection_source) ||
+			state.manifest->topology_fingerprint !=
+				m_phase3_manifest_selection_source->topology_fingerprint;
+		return state.manifest->manifest_id != 0U;
+	}
+	m_phase3_manifest_workspace_owner = m_phase3_manifest_states.size();
+	return false;
+}
+
 void NativeSessionRuntime::
 	release_unreferenced_phase2_manifest_generation() noexcept
 {
@@ -1549,6 +1864,20 @@ void NativeSessionRuntime::release_phase2_manifest_state() noexcept
 	m_phase2_catalog_projection_pending = false;
 }
 
+void NativeSessionRuntime::release_phase3_manifest_states() noexcept
+{
+	for (auto& state : m_phase3_manifest_states) {
+		state.manifest = nullptr;
+		state.slot.reset();
+		state.storage.reset();
+		state.catalog_projection_pending = false;
+	}
+	m_phase3_manifest_selection_source.reset();
+	m_phase3_manifest_workspace.reset();
+	m_phase3_manifest_workspace_owner = m_phase3_manifest_states.size();
+	m_phase3_manifest_backing_bytes = 0U;
+}
+
 void NativeSessionRuntime::prepare_phase2_keyframe(Phase2CapturePlan& plan) noexcept
 {
 	if (!m_phase2_enabled) {
@@ -1557,6 +1886,8 @@ void NativeSessionRuntime::prepare_phase2_keyframe(Phase2CapturePlan& plan) noex
 	plan.force_complete_keyframe = true;
 	plan.capture_flight_controls = true;
 	plan.capture_systems = true;
+	plan.phase3_refresh_targeting = true;
+	plan.phase3_refresh_systems = true;
 }
 
 void NativeSessionRuntime::stop_collection() noexcept
@@ -1567,6 +1898,15 @@ void NativeSessionRuntime::stop_collection() noexcept
 	m_capture_cadence.stop();
 	m_phase2_capture_plan = {};
 	m_phase2_observation.reset_observation_and_clear_phase2();
+	for (std::size_t index = 0U;
+		 index < m_phase3_projections.size(); ++index) {
+		if (m_phase3_projections[index] != nullptr)
+			reset_phase3_projection(*m_phase3_projections[index]);
+		if (m_phase3_projection_scratch[index] != nullptr)
+			reset_phase3_projection(*m_phase3_projection_scratch[index]);
+		if (m_phase3_identity_registries[index] != nullptr)
+			m_phase3_identity_registries[index]->reset_session();
+	}
 	reset_phase2_support_tracker();
 	clear_player_capture();
 	m_last_player_capture_status = NativePlayerCaptureStatus::Inactive;
@@ -1590,8 +1930,9 @@ void NativeSessionRuntime::purge_all(SessionCloseReason reason) noexcept
 		if (m_log != nullptr) {
 			const auto started_at = m_session_started_at_us[index];
 			const auto duration = m_tick_context.now_us >= started_at ? m_tick_context.now_us - started_at : 0U;
-			const auto total = m_metrics != nullptr ? m_metrics->snapshot().process_counters[
-				static_cast<std::size_t>(TelemetryMetricCounter::SessionsEnded)] : 0U;
+			const auto total = m_metrics != nullptr
+				? m_metrics->process_counter(TelemetryMetricCounter::SessionsEnded)
+				: 0U;
 			m_log->session_closed(index, log_reason(reason), duration, total);
 		}
 	}
@@ -1601,6 +1942,15 @@ void NativeSessionRuntime::purge_all(SessionCloseReason reason) noexcept
 	m_capture_cadence.stop();
 	m_phase2_capture_plan = {};
 	m_phase2_observation.reset_observation_and_clear_phase2();
+	for (std::size_t index = 0U;
+		 index < m_phase3_projections.size(); ++index) {
+		if (m_phase3_projections[index] != nullptr)
+			reset_phase3_projection(*m_phase3_projections[index]);
+		if (m_phase3_projection_scratch[index] != nullptr)
+			reset_phase3_projection(*m_phase3_projection_scratch[index]);
+		if (m_phase3_identity_registries[index] != nullptr)
+			m_phase3_identity_registries[index]->reset_session();
+	}
 	reset_phase2_support_tracker();
 	clear_player_capture();
 }
@@ -1726,6 +2076,7 @@ NativeSessionTickStatus NativeSessionRuntime::service_r2_tick(const NativeSessio
 	}
 
 	m_capture_after_ready_transition = false;
+	m_capture_for_phase3_keyframe = false;
 	m_tick_context = context;
 	m_controller.expire_housekeeping(context.now_us);
 	m_controller.service_timeouts(context.now_us);
@@ -1757,9 +2108,13 @@ NativeSessionTickStatus NativeSessionRuntime::service_r2_tick(const NativeSessio
 				index, context.now_us) != 0U)
 			break;
 	(void)m_controller.service_initial_snapshot_egress(m_maximum_attempts, context.now_us);
+	m_capture_for_phase3_keyframe =
+		m_controller.phase3_complete_capture_required();
 	// Deltas are the lowest-priority state traffic and are only exposed after
 	// control, reliable snapshot work and heartbeat processing above.
-	(void)m_controller.service_delta_egress(m_maximum_attempts, context.now_us);
+	if (!m_capture_for_phase3_keyframe)
+		(void)m_controller.service_delta_egress(
+			m_maximum_attempts, context.now_us);
 	if (measure_performance) {
 		m_last_performance_sample.serialization_duration_ns = elapsed_nanoseconds(serialization_started, std::chrono::steady_clock::now());
 	}
@@ -1807,6 +2162,12 @@ void NativeSessionRuntime::refresh_metrics_session_scope() noexcept
 							m_selected_phase2_profile));
 			}
 		} else if (!active && m_metrics_session_active[index]) {
+			if (m_phase3_projections[index] != nullptr)
+				reset_phase3_projection(*m_phase3_projections[index]);
+			if (m_phase3_projection_scratch[index] != nullptr)
+				reset_phase3_projection(*m_phase3_projection_scratch[index]);
+			if (m_phase3_identity_registries[index] != nullptr)
+				m_phase3_identity_registries[index]->reset_session();
 			if (m_metrics != nullptr) {
 				m_metrics->increment_session(index, TelemetryMetricCounter::SessionsEnded);
 				m_metrics->deactivate_session(index);
@@ -1814,20 +2175,16 @@ void NativeSessionRuntime::refresh_metrics_session_scope() noexcept
 			if (m_log != nullptr) {
 				const auto started_at = m_session_started_at_us[index];
 				const auto duration = m_tick_context.now_us >= started_at ? m_tick_context.now_us - started_at : 0U;
-				const auto metrics_snapshot =
-					m_metrics != nullptr
-					? m_metrics->snapshot()
-					: TelemetryMetricsSnapshot{};
-				const auto total = metrics_snapshot.process_counters[
-					static_cast<std::size_t>(
-						TelemetryMetricCounter::SessionsEnded)];
+				const auto total = m_metrics != nullptr
+					? m_metrics->process_counter(TelemetryMetricCounter::SessionsEnded)
+					: 0U;
 				if (m_selected_phase2_profile !=
 					Phase2Profile::None)
 					m_log->phase2_summary(index, total,
-						metrics_snapshot.phase2_memory_high_water[
-							static_cast<std::size_t>(
-								TelemetryPhase2MemoryScope::
-									ProcessTotal)]);
+						m_metrics != nullptr
+							? m_metrics->phase2_memory_high_water(
+								TelemetryPhase2MemoryScope::ProcessTotal)
+							: 0U);
 				m_log->session_closed(index, TelemetryLogReason::PeerClosed, duration, total);
 			}
 			m_session_started_at_us[index] = 0U;
@@ -1976,7 +2333,8 @@ NativeSessionTickStatus NativeSessionRuntime::apply_collected_player_capture(con
 				return NativeSessionTickStatus::Complete;
 			}
 		}
-		if (m_phase2_manifest == nullptr)
+		if (m_selected_phase2_profile != Phase2Profile::CockpitSensors &&
+			m_phase2_manifest == nullptr)
 			return NativeSessionTickStatus::Complete;
 	}
 	const auto mission_generation = m_tick_context.mission_generation == 0U ? 1U : m_tick_context.mission_generation;
@@ -1986,7 +2344,9 @@ NativeSessionTickStatus NativeSessionRuntime::apply_collected_player_capture(con
 			continue;
 		}
 		if (m_selected_phase2_profile ==
-			Phase2Profile::CompleteShip) {
+				Phase2Profile::CompleteShip ||
+			m_selected_phase2_profile ==
+				Phase2Profile::CockpitSensors) {
 			const auto& phase2 =
 				m_phase2_observation.observation();
 			const auto complete_ship_capture_valid =
@@ -2107,6 +2467,38 @@ NativeSessionTickStatus NativeSessionRuntime::apply_collected_player_capture(con
 				return NativeSessionTickStatus::
 					PermanentCaptureFailure;
 			}
+			const Phase2ManifestCandidate* phase2_manifest =
+				m_phase2_manifest;
+			const Phase2ManifestSlot* manifest_slot =
+				m_phase2_manifest_slot.get();
+			if (m_selected_phase2_profile ==
+				Phase2Profile::CockpitSensors) {
+				Phase2ManifestError manifest_error{};
+				if (!refresh_phase3_manifest(index, phase2, bindings.data(),
+						phase2.ships.size(), manifest_error)) {
+					// Catalog discovery reads the same validated target, sensor and
+					// missile authorities as the later Phase 3 projection.  A
+					// rejected discovery must therefore fail the capture atomically;
+					// returning Complete here would mask an invalid engine reference
+					// and retain a stale cockpit image.
+					if (auto* diagnostic = begin_phase2_failure_diagnostic(
+							NativePhase2FailureStage::Manifest);
+						diagnostic != nullptr) {
+						diagnostic->ship_count = phase2.ships.size();
+						diagnostic->player_key = phase2.player_key.value;
+						diagnostic->runtime_result =
+							Phase2RuntimeResult::InvalidInput;
+					}
+					fail_capture(NativePlayerCaptureStatus::CaptureInvariantFailure);
+					return NativeSessionTickStatus::PermanentCaptureFailure;
+				}
+				const auto& cockpit_manifest =
+					m_phase3_manifest_states[index];
+				phase2_manifest = cockpit_manifest.manifest;
+				manifest_slot = cockpit_manifest.slot.get();
+			}
+			if (phase2_manifest == nullptr || manifest_slot == nullptr)
+				return NativeSessionTickStatus::Complete;
 			const auto lifecycle_before =
 				slot.phase2_runtime.pending_lifecycle_count();
 			const auto lifecycle =
@@ -2151,8 +2543,13 @@ NativeSessionTickStatus NativeSessionRuntime::apply_collected_player_capture(con
 				slot.phase2_runtime.manifest_state().rebuild_intent;
 			const auto manifest_state =
 				m_controller.stage_phase2_manifest(index,
-					*m_phase2_manifest,
+					*phase2_manifest,
 					m_tick_context.now_us);
+			if (m_selected_phase2_profile ==
+					Phase2Profile::CockpitSensors &&
+				manifest_state != Phase2RuntimeResult::CandidateBusy)
+				m_phase3_manifest_workspace_owner =
+					m_phase3_manifest_states.size();
 			if (manifest_state == Phase2RuntimeResult::CandidateBusy &&
 				!rebuild_was_pending &&
 				slot.phase2_runtime.manifest_state().rebuild_intent &&
@@ -2167,10 +2564,10 @@ NativeSessionTickStatus NativeSessionRuntime::apply_collected_player_capture(con
 					manifest_duration_us * 1000U;
 			if (m_metrics != nullptr) {
 				m_metrics->set_phase2_closure(
-					m_phase2_manifest->class_record_count,
+					phase2_manifest->class_record_count,
 					phase2.ships.size(),
-					m_phase2_manifest->weapon_record_count,
-					m_phase2_manifest->aggregate_subsystem_count);
+					phase2_manifest->weapon_record_count,
+					phase2_manifest->aggregate_subsystem_count);
 				if (manifest_state == Phase2RuntimeResult::Applied ||
 					manifest_state == Phase2RuntimeResult::InvalidInput ||
 					manifest_state == Phase2RuntimeResult::Stale ||
@@ -2181,8 +2578,8 @@ NativeSessionTickStatus NativeSessionRuntime::apply_collected_player_capture(con
 							Phase2RuntimeResult::Applied
 						? TelemetryPhase2ManifestResult::Built
 						: TelemetryPhase2ManifestResult::Rejected,
-						m_phase2_manifest->encoded_size,
-						m_phase2_manifest->part_count,
+						phase2_manifest->encoded_size,
+						phase2_manifest->part_count,
 						manifest_duration_us);
 			}
 			if (m_log != nullptr &&
@@ -2195,12 +2592,12 @@ NativeSessionTickStatus NativeSessionRuntime::apply_collected_player_capture(con
 					manifest_state == Phase2RuntimeResult::Applied
 					? TelemetryLogEvent::Phase2ManifestBuilt
 					: TelemetryLogEvent::Phase2ManifestRejected,
-					m_phase2_manifest->manifest_id,
-					m_phase2_manifest->class_record_count +
-						m_phase2_manifest->weapon_record_count +
-						m_phase2_manifest->aggregate_subsystem_count,
-					m_phase2_manifest->part_count,
-					m_phase2_manifest->encoded_size,
+					phase2_manifest->manifest_id,
+					phase2_manifest->class_record_count +
+						phase2_manifest->weapon_record_count +
+						phase2_manifest->aggregate_subsystem_count,
+					phase2_manifest->part_count,
+					phase2_manifest->encoded_size,
 					manifest_duration_us);
 			if (manifest_state ==
 					Phase2RuntimeResult::InvalidInput ||
@@ -2230,11 +2627,11 @@ NativeSessionTickStatus NativeSessionRuntime::apply_collected_player_capture(con
 			// Until its reliable APPLIED transition reaches
 			// apply_phase2_manifest(), no dependent snapshot is emitted.
 			if (slot.required_manifest_id !=
-					m_phase2_manifest->manifest_id ||
+					phase2_manifest->manifest_id ||
 				!slot.required_manifest_applied)
 				continue;
 			const auto* installed_manifest =
-				m_phase2_manifest_slot->candidate_for_id(
+				manifest_slot->candidate_for_id(
 					slot.required_manifest_id);
 			if (installed_manifest == nullptr ||
 				installed_manifest->manifest_id !=
@@ -2378,7 +2775,14 @@ NativeSessionTickStatus NativeSessionRuntime::apply_collected_player_capture(con
 				phase2_input.retained_state != nullptr &&
 				!m_phase2_capture_plan.force_complete_keyframe;
 			auto used_in_place_patch = false;
+			// CockpitSensors currently projects its additional records into a
+			// separate immutable image. Do not loan the controller's mutable
+			// Phase 2 backing in that profile: replacing it before commit would
+			// otherwise make the rollback/commit path operate on the wrong
+			// storage.
 			if (incremental_tick &&
+				m_selected_phase2_profile !=
+					Phase2Profile::CockpitSensors &&
 				m_controller
 						.take_current_state_for_incremental_patch(
 							index, image) ==
@@ -2461,6 +2865,66 @@ NativeSessionTickStatus NativeSessionRuntime::apply_collected_player_capture(con
 				return NativeSessionTickStatus::
 					PermanentCaptureFailure;
 			}
+			if (m_selected_phase2_profile ==
+				Phase2Profile::CockpitSensors) {
+				auto* phase3_projection =
+					m_phase3_projections[index].get();
+				auto* phase3_projection_scratch =
+					m_phase3_projection_scratch[index].get();
+				auto* phase3_identity_registry =
+					m_phase3_identity_registries[index].get();
+				if (phase3_projection == nullptr ||
+					phase3_projection_scratch == nullptr ||
+					phase3_identity_registry == nullptr) {
+					fail_capture(NativePlayerCaptureStatus::
+						CaptureInvariantFailure);
+					return NativeSessionTickStatus::
+						PermanentCaptureFailure;
+				}
+				if (player_entity_id == 0U) {
+					// A no-player image contains only the inherited global
+					// singletons. Purging the retained sensor identities here
+					// also guarantees that a later respawn receives a fresh
+					// public identity scope.
+					reset_phase3_projection(*phase3_projection);
+					reset_phase3_projection(*phase3_projection_scratch);
+					phase3_identity_registry->reset_session();
+				} else {
+					const Phase3EngineCollectInput phase3_input{
+						m_tick_context.now_us,
+						player_entity_id,
+						&phase2,
+						bindings.data(),
+						phase2.ships.size(),
+						installed_manifest,
+						m_phase2_capture_plan.phase3_refresh_targeting &&
+							m_phase2_capture_plan.capture_flight_controls,
+						m_phase2_capture_plan.phase3_refresh_systems &&
+							m_phase2_capture_plan.capture_systems};
+					if (collect_phase3_engine_projection(
+							phase3_input,
+							*phase3_identity_registry,
+							*phase3_projection,
+							*phase3_projection_scratch) !=
+						Phase3EngineCollectStatus::Collected) {
+						fail_capture(NativePlayerCaptureStatus::
+							CaptureInvariantFailure);
+						return NativeSessionTickStatus::
+							PermanentCaptureFailure;
+					}
+				}
+				protocol::StateImage phase3_image;
+				if (build_phase3_cockpit_sensor_state_image(
+						image, *phase3_projection,
+						phase3_image) !=
+					Phase3StateImageBuildStatus::Created) {
+					fail_capture(NativePlayerCaptureStatus::
+						CaptureInvariantFailure);
+					return NativeSessionTickStatus::
+						PermanentCaptureFailure;
+				}
+				image = std::move(phase3_image);
+			}
 			if (m_metrics != nullptr)
 				m_metrics->observe_phase2_image(
 					elapsed_nanoseconds(image_started,
@@ -2539,7 +3003,11 @@ NativeSessionTickStatus NativeSessionRuntime::apply_collected_player_capture(con
 			}
 			if (slot.snapshot.has_active_baseline())
 				(void)m_controller.queue_cumulative_delta(
-					index, m_tick_context.now_us);
+					index, m_tick_context.now_us,
+					m_phase2_capture_plan.force_complete_keyframe
+						? m_phase2_capture_plan
+							  .producer_sample_time_us
+						: 0U);
 			if (m_performance_observation_active)
 				m_last_performance_sample.delta_build_duration_ns +=
 					elapsed_nanoseconds(
@@ -2972,6 +3440,7 @@ void NativeSessionRuntime::release_state_image_pools() noexcept
 	m_state_image_pool_backing_bytes = 0U;
 	m_phase2_core_gate_image_pool_backing_bytes = 0U;
 	m_phase2_image_pool_backing_bytes = 0U;
+	release_phase3_manifest_states();
 	release_phase2_manifest_state();
 }
 

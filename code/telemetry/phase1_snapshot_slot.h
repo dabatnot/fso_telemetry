@@ -31,6 +31,13 @@ enum class Phase1KeyframeIntent : std::uint8_t {
 // notification that follows its atomic commit.
 class Phase1SnapshotSlot final {
   public:
+	bool preallocated() const noexcept {
+		return m_baseline.dirty_index_backing_ready();
+	}
+	bool provision() noexcept {
+		return m_baseline.provision_dirty_index_backing();
+	}
+	void reset() noexcept;
 	void set_allocation_observer(Phase1AllocationObserver* observer) noexcept { m_allocation_observer = observer; }
 	protocol::ProducerBaselineResult start_initial_candidate(std::uint32_t snapshot_id,
 		const protocol::StateImage& captured,

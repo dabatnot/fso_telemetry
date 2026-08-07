@@ -74,9 +74,12 @@ ByteView view(const std::vector<std::uint8_t>& bytes)
 	return ByteView{bytes.empty() ? nullptr : bytes.data(), bytes.size()};
 }
 
-RecordEnvelopeView record(RecordType type, const std::vector<std::uint8_t>& payload)
+RecordEnvelopeView record(RecordType type,
+	const std::vector<std::uint8_t>& payload,
+	std::uint8_t version = 1U)
 {
-	return RecordEnvelopeView{static_cast<std::uint16_t>(type), 1, RecordFlagNone, view(payload)};
+	return RecordEnvelopeView{static_cast<std::uint16_t>(type),
+		version, RecordFlagNone, view(payload)};
 }
 
 ValidationError validate(RecordType type, const std::vector<std::uint8_t>& payload)
@@ -565,6 +568,33 @@ TEST(TelemetryProtocolBusinessRecords11To18, RadarContactsValidateBombTypeAndDet
 
 	auto valid_bomb = radar_contact(0, 3, static_cast<std::uint8_t>(ObjectType::Weapon), ContactFlagBomb);
 	EXPECT_EQ(ValidationError::None, validate(RecordType::RadarContacts, valid_bomb));
+}
+
+TEST(TelemetryProtocolBusinessRecords11To18,
+	RadarContactsV2IsExplicitAndRequiresFstl11)
+{
+	auto payload = radar_contact();
+	// v2 inserts its atomic standard-radar inputs immediately after the two
+	// world vectors and before radius/contact_flags.
+	const auto insertion = payload.begin() + 59;
+	std::vector<std::uint8_t> projection;
+	vec3(projection, 10.0F, -20.0F, 30.0F);
+	f32(projection, 40.0F);
+	payload.insert(insertion, projection.begin(), projection.end());
+	BusinessRecordMetadata metadata;
+	EXPECT_EQ(ValidationError::None,
+		validate_business_record(record(RecordType::RadarContacts,
+			payload, 2U), BusinessRecordContainer::FullSnapshot,
+			VersionMinorV1_1, metadata));
+	EXPECT_EQ(ValidationError::UnsupportedRecordVersion,
+		validate_business_record(record(RecordType::RadarContacts,
+			payload, 2U), BusinessRecordContainer::FullSnapshot,
+			VersionMinor, metadata));
+	payload.erase(payload.begin() + 59, payload.begin() + 63);
+	EXPECT_EQ(ValidationError::TruncatedPayload,
+		validate_business_record(record(RecordType::RadarContacts,
+			payload, 2U), BusinessRecordContainer::FullSnapshot,
+			VersionMinorV1_1, metadata));
 }
 
 } // namespace

@@ -22,6 +22,10 @@ namespace telemetry::detail {
 constexpr std::size_t Phase1DeltaScratchBytes = 512U;
 constexpr std::size_t Phase2CompleteShipDeltaBytes =
 	protocol::MaxStateMessageSize;
+// CockpitSensors keeps the FSTL one-MiB logical delta ceiling. A larger
+// cumulative change is represented by a keyframe instead of a larger delta.
+constexpr std::size_t Phase3CockpitSensorsDeltaBytes =
+	protocol::MaxStateMessageSize;
 
 enum class Phase1DeltaReplaceResult : std::uint8_t {
 	Replaced = 0,

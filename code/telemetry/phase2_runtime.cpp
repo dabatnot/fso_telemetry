@@ -43,7 +43,8 @@ bool Phase2RuntimeSlot::configure(
 	Phase2Profile profile, std::size_t session_slot) noexcept
 {
 	if ((profile != Phase2Profile::CoreGate &&
-		 profile != Phase2Profile::CompleteShip) ||
+		 profile != Phase2Profile::CompleteShip &&
+		 profile != Phase2Profile::CockpitSensors) ||
 		session_slot >= Phase2Wp07EpisodeLatches::SessionCapacity)
 		return false;
 	reset();

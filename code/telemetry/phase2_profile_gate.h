@@ -10,6 +10,7 @@ enum class Phase2Profile : std::uint8_t {
 	None = 0,
 	CoreGate,
 	CompleteShip,
+	CockpitSensors,
 };
 
 enum class Phase2ProfileError : std::uint8_t {

@@ -89,6 +89,16 @@ enum RadarVisibility
 	DISTORTED //!< Visible but not fully
 };
 
+struct RadarContactProjection {
+	RadarVisibility visibility = NOT_VISIBLE;
+	vec3d world_position = vmd_zero_vector;
+	// The radar projection is the cockpit authority boundary.  Consumers must
+	// use this velocity rather than reaching back into the source object after
+	// the visibility decision has been made.
+	vec3d world_velocity = vmd_zero_vector;
+	float distance = 0.0f;
+};
+
 enum class RadarIconMode {
 	Off = 0,
 	On = 1,
@@ -99,6 +109,7 @@ extern RadarIconMode Radar_2d_icon_mode;
 void radar_frame_init();
 void radar_mission_init();
 void radar_plot_object( object *objp );
+bool radar_project_contact(object* objp, RadarContactProjection& projection);
 RadarVisibility radar_is_visible( object *objp );
 void radar_check_2d_icon_options();
 

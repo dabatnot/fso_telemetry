@@ -23,7 +23,12 @@ EMPTY_CELL = {"", "-", "—", "–", "none", "aucune"}
 IMPLEMENTATION_STATES = {"pending", "in_progress", "blocked", "implemented"}
 EVIDENCE_STATES = {"pending", "passed", "failed", "blocked"}
 BLOCKER_CATEGORIES = {"product", "tooling", "human"}
-FORBIDDEN_INPUT_PARTS = {".git", "archive", "implementation-status"}
+FORBIDDEN_INPUT_PARTS = {
+    ".git",
+    "__pycache__",
+    "archive",
+    "implementation-status",
+}
 
 TOP_LEVEL_KEYS = {
     "schema",

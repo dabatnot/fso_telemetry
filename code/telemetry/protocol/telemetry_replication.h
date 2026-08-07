@@ -70,10 +70,12 @@ struct StateAtom {
 constexpr std::size_t MaxReplicationStateAtomCount = MaxTransactionSize / RecordEnvelopeHeaderSize;
 constexpr std::size_t MaxReplicationStateImageRetainedBytes =
 	MaxTransactionSize * 3U + MaxReplicationStateAtomCount * sizeof(StateAtom);
-// The incremental Phase 2 profile has at most 4 + 10*64 + 4096 = 4740
-// records. Keep some headroom so the engine-neutral replication layer can
-// track an exact rebuilt-index union without heap growth on the live path.
-constexpr std::size_t MaxIncrementalDirtyStateAtomCount = 8192U;
+// CockpitSensors has at most 9 + 10*64 + 4096 + 4096 = 8841 records:
+// inherited CompleteShip atoms, five new player singletons and 4096 contacts.
+// Size the fixed union exactly to the closed profile maximum; extra headroom
+// here multiplies across three per-client index arrays and the Windows main
+// thread stack without increasing any legal product cardinality.
+constexpr std::size_t MaxIncrementalDirtyStateAtomCount = 8841U;
 
 enum class StateImageResult : std::uint8_t {
 	Created = 0,
@@ -339,6 +341,14 @@ class ProducerResyncTracker final {
 class ProducerBaselineTracker final {
   public:
 	ProducerBaselineTracker() = default;
+	bool provision_dirty_index_backing() noexcept;
+	bool dirty_index_backing_ready() const noexcept {
+		return m_dirty_indices != nullptr;
+	}
+	static constexpr std::size_t dirty_index_backing_bytes() noexcept {
+		return 3U * MaxIncrementalDirtyStateAtomCount *
+			sizeof(std::uint16_t);
+	}
 
 	// Starts a new per-client tracker with a current immutable engine-neutral
 	// image and no common baseline. The first snapshot becomes active only
@@ -431,9 +441,7 @@ class ProducerBaselineTracker final {
 	std::uint32_t m_next_delta_sequence = 1;
 	std::uint64_t m_candidate_deadline_us = 0;
 	bool m_emitted_delta_for_active_baseline = false;
-	std::array<std::uint16_t, MaxIncrementalDirtyStateAtomCount> m_active_dirty_indices{};
-	std::array<std::uint16_t, MaxIncrementalDirtyStateAtomCount> m_candidate_dirty_indices{};
-	std::array<std::uint16_t, MaxIncrementalDirtyStateAtomCount> m_dirty_merge_scratch{};
+	std::unique_ptr<std::uint16_t[]> m_dirty_indices;
 	std::size_t m_active_dirty_index_count = 0U;
 	std::size_t m_candidate_dirty_index_count = 0U;
 	bool m_active_incremental_record_set_compatible = false;

@@ -1754,6 +1754,12 @@ add_file_folder("Telemetry"
 	telemetry/phase2_state_image.h
 	telemetry/phase2_session_transition.cpp
 	telemetry/phase2_session_transition.h
+	telemetry/phase3_engine_collector.cpp
+	telemetry/phase3_engine_collector.h
+	telemetry/phase3_identity_registry.cpp
+	telemetry/phase3_identity_registry.h
+	telemetry/phase3_state_image.cpp
+	telemetry/phase3_state_image.h
 	telemetry/runtime.cpp
 	telemetry/runtime.h
 	telemetry/runtime_adapter.cpp

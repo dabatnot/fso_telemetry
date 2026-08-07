@@ -17,7 +17,8 @@ export interface InstrumentDefinition {
     | "resources" | "ets" | "propulsion" | "engine" | "performance"
     | "core" | "protection" | "recovery" | "subsystems"
     | "modes" | "primary" | "selected" | "secondary" | "reserves" | "turrets"
-    | "overview" | "service" | "approach" | "docking" | "cargo";
+    | "overview" | "service" | "approach" | "docking" | "cargo"
+    | "sensors" | "scope" | "target" | "locks" | "threats";
   order?: number;
   size?: "hero" | "wide" | "compact";
   consumedFields?: string[];
@@ -29,7 +30,9 @@ export interface InspectionTarget {
   definition: InstrumentDefinition;
   kind?: "instrument" | "subsystem" | "subsystem-list"
     | "weapon-bank" | "weapon-bank-list" | "turret-list"
-    | "support-entity" | "docking-relation" | "docking-component" | "cargo-target";
+    | "support-entity" | "docking-relation" | "docking-component" | "cargo-target"
+    | "target" | "radar-contact" | "lock-point" | "lock-list"
+    | "incoming-missile" | "missile-list";
   record?: Record<string, unknown>;
   title?: string;
   family?: "primary" | "secondary" | "tertiary" | "turret";

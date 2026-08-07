@@ -50,6 +50,7 @@ RELIABLE_WINDOW_US = 5_000_000
 DEFAULT_RTO_US = 250_000
 MAX_RTO_US = 1_000_000
 RETRANSMISSION = 0x10
+RECORD_FLAG_DELETE = 0x02
 
 
 def now_us() -> int:
@@ -136,11 +137,44 @@ def _record_identity(record: dict[str, Any]) -> str:
     """Return the stable public identity of one decoded state atom."""
     fields = record["fields"]
     parts = [record["recordName"]]
-    for name in ("manifest_generation", "class_id", "weapon_class_id", "entity_id",
-                 "subsystem_id", "event_id"):
+    for name in ("manifest_generation", "class_id", "weapon_class_id",
+                 "entity_id", "contact_entity_id", "subsystem_id", "event_id"):
         if name in fields:
             parts.append(f"{name}={fields[name]}")
     return "/".join(parts)
+
+
+def _legacy_record_view(
+    instances: dict[str, dict[str, Any]],
+) -> dict[str, dict[str, Any]]:
+    """Build the historical one-record-per-name view deterministically.
+
+    ``record_instances`` is authoritative.  The name-only mapping remains for
+    existing Phase 1/2 consumers that address singleton records directly.
+    """
+    records: dict[str, dict[str, Any]] = {}
+    for identity in sorted(instances):
+        record = instances[identity]
+        records[record["recordName"]] = record["fields"]
+    return records
+
+
+def _apply_state_mutations(
+    instances: dict[str, dict[str, Any]],
+    mutations: list[dict[str, Any]],
+    *,
+    allow_delete: bool,
+) -> None:
+    """Apply complete FSTL state atoms to an identity-keyed replica."""
+    for record in mutations:
+        identity = _record_identity(record)
+        flags = int(record.get("recordFlags", 0))
+        if flags & RECORD_FLAG_DELETE:
+            if not allow_delete:
+                raise ValueError("DELETE is not valid in a full snapshot")
+            instances.pop(identity, None)
+            continue
+        instances[identity] = copy.deepcopy(record)
 
 
 def _as_float(value: Any) -> float | None:
@@ -362,6 +396,109 @@ class DashboardProjection:
             "p2.dashboard.synchronized.v1",
             ["client:manifest_applied", "client:keyframe_applied",
              "client:pending_transactions", "client:baseline"]),
+        "norm(track.position_world-owner.position_world)": (
+            "p3.dashboard.track-distance.v1",
+            ["wire:RADAR_CONTACTS.position_world", "wire:FLIGHT_STATE.position_world"]),
+        "norm(track.velocity_world-owner.velocity_world)": (
+            "p3.dashboard.track-relative-speed.v1",
+            ["wire:RADAR_CONTACTS.velocity_world", "wire:FLIGHT_STATE.velocity_world"]),
+        "-dot(track_relative_velocity,unit_track_separation)": (
+            "p3.dashboard.track-closing-speed.v1",
+            ["wire:RADAR_CONTACTS.position_world", "wire:RADAR_CONTACTS.velocity_world",
+             "wire:FLIGHT_STATE.position_world", "wire:FLIGHT_STATE.velocity_world"]),
+        "track.position_world-owner.position_world": (
+            "p3.dashboard.track-relative-position.v1",
+            ["wire:RADAR_CONTACTS.position_world", "wire:FLIGHT_STATE.position_world"]),
+        "atan2(track_relative_position.y,track_relative_position.x)": (
+            "p3.dashboard.track-bearing.v1",
+            ["derived:p3.dashboard.track-relative-position.v1"]),
+        "atan2(track_relative_position.z,hypot(x,y))": (
+            "p3.dashboard.track-elevation.v1",
+            ["derived:p3.dashboard.track-relative-position.v1"]),
+        "distance/closing_speed when closing_speed>0": (
+            "p3.dashboard.track-ttc.v1",
+            ["derived:p3.dashboard.track-distance.v1",
+             "derived:p3.dashboard.track-closing-speed.v1"]),
+        "norm(navpoint.position_world-owner.position_world)": (
+            "p3.dashboard.navpoint-distance.v1",
+            ["wire:NAVIGATION_STATE.navpoints.position_world",
+             "wire:FLIGHT_STATE.position_world"]),
+        "distance/projected_velocity_toward_navpoint when positive": (
+            "p3.dashboard.navpoint-eta.v1",
+            ["derived:p3.dashboard.navpoint-distance.v1",
+             "wire:FLIGHT_STATE.velocity_world"]),
+        "clamp(sensor_current_hits/sensor_max_hits,0,1)": (
+            "p3.dashboard.sensor-integrity-ratio.v1",
+            ["wire:RADAR_STATE.sensor_current_hits", "wire:RADAR_STATE.sensor_max_hits"]),
+        "conjugate(owner.orientation_local_to_world) * track_relative_position": (
+            "p3.dashboard.track-relative-position-local.v1",
+            ["wire:RADAR_CONTACTS.position_world",
+             "wire:FLIGHT_STATE.position_world",
+             "wire:FLIGHT_STATE.orientation_local_to_world"]),
+        "atan2(track_relative_position_local.x,track_relative_position_local.z)": (
+            "p3.dashboard.track-local-bearing.v1",
+            ["derived:p3.dashboard.track-relative-position-local.v1"]),
+        "atan2(track_relative_position_local.y,hypot(x,z))": (
+            "p3.dashboard.track-local-elevation.v1",
+            ["derived:p3.dashboard.track-relative-position-local.v1"]),
+        "radar-v2: normalize(local.x,local.y) * acos(local.z/projection_distance)/pi": (
+            "p3.dashboard.track-scope-position.v2",
+            ["wire:RADAR_CONTACTS.radar_local_position",
+             "wire:RADAR_CONTACTS.radar_projection_distance"]),
+        "radar-v1-compat: normalize(local.x,local.y) * acos(local.z/distance)/pi": (
+            "p3.dashboard.track-scope-position.v1-compat",
+            ["wire:RADAR_CONTACTS.position_world",
+             "wire:FLIGHT_STATE.position_world",
+             "wire:FLIGHT_STATE.orientation_local_to_world"]),
+        "hypot(radar_local_position.x,radar_local_position.y)>=0.01": (
+            "p3.dashboard.track-scope-direction-defined.v1",
+            ["wire:RADAR_CONTACTS.radar_local_position"]),
+        "track_distance<=selected_range": (
+            "p3.dashboard.track-scope-in-range.v1",
+            ["derived:p3.dashboard.track-distance.v1",
+             "wire:RADAR_STATE.selected_range"]),
+        "RADAR_CONTACTS v2 publication is authoritative": (
+            "p3.dashboard.track-scope-published.v2",
+            ["wire:RADAR_CONTACTS"]),
+        "directional radar projection (already bounded to the scope disk)": (
+            "p3.dashboard.track-scope-clamped-position.v1",
+            ["derived:p3.dashboard.track-scope-position.v1"]),
+        "exact_hud_distance if present else geometric_track_distance": (
+            "p3.dashboard.target-distance.v1",
+            ["wire:TARGET_STATE.exact_hud_distance",
+             "derived:p3.dashboard.track-distance.v1"]),
+        "clamp(1-time_to_lock_remaining_us/weapon.lock.time_us,0,1)": (
+            "p3.dashboard.lock-progress.v1",
+            ["wire:LOCK_STATE.locks.time_to_lock_remaining_us",
+             "wire:WEAPON_STATE.current_secondary_bank_id",
+             "wire:WEAPON_STATE.secondary_banks",
+             "manifest:WEAPON_MANIFEST.lock.time_us"]),
+        "missile.position_world-owner.position_world": (
+            "p3.dashboard.missile-relative-position.v1",
+            ["wire:THREAT_STATE.incoming_missiles.position_world",
+             "wire:FLIGHT_STATE.position_world"]),
+        "conjugate(owner.orientation_local_to_world) * missile_relative_position": (
+            "p3.dashboard.missile-relative-position-local.v1",
+            ["derived:p3.dashboard.missile-relative-position.v1",
+             "wire:FLIGHT_STATE.orientation_local_to_world"]),
+        "norm(missile.position_world-owner.position_world)": (
+            "p3.dashboard.missile-distance.v1",
+            ["wire:THREAT_STATE.incoming_missiles.position_world",
+             "wire:FLIGHT_STATE.position_world"]),
+        "norm(missile.velocity_world-owner.velocity_world)": (
+            "p3.dashboard.missile-relative-speed.v1",
+            ["wire:THREAT_STATE.incoming_missiles.velocity_world",
+             "wire:FLIGHT_STATE.velocity_world"]),
+        "-dot(missile_relative_velocity,unit_missile_separation)": (
+            "p3.dashboard.missile-closing-speed.v1",
+            ["wire:THREAT_STATE.incoming_missiles.position_world",
+             "wire:THREAT_STATE.incoming_missiles.velocity_world",
+             "wire:FLIGHT_STATE.position_world",
+             "wire:FLIGHT_STATE.velocity_world"]),
+        "missile_distance/missile_closing_speed when closing_speed>0": (
+            "p3.dashboard.missile-ttc.v1",
+            ["derived:p3.dashboard.missile-distance.v1",
+             "derived:p3.dashboard.missile-closing-speed.v1"]),
     }
 
     def __init__(self, state: "ConsoleState", at_us: int,
@@ -426,6 +563,12 @@ class DashboardProjection:
             if record["recordName"] == name
         ]
 
+    def _record_envelopes(self, name: str) -> list[dict[str, Any]]:
+        return [
+            record for _, record in sorted(self.state.record_instances.items())
+            if record["recordName"] == name
+        ]
+
     def _per_entity(self, name: str) -> dict[str, dict[str, Any]]:
         return {str(record["entity_id"]): record for record in self._records(name)
                 if "entity_id" in record}
@@ -445,6 +588,14 @@ class DashboardProjection:
                            f"wire:{record['recordName']}:v{record['recordVersion']}")
 
         flights = self._per_entity("FLIGHT_STATE")
+        estimated_producer_now = (
+            self.at_us + self.smoothed_offset_us
+            if self.offset_filter_valid and self.smoothed_offset_us is not None
+            else None
+        )
+        if (estimated_producer_now is not None and
+                not -(1 << 63) <= estimated_producer_now < (1 << 63)):
+            estimated_producer_now = None
         for entity, flight in flights.items():
             velocity = [_as_float(value) for value in flight.get("velocity_world", [])]
             speed = None if len(velocity) != 3 or any(value is None for value in velocity) else math.sqrt(
@@ -474,6 +625,14 @@ class DashboardProjection:
                 "closed lifecycle_phase label mapping",
                 {"available": label is not None,
                  "reason": None if label is not None else "invalid-lifecycle-phase", "value": label},
+            )
+
+        for entity, radar in self._per_entity("RADAR_STATE").items():
+            self._add_derived(
+                f"entities.{entity}.sensor_integrity_ratio",
+                "clamp(sensor_current_hits/sensor_max_hits,0,1)",
+                _ratio(radar.get("sensor_current_hits"),
+                       radar.get("sensor_max_hits")),
             )
 
         for entity, damage in self._per_entity("DAMAGE_STATE").items():
@@ -1105,18 +1264,406 @@ class DashboardProjection:
                 },
             )
 
+        track_metrics: dict[tuple[str, str], dict[str, Any]] = {}
+        radars = self._per_entity("RADAR_STATE")
+        for contact_envelope in self._record_envelopes("RADAR_CONTACTS"):
+            contact = contact_envelope["fields"]
+            contact_record_version = int(contact_envelope["recordVersion"])
+            owner = str(contact.get("entity_id", ""))
+            contact_id = str(contact.get("contact_entity_id", ""))
+            owner_flight = flights.get(owner)
+            position = vector3(contact, "position_world")
+            velocity = vector3(contact, "velocity_world")
+            owner_position = vector3(owner_flight, "position_world")
+            owner_velocity = vector3(owner_flight, "velocity_world")
+            separation = ([remote - local for local, remote in zip(owner_position, position)]
+                          if position is not None and owner_position is not None else None)
+            relative_velocity = ([remote - local for local, remote in zip(owner_velocity, velocity)]
+                                 if velocity is not None and owner_velocity is not None else None)
+            distance = math.sqrt(sum(value * value for value in separation)) if separation is not None else None
+            relative_speed = math.sqrt(sum(value * value for value in relative_velocity)) if relative_velocity is not None else None
+            closing = (-sum(speed * axis / distance for speed, axis in zip(relative_velocity, separation))
+                       if distance is not None and distance > 0.0 and relative_velocity is not None else None)
+            prefix = f"entities.{owner}.tracks.{contact_id}"
+            reason = "track-or-owner-flight-state-absent-or-invalid"
+            relative_position_available = separation is not None
+            bearing = (math.atan2(separation[1], separation[0])
+                       if relative_position_available else None)
+            horizontal_distance = (math.hypot(separation[0], separation[1])
+                                   if relative_position_available else None)
+            elevation = (math.atan2(separation[2], horizontal_distance)
+                         if horizontal_distance is not None else None)
+            local_separation = (
+                _rotate_world_to_local(
+                    owner_flight.get("orientation_local_to_world", [])
+                    if owner_flight is not None else [],
+                    separation,
+                )
+                if separation is not None else None
+            )
+            local_bearing = (
+                math.atan2(local_separation[0], local_separation[2])
+                if local_separation is not None else None
+            )
+            local_elevation = (
+                math.atan2(
+                    local_separation[1],
+                    math.hypot(local_separation[0], local_separation[2]),
+                )
+                if local_separation is not None else None
+            )
+            selected_range = _as_float(radars.get(owner, {}).get("selected_range"))
+            # Match the standard FSO radar: this is a directional projection,
+            # not a top-down distance map. The nose is the centre; screen X is
+            # local right/left and screen Y is local up/down. Radial distance is
+            # the angle from the nose, normalized over the forward-to-rear
+            # hemisphere. ``selected_range`` decides visibility, not placement.
+            radar_local = vector3(contact, "radar_local_position")
+            radar_distance = _as_float(
+                contact.get("radar_projection_distance")
+            )
+            authoritative_radar_projection = (
+                contact_record_version == 2
+                and radar_local is not None
+                and radar_distance is not None
+                and radar_distance >= 0.0
+            )
+            projection_local = (
+                radar_local if authoritative_radar_projection
+                else local_separation if contact_record_version == 1
+                else None
+            )
+            projection_distance = (
+                radar_distance if authoritative_radar_projection
+                else distance if contact_record_version == 1
+                else None
+            )
+            scope_position = None
+            scope_direction_defined = None
+            if (projection_local is not None and projection_distance is not None
+                    and projection_distance > 0.0):
+                transverse = math.hypot(
+                    projection_local[0], projection_local[1]
+                )
+                forward_cosine = max(
+                    -1.0,
+                    min(1.0, projection_local[2] / projection_distance),
+                )
+                radial = (
+                    0.0
+                    if projection_distance < projection_local[2]
+                    else math.acos(forward_cosine) / math.pi
+                )
+                scope_direction_defined = transverse >= 0.01
+                scope_position = (
+                    [
+                        projection_local[0] * radial / transverse,
+                        -projection_local[1] * radial / transverse,
+                    ]
+                    if scope_direction_defined else [0.0, 0.0]
+                )
+            scope_in_range = (
+                True
+                if contact_record_version == 2
+                else (
+                    distance <= selected_range
+                    if distance is not None and selected_range is not None
+                    and selected_range > 0.0
+                    else None
+                )
+            )
+            scope_clamped = scope_position
+            self._add_derived(f"{prefix}.relative_position",
+                              "track.position_world-owner.position_world",
+                              {"available": relative_position_available,
+                               "reason": None if relative_position_available else reason,
+                               "value": separation})
+            self._add_derived(f"{prefix}.bearing_rad",
+                              "atan2(track_relative_position.y,track_relative_position.x)",
+                              {"available": bearing is not None,
+                               "reason": None if bearing is not None else reason,
+                               "value": bearing})
+            self._add_derived(f"{prefix}.elevation_rad",
+                              "atan2(track_relative_position.z,hypot(x,y))",
+                              {"available": elevation is not None,
+                               "reason": None if elevation is not None else reason,
+                               "value": elevation})
+            self._add_derived(
+                f"{prefix}.relative_position_local",
+                "conjugate(owner.orientation_local_to_world) * track_relative_position",
+                {
+                    "available": local_separation is not None,
+                    "reason": None if local_separation is not None else reason,
+                    "value": local_separation,
+                },
+            )
+            self._add_derived(
+                f"{prefix}.bearing_local_rad",
+                "atan2(track_relative_position_local.x,track_relative_position_local.z)",
+                {
+                    "available": local_bearing is not None,
+                    "reason": None if local_bearing is not None else reason,
+                    "value": local_bearing,
+                },
+            )
+            self._add_derived(
+                f"{prefix}.elevation_local_rad",
+                "atan2(track_relative_position_local.y,hypot(x,z))",
+                {
+                    "available": local_elevation is not None,
+                    "reason": None if local_elevation is not None else reason,
+                    "value": local_elevation,
+                },
+            )
+            self._add_derived(
+                f"{prefix}.scope_position",
+                ("radar-v2: normalize(local.x,local.y) * "
+                 "acos(local.z/projection_distance)/pi"
+                 if contact_record_version == 2
+                 else ("radar-v1-compat: normalize(local.x,local.y) * "
+                       "acos(local.z/distance)/pi")),
+                {
+                    "available": scope_position is not None,
+                    "reason": (
+                        None if scope_position is not None
+                        else "missing-authoritative-radar-projection"
+                        if contact_record_version == 2
+                        else "missing-legacy-local-pose-or-nonzero-distance"
+                    ),
+                    "value": scope_position,
+                },
+            )
+            self._add_derived(
+                f"{prefix}.scope_direction_defined",
+                "hypot(radar_local_position.x,radar_local_position.y)>=0.01",
+                {
+                    "available": scope_direction_defined is not None,
+                    "reason": (
+                        None if scope_direction_defined is not None
+                        else "missing-scope-position"
+                    ),
+                    "value": scope_direction_defined,
+                },
+            )
+            self._add_derived(
+                f"{prefix}.scope_in_range",
+                ("RADAR_CONTACTS v2 publication is authoritative"
+                 if contact_record_version == 2
+                 else "track_distance<=selected_range"),
+                {
+                    "available": scope_in_range is not None,
+                    "reason": None if scope_in_range is not None else "missing-track-distance-or-positive-range",
+                    "value": scope_in_range,
+                },
+            )
+            self._add_derived(
+                f"{prefix}.scope_clamped_position",
+                "directional radar projection (already bounded to the scope disk)",
+                {
+                    "available": scope_clamped is not None,
+                    "reason": None if scope_clamped is not None else "missing-scope-position",
+                    "value": scope_clamped,
+                },
+            )
+            self._add_derived(f"{prefix}.distance", "norm(track.position_world-owner.position_world)",
+                              {"available": distance is not None, "reason": None if distance is not None else reason, "value": distance})
+            self._add_derived(f"{prefix}.relative_speed", "norm(track.velocity_world-owner.velocity_world)",
+                              {"available": relative_speed is not None, "reason": None if relative_speed is not None else reason, "value": relative_speed})
+            self._add_derived(f"{prefix}.closing_speed", "-dot(track_relative_velocity,unit_track_separation)",
+                              {"available": closing is not None, "reason": None if closing is not None else reason, "value": closing})
+            ttc_s = distance / closing if closing is not None and closing > 0.0 else None
+            self._add_derived(f"{prefix}.ttc_s", "distance/closing_speed when closing_speed>0",
+                              {"available": ttc_s is not None,
+                               "reason": None if ttc_s is not None else "track-not-approaching-or-invalid",
+                               "value": ttc_s})
+            sample_time = _as_float(contact.get("producer_sample_time_us"))
+            track_age_us = (
+                estimated_producer_now - sample_time
+                if sample_time is not None and estimated_producer_now is not None
+                and estimated_producer_now >= sample_time else None
+            )
+            self._add_derived(f"{prefix}.age_us",
+                              "client_monotonic_time_us+smoothed_offset-producer_sample_time_us",
+                              {"available": track_age_us is not None,
+                               "reason": None if track_age_us is not None else "invalid-or-missing-clock-offset",
+                               "value": track_age_us})
+            track_metrics[(owner, contact_id)] = {
+                "distance": distance,
+                "closing_speed": closing,
+                "relative_speed": relative_speed,
+            }
+
+        for entity, target in self._per_entity("TARGET_STATE").items():
+            target_id = str(target.get("current_target_entity_id", "0"))
+            exact_distance = _as_float(target.get("exact_hud_distance"))
+            geometric_distance = track_metrics.get((entity, target_id), {}).get("distance")
+            effective_distance = exact_distance if exact_distance is not None else geometric_distance
+            self._add_derived(
+                f"entities.{entity}.target.distance",
+                "exact_hud_distance if present else geometric_track_distance",
+                {
+                    "available": effective_distance is not None,
+                    "reason": None if effective_distance is not None else "no-target-distance-source",
+                    "value": effective_distance,
+                },
+            )
+
+        weapon_manifests = {
+            str(record.get("weapon_class_id")): record
+            for record in self._manifest_records("WEAPON_MANIFEST")
+            if record.get("weapon_class_id") is not None
+        }
+        weapons = self._per_entity("WEAPON_STATE")
+        for entity, lock_state in self._per_entity("LOCK_STATE").items():
+            weapon = weapons.get(entity)
+            selected_bank = None
+            if weapon is not None:
+                selected_id = str(weapon.get("current_secondary_bank_id", "0"))
+                matches = [
+                    bank for bank in weapon.get("secondary_banks", [])
+                    if str(bank.get("bank_id")) == selected_id
+                ]
+                if len(matches) == 1:
+                    selected_bank = matches[0]
+            manifest = (
+                weapon_manifests.get(str(selected_bank.get("weapon_class_id")))
+                if selected_bank is not None else None
+            )
+            lock_group = manifest.get("lock") if isinstance(manifest, dict) else None
+            lock_duration_us = (
+                _as_float(lock_group.get("time_us"))
+                if isinstance(lock_group, dict) else None
+            )
+            for index, lock in enumerate(lock_state.get("locks", [])):
+                remaining_us = _as_float(lock.get("time_to_lock_remaining_us"))
+                locked = lock.get("locked") is True
+                valid_duration = lock_duration_us is not None and lock_duration_us > 0.0
+                progress = (
+                    1.0 if locked and valid_duration else
+                    min(1.0, max(0.0, 1.0 - remaining_us / lock_duration_us))
+                    if remaining_us is not None and valid_duration else None
+                )
+                reason = (
+                    None if progress is not None else
+                    "lock-attempt-absent" if remaining_us is None and not locked else
+                    "selected-secondary-lock-manifest-unavailable"
+                )
+                self._add_derived(
+                    f"entities.{entity}.locks[{index}].progress",
+                    "clamp(1-time_to_lock_remaining_us/weapon.lock.time_us,0,1)",
+                    {
+                        "available": progress is not None,
+                        "reason": reason,
+                        "value": progress,
+                    },
+                )
+
+        for entity, threat in self._per_entity("THREAT_STATE").items():
+            owner_flight = flights.get(entity)
+            owner_position = vector3(owner_flight, "position_world")
+            owner_velocity = vector3(owner_flight, "velocity_world")
+            owner_orientation = (
+                owner_flight.get("orientation_local_to_world", [])
+                if owner_flight is not None else []
+            )
+            for missile in threat.get("incoming_missiles", []):
+                missile_id = str(missile.get("entity_id", ""))
+                position = vector3(missile, "position_world")
+                velocity = vector3(missile, "velocity_world")
+                separation = (
+                    [remote - local for local, remote in zip(owner_position, position)]
+                    if owner_position is not None and position is not None else None
+                )
+                relative_velocity = (
+                    [remote - local for local, remote in zip(owner_velocity, velocity)]
+                    if owner_velocity is not None and velocity is not None else None
+                )
+                local_separation = (
+                    _rotate_world_to_local(owner_orientation, separation)
+                    if separation is not None else None
+                )
+                distance = (
+                    math.sqrt(sum(value * value for value in separation))
+                    if separation is not None else None
+                )
+                relative_speed = (
+                    math.sqrt(sum(value * value for value in relative_velocity))
+                    if relative_velocity is not None else None
+                )
+                closing = (
+                    -sum(speed * axis / distance for speed, axis in zip(relative_velocity, separation))
+                    if distance is not None and distance > 0.0 and relative_velocity is not None
+                    else None
+                )
+                ttc_s = distance / closing if closing is not None and closing > 0.0 else None
+                prefix = f"entities.{entity}.missiles.{missile_id}"
+                reason = "missile-or-owner-flight-state-absent-or-invalid"
+                for path, formula, value in (
+                    ("relative_position", "missile.position_world-owner.position_world", separation),
+                    ("relative_position_local",
+                     "conjugate(owner.orientation_local_to_world) * missile_relative_position",
+                     local_separation),
+                    ("distance", "norm(missile.position_world-owner.position_world)", distance),
+                    ("relative_speed", "norm(missile.velocity_world-owner.velocity_world)",
+                     relative_speed),
+                    ("closing_speed",
+                     "-dot(missile_relative_velocity,unit_missile_separation)", closing),
+                ):
+                    self._add_derived(
+                        f"{prefix}.{path}",
+                        formula,
+                        {
+                            "available": value is not None,
+                            "reason": None if value is not None else reason,
+                            "value": value,
+                        },
+                    )
+                self._add_derived(
+                    f"{prefix}.ttc_s",
+                    "missile_distance/missile_closing_speed when closing_speed>0",
+                    {
+                        "available": ttc_s is not None,
+                        "reason": None if ttc_s is not None else "missile-not-approaching-or-invalid",
+                        "value": ttc_s,
+                    },
+                )
+
+        for entity, navigation in self._per_entity("NAVIGATION_STATE").items():
+            owner_flight = flights.get(entity)
+            owner_position = vector3(owner_flight, "position_world")
+            owner_velocity = vector3(owner_flight, "velocity_world")
+            for navpoint in navigation.get("navpoints", []):
+                navpoint_id = str(navpoint.get("navpoint_id", ""))
+                navpoint_position = vector3(navpoint, "position_world")
+                separation = (
+                    [remote - local for local, remote in zip(owner_position, navpoint_position)]
+                    if owner_position is not None and navpoint_position is not None else None
+                )
+                distance = (math.sqrt(sum(value * value for value in separation))
+                            if separation is not None else None)
+                closing_speed = (
+                    sum(velocity * axis / distance for velocity, axis in zip(owner_velocity, separation))
+                    if distance is not None and distance > 0.0 and owner_velocity is not None else None
+                )
+                eta_s = distance / closing_speed if closing_speed is not None and closing_speed > 0.0 else None
+                prefix = f"entities.{entity}.navpoints.{navpoint_id}"
+                reason = "navpoint-or-owner-flight-state-absent-or-invalid"
+                self._add_derived(f"{prefix}.distance",
+                                  "norm(navpoint.position_world-owner.position_world)",
+                                  {"available": distance is not None,
+                                   "reason": None if distance is not None else reason,
+                                   "value": distance})
+                self._add_derived(f"{prefix}.eta_s",
+                                  "distance/projected_velocity_toward_navpoint when positive",
+                                  {"available": eta_s is not None,
+                                   "reason": None if eta_s is not None else "navpoint-not-approaching-or-invalid",
+                                   "value": eta_s})
+
         sample_periods = {
             "FLIGHT_STATE": math.ceil(1_000_000 / self.flight_hz),
             "CONTROL_STATE": math.ceil(1_000_000 / self.flight_hz),
         }
         default_system_period = math.ceil(1_000_000 / self.systems_hz)
-        estimated_now = (
-            self.at_us + self.smoothed_offset_us
-            if self.offset_filter_valid and self.smoothed_offset_us is not None
-            else None
-        )
-        if estimated_now is not None and not -(1 << 63) <= estimated_now < (1 << 63):
-            estimated_now = None
         for identity, record in sorted(self.state.record_instances.items()):
             sample = record["fields"].get("producer_sample_time_us")
             sample_value = int(sample) if sample is not None else None
@@ -1126,8 +1673,9 @@ class DashboardProjection:
                 if record["recordName"] in ("SESSION_STATE", "MISSION_STATE")
                 else default_system_period,
             )
-            valid_age = estimated_now is not None and sample_value is not None and estimated_now >= sample_value
-            age = estimated_now - sample_value if valid_age else None
+            valid_age = (estimated_producer_now is not None and sample_value is not None
+                         and estimated_producer_now >= sample_value)
+            age = estimated_producer_now - sample_value if valid_age else None
             self._add_derived(
                 f"records.{identity}.age_us",
                 "client_monotonic_time_us+smoothed_offset-producer_sample_time_us",
@@ -1260,12 +1808,25 @@ class ConsoleState:
         return True
 
     def _apply_records(self, records: list[dict[str, Any]], replace: bool) -> None:
-        if replace:
-            self.records = {}
-            self.record_instances = {}
-        for record in records:
-            self.records[record["recordName"]] = record["fields"]
-            self.record_instances[_record_identity(record)] = copy.deepcopy(record)
+        candidate = (
+            {}
+            if replace
+            else copy.deepcopy(self.record_instances)
+        )
+        _apply_state_mutations(
+            candidate, records, allow_delete=not replace
+        )
+        self.record_instances = candidate
+        self.records = _legacy_record_view(self.record_instances)
+
+    def _apply_cumulative_delta_records(
+        self, records: list[dict[str, Any]]
+    ) -> None:
+        """Rebuild one cumulative delta from the immutable ACKed baseline."""
+        replica_instances = copy.deepcopy(self.baseline_record_instances)
+        _apply_state_mutations(replica_instances, records, allow_delete=True)
+        self.record_instances = replica_instances
+        self.records = _legacy_record_view(replica_instances)
 
     def end_session(self) -> None:
         """Publish a terminal tombstone then release all retained heavy state."""
@@ -1469,13 +2030,7 @@ class ConsoleState:
                 self.stale_detected_us = None
                 self.stale_detected_utc = None
                 return False, [], []
-            replica = copy.deepcopy(self.baseline_records)
-            replica_instances = copy.deepcopy(self.baseline_record_instances)
-            for record in fields["records"]:
-                replica[record["recordName"]] = record["fields"]
-                replica_instances[_record_identity(record)] = copy.deepcopy(record)
-            self.records = replica
-            self.record_instances = replica_instances
+            self._apply_cumulative_delta_records(fields["records"])
             self.delta_sequence = fields["delta_sequence"]
             self.last_state_us = at_us
             self.last_state_utc = at_utc

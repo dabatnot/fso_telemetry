@@ -325,6 +325,7 @@ class TelemetryRuntime:
         capture_dir: Path,
         replay_path: Path | None = None,
         stale_us: int = 3_000_000,
+        recovery_reconnect_us: int = 10_000_000,
     ) -> None:
         self.host = host
         self.port = port
@@ -334,6 +335,7 @@ class TelemetryRuntime:
         self.capture = CaptureWriter(capture_dir)
         self.replay_path = replay_path
         self.stale_us = stale_us
+        self.recovery_reconnect_us = recovery_reconnect_us
         self.quality = QualityTracker(flight_hz, systems_hz, mission_heartbeat_ms)
         self.client: fstl.ConsoleClient | None = None
         self.mode = "replay" if replay_path else "live"
@@ -483,6 +485,8 @@ class TelemetryRuntime:
                     at_us, at_utc = fstl.local_observation()
                     if not recovering_from_silence:
                         self._publish(at_us, at_utc)
+                    synchronizing_since_us: int | None = None
+                    next_recovery_request_us = 0
                     while not self._stop.is_set():
                         if self._restart_live.is_set():
                             self._restart_live.clear()
@@ -506,10 +510,13 @@ class TelemetryRuntime:
                             changed = self.client.receive(datagram, received_us, received_utc)
                             if changed:
                                 self.quality.observe_state(self.client.state, received_us)
-                                if not recovering_from_silence or self.client.state.status == "Live":
-                                    self._publish(received_us, received_utc)
                                 if self.client.state.status == "Live":
                                     recovering_from_silence = False
+                                    synchronizing_since_us = None
+                                    next_recovery_request_us = 0
+                                    self._publish(received_us, received_utc)
+                                elif not recovering_from_silence:
+                                    self._publish(received_us, received_utc)
                         except socket.timeout:
                             pass
                         now, now_utc = fstl.local_observation()
@@ -522,20 +529,62 @@ class TelemetryRuntime:
                                 and self.client.state.stale_reason == "silence"
                             ):
                                 recovering_from_silence = True
-                                # A fresh endpoint is required for a fresh
-                                # producer-side client identity.  Reusing the
-                                # endpoint can complete SESSION_BEGIN while
-                                # leaving the producer's prior slot ownership
-                                # unable to advance to its initial keyframe.
+                        needs_recovery = (
+                            self.client.state.session_begun
+                            and (
+                                (
+                                    self.client.state.status == "Stale"
+                                    and self.client.state.stale_reason == "silence"
+                                )
+                                or (
+                                    self.client.state.status == "Synchronizing"
+                                    and not self.client.state.keyframe_applied
+                                )
+                            )
+                        )
+                        if needs_recovery:
+                            if synchronizing_since_us is None:
+                                synchronizing_since_us = now
+                            recovery_due = (
+                                self.client.state.status == "Stale"
+                                or now - synchronizing_since_us >= self.stale_us
+                            )
+                            if (
+                                recovery_due
+                                and now >= next_recovery_request_us
+                                and self.client.pending_resync is None
+                            ):
+                                # Preserve the producer-side client identity
+                                # across an intentional game pause.  The
+                                # reliable request remains queued/retried until
+                                # FSO resumes, and a fresh keyframe atomically
+                                # returns the dashboard to Live.
+                                self.client._resync(now)
+                                next_recovery_request_us = now + fstl.RELIABLE_WINDOW_US
+                            if (
+                                now - synchronizing_since_us
+                                >= self.recovery_reconnect_us
+                            ):
+                                # Some producer-side slots acknowledge RESYNC
+                                # after a focus loss but never schedule another
+                                # keyframe.  Preserve the published stale image
+                                # and rotate to a fresh endpoint.  If FSO is
+                                # still paused, this bounded cycle repeats
+                                # until one negotiation can publish Live state.
+                                recovering_from_silence = True
                                 break
+                        else:
+                            synchronizing_since_us = None
+                            next_recovery_request_us = 0
                         if self.client.terminal_published:
                             self._publish(now, now_utc)
                             break
             except (OSError, ValueError, decoder.DecodeFailure) as exc:
-                with self._lock:
-                    self._snapshot = self._empty_snapshot("Disconnected")
-                    self._snapshot["connection"]["error"] = str(exc)
-                    self._version += 1
+                if not recovering_from_silence:
+                    with self._lock:
+                        self._snapshot = self._empty_snapshot("Disconnected")
+                        self._snapshot["connection"]["error"] = str(exc)
+                        self._version += 1
             if self.capture.active and not self._stop.is_set():
                 continue
             if not self._stop.wait(1.0):

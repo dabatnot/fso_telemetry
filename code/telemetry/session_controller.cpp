@@ -12,7 +12,9 @@
 #include <new>
 
 namespace telemetry::detail {
-const std::size_t Wp06ClientSlotStorageBytes = sizeof(SessionControllerSlot);
+const std::size_t Wp06ClientSlotStorageBytes =
+	sizeof(SessionControllerSlot) +
+	protocol::ProducerBaselineTracker::dirty_index_backing_bytes();
 const std::size_t Wp06RateLimiterStorageBytes = sizeof(protocol::ProtocolRateLimiter);
 const std::size_t Wp06HandshakeCacheStorageBytes = SessionController::handshake_cache_storage_bytes();
 const std::size_t Wp06PreproofLedgerStorageBytes = sizeof(PreproofAmplificationLedger);
@@ -264,7 +266,8 @@ SessionControllerConfigureResult SessionController::configure(const SessionContr
 			Phase2CompleteShipDeltaBytes) ||
 		(config.phase2_profile != Phase2Profile::None &&
 		 config.phase2_profile != Phase2Profile::CoreGate &&
-		 config.phase2_profile != Phase2Profile::CompleteShip) ||
+		 config.phase2_profile != Phase2Profile::CompleteShip &&
+		 config.phase2_profile != Phase2Profile::CockpitSensors) ||
 		config.security.resources.max_clients != config.max_clients ||
 		protocol::validate_security_configuration(config.security, totals) !=
 			protocol::SecurityConfigurationError::None) {
@@ -402,8 +405,18 @@ bool SessionController::initialize_slot(std::size_t index) noexcept
 	auto snapshot_egress = std::move(m_slots[index].snapshot_egress);
 	auto delta_egress = std::move(m_slots[index].delta_egress);
 	auto delta_scratch = std::move(m_slots[index].delta_scratch);
+	auto snapshot = std::move(m_slots[index].snapshot);
 	const auto needs_snapshot_egress_configuration = !snapshot_egress.configured();
-	m_slots[index] = SessionControllerSlot{};
+	// SessionControllerSlot owns the large fixed replication trackers. Reset it
+	// directly in its startup-owned heap slot: materializing a value-initialized
+	// temporary here would put the whole Phase 3 dirty-index inventory on the
+	// Windows main-thread stack.
+	m_slots[index].~SessionControllerSlot();
+	new (&m_slots[index]) SessionControllerSlot();
+	m_slots[index].snapshot = std::move(snapshot);
+	if (!m_slots[index].snapshot.preallocated() &&
+		!m_slots[index].snapshot.provision()) return false;
+	m_slots[index].snapshot.reset();
 	m_slots[index].snapshot_egress = std::move(snapshot_egress);
 	m_slots[index].delta_egress = std::move(delta_egress);
 	m_slots[index].delta_scratch = std::move(delta_scratch);
@@ -1391,7 +1404,8 @@ SessionIngressResult SessionController::ingest_resync_request(const protocol::En
 				rollback_snapshot_candidate(index);
 			}
 		}
-		if (!slot.snapshot.has_candidate() && !slot.snapshot_egress.has_candidate() &&
+		if (m_config.phase2_profile != Phase2Profile::CockpitSensors &&
+			!slot.snapshot.has_candidate() && !slot.snapshot_egress.has_candidate() &&
 			begin_scheduled_snapshot(index, protocol::SnapshotFlagResync, now_us)) {
 			(void)slot.resync.complete();
 		}
@@ -1712,7 +1726,9 @@ void SessionController::service_reliability(std::uint64_t now_us) noexcept
 				if (action.terminal_policy == protocol::ReliableTerminalPolicy::RequestResync &&
 					slot.snapshot.has_active_baseline()) {
 					rollback_snapshot_candidate(index);
-					if (!slot.snapshot.has_candidate()) {
+					if (!slot.snapshot.has_candidate() &&
+						m_config.phase2_profile !=
+							Phase2Profile::CockpitSensors) {
 						(void)begin_scheduled_snapshot(index, protocol::SnapshotFlagResync, now_us);
 					}
 					return;
@@ -1913,7 +1929,10 @@ void SessionController::service_periodic(std::uint64_t now_us) noexcept
 		if (slot.progress != ProducerSessionProgress::ReadyForState || !slot.snapshot.has_active_baseline()) {
 			continue;
 		}
-		if (slot.resync.has_candidate() && !slot.snapshot.has_candidate() && !slot.snapshot_egress.has_candidate()) {
+		if (slot.resync.has_candidate() &&
+			m_config.phase2_profile != Phase2Profile::CockpitSensors &&
+			!slot.snapshot.has_candidate() &&
+			!slot.snapshot_egress.has_candidate()) {
 			if (begin_scheduled_snapshot(index, protocol::SnapshotFlagResync, now_us)) {
 				preempt_queued_delta();
 				(void)slot.resync.complete();
@@ -1927,7 +1946,9 @@ void SessionController::service_periodic(std::uint64_t now_us) noexcept
 				: now_us + interval_us;
 			slot.keyframe_due = true;
 		}
-		if (slot.keyframe_due && !slot.snapshot.has_candidate() && !slot.snapshot_egress.has_candidate() &&
+		if (slot.keyframe_due &&
+			m_config.phase2_profile != Phase2Profile::CockpitSensors &&
+			!slot.snapshot.has_candidate() && !slot.snapshot_egress.has_candidate() &&
 			begin_scheduled_snapshot(index, protocol::SnapshotFlagPeriodicKeyframe, now_us)) {
 			preempt_queued_delta();
 		}
@@ -2056,6 +2077,7 @@ bool SessionController::begin_initial_snapshot(std::size_t slot_index,
 	slot.next_message_id =
 		slot.snapshot_egress.next_message_id();
 	++slot.next_snapshot_id;
+	slot.keyframe_due = false;
 	return true;
 }
 
@@ -2561,24 +2583,56 @@ bool SessionController::begin_phase2_snapshot(
 	return true;
 }
 
-bool SessionController::queue_cumulative_delta(std::size_t slot_index, std::uint64_t now_us) noexcept
+bool SessionController::queue_cumulative_delta(std::size_t slot_index,
+	std::uint64_t now_us,
+	std::uint64_t complete_capture_sample_time_us) noexcept
 {
 	if (!m_ready || m_faulted || slot_index >= m_config.max_clients) {
 		return false;
 	}
 	auto& slot = m_slots[slot_index];
+	const auto phase3_complete_capture =
+		m_config.phase2_profile != Phase2Profile::CockpitSensors ||
+		(complete_capture_sample_time_us != 0U &&
+		 complete_capture_sample_time_us == now_us);
+	if (slot.resync.has_candidate()) {
+		if (!phase3_complete_capture)
+			return false;
+		if (begin_scheduled_snapshot(slot_index,
+				protocol::SnapshotFlagResync, now_us)) {
+			(void)slot.resync.complete();
+			return true;
+		}
+		return false;
+	}
 	if (slot.keyframe_due) {
+		if (!phase3_complete_capture)
+			return false;
 		if (begin_scheduled_snapshot(slot_index,
 				protocol::SnapshotFlagPeriodicKeyframe, now_us))
 			return true;
 		return false;
 	}
 	if (slot.snapshot.keyframe_intent() != Phase1KeyframeIntent::None) {
+		if (!phase3_complete_capture)
+			return false;
 		if (begin_scheduled_snapshot(slot_index, protocol::SnapshotFlagPeriodicKeyframe, now_us)) {
 			(void)slot.snapshot.consume_keyframe_intent();
 			return true;
 		}
 		return false;
+	}
+	if (m_config.phase2_profile == Phase2Profile::CockpitSensors &&
+		slot.phase2_runtime.pending_snapshot_cause() !=
+			Phase2RuntimeSnapshotCause::None) {
+		if (!phase3_complete_capture)
+			return false;
+		const auto flags =
+			slot.phase2_runtime.pending_snapshot_cause() ==
+					Phase2RuntimeSnapshotCause::Resync
+				? protocol::SnapshotFlagResync
+				: protocol::SnapshotFlagPeriodicKeyframe;
+		return begin_scheduled_snapshot(slot_index, flags, now_us);
 	}
 	if (m_config.phase2_profile != Phase2Profile::None &&
 		!slot.phase2_runtime.can_emit_delta())
@@ -2611,6 +2665,8 @@ bool SessionController::queue_cumulative_delta(std::size_t slot_index, std::uint
 			Phase2Profile::None)
 			(void)slot.phase2_runtime.request_snapshot(
 				Phase2RuntimeSnapshotCause::DeltaCapacity);
+		if (!phase3_complete_capture)
+			return false;
 		if (begin_scheduled_snapshot(slot_index,
 				protocol::SnapshotFlagPeriodicKeyframe, now_us)) {
 			(void)slot.snapshot.consume_keyframe_intent();
@@ -2623,6 +2679,28 @@ bool SessionController::queue_cumulative_delta(std::size_t slot_index, std::uint
 	++slot.next_message_id;
 	(void)slot.snapshot.consume_session_state_dirty();
 	return true;
+}
+
+bool SessionController::phase3_complete_capture_required() const noexcept
+{
+	if (!m_ready || m_faulted ||
+		m_config.phase2_profile != Phase2Profile::CockpitSensors)
+		return false;
+	for (std::size_t index = 0U; index < m_config.max_clients; ++index) {
+		const auto& slot = m_slots[index];
+		if (slot.progress != ProducerSessionProgress::ReadyForState ||
+			!slot.snapshot.has_active_baseline() ||
+			slot.snapshot.has_candidate() ||
+			slot.snapshot_egress.has_candidate())
+			continue;
+		if (slot.resync.has_candidate() || slot.keyframe_due ||
+			slot.snapshot.keyframe_intent() !=
+				Phase1KeyframeIntent::None ||
+			slot.phase2_runtime.pending_snapshot_cause() !=
+				Phase2RuntimeSnapshotCause::None)
+			return true;
+	}
+	return false;
 }
 
 protocol::ProducerBaselineResult SessionController::replace_current_state(std::size_t slot_index,
@@ -2907,7 +2985,7 @@ SessionControllerOwnedCapacity SessionController::owned_capacity() const noexcep
 		m_config.max_clients * 2U,
 		m_config.max_clients * 2U,
 		0U,
-		m_config.max_clients * sizeof(SessionControllerSlot),
+		m_config.max_clients * Wp06ClientSlotStorageBytes,
 		sizeof(protocol::ProtocolRateLimiter),
 		sizeof(m_cache),
 		sizeof(m_preproof),

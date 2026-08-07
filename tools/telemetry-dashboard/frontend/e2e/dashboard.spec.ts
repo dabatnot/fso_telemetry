@@ -577,14 +577,247 @@ async function mockSupportSnapshot(page: import("@playwright/test").Page) {
   }, snapshot);
 }
 
-test("all cockpit tabs remain reachable and future tactical data is ND", async ({ page }) => {
+async function mockTacticalSnapshot(
+  page: import("@playwright/test").Page,
+  contactCount = 24
+) {
+  const contacts = Array.from({ length: contactCount }, (_, index) => {
+    const id = String(101 + index);
+    const angle = (index / Math.max(contactCount, 1)) * Math.PI * 2;
+    const distance = 200 + (index % 12) * 70;
+    return {
+      entity_id: "1",
+      contact_entity_id: id,
+      presence: index < 4 ? "2" : "0",
+      producer_sample_time_us: "1000000",
+      object_type: index === 1 ? 2 : 1,
+      category: index === 1 ? 2 : 1,
+      visibility: index % 9 === 0 ? 2 : 1,
+      position_world: [
+        Math.sin(angle) * distance,
+        (index % 3 - 1) * 20,
+        Math.cos(angle) * distance
+      ],
+      velocity_world: [0, 0, index === 1 ? -120 : -10],
+      radius: index === 1 ? 2 : 12,
+      contact_flags: index === 0 ? 0x02 : index === 1 ? 0xe0 : 0,
+      ...(index < 4 ? { revealed_name: index === 0 ? "Cible Alpha" : `Contact ${id}` } : {})
+    };
+  });
+  const derived = Object.fromEntries(contacts.flatMap((contact, index) => {
+    const id = String(contact.contact_entity_id);
+    const distance = Math.hypot(
+      Number(contact.position_world[0]),
+      Number(contact.position_world[1]),
+      Number(contact.position_world[2])
+    );
+    const rawX = Number(contact.position_world[0]) / 1000;
+    const rawY = -Number(contact.position_world[2]) / 1000;
+    const radius = Math.hypot(rawX, rawY);
+    const divisor = Math.max(1, radius);
+    const prefix = `entities.1.tracks.${id}`;
+    return [
+      [`${prefix}.distance`, { available: true, value: distance }],
+      [`${prefix}.relative_speed`, { available: true, value: index === 1 ? 120 : 10 }],
+      [`${prefix}.closing_speed`, { available: true, value: index === 1 ? 115 : 8 }],
+      [`${prefix}.ttc_s`, { available: true, value: index === 1 ? distance / 115 : distance / 8 }],
+      [`${prefix}.age_us`, { available: true, value: 0 }],
+      [`${prefix}.bearing_local_rad`, { available: true, value: Math.atan2(rawX, -rawY) }],
+      [`${prefix}.elevation_local_rad`, { available: true, value: Number(contact.position_world[1]) / Math.max(distance, 1) }],
+      [`${prefix}.scope_clamped_position`, { available: true, value: [rawX / divisor, rawY / divisor] }],
+      [`${prefix}.scope_in_range`, { available: true, value: radius <= 1 }]
+    ];
+  }));
+  const snapshot = {
+    schema: "DashboardSnapshotV1",
+    publishedAtUtc: "2026-08-06T12:00:00Z",
+    mode: "live",
+    connection: {
+      status: "Live",
+      host: "127.0.0.1",
+      port: 42042,
+      sessionId: "46",
+      lastLiveObservedUtc: "2026-08-06T12:00:00Z",
+      staleReason: null
+    },
+    session: {},
+    mission: { phase: "ACTIVE" },
+    playerEntityId: "1",
+    records: {
+      FLIGHT_STATE: [{
+        entity_id: "1", producer_sample_time_us: "1000000",
+        position_world: [0, 0, 0], velocity_world: [0, 0, 0],
+        orientation_local_to_world: [1, 0, 0, 0]
+      }],
+      RADAR_STATE: [{
+        entity_id: "1", presence: "12", producer_sample_time_us: "1000000",
+        radar_mode: 0, selected_range: 1000, sensor_state: 2,
+        sensor_current_hits: 80, sensor_max_hits: 100,
+        awacs_intensity: 0.75, awacs_range: 1500,
+        emp_intensity: 0.2, emp_remaining_us: "2500000"
+      }],
+      RADAR_CONTACTS: contacts,
+      TARGET_STATE: [{
+        entity_id: "1", presence: "902", producer_sample_time_us: "1000000",
+        current_target_entity_id: "101", previous_target_entity_id: "103",
+        revealed_identity: { object_type: 1, name: "Cible Alpha", class_id: 7, team_id: 2, iff_id: 3 },
+        time_on_target_us: "3200000", target_subsystem_id: 4,
+        distance_trend: 1, speed_trend: 2, in_cone: true,
+        lead_world: [20, 0, 300], lead_bank_id: 21
+      }],
+      LOCK_STATE: [{
+        entity_id: "1", presence: "0", producer_sample_time_us: "1000000",
+        locks: [{
+          item_version: 1, item_size: 40, presence: 3,
+          locked: false, target_in_lock_cone: true,
+          target_entity_id: "101", subsystem_id: 4,
+          world_position: [0, 0, 300], time_to_lock_remaining_us: "1000000"
+        }]
+      }],
+      THREAT_STATE: [{
+        entity_id: "1", presence: "4", producer_sample_time_us: "1000000",
+        threat_level: 2, nearest_homing_entity_id: "102",
+        incoming_missiles: [{
+          item_version: 1, item_size: 80, presence: 0,
+          guidance_type: 3, radar_visibility: 1,
+          entity_id: "102", weapon_class_id: 9, target_entity_id: "1",
+          position_world: [0, 0, 600], orientation_local_to_world: [1, 0, 0, 0],
+          velocity_world: [0, 0, -120]
+        }]
+      }]
+    },
+    recordInstances: {},
+    manifest: {
+      id: 5,
+      records: {
+        "WEAPON_MANIFEST/weapon_class_id=9": {
+          recordName: "WEAPON_MANIFEST",
+          fields: { weapon_class_id: 9, title: "Harpoon entrant", internal_name: "Harpoon", lock: { time_us: "2000000" } }
+        },
+        "CLASS_MANIFEST/class_id=7": {
+          recordName: "CLASS_MANIFEST",
+          fields: {
+            class_id: 7,
+            internal_name: "GTF Tactical",
+            subsystem_definitions: [{ subsystem_id: 4, internal_name: "Moteurs" }]
+          }
+        }
+      }
+    },
+    derived: {
+      ...derived,
+      "entities.1.sensor_integrity_ratio": { available: true, value: 0.8 },
+      "entities.1.target.distance": { available: true, value: 200 },
+      "entities.1.locks[0].progress": { available: true, value: 0.5 },
+      "entities.1.missiles.102.distance": { available: true, value: 600 },
+      "entities.1.missiles.102.relative_speed": { available: true, value: 120 },
+      "entities.1.missiles.102.closing_speed": { available: true, value: 120 },
+      "entities.1.missiles.102.ttc_s": { available: true, value: 5 }
+    },
+    transport: { synchronized: true, baseline: 5, deltaSequence: 9, manifestId: 5 },
+    quality: { packets: 20, transportGapCount: 0, decodeErrorCount: 0, resyncCount: 0, channels: [] },
+    capture: { active: false, path: null },
+    replay: { path: null, playing: false, speed: 1, position: 0, packetCount: 0 }
+  };
+  await page.addInitScript((payload) => {
+    class MockWebSocket {
+      static OPEN = 1;
+      static CLOSED = 3;
+      readyState = MockWebSocket.OPEN;
+      onopen: ((event: Event) => void) | null = null;
+      onmessage: ((event: MessageEvent) => void) | null = null;
+      onclose: ((event: CloseEvent) => void) | null = null;
+      onerror: ((event: Event) => void) | null = null;
+      constructor() {
+        setTimeout(() => {
+          this.onopen?.(new Event("open"));
+          this.onmessage?.(new MessageEvent("message", { data: JSON.stringify(payload) }));
+        }, 0);
+      }
+      close() {
+        this.readyState = MockWebSocket.CLOSED;
+        this.onclose?.(new CloseEvent("close"));
+      }
+    }
+    Object.defineProperty(window, "WebSocket", { value: MockWebSocket });
+  }, snapshot);
+}
+
+test("all cockpit tabs remain reachable and tactical future data is ND", async ({ page }) => {
   await page.goto("/");
   const tabs = page.getByRole("navigation", { name: "Sections du cockpit" }).getByRole("button");
   await expect(tabs).toHaveCount(10);
   await page.getByRole("button", { name: /Tactique/ }).click();
   await expect(page.getByRole("heading", { name: "Tactique" })).toBeVisible();
-  await expect(page.getByRole("button", { name: /Radar tactique: ND/ })).toBeVisible();
-  await expect(page.getByRole("button", { name: /Missiles entrants: ND/ })).toBeVisible();
+  await expect(page.getByText("Brouillage global quantifié", { exact: true })).toBeVisible();
+  await expect(page.locator(".tactical-future").getByText("ND", { exact: true })).toBeVisible();
+});
+
+test("the 1920x1080 tactical cockpit keeps its five combat zones readable", async ({ page }) => {
+  await mockTacticalSnapshot(page);
+  await page.goto("/");
+  await page.getByRole("button", { name: /Tactique/ }).click();
+  await expect(page.getByRole("heading", { name: "Tactique" })).toBeVisible();
+  const dimensions = await page.evaluate(() => ([
+    document.documentElement.scrollWidth,
+    document.documentElement.clientWidth,
+    document.documentElement.scrollHeight,
+    document.documentElement.clientHeight,
+    document.querySelector("main")?.scrollHeight ?? 0,
+    document.querySelector("main")?.clientHeight ?? 0,
+    document.querySelector(".tactical-scope")?.getBoundingClientRect().width ?? 0,
+    document.querySelector(".tactical-target")?.getBoundingClientRect().width ?? 0
+  ]));
+  expect(dimensions[0]).toBeLessThanOrEqual(dimensions[1]);
+  expect(dimensions[2]).toBeLessThanOrEqual(dimensions[3]);
+  expect(dimensions[4]).toBeLessThanOrEqual(dimensions[5]);
+  expect(dimensions[6]).toBeGreaterThan(dimensions[7]);
+  await expect(page.getByText("COURTE", { exact: true })).toBeVisible();
+  await expect(page.getByText("Cible Alpha", { exact: true }).first()).toBeVisible();
+  await expect(page.getByText("ACQUISITION", { exact: true })).toBeVisible();
+  await expect(page.getByText("LOCK EN COURS", { exact: true })).toBeVisible();
+  await expect(page.getByText("Harpoon entrant", { exact: true })).toBeVisible();
+  await expect(page.getByLabel(/Scope radar affichant 24 contacts/)).toBeVisible();
+});
+
+test("tactical contacts, locks and missiles remain keyboard inspectable", async ({ page }) => {
+  await mockTacticalSnapshot(page);
+  await page.goto("/");
+  await page.getByRole("button", { name: /Tactique/ }).click();
+  const contact = page.locator(".scope-contact-list").getByRole("button", { name: /Cible Alpha/ });
+  await contact.focus();
+  await page.keyboard.press("Enter");
+  await expect(page.getByText("INSPECTION TACTIQUE", { exact: true })).toBeVisible();
+  await expect(page.getByText("RADAR_CONTACTS", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Fermer" }).click();
+  const lock = page.locator(".lock-list").getByRole("button", { name: /Cible Alpha/ });
+  await lock.focus();
+  await page.keyboard.press("Enter");
+  await expect(page.getByText("LOCK_STATE", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Fermer" }).click();
+  const missile = page.locator(".missile-rack").getByRole("button", { name: /Harpoon entrant/ });
+  await missile.focus();
+  await page.keyboard.press("Enter");
+  await expect(page.getByText("THREAT_STATE", { exact: true })).toBeVisible();
+  await expect(page.getByText("Manifeste autorisé", { exact: true })).toBeVisible();
+});
+
+test("the canvas scope accepts the full 4096-contact contract without DOM growth", async ({ page }) => {
+  test.setTimeout(30_000);
+  await mockTacticalSnapshot(page, 4096);
+  await page.goto("/");
+  await page.getByRole("button", { name: /Tactique/ }).click();
+  await expect(page.getByLabel(/Scope radar affichant 4096 contacts/)).toBeVisible();
+  await expect(page.locator(".scope-contact-list > button")).toHaveCount(9);
+  const state = await page.evaluate(() => ({
+    canvasCount: document.querySelectorAll(".tactical-scope canvas").length,
+    contactDomCount: document.querySelectorAll(".scope-contact-list > button").length,
+    mainOverflow: (document.querySelector("main")?.scrollHeight ?? 0) >
+      (document.querySelector("main")?.clientHeight ?? 0)
+  }));
+  expect(state.canvasCount).toBe(1);
+  expect(state.contactDomCount).toBe(9);
+  expect(state.mainOverflow).toBe(false);
 });
 
 test("the 1920x1080 Pilotage cockpit fits without scrolling and keeps attitude dominant", async ({ page }) => {

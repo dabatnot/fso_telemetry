@@ -345,8 +345,11 @@ class SessionController final {
 		protocol::StateImage&& image,
 		const std::uint16_t* rebuilt_indices,
 		std::size_t rebuilt_index_count) noexcept;
-	bool queue_cumulative_delta(std::size_t slot_index, std::uint64_t now_us) noexcept;
+	bool queue_cumulative_delta(std::size_t slot_index,
+		std::uint64_t now_us,
+		std::uint64_t complete_capture_sample_time_us = 0U) noexcept;
 	std::size_t service_delta_egress(std::size_t datagram_budget, std::uint64_t now_us) noexcept;
+	bool phase3_complete_capture_required() const noexcept;
 	Phase1SnapshotProgress snapshot_progress(std::size_t slot_index) const noexcept;
 	bool session_state_dirty(std::size_t slot_index) const noexcept;
 	bool consume_session_state_dirty(std::size_t slot_index) noexcept;

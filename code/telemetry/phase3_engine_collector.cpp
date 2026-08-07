@@ -1,0 +1,1324 @@
+#include "telemetry/phase3_engine_collector.h"
+
+#include "ai/ai.h"
+#include "autopilot/autopilot.h"
+#include "globalincs/systemvars.h"
+#include "hud/hudconfig.h"
+#include "hud/hudtarget.h"
+#include "mod_table/mod_table.h"
+#include "object/object.h"
+#include "object/waypoint.h"
+#include "playerman/player.h"
+#include "radar/radarsetup.h"
+#include "ship/ship.h"
+#include "ship/awacs.h"
+#include "ship/subsysdamage.h"
+#include "telemetry/engine_adapter.h"
+#include "weapon/emp.h"
+#include "weapon/weapon.h"
+
+#include <algorithm>
+#include <cmath>
+#include <cstring>
+#include <limits>
+#include <new>
+
+namespace telemetry::detail {
+namespace {
+
+constexpr int ThreatDumbfire = 1 << 0;
+constexpr int ThreatAttemptLock = 1 << 1;
+constexpr int ThreatLock = 1 << 2;
+
+template <typename T>
+void reconstruct_in_place(T& value) noexcept
+{
+	// Phase3Projection and its navigation/contact members own large fixed
+	// workspaces.  Aggregate assignment from {} makes MSVC materialize a
+	// value-initialized temporary on the engine thread stack, even when the
+	// branch is not taken.  Reconstruct directly in the existing heap-backed
+	// storage instead.
+	value.~T();
+	new (&value) T();
+}
+
+protocol::ObjectType object_type(int type) noexcept
+{
+	switch (type) {
+	case OBJ_SHIP: return protocol::ObjectType::Ship;
+	case OBJ_WEAPON: return protocol::ObjectType::Weapon;
+	case OBJ_ASTEROID: return protocol::ObjectType::Asteroid;
+	case OBJ_DEBRIS: return protocol::ObjectType::Debris;
+	case OBJ_JUMP_NODE: return protocol::ObjectType::JumpNode;
+	case OBJ_WAYPOINT: return protocol::ObjectType::Waypoint;
+	case OBJ_FIREBALL: return protocol::ObjectType::Fireball;
+	default: return protocol::ObjectType::Unknown;
+	}
+}
+
+std::uint8_t radar_category(protocol::ObjectType type) noexcept
+{
+	switch (type) {
+	case protocol::ObjectType::Ship:
+		return static_cast<std::uint8_t>(protocol::RadarCategory::Ship);
+	case protocol::ObjectType::Weapon:
+		return static_cast<std::uint8_t>(protocol::RadarCategory::Weapon);
+	case protocol::ObjectType::Waypoint:
+		return static_cast<std::uint8_t>(protocol::RadarCategory::Navigation);
+	case protocol::ObjectType::JumpNode:
+		return static_cast<std::uint8_t>(protocol::RadarCategory::JumpNode);
+	case protocol::ObjectType::Asteroid:
+		return static_cast<std::uint8_t>(protocol::RadarCategory::Asteroid);
+	case protocol::ObjectType::Debris:
+		return static_cast<std::uint8_t>(protocol::RadarCategory::Debris);
+	default:
+		return static_cast<std::uint8_t>(protocol::RadarCategory::Other);
+	}
+}
+
+protocol::RadarVisibility radar_visibility(RadarVisibility visibility) noexcept
+{
+	switch (visibility) {
+	case VISIBLE: return protocol::RadarVisibility::Visible;
+	case DISTORTED: return protocol::RadarVisibility::Distorted;
+	case NOT_VISIBLE:
+	default: return protocol::RadarVisibility::NotVisible;
+	}
+}
+
+bool valid_live_object(const object* candidate) noexcept
+{
+	if (candidate == nullptr || candidate->signature <= 0 ||
+		candidate->flags[Object::Object_Flags::Should_be_dead]) {
+		return false;
+	}
+	for (auto* current = GET_FIRST(&obj_used_list);
+		 current != END_OF_LIST(&obj_used_list);
+		 current = GET_NEXT(current)) {
+		if (current == candidate) return true;
+	}
+	return false;
+}
+
+Phase3IdentityResolveResult resolve_object(
+	Phase3IdentityRegistry& identities, const object& source) noexcept
+{
+	const auto type = object_type(source.type);
+	if (type == protocol::ObjectType::Unknown || source.signature <= 0) {
+		return {};
+	}
+	return identities.resolve({static_cast<std::uint32_t>(source.signature),
+		static_cast<std::uint8_t>(type)});
+}
+
+bool resolved(const Phase3IdentityResolveResult& result) noexcept
+{
+	return result.status == Phase3IdentityResolveStatus::Existing ||
+		result.status == Phase3IdentityResolveStatus::Allocated;
+}
+
+bool cockpit_track_visible(object& source,
+	RadarContactProjection& projection) noexcept
+{
+	// Radar projection is the engine-owned cockpit authorization surface.  It
+	// must run before an identity can be allocated or a dynamic reference can
+	// reach the per-client projection; a target or lock alone is not a grant of
+	// visibility.
+	return radar_project_contact(&source, projection);
+}
+
+object* current_player_target() noexcept
+{
+	if (Player_ai == nullptr || Player_ai->target_objnum < 0 ||
+		Player_ai->target_objnum >= MAX_OBJECTS)
+		return nullptr;
+	auto& target = Objects[Player_ai->target_objnum];
+	// Target selection is mutable gameplay state.  A stale index/signature pair
+	// is not an invalid telemetry session: it merely means that TARGET_STATE has
+	// no coherent current target at this sample time.
+	return valid_live_object(&target) &&
+		target.signature == Player_ai->target_signature
+		? &target
+		: nullptr;
+}
+
+std::uint32_t installed_weapon_class_id(
+	const Phase2ManifestCandidate* manifest, int engine_index) noexcept
+{
+	if (manifest == nullptr || engine_index < 0) return 0U;
+	const auto source_key =
+		static_cast<std::uint32_t>(engine_index) + 1U;
+	for (std::uint32_t index = 0U;
+		 index < manifest->weapon_record_count; ++index) {
+		if (manifest->weapon_records[index].source_key == source_key)
+			return manifest->weapon_records[index].weapon_class_id;
+	}
+	return 0U;
+}
+
+const Phase2ClassRecord* installed_ship_class(
+	const Phase2ManifestCandidate* manifest, int engine_index) noexcept
+{
+	if (manifest == nullptr || engine_index < 0) return nullptr;
+	const auto source_key =
+		static_cast<std::uint32_t>(engine_index) + 1U;
+	for (std::uint32_t index = 0U;
+		 index < manifest->class_record_count; ++index) {
+		if (manifest->class_records[index].source_key == source_key)
+			return &manifest->class_records[index];
+	}
+	return nullptr;
+}
+
+std::uint32_t installed_hull_primary_bank_id(
+	const Phase2ManifestCandidate* manifest,
+	const ship& source,
+	int bank_index) noexcept
+{
+	if (bank_index < 0) return 0U;
+	const auto* installed =
+		installed_ship_class(manifest, source.ship_info_index);
+	if (installed == nullptr) return 0U;
+	for (std::uint32_t index = 0U; index < installed->bank_count;
+		 ++index) {
+		const auto& candidate = installed->banks[index];
+		if (candidate.family == WeaponFamily::Primary &&
+			candidate.owner_subsystem_id == 0U &&
+			candidate.canonical_index ==
+				static_cast<std::uint16_t>(bank_index)) {
+			return candidate.bank_id;
+		}
+	}
+	return 0U;
+}
+
+bool collect_default_primary_lead(
+	object& target,
+	const Phase2ManifestCandidate* installed_manifest,
+	Phase3TargetState& output) noexcept
+{
+	// TARGET_STATE has one (position, bank) lead pair.  The HUD's linked
+	// MULTIPLE and AVERAGE modes deliberately render several or aggregate
+	// positions, which cannot be truthfully represented by that pair.  Publish
+	// only the default HUD choice; it uses the engine's own lead calculation,
+	// not a telemetry approximation.
+	if (Player_obj == nullptr || Player_ship == nullptr ||
+		Lead_indicator_behavior != leadIndicatorBehavior::DEFAULT) {
+		return false;
+	}
+	const auto& weapons = Player_ship->weapons;
+	if (weapons.num_primary_banks <= 0 ||
+		weapons.current_primary_bank < 0 ||
+		weapons.current_primary_bank >= weapons.num_primary_banks) {
+		return false;
+	}
+	float primary_range = 0.0F;
+	const auto bank_index = hud_get_best_primary_bank(&primary_range);
+	if (bank_index < 0 || bank_index >= weapons.num_primary_banks ||
+		weapons.primary_bank_weapons[bank_index] < 0 ||
+		weapons.primary_bank_weapons[bank_index] >= weapon_info_size()) {
+		return false;
+	}
+	const auto bank_id = installed_hull_primary_bank_id(
+		installed_manifest, *Player_ship, bank_index);
+	if (bank_id == 0U) return false;
+
+	vec3d target_position = target.pos;
+	float distance = hud_find_target_distance(&target, Player_obj);
+	if (Player_ai->targeted_subsys != nullptr) {
+		get_subsystem_world_pos(&target, Player_ai->targeted_subsys,
+			&target_position);
+		distance = vm_vec_dist(&target_position, &Player_obj->pos);
+	}
+	if (!std::isfinite(distance) || distance < 0.0F) return false;
+	vec3d lead{};
+	if (!hud_calculate_lead_pos(&Player_obj->pos, &lead, &target_position,
+			&target, &Weapon_info[weapons.primary_bank_weapons[bank_index]],
+			distance) ||
+		!std::isfinite(lead.xyz.x) || !std::isfinite(lead.xyz.y) ||
+		!std::isfinite(lead.xyz.z)) {
+		return false;
+	}
+	output.lead_world = {lead.xyz.x, lead.xyz.y, lead.xyz.z};
+	output.lead_bank_id = bank_id;
+	output.presence |= protocol::TargetStatePresenceFlagLead;
+	return true;
+}
+
+std::uint32_t installed_subsystem_id(
+	const Phase2ManifestCandidate* manifest,
+	const object& owner,
+	const ship_subsys* subsystem) noexcept
+{
+	if (subsystem == nullptr || owner.type != OBJ_SHIP ||
+		owner.instance < 0 || owner.instance >= MAX_SHIPS) {
+		return 0U;
+	}
+	const auto& source_ship = Ships[owner.instance];
+	if (source_ship.ship_info_index < 0 ||
+		source_ship.ship_info_index >= static_cast<int>(Ship_info.size())) {
+		return 0U;
+	}
+	const auto& source_class = Ship_info[source_ship.ship_info_index];
+	std::uint32_t source_key = 0U;
+	if (source_class.n_subsystems < 0 ||
+		(source_class.n_subsystems != 0 &&
+		 source_class.subsystems == nullptr)) {
+		return 0U;
+	}
+	for (std::size_t index = 0U;
+		 index < static_cast<std::size_t>(
+			 source_class.n_subsystems); ++index) {
+		if (&source_class.subsystems[index] == subsystem->system_info) {
+			source_key = static_cast<std::uint32_t>(index) + 1U;
+			break;
+		}
+	}
+	const auto* installed =
+		installed_ship_class(manifest, source_ship.ship_info_index);
+	if (source_key == 0U || installed == nullptr) return 0U;
+	for (std::uint32_t index = 0U;
+		 index < installed->subsystem_count; ++index) {
+		if (installed->subsystems[index].source_key == source_key)
+			return installed->subsystems[index].subsystem_id;
+	}
+	return 0U;
+}
+
+std::uint32_t installed_subsystem_id_from_source_key(
+	const Phase2ManifestCandidate* manifest,
+	const object& owner,
+	Phase2CaptureLocalKey source_key) noexcept
+{
+	if (source_key.value == 0U || owner.type != OBJ_SHIP ||
+		owner.instance < 0 || owner.instance >= MAX_SHIPS) {
+		return 0U;
+	}
+	const auto& source_ship = Ships[owner.instance];
+	const auto* installed =
+		installed_ship_class(manifest, source_ship.ship_info_index);
+	if (installed == nullptr) return 0U;
+	for (std::uint32_t index = 0U;
+		 index < installed->subsystem_count; ++index) {
+		if (installed->subsystems[index].source_key == source_key.value)
+			return installed->subsystems[index].subsystem_id;
+	}
+	return 0U;
+}
+
+std::uint8_t guidance_type(const weapon_info& info) noexcept
+{
+	if (info.wi_flags[Weapon::Info_Flags::Swarm])
+		return static_cast<std::uint8_t>(protocol::GuidanceType::Swarm);
+	if (info.wi_flags[Weapon::Info_Flags::Homing_heat])
+		return static_cast<std::uint8_t>(protocol::GuidanceType::Heat);
+	if (info.wi_flags[Weapon::Info_Flags::Homing_aspect])
+		return static_cast<std::uint8_t>(protocol::GuidanceType::Aspect);
+	if (info.wi_flags[Weapon::Info_Flags::Homing_javelin])
+		return static_cast<std::uint8_t>(protocol::GuidanceType::Homing);
+	return static_cast<std::uint8_t>(protocol::GuidanceType::None);
+}
+
+void copy_position(const vec3d& value, std::array<float, 3U>& output) noexcept
+{
+	output = {value.xyz.x, value.xyz.y, value.xyz.z};
+}
+
+std::uint8_t value_trend(int trend) noexcept
+{
+	switch (trend) {
+	case DECREASING:
+		return static_cast<std::uint8_t>(protocol::ValueTrend::Decreasing);
+	case NO_CHANGE:
+		return static_cast<std::uint8_t>(protocol::ValueTrend::Stable);
+	case INCREASING:
+		return static_cast<std::uint8_t>(protocol::ValueTrend::Increasing);
+	default:
+		return static_cast<std::uint8_t>(protocol::ValueTrend::Unknown);
+	}
+}
+
+std::uint8_t scan_phase(CargoScanPhaseObservation phase) noexcept
+{
+	switch (phase) {
+	case CargoScanPhaseObservation::Idle:
+		return static_cast<std::uint8_t>(protocol::ScanPhase::Idle);
+	case CargoScanPhaseObservation::Scanning:
+		return static_cast<std::uint8_t>(protocol::ScanPhase::Scanning);
+	case CargoScanPhaseObservation::Completed:
+		return static_cast<std::uint8_t>(protocol::ScanPhase::Completed);
+	case CargoScanPhaseObservation::NotScannable:
+	case CargoScanPhaseObservation::Count:
+	default:
+		return static_cast<std::uint8_t>(protocol::ScanPhase::NotScannable);
+	}
+}
+
+bool same_owned_string(const Phase3OwnedString<255U>& value,
+	const char* bytes, std::size_t size) noexcept
+{
+	return value.size == size &&
+		(size == 0U ||
+		 std::memcmp(value.bytes.data(), bytes, size) == 0);
+}
+
+std::uint32_t resolve_navpoint_id(Phase3Projection& projection,
+	const char* name, std::size_t name_size, std::uint8_t type) noexcept
+{
+	for (std::size_t index = 0U;
+		 index < projection.nav_identity_count; ++index) {
+		auto& entry = projection.nav_identities[index];
+		if (entry.occupied &&
+			same_owned_string(entry.name, name, name_size)) {
+			return entry.type == type ? entry.navpoint_id : 0U;
+		}
+	}
+	if (projection.nav_identity_count ==
+			projection.nav_identities.size() ||
+		projection.next_navpoint_id == 0U) {
+		return 0U;
+	}
+	auto& entry = projection.nav_identities[
+		projection.nav_identity_count++];
+	if (!entry.name.assign(name, name_size)) return 0U;
+	entry.type = type;
+	entry.navpoint_id = projection.next_navpoint_id++;
+	entry.occupied = true;
+	return entry.navpoint_id;
+}
+
+protocol::AutopilotRefusal autopilot_refusal(
+	AutopilotAvailability availability) noexcept
+{
+	switch (availability) {
+	case AutopilotAvailability::NoSelection:
+		return protocol::AutopilotRefusal::NoValidNav;
+	case AutopilotAvailability::TooClose:
+		return protocol::AutopilotRefusal::TooClose;
+	case AutopilotAvailability::Hostiles:
+		return protocol::AutopilotRefusal::Hostiles;
+	case AutopilotAvailability::Gliding:
+	case AutopilotAvailability::Hazard:
+	case AutopilotAvailability::SupportPresent:
+		return protocol::AutopilotRefusal::Unknown;
+	case AutopilotAvailability::Available:
+	default:
+		return protocol::AutopilotRefusal::None;
+	}
+}
+
+Phase3EngineCollectStatus reconcile_phase2(
+	const Phase3EngineCollectInput& input,
+	Phase3IdentityRegistry& identities) noexcept
+{
+	if (input.phase2_observation == nullptr ||
+		input.phase2_binding_count != input.phase2_observation->ships.size() ||
+		(input.phase2_binding_count != 0U && input.phase2_bindings == nullptr)) {
+		return Phase3EngineCollectStatus::InvalidSource;
+	}
+	for (std::size_t index = 0U; index < input.phase2_binding_count; ++index) {
+		const auto& source = input.phase2_observation->ships[index];
+		const auto& binding = input.phase2_bindings[index];
+		if (source.capture_key.value == 0U ||
+			binding.capture_key.value != source.capture_key.value ||
+			binding.entity_id == 0U) {
+			return Phase3EngineCollectStatus::InvalidSource;
+		}
+		const auto status = identities.reconcile_phase2_binding(
+			{source.capture_key.value,
+			 static_cast<std::uint8_t>(protocol::ObjectType::Ship)},
+			binding.entity_id);
+		if (status != Phase3IdentityReconcileStatus::Existing &&
+			status != Phase3IdentityReconcileStatus::Bound) {
+			return Phase3EngineCollectStatus::IdentityFailure;
+		}
+	}
+	return Phase3EngineCollectStatus::Collected;
+}
+
+Phase3EngineCollectStatus collect_target_and_locks(
+	std::uint64_t sample_time,
+	const Phase2ManifestCandidate* installed_manifest,
+	Phase3IdentityRegistry& identities,
+	Phase3Projection& output) noexcept
+{
+	output.target.producer_sample_time_us = sample_time;
+	if (Player_ai == nullptr || Player_ship == nullptr) {
+		return Phase3EngineCollectStatus::InvalidSource;
+	}
+	if (auto* current_target = current_player_target()) {
+		auto& target = *current_target;
+		RadarContactProjection public_target;
+		// A target selection may outlive the public cockpit track.  Omit it
+		// atomically instead of allocating an identity for a hidden object.
+		if (cockpit_track_visible(target, public_target)) {
+		const auto identity = resolve_object(identities, target);
+		if (!resolved(identity)) return Phase3EngineCollectStatus::IdentityFailure;
+		output.target.current_target_entity_id = identity.entity_id;
+		output.target.presence |=
+			protocol::TargetStatePresenceFlagDistanceTrend |
+			protocol::TargetStatePresenceFlagSpeedTrend;
+		output.target.distance_trend =
+			value_trend(Player_ai->current_target_dist_trend);
+		output.target.speed_trend =
+			value_trend(Player_ai->current_target_speed_trend);
+		if (std::isfinite(Player_ai->target_time) &&
+			Player_ai->target_time >= 0.0F) {
+			output.target.presence |=
+				protocol::TargetStatePresenceFlagTimeOnTarget;
+			output.target.time_on_target_us =
+				static_cast<std::uint64_t>(
+					static_cast<double>(Player_ai->target_time) *
+					1'000'000.0);
+		}
+		output.target.presence |=
+			protocol::TargetStatePresenceFlagInCone;
+		output.target.in_cone = Player->target_in_lock_cone != 0;
+		// The AI target state is the cockpit's retained last stealth observation.
+		// It is optional and may only cross the capture boundary when the engine
+		// still has a real observation stamp and both cached vectors are usable.
+		// Do not extrapolate it here: the telemetry projection publishes exactly
+		// the retained engine observation or nothing.
+		const auto& stealth_position = Player_ai->stealth_last_pos.xyz;
+		const auto& stealth_velocity = Player_ai->stealth_velocity.xyz;
+		if (Player_ai->stealth_last_visible_stamp > 0 &&
+			std::isfinite(stealth_position.x) && std::isfinite(stealth_position.y) &&
+			std::isfinite(stealth_position.z) &&
+			std::isfinite(stealth_velocity.x) && std::isfinite(stealth_velocity.y) &&
+			std::isfinite(stealth_velocity.z)) {
+			copy_position(Player_ai->stealth_last_pos,
+				output.target.last_stealth_position);
+			copy_position(Player_ai->stealth_velocity,
+				output.target.last_stealth_velocity);
+			output.target.presence |=
+				protocol::TargetStatePresenceFlagLastStealthObservation;
+		}
+		// The optional lead is emitted only when the engine can associate the
+		// exact HUD-authoritative result with an installed primary-bank ID.
+		(void)collect_default_primary_lead(target, installed_manifest,
+			output.target);
+		if (public_target.visibility == VISIBLE) {
+			if (target.type == OBJ_SHIP &&
+				target.instance >= 0 &&
+				target.instance < MAX_SHIPS) {
+				const auto& target_ship = Ships[target.instance];
+				const auto* installed = installed_ship_class(
+					installed_manifest,
+					target_ship.ship_info_index);
+				// TARGET_STATE has one all-or-nothing identity group.  A
+				// visible track does not authorize publishing a partial group
+				// whose class has not yet been installed by the manifest.
+				if (installed == nullptr) {
+					// The target track itself remains public; only its optional
+					// identity attributes are absent until APPLIED.
+				} else {
+				std::size_t name_size = 0U;
+				while (name_size < sizeof(target_ship.ship_name) &&
+					target_ship.ship_name[name_size] != '\0')
+					++name_size;
+				if (name_size == sizeof(target_ship.ship_name) ||
+					!output.target.revealed_name.assign(
+						target_ship.ship_name, name_size)) {
+					return Phase3EngineCollectStatus::
+						SourceLimitExceeded;
+				}
+					output.target.presence |=
+						protocol::TargetStatePresenceFlagRevealedIdentity;
+					output.target.revealed_object_type =
+						object_type(target.type);
+					output.target.revealed_class_id =
+						installed->class_id;
+					output.target.revealed_team_id = 0U;
+					output.target.revealed_iff_id = installed->iff_id;
+				}
+				}
+			}
+		// Subsystem IDs are an identity disclosure.  A distorted track, or a
+		// visible track whose class has not yet been installed, must not expose
+		// either targeted subsystem even when legacy player state retains it.
+		const auto identity_revealed =
+			(output.target.presence &
+				protocol::TargetStatePresenceFlagRevealedIdentity) != 0U;
+		if (identity_revealed && Player_ai->targeted_subsys != nullptr) {
+			const auto subsystem_id = installed_subsystem_id(
+				installed_manifest, target,
+				Player_ai->targeted_subsys);
+			if (subsystem_id == 0U)
+				return Phase3EngineCollectStatus::InvalidSource;
+			output.target.presence |=
+				protocol::TargetStatePresenceFlagTargetSubsystem;
+			output.target.target_subsystem_id = subsystem_id;
+		}
+		if (identity_revealed && Player->locking_subsys != nullptr &&
+			Player->locking_subsys_parent ==
+				Player_ai->target_objnum) {
+			const auto subsystem_id = installed_subsystem_id(
+				installed_manifest, target,
+				Player->locking_subsys);
+			if (subsystem_id == 0U)
+				return Phase3EngineCollectStatus::InvalidSource;
+			output.target.presence |=
+				protocol::TargetStatePresenceFlagLockSubsystem;
+			output.target.lock_subsystem_id = subsystem_id;
+		}
+		}
+	}
+
+	if (Player_ai->previous_target_objnum >= 0 &&
+		Player_ai->previous_target_objnum < MAX_OBJECTS) {
+		auto& previous = Objects[Player_ai->previous_target_objnum];
+		if (valid_live_object(&previous)) {
+			RadarContactProjection public_previous;
+			if (cockpit_track_visible(previous, public_previous)) {
+			const auto identity = resolve_object(identities, previous);
+			if (!resolved(identity)) return Phase3EngineCollectStatus::IdentityFailure;
+			output.target.presence |=
+				protocol::TargetStatePresenceFlagPreviousTarget;
+			output.target.previous_target_entity_id = identity.entity_id;
+			}
+		}
+	}
+
+	if (Player_ship->missile_locks.size() > MaximumPhase3Locks) {
+		return Phase3EngineCollectStatus::SourceLimitExceeded;
+	}
+	for (const auto& source : Player_ship->missile_locks) {
+		if (!valid_live_object(source.obj)) {
+			return Phase3EngineCollectStatus::InvalidSource;
+		}
+		if (!std::isfinite(source.world_pos.xyz.x) ||
+			!std::isfinite(source.world_pos.xyz.y) ||
+			!std::isfinite(source.world_pos.xyz.z) ||
+			(!source.locked &&
+			 (!std::isfinite(source.time_to_lock) ||
+			  source.time_to_lock < 0.0F))) {
+			return Phase3EngineCollectStatus::InvalidSource;
+		}
+		RadarContactProjection public_lock;
+		if (!cockpit_track_visible(*source.obj, public_lock)) {
+			continue;
+		}
+		const auto identity = resolve_object(identities, *source.obj);
+		if (!resolved(identity)) return Phase3EngineCollectStatus::IdentityFailure;
+		auto& destination = output.locks[output.lock_count++];
+		destination.locked = source.locked;
+		destination.target_in_lock_cone = source.target_in_lock_cone;
+		destination.target_entity_id = identity.entity_id;
+		copy_position(source.world_pos, destination.world_position);
+		if (source.subsys != nullptr) {
+			const auto subsystem_id = installed_subsystem_id(
+				installed_manifest, *source.obj, source.subsys);
+			if (subsystem_id == 0U)
+				return Phase3EngineCollectStatus::InvalidSource;
+			destination.presence |=
+				protocol::LockItemPresenceFlagSubsystem;
+			destination.subsystem_id = subsystem_id;
+		}
+		if (!source.locked) {
+			destination.presence |= protocol::LockItemPresenceFlagLockAttempt;
+			destination.time_to_lock_remaining_us =
+				source.time_to_lock > 0.0F && std::isfinite(source.time_to_lock)
+				? static_cast<std::uint64_t>(
+					static_cast<double>(source.time_to_lock) * 1'000'000.0)
+				: 0U;
+		}
+	}
+	std::sort(output.locks.begin(),
+		output.locks.begin() + output.lock_count,
+		[](const Phase3LockItem& left,
+		   const Phase3LockItem& right) {
+			if (left.target_entity_id != right.target_entity_id)
+				return left.target_entity_id < right.target_entity_id;
+			if (left.subsystem_id != right.subsystem_id)
+				return left.subsystem_id < right.subsystem_id;
+			return left.world_position < right.world_position;
+		});
+	for (std::size_t index = 1U; index < output.lock_count; ++index) {
+		const auto& previous = output.locks[index - 1U];
+		const auto& current = output.locks[index];
+		if (previous.target_entity_id == current.target_entity_id &&
+			previous.subsystem_id == current.subsystem_id &&
+			previous.world_position == current.world_position) {
+			return Phase3EngineCollectStatus::InvalidSource;
+		}
+	}
+	return Phase3EngineCollectStatus::Collected;
+}
+
+Phase3EngineCollectStatus collect_radar(
+	std::uint64_t sample_time,
+	const Phase2ManifestCandidate* installed_manifest,
+	Phase3IdentityRegistry& identities,
+	Phase3Projection& output) noexcept
+{
+	output.radar.producer_sample_time_us = sample_time;
+	output.radar.selected_range =
+		HUD_config.rp_dist >= 0 && HUD_config.rp_dist < RR_MAX_RANGES
+		? Radar_ranges[HUD_config.rp_dist]
+		: 0.0F;
+	output.radar.mode =
+		HUD_config.rp_dist == RR_SHORT ? protocol::RadarMode::Short :
+		HUD_config.rp_dist == RR_LONG ? protocol::RadarMode::Long :
+		HUD_config.rp_dist == RR_INFINITY ? protocol::RadarMode::Infinite :
+		protocol::RadarMode::Custom;
+	const auto sensor_strength =
+		std::clamp(ship_get_subsystem_strength(Player_ship, SUBSYSTEM_SENSORS),
+			0.0F, 1.0F);
+	output.radar.sensor_current_hits = sensor_strength;
+	output.radar.sensor_max_hits = 1.0F;
+	output.radar.sensor_state =
+		sensor_strength < MIN_SENSOR_STR_TO_RADAR
+		? protocol::SensorState::Offline
+		: sensor_strength < SENSOR_STR_RADAR_NO_EFFECTS
+		? protocol::SensorState::Degraded
+		: protocol::SensorState::Online;
+	output.radar.presence |= protocol::RadarStatePresenceFlagBrightRange;
+	output.radar.bright_range = std::max(0.0F, Radar_bright_range);
+	const auto awacs = awacs_observer_telemetry(Player_ship);
+	if (awacs.intensity > 0.0F || awacs.range > 0.0F) {
+		output.radar.presence |= protocol::RadarStatePresenceFlagAwacs;
+		output.radar.awacs_intensity = awacs.intensity;
+		output.radar.awacs_range = awacs.range;
+	}
+	if (Player_ship->flags[Ship::Ship_Flags::Primitive_sensors]) {
+		if (Player_ship->primitive_sensor_range < 0) {
+			return Phase3EngineCollectStatus::InvalidSource;
+		}
+		output.radar.presence |=
+			protocol::RadarStatePresenceFlagPrimitiveRange;
+		output.radar.primitive_range =
+			static_cast<float>(Player_ship->primitive_sensor_range);
+	}
+	if (Player_ship->emp_intensity > 0.0F) {
+		if (!std::isfinite(Player_ship->emp_intensity) ||
+			!std::isfinite(Player_ship->emp_decr) ||
+			Player_ship->emp_decr <= 0.0F) {
+			return Phase3EngineCollectStatus::InvalidSource;
+		}
+		const auto remaining_us = static_cast<double>(Player_ship->emp_intensity) /
+			static_cast<double>(Player_ship->emp_decr) * 1'000'000.0;
+		if (!std::isfinite(remaining_us) || remaining_us < 0.0 ||
+			remaining_us > static_cast<double>(std::numeric_limits<std::uint64_t>::max())) {
+			return Phase3EngineCollectStatus::InvalidSource;
+		}
+		output.radar.presence |= protocol::RadarStatePresenceFlagEmp;
+		output.radar.emp_intensity = Player_ship->emp_intensity;
+		output.radar.emp_remaining_us =
+			static_cast<std::uint64_t>(remaining_us);
+	}
+	// The standard radar plots in the cockpit eye frame. Capture that frame
+	// alongside the contact projection rather than asking a remote client to
+	// combine this contact with a potentially newer FLIGHT_STATE pose.
+	vec3d unused_eye_position{};
+	matrix eye_orientation{};
+	object_get_eye(
+		&unused_eye_position, &eye_orientation, Player_obj, false);
+	for (auto* source = GET_FIRST(&obj_used_list);
+		 source != END_OF_LIST(&obj_used_list);
+		 source = GET_NEXT(source)) {
+		const auto type = object_type(source->type);
+		if (type != protocol::ObjectType::Ship &&
+			type != protocol::ObjectType::Weapon &&
+			type != protocol::ObjectType::JumpNode) {
+			continue;
+		}
+		RadarContactProjection projected;
+		if (!radar_project_contact(source, projected)) {
+			continue;
+		}
+		// Telemetry owns a separate bounded contact model.  The HUD display pool
+		// is not an authorization or transaction boundary: stopping at MAX_BLIPS
+		// would silently publish a partial state image.  Continue through the
+		// authoritative object list and fail atomically at the Phase 3 contract
+		// limit below instead.
+		if (output.contact_count == MaximumPhase3Contacts) {
+			return Phase3EngineCollectStatus::SourceLimitExceeded;
+		}
+		const auto identity = resolve_object(identities, *source);
+		if (!resolved(identity)) return Phase3EngineCollectStatus::IdentityFailure;
+		auto& contact = output.contacts[output.contact_count++];
+		contact.producer_sample_time_us = sample_time;
+		contact.entity_id = identity.entity_id;
+		contact.object_type = type;
+		contact.category = radar_category(type);
+		contact.visibility = radar_visibility(projected.visibility);
+		copy_position(projected.world_position, contact.position_world);
+		copy_position(projected.world_velocity, contact.velocity_world);
+		vec3d radar_relative{};
+		vec3d radar_local{};
+		// Keep the exact origin used by radar_plot_object(): the standard
+		// gauge asks object_get_eye for its orientation, but subtracts the
+		// player object origin rather than the returned eye position.
+		vm_vec_sub(
+			&radar_relative, &projected.world_position, &Player_obj->pos);
+		vm_vec_rotate(&radar_local, &radar_relative, &eye_orientation);
+		if (!std::isfinite(radar_local.xyz.x) ||
+			!std::isfinite(radar_local.xyz.y) ||
+			!std::isfinite(radar_local.xyz.z) ||
+			!std::isfinite(projected.distance) || projected.distance < 0.0F) {
+			return Phase3EngineCollectStatus::InvalidSource;
+		}
+		copy_position(radar_local, contact.radar_local_position);
+		contact.radar_projection_distance = projected.distance;
+		contact.radius = std::max(0.0F, source->radius);
+		if (current_player_target() == source) {
+			contact.flags |= protocol::ContactFlagCurrentTarget;
+		}
+		// A HUD radar blip authorizes a track, not the ship's display name,
+		// class definition, team, or IFF value.  Those identity groups require
+		// their own authoritative targeting disclosure and must never be inferred
+		// from VISIBLE alone.  Keeping them absent also prevents a mere radar
+		// contact from expanding the manifest with a hidden class definition.
+	}
+	return Phase3EngineCollectStatus::Collected;
+}
+
+Phase3EngineCollectStatus collect_threat(
+	std::uint64_t sample_time,
+	const Phase2ManifestCandidate* installed_manifest,
+	Phase3IdentityRegistry& identities,
+	Phase3Projection& output) noexcept
+{
+	output.threat.producer_sample_time_us = sample_time;
+	if ((Player->threat_flags & ThreatLock) != 0) {
+		output.threat.threat_level = protocol::ThreatLevel::LockAcquired;
+	} else if ((Player->threat_flags & ThreatAttemptLock) != 0) {
+		output.threat.threat_level = protocol::ThreatLevel::LockAttempt;
+	} else if ((Player->threat_flags & ThreatDumbfire) != 0) {
+		output.threat.threat_level = protocol::ThreatLevel::Dumbfire;
+	}
+	const auto resolve_ai_attacker = [&](int object_index,
+		std::uint64_t& entity_id) {
+		if (object_index < 0) return true;
+		if (object_index >= MAX_OBJECTS) return false;
+		auto& source = Objects[object_index];
+		if (!valid_live_object(&source)) return false;
+		RadarContactProjection public_attacker;
+		if (!cockpit_track_visible(source, public_attacker)) {
+			// The AI may retain an attacker after the cockpit has lost the
+			// corresponding track.  That history is not an authorization to
+			// allocate or expose a public sensor identity.
+			return true;
+		}
+		const auto identity = resolve_object(identities, source);
+		if (!resolved(identity)) return false;
+		entity_id = identity.entity_id;
+		return true;
+	};
+	const auto resolve_ai_weapon = [&](int object_index, int signature,
+									 std::uint64_t& entity_id) {
+		if (object_index < 0) return true;
+		if (object_index >= MAX_OBJECTS) return false;
+		auto& source = Objects[object_index];
+		if (!valid_live_object(&source) || source.type != OBJ_WEAPON ||
+			(signature > 0 && source.signature != signature)) {
+			return false;
+		}
+		RadarContactProjection public_weapon;
+		if (!cockpit_track_visible(source, public_weapon)) {
+			return true;
+		}
+		const auto identity = resolve_object(identities, source);
+		if (!resolved(identity)) return false;
+		entity_id = identity.entity_id;
+		return true;
+	};
+	if (!resolve_ai_attacker(Player_ai->attacker_objnum,
+			output.threat.nearest_attacker_entity_id) ||
+		!resolve_ai_weapon(Player_ai->danger_weapon_objnum,
+			Player_ai->danger_weapon_signature,
+			output.threat.dangerous_weapon_entity_id) ||
+		!resolve_ai_weapon(Player_ai->nearest_locked_object, -1,
+			output.threat.nearest_homing_entity_id)) {
+		return Phase3EngineCollectStatus::InvalidSource;
+	}
+	if (output.threat.nearest_attacker_entity_id != 0U) {
+		output.threat.presence |=
+			protocol::ThreatStatePresenceFlagNearestAttacker;
+	}
+	if (output.threat.dangerous_weapon_entity_id != 0U) {
+		output.threat.presence |=
+			protocol::ThreatStatePresenceFlagDangerousWeapon;
+	}
+	if (output.threat.nearest_homing_entity_id != 0U) {
+		output.threat.presence |=
+			protocol::ThreatStatePresenceFlagNearestHoming;
+	}
+
+	std::size_t incoming_count = 0U;
+	const auto is_incoming = [&](const object& missile_object,
+								 const weapon& missile) noexcept {
+		return missile.homing_object == Player_obj ||
+			(Player_ai->danger_weapon_objnum ==
+				 missile.objnum &&
+			 (Player_ai->danger_weapon_signature <= 0 ||
+			  Player_ai->danger_weapon_signature ==
+				  missile_object.signature));
+	};
+	for (auto* item = GET_FIRST(&Missile_obj_list);
+		 item != END_OF_LIST(&Missile_obj_list);
+		 item = GET_NEXT(item)) {
+		if (item->objnum < 0 || item->objnum >= MAX_OBJECTS) {
+			return Phase3EngineCollectStatus::InvalidSource;
+		}
+		auto& missile_object = Objects[item->objnum];
+		if (!valid_live_object(&missile_object) ||
+			missile_object.type != OBJ_WEAPON ||
+			missile_object.instance < 0 ||
+			missile_object.instance >= MAX_WEAPONS) {
+			return Phase3EngineCollectStatus::InvalidSource;
+		}
+		auto& missile = Weapons[missile_object.instance];
+		if (!is_incoming(missile_object, missile)) continue;
+		if (++incoming_count > MaximumPhase3IncomingMissiles) {
+			return Phase3EngineCollectStatus::SourceLimitExceeded;
+		}
+	}
+	for (auto* item = GET_FIRST(&Missile_obj_list);
+		 item != END_OF_LIST(&Missile_obj_list);
+		 item = GET_NEXT(item)) {
+		auto& missile_object = Objects[item->objnum];
+		auto& missile = Weapons[missile_object.instance];
+		if (!is_incoming(missile_object, missile)) continue;
+		if (missile.weapon_info_index < 0 ||
+			missile.weapon_info_index >= weapon_info_size()) {
+			return Phase3EngineCollectStatus::InvalidSource;
+		}
+		const auto weapon_class_id = installed_weapon_class_id(
+			installed_manifest, missile.weapon_info_index);
+		if (weapon_class_id == 0U) {
+			// Never expose a dynamic reference before its manifest
+			// definition is installed and APPLIED.
+			return Phase3EngineCollectStatus::InvalidSource;
+		}
+		const auto identity = resolve_object(identities, missile_object);
+		if (!resolved(identity))
+			return Phase3EngineCollectStatus::IdentityFailure;
+		auto& destination = output.threat.incoming_missiles[
+			output.threat.incoming_missile_count++];
+		destination.entity_id = identity.entity_id;
+		destination.weapon_class_id = weapon_class_id;
+		destination.guidance_type =
+			guidance_type(Weapon_info[missile.weapon_info_index]);
+		RadarContactProjection radar_projection;
+		destination.radar_visibility =
+			radar_project_contact(&missile_object, radar_projection)
+			? radar_visibility(radar_projection.visibility)
+			: protocol::RadarVisibility::NotVisible;
+		copy_position(missile_object.pos, destination.position_world);
+		copy_position(
+			missile_object.phys_info.vel, destination.velocity_world);
+		const CaptureOrientationBasis basis{
+			{missile_object.orient.vec.rvec.xyz.x,
+			 missile_object.orient.vec.rvec.xyz.y,
+			 missile_object.orient.vec.rvec.xyz.z},
+			{missile_object.orient.vec.uvec.xyz.x,
+			 missile_object.orient.vec.uvec.xyz.y,
+			 missile_object.orient.vec.uvec.xyz.z},
+			{missile_object.orient.vec.fvec.xyz.x,
+			 missile_object.orient.vec.fvec.xyz.y,
+			 missile_object.orient.vec.fvec.xyz.z}};
+		CaptureQuaternionf quaternion;
+		if (convert_fso_orientation_to_local_to_world(
+				basis, quaternion) !=
+			QuaternionConversionStatus::Converted) {
+			return Phase3EngineCollectStatus::InvalidSource;
+		}
+		destination.orientation_local_to_world = {
+			quaternion.w, quaternion.x, quaternion.y, quaternion.z};
+	}
+	std::sort(output.threat.incoming_missiles.begin(),
+		output.threat.incoming_missiles.begin() +
+			output.threat.incoming_missile_count,
+		[](const Phase3IncomingMissile& left,
+		   const Phase3IncomingMissile& right) {
+			return left.entity_id < right.entity_id;
+		});
+	return Phase3EngineCollectStatus::Collected;
+}
+
+Phase3EngineCollectStatus collect_cargo(
+	const Phase3EngineCollectInput& input,
+	Phase3IdentityRegistry& identities,
+	Phase3Projection& output) noexcept
+{
+	const auto& source = input.phase2_observation->player_cargo_scan;
+	output.cargo.producer_sample_time_us = input.producer_sample_time_us;
+	output.cargo.scan_phase = scan_phase(source.phase);
+	if ((source.presence & protocol::CargoScanStatePresenceFlagTarget) != 0U) {
+		if (Player_ai == nullptr || Player_ai->target_objnum < 0 ||
+			Player_ai->target_objnum >= MAX_OBJECTS) {
+			return Phase3EngineCollectStatus::InvalidSource;
+		}
+		auto& target = Objects[Player_ai->target_objnum];
+		if (!valid_live_object(&target) || target.type != OBJ_SHIP ||
+			static_cast<std::uint32_t>(target.signature) !=
+				source.target_capture_key.value) {
+			return Phase3EngineCollectStatus::InvalidSource;
+		}
+		// A cargo scan is its own cockpit authorization.  The scanned ship may
+		// deliberately be outside the CompleteShip closure, so it cannot be
+		// looked up only among reconciled Phase 2 bindings.  Allocate the public
+		// sensor identity after validating the authoritative scan/target pair;
+		// this publishes only the cargo reference, never the ship's full state.
+		const auto identity = resolve_object(identities, target);
+		if (!resolved(identity)) return Phase3EngineCollectStatus::IdentityFailure;
+		output.cargo.presence |= protocol::CargoScanStatePresenceFlagTarget;
+		output.cargo.target_entity_id = identity.entity_id;
+		if ((source.presence &
+				protocol::CargoScanStatePresenceFlagSubsystem) != 0U) {
+			const auto subsystem_id =
+				installed_subsystem_id_from_source_key(
+					input.installed_manifest, target,
+					source.target_subsystem_source_key);
+			if (subsystem_id == 0U)
+				return Phase3EngineCollectStatus::InvalidSource;
+			output.cargo.presence |=
+				protocol::CargoScanStatePresenceFlagSubsystem;
+			output.cargo.target_subsystem_id = subsystem_id;
+		}
+	} else if ((source.presence &
+				 protocol::CargoScanStatePresenceFlagSubsystem) != 0U) {
+		return Phase3EngineCollectStatus::InvalidSource;
+	}
+	if ((source.presence & protocol::CargoScanStatePresenceFlagTiming) != 0U) {
+		output.cargo.presence |= protocol::CargoScanStatePresenceFlagTiming;
+		output.cargo.elapsed_us = source.elapsed_us;
+		output.cargo.required_us = source.required_us;
+	}
+	if ((source.presence & protocol::CargoScanStatePresenceFlagValidity) != 0U) {
+		if (source.validity_flags > 0xffU) {
+			return Phase3EngineCollectStatus::InvalidSource;
+		}
+		output.cargo.presence |= protocol::CargoScanStatePresenceFlagValidity;
+		output.cargo.validity_flags =
+			static_cast<std::uint8_t>(source.validity_flags);
+	}
+	if ((source.presence & protocol::CargoScanStatePresenceFlagCargoText) != 0U) {
+		if (!output.cargo.cargo_text.assign(
+				source.cargo_text.data(), source.cargo_text.size())) {
+			return Phase3EngineCollectStatus::SourceLimitExceeded;
+		}
+		output.cargo.presence |= protocol::CargoScanStatePresenceFlagCargoText;
+		output.cargo.disclosure =
+			static_cast<std::uint8_t>(protocol::DisclosureState::Revealed);
+	}
+	return Phase3EngineCollectStatus::Collected;
+}
+
+Phase3EngineCollectStatus collect_navigation(
+	std::uint64_t sample_time,
+	Phase3IdentityRegistry& identities,
+	Phase3Projection& output) noexcept
+{
+	output.navigation.producer_sample_time_us = sample_time;
+	if (CurrentNav < -1 || CurrentNav >= MAX_NAVPOINTS) {
+		return Phase3EngineCollectStatus::InvalidSource;
+	}
+	const auto availability = EvaluateAutopilot(&Player_obj->pos);
+	if (AutoPilotEngaged) {
+		output.navigation.autopilot_state =
+			protocol::AutopilotState::Engaged;
+	} else if (CurrentNav < 0) {
+		output.navigation.autopilot_state =
+			protocol::AutopilotState::Refused;
+	} else if (availability == AutopilotAvailability::Available) {
+		output.navigation.autopilot_state =
+			protocol::AutopilotState::Available;
+	} else {
+		output.navigation.autopilot_state =
+			protocol::AutopilotState::Refused;
+		output.navigation.presence |=
+			protocol::NavigationStatePresenceFlagAutopilotRefusal;
+		output.navigation.autopilot_refusal =
+			autopilot_refusal(availability);
+	}
+	if (CurrentNav < 0) {
+		output.navigation.presence |=
+			protocol::NavigationStatePresenceFlagAutopilotRefusal;
+		output.navigation.autopilot_refusal =
+			protocol::AutopilotRefusal::NoValidNav;
+	}
+	for (std::size_t index = 0U; index < MAX_NAVPOINTS; ++index) {
+		auto& source = Navs[index];
+		if ((source.flags & NP_VALIDTYPE) == 0 ||
+			(source.flags & NP_HIDDEN) != 0) {
+			continue;
+		}
+		const auto* position = source.GetPosition();
+		if (position == nullptr) return Phase3EngineCollectStatus::InvalidSource;
+		auto& navpoint =
+			output.navigation.navpoints[output.navigation.navpoint_count++];
+		navpoint.type = static_cast<std::uint8_t>(
+			(source.flags & NP_SHIP) != 0
+			? protocol::NavPointType::Entity
+			: protocol::NavPointType::Waypoint);
+		navpoint.flags =
+			(source.flags & NP_NOACCESS) != 0
+				? protocol::NavPointFlagNoAccess : 0U;
+		if ((source.flags & NP_VISITED) != 0)
+			navpoint.flags |= protocol::NavPointFlagVisited;
+		copy_position(*position, navpoint.position_world);
+		std::size_t name_length = 0U;
+		while (name_length < sizeof(source.m_NavName) &&
+			source.m_NavName[name_length] != '\0') {
+			++name_length;
+		}
+		if (name_length == sizeof(source.m_NavName) ||
+			!navpoint.name.assign(source.m_NavName, name_length)) {
+			return Phase3EngineCollectStatus::SourceLimitExceeded;
+		}
+		navpoint.navpoint_id = resolve_navpoint_id(output,
+			source.m_NavName, name_length, navpoint.type);
+		if (navpoint.navpoint_id == 0U)
+			return Phase3EngineCollectStatus::SourceLimitExceeded;
+		if ((source.flags & NP_SHIP) != 0 &&
+			source.target_index >= 0 && source.target_index < MAX_OBJECTS) {
+			auto& linked = Objects[source.target_index];
+			RadarContactProjection projected;
+			if (valid_live_object(&linked) &&
+				radar_project_contact(&linked, projected)) {
+				const auto identity = resolve_object(identities, linked);
+				if (!resolved(identity)) {
+					return Phase3EngineCollectStatus::IdentityFailure;
+				}
+				navpoint.presence |=
+					protocol::NavPointPresenceFlagEntityLink;
+				navpoint.linked_entity_id = identity.entity_id;
+			}
+		}
+		if ((source.flags & NP_WAYPOINT) != 0) {
+			if (source.target_index < 0 ||
+				static_cast<std::size_t>(source.target_index) >=
+					Waypoint_lists.size() ||
+				source.waypoint_num < 0) {
+				return Phase3EngineCollectStatus::InvalidSource;
+			}
+			const auto& list = Waypoint_lists[source.target_index];
+			if (static_cast<std::size_t>(source.waypoint_num) >=
+				list.get_waypoints().size()) {
+				return Phase3EngineCollectStatus::InvalidSource;
+			}
+			navpoint.presence |=
+				protocol::NavPointPresenceFlagWaypointLink;
+			navpoint.waypoint_list_id =
+				static_cast<std::uint32_t>(source.target_index) + 1U;
+			navpoint.waypoint_index =
+				static_cast<std::uint16_t>(source.waypoint_num);
+			if (CurrentNav == static_cast<int>(index)) {
+				const auto remaining =
+					list.get_waypoints().size() -
+					static_cast<std::size_t>(source.waypoint_num);
+				if (remaining > MaximumPhase3RouteWaypoints) {
+					return Phase3EngineCollectStatus::
+						SourceLimitExceeded;
+				}
+				for (std::size_t waypoint =
+						 static_cast<std::size_t>(
+							 source.waypoint_num);
+					 waypoint < list.get_waypoints().size();
+					 ++waypoint) {
+					const auto* route_position =
+						list.get_waypoints()[waypoint].get_pos();
+					if (route_position == nullptr) {
+						return Phase3EngineCollectStatus::
+							InvalidSource;
+					}
+					auto& route =
+						output.navigation.route_waypoints[
+							output.navigation
+								.route_waypoint_count++];
+					route.waypoint_list_id =
+						navpoint.waypoint_list_id;
+					route.waypoint_index =
+						static_cast<std::uint16_t>(waypoint);
+					copy_position(*route_position,
+						route.position_world);
+				}
+				output.navigation.presence |=
+					protocol::
+						NavigationStatePresenceFlagWaypointRoute;
+				output.navigation.current_route_index = 0U;
+				if (Player_ship->ai_index >= 0 &&
+					Player_ship->ai_index < MAX_AI_INFO) {
+					output.navigation.route_speed_limit =
+						std::max(0.0F,
+							static_cast<float>(
+								Ai_info[Player_ship->ai_index]
+									.waypoint_speed_cap));
+				}
+			}
+		}
+		if (CurrentNav == static_cast<int>(index)) {
+			output.navigation.presence |=
+				protocol::NavigationStatePresenceFlagCurrentNavpoint;
+			output.navigation.current_navpoint_id = navpoint.navpoint_id;
+		}
+	}
+	return Phase3EngineCollectStatus::Collected;
+}
+
+} // namespace
+
+Phase3EngineCollectStatus discover_phase3_catalog_dependencies(
+	const Phase2ObservationDto& observation,
+	Phase3CatalogDependencies& output) noexcept
+{
+	output = {};
+	if (!phase2_current_thread_is_main())
+		return Phase3EngineCollectStatus::NotMainThread;
+	if ((Game_mode & GM_IN_MISSION) == 0 || Player_obj == nullptr ||
+		Player_ship == nullptr || Player_ai == nullptr)
+		return Phase3EngineCollectStatus::NoPlayer;
+	const auto append = [](auto& keys, std::uint32_t& count,
+		std::uint32_t key) noexcept {
+		if (key == 0U) return true;
+		for (std::uint32_t index = 0U; index < count; ++index)
+			if (keys[index] == key) return true;
+		if (count >= keys.size()) return false;
+		keys[count++] = key;
+		return true;
+	};
+	// TARGET_STATE has an independently disclosed identity group.  Unlike a
+	// radar blip, a fully visible current target is therefore allowed to make
+	// its ship class a manifest dependency.  Selecting it here ensures the
+	// next manifest is installed before collect_target_and_locks can publish
+	// that group's class ID.
+	if (auto* current_target = current_player_target()) {
+		auto& target = *current_target;
+		RadarContactProjection projected;
+		if (target.type == OBJ_SHIP &&
+			target.instance >= 0 && target.instance < MAX_SHIPS &&
+			radar_project_contact(&target, projected) &&
+			projected.visibility == VISIBLE) {
+			const auto class_index = Ships[target.instance].ship_info_index;
+			if (class_index < 0 ||
+				class_index >= static_cast<int>(Ship_info.size()) ||
+				!append(output.ship_class_source_keys,
+					output.ship_class_count,
+					static_cast<std::uint32_t>(class_index) + 1U)) {
+				return Phase3EngineCollectStatus::SourceLimitExceeded;
+			}
+		}
+	}
+	// Radar tracks intentionally carry no class identity.  In particular, a
+	// VISIBLE blip is not a manifest dependency: the manifest is limited to
+	// classes referenced by independently revealed target/cargo data below.
+	const auto& cargo = observation.player_cargo_scan;
+	if ((cargo.presence & protocol::CargoScanStatePresenceFlagSubsystem) != 0U) {
+		if ((cargo.presence & protocol::CargoScanStatePresenceFlagTarget) == 0U ||
+			Player_ai->target_objnum < 0 ||
+			Player_ai->target_objnum >= MAX_OBJECTS) {
+			return Phase3EngineCollectStatus::InvalidSource;
+		}
+		const auto& target = Objects[Player_ai->target_objnum];
+		if (!valid_live_object(&target) || target.type != OBJ_SHIP ||
+			target.instance < 0 || target.instance >= MAX_SHIPS ||
+			static_cast<std::uint32_t>(target.signature) !=
+				cargo.target_capture_key.value) {
+			return Phase3EngineCollectStatus::InvalidSource;
+		}
+		const auto class_index = Ships[target.instance].ship_info_index;
+		if (class_index < 0 || class_index >= static_cast<int>(Ship_info.size()) ||
+			!append(output.ship_class_source_keys, output.ship_class_count,
+				static_cast<std::uint32_t>(class_index) + 1U)) {
+			return Phase3EngineCollectStatus::SourceLimitExceeded;
+		}
+	}
+	for (auto* item = GET_FIRST(&Missile_obj_list);
+		 item != END_OF_LIST(&Missile_obj_list);
+		 item = GET_NEXT(item)) {
+		if (item->objnum < 0 || item->objnum >= MAX_OBJECTS)
+			return Phase3EngineCollectStatus::InvalidSource;
+		const auto& missile_object = Objects[item->objnum];
+		if (!valid_live_object(&missile_object) ||
+			missile_object.type != OBJ_WEAPON ||
+			missile_object.instance < 0 || missile_object.instance >= MAX_WEAPONS)
+			return Phase3EngineCollectStatus::InvalidSource;
+		const auto& missile = Weapons[missile_object.instance];
+		const auto incoming = missile.homing_object == Player_obj ||
+			(Player_ai->danger_weapon_objnum == missile.objnum &&
+				(Player_ai->danger_weapon_signature <= 0 ||
+				 Player_ai->danger_weapon_signature == missile_object.signature));
+		if (!incoming) continue;
+		if (missile.weapon_info_index < 0 ||
+			missile.weapon_info_index >= weapon_info_size())
+			return Phase3EngineCollectStatus::InvalidSource;
+		if (!append(output.weapon_source_keys, output.weapon_count,
+			static_cast<std::uint32_t>(missile.weapon_info_index) + 1U))
+			return Phase3EngineCollectStatus::SourceLimitExceeded;
+	}
+	return Phase3EngineCollectStatus::Collected;
+}
+
+Phase3EngineCollectStatus collect_phase3_engine_projection(
+	const Phase3EngineCollectInput& input,
+	Phase3IdentityRegistry& identities,
+	Phase3Projection& output,
+	Phase3Projection& scratch) noexcept
+{
+	if (!phase2_current_thread_is_main()) {
+		return Phase3EngineCollectStatus::NotMainThread;
+	}
+	if ((Game_mode & GM_IN_MISSION) == 0 || Player == nullptr ||
+		Player_obj == nullptr || Player_ship == nullptr) {
+		return Phase3EngineCollectStatus::NoPlayer;
+	}
+	if (!identities.ready() || input.player_entity_id == 0U ||
+		&output == &scratch ||
+		Player_obj->type != OBJ_SHIP || Player_obj->signature <= 0 ||
+		Player_ship->objnum < 0 || Player_ship->objnum >= MAX_OBJECTS ||
+		&Objects[Player_ship->objnum] != Player_obj) {
+		return Phase3EngineCollectStatus::InvalidSource;
+	}
+	if (!identities.begin_transaction()) {
+		return Phase3EngineCollectStatus::InvalidSource;
+	}
+	scratch = output;
+	const auto reject = [&identities](
+		Phase3EngineCollectStatus failure) noexcept {
+		identities.rollback_transaction();
+		return failure;
+	};
+	auto status = reconcile_phase2(input, identities);
+	if (status != Phase3EngineCollectStatus::Collected) return reject(status);
+	const auto identity_changed =
+		scratch.player_entity_id != input.player_entity_id;
+	const auto refresh_flight =
+		input.refresh_flight_controls || identity_changed;
+	const auto refresh_systems =
+		input.refresh_systems || identity_changed;
+	if (identity_changed) reconstruct_in_place(scratch);
+	scratch.player_entity_id = input.player_entity_id;
+	if (refresh_flight) {
+		reconstruct_in_place(scratch.target);
+		scratch.lock_count = 0U;
+		status = collect_target_and_locks(
+			input.producer_sample_time_us,
+			input.installed_manifest, identities, scratch);
+		if (status != Phase3EngineCollectStatus::Collected) return reject(status);
+	}
+	if (refresh_systems) {
+		reconstruct_in_place(scratch.radar);
+		scratch.contact_count = 0U;
+		reconstruct_in_place(scratch.threat);
+		reconstruct_in_place(scratch.cargo);
+		reconstruct_in_place(scratch.navigation);
+		status = collect_radar(input.producer_sample_time_us,
+			input.installed_manifest, identities, scratch);
+		if (status != Phase3EngineCollectStatus::Collected) return reject(status);
+		status = collect_threat(input.producer_sample_time_us,
+			input.installed_manifest, identities, scratch);
+		if (status != Phase3EngineCollectStatus::Collected) return reject(status);
+		status = collect_cargo(input, identities, scratch);
+		if (status != Phase3EngineCollectStatus::Collected) return reject(status);
+		status = collect_navigation(
+			input.producer_sample_time_us, identities, scratch);
+		if (status != Phase3EngineCollectStatus::Collected) return reject(status);
+	}
+	output = scratch;
+	identities.commit_transaction();
+	return Phase3EngineCollectStatus::Collected;
+}
+
+} // namespace telemetry::detail

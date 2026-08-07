@@ -11,6 +11,12 @@ target_link_libraries(unittests PRIVATE code)
 target_include_directories(unittests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
 
 set_target_properties(unittests PROPERTIES FOLDER "tests")
+if(MSVC)
+	# The Phase 3 integration case nests the complete engine, session and
+	# projection call stack. Product projections remain heap-backed; reserve
+	# virtual stack for the monolithic Windows test runner itself.
+  target_link_options(unittests PRIVATE /STACK:8388608)
+endif()
 
 file(TO_NATIVE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../test_data" TEST_DATA_PATH)
 string(REPLACE "\\" "\\\\" TEST_DATA_PATH "${TEST_DATA_PATH}")
@@ -127,6 +133,13 @@ if(WIN32)
 endif()
 set_target_properties(telemetry_native_runtime_loopback_contract_tests
 	PROPERTIES FOLDER "tests")
+if(MSVC)
+	# This in-process test nests a complete server, client and engine callback
+	# stack. Production trackers remain heap-backed; reserve virtual stack for
+	# the Windows-only harness nesting itself.
+	target_link_options(telemetry_native_runtime_loopback_contract_tests
+		PRIVATE /STACK:4194304)
+endif()
 add_test(NAME telemetry_native_runtime_loopback_contract_tests
 	COMMAND telemetry_native_runtime_loopback_contract_tests)
 
@@ -501,6 +514,41 @@ source_group("Telemetry\\Producer" FILES
 add_test(NAME telemetry_phase2_security_bounds_tests
 	COMMAND telemetry_phase2_security_bounds_tests)
 
+add_executable(telemetry_phase3_identity_tests
+	telemetry/producer/phase3_identity_tests.cpp
+	telemetry/phase2_allocation_tracker.cpp
+	${CMAKE_SOURCE_DIR}/code/telemetry/phase3_identity_registry.cpp
+)
+target_compile_features(telemetry_phase3_identity_tests PRIVATE cxx_std_17)
+target_include_directories(telemetry_phase3_identity_tests PRIVATE
+	${CMAKE_CURRENT_SOURCE_DIR}
+	${CODE_HEADERS}
+	${FREESPACE_HEADERS}
+	${GENERATED_SOURCE_DIR}
+	${GENERATED_SOURCE_DIR}/code
+)
+target_link_libraries(telemetry_phase3_identity_tests PRIVATE gtest_main)
+set_target_properties(telemetry_phase3_identity_tests PROPERTIES FOLDER "tests")
+source_group("Telemetry\\Producer" FILES
+	telemetry/producer/phase3_identity_tests.cpp
+	telemetry/phase2_allocation_tracker.cpp
+	telemetry/phase2_allocation_tracker.h
+)
+add_test(NAME telemetry_phase3_identity_tests COMMAND telemetry_phase3_identity_tests)
+
+add_executable(telemetry_phase3_state_image_tests
+	telemetry/producer/phase3_state_image_tests.cpp
+	${CMAKE_SOURCE_DIR}/code/telemetry/phase3_state_image.cpp)
+target_compile_features(telemetry_phase3_state_image_tests PRIVATE cxx_std_17)
+target_include_directories(telemetry_phase3_state_image_tests PRIVATE
+	${CMAKE_SOURCE_DIR}/code
+	${CMAKE_SOURCE_DIR}/test/src)
+target_link_libraries(telemetry_phase3_state_image_tests PRIVATE
+	gtest_main fstl_protocol)
+set_target_properties(telemetry_phase3_state_image_tests PROPERTIES FOLDER "tests")
+add_test(NAME telemetry_phase3_state_image_tests
+	COMMAND telemetry_phase3_state_image_tests)
+
 if(FSO_TELEMETRY_FUZZ_STANDALONE
 	AND TARGET telemetry_phase2_packet_reader_fuzz
 	AND TARGET telemetry_phase2_state_validator_fuzz)
@@ -590,6 +638,8 @@ set(TELEMETRY_SHORT_TESTS
 	telemetry_phase2_replication_tests
 	telemetry_phase2_runtime_tests
 	telemetry_phase2_security_bounds_tests
+	telemetry_phase3_identity_tests
+	telemetry_phase3_state_image_tests
 	telemetry_no_legacy_certification)
 set_tests_properties(${TELEMETRY_SHORT_TESTS} PROPERTIES
 	LABELS "telemetry-short"

@@ -20,6 +20,9 @@
 #include "ship/ship.h"
 #include "species_defs/species_defs.h"
 
+#include <algorithm>
+#include <cmath>
+
 
 // ----------------------------------------------------------------------------------------------------
 // AWACS DEFINES/VARS
@@ -363,6 +366,28 @@ const     float FULLY_TARGETABLE        = (viewer_has_primitive_sensors ? ((dist
 		// untargetable at longer range
 		return UNTARGETABLE;	
 	}		
+}
+
+AwacsObserverTelemetry awacs_observer_telemetry(const ship* viewer)
+{
+	AwacsObserverTelemetry result;
+	if (viewer == nullptr) return result;
+	for (int index = 0; index < Awacs_count; ++index) {
+		const auto& source = Awacs[index];
+		if (source.team != viewer->team || source.objp == nullptr ||
+			source.subsys == nullptr || source.objp->type != OBJ_SHIP) {
+			continue;
+		}
+		if (!std::isfinite(source.subsys->awacs_intensity) ||
+			!std::isfinite(source.subsys->awacs_radius) ||
+			source.subsys->awacs_intensity < 0.0f ||
+			source.subsys->awacs_radius < 0.0f) {
+			continue;
+		}
+		result.intensity += source.subsys->awacs_intensity;
+		result.range = std::max(result.range, source.subsys->awacs_radius);
+	}
+	return result;
 }
 
 

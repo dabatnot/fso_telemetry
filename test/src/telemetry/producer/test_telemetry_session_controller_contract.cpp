@@ -234,7 +234,9 @@ detail::SessionControllerConfig config(std::size_t max_clients = 1U)
 detail::SessionController make_controller(detail::SessionIdAllocator& ids,
 	StageRecorder* observer = nullptr,
 	std::size_t max_clients = 1U,
-	std::uint8_t keyframe_seconds = 2U)
+	std::uint8_t keyframe_seconds = 2U,
+	telemetry::Phase2Profile phase2_profile =
+		telemetry::Phase2Profile::None)
 {
 	struct PacketSequences final : detail::RandomSource {
 		std::uint64_t next = 0x10203040U;
@@ -248,6 +250,10 @@ detail::SessionController make_controller(detail::SessionIdAllocator& ids,
 	detail::SessionController controller;
 	auto controller_config = config(max_clients);
 	controller_config.keyframe_seconds = keyframe_seconds;
+	controller_config.phase2_profile = phase2_profile;
+	if (phase2_profile != telemetry::Phase2Profile::None)
+		controller_config.delta_payload_capacity =
+			detail::Phase2CompleteShipDeltaBytes;
 	EXPECT_EQ(detail::SessionControllerConfigureResult::Ready,
 		detail::SessionController::configure(
 			controller_config, ids, packet_sequences, 0U, observer, controller));
@@ -389,6 +395,54 @@ void activate_phase1_live_baseline(detail::SessionController& controller, std::u
 	ASSERT_NE(detail::SessionIngressDisposition::Dropped,
 		controller.ingest(endpoint(), view(encoded_snapshot_ack.bytes), start_us + 3'000U, 7U, true).disposition);
 	ASSERT_EQ(detail::Phase1SnapshotProgress::Live, controller.snapshot_progress(0U));
+}
+
+void activate_phase3_live_baseline(detail::SessionController& controller,
+	std::uint64_t nonce,
+	std::uint64_t start_us = 1'000U)
+{
+	const auto request = hello(nonce);
+	ASSERT_EQ(detail::SessionIngressDisposition::ResponseQueued,
+		controller.ingest(endpoint(), view(request.bytes), start_us, 7U,
+			true).disposition);
+	const auto welcome = pop_output(controller);
+	const auto welcome_ack = applied_welcome_ack(welcome);
+	ASSERT_EQ(detail::SessionIngressDisposition::WelcomeProofApplied,
+		controller.ingest(endpoint(), view(welcome_ack.bytes),
+			start_us + 1'000U, 7U, true).disposition);
+	(void)pop_output(controller); // SESSION_BEGIN
+
+	protocol::Sha256Digest catalog{};
+	protocol::Sha256Digest topology{};
+	catalog[0] = 1U;
+	topology[0] = 2U;
+	ASSERT_EQ(detail::Phase2RuntimeResult::ManifestRequired,
+		controller.stage_phase2_manifest(
+			0U, 1U, catalog, topology));
+	ASSERT_EQ(detail::Phase2RuntimeResult::SnapshotRequired,
+		controller.apply_phase2_manifest(0U, 1U));
+	std::array<std::uint64_t,
+		detail::Phase2RuntimeSlot::BlockCount> samples{};
+	samples.fill(start_us + 2'000U);
+	ASSERT_TRUE(controller.set_phase2_block_samples(0U, samples));
+	ASSERT_TRUE(controller.begin_phase2_snapshot(0U,
+		phase1_integration_image(),
+		detail::Phase2RuntimeSnapshotCause::Initial,
+		start_us + 2'000U));
+	ASSERT_EQ(1U, controller.service_initial_snapshot_egress(
+		1U, start_us + 2'001U));
+	const auto snapshot = pop_output(controller);
+	auto snapshot_ack = welcome_ack_payload(snapshot);
+	snapshot_ack.target_message_type =
+		protocol::MessageType::FullSnapshot;
+	snapshot_ack.ack_flags = protocol::KnownAckFlags;
+	const auto encoded_snapshot_ack =
+		encode_welcome_ack(snapshot, snapshot_ack);
+	ASSERT_NE(detail::SessionIngressDisposition::Dropped,
+		controller.ingest(endpoint(), view(encoded_snapshot_ack.bytes),
+			start_us + 3'000U, 7U, true).disposition);
+	ASSERT_EQ(detail::Phase1SnapshotProgress::Live,
+		controller.snapshot_progress(0U));
 }
 
 template <typename T, typename = void>
@@ -728,6 +782,82 @@ TEST(TelemetryWp06HandshakeContract, OfferedRange10Through11SelectsTheExactPhase
 	EXPECT_EQ(protocol::VersionMinorV1_1, output.datagram.header.version_minor);
 	EXPECT_EQ(protocol::VersionMinorV1_1, decode_welcome(output).selected_minor);
 	EXPECT_EQ(0x1234U, output.datagram.header.session_id);
+}
+
+TEST(TelemetryPhase3Session, CockpitSensorsRequiresAndSelectsMinor11)
+{
+	IdentityHarness rejected_ids{{{true, 0x7c01U}}};
+	auto rejected = make_controller(rejected_ids.allocator, nullptr, 1U, 2U,
+		telemetry::Phase2Profile::CockpitSensors);
+	const auto only_v10 = hello(0x7c01U,
+		protocol::VersionMinorV1_0, protocol::VersionMinorV1_0);
+	ASSERT_EQ(detail::SessionIngressDisposition::ResponseQueued,
+		rejected.ingest(endpoint(), view(only_v10.bytes), 10'000U, 0U, true).disposition);
+	const auto rejection = pop_output(rejected);
+	EXPECT_EQ(protocol::VersionMinorV1_0, rejection.datagram.header.version_minor);
+	EXPECT_EQ(protocol::WelcomeStatus::UnsupportedVersion,
+		decode_welcome(rejection).status);
+	EXPECT_EQ(0U, rejected.active_slots());
+
+	IdentityHarness accepted_ids{{{true, 0x7c02U}}};
+	auto accepted = make_controller(accepted_ids.allocator, nullptr, 1U, 2U,
+		telemetry::Phase2Profile::CockpitSensors);
+	const auto range_including_v11 = hello(0x7c02U,
+		protocol::VersionMinorV1_0, protocol::VersionMinorV1_1);
+	ASSERT_EQ(detail::SessionIngressDisposition::ResponseQueued,
+		accepted.ingest(endpoint(), view(range_including_v11.bytes), 10'001U, 0U, true).disposition);
+	const auto welcome = pop_output(accepted);
+	EXPECT_EQ(protocol::VersionMinorV1_1, welcome.datagram.header.version_minor);
+	EXPECT_EQ(protocol::VersionMinorV1_1, decode_welcome(welcome).selected_minor);
+	EXPECT_EQ(1U, accepted.active_slots());
+}
+
+TEST(TelemetryPhase3Session, CockpitSensorsCoverageIsImmutableForTheSession)
+{
+	constexpr auto profile = telemetry::Phase2Profile::CockpitSensors;
+	const auto coverage = telemetry::phase2_profile_coverage(profile);
+	ASSERT_NE(protocol::StateDomainCoverageBitNone, coverage);
+
+	// The transition rule rejects both a wider and a narrower coverage.  A
+	// session controller must turn such an attempted valid-ingress update into
+	// a terminal SESSION_END instead of changing the established session.
+	const auto promotion = telemetry::reject_phase2_profile_mutation(
+		profile,
+		telemetry::phase2_profile_coverage(telemetry::Phase2Profile::CompleteShip),
+		telemetry::Phase2ProfileMutationSource::CapabilityUpdate);
+	EXPECT_EQ(protocol::ValidationError::InvalidStateTransition, promotion.error);
+	EXPECT_EQ(telemetry::Phase2SessionSlotState::FaultedSession, promotion.slot_state);
+	const auto degradation = telemetry::reject_phase2_profile_mutation(
+		profile, protocol::StateDomainCoverageBitNone,
+		telemetry::Phase2ProfileMutationSource::Delta);
+	EXPECT_EQ(protocol::ValidationError::InvalidStateTransition, degradation.error);
+	EXPECT_EQ(telemetry::Phase2SessionSlotState::FaultedSession, degradation.slot_state);
+
+	IdentityHarness ids{{{true, 0x7c03U}}};
+	auto controller = make_controller(ids.allocator, nullptr, 1U, 2U, profile);
+	activate_phase3_live_baseline(controller, 0x7c03U);
+	const auto session_id = controller.slot(0U).session_id;
+	ASSERT_NE(0U, session_id);
+	ASSERT_EQ(detail::ProducerSessionProgress::ReadyForState, controller.slot(0U).progress);
+	EXPECT_EQ(session_id, controller.slot(0U).session_id);
+
+	const auto result = controller.reject_phase2_profile_mutation_for_slot(
+		0U, telemetry::Phase2ProfileMutationSource::CapabilityUpdate);
+	EXPECT_EQ(protocol::ValidationError::InvalidStateTransition, result.error);
+	EXPECT_EQ(telemetry::Phase2SessionSlotState::FaultedSession, result.slot_state);
+	EXPECT_EQ(detail::ProducerSessionProgress::FaultedSession, controller.slot(0U).progress);
+	EXPECT_EQ(session_id, controller.slot(0U).session_id)
+		<< "A coverage change cannot silently create a replacement session identity.";
+
+	const auto end = pop_output(controller);
+	EXPECT_EQ(protocol::MessageType::SessionEnd, end.datagram.header.message_type);
+	EXPECT_EQ(session_id, end.datagram.header.session_id);
+	protocol::SessionEndPayload payload;
+	ASSERT_EQ(protocol::ValidationError::None,
+		protocol::decode_session_end_payload(end.datagram.payload, payload));
+	EXPECT_EQ(protocol::SessionEndReason::ProtocolError, payload.reason);
+	EXPECT_EQ(protocol::SessionEndFlagReconnectAllowed, payload.end_flags)
+		<< "Changing CockpitSensors coverage requires a fresh handshake.";
 }
 
 TEST(TelemetryWp06HandshakeContract, DuplicateHelloWithinTenSecondsReplaysIdenticalWelcomeAndSession)
@@ -1447,6 +1577,33 @@ TEST(TelemetryPhase1KeyframeContract, DefaultTwoSecondPeriodicDueStartsOneCandid
 	EXPECT_TRUE(controller.slot(0U).snapshot.has_candidate());
 	EXPECT_EQ(candidate_id, controller.slot(0U).snapshot.candidate_snapshot_id())
 		<< "Missed periodic intervals coalesce while APPLIED is pending; no third snapshot is retained.";
+}
+
+TEST(TelemetryPhase3CaptureSchedule,
+	PeriodicKeyframeWaitsForCompleteCaptureSample)
+{
+	IdentityHarness ids{{{true, 0x7506U}}};
+	auto controller = make_controller(ids.allocator, nullptr, 1U, 1U,
+		telemetry::Phase2Profile::CockpitSensors);
+	activate_phase3_live_baseline(controller, 0x7506U);
+	const auto due = controller.slot(0U).next_keyframe_due_us;
+
+	controller.service_periodic(due);
+	EXPECT_TRUE(controller.phase3_complete_capture_required());
+	EXPECT_FALSE(controller.slot(0U).snapshot.has_candidate());
+	EXPECT_FALSE(controller.queue_cumulative_delta(0U, due))
+		<< "A network/maintenance pass has no complete EngineUpdate sample.";
+	EXPECT_FALSE(controller.slot(0U).snapshot.has_candidate());
+
+	ASSERT_EQ(protocol::ProducerBaselineResult::Applied,
+		controller.replace_current_state(
+			0U, phase1_integration_image_at(9.0F, due)));
+	ASSERT_TRUE(controller.queue_cumulative_delta(0U, due, due));
+	EXPECT_FALSE(controller.phase3_complete_capture_required());
+	EXPECT_TRUE(controller.slot(0U).snapshot.has_candidate());
+	EXPECT_EQ(detail::Phase2RuntimeSnapshotCause::Periodic,
+		controller.slot(0U).phase2_runtime
+			.last_started_snapshot_cause());
 }
 
 TEST(TelemetryPhase1KeyframeContract, ResyncRequestIsValidatedAndStartsOneReplacement)

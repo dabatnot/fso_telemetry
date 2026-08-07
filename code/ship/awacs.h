@@ -21,6 +21,13 @@
 class object;
 class ship;
 
+// Read-only summary of the AWACS sources currently applicable to an observer.
+// It deliberately exposes no source object or subsystem pointer.
+struct AwacsObserverTelemetry {
+	float intensity = 0.0f;
+	float range = 0.0f;
+};
+
 // DAVE'S OFFICIAL DEFINITION OF AWACS
 
 // ----------------------------------------------------------------------------------------------------
@@ -38,6 +45,9 @@ void awacs_process();
 // 0.0 - 1.0f	: marginally targetable
 // 1.0f			: fully targetable as normal
 float awacs_get_level(const object *target, const ship *viewer, bool use_awacs = true);
+
+// Return the current observer-owned AWACS aggregate for HUD consumers.
+AwacsObserverTelemetry awacs_observer_telemetry(const ship* viewer);
 
 // Determine if ship is visible by team
 // return 1 if ship is fully visible

@@ -74,7 +74,7 @@ enum class TelemetryPhase2ManifestResult : std::uint8_t {
 	Built = 0, Reused, Rejected, Count
 };
 enum class TelemetryPhase2Profile : std::uint8_t {
-	None = 0, CoreGate, CompleteShip, Count
+	None = 0, CoreGate, CompleteShip, CockpitSensors, Count
 };
 enum class TelemetryPhase2LifecycleKind : std::uint8_t {
 	Appeared = 0, Disabled, DyingStarted, Destroyed, Disappeared, Count
@@ -304,6 +304,8 @@ class TelemetryMetrics final {
 	void set_allocated_bytes(std::uint64_t bytes) noexcept;
 	void set_udp_sockets_open(std::uint64_t sockets) noexcept;
 	void set_current_player_entity_id(std::uint64_t entity_id) noexcept;
+	std::uint64_t process_counter(TelemetryMetricCounter counter) const noexcept;
+	std::uint64_t phase2_memory_high_water(TelemetryPhase2MemoryScope scope) const noexcept;
 	void set_session_gauges(std::size_t slot, std::uint64_t state, std::uint64_t reassemblies,
 		std::uint64_t reassembly_bytes, std::uint64_t reliable_items,
 		std::uint64_t snapshot_candidates, std::uint64_t baselines) noexcept;

@@ -8,6 +8,8 @@
 #include "telemetry/phase2_observation.h"
 #include "telemetry/phase2_profile_gate.h"
 #include "telemetry/phase2_state_image.h"
+#include "telemetry/phase3_identity_registry.h"
+#include "telemetry/phase3_state_image.h"
 #include "telemetry/session_controller.h"
 #include "telemetry/startup_budget.h"
 #include "telemetry/transport.h"
@@ -76,6 +78,8 @@ struct Phase2CapturePlan {
 	bool capture_flight_controls = false;
 	bool capture_systems = false;
 	bool force_complete_keyframe = false;
+	bool phase3_refresh_targeting = false;
+	bool phase3_refresh_systems = false;
 	std::uint64_t producer_sample_time_us = 0U;
 };
 
@@ -216,11 +220,21 @@ class NativeSessionRuntime final : private DatagramIoWork {
 	void observe_phase2_support_transitions() noexcept;
 	void reset_phase2_support_tracker() noexcept;
 	bool provision_phase2_manifest_state() noexcept;
+	bool provision_phase2_catalog_source() noexcept;
+	bool provision_phase3_manifest_states(
+		std::size_t client_count) noexcept;
 	bool refresh_owned_phase2_manifest(
 		const Phase2ObservationDto& observation,
 		Phase2ManifestError& result) noexcept;
+	bool refresh_phase3_manifest(
+		std::size_t client_slot,
+		const Phase2ObservationDto& observation,
+		const Phase2Wp05SubjectBinding* bindings,
+		std::size_t binding_count,
+		Phase2ManifestError& result) noexcept;
 	void release_unreferenced_phase2_manifest_generation() noexcept;
 	void release_phase2_manifest_state() noexcept;
+	void release_phase3_manifest_states() noexcept;
 	std::uint64_t state_image_pool_allocation_count() const noexcept;
 	std::size_t state_image_pool_backing_bytes() const noexcept;
 
@@ -235,6 +249,12 @@ class NativeSessionRuntime final : private DatagramIoWork {
 	Phase2CaptureResult m_last_phase2_capture_result{};
 	Phase2Profile m_selected_phase2_profile = Phase2Profile::None;
 	bool m_phase2_enabled = false;
+	std::array<std::unique_ptr<Phase3Projection>, 4U>
+		m_phase3_projections{};
+	std::array<std::unique_ptr<Phase3Projection>, 4U>
+		m_phase3_projection_scratch{};
+	std::array<std::unique_ptr<Phase3IdentityRegistry>, 4U>
+		m_phase3_identity_registries{};
 	CurrentPlayerCapture m_current_player_capture;
 	SessionPlayerMaterializationResult m_last_player_materialization;
 	NativeSessionTickContext m_tick_context{};
@@ -273,6 +293,21 @@ class NativeSessionRuntime final : private DatagramIoWork {
 	std::array<Phase2StateImagePool, 4U>
 		m_phase2_core_gate_image_pools{};
 	std::array<Phase2CompleteDomainPool, 4U> m_phase2_image_pools{};
+	struct Phase3ManifestState {
+		std::unique_ptr<Phase2ManifestStorage> storage;
+		std::unique_ptr<Phase2ManifestSlot> slot;
+		const Phase2ManifestCandidate* manifest = nullptr;
+		bool catalog_projection_pending = false;
+	};
+	// Cockpit catalog visibility is observer-specific.  Each client owns its
+	// selected candidate while a bounded mission workspace is reused only to
+	// encode it into that client's reliable egress queue.
+	std::array<Phase3ManifestState, 4U> m_phase3_manifest_states{};
+	std::unique_ptr<std::uint8_t[]> m_phase3_manifest_workspace;
+	std::size_t m_phase3_manifest_workspace_owner = 4U;
+	std::unique_ptr<Phase2ManifestSource>
+		m_phase3_manifest_selection_source;
+	std::size_t m_phase3_manifest_backing_bytes = 0U;
 	std::unique_ptr<std::uint8_t[]> m_phase2_manifest_backing;
 	std::unique_ptr<Phase2ManifestSource> m_phase2_manifest_source;
 	std::unique_ptr<Phase2ManifestStorage> m_phase2_manifest_storage;
@@ -287,6 +322,7 @@ class NativeSessionRuntime final : private DatagramIoWork {
 	std::array<std::uint64_t, TelemetryMetricsMaxClients>
 		m_phase2_started_snapshot_sequences{};
 	bool m_capture_after_ready_transition = false;
+	bool m_capture_for_phase3_keyframe = false;
 	bool m_applying_engine_capture = false;
 	bool m_phase2_event_pipeline_failed_closed = false;
 	bool m_performance_observation_active = false;

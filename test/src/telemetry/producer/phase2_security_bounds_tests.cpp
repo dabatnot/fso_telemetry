@@ -153,6 +153,40 @@ TEST(Phase2SecurityBounds, P2TST004DisabledConfigurationRetainsThePhase1FastPath
 	EXPECT_EQ(10U, disabled.effective.systems_hz);
 }
 
+TEST(TelemetryConfigContract, VersionThreeProfileIsClosed)
+{
+	const auto cockpit = detail::parse_telemetry_config_json(
+		R"({"schemaVersion":3,"profile":"CockpitSensors"})");
+	ASSERT_EQ(telemetry::ConfigStatus::ValidDisabled, cockpit.status);
+	EXPECT_EQ(3U, cockpit.effective.schema_version);
+	EXPECT_EQ(telemetry::Phase2Profile::CockpitSensors,
+		cockpit.effective.phase2_profile);
+	EXPECT_EQ(0x07CBU,
+		telemetry::phase2_profile_coverage(
+			cockpit.effective.phase2_profile));
+
+	for (const auto* invalid : {
+			 R"({"schemaVersion":3})",
+			 R"({"schemaVersion":3,"profile":"cockpitsensors"})",
+			 R"({"schemaVersion":3,"profile":"Complete"})",
+			 R"({"schemaVersion":3,"phase2Profile":"CompleteShip","profile":"CockpitSensors"})"}) {
+		SCOPED_TRACE(invalid);
+		EXPECT_EQ(telemetry::ConfigStatus::Invalid,
+			detail::parse_telemetry_config_json(invalid).status);
+	}
+
+	const auto legacy_v1 = detail::parse_telemetry_config_json(
+		R"({"schemaVersion":1})");
+	ASSERT_EQ(telemetry::ConfigStatus::ValidDisabled, legacy_v1.status);
+	EXPECT_EQ(telemetry::Phase2Profile::CompleteShip,
+		legacy_v1.effective.phase2_profile);
+	const auto legacy_v2 = detail::parse_telemetry_config_json(
+		R"({"schemaVersion":2,"phase2Profile":"CoreGate"})");
+	ASSERT_EQ(telemetry::ConfigStatus::ValidDisabled, legacy_v2.status);
+	EXPECT_EQ(telemetry::Phase2Profile::CoreGate,
+		legacy_v2.effective.phase2_profile);
+}
+
 TEST(Phase2SecurityBounds, P2TST005And006BuildSurfaceAndCMakeInventoryAreExplicit)
 {
 #if defined(_MSC_VER)
@@ -231,6 +265,55 @@ TEST(Phase2SecurityBounds, P2TST049ExactOwnedCapsPassAndEveryPlusOneFailsBeforeB
 		detail::calculate_phase2_owned_budget(overflow).error);
 }
 
+TEST(Phase3SecurityBounds, ExactOwnedCapsAndReplicationScratchCoverFourThousandNinetySixContacts)
+{
+	static_assert(detail::Phase3SharedOwnedCapBytes == 167'772'160U);
+	static_assert(detail::Phase3ClientOwnedCapBytes == 92'274'688U);
+	static_assert(detail::Phase3ProcessOwnedCapBytes == 536'870'912U);
+	static_assert(detail::Phase3CockpitSensorsDeltaBytes ==
+		telemetry::protocol::MaxStateMessageSize);
+	static_assert(telemetry::protocol::MaxIncrementalDirtyStateAtomCount >=
+		9U + 10U * 64U + 4096U + 4096U);
+
+	const detail::Phase2OwnedBudgetRequest exact{
+		detail::Phase3SharedOwnedCapBytes,
+		detail::Phase3ClientOwnedCapBytes,
+		detail::TelemetryMetricsMaxClients};
+	const auto accepted = detail::calculate_phase3_owned_budget(exact);
+	ASSERT_EQ(detail::StartupBudgetError::None, accepted.error);
+	EXPECT_EQ(167'772'160U, accepted.shared_owned_bytes);
+	EXPECT_EQ(92'274'688U, accepted.client_owned_bytes);
+	EXPECT_EQ(369'098'752U, accepted.clients_owned_bytes);
+	EXPECT_EQ(536'870'912U, accepted.process_owned_bytes);
+
+	for (const auto scope : {
+			 detail::TelemetryPhase2MemoryScope::Shared,
+			 detail::TelemetryPhase2MemoryScope::ClientTotal,
+			 detail::TelemetryPhase2MemoryScope::ProcessTotal}) {
+		const auto cap =
+			scope == detail::TelemetryPhase2MemoryScope::Shared
+			? detail::Phase3SharedOwnedCapBytes
+			: scope == detail::TelemetryPhase2MemoryScope::ClientTotal
+			? detail::Phase3ClientOwnedCapBytes
+			: detail::Phase3ProcessOwnedCapBytes;
+		EXPECT_TRUE(detail::phase3_owned_scope_within_cap(scope, cap));
+		EXPECT_FALSE(detail::phase3_owned_scope_within_cap(
+			scope, cap + 1U));
+	}
+	EXPECT_FALSE(detail::phase3_owned_scope_within_cap(
+		detail::TelemetryPhase2MemoryScope::Count, 0U));
+
+	const detail::Phase2OwnedBudgetRequest invalid_clients{
+		0U, 0U, detail::TelemetryMetricsMaxClients + 1U};
+	EXPECT_EQ(detail::StartupBudgetError::InvalidClientCount,
+		detail::calculate_phase3_owned_budget(invalid_clients).error);
+	const detail::Phase2OwnedBudgetRequest overflow{
+		1U, std::numeric_limits<std::size_t>::max(),
+		detail::TelemetryMetricsMaxClients};
+	EXPECT_EQ(detail::StartupBudgetError::ArithmeticOverflow,
+		detail::calculate_phase3_owned_budget(overflow).error);
+}
+
 TEST(Phase2SecurityBounds, P2AC012Phase2MetricsAreClosedBoundedResettableAndHighWatered)
 {
 	static_assert(std::is_trivially_copyable_v<detail::TelemetryMetricsSnapshot>);
@@ -238,10 +321,13 @@ TEST(Phase2SecurityBounds, P2AC012Phase2MetricsAreClosedBoundedResettableAndHigh
 	ASSERT_TRUE(metrics.provision());
 	metrics.activate_session(0U, 7U);
 	metrics.activate_session(1U, 8U);
+	metrics.activate_session(2U, 9U);
 	metrics.set_phase2_profile(
 		0U, detail::TelemetryPhase2Profile::CompleteShip);
 	metrics.set_phase2_profile(
 		1U, detail::TelemetryPhase2Profile::CoreGate);
+	metrics.set_phase2_profile(
+		2U, detail::TelemetryPhase2Profile::CockpitSensors);
 	for (std::size_t block = 0U;
 		 block < static_cast<std::size_t>(detail::TelemetryPhase2Block::Count);
 		 ++block) {
@@ -399,6 +485,8 @@ TEST(Phase2SecurityBounds, P2AC012Phase2MetricsAreClosedBoundedResettableAndHigh
 		snapshot.mission_phase2_closure_results);
 	EXPECT_EQ(240U, snapshot.phase2_memory_bytes[
 		index(detail::TelemetryPhase2MemoryScope::ProcessTotal)]);
+	EXPECT_EQ(detail::TelemetryPhase2Profile::CockpitSensors,
+		snapshot.sessions[2].phase2_profile);
 
 	metrics.reset_session(0U);
 	metrics.reset_mission();
@@ -431,6 +519,8 @@ TEST(Phase2SecurityBounds, P2AC011DiagnosticsContainOnlyClosedNumericLabels)
 		static_cast<std::size_t>(detail::TelemetryPhase2ClosureResult::Count));
 	EXPECT_EQ(3U,
 		static_cast<std::size_t>(detail::TelemetryPhase2ManifestResult::Count));
+	EXPECT_EQ(4U,
+		static_cast<std::size_t>(detail::TelemetryPhase2Profile::Count));
 	EXPECT_EQ(5U,
 		static_cast<std::size_t>(
 			detail::TelemetryPhase2AllocationKind::Count));
@@ -457,6 +547,8 @@ TEST(Phase2SecurityBounds, P2AC011DiagnosticsContainOnlyClosedNumericLabels)
 	detail::TelemetryStructuredLog log;
 	log.phase2_profile_selected(0U,
 		detail::TelemetryPhase2Profile::CompleteShip, 0x0583U);
+	log.phase2_profile_selected(1U,
+		detail::TelemetryPhase2Profile::CockpitSensors, 0x07CBU);
 	log.phase2_profile_rejected(
 		detail::TelemetryPhase2ProfileRejection::InvalidSource,
 		0x0401U);
@@ -503,6 +595,15 @@ TEST(Phase2SecurityBounds, P2AC011DiagnosticsContainOnlyClosedNumericLabels)
 					return record.event == event;
 				}));
 	}
+	const auto cockpit_profile = std::find_if(logs.records.begin(),
+		logs.records.begin() + logs.count, [](const auto& record) {
+			return record.event ==
+					detail::TelemetryLogEvent::Phase2ProfileSelected &&
+				record.phase2_profile ==
+					detail::TelemetryPhase2Profile::CockpitSensors;
+		});
+	ASSERT_NE(logs.records.begin() + logs.count, cockpit_profile);
+	EXPECT_EQ(0x07CBU, cockpit_profile->value);
 	const auto first_resync = std::find_if(logs.records.begin(),
 		logs.records.begin() + logs.count, [](const auto& record) {
 			return record.event ==

@@ -776,6 +776,293 @@ main { grid-row: 2; grid-column: 2; min-width: 0; overflow: auto; padding: 22px 
 .weapon-future-list span { min-width: 0; display: flex; align-items: center; gap: 6px; padding: 5px 7px; overflow: hidden; color: #a69472; border: 1px solid #514226; background: #15130e; font: 6px "IBM Plex Mono"; text-overflow: ellipsis; white-space: nowrap; }
 .weapon-future-list b { color: var(--amber); font-size: 8px; }
 
+/* Tactical cockpit */
+.tactical-cockpit {
+  height: calc(100% - 60px);
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 330px minmax(480px, 1fr) 350px;
+  grid-template-rows: 92px minmax(0, 1fr) 132px 62px;
+  grid-template-areas:
+    "tacticalsensors tacticalsensors tacticalsensors"
+    "tacticaltarget tacticalscope tacticallocks"
+    "tacticalthreats tacticalthreats tacticalthreats"
+    "tacticalfuture tacticalfuture tacticalfuture";
+  gap: 8px;
+}
+
+.tactical-panel {
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: 27px minmax(0, 1fr);
+  overflow: hidden;
+  border: 1px solid var(--line);
+  background: linear-gradient(145deg, #0c1c25, #071219);
+  box-shadow: inset 0 0 28px #0007;
+}
+.tactical-panel.state-stale .tactical-panel-body {
+  background: repeating-linear-gradient(135deg, transparent 0 7px, #f2b6530a 7px 12px);
+}
+.tactical-panel.state-stale .tactical-panel-header i { color: var(--amber); border-color: #6a532a; }
+.tactical-panel-header {
+  width: 100%;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 9px;
+  color: inherit;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  background: #0c1d26;
+  cursor: pointer;
+}
+.tactical-panel-header:hover, .tactical-panel-header:focus-visible { outline: none; background: #12303a; }
+.tactical-panel-header span { font: 8px "IBM Plex Mono", monospace; letter-spacing: 1.1px; }
+.tactical-panel-header i {
+  padding: 2px 4px;
+  color: var(--cyan);
+  border: 1px solid #1b6267;
+  font: 7px "IBM Plex Mono", monospace;
+  font-style: normal;
+}
+.tactical-panel-body { min-width: 0; min-height: 0; overflow: hidden; }
+.tactical-unavailable {
+  height: 100%;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 5px;
+  color: var(--muted);
+  text-align: center;
+}
+.tactical-unavailable strong { color: var(--amber); font: 16px "IBM Plex Mono", monospace; }
+.tactical-unavailable span { font-size: 9px; }
+.tactical-empty {
+  min-height: 36px;
+  display: grid;
+  place-content: center;
+  color: var(--muted);
+  font: 8px "IBM Plex Mono", monospace;
+  letter-spacing: .8px;
+}
+.tactical-sensors { grid-area: tacticalsensors; }
+.tactical-scope { grid-area: tacticalscope; }
+.tactical-target { grid-area: tacticaltarget; }
+.tactical-locks { grid-area: tacticallocks; }
+.tactical-threats { grid-area: tacticalthreats; }
+
+.sensor-strip {
+  height: 100%;
+  display: grid;
+  grid-template-columns: .8fr .8fr 1.6fr 1fr 1fr;
+}
+.sensor-strip > div {
+  min-width: 0;
+  display: grid;
+  align-content: center;
+  gap: 2px;
+  padding: 5px 13px;
+  border-right: 1px solid var(--line);
+}
+.sensor-strip > div:last-child { border-right: 0; }
+.sensor-strip span { color: var(--muted); font: 7px "IBM Plex Mono", monospace; letter-spacing: 1px; }
+.sensor-strip strong { overflow: hidden; color: #e7ffff; font: 13px "IBM Plex Mono", monospace; text-overflow: ellipsis; white-space: nowrap; }
+.sensor-strip small { color: var(--cyan-soft); font: 7px "IBM Plex Mono", monospace; }
+.sensor-strip .alert strong { color: var(--amber); }
+.sensor-strip.invalid strong { color: var(--red); }
+.sensor-health > div { height: 4px; overflow: hidden; background: #061016; }
+.sensor-health > div i { display: block; height: 100%; background: var(--cyan); box-shadow: 0 0 8px var(--cyan); }
+
+.scope-layout {
+  height: 100%;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(300px, 1fr) 126px;
+}
+.scope-layout canvas {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  cursor: crosshair;
+}
+.scope-contact-list {
+  min-height: 0;
+  display: grid;
+  grid-auto-rows: minmax(34px, 1fr);
+  overflow: hidden;
+  border-left: 1px solid var(--line);
+  background: #061219;
+}
+.scope-contact-list button {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 1px 4px;
+  padding: 4px 6px;
+  color: inherit;
+  text-align: left;
+  border: 0;
+  border-bottom: 1px solid #16313a;
+  background: transparent;
+  cursor: pointer;
+}
+.scope-contact-list button:hover, .scope-contact-list button:focus-visible { outline: none; background: #12303a; }
+.scope-contact-list button.current { border-left: 3px solid var(--amber); background: #2a2415; }
+.scope-contact-list button.invalid strong { color: var(--red); }
+.scope-contact-list span { overflow: hidden; font: 7px "IBM Plex Mono", monospace; text-overflow: ellipsis; white-space: nowrap; }
+.scope-contact-list strong { color: var(--cyan); font: 7px "IBM Plex Mono", monospace; }
+.scope-contact-list small { grid-column: 1 / -1; overflow: hidden; color: var(--muted); font: 6px "IBM Plex Mono", monospace; text-overflow: ellipsis; white-space: nowrap; }
+.scope-contact-list .scope-more { display: block; color: var(--amber); font: 7px "IBM Plex Mono", monospace; text-align: center; }
+
+.target-empty {
+  height: 100%;
+  display: grid;
+  place-content: center;
+  color: var(--muted);
+  font: 11px "IBM Plex Mono", monospace;
+}
+.target-card {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  display: grid;
+  align-content: start;
+  gap: 9px;
+  padding: 14px;
+  overflow: hidden;
+  color: inherit;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+.target-card:hover, .target-card:focus-visible { outline: none; background: #102832; }
+.target-card.invalid > strong { color: var(--red); }
+.target-kicker { color: var(--cyan-soft); font: 7px "IBM Plex Mono", monospace; letter-spacing: 1.3px; }
+.target-card > strong { overflow: hidden; color: #efffff; font: 19px "IBM Plex Mono", monospace; text-overflow: ellipsis; white-space: nowrap; }
+.target-primary-metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
+.target-primary-metrics > div { min-width: 0; padding: 7px; border: 1px solid #244650; background: #07151c; }
+.target-primary-metrics span, .target-card dt { color: var(--muted); font: 6px "IBM Plex Mono", monospace; letter-spacing: .6px; }
+.target-primary-metrics strong { display: block; margin-top: 3px; color: var(--cyan); font: 11px "IBM Plex Mono", monospace; }
+.target-badges { display: flex; flex-wrap: wrap; gap: 4px; }
+.target-badges i {
+  padding: 4px 6px;
+  color: var(--amber);
+  border: 1px solid #594a28;
+  background: #201b11;
+  font: 6px "IBM Plex Mono", monospace;
+  font-style: normal;
+}
+.target-card dl { display: grid; grid-template-columns: 1fr 1fr; gap: 5px 8px; margin: 0; }
+.target-card dd { margin: 0; overflow: hidden; color: #cfe9e9; font: 8px "IBM Plex Mono", monospace; text-overflow: ellipsis; white-space: nowrap; }
+.stealth-memory { padding: 6px; color: #a58acb; border: 1px dashed #685181; font: 7px "IBM Plex Mono", monospace; text-align: center; }
+
+.lock-list {
+  height: 100%;
+  min-height: 0;
+  display: grid;
+  grid-auto-rows: minmax(47px, 1fr);
+  overflow: hidden;
+}
+.lock-list button {
+  min-width: 0;
+  display: grid;
+  align-content: center;
+  gap: 4px;
+  padding: 6px 9px;
+  color: inherit;
+  text-align: left;
+  border: 0;
+  border-bottom: 1px solid #173541;
+  background: transparent;
+  cursor: pointer;
+}
+.lock-list button:hover, .lock-list button:focus-visible { outline: none; background: #12303a; }
+.lock-list button.acquired { border-left: 3px solid var(--red); background: #281614; }
+.lock-list button.attempt { border-left: 3px solid var(--amber); }
+.lock-list button.invalid strong { color: var(--red); }
+.lock-list button > div:first-child { display: flex; justify-content: space-between; gap: 6px; }
+.lock-list span { overflow: hidden; font: 8px "IBM Plex Mono", monospace; text-overflow: ellipsis; white-space: nowrap; }
+.lock-list strong { color: var(--amber); font: 7px "IBM Plex Mono", monospace; }
+.lock-list small { color: var(--muted); font: 6px "IBM Plex Mono", monospace; }
+.lock-progress { height: 3px; overflow: hidden; background: #061016; }
+.lock-progress i { display: block; height: 100%; background: var(--amber); }
+.lock-list .lock-more { display: block; color: var(--amber); text-align: center; }
+
+.threat-strip { height: 100%; display: grid; grid-template-columns: 150px minmax(0, 1fr); }
+.threat-level {
+  display: grid;
+  place-content: center;
+  gap: 3px;
+  color: inherit;
+  text-align: center;
+  border: 0;
+  border-right: 1px solid var(--line);
+  background: #07151c;
+  cursor: pointer;
+}
+.threat-level span { color: var(--muted); font: 7px "IBM Plex Mono", monospace; }
+.threat-level strong { color: var(--cyan); font: 14px "IBM Plex Mono", monospace; }
+.threat-level small { color: var(--muted); font: 7px "IBM Plex Mono", monospace; }
+.threat-level-2 .threat-level strong { color: var(--amber); }
+.threat-level-3 .threat-level strong { color: var(--red); text-shadow: 0 0 9px #ee6b6188; }
+.missile-rack { min-width: 0; display: grid; grid-template-columns: repeat(6, minmax(100px, 1fr)); }
+.missile-rack button {
+  min-width: 0;
+  display: grid;
+  align-content: center;
+  gap: 2px;
+  padding: 6px 8px;
+  color: inherit;
+  text-align: left;
+  border: 0;
+  border-right: 1px solid var(--line);
+  background: transparent;
+  cursor: pointer;
+}
+.missile-rack button:hover, .missile-rack button:focus-visible { outline: none; background: #282015; }
+.missile-rack span, .missile-rack small { overflow: hidden; font: 7px "IBM Plex Mono", monospace; text-overflow: ellipsis; white-space: nowrap; }
+.missile-rack strong { color: var(--amber); font: 10px "IBM Plex Mono", monospace; }
+.missile-rack small { color: var(--muted); font-size: 6px; }
+.missile-rack button.invalid strong { color: var(--red); }
+.missile-rack .missile-more { color: var(--amber); text-align: center; }
+
+.tactical-future {
+  grid-area: tacticalfuture;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 42px repeat(6, minmax(120px, 1fr));
+  align-items: center;
+  gap: 5px;
+  padding: 6px 9px;
+  overflow: hidden;
+  color: #a69472;
+  border: 1px solid #514226;
+  background: #15130e;
+}
+.tactical-future > strong { color: var(--amber); font: 13px "IBM Plex Mono", monospace; }
+.tactical-future > span { padding: 5px; overflow: hidden; border: 1px solid #514226; font: 6px "IBM Plex Mono", monospace; text-overflow: ellipsis; white-space: nowrap; }
+.tactical-future > small { display: none; }
+
+.inspection-choice-list { display: grid; gap: 5px; margin-top: 12px; }
+.inspection-choice-list button {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 3px 8px;
+  padding: 9px;
+  color: inherit;
+  text-align: left;
+  border: 1px solid var(--line);
+  background: #0a1921;
+  cursor: pointer;
+}
+.inspection-choice-list button:hover, .inspection-choice-list button:focus-visible { outline: none; border-color: var(--cyan); }
+.inspection-choice-list small { grid-column: 1 / -1; color: var(--muted); }
+.inspection-json { display: block; max-height: 230px; padding: 8px; overflow: auto; color: #acd8d7; background: #061016; white-space: pre-wrap; }
+.tactical-detail-values code { max-width: 100%; overflow-wrap: anywhere; white-space: pre-wrap; }
+
 @media (max-width: 1450px) {
   .command-bar { grid-template-columns: 250px 1fr 225px; }
   .mission-strip div { min-width: 105px; padding: 0 12px; }
@@ -829,6 +1116,18 @@ main { grid-row: 2; grid-column: 2; min-width: 0; overflow: auto; padding: 22px 
       "weaponfuture weaponfuture";
   }
   .weapon-lower-strip.with-turrets { grid-template-columns: minmax(0, 1fr) 280px; }
+  .tactical-cockpit {
+    height: auto;
+    min-height: 1650px;
+    grid-template-columns: repeat(2, minmax(300px, 1fr));
+    grid-template-rows: 120px 650px 450px 220px 100px;
+    grid-template-areas:
+      "tacticalsensors tacticalsensors"
+      "tacticalscope tacticalscope"
+      "tacticaltarget tacticallocks"
+      "tacticalthreats tacticalthreats"
+      "tacticalfuture tacticalfuture";
+  }
 }
 
 @media (max-width: 1050px) {
@@ -872,6 +1171,23 @@ main { grid-row: 2; grid-column: 2; min-width: 0; overflow: auto; padding: 22px 
   .weapon-reserves { grid-template-columns: 1fr; }
   .weapon-lower-strip.with-turrets { grid-template-columns: 1fr; }
   .weapon-future-list { grid-template-columns: repeat(2, 1fr); }
+  .tactical-cockpit {
+    min-height: 2200px;
+    grid-template-columns: minmax(280px, 1fr);
+    grid-template-rows: 300px 680px 470px 520px 260px 120px;
+    grid-template-areas:
+      "tacticalsensors"
+      "tacticalscope"
+      "tacticaltarget"
+      "tacticallocks"
+      "tacticalthreats"
+      "tacticalfuture";
+  }
+  .sensor-strip { grid-template-columns: repeat(2, 1fr); }
+  .scope-layout { grid-template-columns: minmax(260px, 1fr) 120px; }
+  .threat-strip { grid-template-columns: 1fr; }
+  .missile-rack { grid-template-columns: repeat(2, 1fr); }
+  .tactical-future { grid-template-columns: 42px repeat(2, 1fr); }
   .performance-strip { grid-template-columns: repeat(2, 1fr); }
   .energy-future-list { grid-template-columns: repeat(2, 1fr); }
   .integrity-future-list { grid-template-columns: repeat(2, 1fr); }

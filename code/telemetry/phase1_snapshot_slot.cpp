@@ -6,6 +6,16 @@
 
 namespace telemetry::detail {
 
+void Phase1SnapshotSlot::reset() noexcept
+{
+	m_baseline.clear();
+	m_highest_started_snapshot_id = 0U;
+	m_progress = Phase1SnapshotProgress::Synchronizing;
+	m_session_state_dirty = false;
+	m_keyframe_intent = Phase1KeyframeIntent::None;
+	m_allocation_observer = nullptr;
+}
+
 protocol::ProducerBaselineResult Phase1SnapshotSlot::start_initial_candidate(std::uint32_t snapshot_id,
 	const protocol::StateImage& captured,
 	const std::vector<protocol::SnapshotCandidatePart>& parts,

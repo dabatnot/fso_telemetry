@@ -100,7 +100,7 @@ class DashboardRuntimeTest(unittest.TestCase):
             self.assertFalse(snapshot["transport"]["synchronized"])
             self.assertEqual([], snapshot["quality"]["channels"])
 
-    def test_live_session_recovers_after_silence_without_reloading_dashboard(self) -> None:
+    def test_suspended_producer_resumes_same_session_without_reloading_dashboard(self) -> None:
         with tempfile.TemporaryDirectory() as directory, socket.socket(
             socket.AF_INET, socket.SOCK_DGRAM
         ) as server:
@@ -163,21 +163,128 @@ class DashboardRuntimeTest(unittest.TestCase):
                     )
                 )
 
+                resync_request = None
+                resync_address = None
+                deadline = time.monotonic() + 2.0
+                while time.monotonic() < deadline:
+                    packet_bytes, address = server.recvfrom(1200)
+                    if contract.reference.read_header(packet_bytes)["message_type"] == 12:
+                        resync_request, resync_address = packet_bytes, address
+                        break
+                self.assertIsNotNone(resync_request)
+                self.assertEqual(
+                    client_address,
+                    resync_address,
+                    "an intentional pause must preserve the active UDP endpoint",
+                )
+                self.assertEqual("Stale", runtime.latest()["connection"]["status"])
+
+                for part_index, payload in enumerate(contract.snapshot_parts(2)):
+                    server.sendto(
+                        contract.packet(
+                            6,
+                            payload,
+                            session_id=first_session,
+                            sequence=10 + part_index,
+                            sent_us=2_000_000 + part_index,
+                            flags=2,
+                        ),
+                        client_address,
+                    )
+                recovered = self.wait_for(
+                    lambda: (
+                        snapshot
+                        if (snapshot := runtime.latest())["connection"]["status"] == "Live"
+                        and snapshot["connection"]["sessionId"] == str(first_session)
+                        and snapshot["transport"]["baseline"] == 2
+                        else None
+                    )
+                )
+                self.assertIsNotNone(recovered)
+            finally:
+                runtime.stop()
+
+    def test_stuck_stale_session_rotates_endpoint_without_erasing_last_state(self) -> None:
+        with tempfile.TemporaryDirectory() as directory, socket.socket(
+            socket.AF_INET, socket.SOCK_DGRAM
+        ) as server:
+            server.bind(("127.0.0.1", 0))
+            server.settimeout(2.0)
+            runtime = TelemetryRuntime(
+                host="127.0.0.1",
+                port=server.getsockname()[1],
+                flight_hz=30,
+                systems_hz=10,
+                mission_heartbeat_ms=500,
+                capture_dir=Path(directory),
+                stale_us=50_000,
+                recovery_reconnect_us=150_000,
+            )
+            runtime.start()
+            try:
+                hello, first_address = server.recvfrom(1200)
+                first_session = 0x1122334455667788
+                server.sendto(
+                    contract.packet(
+                        3,
+                        contract.welcome_for(hello),
+                        session_id=first_session,
+                        sequence=1,
+                        sent_us=1_000_000,
+                        flags=2,
+                    ),
+                    first_address,
+                )
+                server.sendto(
+                    contract.packet(
+                        4,
+                        contract.session_begin_payload(),
+                        session_id=first_session,
+                        sequence=2,
+                        sent_us=1_000_001,
+                        flags=2,
+                    ),
+                    first_address,
+                )
+                server.sendto(
+                    contract.packet(
+                        6,
+                        contract.v11_payload("minimal-with-player", ".bin"),
+                        session_id=first_session,
+                        sequence=3,
+                        sent_us=1_000_002,
+                        flags=2,
+                    ),
+                    first_address,
+                )
+                self.assertTrue(
+                    self.wait_for(
+                        lambda: runtime.latest()["connection"]["status"] == "Live"
+                    )
+                )
+                self.assertTrue(
+                    self.wait_for(
+                        lambda: runtime.latest()["connection"]["status"] == "Stale"
+                    )
+                )
+
                 second_hello = None
                 second_address = None
                 deadline = time.monotonic() + 2.0
                 while time.monotonic() < deadline:
                     packet_bytes, address = server.recvfrom(1200)
-                    if contract.reference.read_header(packet_bytes)["message_type"] == 2:
+                    if (
+                        contract.reference.read_header(packet_bytes)["message_type"] == 2
+                        and address != first_address
+                    ):
                         second_hello, second_address = packet_bytes, address
                         break
                 self.assertIsNotNone(second_hello)
-                self.assertNotEqual(
-                    client_address,
-                    second_address,
-                    "silence recovery must negotiate from a fresh UDP endpoint",
+                self.assertEqual(
+                    "Stale",
+                    runtime.latest()["connection"]["status"],
+                    "recovery negotiation must retain the last stale image",
                 )
-                self.assertEqual("Stale", runtime.latest()["connection"]["status"])
 
                 second_session = 0x8877665544332211
                 server.sendto(

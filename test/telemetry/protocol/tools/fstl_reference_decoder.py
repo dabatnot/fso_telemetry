@@ -317,7 +317,9 @@ def canonical_record(
     }
 
 
-def decode_record_payload(record_type: int, reader: Reader) -> dict[str, Any]:
+def decode_record_payload(
+    record_type: int, record_version: int, reader: Reader
+) -> dict[str, Any]:
     if record_type == 1:
         presence = reader.u64()
         require(presence in (0, 1), 37, "SESSION_STATE presence")
@@ -1285,10 +1287,45 @@ def decode_record_payload(record_type: int, reader: Reader) -> dict[str, Any]:
         presence = reader.u64()
         sample = reader.u64()
         count = reader.u16()
-        require(entity and presence == 0 and count == 0, 37, "LOCK_STATE fixture invariant")
+        require(entity and presence == 0 and count <= 64, 37, "LOCK_STATE invariant")
+        locks = []
+        identities: set[tuple[int, int | tuple[float, float, float]]] = set()
+        for _ in range(count):
+            version, size, item = item_reader(reader)
+            item_presence = item.u16()
+            require(item_presence & ~0x0003 == 0, 37, "LOCK_STATE item presence")
+            locked = item.u8()
+            in_cone = item.u8()
+            target = item.u64()
+            require(locked <= 1 and in_cone <= 1 and target, 34, "LOCK_STATE item invariant")
+            lock: dict[str, Any] = {
+                "item_version": version,
+                "item_size": size,
+                "presence": item_presence,
+                "locked": bool(locked),
+                "target_in_lock_cone": bool(in_cone),
+                "target_entity_id": u64s(target),
+            }
+            subsystem = 0
+            if item_presence & 0x0001:
+                subsystem = item.u32()
+                require(subsystem, 34, "LOCK_STATE subsystem")
+                lock["subsystem_id"] = subsystem
+            position = vec3(item)
+            lock["world_position"] = position
+            if item_presence & 0x0002:
+                lock["time_to_lock_remaining_us"] = u64s(item.u64())
+            item.finish()
+            identity: tuple[int, int | tuple[float, float, float]] = (
+                target,
+                subsystem if subsystem else tuple(position),
+            )
+            require(identity not in identities, 30, "duplicate LOCK_STATE item")
+            identities.add(identity)
+            locks.append(lock)
         return {
             "entity_id": u64s(entity),
-            "locks": [],
+            "locks": locks,
             "presence": u64s(presence),
             "producer_sample_time_us": u64s(sample),
         }
@@ -1298,13 +1335,55 @@ def decode_record_payload(record_type: int, reader: Reader) -> dict[str, Any]:
         presence = reader.u64()
         sample = reader.u64()
         current = reader.u64()
-        require(entity and presence == 0, 37, "TARGET_STATE fixture invariant")
-        return {
+        require(entity and presence & ~0x3FFF == 0, 37, "TARGET_STATE presence")
+        require(current or presence & ~0x0001 == 0, 37, "TARGET_STATE absent target")
+        result = {
             "current_target_entity_id": u64s(current),
             "entity_id": u64s(entity),
             "presence": u64s(presence),
             "producer_sample_time_us": u64s(sample),
         }
+        if presence & 0x0001:
+            result["previous_target_entity_id"] = u64s(reader.u64())
+        if presence & 0x0002:
+            object_type = reader.u8()
+            require(object_type <= 8, 34, "TARGET_STATE object type")
+            result["revealed_identity"] = {
+                "object_type": object_type,
+                "name": reader.utf8(255),
+                "class_id": reader.u32(),
+                "team_id": reader.u32(),
+                "iff_id": reader.u32(),
+            }
+        if presence & 0x0004:
+            result["time_on_target_us"] = u64s(reader.u64())
+        if presence & 0x0008:
+            result["target_subsystem_id"] = reader.u32()
+        if presence & 0x0010:
+            result["lock_subsystem_id"] = reader.u32()
+        if presence & 0x0020:
+            result["last_stealth_position"] = vec3(reader)
+            result["last_stealth_velocity"] = vec3(reader)
+        if presence & 0x0040:
+            result["distance_trend"] = reader.u8()
+        if presence & 0x0080:
+            result["speed_trend"] = reader.u8()
+        if presence & 0x0100:
+            in_cone = reader.u8()
+            require(in_cone <= 1, 34, "TARGET_STATE in cone")
+            result["in_cone"] = bool(in_cone)
+        if presence & 0x0200:
+            result["lead_world"] = vec3(reader)
+            result["lead_bank_id"] = reader.u32()
+        if presence & 0x0400:
+            result["attacker_entity_id"] = u64s(reader.u64())
+        if presence & 0x0800:
+            result["dangerous_weapon_entity_id"] = u64s(reader.u64())
+        if presence & 0x1000:
+            result["nearest_locked_entity_id"] = u64s(reader.u64())
+        if presence & 0x2000:
+            result["exact_hud_distance"] = reader.f32()
+        return result
 
     if record_type == 17:
         entity = reader.u64()
@@ -1315,8 +1394,8 @@ def decode_record_payload(record_type: int, reader: Reader) -> dict[str, Any]:
         sensor = reader.u8()
         current = reader.f32()
         maximum = reader.f32()
-        require(entity and presence == 0 and mode <= 3 and sensor <= 2 and maximum > 0 and current <= maximum, 34, "RADAR_STATE invariant")
-        return {
+        require(entity and presence & ~0x003F == 0 and mode <= 3 and sensor <= 2 and maximum > 0 and current <= maximum, 34, "RADAR_STATE invariant")
+        result = {
             "entity_id": u64s(entity),
             "presence": u64s(presence),
             "producer_sample_time_us": u64s(sample),
@@ -1326,6 +1405,23 @@ def decode_record_payload(record_type: int, reader: Reader) -> dict[str, Any]:
             "sensor_max_hits": maximum,
             "sensor_state": sensor,
         }
+        if presence & 0x0001:
+            result["bright_range"] = reader.f32()
+        if presence & 0x0002:
+            result["primitive_range"] = reader.f32()
+        if presence & 0x0004:
+            result["awacs_intensity"] = reader.f32()
+            result["awacs_range"] = reader.f32()
+        if presence & 0x0008:
+            result["emp_intensity"] = reader.f32()
+            result["emp_remaining_us"] = u64s(reader.u64())
+        if presence & 0x0010:
+            result["jamming_intensity"] = reader.f32()
+            result["distortion_intensity"] = reader.f32()
+        if presence & 0x0020:
+            result["first_visible_time_us"] = u64s(reader.u64())
+            result["last_contact_time_us"] = u64s(reader.u64())
+        return result
 
     if record_type == 18:
         entity = reader.u64()
@@ -1337,10 +1433,14 @@ def decode_record_payload(record_type: int, reader: Reader) -> dict[str, Any]:
         visibility = reader.u8()
         position = vec3(reader)
         velocity = vec3(reader)
+        radar_local_position = vec3(reader) if record_version == 2 else None
+        radar_projection_distance = (
+            reader.f32() if record_version == 2 else None
+        )
         radius = reader.f32()
         flags = reader.u32()
-        require(entity and contact and presence == 0 and object_type <= 8 and category <= 7 and visibility <= 2, 34, "RADAR_CONTACTS invariant")
-        return {
+        require(entity and contact and presence & ~0x003F == 0 and object_type <= 8 and category <= 7 and visibility <= 2, 34, "RADAR_CONTACTS invariant")
+        result = {
             "category": category,
             "contact_entity_id": u64s(contact),
             "contact_flags": flags,
@@ -1353,6 +1453,24 @@ def decode_record_payload(record_type: int, reader: Reader) -> dict[str, Any]:
             "velocity_world": velocity,
             "visibility": visibility,
         }
+        if record_version == 2:
+            result["radar_local_position"] = radar_local_position
+            result["radar_projection_distance"] = radar_projection_distance
+        if presence & 0x0001:
+            result["icon_size"] = reader.f32()
+        if presence & 0x0002:
+            result["revealed_name"] = reader.utf8(255)
+        if presence & 0x0004:
+            result["revealed_class_id"] = reader.u32()
+        if presence & 0x0008:
+            result["revealed_team_id"] = reader.u32()
+            result["revealed_iff_id"] = reader.u32()
+        if presence & 0x0010:
+            result["first_detection_time_us"] = u64s(reader.u64())
+            result["last_detection_time_us"] = u64s(reader.u64())
+        if presence & 0x0020:
+            result["confidence"] = reader.f32()
+        return result
 
     if record_type in (19, 20, 21, 22, 23, 24):
         entity = reader.u64()
@@ -1365,11 +1483,50 @@ def decode_record_payload(record_type: int, reader: Reader) -> dict[str, Any]:
             "producer_sample_time_us": u64s(sample),
         }
         if record_type == 19:
-            require(presence == 0, 37, "THREAT_STATE presence")
+            require(presence & ~0x0007 == 0, 37, "THREAT_STATE presence")
             level = reader.u8()
+            result = {**common, "threat_level": level}
+            if presence & 0x0001:
+                result["nearest_attacker_entity_id"] = u64s(reader.u64())
+            if presence & 0x0002:
+                result["dangerous_weapon_entity_id"] = u64s(reader.u64())
+            if presence & 0x0004:
+                result["nearest_homing_entity_id"] = u64s(reader.u64())
             count = reader.u16()
-            require(level <= 3 and count == 0, 34, "THREAT_STATE invariant")
-            return {**common, "incoming_missiles": [], "threat_level": level}
+            require(level <= 3 and count <= 256, 34, "THREAT_STATE invariant")
+            missiles = []
+            missile_ids: set[int] = set()
+            for _ in range(count):
+                version, size, item = item_reader(reader)
+                item_presence = item.u16()
+                guidance = item.u8()
+                visibility = item.u8()
+                missile_id = item.u64()
+                weapon_class_id = item.u32()
+                target_id = item.u64()
+                require(item_presence & ~0x0001 == 0 and guidance <= 5 and visibility <= 2, 37, "incoming missile invariant")
+                require(missile_id and weapon_class_id and target_id == entity, 34, "incoming missile references")
+                missile = {
+                    "item_version": version,
+                    "item_size": size,
+                    "presence": item_presence,
+                    "guidance_type": guidance,
+                    "radar_visibility": visibility,
+                    "entity_id": u64s(missile_id),
+                    "weapon_class_id": weapon_class_id,
+                    "target_entity_id": u64s(target_id),
+                }
+                if item_presence & 0x0001:
+                    missile["homing_subsystem_id"] = item.u32()
+                missile["position_world"] = vec3(item)
+                missile["orientation_local_to_world"] = [item.f32() for _ in range(4)]
+                missile["velocity_world"] = vec3(item)
+                item.finish()
+                require(missile_id not in missile_ids, 30, "duplicate incoming missile")
+                missile_ids.add(missile_id)
+                missiles.append(missile)
+            result["incoming_missiles"] = missiles
+            return result
         if record_type == 20:
             require(presence & ~0x001F == 0, 37, "CARGO_SCAN_STATE presence")
             phase = reader.u8()
@@ -1420,11 +1577,65 @@ def decode_record_payload(record_type: int, reader: Reader) -> dict[str, Any]:
                 result["support_entity_id"] = u64s(reader.u64())
             return result
         if record_type == 23:
-            require(presence == 0, 37, "NAVIGATION_STATE presence")
+            require(presence & ~0x0007 == 0, 37, "NAVIGATION_STATE presence")
             state = reader.u8()
             count = reader.u16()
-            require(state <= 3 and count == 0, 34, "NAVIGATION_STATE invariant")
-            return {**common, "autopilot_state": state, "navpoints": []}
+            require(state <= 3 and count <= 1024, 34, "NAVIGATION_STATE invariant")
+            navpoints = []
+            navpoint_ids: set[int] = set()
+            for _ in range(count):
+                version, size, item = item_reader(reader)
+                item_presence = item.u16()
+                nav_type = item.u8()
+                nav_flags = item.u8()
+                nav_id = item.u32()
+                require(item_presence & ~0x0003 == 0 and nav_type <= 2 and nav_id, 37, "navpoint invariant")
+                navpoint = {
+                    "item_version": version,
+                    "item_size": size,
+                    "presence": item_presence,
+                    "type": nav_type,
+                    "flags": nav_flags,
+                    "navpoint_id": nav_id,
+                    "name": item.utf8(255),
+                    "position_world": vec3(item),
+                }
+                if item_presence & 0x0001:
+                    navpoint["linked_entity_id"] = u64s(item.u64())
+                if item_presence & 0x0002:
+                    navpoint["waypoint_list_id"] = item.u32()
+                    navpoint["waypoint_index"] = item.u16()
+                item.finish()
+                require(nav_id not in navpoint_ids, 30, "duplicate navpoint")
+                navpoint_ids.add(nav_id)
+                navpoints.append(navpoint)
+            result = {**common, "autopilot_state": state, "navpoints": navpoints}
+            if presence & 0x0001:
+                result["current_navpoint_id"] = reader.u32()
+            if presence & 0x0002:
+                result["autopilot_refusal"] = reader.u8()
+            if presence & 0x0004:
+                route_count = reader.u16()
+                version = reader.u8()
+                size = reader.u16()
+                require(
+                    0 < route_count <= 2048 and version == 1 and size == 20,
+                    34,
+                    "route waypoint list header",
+                )
+                route = []
+                for _ in range(route_count):
+                    waypoint = {
+                        "waypoint_list_id": reader.u32(),
+                        "waypoint_index": reader.u16(),
+                    }
+                    require(reader.u16() == 0, 37, "route waypoint reserved")
+                    waypoint["position_world"] = vec3(reader)
+                    route.append(waypoint)
+                result["route_waypoints"] = route
+                result["current_route_index"] = reader.u16()
+                result["route_speed_limit"] = reader.f32()
+            return result
         require(presence == 0, 37, "EFFECT_STATE presence")
         flags = reader.u32()
         return {**common, "effect_flags": flags}
@@ -1618,7 +1829,32 @@ def validate_record_semantics(record: dict[str, Any], context: dict[str, Any]) -
         require(fields["duration_us"] == durations[asset], 44, "communication duration mismatch")
 
 
-def decode_record(encoded: bytes, context: dict[str, Any] | None = None) -> dict[str, Any]:
+def decode_delete_key(record_type: int, reader: Reader) -> dict[str, Any]:
+    if record_type == 5:
+        entity = reader.u64()
+        require(entity != 0, 34, "ENTITY_LIFECYCLE DELETE key")
+        return {"entity_id": u64s(entity)}
+    if record_type == 11:
+        entity = reader.u64()
+        subsystem = reader.u32()
+        require(entity != 0 and subsystem != 0, 34, "SUBSYSTEM_STATE DELETE key")
+        return {"entity_id": u64s(entity), "subsystem_id": subsystem}
+    if record_type == 18:
+        observer = reader.u64()
+        contact = reader.u64()
+        require(observer != 0 and contact != 0, 34, "RADAR_CONTACTS DELETE key")
+        return {
+            "contact_entity_id": u64s(contact),
+            "entity_id": u64s(observer),
+        }
+    fail(36, "DELETE is not supported for this record")
+
+
+def decode_record(
+    encoded: bytes,
+    context: dict[str, Any] | None = None,
+    container: str = "standalone",
+) -> dict[str, Any]:
     reader = Reader(encoded)
     record_type = reader.u16()
     version = reader.u8()
@@ -1626,14 +1862,25 @@ def decode_record(encoded: bytes, context: dict[str, Any] | None = None) -> dict
     length = reader.u16()
     require(record_type != 0, 34, "RecordType zero")
     require(record_type in RECORD_NAMES, 26, "unknown required record")
-    require(version == 1, 27, "unsupported record version")
+    radar_contacts_v2 = record_type == 18 and version == 2
+    require(version == 1 or radar_contacts_v2, 27, "unsupported record version")
     require(length == reader.remaining, 28, "record_length mismatch")
-    if record_type in (27, 28):
+    if container == "event" or (container == "standalone" and record_type in (27, 28)):
+        require(record_type in (27, 28), 36, "state record in event batch")
         require(flags == 1, 36, "event record requires CREATE")
+    elif container == "delta":
+        if record_type in (5, 11, 18):
+            require(flags in (0, 1, 2), 36, "DELTA state record flags")
+        else:
+            require(flags == 0, 36, "canonical DELTA record flags")
     else:
         require(flags == 0, 36, "canonical record flags")
     payload = Reader(reader.take(length))
-    fields = decode_record_payload(record_type, payload)
+    fields = (
+        decode_delete_key(record_type, payload)
+        if container == "delta" and flags == 2
+        else decode_record_payload(record_type, version, payload)
+    )
     payload.finish()
     reader.finish()
     record = canonical_record(record_type, version, flags, length, fields)
@@ -1641,14 +1888,16 @@ def decode_record(encoded: bytes, context: dict[str, Any] | None = None) -> dict
     return record
 
 
-def decode_record_region(reader: Reader, count: int) -> list[dict[str, Any]]:
+def decode_record_region(
+    reader: Reader, count: int, container: str
+) -> list[dict[str, Any]]:
     records: list[dict[str, Any]] = []
     for _ in range(count):
         require(reader.remaining >= 6, 24, "truncated record envelope")
         start = reader.offset
         length = int.from_bytes(reader.data[start + 4 : start + 6], "little")
         encoded = reader.take(6 + length)
-        records.append(decode_record(encoded))
+        records.append(decode_record(encoded, container=container))
     return records
 
 
@@ -1897,7 +2146,9 @@ def decode_message(message_type: int, flags: int, payload: bytes, context: dict[
                 28, "transaction part size")
         require(count > 0, 34, "empty transaction part")
         enforce_record_count_quota(count, context)
-        records = decode_record_region(reader, count)
+        records = decode_record_region(
+            reader, count, "manifest" if message_type == 5 else "snapshot"
+        )
         fields = {
             ("manifest_id" if message_type == 5 else "snapshot_id"): transaction_id,
             "part_count": part_count,
@@ -1921,7 +2172,7 @@ def decode_message(message_type: int, flags: int, payload: bytes, context: dict[
         reserved = reader.u16()
         require(count > 0, 34, "empty DELTA")
         enforce_record_count_quota(count, context)
-        records = decode_record_region(reader, count)
+        records = decode_record_region(reader, count, "delta")
         fields = {
             "baseline_snapshot_id": baseline,
             "delta_sequence": sequence,
@@ -1939,7 +2190,7 @@ def decode_message(message_type: int, flags: int, payload: bytes, context: dict[
         count = reader.u16()
         require(count > 0, 34, "empty EVENT_BATCH")
         enforce_record_count_quota(count, context)
-        records = decode_record_region(reader, count)
+        records = decode_record_region(reader, count, "event")
         fields = {
             "batch_id": batch,
             "delivery_class": delivery,

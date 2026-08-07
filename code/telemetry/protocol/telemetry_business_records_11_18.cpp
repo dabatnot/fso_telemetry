@@ -1307,7 +1307,8 @@ ValidationError validate_radar_state(ByteView payload) noexcept
 	return reader.finish();
 }
 
-ValidationError validate_radar_contacts(ByteView payload) noexcept
+ValidationError validate_radar_contacts(
+	std::uint8_t record_version, ByteView payload) noexcept
 {
 	Validator reader(payload);
 	std::uint64_t entity = 0;
@@ -1322,8 +1323,18 @@ ValidationError validate_radar_contacts(ByteView payload) noexcept
 	if (!id64(reader, entity) || !id64(reader, contact) ||
 		!presence64(reader, KnownRadarContactsPresenceFlags, presence) || !reader.u64(sample) ||
 		!enum8(reader, 8, object_type) || !enum8(reader, 7, category) || !enum8(reader, 2, visibility) ||
-		!vec3(reader, -PositionLimit, PositionLimit) || !vec3(reader, -VelocityLimit, VelocityLimit) ||
-		!reader.f32(radius, 0.0F, VelocityLimit) || !flags32(reader, KnownContactFlags, flags)) {
+		!vec3(reader, -PositionLimit, PositionLimit) || !vec3(reader, -VelocityLimit, VelocityLimit)) {
+		return reader.error();
+	}
+	if (record_version == 2U) {
+		float projection_distance = 0.0F;
+		if (!vec3(reader, -PositionLimit, PositionLimit) ||
+			!reader.f32(projection_distance, 0.0F, PositionLimit)) {
+			return reader.error();
+		}
+	}
+	if (!reader.f32(radius, 0.0F, VelocityLimit) ||
+		!flags32(reader, KnownContactFlags, flags)) {
 		return reader.error();
 	}
 	if ((flags & ContactFlagBomb) != 0 && object_type != static_cast<std::uint8_t>(ObjectType::Weapon)) {
@@ -1374,7 +1385,8 @@ ValidationError validate_radar_contacts(ByteView payload) noexcept
 
 } // namespace
 
-ValidationError validate_business_record_11_18(RecordType type, ByteView payload) noexcept
+ValidationError validate_business_record_11_18(
+	RecordType type, std::uint8_t record_version, ByteView payload) noexcept
 {
 	switch (type) {
 	case RecordType::SubsystemState:
@@ -1392,7 +1404,7 @@ ValidationError validate_business_record_11_18(RecordType type, ByteView payload
 	case RecordType::RadarState:
 		return validate_radar_state(payload);
 	case RecordType::RadarContacts:
-		return validate_radar_contacts(payload);
+		return validate_radar_contacts(record_version, payload);
 	default:
 		return ValidationError::UnknownRequiredRecord;
 	}

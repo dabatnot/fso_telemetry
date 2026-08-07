@@ -72,6 +72,19 @@ TEST(TelemetryP91MetricsContract, ProcessTotalsSurviveWhileSessionAndMissionScop
 	EXPECT_EQ(0U, after.current_player_entity_id);
 }
 
+TEST(TelemetryP91MetricsContract, ScalarDiagnosticsDoNotRequireCopyingTheMetricsSnapshot)
+{
+	detail::TelemetryMetrics metrics;
+	ASSERT_TRUE(metrics.provision());
+	metrics.increment_process(detail::TelemetryMetricCounter::SessionsEnded, 3U);
+	metrics.set_phase2_memory(detail::TelemetryPhase2MemoryScope::ProcessTotal, 64U);
+	metrics.set_phase2_memory(detail::TelemetryPhase2MemoryScope::ProcessTotal, 16U);
+
+	EXPECT_EQ(3U, metrics.process_counter(detail::TelemetryMetricCounter::SessionsEnded));
+	EXPECT_EQ(64U, metrics.phase2_memory_high_water(
+		detail::TelemetryPhase2MemoryScope::ProcessTotal));
+}
+
 TEST(TelemetryP91MetricsContract, CounterAndHistogramSumsSaturateAndAccountForOverflow)
 {
 	detail::TelemetryMetrics metrics;

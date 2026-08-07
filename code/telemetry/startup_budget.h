@@ -33,6 +33,9 @@ constexpr std::size_t Wp06ReliableRetentionBytesPerClient =
 constexpr std::size_t Phase2SharedOwnedCapBytes = 128U * 1024U * 1024U;
 constexpr std::size_t Phase2ClientOwnedCapBytes = 80U * 1024U * 1024U;
 constexpr std::size_t Phase2ProcessOwnedCapBytes = 384U * 1024U * 1024U;
+constexpr std::size_t Phase3SharedOwnedCapBytes = 160U * 1024U * 1024U;
+constexpr std::size_t Phase3ClientOwnedCapBytes = 88U * 1024U * 1024U;
+constexpr std::size_t Phase3ProcessOwnedCapBytes = 512U * 1024U * 1024U;
 
 enum class StartupBudgetError : std::uint8_t {
 	None = 0,
@@ -149,6 +152,10 @@ bool wp09_budget_matches_metrics(const Wp03KnownBudgetSubtotal& budget,
 Phase2OwnedBudget calculate_phase2_owned_budget(
 	const Phase2OwnedBudgetRequest& request) noexcept;
 bool phase2_owned_scope_within_cap(TelemetryPhase2MemoryScope scope,
+	std::size_t owned_bytes) noexcept;
+Phase2OwnedBudget calculate_phase3_owned_budget(
+	const Phase2OwnedBudgetRequest& request) noexcept;
+bool phase3_owned_scope_within_cap(TelemetryPhase2MemoryScope scope,
 	std::size_t owned_bytes) noexcept;
 bool startup_budget_category_is_deferred(const Wp03KnownBudgetSubtotal& subtotal,
 	DeferredStartupBudgetCategory category) noexcept;

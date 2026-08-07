@@ -78,7 +78,7 @@ struct TelemetryConfig {
 
 	std::uint8_t schema_version = 1;
 	// schemaVersion 1 is migrated explicitly to CompleteShip. Version 2
-	// requires an explicit value and never falls back silently.
+	// requires phase2Profile. Version 3 requires the closed profile key.
 	Phase2Profile phase2_profile = Phase2Profile::CompleteShip;
 	bool enabled = false;
 	BindAddressList bind_addresses;
@@ -117,6 +117,8 @@ enum class ConfigError : std::uint8_t {
 	MissingPhase2Profile,
 	Phase2ProfileNotAllowed,
 	InvalidPhase2Profile,
+	MissingProfile,
+	InvalidProfile,
 	InvalidType,
 	OutOfRange,
 	InvalidAddress,

@@ -33,6 +33,8 @@
 #include "weapon/weapon.h"
 #include "mod_table/mod_table.h"
 
+#include <cmath>
+
 sound_handle Radar_static_looping = sound_handle::invalid();
 
 rcol Radar_color_rgb[MAX_RADAR_COLORS][MAX_RADAR_LEVELS] =
@@ -172,233 +174,188 @@ void radar_stuff_blip_info(object *objp, int is_bright, color **blip_color, int 
 	}
 }
 
-void radar_plot_object( object *objp )
+bool radar_project_contact(object* objp, RadarContactProjection& projection)
 {
-	vec3d pos, tempv;
-	float awacs_level, dist, max_radar_dist;
-	vec3d world_pos = objp->pos;
-	bool mine_in_targetable_range = true; // for mines, computed below after distance check; non-mines unaffected
-
-	// don't process anything here.  Somehow, a jumpnode object caused this function
-	// to get entered on server side.
-	if( Game_mode & GM_STANDALONE_SERVER ){
-		return;
+	projection = {};
+	if (objp == nullptr || Player_obj == nullptr || Player_ship == nullptr ||
+		Player_ai == nullptr || objp->flags[Object::Object_Flags::Should_be_dead]) {
+		return false;
+	}
+	if ((Game_mode & GM_STANDALONE_SERVER) || (Game_mode & GM_LAB) ||
+		(MULTIPLAYER_CLIENT &&
+		 (Net_player == nullptr ||
+		  (Net_player->flags & NETINFO_FLAG_INGAME_JOIN)))) {
+		return false;
 	}
 
-	// if we are in the lab, do nothing here
-	if (Game_mode & GM_LAB) {
-		return;
-	}
-
-	// multiplayer clients ingame joining should skip this function
-	if ( MULTIPLAYER_CLIENT && (Net_player->flags & NETINFO_FLAG_INGAME_JOIN) ){
-		return;
-	}
-
-	// get team-wide awacs level for the object if not ship
-	int ship_is_visible = 0;
-	if (objp->type == OBJ_SHIP) {
-		if (Player_ship != NULL) {
-			if (ship_is_visible_by_team(objp, Player_ship)) {
-				ship_is_visible = 1;
-			}
-		}
-	}
-
-	// only check awacs level if ship is not visible by team
-	awacs_level = 1.5f;
-	if (Player_ship != NULL && !ship_is_visible) {
+	auto world_pos = objp->pos;
+	auto awacs_level = 1.5f;
+	const auto ship_is_visible =
+		objp->type == OBJ_SHIP &&
+		ship_is_visible_by_team(objp, Player_ship);
+	if (!ship_is_visible) {
 		awacs_level = awacs_get_level(objp, Player_ship);
 	}
+	if (awacs_level < 0.0f && !See_all) {
+		return false;
+	}
 
-	// if the awacs level is unviewable - bail
-	if(awacs_level < 0.0f && !See_all){
+	bool mine_in_targetable_range = true;
+	switch (objp->type) {
+	case OBJ_SHIP:
+		if (objp->instance < 0 || objp->instance >= MAX_SHIPS) {
+			return false;
+		}
+		break;
+	case OBJ_JUMP_NODE: {
+		const auto node = jumpnode_get_by_objp(objp);
+		if (node == nullptr || node->IsHidden()) {
+			return false;
+		}
+		break;
+	}
+	case OBJ_WEAPON: {
+		if (objp->instance < 0 || objp->instance >= MAX_WEAPONS) {
+			return false;
+		}
+		const auto& weapon = Weapons[objp->instance];
+		if (weapon.weapon_info_index < 0 ||
+			weapon.weapon_info_index >= weapon_info_size()) {
+			return false;
+		}
+		const auto& info = Weapon_info[weapon.weapon_info_index];
+		if (info.wi_flags[Weapon::Info_Flags::Dont_show_on_radar] ||
+			(!info.wi_flags[Weapon::Info_Flags::Show_friendly] &&
+			 !iff_x_attacks_y(Player_ship->team, obj_team(objp)))) {
+			return false;
+		}
+		if (!info.is_mine() &&
+			!info.wi_flags[Weapon::Info_Flags::Shown_on_radar] &&
+			!info.wi_flags[Weapon::Info_Flags::Bomb]) {
+			return false;
+		}
+		if (weapon.lssm_stage == 3) {
+			return false;
+		}
+		if (info.wi_flags[Weapon::Info_Flags::Corkscrew]) {
+			world_pos = objp->last_pos;
+		}
+		break;
+	}
+	default:
+		return false;
+	}
+
+	if (HUD_config.rp_dist < 0 || HUD_config.rp_dist >= RR_MAX_RANGES) {
+		return false;
+	}
+	const auto distance = vm_vec_dist(&world_pos, &Player_obj->pos);
+	if (!std::isfinite(distance) ||
+		distance > Radar_ranges[HUD_config.rp_dist]) {
+		return false;
+	}
+	if (objp->type == OBJ_WEAPON) {
+		const auto& info =
+			Weapon_info[Weapons[objp->instance].weapon_info_index];
+		if (info.is_mine()) {
+			if (distance > info.mine_sensors_range) {
+				return false;
+			}
+			mine_in_targetable_range =
+				distance <= info.mine_targetable_range;
+		}
+	}
+
+	auto visibility = VISIBLE;
+	if (!mine_in_targetable_range ||
+		(objp->type == OBJ_SHIP &&
+		 (Ships[objp->instance].flags[
+			  Ship::Ship_Flags::Hidden_from_sensors] ||
+		  awacs_level < 1.0f))) {
+		visibility = DISTORTED;
+	}
+	if (Player_ship->flags[Ship::Ship_Flags::Primitive_sensors] &&
+		!(The_mission.flags[Mission::Mission_Flags::Fullneb])) {
+		visibility = VISIBLE;
+	}
+
+	projection.visibility = visibility;
+	projection.world_position = world_pos;
+	projection.world_velocity = objp->phys_info.vel;
+	projection.distance = distance;
+	return true;
+}
+
+void radar_plot_object(object* objp)
+{
+	RadarContactProjection projection;
+	if (!radar_project_contact(objp, projection)) {
 		return;
 	}
 
-	// Apply object type filters	
-	switch (objp->type)
-	{
-		case OBJ_SHIP:
-			// Place to cull ships, such as NavBuoys		
-			break;
-		
-		case OBJ_JUMP_NODE:
-		{
-			auto jnp = jumpnode_get_by_objp(objp);
-			
-			// don't plot missing or hidden jump nodes
-			if ( !jnp || jnp->IsHidden() )
-				return;
-
-			// filter jump nodes here if required
-			break;
-		}
-
-		case OBJ_WEAPON:
-		{
-			weapon_info *wip = &Weapon_info[Weapons[objp->instance].weapon_info_index];
-
-			if (wip->is_mine()) {
-				// if explicitly hidden, return
-				if (wip->wi_flags[Weapon::Info_Flags::Dont_show_on_radar])
-					return;
-
-				// if we don't attack the mine, return
-				if ( !wip->wi_flags[Weapon::Info_Flags::Show_friendly] && !iff_x_attacks_y(Player_ship->team, obj_team(objp)) )
-					return;
-
-				// Mine range-based detection... visibility determined after distance is calculated below
-				break;
-			}
-
-			// if not a bomb, return
-			if ( !(wip->wi_flags[Weapon::Info_Flags::Shown_on_radar]) )
-				if ( !(wip->wi_flags[Weapon::Info_Flags::Bomb]) )
-					return;
-
-			// if explicitly hidden, return
-			if (wip->wi_flags[Weapon::Info_Flags::Dont_show_on_radar])
-				return;
-
-			// if we don't attack the bomb, return
-			if ( !wip->wi_flags[Weapon::Info_Flags::Show_friendly] && !iff_x_attacks_y(Player_ship->team, obj_team(objp)) )
-				return;
-
-			// if a local ssm is in subspace, return
-			if (Weapons[objp->instance].lssm_stage == 3)
-				return;
-
-			// if corkscrew missile use last frame pos for pos
-			if (wip->wi_flags[Weapon::Info_Flags::Corkscrew])
-				world_pos = objp->last_pos;
-
-			break;
-		}
-
-		// if any other kind of object, don't show it on radar
-		default:
-			return;
-	}
-
-	// Retrieve the eye orientation so we can position the blips relative to it
+	vec3d pos, tempv;
 	matrix eye_orient;
 	object_get_eye(&tempv, &eye_orient, Player_obj, false);
-
-	// JAS -- new way of getting the rotated point that doesn't require this to be
-	// in a g3_start_frame/end_frame block.
-	vm_vec_sub(&tempv, &world_pos, &Player_obj->pos);
+	vm_vec_sub(&tempv, &projection.world_position, &Player_obj->pos);
 	vm_vec_rotate(&pos, &tempv, &eye_orient);
 
-	// Apply range filter
-	dist = vm_vec_dist(&world_pos, &Player_obj->pos);
-	max_radar_dist = Radar_ranges[HUD_config.rp_dist];
-	if (dist > max_radar_dist) {
-		return;
-	}
-
-	// Mine range-based visibility: sensors_range is the outer detection envelope. The parser
-	// guarantees sensors_range >= targetable_range, so anything within targetable range is
-	// necessarily within sensors range; targetable range only governs distorted-vs-clear below.
-	if (objp->type == OBJ_WEAPON) {
-		weapon_info *wip = &Weapon_info[Weapons[objp->instance].weapon_info_index];
-		if (wip->is_mine()) {
-			if (dist > wip->mine_sensors_range)
-				return; // beyond detection
-			mine_in_targetable_range = (dist <= wip->mine_targetable_range);
-		}
-	}
-
-	// determine the range within which the radar blip is bright
-	if (timestamp_elapsed(Radar_calc_bright_dist_timer))
-	{
+	if (timestamp_elapsed(Radar_calc_bright_dist_timer)) {
 		Radar_calc_bright_dist_timer = _timestamp(1000);
 		Radar_bright_range = player_farthest_weapon_range();
-		if (Radar_bright_range <= 0)
+		if (Radar_bright_range <= 0) {
 			Radar_bright_range = 1500.0f;
+		}
 	}
-
-	blip *b;
-	int blip_bright = 0;
-	int blip_type = 0;
-
-	if (N_blips >= MAX_BLIPS)
-	{
+	if (N_blips >= MAX_BLIPS) {
 		return;
 	}
 
-	int objnum = OBJ_INDEX(objp);
-
-	b = &Blips[N_blips];
+	const auto objnum = OBJ_INDEX(objp);
+	auto* b = &Blips[N_blips];
 	b->rad = 0;
 	b->flags = 0;
-
-	// bright if within range
-	blip_bright = (dist <= Radar_bright_range);
-
-	// flag the blip as a current target if it is
-	if (objnum == Player_ai->target_objnum)
-	{
+	auto blip_bright = projection.distance <= Radar_bright_range ? 1 : 0;
+	if (objnum == Player_ai->target_objnum) {
 		b->flags |= BLIP_CURRENT_TARGET;
 		blip_bright = 1;
 	}
 
-	radar_stuff_blip_info(objp, blip_bright, &b->blip_color, &blip_type);
-
-	if (blip_bright)
+	int blip_type = 0;
+	radar_stuff_blip_info(
+		objp, blip_bright, &b->blip_color, &blip_type);
+	if (blip_bright) {
 		list_append(&Blip_bright_list[blip_type], b);
-	else
+	} else {
 		list_append(&Blip_dim_list[blip_type], b);
+	}
 
 	b->position = pos;
 	b->radar_image_2d = -1;
 	b->radar_color_image_2d = -1;
 	b->radar_image_size = -1;
 	b->radar_projection_size = 1.0f;
-	b->dist = dist;
+	b->dist = projection.distance;
 	b->objnum = objnum;
-
-	auto it = Blip_last_update.find(objnum);
-	if (it == Blip_last_update.end())
+	if (Blip_last_update.find(objnum) == Blip_last_update.end()) {
 		Blip_last_update.emplace(objnum, TIMESTAMP::never());
-
-
-	// see if blip should be drawn distorted
-	// also determine if alternate image was defined for this ship
-	// Mines outside their targetable range (but inside sensors range, by the earlier gate) get a distorted blip
-	if (!mine_in_targetable_range)
+	}
+	if (projection.visibility == DISTORTED) {
 		b->flags |= BLIP_DRAW_DISTORTED;
-
-	if (objp->type == OBJ_SHIP)
-	{
-		// ships specifically hidden from sensors
-		if (Ships[objp->instance].flags[Ship::Ship_Flags::Hidden_from_sensors])
-			b->flags |= BLIP_DRAW_DISTORTED;
-
-		// determine if its AWACS distorted
-		if (awacs_level < 1.0f)
-			b->flags |= BLIP_DRAW_DISTORTED;
-
-		ship_info *Iff_ship_info = &Ship_info[Ships[objp->instance].ship_info_index];
-
-		if (Iff_ship_info->radar_image_2d_idx >= 0 || Iff_ship_info->radar_color_image_2d_idx >= 0)
-		{
-			b->radar_image_2d = Iff_ship_info->radar_image_2d_idx;
-			b->radar_color_image_2d = Iff_ship_info->radar_color_image_2d_idx;
-			b->radar_image_size = Iff_ship_info->radar_image_size;
-			b->radar_projection_size = Iff_ship_info->radar_projection_size_mult;
+	}
+	if (objp->type == OBJ_SHIP) {
+		auto* info =
+			&Ship_info[Ships[objp->instance].ship_info_index];
+		if (info->radar_image_2d_idx >= 0 ||
+			info->radar_color_image_2d_idx >= 0) {
+			b->radar_image_2d = info->radar_image_2d_idx;
+			b->radar_color_image_2d =
+				info->radar_color_image_2d_idx;
+			b->radar_image_size = info->radar_image_size;
+			b->radar_projection_size =
+				info->radar_projection_size_mult;
 		}
 	}
-
-	// don't distort the sensor blips if the player has primitive sensors and the nebula effect
-	// is not active
-	if (Player_ship->flags[Ship::Ship_Flags::Primitive_sensors])
-	{
-		if (!(The_mission.flags[Mission::Mission_Flags::Fullneb]))
-			b->flags &= ~BLIP_DRAW_DISTORTED;
-	}
-
-	N_blips++;
+	++N_blips;
 }
 
 void radar_mission_init()

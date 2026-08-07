@@ -1335,6 +1335,142 @@ TEST(TelemetryProtocolBusinessStateValidation, TargetAndLockReferencesMustResolv
 	EXPECT_EQ(ValidationError::VisibilityViolation, hidden_target.validate(image));
 }
 
+TEST(TelemetryProtocolBusinessStateValidation,
+	Phase3CockpitSensorsAcceptSensorOnlyIdentitiesButStillEnforceVisibility)
+{
+	constexpr auto coverage =
+		StateDomainCoverageBitPlayerKinematics |
+		StateDomainCoverageBitCoreShip |
+		StateDomainCoverageBitControlInputs |
+		StateDomainCoverageBitRadarSensors |
+		StateDomainCoverageBitTargeting |
+		StateDomainCoverageBitWeapons |
+		StateDomainCoverageBitCargoDockSupport |
+		StateDomainCoverageBitNavigation;
+	static_assert(coverage == 0x07cbULL);
+
+	auto atoms = make_phase2_complete_image().records();
+	auto session = std::find_if(atoms.begin(), atoms.end(), [](const StateAtom& value) {
+		return value.key.record_type ==
+			static_cast<std::uint16_t>(RecordType::SessionState);
+	});
+	ASSERT_NE(atoms.end(), session);
+	session->value = session_payload(VisibilityMode::Cockpit, 1U, coverage, 1U);
+	auto cargo = std::find_if(atoms.begin(), atoms.end(), [](const StateAtom& value) {
+		return value.key.record_type ==
+			static_cast<std::uint16_t>(RecordType::CargoScanState);
+	});
+	ASSERT_NE(atoms.end(), cargo);
+	cargo->value = cargo_payload(1U, 2U);
+
+	atoms.push_back(atom(RecordType::LockState, lock_payload(1U, 2U), 8U));
+	atoms.push_back(atom(RecordType::TargetState, target_payload(1U, 2U), 8U));
+	atoms.push_back(atom(RecordType::RadarState, radar_payload(1U), 8U));
+	atoms.push_back(atom(RecordType::RadarContacts,
+		radar_contact_payload(1U, 2U, ObjectType::Ship,
+			ContactFlagCurrentTarget),
+		16U,
+		StateRecordLifecycle::ExplicitCreateDelete));
+	atoms.push_back(atom(RecordType::ThreatState,
+		threat_payload(1U, 3U, 3U, 3U), 8U));
+	atoms.push_back(atom(RecordType::NavigationState,
+		navigation_none_payload(1U), 8U));
+	const auto image = image_from_atoms(std::move(atoms));
+
+	const std::uint32_t weapon_ids[] = {3U};
+	const std::uint64_t weapon_flags[] = {0U};
+	auto context = phase2_complete_context();
+	context.weapon_class_ids = weapon_ids;
+	context.weapon_class_flags = weapon_flags;
+	context.weapon_class_count = 1U;
+	BusinessStateImageValidator valid(context);
+	EXPECT_EQ(ValidationError::None, valid.validate(image));
+
+	const std::uint64_t observer_only[] = {1U};
+	context.enforce_cockpit_entity_allowlist = true;
+	context.cockpit_entity_ids = observer_only;
+	context.cockpit_entity_count = 1U;
+	BusinessStateImageValidator hidden_sensor_identity(context);
+	EXPECT_EQ(ValidationError::VisibilityViolation,
+		hidden_sensor_identity.validate(image));
+}
+
+TEST(TelemetryProtocolBusinessStateValidation,
+	Phase3RadarContactConvergesAfterLostDelta)
+{
+	constexpr auto coverage =
+		StateDomainCoverageBitPlayerKinematics |
+		StateDomainCoverageBitCoreShip |
+		StateDomainCoverageBitControlInputs |
+		StateDomainCoverageBitRadarSensors |
+		StateDomainCoverageBitTargeting |
+		StateDomainCoverageBitWeapons |
+		StateDomainCoverageBitCargoDockSupport |
+		StateDomainCoverageBitNavigation;
+	auto atoms = make_phase2_complete_image().records();
+	auto session = std::find_if(atoms.begin(), atoms.end(), [](const StateAtom& value) {
+		return value.key.record_type ==
+			static_cast<std::uint16_t>(RecordType::SessionState);
+	});
+	ASSERT_NE(atoms.end(), session);
+	session->value = session_payload(VisibilityMode::Cockpit, 1U, coverage, 1U);
+	auto cargo = std::find_if(atoms.begin(), atoms.end(), [](const StateAtom& value) {
+		return value.key.record_type ==
+			static_cast<std::uint16_t>(RecordType::CargoScanState);
+	});
+	ASSERT_NE(atoms.end(), cargo);
+	cargo->value = cargo_payload(1U, 2U);
+	atoms.push_back(atom(RecordType::LockState, lock_payload(1U, 2U), 8U));
+	atoms.push_back(atom(RecordType::TargetState, target_payload(1U, 2U), 8U));
+	atoms.push_back(atom(RecordType::RadarState, radar_payload(1U), 8U));
+	const auto contact = atom(RecordType::RadarContacts,
+		radar_contact_payload(1U, 2U, ObjectType::Ship,
+			ContactFlagCurrentTarget),
+		16U, StateRecordLifecycle::ExplicitCreateDelete);
+	atoms.push_back(contact);
+	atoms.push_back(atom(RecordType::ThreatState, threat_payload(1U), 8U));
+	atoms.push_back(atom(RecordType::NavigationState,
+		navigation_none_payload(1U), 8U));
+	const auto baseline = image_from_atoms(std::move(atoms));
+
+	auto context = phase2_complete_context();
+	BusinessStateImageValidator validator(context);
+	ASSERT_EQ(ValidationError::None, validator.validate(baseline));
+	ClientReplicationModel client;
+	ASSERT_EQ(ManifestInstallResult::Installed, client.install_manifest(1U));
+	ASSERT_EQ(SnapshotCandidateResult::Known,
+		client.note_snapshot_candidate(7U, 1U, 1U, 10'000'001U));
+	ProtocolRateLimiter limiter;
+	ASSERT_EQ(ValidationError::None,
+		ProtocolRateLimiter::configure({}, 0U, limiter));
+	ResyncRequestPayload resync;
+	const auto endpoint =
+		EndpointKey::from_ipv4({127U, 0U, 0U, 1U}, 42043U);
+	ClientResyncChannel channel{1U, endpoint, limiter, resync};
+	ASSERT_EQ(SnapshotCommitResult::Committed,
+		client.commit_snapshot(7U, 1U, baseline, 2U, channel, &validator));
+
+	auto changed_contact = contact;
+	changed_contact.value[24U] = 101U;
+	const CumulativeStateDelta lost{7U, 1U, 101U,
+		{{StateMutationKind::Upsert, changed_contact}}};
+	auto latest_contact = contact;
+	latest_contact.value[24U] = 102U;
+	const CumulativeStateDelta latest{7U, 2U, 102U,
+		{{StateMutationKind::Upsert, latest_contact}}};
+
+	ASSERT_EQ(ClientDeltaResult::Applied,
+		client.receive_delta(latest, 2U, 1U, endpoint, limiter, resync,
+			&validator));
+	EXPECT_EQ(ClientDeltaResult::IgnoredOldSequence,
+		client.receive_delta(lost, 3U, 1U, endpoint, limiter, resync,
+			&validator));
+	StateImage expected;
+	ASSERT_EQ(StateDeltaApplyResult::Applied,
+		apply_cumulative_state_delta(baseline, latest, &validator, expected));
+	EXPECT_EQ(expected, client.published());
+}
+
 TEST(TelemetryProtocolBusinessStateValidation, TargetSubsystemMustBelongToTheInstalledClassCatalog)
 {
 	const auto coverage = StateDomainCoverageBitCoreShip | StateDomainCoverageBitTargeting;

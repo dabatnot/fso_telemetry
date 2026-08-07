@@ -3,7 +3,7 @@
   "phase": 2,
   "phaseDirectory": "documentation/analysis/specs/2-Vaisseau-complet",
   "contractFingerprint": "sha256:7c2ab4b95ddb12ae8f0235c987bb6d36e7bae5d0a03845bd6f3fea84a0cbf646",
-  "updatedAtUtc": "2026-08-02T22:17:49Z",
+  "updatedAtUtc": "2026-08-03T20:07:50Z",
   "requirements": [
     {
       "id": "P2-REQ-001",
@@ -54,10 +54,10 @@
             "code/telemetry/protocol",
             "test/telemetry/protocol"
           ],
-          "inputFingerprint": "sha256:61bb70e3a4ba2fdce72f4db129675abf989e009b35b6e4965fb132b3e761f9f8",
-          "observedAtUtc": "2026-08-02T22:17:30Z",
+          "inputFingerprint": "sha256:ffd30f2e27fce8c0ebc595add99be3252422ebfe5f85d3fe81479fa378099184",
+          "observedAtUtc": "2026-08-03T20:07:50Z",
           "result": "15/15 freeze tests passed; FSTL 1.0 is frozen and the additive 1.1 schemas, vectors and negative self-tests are verified.",
-          "resultRef": "build/telemetry-observations/fstl-freeze-schema-final.txt"
+          "resultRef": "build/telemetry-observations/fstl-freeze-schema-phase3-preflight.txt"
         }
       ],
       "requiredObservations": [],
@@ -1633,12 +1633,13 @@
         "test/telemetry/producer/observations/telemetry_p2_core.fs2",
         "test/telemetry/producer/observations/core-gate.telemetry.json",
         "test/telemetry/protocol/tools/fstl_console_client.py",
+        "test/telemetry/protocol/tools/fstl_client_core.py",
         "test/telemetry/protocol/tools/fstl_reference_decoder.py"
       ],
-      "inputFingerprint": "sha256:609ada60b1be4c4b0f71a967002fc11030a01f8dcb8e943681147bbb4546f464",
-      "observedAtUtc": "2026-08-02T21:41:24Z",
+      "inputFingerprint": "sha256:f9c0a35b8925dd9e99ed64d963678bc4e6f2abe75c9d1eca324e833e991e466d",
+      "observedAtUtc": "2026-08-03T18:06:33Z",
       "reviewedBy": "david",
-      "observed": "Capture finale Release CoreGate de 60 s : 1346 états JSON valides, dont 1343 Live, couverture 1025 (`0x0401`), manifeste 1, génération de mission 1, baselines jusqu'à 31 et deltas jusqu'à la séquence 46. Seule l'entité joueur 1 est publiée. Le retour normal au menu a été confirmé par david.",
+      "observed": "Capture Release CoreGate relue avec le cœur client partagé : 1148 états JSON valides, dont 1144 Live, couverture 1025 (`0x0401`), manifeste 1 publié avant le premier état Live, génération de mission 1, baselines 1 à 27 et deltas 1 à 47. Seule l'entité joueur 1 est publiée. Le retour normal au menu sans anomalie visible a été confirmé par david.",
       "deviation": "aucun",
       "impact": "aucun"
     },
@@ -1651,12 +1652,13 @@
         "test/telemetry/producer/observations/telemetry_p2_complete.fs2",
         "test/telemetry/producer/observations/complete-ship.telemetry.json",
         "test/telemetry/protocol/tools/fstl_console_client.py",
+        "test/telemetry/protocol/tools/fstl_client_core.py",
         "test/telemetry/protocol/tools/fstl_reference_decoder.py"
       ],
-      "inputFingerprint": "sha256:33a63bd61c671e3747b3596b427177f15c72fd2263454eac439080b9efd3a0ca",
-      "observedAtUtc": "2026-08-02T22:09:23Z",
+      "inputFingerprint": "sha256:a6b18b7210a95a76ddf90725bfe9df129a06dedc8a00057e239d1055c85a0d44",
+      "observedAtUtc": "2026-08-03T18:06:33Z",
       "reviewedBy": "david",
-      "observed": "Capture finale Release CompleteShip de 120 s : 642 états JSON valides, dont 639 Live, couverture 1411 (`0x0583`), manifestes 2 puis 3 décodés, génération de mission 2, baselines 1 à 62 et deltas jusqu'à la séquence 33. L'entité support 2 est publiée avec les phases approche, docking et réarmement. DOCKING_STATE atteint `Docked` et contient les relations réciproques joueur/support. Le retour normal au menu a été effectué par david ; la capture Release antérieure de redémarrage avait déjà établi une nouvelle session Live.",
+      "observed": "Capture Release CompleteShip relue avec le cœur client partagé : 581 états JSON valides, dont 577 Live, couverture 1411 (`0x0583`), manifestes 2 puis 3, génération de mission 1, baselines 1 à 22 et deltas 1 à 32. L'entité support 2 est publiée avec les phases approche, docking, docked et départ ; DOCKING_STATE contient les relations réciproques joueur/support. David confirme le support demandé et docké, le retour normal au menu et l'absence d'anomalie visible. La capture de redémarrage établit une session distincte avec 236 états valides, dont 233 Live, manifeste 1 et génération de mission 3.",
       "deviation": "aucun",
       "impact": "aucun"
     },
@@ -1669,12 +1671,13 @@
         "test/telemetry/producer/observations/telemetry_p2_complete.fs2",
         "test/telemetry/producer/observations/complete-ship.telemetry.json",
         "test/telemetry/protocol/tools/fstl_console_client.py",
+        "test/telemetry/protocol/tools/fstl_client_core.py",
         "test/telemetry/protocol/tools/fstl_reference_decoder.py"
       ],
-      "inputFingerprint": "sha256:33a63bd61c671e3747b3596b427177f15c72fd2263454eac439080b9efd3a0ca",
-      "observedAtUtc": "2026-08-02T22:09:23Z",
+      "inputFingerprint": "sha256:a6b18b7210a95a76ddf90725bfe9df129a06dedc8a00057e239d1055c85a0d44",
+      "observedAtUtc": "2026-08-03T18:06:33Z",
       "reviewedBy": "david",
-      "observed": "External Cargo 1 a été maintenu comme cible pendant l'observation humaine. La capture Live ne publie dans la fermeture que le joueur et le vaisseau de support ; la cible cargo extérieure est omise. CARGO_SCAN_STATE du joueur reste scan_phase=3 (`NOT_SCANNABLE`), disclosure=0 (`HIDDEN`) et presence=0. La session demeure Live sans extension de fermeture ni fin de session.",
+      "observed": "David confirme qu'External Cargo 1 a été ciblé pendant l'observation. La capture Live ne publie dans la fermeture que le joueur 1 et le support 2 ; la cible cargo extérieure reste omise. CARGO_SCAN_STATE du joueur conserve scan_phase=3 (`NOT_SCANNABLE`), disclosure=0 (`HIDDEN`) et presence=0. La session reste Live sans extension de fermeture ; le retour au menu est normal et aucune anomalie n'est visible.",
       "deviation": "aucun",
       "impact": "aucun"
     },
@@ -1687,15 +1690,16 @@
         "test/telemetry/producer/observations/telemetry_p2_complete.fs2",
         "test/telemetry/producer/observations/complete-ship.telemetry.json",
         "test/telemetry/protocol/tools/fstl_console_client.py",
+        "test/telemetry/protocol/tools/fstl_client_core.py",
         "test/telemetry/protocol/tools/fstl_reference_decoder.py",
         "test/src/telemetry/producer/test_phase2_observation_contract.cpp",
         "test/src/telemetry/producer/phase2_security_bounds_tests.cpp",
         "test/src/telemetry/producer/phase2_replication_tests.cpp"
       ],
-      "inputFingerprint": "sha256:81488ddc21cc9109e1cf5736461c3aed247a8a8a446168326a6968113b893b60",
-      "observedAtUtc": "2026-08-02T22:09:23Z",
+      "inputFingerprint": "sha256:1108f6f3b0d80468695146f4c3b64cdb5a4730f512b71b3b06e866c95ef79612",
+      "observedAtUtc": "2026-08-03T18:06:33Z",
       "reviewedBy": "david",
-      "observed": "Les preuves courtes actuelles passent : contrat Python du client 30/30 et sélection Release `telemetry-short` 16/16, incluant min/max/max+1, NaN, infini, cast impossible et budget exact/+1. Le client injecte exactement une perte de delta (`message_id=6`). La session reste Live, applique immédiatement les deltas suivants jusqu'à la séquence 33, puis les keyframes jusqu'à la baseline 62, sans état transport Stale ni perte de session.",
+      "observed": "Les preuves courtes actuelles passent : contrat Python du client partagé 34/34 et sélection Release `telemetry-short` 16/16, incluant min/max/max+1, NaN, infini, cast impossible et budget exact/+1. Le client injecte exactement une perte de delta (`message_id=9`). Des états Live synchronisés suivent cette injection, avec deltas jusqu'à la séquence 32 et keyframes jusqu'à la baseline 22 ; le seul état Stale final correspond au retour normal au menu confirmé par david. La nouvelle capture de redémarrage établit une session Live distincte et récupérable.",
       "deviation": "aucun",
       "impact": "aucun"
     }

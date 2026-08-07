@@ -152,6 +152,22 @@ class PhaseTrackerTest(unittest.TestCase):
             any("input fingerprint is stale" in gap for gap in result["gaps"])
         )
 
+    def test_python_cache_does_not_make_evidence_stale(self) -> None:
+        cache = self.root / "test" / "__pycache__" / "product_test.cpython-314.pyc"
+        cache.parent.mkdir()
+        cache.write_bytes(b"first generated cache")
+        inputs = ["code", "test"]
+        before, before_files = phase_tracker.fingerprint_inputs(self.root, inputs)
+
+        cache.write_bytes(b"changed generated cache")
+        after, after_files = phase_tracker.fingerprint_inputs(self.root, inputs)
+
+        self.assertEqual(before, after)
+        self.assertEqual(before_files, after_files)
+        self.assertNotIn(
+            "test/__pycache__/product_test.cpython-314.pyc", after_files
+        )
+
     def test_unknown_field_is_rejected(self) -> None:
         self.tracker["unexpected"] = True
         result = self.validate()

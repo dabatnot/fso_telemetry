@@ -10,6 +10,8 @@ import { WeaponsCockpit } from "./WeaponsCockpit";
 import { WeaponInspection } from "./WeaponInspection";
 import { SupportCockpit } from "./SupportCockpit";
 import { SupportInspection } from "./SupportInspection";
+import { TacticalCockpit } from "./TacticalCockpit";
+import { TacticalInspection } from "./TacticalInspection";
 import type { DashboardSnapshot, InspectionTarget, InstrumentDefinition } from "./types";
 import "./styles.css";
 
@@ -170,6 +172,8 @@ export default function App() {
           <WeaponsCockpit definitions={instruments} snapshot={snapshot} onInspect={setSelected} />
         ) : tab === "support" ? (
           <SupportCockpit definitions={instruments} snapshot={snapshot} onInspect={setSelected} />
+        ) : tab === "tactical" ? (
+          <TacticalCockpit definitions={instruments} snapshot={snapshot} onInspect={setSelected} />
         ) : (
           <section className={`instrument-grid tab-${tab}`}>
             {instruments.map((definition) => {
@@ -203,6 +207,13 @@ export default function App() {
                 selected.kind === "docking-component" ||
                 selected.kind === "cargo-target" ? (
               <SupportInspection target={selected} snapshot={snapshot} onSelect={setSelected} />
+            ) : selected.kind === "target" ||
+                selected.kind === "radar-contact" ||
+                selected.kind === "lock-point" ||
+                selected.kind === "lock-list" ||
+                selected.kind === "incoming-missile" ||
+                selected.kind === "missile-list" ? (
+              <TacticalInspection target={selected} snapshot={snapshot} onSelect={setSelected} />
             ) : (() => {
           const definition = selected.definition;
           const resolved = resolveInstrument(definition, snapshot);

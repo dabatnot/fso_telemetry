@@ -124,77 +124,77 @@ const vec3d *NavPoint::GetPosition()
 }
 
 // ********************************************************************************************
-bool CanAutopilot(const vec3d *targetPos, bool send_msg)
+AutopilotAvailability EvaluateAutopilot(const vec3d* targetPos)
 {
-	if (CurrentNav == -1)
-	{
-		if (send_msg)
-					send_autopilot_msgID(NP_MSG_FAIL_NOSEL);
-		return false;
+	if (CurrentNav == -1) {
+		return AutopilotAvailability::NoSelection;
 	}
-
-	if (object_get_gliding(Player_obj))
-	{
-		if (send_msg)
-					send_autopilot_msgID(NP_MSG_FAIL_GLIDING);
-		return false;
+	if (object_get_gliding(Player_obj)) {
+		return AutopilotAvailability::Gliding;
 	}
-
-	// You cannot autopilot if you're within 1000 meters of your destination nav point
 	if (vm_vec_dist_quick(targetPos, Navs[CurrentNav].GetPosition()) < 1000) {
-		if (send_msg)
-					send_autopilot_msgID(NP_MSG_FAIL_TOCLOSE);
-		return false;
+		return AutopilotAvailability::TooClose;
 	}
-
 	if ( AutopilotMinEnemyDistance > 0 ) {
-		// see if any hostiles are nearby
 		for (ship_obj *so = GET_FIRST(&Ship_obj_list); so != END_OF_LIST(&Ship_obj_list); so = GET_NEXT(so))
 		{
 			object *other_objp = &Objects[so->objnum];
 			if (other_objp->flags[Object::Object_Flags::Should_be_dead])
 				continue;
-
-			// attacks player?
 			if (iff_x_attacks_y(obj_team(other_objp), obj_team(Player_obj)) 
 				&& !(Ship_info[Ships[other_objp->instance].ship_info_index].flags[Ship::Info_Flags::Cargo])) // ignore cargo
 			{
-				// Cannot autopilot if enemy within AutopilotMinEnemyDistance meters
 				if (vm_vec_dist_quick(targetPos, &other_objp->pos) < AutopilotMinEnemyDistance) {
-					if (send_msg)
-						send_autopilot_msgID(NP_MSG_FAIL_HOSTILES);
-					return false;
+					return AutopilotAvailability::Hostiles;
 				}
 			}
 		}
 	}
-	
 	if ( AutopilotMinAsteroidDistance > 0 ) {
-		//check for asteroids	
 		for (int n=0; n<MAX_ASTEROIDS; n++) 
 		{
-			// asteroid
 			if (Asteroids[n].flags & AF_USED)
 			{
-				// Cannot autopilot if asteroid within AutopilotMinAsteroidDistance meters
 				if (vm_vec_dist_quick(targetPos, &Objects[Asteroids[n].objnum].pos) < AutopilotMinAsteroidDistance) {
-					if (send_msg)
-						send_autopilot_msgID(NP_MSG_FAIL_HAZARD);
-					return false;
+					return AutopilotAvailability::Hazard;
 				}
 			}
 		}
 	}
-
-	// check for support ships
-	// cannot autopilot if support ship present
 	if ( ship_find_repair_ship(Player_obj) != 0 ) {
-		if (send_msg)
-			send_autopilot_msgID(NP_MSG_FAIL_SUPPORT_PRESENT);
-		return false;
+		return AutopilotAvailability::SupportPresent;
 	}
+	return AutopilotAvailability::Available;
+}
 
-	return true;
+bool CanAutopilot(const vec3d *targetPos, bool send_msg)
+{
+	const auto availability = EvaluateAutopilot(targetPos);
+	if (send_msg && availability != AutopilotAvailability::Available) {
+		switch (availability) {
+		case AutopilotAvailability::NoSelection:
+			send_autopilot_msgID(NP_MSG_FAIL_NOSEL);
+			break;
+		case AutopilotAvailability::Gliding:
+			send_autopilot_msgID(NP_MSG_FAIL_GLIDING);
+			break;
+		case AutopilotAvailability::TooClose:
+			send_autopilot_msgID(NP_MSG_FAIL_TOCLOSE);
+			break;
+		case AutopilotAvailability::Hostiles:
+			send_autopilot_msgID(NP_MSG_FAIL_HOSTILES);
+			break;
+		case AutopilotAvailability::Hazard:
+			send_autopilot_msgID(NP_MSG_FAIL_HAZARD);
+			break;
+		case AutopilotAvailability::SupportPresent:
+			send_autopilot_msgID(NP_MSG_FAIL_SUPPORT_PRESENT);
+			break;
+		case AutopilotAvailability::Available:
+			break;
+		}
+	}
+	return availability == AutopilotAvailability::Available;
 }
 
 extern object* Autopilot_flight_leader;

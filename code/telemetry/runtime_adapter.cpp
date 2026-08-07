@@ -180,6 +180,8 @@ TelemetryLogReason map_config_log_reason(ConfigError error) noexcept
 	case ConfigError::MissingPhase2Profile:
 	case ConfigError::Phase2ProfileNotAllowed:
 	case ConfigError::InvalidPhase2Profile:
+	case ConfigError::MissingProfile:
+	case ConfigError::InvalidProfile:
 	case ConfigError::InvalidType:
 	default:
 		return TelemetryLogReason::ConfigSchema;
@@ -429,7 +431,7 @@ class NativeRuntimeStartupServices final : public RuntimeStartupServices {
 	}
 	std::uint64_t process_session_total() const noexcept
 	{
-		return m_metrics.snapshot().process_counters[static_cast<std::size_t>(TelemetryMetricCounter::SessionsEnded)];
+		return m_metrics.process_counter(TelemetryMetricCounter::SessionsEnded);
 	}
 	static TelemetryLogFault map_runtime_fault_log(RuntimeTerminalReason reason) noexcept
 	{

@@ -12,6 +12,7 @@ from __future__ import annotations
 import ast
 import importlib.util
 import json
+import math
 import hashlib
 import socket
 import struct
@@ -974,8 +975,16 @@ class FstlConsoleClientContractTest(unittest.TestCase):
         self.assertEqual("afterburner-unavailable", unavailable["afterburner_readiness"]["reason"])
 
     def test_weapon_dashboard_derivations_use_decoded_shapes_and_fail_closed(self) -> None:
-        def record(name: str, fields: dict[str, object]) -> dict[str, object]:
-            return {"recordName": name, "recordVersion": 1, "fields": fields}
+        def record(
+            name: str,
+            fields: dict[str, object],
+            version: int = 1,
+        ) -> dict[str, object]:
+            return {
+                "recordName": name,
+                "recordVersion": version,
+                "fields": fields,
+            }
 
         state = console.ConsoleState()
         state.record_instances = {
@@ -1191,6 +1200,215 @@ class FstlConsoleClientContractTest(unittest.TestCase):
         )
         self.assertEqual(
             0.0, self_support["entities.1.support.closing_speed"]["value"]
+        )
+
+    def test_phase3_tactical_dashboard_derivations_are_local_and_fail_closed(self) -> None:
+        def record(
+            name: str,
+            fields: dict[str, object],
+            version: int = 1,
+        ) -> dict[str, object]:
+            return {
+                "recordName": name,
+                "recordVersion": version,
+                "fields": fields,
+            }
+
+        state = console.ConsoleState()
+        state.record_instances = {
+            "FLIGHT_STATE/entity_id=1": record(
+                "FLIGHT_STATE",
+                {
+                    "entity_id": "1",
+                    "position_world": [0.0, 0.0, 0.0],
+                    "velocity_world": [0.0, 0.0, 0.0],
+                    "orientation_local_to_world": [1.0, 0.0, 0.0, 0.0],
+                },
+            ),
+            "RADAR_STATE/entity_id=1": record(
+                "RADAR_STATE",
+                {
+                    "entity_id": "1",
+                    "selected_range": 1_000.0,
+                    "sensor_current_hits": 50.0,
+                    "sensor_max_hits": 100.0,
+                },
+            ),
+            "RADAR_CONTACTS/entity_id=1/contact_entity_id=101": record(
+                "RADAR_CONTACTS",
+                {
+                    "entity_id": "1",
+                    "contact_entity_id": "101",
+                    "producer_sample_time_us": "900000",
+                    "position_world": [0.0, 0.0, 500.0],
+                    "velocity_world": [0.0, 0.0, -25.0],
+                    "radar_local_position": [0.0, 0.0, 500.0],
+                    "radar_projection_distance": 500.0,
+                },
+                version=2,
+            ),
+            "TARGET_STATE/entity_id=1": record(
+                "TARGET_STATE",
+                {
+                    "entity_id": "1",
+                    "current_target_entity_id": "101",
+                    "exact_hud_distance": 0.0,
+                },
+            ),
+            "WEAPON_STATE/entity_id=1": record(
+                "WEAPON_STATE",
+                {
+                    "entity_id": "1",
+                    "current_secondary_bank_id": 21,
+                    "secondary_banks": [
+                        {"bank_id": 21, "weapon_class_id": 201}
+                    ],
+                },
+            ),
+            "LOCK_STATE/entity_id=1": record(
+                "LOCK_STATE",
+                {
+                    "entity_id": "1",
+                    "locks": [
+                        {
+                            "locked": False,
+                            "target_entity_id": "101",
+                            "time_to_lock_remaining_us": "1000000",
+                        }
+                    ],
+                },
+            ),
+            "THREAT_STATE/entity_id=1": record(
+                "THREAT_STATE",
+                {
+                    "entity_id": "1",
+                    "producer_sample_time_us": "900000",
+                    "incoming_missiles": [
+                        {
+                            "entity_id": "202",
+                            "position_world": [0.0, 0.0, 1_000.0],
+                            "velocity_world": [0.0, 0.0, -100.0],
+                        },
+                        {
+                            "entity_id": "203",
+                            "position_world": [0.0, 0.0, 1_000.0],
+                            "velocity_world": [0.0, 0.0, 100.0],
+                        },
+                    ],
+                },
+            ),
+        }
+        state.manifest_records = {
+            "WEAPON_MANIFEST/weapon_class_id=201": record(
+                "WEAPON_MANIFEST",
+                {
+                    "weapon_class_id": 201,
+                    "lock": {"time_us": "2000000"},
+                },
+            ),
+        }
+
+        def projection() -> dict[str, dict[str, object]]:
+            return console.DashboardProjection(
+                state,
+                at_us=1_000_000,
+                smoothed_offset_us=0,
+                offset_filter_valid=True,
+            ).build()["derived"]
+
+        values = projection()
+        self.assertEqual(
+            [0.0, 0.0, 500.0],
+            values["entities.1.tracks.101.relative_position_local"]["value"],
+        )
+        self.assertEqual(
+            [0.0, 0.0],
+            values["entities.1.tracks.101.scope_position"]["value"],
+        )
+        self.assertTrue(values["entities.1.tracks.101.scope_in_range"]["value"])
+        self.assertEqual(0.0, values["entities.1.tracks.101.bearing_local_rad"]["value"])
+        self.assertEqual(0.0, values["entities.1.tracks.101.elevation_local_rad"]["value"])
+
+        # The standard FSO radar is a directional disc: its centre is the
+        # forward axis, with local right/left and up/down determining the
+        # direction from that centre. Range filters a contact but never moves
+        # its marker radially.
+        track = state.record_instances[
+            "RADAR_CONTACTS/entity_id=1/contact_entity_id=101"
+        ]["fields"]
+        track["radar_local_position"] = [1_000.0, 0.0, 0.0]
+        track["radar_projection_distance"] = 1_000.0
+        right = projection()
+        self.assertEqual(
+            [0.5, 0.0],
+            right["entities.1.tracks.101.scope_position"]["value"],
+        )
+        track["radar_local_position"] = [0.0, 1_000.0, 0.0]
+        above = projection()
+        self.assertEqual(
+            [0.0, -0.5],
+            above["entities.1.tracks.101.scope_position"]["value"],
+        )
+        track["radar_local_position"] = [-500.0, -500.0, 0.0]
+        track["radar_projection_distance"] = math.sqrt(500_000.0)
+        left_below = projection()
+        self.assertLess(
+            left_below["entities.1.tracks.101.scope_position"]["value"][0],
+            0.0,
+        )
+        self.assertGreater(
+            left_below["entities.1.tracks.101.scope_position"]["value"][1],
+            0.0,
+        )
+        track["radar_local_position"] = [10.0, 0.0, -1_000.0]
+        track["radar_projection_distance"] = math.hypot(10.0, 1_000.0)
+        behind = projection()
+        self.assertAlmostEqual(
+            0.9968,
+            behind["entities.1.tracks.101.scope_position"]["value"][0],
+            places=4,
+        )
+        self.assertEqual(
+            0.0,
+            behind["entities.1.tracks.101.scope_position"]["value"][1],
+        )
+        # A newer FLIGHT_STATE pose cannot move a v2 contact: the projection
+        # is atomic inside RADAR_CONTACTS and publication already proves range.
+        state.record_instances["FLIGHT_STATE/entity_id=1"]["fields"][
+            "orientation_local_to_world"
+        ] = [0.0, 0.0, 1.0, 0.0]
+        self.assertEqual(
+            behind["entities.1.tracks.101.scope_position"]["value"],
+            projection()["entities.1.tracks.101.scope_position"]["value"],
+        )
+        self.assertTrue(
+            projection()["entities.1.tracks.101.scope_in_range"]["value"]
+        )
+        track["radar_local_position"] = [0.0, 0.0, 500.0]
+        track["radar_projection_distance"] = 500.0
+
+        self.assertEqual(0.0, values["entities.1.target.distance"]["value"])
+        self.assertEqual(0.5, values["entities.1.locks[0].progress"]["value"])
+        self.assertEqual(1_000.0, values["entities.1.missiles.202.distance"]["value"])
+        self.assertEqual(100.0, values["entities.1.missiles.202.closing_speed"]["value"])
+        self.assertEqual(10.0, values["entities.1.missiles.202.ttc_s"]["value"])
+        self.assertFalse(values["entities.1.missiles.203.ttc_s"]["available"])
+        self.assertEqual(
+            "missile-not-approaching-or-invalid",
+            values["entities.1.missiles.203.ttc_s"]["reason"],
+        )
+
+        target = state.record_instances["TARGET_STATE/entity_id=1"]["fields"]
+        target.pop("exact_hud_distance")
+        self.assertEqual(500.0, projection()["entities.1.target.distance"]["value"])
+
+        weapon = state.record_instances["WEAPON_STATE/entity_id=1"]["fields"]
+        weapon["current_secondary_bank_id"] = 999
+        ambiguous = projection()["entities.1.locks[0].progress"]
+        self.assertFalse(ambiguous["available"])
+        self.assertEqual(
+            "selected-secondary-lock-manifest-unavailable",
+            ambiguous["reason"],
         )
 
     def test_console_tool_exists_and_does_not_import_producer_cpp_bindings(self) -> None:

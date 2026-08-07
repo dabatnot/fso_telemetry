@@ -79,6 +79,20 @@ void TelemetryMetrics::set_current_player_entity_id(std::uint64_t entity_id) noe
 	m_snapshot.current_player_entity_id = entity_id;
 }
 
+std::uint64_t TelemetryMetrics::process_counter(TelemetryMetricCounter counter) const noexcept
+{
+	const auto index = static_cast<std::size_t>(counter);
+	return index < m_snapshot.process_counters.size() ? m_snapshot.process_counters[index] : 0U;
+}
+
+std::uint64_t TelemetryMetrics::phase2_memory_high_water(TelemetryPhase2MemoryScope scope) const noexcept
+{
+	const auto index = static_cast<std::size_t>(scope);
+	return index < m_snapshot.phase2_memory_high_water.size()
+		? m_snapshot.phase2_memory_high_water[index]
+		: 0U;
+}
+
 void TelemetryMetrics::set_session_gauges(std::size_t slot, std::uint64_t state, std::uint64_t reassemblies,
 	std::uint64_t reassembly_bytes, std::uint64_t reliable_items, std::uint64_t snapshot_candidates,
 	std::uint64_t baselines) noexcept

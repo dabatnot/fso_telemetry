@@ -1,5 +1,6 @@
 #include "telemetry/phase2_catalog_projection.h"
 #include "telemetry/phase2_profile_gate.h"
+#include "telemetry/phase3_state_image.h"
 #include "telemetry/protocol/telemetry_protocol_constants.h"
 
 #include <gtest/gtest.h>
@@ -26,9 +27,28 @@ TEST(TelemetryPhase2ProfileGate, CompleteShipMapsToTheFrozenCoverage)
 	EXPECT_EQ(Phase2Profile::CompleteShip, phase2_profile_from_coverage(0x0583ULL));
 }
 
+TEST(TelemetryPhase3ProfileGate, CockpitSensorsMapsToTheFrozenCoverage)
+{
+	EXPECT_EQ(0x07CBULL, phase2_profile_coverage(Phase2Profile::CockpitSensors));
+	EXPECT_EQ(Phase2Profile::CockpitSensors, phase2_profile_from_coverage(0x07CBULL));
+}
+
+TEST(TelemetryPhase3ProfileGate, CockpitSensorsExcludesGlobalEffectsCommunicationAndVideo)
+{
+	const auto coverage =
+		phase2_profile_coverage(Phase2Profile::CockpitSensors);
+	EXPECT_EQ(0U,
+		coverage &
+			(protocol::StateDomainCoverageBitAllEntities |
+			 protocol::StateDomainCoverageBitLowFrequencyEffects));
+	EXPECT_EQ(0U,
+		Phase3StateDerivedEventCoverage &
+			protocol::EventFamilyBitCommunication);
+}
+
 TEST(TelemetryPhase2ProfileGate, IncompleteOrExpandedCoverageDoesNotSelectAProfile)
 {
-	constexpr std::array<std::uint64_t, 8> invalid_coverages{{
+	constexpr std::array<std::uint64_t, 12> invalid_coverages{{
 		0x0000ULL,
 		0x0400ULL,
 		0x0001ULL,
@@ -37,6 +57,10 @@ TEST(TelemetryPhase2ProfileGate, IncompleteOrExpandedCoverageDoesNotSelectAProfi
 		0x0501ULL,
 		0x0581ULL,
 		0x0587ULL,
+		0x078BULL,
+		0x07C3ULL,
+		0x07CAULL,
+		0x07CFULL,
 	}};
 
 	for (const auto coverage : invalid_coverages) {
@@ -51,6 +75,14 @@ TEST(TelemetryPhase2ProfileGate, InvalidCoverageReturnsAnObservableFailClosedRea
 	EXPECT_EQ(Phase2ProfileError::UnsupportedCoverage,
 		validate_phase2_profile_coverage(0x0581ULL, selected));
 	EXPECT_EQ(Phase2Profile::None, selected);
+}
+
+TEST(TelemetryPhase3ProfileGate, ExactCoverageSelectsCockpitSensors)
+{
+	Phase2Profile selected = Phase2Profile::None;
+	EXPECT_EQ(Phase2ProfileError::None,
+		validate_phase2_profile_coverage(0x07CBULL, selected));
+	EXPECT_EQ(Phase2Profile::CockpitSensors, selected);
 }
 
 TEST(TelemetryPhase2ProfileGate, ProfileErrorRegistryIsClosed)
@@ -84,6 +116,37 @@ TEST(TelemetryPhase2ProfileGate, CompleteShipEligibilityIsSoloCockpitNonTrustedO
 		SCOPED_TRACE(static_cast<std::uint8_t>(input.authority_mode));
 		EXPECT_NE(Phase2ProfileError::None,
 			select_phase2_profile(input, Phase2Profile::CompleteShip, selected));
+		EXPECT_EQ(Phase2Profile::None, selected);
+	}
+}
+
+TEST(TelemetryPhase3ProfileGate, CockpitSensorsEligibilityIsSoloCockpitNonTrustedOnly)
+{
+	using telemetry::protocol::AuthorityMode;
+	using telemetry::protocol::VisibilityMode;
+
+	const Phase2ProfileEligibility eligible{
+		AuthorityMode::Solo, VisibilityMode::Cockpit, false, false, false};
+	Phase2Profile selected = Phase2Profile::None;
+	EXPECT_EQ(Phase2ProfileError::None,
+		select_phase2_profile(
+			eligible, Phase2Profile::CockpitSensors, selected));
+	EXPECT_EQ(Phase2Profile::CockpitSensors, selected);
+
+	const std::array<Phase2ProfileEligibility, 6> ineligible{{
+		{AuthorityMode::MultiplayerClient, VisibilityMode::Cockpit, false, false, false},
+		{AuthorityMode::MultiplayerMaster, VisibilityMode::Cockpit, false, false, false},
+		{AuthorityMode::Solo, VisibilityMode::Cockpit, true, false, false},
+		{AuthorityMode::Solo, VisibilityMode::Cockpit, false, true, false},
+		{AuthorityMode::Solo, VisibilityMode::TrustedFullState, false, false, false},
+		{AuthorityMode::Solo, VisibilityMode::Cockpit, false, false, true},
+	}};
+	for (const auto& input : ineligible) {
+		selected = Phase2Profile::CockpitSensors;
+		SCOPED_TRACE(static_cast<std::uint8_t>(input.authority_mode));
+		EXPECT_NE(Phase2ProfileError::None,
+			select_phase2_profile(
+				input, Phase2Profile::CockpitSensors, selected));
 		EXPECT_EQ(Phase2Profile::None, selected);
 	}
 }

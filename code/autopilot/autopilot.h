@@ -82,6 +82,16 @@ extern NavMessage NavMsgs[NP_NUM_MESSAGES];
 extern TIMESTAMP LockAPConv;
 extern SCP_map<int,int> autopilot_wings;
 
+enum class AutopilotAvailability {
+	Available = 0,
+	NoSelection,
+	Gliding,
+	TooClose,
+	Hostiles,
+	Hazard,
+	SupportPresent,
+};
+
 // Cycles through the NavPoint List
 bool Sel_NextNav();
 
@@ -93,6 +103,7 @@ bool Sel_NextNav();
 //        * No asteroids within AutopilotMinAsteroidDistance meters
 //        * Destination > 1,000 meters away
 //        * Support ship not present or is actively leaving
+AutopilotAvailability EvaluateAutopilot(const vec3d* targetPos);
 bool CanAutopilot(const vec3d *targetPos, bool send_msg=false);
 
 // Check if autopilot is allowed at player's current position
