@@ -7873,9 +7873,9 @@
         "Top-level presence bitmap for RecordType 16"
       ],
       "reserved": {
-        "known_mask": 32767,
+        "known_mask": 65535,
         "policy": "reject_nonzero",
-        "reserved_mask": 18446744073709518848
+        "reserved_mask": 18446744073709486080
       },
       "source": {
         "document": "documentation/analysis/specs/0-Contrat-de-protocole/04-modele-de-donnees-v1.md",
@@ -7961,6 +7961,15 @@
             "section": "5.2"
           },
           "value": 16384
+        },
+        {
+          "bit": 15,
+          "name": "HUD_TYPE_LABEL",
+          "source": {
+            "document": "documentation/analysis/specs/3-Ciblage-et-capteurs/04-modele-de-donnees-et-regles-metier.md",
+            "section": "5.2"
+          },
+          "value": 32768
         }
       ],
       "width_bits": 64
@@ -15362,7 +15371,7 @@
       "layout_name": "TARGET_STATE",
       "name": "TARGET_STATE",
       "nested_types": [],
-      "phase3_live_record_version": 2,
+      "phase3_live_record_version": 3,
       "position_kind": "order",
       "scope": "observateur",
       "version": 1,
@@ -16018,6 +16027,354 @@
           "minimum_minor": 1,
           "required_profile": "CockpitSensors",
           "version": 2
+        },
+        {
+          "compatibility": "explicit; v3 adds the conditional HUD target type label",
+          "fields": [
+            {
+              "constraint": "observateur",
+              "name": "entity_id",
+              "nature": "A",
+              "position": "1",
+              "semantics": "clé",
+              "wire": "entity_id"
+            },
+            {
+              "constraint": "bits 0–13",
+              "name": "presence",
+              "nature": "A",
+              "position": "2",
+              "semantics": "si cible nulle, tous les bits doivent être nuls sauf PREVIOUS_TARGET",
+              "wire": "u64"
+            },
+            {
+              "constraint": "monotone",
+              "name": "producer_sample_time_us",
+              "nature": "A",
+              "position": "3",
+              "semantics": "obligatoire",
+              "wire": "sample_time_us"
+            },
+            {
+              "constraint": "0 aucune cible",
+              "name": "current_target_entity_id",
+              "nature": "A",
+              "position": "4",
+              "semantics": "obligatoire",
+              "wire": "u64"
+            },
+            {
+              "constraint": "non nul",
+              "name": "previous_target_entity_id",
+              "nature": "A",
+              "position": "5",
+              "presence_condition": {
+                "bits": [
+                  0
+                ],
+                "selector": "presence"
+              },
+              "semantics": "bit 0",
+              "wire": "entity_id"
+            },
+            {
+              "constraint": "enum fermé",
+              "name": "revealed_object_type",
+              "nature": "A",
+              "position": "6",
+              "presence_condition": {
+                "bits": [
+                  1
+                ],
+                "selector": "presence"
+              },
+              "semantics": "bit 1",
+              "wire": "ObjectType"
+            },
+            {
+              "constraint": "0–255",
+              "name": "revealed_name",
+              "nature": "A",
+              "position": "7",
+              "presence_condition": {
+                "bits": [
+                  1
+                ],
+                "selector": "presence"
+              },
+              "semantics": "bit 1",
+              "wire": "str<255>"
+            },
+            {
+              "constraint": "0 non révélé",
+              "name": "revealed_class_id",
+              "nature": "A",
+              "position": "8",
+              "presence_condition": {
+                "bits": [
+                  1
+                ],
+                "selector": "presence"
+              },
+              "semantics": "bit 1",
+              "wire": "u32"
+            },
+            {
+              "constraint": "[0;65535]",
+              "name": "revealed_team_id",
+              "nature": "A",
+              "position": "9",
+              "presence_condition": {
+                "bits": [
+                  1
+                ],
+                "selector": "presence"
+              },
+              "semantics": "bit 1",
+              "wire": "u32"
+            },
+            {
+              "constraint": "[0;65535]",
+              "name": "revealed_iff_id",
+              "nature": "A",
+              "position": "10",
+              "presence_condition": {
+                "bits": [
+                  1
+                ],
+                "selector": "presence"
+              },
+              "semantics": "bit 1",
+              "wire": "u32"
+            },
+            {
+              "constraint": "max 24 h",
+              "name": "time_on_target_us",
+              "nature": "A",
+              "position": "11",
+              "presence_condition": {
+                "bits": [
+                  2
+                ],
+                "selector": "presence"
+              },
+              "semantics": "bit 2",
+              "wire": "duration_us"
+            },
+            {
+              "constraint": "non nul",
+              "name": "target_subsystem_id",
+              "nature": "A",
+              "position": "12",
+              "presence_condition": {
+                "bits": [
+                  3
+                ],
+                "selector": "presence"
+              },
+              "semantics": "bit 3",
+              "wire": "subsystem_id"
+            },
+            {
+              "constraint": "non nul",
+              "name": "lock_subsystem_id",
+              "nature": "A",
+              "position": "13",
+              "presence_condition": {
+                "bits": [
+                  4
+                ],
+                "selector": "presence"
+              },
+              "semantics": "bit 4",
+              "wire": "subsystem_id"
+            },
+            {
+              "constraint": "position bornée",
+              "name": "last_known_position_world",
+              "nature": "A",
+              "position": "14",
+              "presence_condition": {
+                "bits": [
+                  5
+                ],
+                "selector": "presence"
+              },
+              "semantics": "bit 5, observation furtive",
+              "wire": "vec3f"
+            },
+            {
+              "constraint": "vitesse bornée",
+              "name": "last_known_velocity_world",
+              "nature": "A",
+              "position": "15",
+              "presence_condition": {
+                "bits": [
+                  5
+                ],
+                "selector": "presence"
+              },
+              "semantics": "bit 5",
+              "wire": "vec3f"
+            },
+            {
+              "constraint": "enum fermé",
+              "name": "distance_trend",
+              "nature": "A",
+              "position": "16",
+              "presence_condition": {
+                "bits": [
+                  6
+                ],
+                "selector": "presence"
+              },
+              "semantics": "bit 6, décision affichée du producteur",
+              "wire": "ValueTrend"
+            },
+            {
+              "constraint": "enum fermé",
+              "name": "speed_trend",
+              "nature": "A",
+              "position": "17",
+              "presence_condition": {
+                "bits": [
+                  7
+                ],
+                "selector": "presence"
+              },
+              "semantics": "bit 7",
+              "wire": "ValueTrend"
+            },
+            {
+              "constraint": "0/1",
+              "name": "target_in_cone",
+              "nature": "A",
+              "position": "18",
+              "presence_condition": {
+                "bits": [
+                  8
+                ],
+                "selector": "presence"
+              },
+              "semantics": "bit 8",
+              "wire": "bool8"
+            },
+            {
+              "constraint": "position bornée",
+              "name": "lead_position_world",
+              "nature": "A",
+              "position": "19",
+              "presence_condition": {
+                "bits": [
+                  9
+                ],
+                "selector": "presence"
+              },
+              "semantics": "bit 9, résultat complexe autoritaire",
+              "wire": "vec3f"
+            },
+            {
+              "constraint": "non nul",
+              "name": "lead_bank_id",
+              "nature": "A",
+              "position": "20",
+              "presence_condition": {
+                "bits": [
+                  9
+                ],
+                "selector": "presence"
+              },
+              "semantics": "bit 9",
+              "wire": "bank_id"
+            },
+            {
+              "constraint": "non nul",
+              "name": "current_attacker_entity_id",
+              "nature": "A",
+              "position": "21",
+              "presence_condition": {
+                "bits": [
+                  10
+                ],
+                "selector": "presence"
+              },
+              "semantics": "bit 10",
+              "wire": "entity_id"
+            },
+            {
+              "constraint": "non nul",
+              "name": "dangerous_weapon_entity_id",
+              "nature": "A",
+              "position": "22",
+              "presence_condition": {
+                "bits": [
+                  11
+                ],
+                "selector": "presence"
+              },
+              "semantics": "bit 11",
+              "wire": "entity_id"
+            },
+            {
+              "constraint": "non nul",
+              "name": "nearest_locked_entity_id",
+              "nature": "A",
+              "position": "23",
+              "presence_condition": {
+                "bits": [
+                  12
+                ],
+                "selector": "presence"
+              },
+              "semantics": "bit 12",
+              "wire": "entity_id"
+            },
+            {
+              "constraint": "[0;1,0e12] wu",
+              "name": "exact_hud_distance",
+              "nature": "A",
+              "position": "24",
+              "presence_condition": {
+                "bits": [
+                  13
+                ],
+                "selector": "presence"
+              },
+              "semantics": "bit 13, uniquement si les règles HUD ne sont pas reproductibles ; nom interdit pour une distance géométrique dérivable",
+              "wire": "float32"
+            },
+            {
+              "constraint": "[0;1,0e12] HUD speed units",
+              "name": "exact_hud_speed",
+              "nature": "A",
+              "position": "25",
+              "presence_condition": {
+                "bits": [
+                  14
+                ],
+                "selector": "presence"
+              },
+              "semantics": "bit 14; exact target-box display speed after HUD multiplier",
+              "wire": "float32"
+            },
+            {
+              "constraint": "UTF-8 1..255 octets",
+              "name": "hud_type_label",
+              "nature": "A",
+              "position": "26",
+              "presence_condition": {
+                "bits": [
+                  15
+                ],
+                "selector": "presence"
+              },
+              "semantics": "bit 15; exact Target Box second-line label for non-ship HUD targets",
+              "wire": "utf8-string"
+            }
+          ],
+          "minimum_minor": 1,
+          "required_profile": "CockpitSensors",
+          "version": 3
         }
       ]
     },

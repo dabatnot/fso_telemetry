@@ -16,6 +16,7 @@ import {
   prioritizedContacts,
   targetClassDisplayName,
   targetDisplayName,
+  targetHudTypeLabel,
   targetReferenceInvalid
 } from "./tacticalSemantics";
 import type { DashboardSnapshot, InstrumentDefinition } from "./types";
@@ -240,14 +241,23 @@ describe("tactical display semantics", () => {
     });
   });
 
-  it("marks an unresolved current target invalid only after synchronization", () => {
+  it("keeps a HUD target valid when it deliberately has no radar contact", () => {
     const value = snapshot();
     value.records.RADAR_CONTACTS = value.records.RADAR_CONTACTS.filter(
       (record) => record.contact_entity_id !== "101"
     );
-    expect(targetReferenceInvalid(value)).toBe(true);
+    expect(targetReferenceInvalid(value)).toBe(false);
     value.transport.synchronized = false;
     expect(targetReferenceInvalid(value)).toBe(false);
+  });
+
+  it("uses the v3 HUD type label when a non-ship target has no class manifest", () => {
+    const value = snapshot();
+    value.records.TARGET_STATE[0].revealed_identity = { name: "Harpoon" };
+    value.records.TARGET_STATE[0].hud_type_label = "impact: 4.0 sec";
+    expect(targetClassDisplayName(value)).toBeNull();
+    expect(targetDisplayName(value)).toBe("Harpoon");
+    expect(targetHudTypeLabel(value)).toBe("impact: 4.0 sec");
   });
 
   it("preserves live zero, stale, waiting and ND states", () => {

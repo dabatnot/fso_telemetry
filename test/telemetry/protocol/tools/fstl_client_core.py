@@ -1514,13 +1514,13 @@ class DashboardProjection:
             geometric_distance = track_metrics.get((entity, target_id), {}).get("distance")
             exact_speed = _as_float(target.get("exact_hud_speed"))
             effective_distance = (
-                exact_distance if target_record_version == 2
+                exact_distance if target_record_version >= 2
                 else exact_distance if exact_distance is not None else geometric_distance
             )
             self._add_derived(
                 f"entities.{entity}.target.distance",
                 ("target-state-v2 exact HUD display distance"
-                 if target_record_version == 2 and exact_distance is not None
+                 if target_record_version >= 2 and exact_distance is not None
                  else "exact_hud_distance if present else geometric_track_distance"
                  if exact_distance is not None
                  else "legacy geometric_track_distance"),
@@ -1533,13 +1533,13 @@ class DashboardProjection:
             self._add_derived(
                 f"entities.{entity}.target.hud_speed",
                 ("target-state-v2 exact HUD display speed"
-                 if target_record_version == 2 and exact_speed is not None
+                 if target_record_version >= 2 and exact_speed is not None
                  else "missing-authoritative-target-hud-speed"),
                 {
-                    "available": target_record_version == 2 and exact_speed is not None,
-                    "reason": None if target_record_version == 2 and exact_speed is not None
+                    "available": target_record_version >= 2 and exact_speed is not None,
+                    "reason": None if target_record_version >= 2 and exact_speed is not None
                     else "legacy-target-state-has-no-authoritative-hud-speed",
-                    "value": exact_speed if target_record_version == 2 else None,
+                    "value": exact_speed if target_record_version >= 2 else None,
                 },
             )
 

@@ -337,6 +337,12 @@ ValidationError parse_target(const StateAtom& atom, TargetFacts& facts) noexcept
 	if ((facts.presence & TargetStatePresenceFlagExactHudSpeed) != 0U && !reader.skip(4U)) {
 		return ValidationError::BadRecordLength;
 	}
+	if ((facts.presence & TargetStatePresenceFlagHudTypeLabel) != 0U) {
+		std::string_view ignored_label;
+		if (!reader.read_utf8(255U, ignored_label)) {
+			return ValidationError::BadRecordLength;
+		}
+	}
 	return reader.at_end() ? ValidationError::None : ValidationError::BadRecordLength;
 }
 

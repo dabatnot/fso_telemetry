@@ -3689,12 +3689,18 @@ def build_fstl_v1_1_schema() -> dict[str, object]:
     radar_contacts["phase3_live_record_version"] = 2
 
     target_presence = registries["TargetStatePresence"]
-    target_presence["reserved"]["known_mask"] = 0x7FFF
-    target_presence["reserved"]["reserved_mask"] = 0xFFFFFFFFFFFF8000
+    target_presence["reserved"]["known_mask"] = 0xFFFF
+    target_presence["reserved"]["reserved_mask"] = 0xFFFFFFFFFFFF0000
     target_presence["values"].append({
         "bit": 14,
         "name": "EXACT_HUD_SPEED",
         "value": 0x4000,
+        "source": {"document": p3_doc04_path, "section": "5.2"},
+    })
+    target_presence["values"].append({
+        "bit": 15,
+        "name": "HUD_TYPE_LABEL",
+        "value": 0x8000,
         "source": {"document": p3_doc04_path, "section": "5.2"},
     })
     target_presence["values"].sort(key=lambda item: int(item["value"]))
@@ -3711,6 +3717,16 @@ def build_fstl_v1_1_schema() -> dict[str, object]:
         "semantics": "bit 14; exact target-box display speed after HUD multiplier",
         "wire": "float32",
     })
+    target_v3_fields = json.loads(json.dumps(target_v2_fields))
+    target_v3_fields.append({
+        "constraint": "UTF-8 1..255 octets",
+        "name": "hud_type_label",
+        "nature": "A",
+        "position": "26",
+        "presence_condition": {"bits": [15], "selector": "presence"},
+        "semantics": "bit 15; exact Target Box second-line label for non-ship HUD targets",
+        "wire": "utf8-string",
+    })
     for index, field in enumerate(target_v2_fields, start=1):
         field["position"] = str(index)
     target_state["versions"] = [
@@ -3720,8 +3736,12 @@ def build_fstl_v1_1_schema() -> dict[str, object]:
          "required_profile": "CockpitSensors",
          "compatibility": "explicit; no v1/v2 payload autodetection",
          "fields": target_v2_fields},
+        {"version": 3, "minimum_minor": 1,
+         "required_profile": "CockpitSensors",
+         "compatibility": "explicit; v3 adds the conditional HUD target type label",
+         "fields": target_v3_fields},
     ]
-    target_state["phase3_live_record_version"] = 2
+    target_state["phase3_live_record_version"] = 3
 
     correspondence = schema.get("cpp_correspondence")
     if not isinstance(correspondence, dict):

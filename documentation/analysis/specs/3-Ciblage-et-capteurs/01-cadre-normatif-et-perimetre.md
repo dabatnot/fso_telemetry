@@ -117,7 +117,7 @@ handshake et un nouveau `session_id`.
 
 | ID | Exigence normative |
 |---|---|
-| `P3-REQ-019` | `TARGET_STATE` DOIT reproduire la cible courante et précédente ainsi que chaque groupe conditionnel autoritaire applicable. Le profil live `CockpitSensors` utilise explicitement `TARGET_STATE` v2 pour les valeurs visibles D/S du HUD ; v1 reste une compatibilité de capture. |
+| `P3-REQ-019` | `TARGET_STATE` DOIT reproduire la cible courante et précédente indépendamment de `RADAR_CONTACTS`, pour vaisseau, arme, débris, astéroïde et jump node. Le profil live `CockpitSensors` utilise explicitement v3 pour les valeurs visibles D/S et le libellé HUD conditionnel ; v1/v2 restent des compatibilités de capture. |
 | `P3-REQ-020` | Identité, classe, équipe, IFF et sous-systèmes ciblés DOIVENT être présents seulement lorsqu’ils sont révélés et résolubles; une cible perdue ne conserve que les groupes de dernière observation explicitement autorisés. |
 | `P3-REQ-021` | Le lead publié DOIT être le résultat autoritaire monde associé à une banque valide; distances géométriques, angles, pixels, brackets et progressions restent absents. |
 | `P3-REQ-022` | `LOCK_STATE` DOIT publier la liste complète de 0 à 64 points de lock, avec absence explicite de tentative, IDs cohérents, état locked, cône, position monde et durée restante bornée. |
@@ -141,7 +141,7 @@ handshake et un nouveau `session_id`.
 | `P3-REQ-030` | Phase, divulgation, temps et validités de scan DOIVENT suivre la décision gameplay; `cargo_text` est présent si et seulement si `disclosure=REVEALED`, et `COMPLETED+HIDDEN` reste valide. |
 | `P3-REQ-031` | `NAVIGATION_STATE` DOIT contenir la liste complète et ordonnée des navpoints et waypoints autorisés, leurs IDs stables, la destination courante, la route et la décision d’autopilote. |
 | `P3-REQ-032` | L’état et le refus d’autopilote DOIVENT être cohérents avec le mode de contrôle hérité sans dupliquer les axes ou modes de vol de `CONTROL_STATE`; aucune commande distante n’est créée. |
-| `P3-REQ-033` | Distances, relèvements, vitesses relatives, TTC, temps d’impact/interception, âge de piste, progressions et ETA DOIVENT rester dérivés côté client à partir des sources canoniques. Les lectures D/S visibles du HUD cible sont l’exception : `TARGET_STATE` v2 les capture autoritairement. La coordonnée du radar standard est dérivée exclusivement des entrées autoritaires `RADAR_CONTACTS` v2 en live ; la reconstruction depuis `FLIGHT_STATE` est une compatibilité v1 explicite seulement. |
+| `P3-REQ-033` | Distances, relèvements, vitesses relatives, TTC, temps d’impact/interception, âge de piste, progressions et ETA DOIVENT rester dérivés côté client à partir des sources canoniques. Les lectures D/S visibles du HUD cible sont l’exception : `TARGET_STATE` v3 les capture autoritairement. La coordonnée du radar standard est dérivée exclusivement des entrées autoritaires `RADAR_CONTACTS` v2 en live ; la reconstruction depuis `FLIGHT_STATE` est une compatibilité v1 explicite seulement. |
 | `P3-REQ-034` | Tout flottant publié DOIT être fini et canonisé pour `-0`; enums, IDs, temps, listes et références hors borne provoquent un échec fermé observable, jamais un clamp ou une troncature non autorisés. |
 
 ### 5.6 Réplication, ressources et exploitation

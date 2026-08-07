@@ -50,7 +50,9 @@ bool structurally_valid_atom(const StateAtom& atom, std::size_t& encoded_size) n
 {
 	const auto supported_record_version =
 		atom.record_version == 1U ||
-		(atom.record_version == 2U &&
+		((atom.record_version == 2U ||
+		  (atom.record_version == 3U &&
+		   atom.key.record_type == static_cast<std::uint16_t>(RecordType::TargetState))) &&
 		 (atom.key.record_type == static_cast<std::uint16_t>(RecordType::RadarContacts) ||
 		  atom.key.record_type == static_cast<std::uint16_t>(RecordType::TargetState)));
 	if (atom.key.record_type == 0 || !supported_record_version ||
@@ -73,7 +75,9 @@ bool structurally_valid_delete_atom(const StateAtom& atom) noexcept
 {
 	const auto supported_record_version =
 		atom.record_version == 1U ||
-		(atom.record_version == 2U &&
+		((atom.record_version == 2U ||
+		  (atom.record_version == 3U &&
+		   atom.key.record_type == static_cast<std::uint16_t>(RecordType::TargetState))) &&
 		 (atom.key.record_type == static_cast<std::uint16_t>(RecordType::RadarContacts) ||
 		  atom.key.record_type == static_cast<std::uint16_t>(RecordType::TargetState)));
 	return atom.key.record_type != 0 && supported_record_version &&

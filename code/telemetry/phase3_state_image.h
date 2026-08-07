@@ -64,6 +64,7 @@ struct Phase3TargetState {
 	std::uint32_t revealed_class_id = 0U;
 	std::uint32_t revealed_team_id = 0U;
 	std::uint32_t revealed_iff_id = 0U;
+	Phase3OwnedString<255U> hud_type_label;
 	std::uint64_t time_on_target_us = 0U;
 	std::uint32_t target_subsystem_id = 0U;
 	std::uint32_t lock_subsystem_id = 0U;

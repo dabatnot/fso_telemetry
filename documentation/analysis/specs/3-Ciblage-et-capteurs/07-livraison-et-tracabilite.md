@@ -28,7 +28,7 @@ des dépendances et ne sont pas recopiées.
 | `P3-REQ-016` | Une piste ne matérialise pas implicitement l’état complet d’une entité. | `telemetry_phase3_visibility_tests` | — |
 | `P3-REQ-017` | Toute classe révélée est installée avant référence et aucune classe cachée n’est cataloguée. | `telemetry_phase3_manifest_tests` | — |
 | `P3-REQ-018` | Nouvelle définition : manifeste puis keyframe; changement de piste seul : aucun manifeste. | `telemetry_phase3_manifest_tests` | — |
-| `P3-REQ-019` | `TARGET_STATE` v2 reproduit cible, groupes conditionnels et lectures HUD D/S exactes ; v1 reste décodable. | `telemetry_phase3_targeting_tests` | — |
+| `P3-REQ-019` | `TARGET_STATE` v3 reproduit les cibles Target Box avec ou sans blip radar, groupes conditionnels, D/S et libellé HUD ; v1/v2 restent décodables. | `telemetry_phase3_targeting_tests` | — |
 | `P3-REQ-020` | Identité et sous-systèmes ciblés ne sont présents que s’ils sont révélés et résolubles. | `telemetry_phase3_targeting_tests` | — |
 | `P3-REQ-021` | Le lead autoritaire est associé à une banque valide, sans données HUD dérivées. | `telemetry_phase3_targeting_tests` | — |
 | `P3-REQ-022` | `LOCK_STATE` contient la liste complète de 0 à 64 locks avec absence de tentative explicite. | `telemetry_phase3_lock_tests` | — |

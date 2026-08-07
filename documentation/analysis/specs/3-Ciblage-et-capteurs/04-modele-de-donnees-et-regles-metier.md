@@ -101,7 +101,8 @@ pas une promesse d’état complet.
 Les relations suivantes sont obligatoires :
 
 - un `TARGET_STATE.current_target_entity_id` égal à une piste radar présente
-  utilise le même ID ;
+  utilise le même ID ; son absence de `RADAR_CONTACTS` reste légitime pour une
+  cible prise en charge par le Target Box mais non projetée par le radar ;
 - un lock vers cette cible utilise ce même ID ;
 - `ContactFlags.CURRENT_TARGET` est posé sur exactement le contact cible
   lorsqu’il existe ;
@@ -119,9 +120,10 @@ autorise une dernière observation ou une connaissance de menace distincte.
 ### 5.0 Version filaire
 
 Le layout v1 reste lisible pour les captures existantes. Le profil live
-`CockpitSensors` émet `record_version=2` sous FSTL 1.1. La variante v2 ajoute
-après `EXACT_HUD_DISTANCE` le groupe `EXACT_HUD_SPEED`; la variante est choisie
-uniquement par `record_version`, jamais par la longueur du payload.
+`CockpitSensors` émet `record_version=3` sous FSTL 1.1. La variante v2 ajoute
+après `EXACT_HUD_DISTANCE` le groupe `EXACT_HUD_SPEED`; v3 ajoute ensuite
+`HUD_TYPE_LABEL`. La variante est choisie uniquement par `record_version`,
+jamais par la longueur du payload. Les captures v1/v2 restent décodables.
 
 ### 5.1 Champs obligatoires
 
@@ -144,6 +146,7 @@ cible. `producer_sample_time_us` est l’instant de la décision de ciblage.
 | `ATTACKER`, `DANGEROUS_WEAPON`, `NEAREST_LOCKED` | présents seulement si la référence est autorisée et résoluble dans l’espace public |
 | `EXACT_HUD_DISTANCE` | valeur D visible : `Player_ai->current_target_distance` après multiplicateur HUD |
 | `EXACT_HUD_SPEED` | v2 seulement ; valeur S visible calculée comme le target box, y compris le fallback docké et le multiplicateur HUD |
+| `HUD_TYPE_LABEL` | v3 seulement ; seconde ligne exacte du Target Box pour une arme, un débris, un astéroïde ou un jump node ; aucune classe de vaisseau n’est inventée |
 
 Si la cible vaut zéro, tous les groupes sont absents sauf `PREVIOUS_TARGET`,
 comme l’impose FSTL.

@@ -1248,8 +1248,13 @@ ValidationError validate_target_state(std::uint8_t record_version, ByteView payl
 	}
 	float speed = 0.0F;
 	if ((presence & TargetStatePresenceFlagExactHudSpeed) != 0) {
-		if (record_version != 2U) return ValidationError::UnsupportedRecordVersion;
+		if (record_version < 2U) return ValidationError::UnsupportedRecordVersion;
 		if (!reader.f32(speed, 0.0F, QuantityLimit)) return reader.error();
+	}
+	if ((presence & TargetStatePresenceFlagHudTypeLabel) != 0) {
+		if (record_version != 3U) return ValidationError::UnsupportedRecordVersion;
+		std::string_view label;
+		if (!reader.string(1U, 255U, label)) return reader.error();
 	}
 	return reader.finish();
 }

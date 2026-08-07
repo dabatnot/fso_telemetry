@@ -10,6 +10,7 @@ import {
   targetClassDisplayName,
   targetContact,
   targetDisplayName,
+  targetHudTypeLabel,
   targetRecordVersion,
   targetReferenceInvalid,
   targetState,
@@ -388,6 +389,7 @@ function TargetPanel({
   const hudSpeed = hudSpeedItem?.available ? finite(hudSpeedItem.value) : null;
   const targetVersion = targetRecordVersion(snapshot);
   const targetClass = targetClassDisplayName(snapshot);
+  const targetHudLabel = targetHudTypeLabel(snapshot);
   const targetId = String(target?.current_target_entity_id ?? "0");
   const invalid = targetReferenceInvalid(snapshot);
   const targetSubsystem = subsystemNameForTarget(snapshot, target?.target_subsystem_id);
@@ -415,11 +417,11 @@ function TargetPanel({
         >
           <span className="target-kicker">ENTITÉ {targetId}</span>
           <strong>{invalid ? "ERR · RÉFÉRENCE INCONNUE" : targetDisplayName(snapshot)}</strong>
-          {targetClass !== null && <span className="target-class">{targetClass}</span>}
+          {(targetClass ?? targetHudLabel) !== null && <span className="target-class">{targetClass ?? targetHudLabel}</span>}
           <div className="target-hud-readout" aria-label="Informations HUD FSO">
             <span>D : {formatNumber(distance)}{hudTrendSuffix(target?.distance_trend)}</span>
             <span>S : {formatNumber(hudSpeed)}{hudTrendSuffix(target?.speed_trend, (hudSpeed ?? 0) <= 1)}</span>
-            {targetVersion !== 2 && <i>COMPAT. CAPTURE V1</i>}
+            {targetVersion !== null && targetVersion < 2 && <i>COMPAT. CAPTURE V1</i>}
           </div>
           <div className="target-primary-metrics">
             <div><span>DISTANCE</span><strong>{formatNumber(distance)}</strong></div>

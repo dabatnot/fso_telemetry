@@ -295,6 +295,12 @@ export function targetClassDisplayName(snapshot: DashboardSnapshot | null): stri
   return typeof name === "string" && name.trim() ? name.trim() : null;
 }
 
+/** The second Target Box line for HUD-only non-ship targets (TARGET_STATE v3). */
+export function targetHudTypeLabel(snapshot: DashboardSnapshot | null): string | null {
+  const label = targetState(snapshot)?.hud_type_label;
+  return typeof label === "string" && label.trim() ? label.trim() : null;
+}
+
 export function targetRecordVersion(snapshot: DashboardSnapshot | null): number | null {
   const target = targetState(snapshot);
   if (!target) return null;
@@ -310,10 +316,9 @@ export function targetRecordVersion(snapshot: DashboardSnapshot | null): number 
 }
 
 export function targetReferenceInvalid(snapshot: DashboardSnapshot | null): boolean {
-  const target = targetState(snapshot);
-  if (!target || !snapshot?.transport.synchronized) return false;
-  const targetId = String(target.current_target_entity_id ?? "0");
-  return targetId !== "0" && targetContact(snapshot) === null;
+  // TARGET_STATE v3 is an independent projection of the FSO Target Box.  A
+  // selected object can intentionally have no RADAR_CONTACTS entry.
+  return false;
 }
 
 export function lockViews(snapshot: DashboardSnapshot | null): LockView[] {

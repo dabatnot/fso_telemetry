@@ -130,6 +130,18 @@ bool cockpit_track_visible(object& source,
 	return radar_project_contact(&source, projection);
 }
 
+const char* target_box_type_label(int type) noexcept
+{
+	switch (type) {
+	case OBJ_SHIP: return "SHIP";
+	case OBJ_WEAPON: return "WEAPON";
+	case OBJ_DEBRIS: return "DEBRIS";
+	case OBJ_ASTEROID: return "ASTEROID";
+	case OBJ_JUMP_NODE: return "JUMP NODE";
+	default: return nullptr;
+	}
+}
+
 object* current_player_target() noexcept
 {
 	if (Player_ai == nullptr || Player_ai->target_objnum < 0 ||
@@ -473,13 +485,12 @@ Phase3EngineCollectStatus collect_target_and_locks(
 	}
 	if (auto* current_target = current_player_target()) {
 		auto& target = *current_target;
-		RadarContactProjection public_target;
-		// A target selection may outlive the public cockpit track.  Omit it
-		// atomically instead of allocating an identity for a hidden object.
-		if (cockpit_track_visible(target, public_target)) {
-		const auto identity = resolve_object(identities, target);
-		if (!resolved(identity)) return Phase3EngineCollectStatus::IdentityFailure;
-		output.target.current_target_entity_id = identity.entity_id;
+		// TARGET_STATE mirrors the Target Box, not the radar.  A selected HUD
+		// object may legitimately have no radar blip.
+		if (target_box_type_label(target.type) != nullptr) {
+			const auto identity = resolve_object(identities, target);
+			if (!resolved(identity)) return Phase3EngineCollectStatus::IdentityFailure;
+			output.target.current_target_entity_id = identity.entity_id;
 		output.target.presence |=
 			protocol::TargetStatePresenceFlagDistanceTrend |
 			protocol::TargetStatePresenceFlagSpeedTrend;
@@ -547,7 +558,6 @@ Phase3EngineCollectStatus collect_target_and_locks(
 		// exact HUD-authoritative result with an installed primary-bank ID.
 		(void)collect_default_primary_lead(target, installed_manifest,
 			output.target);
-		if (public_target.visibility == VISIBLE) {
 			if (target.type == OBJ_SHIP &&
 				target.instance >= 0 &&
 				target.instance < MAX_SHIPS) {
@@ -581,6 +591,15 @@ Phase3EngineCollectStatus collect_target_and_locks(
 					output.target.revealed_team_id = 0U;
 					output.target.revealed_iff_id = installed->iff_id;
 				}
+			} else {
+				const auto* label = target_box_type_label(target.type);
+				if (label != nullptr &&
+					output.target.revealed_name.assign(label, std::strlen(label)) &&
+					output.target.hud_type_label.assign(label, std::strlen(label))) {
+					output.target.presence |=
+						protocol::TargetStatePresenceFlagRevealedIdentity |
+						protocol::TargetStatePresenceFlagHudTypeLabel;
+					output.target.revealed_object_type = object_type(target.type);
 				}
 			}
 		// Subsystem IDs are an identity disclosure.  A distorted track, or a
@@ -589,27 +608,29 @@ Phase3EngineCollectStatus collect_target_and_locks(
 		const auto identity_revealed =
 			(output.target.presence &
 				protocol::TargetStatePresenceFlagRevealedIdentity) != 0U;
-		if (identity_revealed && Player_ai->targeted_subsys != nullptr) {
+		if (identity_revealed && target.type == OBJ_SHIP &&
+			Player_ai->targeted_subsys != nullptr) {
 			const auto subsystem_id = installed_subsystem_id(
 				installed_manifest, target,
 				Player_ai->targeted_subsys);
-			if (subsystem_id == 0U)
-				return Phase3EngineCollectStatus::InvalidSource;
-			output.target.presence |=
-				protocol::TargetStatePresenceFlagTargetSubsystem;
-			output.target.target_subsystem_id = subsystem_id;
+			if (subsystem_id != 0U) {
+				output.target.presence |=
+					protocol::TargetStatePresenceFlagTargetSubsystem;
+				output.target.target_subsystem_id = subsystem_id;
+			}
 		}
-		if (identity_revealed && Player->locking_subsys != nullptr &&
+		if (identity_revealed && target.type == OBJ_SHIP &&
+			Player->locking_subsys != nullptr &&
 			Player->locking_subsys_parent ==
 				Player_ai->target_objnum) {
 			const auto subsystem_id = installed_subsystem_id(
 				installed_manifest, target,
 				Player->locking_subsys);
-			if (subsystem_id == 0U)
-				return Phase3EngineCollectStatus::InvalidSource;
-			output.target.presence |=
-				protocol::TargetStatePresenceFlagLockSubsystem;
-			output.target.lock_subsystem_id = subsystem_id;
+			if (subsystem_id != 0U) {
+				output.target.presence |=
+					protocol::TargetStatePresenceFlagLockSubsystem;
+				output.target.lock_subsystem_id = subsystem_id;
+			}
 		}
 		}
 	}
@@ -770,6 +791,13 @@ Phase3EngineCollectStatus collect_radar(
 	for (auto* source = GET_FIRST(&obj_used_list);
 		 source != END_OF_LIST(&obj_used_list);
 		 source = GET_NEXT(source)) {
+		// The used-object list can retain an object during its spawn/despawn
+		// transition.  It has no stable public signature at that point, so it
+		// cannot receive a Phase 3 entity ID.  Skip that transient entry rather
+		// than failing the entire radar snapshot and stopping telemetry.
+		if (!valid_live_object(source)) {
+			continue;
+		}
 		const auto type = object_type(source->type);
 		if (type != protocol::ObjectType::Ship &&
 			type != protocol::ObjectType::Weapon &&
@@ -920,14 +948,17 @@ Phase3EngineCollectStatus collect_threat(
 		 item != END_OF_LIST(&Missile_obj_list);
 		 item = GET_NEXT(item)) {
 		if (item->objnum < 0 || item->objnum >= MAX_OBJECTS) {
-			return Phase3EngineCollectStatus::InvalidSource;
+			// Missile list nodes can straddle object allocation/release.  They do
+			// not describe a publishable threat until the referenced object is
+			// coherent, so omit that node for this sample.
+			continue;
 		}
 		auto& missile_object = Objects[item->objnum];
 		if (!valid_live_object(&missile_object) ||
 			missile_object.type != OBJ_WEAPON ||
 			missile_object.instance < 0 ||
 			missile_object.instance >= MAX_WEAPONS) {
-			return Phase3EngineCollectStatus::InvalidSource;
+			continue;
 		}
 		auto& missile = Weapons[missile_object.instance];
 		if (!is_incoming(missile_object, missile)) continue;
@@ -938,12 +969,17 @@ Phase3EngineCollectStatus collect_threat(
 	for (auto* item = GET_FIRST(&Missile_obj_list);
 		 item != END_OF_LIST(&Missile_obj_list);
 		 item = GET_NEXT(item)) {
+		if (item->objnum < 0 || item->objnum >= MAX_OBJECTS) continue;
 		auto& missile_object = Objects[item->objnum];
+		if (!valid_live_object(&missile_object) ||
+			missile_object.type != OBJ_WEAPON ||
+			missile_object.instance < 0 ||
+			missile_object.instance >= MAX_WEAPONS) continue;
 		auto& missile = Weapons[missile_object.instance];
 		if (!is_incoming(missile_object, missile)) continue;
 		if (missile.weapon_info_index < 0 ||
 			missile.weapon_info_index >= weapon_info_size()) {
-			return Phase3EngineCollectStatus::InvalidSource;
+			continue;
 		}
 		const auto weapon_class_id = installed_weapon_class_id(
 			installed_manifest, missile.weapon_info_index);
@@ -985,7 +1021,10 @@ Phase3EngineCollectStatus collect_threat(
 		if (convert_fso_orientation_to_local_to_world(
 				basis, quaternion) !=
 			QuaternionConversionStatus::Converted) {
-			return Phase3EngineCollectStatus::InvalidSource;
+			// A partially initialized orientation is not an incoming-missile
+			// observation.  Withdraw only this optional item for the tick.
+			--output.threat.incoming_missile_count;
+			continue;
 		}
 		destination.orientation_local_to_world = {
 			quaternion.w, quaternion.x, quaternion.y, quaternion.z};
@@ -1244,18 +1283,16 @@ Phase3EngineCollectStatus discover_phase3_catalog_dependencies(
 		keys[count++] = key;
 		return true;
 	};
-	// TARGET_STATE has an independently disclosed identity group.  Unlike a
-	// radar blip, a fully visible current target is therefore allowed to make
-	// its ship class a manifest dependency.  Selecting it here ensures the
-	// next manifest is installed before collect_target_and_locks can publish
-	// that group's class ID.
+	// TARGET_STATE is independent of radar visibility.  This is deliberately
+	// the Target Box's live-object gate, not radar_project_contact(). Selecting
+	// a ship here ensures the next manifest is installed before
+	// collect_target_and_locks can publish its class identity, even when that
+	// ship has no radar blip.
 	if (auto* current_target = current_player_target()) {
 		auto& target = *current_target;
-		RadarContactProjection projected;
 		if (target.type == OBJ_SHIP &&
 			target.instance >= 0 && target.instance < MAX_SHIPS &&
-			radar_project_contact(&target, projected) &&
-			projected.visibility == VISIBLE) {
+			valid_live_object(&target)) {
 			const auto class_index = Ships[target.instance].ship_info_index;
 			if (class_index < 0 ||
 				class_index >= static_cast<int>(Ship_info.size()) ||
@@ -1271,35 +1308,35 @@ Phase3EngineCollectStatus discover_phase3_catalog_dependencies(
 	// classes referenced by independently revealed target/cargo data below.
 	const auto& cargo = observation.player_cargo_scan;
 	if ((cargo.presence & protocol::CargoScanStatePresenceFlagSubsystem) != 0U) {
-		if ((cargo.presence & protocol::CargoScanStatePresenceFlagTarget) == 0U ||
-			Player_ai->target_objnum < 0 ||
-			Player_ai->target_objnum >= MAX_OBJECTS) {
-			return Phase3EngineCollectStatus::InvalidSource;
-		}
-		const auto& target = Objects[Player_ai->target_objnum];
-		if (!valid_live_object(&target) || target.type != OBJ_SHIP ||
-			target.instance < 0 || target.instance >= MAX_SHIPS ||
-			static_cast<std::uint32_t>(target.signature) !=
-				cargo.target_capture_key.value) {
-			return Phase3EngineCollectStatus::InvalidSource;
-		}
-		const auto class_index = Ships[target.instance].ship_info_index;
-		if (class_index < 0 || class_index >= static_cast<int>(Ship_info.size()) ||
-			!append(output.ship_class_source_keys, output.ship_class_count,
-				static_cast<std::uint32_t>(class_index) + 1U)) {
-			return Phase3EngineCollectStatus::SourceLimitExceeded;
+		if ((cargo.presence & protocol::CargoScanStatePresenceFlagTarget) != 0U &&
+			Player_ai->target_objnum >= 0 &&
+			Player_ai->target_objnum < MAX_OBJECTS) {
+			const auto& target = Objects[Player_ai->target_objnum];
+			if (valid_live_object(&target) && target.type == OBJ_SHIP &&
+				target.instance >= 0 && target.instance < MAX_SHIPS &&
+				static_cast<std::uint32_t>(target.signature) ==
+					cargo.target_capture_key.value) {
+				const auto class_index = Ships[target.instance].ship_info_index;
+				if (class_index < 0 ||
+					class_index >= static_cast<int>(Ship_info.size()) ||
+					!append(output.ship_class_source_keys,
+						output.ship_class_count,
+						static_cast<std::uint32_t>(class_index) + 1U)) {
+					return Phase3EngineCollectStatus::SourceLimitExceeded;
+				}
+			}
 		}
 	}
 	for (auto* item = GET_FIRST(&Missile_obj_list);
 		 item != END_OF_LIST(&Missile_obj_list);
 		 item = GET_NEXT(item)) {
 		if (item->objnum < 0 || item->objnum >= MAX_OBJECTS)
-			return Phase3EngineCollectStatus::InvalidSource;
+			continue;
 		const auto& missile_object = Objects[item->objnum];
 		if (!valid_live_object(&missile_object) ||
 			missile_object.type != OBJ_WEAPON ||
 			missile_object.instance < 0 || missile_object.instance >= MAX_WEAPONS)
-			return Phase3EngineCollectStatus::InvalidSource;
+			continue;
 		const auto& missile = Weapons[missile_object.instance];
 		const auto incoming = missile.homing_object == Player_obj ||
 			(Player_ai->danger_weapon_objnum == missile.objnum &&
@@ -1308,7 +1345,7 @@ Phase3EngineCollectStatus discover_phase3_catalog_dependencies(
 		if (!incoming) continue;
 		if (missile.weapon_info_index < 0 ||
 			missile.weapon_info_index >= weapon_info_size())
-			return Phase3EngineCollectStatus::InvalidSource;
+			continue;
 		if (!append(output.weapon_source_keys, output.weapon_count,
 			static_cast<std::uint32_t>(missile.weapon_info_index) + 1U))
 			return Phase3EngineCollectStatus::SourceLimitExceeded;

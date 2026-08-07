@@ -226,13 +226,16 @@ bool make_target(const Phase3Projection& source, StateAtom& atom)
 		((target.presence & protocol::TargetStatePresenceFlagExactHudDistance) != 0U &&
 			!writer.write_f32(target.exact_hud_distance)) ||
 		((target.presence & protocol::TargetStatePresenceFlagExactHudSpeed) != 0U &&
-			!writer.write_f32(target.exact_hud_speed)))
+			!writer.write_f32(target.exact_hud_speed)) ||
+		((target.presence & protocol::TargetStatePresenceFlagHudTypeLabel) != 0U &&
+			!writer.write_utf8({target.hud_type_label.bytes.data(),
+				target.hud_type_label.size}, 255U)))
 		return false;
 	if (!set_entity_key(atom, RecordType::TargetState, source.player_entity_id) ||
 		!assign_payload(writer, atom)) {
 		return false;
 	}
-	atom.record_version = 2U;
+	atom.record_version = 3U;
 	return validate_encoded(atom);
 }
 
