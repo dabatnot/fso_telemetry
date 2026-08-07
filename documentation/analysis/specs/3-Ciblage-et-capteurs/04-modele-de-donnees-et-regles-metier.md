@@ -96,6 +96,10 @@ Un même espace `entity_id` couvre :
 Une piste seule ne crée pas de lifecycle. Son ID reste une clé publique stable,
 pas une promesse d’état complet.
 
+Une piste en cours de spawn dont `radar_project_contact()` ne fournit pas encore
+une projection finie est omise pour ce tick. Elle est réévaluée au tick suivant
+et ne ferme jamais la capture complète.
+
 ### 4.2 Cohérence
 
 Les relations suivantes sont obligatoires :

@@ -858,7 +858,13 @@ Phase3EngineCollectStatus collect_radar(
 			!std::isfinite(radar_local.xyz.y) ||
 			!std::isfinite(radar_local.xyz.z) ||
 			!std::isfinite(projected.distance) || projected.distance < 0.0F) {
-			return Phase3EngineCollectStatus::InvalidSource;
+			// radar_project_contact() may observe a newly spawned object during
+			// the tick in which its pose/distance is still being initialized.
+			// That is not a permanent capture invariant: withdraw this contact
+			// atomically and retry it on the next systems sample.
+			--output.contact_count;
+			reconstruct_in_place(contact);
+			continue;
 		}
 		copy_position(radar_local, contact.radar_local_position);
 		contact.radar_projection_distance = projected.distance;
