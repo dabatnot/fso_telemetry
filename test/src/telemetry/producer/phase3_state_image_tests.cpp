@@ -725,7 +725,7 @@ TEST(TelemetryPhase3StateImage, CanonicalizesNegativeZeroBeforePublication)
 }
 
 TEST(TelemetryPhase3StateImage,
-	RejectsServerDerivedExactHudDistanceBeforePublication)
+	PublishesExactHudTargetReadoutInExplicitVersionTwo)
 {
 	constexpr std::uint64_t Player = 42U;
 	auto base = make_base(Player);
@@ -738,12 +738,20 @@ TEST(TelemetryPhase3StateImage,
 			base, *projection, image));
 	const auto published_count = image.records().size();
 	projection->target.presence =
-		telemetry::protocol::TargetStatePresenceFlagExactHudDistance;
+		telemetry::protocol::TargetStatePresenceFlagExactHudDistance |
+		telemetry::protocol::TargetStatePresenceFlagExactHudSpeed;
+	projection->target.current_target_entity_id = 100U;
 	projection->target.exact_hud_distance = 500.0F;
-	EXPECT_EQ(telemetry::Phase3StateImageBuildStatus::EncodingFailed,
+	projection->target.exact_hud_speed = 92.0F;
+	ASSERT_EQ(telemetry::Phase3StateImageBuildStatus::Created,
 		telemetry::build_phase3_cockpit_sensor_state_image(
 			base, *projection, image));
+	const auto* target = find(image, RecordType::TargetState);
+	ASSERT_NE(nullptr, target);
+	EXPECT_EQ(2U, target->record_version);
 	EXPECT_EQ(published_count, image.records().size());
+	EXPECT_FLOAT_EQ(500.0F, read_f32(target->value, 32U));
+	EXPECT_FLOAT_EQ(92.0F, read_f32(target->value, 36U));
 }
 
 TEST(TelemetryPhase3StateImage, PlayerAbsentRetainsOnlyGlobalSingletons)

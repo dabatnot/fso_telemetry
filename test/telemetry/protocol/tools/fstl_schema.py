@@ -3688,6 +3688,41 @@ def build_fstl_v1_1_schema() -> dict[str, object]:
     ]
     radar_contacts["phase3_live_record_version"] = 2
 
+    target_presence = registries["TargetStatePresence"]
+    target_presence["reserved"]["known_mask"] = 0x7FFF
+    target_presence["reserved"]["reserved_mask"] = 0xFFFFFFFFFFFF8000
+    target_presence["values"].append({
+        "bit": 14,
+        "name": "EXACT_HUD_SPEED",
+        "value": 0x4000,
+        "source": {"document": p3_doc04_path, "section": "5.2"},
+    })
+    target_presence["values"].sort(key=lambda item: int(item["value"]))
+
+    target_state = next(record for record in records if int(record["id"]) == 16)
+    target_v1_fields = json.loads(json.dumps(target_state["fields"]))
+    target_v2_fields = json.loads(json.dumps(target_v1_fields))
+    target_v2_fields.append({
+        "constraint": "[0;1,0e12] HUD speed units",
+        "name": "exact_hud_speed",
+        "nature": "A",
+        "position": "25",
+        "presence_condition": {"bits": [14], "selector": "presence"},
+        "semantics": "bit 14; exact target-box display speed after HUD multiplier",
+        "wire": "float32",
+    })
+    for index, field in enumerate(target_v2_fields, start=1):
+        field["position"] = str(index)
+    target_state["versions"] = [
+        {"version": 1, "compatibility": "legacy FSTL 1.1 capture layout",
+         "fields": target_v1_fields},
+        {"version": 2, "minimum_minor": 1,
+         "required_profile": "CockpitSensors",
+         "compatibility": "explicit; no v1/v2 payload autodetection",
+         "fields": target_v2_fields},
+    ]
+    target_state["phase3_live_record_version"] = 2
+
     correspondence = schema.get("cpp_correspondence")
     if not isinstance(correspondence, dict):
         raise SchemaError("base schema C++ correspondence is missing")

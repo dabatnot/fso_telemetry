@@ -14,6 +14,7 @@ import {
   lockViews,
   missileViews,
   prioritizedContacts,
+  targetClassDisplayName,
   targetDisplayName,
   targetReferenceInvalid
 } from "./tacticalSemantics";
@@ -135,6 +136,10 @@ function snapshot(): DashboardSnapshot {
     manifest: {
       id: 4,
       records: {
+        "CLASS_MANIFEST/class_id=3": {
+          recordName: "CLASS_MANIFEST",
+          fields: { class_id: 3, internal_name: "GTF Myrmidon" }
+        },
         "WEAPON_MANIFEST/weapon_class_id=9": {
           recordName: "WEAPON_MANIFEST",
           fields: {
@@ -198,6 +203,15 @@ describe("tactical display semantics", () => {
     const view = contactViews(snapshot()).find((contact) => contact.id === "101");
     expect(view?.name).toBe("CONTACT 101");
     expect(targetDisplayName(snapshot())).toBe("CONTACT 101");
+  });
+
+  it("resolves a revealed target class from the CLASS_MANIFEST internal name", () => {
+    const value = snapshot();
+    value.records.TARGET_STATE[0].revealed_identity = {
+      name: "Alpha 2", class_id: 3
+    };
+    expect(targetDisplayName(value)).toBe("Alpha 2");
+    expect(targetClassDisplayName(value)).toBe("GTF Myrmidon");
   });
 
   it("keeps authoritative zero distance and prioritizes target and threat contacts", () => {

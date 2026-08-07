@@ -1402,6 +1402,21 @@ class FstlConsoleClientContractTest(unittest.TestCase):
         target.pop("exact_hud_distance")
         self.assertEqual(500.0, projection()["entities.1.target.distance"]["value"])
 
+        target_envelope = state.record_instances["TARGET_STATE/entity_id=1"]
+        target_envelope["recordVersion"] = 2
+        target["exact_hud_distance"] = 809.0
+        target["exact_hud_speed"] = 92.0
+        hud = projection()
+        self.assertEqual(809.0, hud["entities.1.target.distance"]["value"])
+        self.assertEqual(92.0, hud["entities.1.target.hud_speed"]["value"])
+        self.assertEqual(
+            "p3.dashboard.target-distance.v2",
+            next(item["formulaId"] for item in console.DashboardProjection(
+                state, at_us=1_000_000, smoothed_offset_us=0,
+                offset_filter_valid=True,
+            ).build()["inventory"] if item["path"] == "entities.1.target.distance"),
+        )
+
         weapon = state.record_instances["WEAPON_STATE/entity_id=1"]["fields"]
         weapon["current_secondary_bank_id"] = 999
         ambiguous = projection()["entities.1.locks[0].progress"]

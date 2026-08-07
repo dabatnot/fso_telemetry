@@ -78,6 +78,7 @@ struct Phase3TargetState {
 	std::uint64_t dangerous_weapon_entity_id = 0U;
 	std::uint64_t nearest_locked_entity_id = 0U;
 	float exact_hud_distance = 0.0F;
+	float exact_hud_speed = 0.0F;
 };
 
 struct Phase3RadarState {

@@ -11,6 +11,7 @@
 #include "telemetry/runtime_adapter_test_seam.h"
 #include "telemetry/phase1_state_image.h"
 #include "telemetry/protocol/telemetry_control_messages.h"
+#include "telemetry/protocol/telemetry_business_records.h"
 #include "telemetry/protocol/telemetry_crc32.h"
 #include "telemetry/protocol/telemetry_datagram.h"
 #include "telemetry/session_controller.h"
@@ -37,6 +38,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <memory>
 #include <limits>
 #include <string>
@@ -1546,6 +1548,8 @@ TEST(TelemetryPhase3Targeting,
 	See_all = 1;
 	const auto ship_info_count = Ship_info.size();
 	Ship_info.emplace_back();
+	std::strncpy(Ship_info.back().name, "GTF Myrmidon",
+		sizeof(Ship_info.back().name) - 1U);
 	Player_ship->ship_info_index = static_cast<int>(ship_info_count);
 	constexpr int TargetObjectIndex = MAX_OBJECTS - 3;
 	constexpr int TargetShipIndex = MAX_SHIPS - 3;
@@ -1588,9 +1592,9 @@ TEST(TelemetryPhase3Targeting,
 		identities, *output, *scratch);
 	telemetry::Phase2ManifestCandidate manifest;
 	manifest.class_record_count = 1U;
-	manifest.class_records[0].source_key =
-		static_cast<std::uint32_t>(ship_info_count) + 1U;
+	manifest.class_records[0].source_key = 1U;
 	manifest.class_records[0].class_id = 9001U;
+	manifest.class_records[0].name.assign("GTF Myrmidon");
 	const auto weapon_info_count = Weapon_info.size();
 	Weapon_info.emplace_back();
 	Weapon_info.back().max_speed = 100.0F;
@@ -1674,6 +1678,94 @@ TEST(TelemetryPhase3Targeting,
 	EXPECT_NE(0U, revealed_output->target.presence &
 		protocol::TargetStatePresenceFlagLead);
 	EXPECT_EQ(7001U, revealed_output->target.lead_bank_id);
+}
+
+TEST(TelemetryPhase3RadarContacts,
+	SystemsRefreshClearsCurrentTargetFlagFromThePreviousTarget)
+{
+	auto engine_globals = std::make_unique<Phase3EngineGlobalsScope>();
+	detail::capture_phase2_main_thread_authority();
+	Player_ship->flags.set(Ship::Ship_Flags::Primitive_sensors);
+	Player_ship->primitive_sensor_range = 1'000;
+	See_all = 1;
+	const auto ship_info_count = Ship_info.size();
+	Ship_info.emplace_back();
+	Player_ship->ship_info_index = static_cast<int>(ship_info_count);
+	constexpr int FirstObjectIndex = MAX_OBJECTS - 3;
+	constexpr int FirstShipIndex = MAX_SHIPS - 3;
+	constexpr int SecondObjectIndex = MAX_OBJECTS - 4;
+	constexpr int SecondShipIndex = MAX_SHIPS - 4;
+	auto& first = Objects[FirstObjectIndex];
+	auto& first_ship = Ships[FirstShipIndex];
+	auto& second = Objects[SecondObjectIndex];
+	auto& second_ship = Ships[SecondShipIndex];
+	first.clear();
+	first.type = OBJ_SHIP;
+	first.instance = FirstShipIndex;
+	first.signature = 101;
+	first.orient = vmd_identity_matrix;
+	first.pos.xyz.z = 100.0F;
+	first_ship.clear();
+	first_ship.objnum = FirstObjectIndex;
+	first_ship.team = Player_ship->team;
+	first_ship.ship_info_index = static_cast<int>(ship_info_count);
+	second.clear();
+	second.type = OBJ_SHIP;
+	second.instance = SecondShipIndex;
+	second.signature = 102;
+	second.orient = vmd_identity_matrix;
+	second.pos.xyz.z = 200.0F;
+	second_ship.clear();
+	second_ship.objnum = SecondObjectIndex;
+	second_ship.team = Player_ship->team;
+	second_ship.ship_info_index = static_cast<int>(ship_info_count);
+	list_append(&obj_used_list, &first);
+	list_append(&obj_used_list, &second);
+	Player_ai->target_objnum = FirstObjectIndex;
+	Player_ai->target_signature = first.signature;
+
+	auto phase2 = std::make_unique<detail::Phase2ObservationDto>();
+	phase2->ships.resize(1U);
+	phase2->ships[0].capture_key.value =
+		static_cast<std::uint32_t>(Player_obj->signature);
+	const telemetry::Phase2Wp05SubjectBinding binding{
+		phase2->ships[0].capture_key, 1U};
+	detail::Phase3IdentityRegistry identities;
+	ASSERT_EQ(detail::Phase3IdentityProvisionStatus::Ready,
+		identities.provision());
+	auto output = std::make_unique<telemetry::Phase3Projection>();
+	auto scratch = std::make_unique<telemetry::Phase3Projection>();
+	ASSERT_EQ(detail::Phase3EngineCollectStatus::Collected,
+		detail::collect_phase3_engine_projection(
+			{64U, 1U, phase2.get(), &binding, 1U, nullptr, true, true},
+			identities, *output, *scratch));
+	ASSERT_EQ(2U, output->contact_count);
+	const auto first_id = output->target.current_target_entity_id;
+	ASSERT_NE(0U, first_id);
+	const auto second_id = output->contacts[0].entity_id == first_id
+		? output->contacts[1].entity_id : output->contacts[0].entity_id;
+
+	Player_ai->previous_target_objnum = FirstObjectIndex;
+	Player_ai->target_objnum = SecondObjectIndex;
+	Player_ai->target_signature = second.signature;
+	ASSERT_EQ(detail::Phase3EngineCollectStatus::Collected,
+		detail::collect_phase3_engine_projection(
+			{65U, 1U, phase2.get(), &binding, 1U, nullptr, true, true},
+			identities, *output, *scratch));
+	EXPECT_EQ(second_id, output->target.current_target_entity_id);
+	for (std::size_t index = 0U; index < output->contact_count; ++index) {
+		const auto& contact = output->contacts[index];
+		EXPECT_EQ(contact.entity_id == second_id,
+			(contact.flags & protocol::ContactFlagCurrentTarget) != 0U);
+	}
+
+	list_remove(&obj_used_list, &second);
+	list_remove(&obj_used_list, &first);
+	second_ship.clear();
+	second.clear();
+	first_ship.clear();
+	first.clear();
+	Ship_info.resize(ship_info_count);
 }
 
 TEST(TelemetryPhase3Locks, RealVisibleCockpitTrackProducesAuthorizedLock)
@@ -2425,6 +2517,32 @@ TEST(TelemetryPhase3CaptureSchedule,
 		}
 	}
 	ASSERT_LT(systems_delta, fixture.backend.sent.size());
+	// The CockpitSensors image appends its radar/sensor records after the
+	// Phase 2 rebuild set. Their current-state sample alone is insufficient:
+	// they must also be present in this non-keyframe Delta.
+	std::vector<std::uint8_t> systems_delta_storage;
+	const auto systems_delta_view =
+		decode_sent(fixture.backend, systems_delta, systems_delta_storage);
+	protocol::DeltaPayload systems_delta_payload;
+	ASSERT_EQ(protocol::ValidationError::None,
+		protocol::decode_delta_payload(
+			systems_delta_view.payload, systems_delta_payload));
+	protocol::RecordEnvelopeIterator records(systems_delta_payload.records,
+		systems_delta_payload.record_count,
+		protocol::RecordFlagPolicy::AllowV1Mutations);
+	bool contains_threat_state = false;
+	for (;;) {
+		protocol::RecordEnvelopeView record;
+		bool has_record = false;
+		ASSERT_EQ(protocol::ValidationError::None,
+			records.next(record, has_record));
+		if (!has_record) break;
+		contains_threat_state = contains_threat_state ||
+			((record.record_flags & protocol::RecordFlagDelete) == 0U &&
+				record.raw_record_type ==
+					static_cast<std::uint16_t>(protocol::RecordType::ThreatState));
+	}
+	EXPECT_TRUE(contains_threat_state);
 	fixture.backend.receives.push_back({detail::IoStatus::Complete,
 		ack_for(fixture.backend.sent[systems_delta], endpoint, 922U)});
 	ASSERT_EQ(detail::NativeSessionTickStatus::Complete,

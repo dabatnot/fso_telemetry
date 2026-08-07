@@ -1146,7 +1146,7 @@ ValidationError validate_lock_state(ByteView payload) noexcept
 	return reader.finish();
 }
 
-ValidationError validate_target_state(ByteView payload) noexcept
+ValidationError validate_target_state(std::uint8_t record_version, ByteView payload) noexcept
 {
 	Validator reader(payload);
 	std::uint64_t entity = 0;
@@ -1245,6 +1245,11 @@ ValidationError validate_target_state(ByteView payload) noexcept
 	if ((presence & TargetStatePresenceFlagExactHudDistance) != 0 &&
 		!reader.f32(distance, 0.0F, QuantityLimit)) {
 		return reader.error();
+	}
+	float speed = 0.0F;
+	if ((presence & TargetStatePresenceFlagExactHudSpeed) != 0) {
+		if (record_version != 2U) return ValidationError::UnsupportedRecordVersion;
+		if (!reader.f32(speed, 0.0F, QuantityLimit)) return reader.error();
 	}
 	return reader.finish();
 }
@@ -1400,7 +1405,7 @@ ValidationError validate_business_record_11_18(
 	case RecordType::LockState:
 		return validate_lock_state(payload);
 	case RecordType::TargetState:
-		return validate_target_state(payload);
+		return validate_target_state(record_version, payload);
 	case RecordType::RadarState:
 		return validate_radar_state(payload);
 	case RecordType::RadarContacts:

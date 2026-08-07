@@ -2924,6 +2924,23 @@ NativeSessionTickStatus NativeSessionRuntime::apply_collected_player_capture(con
 						PermanentCaptureFailure;
 				}
 				image = std::move(phase3_image);
+				// The Phase 3 projection replaces and appends records after the
+				// Phase 2 builder has returned its rebuild set.  Include the final
+				// canonical image in the incremental dirty set so systems ticks emit
+				// RADAR_CONTACTS and the other cockpit sensor records immediately,
+				// rather than waiting for the periodic keyframe.
+				if (image.records().size() >
+					rebuilt_atoms.canonical_indices.size()) {
+					fail_capture(NativePlayerCaptureStatus::
+						CaptureInvariantFailure);
+					return NativeSessionTickStatus::PermanentCaptureFailure;
+				}
+				rebuilt_atoms.count = image.records().size();
+				for (std::size_t record_index = 0U;
+					 record_index < rebuilt_atoms.count; ++record_index)
+					rebuilt_atoms.canonical_indices[record_index] =
+						static_cast<std::uint16_t>(record_index);
+				rebuilt_atoms.exhaustive = true;
 			}
 			if (m_metrics != nullptr)
 				m_metrics->observe_phase2_image(
@@ -2952,16 +2969,12 @@ NativeSessionTickStatus NativeSessionRuntime::apply_collected_player_capture(con
 			const auto delta_started = m_performance_observation_active
 				? std::chrono::steady_clock::now()
 				: std::chrono::steady_clock::time_point{};
-			auto baseline_result =
-				used_in_place_patch
-				? m_controller
-					  .commit_current_state_incremental_patch(
-						  index, std::move(image),
-						  rebuilt_atoms.canonical_indices.data(),
-						  rebuilt_atoms.count)
+			auto baseline_result = used_in_place_patch
+				? m_controller.commit_current_state_incremental_patch(
+					  index, std::move(image),
+					  rebuilt_atoms.canonical_indices.data(), rebuilt_atoms.count)
 				: m_controller.replace_current_state_incremental(
-					  index, image,
-					  rebuilt_atoms.canonical_indices.data(),
+					  index, image, rebuilt_atoms.canonical_indices.data(),
 					  rebuilt_atoms.count);
 			if (!used_in_place_patch &&
 				rebuilt_atoms.exhaustive &&

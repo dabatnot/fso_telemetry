@@ -524,6 +524,17 @@ TEST(TelemetryProtocolBusinessRecords11To18, TargetPresenceIsBoundToCurrentTarge
 	f32(no_target, 0.0F);
 	EXPECT_EQ(ValidationError::InvalidAbsence, validate(RecordType::TargetState, no_target));
 
+	auto hud_readout = target(TargetStatePresenceFlagExactHudDistance |
+		TargetStatePresenceFlagExactHudSpeed, 2);
+	f32(hud_readout, 809.0F);
+	f32(hud_readout, 92.0F);
+	EXPECT_EQ(ValidationError::UnsupportedRecordVersion,
+		validate(RecordType::TargetState, hud_readout));
+	BusinessRecordMetadata metadata;
+	EXPECT_EQ(ValidationError::None,
+		validate_business_record(record(RecordType::TargetState, hud_readout, 2U),
+			BusinessRecordContainer::FullSnapshot, VersionMinorV1_1, metadata));
+
 	auto invalid_utf8 = target(TargetStatePresenceFlagRevealedIdentity, 2);
 	u8(invalid_utf8, static_cast<std::uint8_t>(ObjectType::Ship));
 	u16(invalid_utf8, 1);

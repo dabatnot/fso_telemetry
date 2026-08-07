@@ -7,8 +7,10 @@ import {
   radarState,
   sensorLabels,
   subsystemNameForTarget,
+  targetClassDisplayName,
   targetContact,
   targetDisplayName,
+  targetRecordVersion,
   targetReferenceInvalid,
   targetState,
   threatState,
@@ -251,7 +253,7 @@ function RadarScope({
       context.lineTo(centerX, centerY + radius);
       context.stroke();
       context.fillStyle = "#d5f8f1";
-      context.font = "10px ui-monospace, monospace";
+      context.font = "13px ui-monospace, monospace";
       context.textAlign = "center";
       // Match FSO's standard directional radar: the nose is at the centre,
       // while the disc direction tells the pilot which way to turn or pitch.
@@ -361,6 +363,13 @@ const TRENDS: Record<number, string> = {
   3: "AUGMENTE"
 };
 
+function hudTrendSuffix(value: unknown, hide = false): string {
+  if (hide) return "";
+  if (Number(value) === 1) return "−";
+  if (Number(value) === 3) return "+";
+  return "";
+}
+
 function TargetPanel({
   snapshot,
   definition,
@@ -375,6 +384,10 @@ function TargetPanel({
   const player = String(snapshot?.playerEntityId ?? "");
   const distanceItem = snapshot?.derived[`entities.${player}.target.distance`];
   const distance = distanceItem?.available ? finite(distanceItem.value) : null;
+  const hudSpeedItem = snapshot?.derived[`entities.${player}.target.hud_speed`];
+  const hudSpeed = hudSpeedItem?.available ? finite(hudSpeedItem.value) : null;
+  const targetVersion = targetRecordVersion(snapshot);
+  const targetClass = targetClassDisplayName(snapshot);
   const targetId = String(target?.current_target_entity_id ?? "0");
   const invalid = targetReferenceInvalid(snapshot);
   const targetSubsystem = subsystemNameForTarget(snapshot, target?.target_subsystem_id);
@@ -402,6 +415,12 @@ function TargetPanel({
         >
           <span className="target-kicker">ENTITÉ {targetId}</span>
           <strong>{invalid ? "ERR · RÉFÉRENCE INCONNUE" : targetDisplayName(snapshot)}</strong>
+          {targetClass !== null && <span className="target-class">{targetClass}</span>}
+          <div className="target-hud-readout" aria-label="Informations HUD FSO">
+            <span>D : {formatNumber(distance)}{hudTrendSuffix(target?.distance_trend)}</span>
+            <span>S : {formatNumber(hudSpeed)}{hudTrendSuffix(target?.speed_trend, (hudSpeed ?? 0) <= 1)}</span>
+            {targetVersion !== 2 && <i>COMPAT. CAPTURE V1</i>}
+          </div>
           <div className="target-primary-metrics">
             <div><span>DISTANCE</span><strong>{formatNumber(distance)}</strong></div>
             <div><span>RAPPROCHEMENT</span><strong>{formatNumber(contact?.closingSpeed ?? null, 1)}</strong></div>

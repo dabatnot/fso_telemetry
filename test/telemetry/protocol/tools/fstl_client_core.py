@@ -467,6 +467,18 @@ class DashboardProjection:
             "p3.dashboard.target-distance.v1",
             ["wire:TARGET_STATE.exact_hud_distance",
              "derived:p3.dashboard.track-distance.v1"]),
+        "target-state-v2 exact HUD display distance": (
+            "p3.dashboard.target-distance.v2",
+            ["wire:TARGET_STATE.exact_hud_distance"]),
+        "legacy geometric_track_distance": (
+            "p3.dashboard.target-distance.v1-compat",
+            ["derived:p3.dashboard.track-distance.v1"]),
+        "target-state-v2 exact HUD display speed": (
+            "p3.dashboard.target-hud-speed.v2",
+            ["wire:TARGET_STATE.exact_hud_speed"]),
+        "missing-authoritative-target-hud-speed": (
+            "p3.dashboard.target-hud-speed.v2-missing",
+            ["wire:TARGET_STATE.exact_hud_speed"]),
         "clamp(1-time_to_lock_remaining_us/weapon.lock.time_us,0,1)": (
             "p3.dashboard.lock-progress.v1",
             ["wire:LOCK_STATE.locks.time_to_lock_remaining_us",
@@ -1493,18 +1505,41 @@ class DashboardProjection:
                 "relative_speed": relative_speed,
             }
 
-        for entity, target in self._per_entity("TARGET_STATE").items():
+        for target_envelope in self._record_envelopes("TARGET_STATE"):
+            target = target_envelope["fields"]
+            entity = str(target.get("entity_id", ""))
             target_id = str(target.get("current_target_entity_id", "0"))
+            target_record_version = int(target_envelope["recordVersion"])
             exact_distance = _as_float(target.get("exact_hud_distance"))
             geometric_distance = track_metrics.get((entity, target_id), {}).get("distance")
-            effective_distance = exact_distance if exact_distance is not None else geometric_distance
+            exact_speed = _as_float(target.get("exact_hud_speed"))
+            effective_distance = (
+                exact_distance if target_record_version == 2
+                else exact_distance if exact_distance is not None else geometric_distance
+            )
             self._add_derived(
                 f"entities.{entity}.target.distance",
-                "exact_hud_distance if present else geometric_track_distance",
+                ("target-state-v2 exact HUD display distance"
+                 if target_record_version == 2 and exact_distance is not None
+                 else "exact_hud_distance if present else geometric_track_distance"
+                 if exact_distance is not None
+                 else "legacy geometric_track_distance"),
                 {
                     "available": effective_distance is not None,
                     "reason": None if effective_distance is not None else "no-target-distance-source",
                     "value": effective_distance,
+                },
+            )
+            self._add_derived(
+                f"entities.{entity}.target.hud_speed",
+                ("target-state-v2 exact HUD display speed"
+                 if target_record_version == 2 and exact_speed is not None
+                 else "missing-authoritative-target-hud-speed"),
+                {
+                    "available": target_record_version == 2 and exact_speed is not None,
+                    "reason": None if target_record_version == 2 and exact_speed is not None
+                    else "legacy-target-state-has-no-authoritative-hud-speed",
+                    "value": exact_speed if target_record_version == 2 else None,
                 },
             )
 

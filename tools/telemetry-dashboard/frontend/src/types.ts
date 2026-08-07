@@ -86,7 +86,11 @@ export interface DashboardSnapshot {
   mission: Record<string, unknown>;
   playerEntityId: string | null;
   records: Record<string, Array<Record<string, unknown>>>;
-  recordInstances: Record<string, { recordName: string; fields: Record<string, unknown> }>;
+  recordInstances: Record<string, {
+    recordName: string;
+    recordVersion?: number;
+    fields: Record<string, unknown>;
+  }>;
   manifest: { id: number; records: Record<string, unknown> };
   derived: Record<string, { available: boolean; reason?: string; value: unknown }>;
   transport: {

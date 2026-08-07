@@ -285,6 +285,30 @@ export function targetDisplayName(snapshot: DashboardSnapshot | null): string {
   return revealed || targetContact(snapshot)?.name || `CONTACT ${targetId}`;
 }
 
+export function targetClassDisplayName(snapshot: DashboardSnapshot | null): string | null {
+  const identity = targetState(snapshot)?.revealed_identity;
+  const classId = identity && typeof identity === "object"
+    ? (identity as Record<string, unknown>).class_id
+    : undefined;
+  const definition = manifestRecord(snapshot, "CLASS_MANIFEST", "class_id", classId);
+  const name = definition?.internal_name;
+  return typeof name === "string" && name.trim() ? name.trim() : null;
+}
+
+export function targetRecordVersion(snapshot: DashboardSnapshot | null): number | null {
+  const target = targetState(snapshot);
+  if (!target) return null;
+  const player = String(snapshot?.playerEntityId ?? "");
+  for (const envelope of Object.values(snapshot?.recordInstances ?? {})) {
+    if (envelope.recordName === "TARGET_STATE" &&
+        String(envelope.fields.entity_id ?? "") === player) {
+      const version = envelope.recordVersion;
+      return typeof version === "number" && Number.isInteger(version) ? version : null;
+    }
+  }
+  return null;
+}
+
 export function targetReferenceInvalid(snapshot: DashboardSnapshot | null): boolean {
   const target = targetState(snapshot);
   if (!target || !snapshot?.transport.synchronized) return false;

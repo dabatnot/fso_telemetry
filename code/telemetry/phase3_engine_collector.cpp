@@ -4,9 +4,11 @@
 #include "autopilot/autopilot.h"
 #include "globalincs/systemvars.h"
 #include "hud/hudconfig.h"
+#include "hud/hudparse.h"
 #include "hud/hudtarget.h"
 #include "mod_table/mod_table.h"
 #include "object/object.h"
+#include "object/objectdock.h"
 #include "object/waypoint.h"
 #include "playerman/player.h"
 #include "radar/radarsetup.h"
@@ -22,6 +24,7 @@
 #include <cstring>
 #include <limits>
 #include <new>
+#include <string_view>
 
 namespace telemetry::detail {
 namespace {
@@ -167,7 +170,29 @@ const Phase2ClassRecord* installed_ship_class(
 		if (manifest->class_records[index].source_key == source_key)
 			return &manifest->class_records[index];
 	}
-	return nullptr;
+	// Phase 2 uses capture-local class keys.  The player class therefore does
+	// not necessarily share the engine Ship_info index used above.  A selected
+	// ship of that already installed class must still resolve, but only through
+	// one unambiguous internal-name match.
+	if (engine_index >= static_cast<int>(Ship_info.size())) return nullptr;
+	const auto& engine_class = Ship_info[engine_index];
+	std::size_t name_size = 0U;
+	while (name_size < sizeof(engine_class.name) &&
+		engine_class.name[name_size] != '\0')
+		++name_size;
+	if (name_size == 0U || name_size == sizeof(engine_class.name))
+		return nullptr;
+	const std::string_view engine_name{engine_class.name, name_size};
+	const Phase2ClassRecord* matched = nullptr;
+	for (std::uint32_t index = 0U;
+		 index < manifest->class_record_count; ++index) {
+		const auto& candidate = manifest->class_records[index];
+		if (static_cast<std::string_view>(candidate.name) != engine_name)
+			continue;
+		if (matched != nullptr) return nullptr;
+		matched = &candidate;
+	}
+	return matched;
 }
 
 std::uint32_t installed_hull_primary_bank_id(
@@ -462,6 +487,31 @@ Phase3EngineCollectStatus collect_target_and_locks(
 			value_trend(Player_ai->current_target_dist_trend);
 		output.target.speed_trend =
 			value_trend(Player_ai->current_target_speed_trend);
+		// Mirror the standard target box values after its HUD unit multipliers.
+		// These are display-authoritative values: distance can target a subsystem
+		// and speed has a docked-ship fallback, neither of which a client can
+		// reproduce faithfully from the public track alone.
+		const auto hud_distance = Player_ai->current_target_distance;
+		if (std::isfinite(hud_distance) && hud_distance >= 0.0F) {
+			output.target.presence |=
+				protocol::TargetStatePresenceFlagExactHudDistance;
+			output.target.exact_hud_distance = Hud_unit_multiplier > 0.0F
+				? hud_distance * Hud_unit_multiplier
+				: hud_distance;
+		}
+		float hud_speed = vm_vec_mag(&target.phys_info.vel);
+		if (hud_speed < 0.1F) hud_speed = 0.0F;
+		if (hud_speed == 0.0F && target.type == OBJ_SHIP) {
+			hud_speed = dock_calc_docked_fspeed(&target);
+			if (hud_speed < 0.1F) hud_speed = 0.0F;
+		}
+		if (std::isfinite(hud_speed) && hud_speed >= 0.0F) {
+			output.target.presence |=
+				protocol::TargetStatePresenceFlagExactHudSpeed;
+			output.target.exact_hud_speed = Hud_speed_multiplier > 0.0F
+				? hud_speed * Hud_speed_multiplier
+				: hud_speed;
+		}
 		if (std::isfinite(Player_ai->target_time) &&
 			Player_ai->target_time >= 0.0F) {
 			output.target.presence |=
@@ -584,7 +634,9 @@ Phase3EngineCollectStatus collect_target_and_locks(
 	}
 	for (const auto& source : Player_ship->missile_locks) {
 		if (!valid_live_object(source.obj)) {
-			return Phase3EngineCollectStatus::InvalidSource;
+			// Lock records are an optional HUD view.  The engine may retain an
+			// object pointer for one tick while a contact despawns.
+			continue;
 		}
 		if (!std::isfinite(source.world_pos.xyz.x) ||
 			!std::isfinite(source.world_pos.xyz.y) ||
@@ -592,7 +644,7 @@ Phase3EngineCollectStatus collect_target_and_locks(
 			(!source.locked &&
 			 (!std::isfinite(source.time_to_lock) ||
 			  source.time_to_lock < 0.0F))) {
-			return Phase3EngineCollectStatus::InvalidSource;
+			continue;
 		}
 		RadarContactProjection public_lock;
 		if (!cockpit_track_visible(*source.obj, public_lock)) {
@@ -608,11 +660,13 @@ Phase3EngineCollectStatus collect_target_and_locks(
 		if (source.subsys != nullptr) {
 			const auto subsystem_id = installed_subsystem_id(
 				installed_manifest, *source.obj, source.subsys);
-			if (subsystem_id == 0U)
-				return Phase3EngineCollectStatus::InvalidSource;
-			destination.presence |=
-				protocol::LockItemPresenceFlagSubsystem;
-			destination.subsystem_id = subsystem_id;
+			// A visible lock does not grant a subsystem identity when the
+			// target class is not in the installed manifest.
+			if (subsystem_id != 0U) {
+				destination.presence |=
+					protocol::LockItemPresenceFlagSubsystem;
+				destination.subsystem_id = subsystem_id;
+			}
 		}
 		if (!source.locked) {
 			destination.presence |= protocol::LockItemPresenceFlagLockAttempt;
@@ -737,6 +791,10 @@ Phase3EngineCollectStatus collect_radar(
 		const auto identity = resolve_object(identities, *source);
 		if (!resolved(identity)) return Phase3EngineCollectStatus::IdentityFailure;
 		auto& contact = output.contacts[output.contact_count++];
+		// Contacts live in a fixed preallocated workspace reused between systems
+		// captures. Reset the whole DTO before applying this sample: flags such
+		// as CurrentTarget are sample state, not a retained track property.
+		reconstruct_in_place(contact);
 		contact.producer_sample_time_us = sample_time;
 		contact.entity_id = identity.entity_id;
 		contact.object_type = type;
@@ -790,9 +848,12 @@ Phase3EngineCollectStatus collect_threat(
 	const auto resolve_ai_attacker = [&](int object_index,
 		std::uint64_t& entity_id) {
 		if (object_index < 0) return true;
-		if (object_index >= MAX_OBJECTS) return false;
+		// AI threat indices are retained gameplay hints.  Object creation and
+		// destruction can leave one stale for a tick; that must withdraw only
+		// this optional reference, never terminate the cockpit telemetry stream.
+		if (object_index >= MAX_OBJECTS) return true;
 		auto& source = Objects[object_index];
-		if (!valid_live_object(&source)) return false;
+		if (!valid_live_object(&source)) return true;
 		RadarContactProjection public_attacker;
 		if (!cockpit_track_visible(source, public_attacker)) {
 			// The AI may retain an attacker after the cockpit has lost the
@@ -808,11 +869,11 @@ Phase3EngineCollectStatus collect_threat(
 	const auto resolve_ai_weapon = [&](int object_index, int signature,
 									 std::uint64_t& entity_id) {
 		if (object_index < 0) return true;
-		if (object_index >= MAX_OBJECTS) return false;
+		if (object_index >= MAX_OBJECTS) return true;
 		auto& source = Objects[object_index];
 		if (!valid_live_object(&source) || source.type != OBJ_WEAPON ||
 			(signature > 0 && source.signature != signature)) {
-			return false;
+			return true;
 		}
 		RadarContactProjection public_weapon;
 		if (!cockpit_track_visible(source, public_weapon)) {
@@ -888,8 +949,10 @@ Phase3EngineCollectStatus collect_threat(
 			installed_manifest, missile.weapon_info_index);
 		if (weapon_class_id == 0U) {
 			// Never expose a dynamic reference before its manifest
-			// definition is installed and APPLIED.
-			return Phase3EngineCollectStatus::InvalidSource;
+			// definition is installed and APPLIED.  This is an omission, not
+			// a fatal telemetry error: enemy ordnance may legitimately be
+			// outside the player's Phase 2 catalog.
+			continue;
 		}
 		const auto identity = resolve_object(identities, missile_object);
 		if (!resolved(identity))
@@ -948,13 +1011,15 @@ Phase3EngineCollectStatus collect_cargo(
 	if ((source.presence & protocol::CargoScanStatePresenceFlagTarget) != 0U) {
 		if (Player_ai == nullptr || Player_ai->target_objnum < 0 ||
 			Player_ai->target_objnum >= MAX_OBJECTS) {
-			return Phase3EngineCollectStatus::InvalidSource;
+			return Phase3EngineCollectStatus::Collected;
 		}
 		auto& target = Objects[Player_ai->target_objnum];
 		if (!valid_live_object(&target) || target.type != OBJ_SHIP ||
 			static_cast<std::uint32_t>(target.signature) !=
-				source.target_capture_key.value) {
-			return Phase3EngineCollectStatus::InvalidSource;
+			source.target_capture_key.value) {
+			// The scan/target pair can straddle a target switch.  Do not emit
+			// stale cargo data and do not end the session for that transition.
+			return Phase3EngineCollectStatus::Collected;
 		}
 		// A cargo scan is its own cockpit authorization.  The scanned ship may
 		// deliberately be outside the CompleteShip closure, so it cannot be
@@ -971,15 +1036,15 @@ Phase3EngineCollectStatus collect_cargo(
 				installed_subsystem_id_from_source_key(
 					input.installed_manifest, target,
 					source.target_subsystem_source_key);
-			if (subsystem_id == 0U)
-				return Phase3EngineCollectStatus::InvalidSource;
-			output.cargo.presence |=
-				protocol::CargoScanStatePresenceFlagSubsystem;
-			output.cargo.target_subsystem_id = subsystem_id;
+			if (subsystem_id != 0U) {
+				output.cargo.presence |=
+					protocol::CargoScanStatePresenceFlagSubsystem;
+				output.cargo.target_subsystem_id = subsystem_id;
+			}
 		}
 	} else if ((source.presence &
 				 protocol::CargoScanStatePresenceFlagSubsystem) != 0U) {
-		return Phase3EngineCollectStatus::InvalidSource;
+		return Phase3EngineCollectStatus::Collected;
 	}
 	if ((source.presence & protocol::CargoScanStatePresenceFlagTiming) != 0U) {
 		output.cargo.presence |= protocol::CargoScanStatePresenceFlagTiming;

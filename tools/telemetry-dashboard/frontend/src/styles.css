@@ -732,21 +732,21 @@ main { grid-row: 2; grid-column: 2; min-width: 0; overflow: auto; padding: 22px 
 .selected-weapons { height: 100%; min-height: 0; display: grid; grid-template-rows: repeat(2, minmax(0, 1fr)); gap: 7px; padding: 7px; }
 .selected-weapon { min-height: 0; display: grid; grid-template-rows: 25px auto auto minmax(0, 1fr) auto; gap: 5px; padding: 0 10px 8px; overflow: hidden; color: inherit; text-align: left; border: 1px solid #24515d; background: radial-gradient(circle at 80% 10%, #12343e 0, #091922 40%); cursor: pointer; }
 .selected-weapon:hover, .selected-weapon:focus-visible { outline: 1px solid var(--cyan); outline-offset: -1px; }
-.selected-weapon > header { margin: 0 -10px; padding: 0 9px; display: flex; align-items: center; justify-content: space-between; color: var(--muted); border-bottom: 1px solid var(--line); font: 7px "IBM Plex Mono"; letter-spacing: .7px; }
+.selected-weapon > header { margin: 0 -10px; padding: 0 9px; display: flex; align-items: center; justify-content: space-between; color: var(--muted); border-bottom: 1px solid var(--line); font: 11px "IBM Plex Mono"; letter-spacing: .7px; }
 .selected-weapon > header i { color: var(--cyan); font-style: normal; }
 .selected-weapon-title { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
-.selected-weapon-title strong { min-width: 0; overflow: hidden; color: #fff; font: 18px "IBM Plex Mono"; text-overflow: ellipsis; white-space: nowrap; }
-.selected-weapon-title span { color: var(--muted); font: 7px "IBM Plex Mono"; white-space: nowrap; }
+.selected-weapon-title strong { min-width: 0; overflow: hidden; color: #fff; font: 22px "IBM Plex Mono"; text-overflow: ellipsis; white-space: nowrap; }
+.selected-weapon-title span { color: var(--muted); font: 10px "IBM Plex Mono"; white-space: nowrap; }
 .weapon-badges { display: flex; flex-wrap: wrap; gap: 4px; }
-.weapon-badges span { padding: 2px 4px; color: var(--cyan); border: 1px solid #236068; background: #0a272e; font: 6px "IBM Plex Mono"; }
+.weapon-badges span { padding: 3px 5px; color: var(--cyan); border: 1px solid #236068; background: #0a272e; font: 9px "IBM Plex Mono"; }
 .selected-weapon-grid { min-height: 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px 7px; }
 .weapon-metric { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: baseline; gap: 4px; padding: 4px 5px; border-left: 2px solid var(--cyan-soft); background: #0b2028; }
-.weapon-metric span { overflow: hidden; color: var(--muted); font: 6px "IBM Plex Mono"; text-overflow: ellipsis; white-space: nowrap; }
-.weapon-metric strong { color: #efffff; font: 11px "IBM Plex Mono"; white-space: nowrap; }
-.weapon-metric small { color: var(--cyan-soft); font: 6px "IBM Plex Mono"; white-space: nowrap; }
+.weapon-metric span { overflow: hidden; color: var(--muted); font: 10px "IBM Plex Mono"; text-overflow: ellipsis; white-space: nowrap; }
+.weapon-metric strong { color: #efffff; font: 15px "IBM Plex Mono"; white-space: nowrap; }
+.weapon-metric small { color: var(--cyan-soft); font: 9px "IBM Plex Mono"; white-space: nowrap; }
 .weapon-combat-strip { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
-.weapon-combat-strip span { min-width: 0; display: grid; gap: 2px; color: var(--muted); font: 6px "IBM Plex Mono"; }
-.weapon-combat-strip b { overflow: hidden; color: #d9f3f4; font-size: 7px; text-overflow: ellipsis; white-space: nowrap; }
+.weapon-combat-strip span { min-width: 0; display: grid; gap: 2px; color: var(--muted); font: 9px "IBM Plex Mono"; }
+.weapon-combat-strip b { overflow: hidden; color: #d9f3f4; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
 .selected-empty, .selected-invalid { place-content: center; justify-items: center; grid-template-rows: auto auto auto; color: var(--muted); cursor: default; }
 .selected-empty > strong, .selected-invalid > strong { font: 22px "IBM Plex Mono"; }
 .selected-invalid > strong { color: var(--red); }
@@ -756,9 +756,9 @@ main { grid-row: 2; grid-column: 2; min-width: 0; overflow: auto; padding: 22px 
 .weapon-reserves { height: 100%; min-width: 0; display: grid; grid-template-columns: 1.1fr repeat(4, 1fr); gap: 1px; background: var(--line); }
 .weapon-reserve-block { min-width: 0; display: grid; align-content: center; gap: 5px; padding: 7px 10px; background: #081820; border-top: 2px solid #204d58; }
 .weapon-reserve-block.energy { border-top-color: var(--cyan); }
-.weapon-reserve-block span { color: var(--muted); font: 7px "IBM Plex Mono"; letter-spacing: .5px; }
-.weapon-reserve-block strong { overflow: hidden; color: #efffff; font: 14px "IBM Plex Mono"; text-overflow: ellipsis; white-space: nowrap; }
-.weapon-reserve-block small { overflow: hidden; color: var(--cyan-soft); font: 6px "IBM Plex Mono"; text-overflow: ellipsis; white-space: nowrap; }
+.weapon-reserve-block span { color: var(--muted); font: 10px "IBM Plex Mono"; letter-spacing: .5px; }
+.weapon-reserve-block strong { overflow: hidden; color: #efffff; font: 16px "IBM Plex Mono"; text-overflow: ellipsis; white-space: nowrap; }
+.weapon-reserve-block small { overflow: hidden; color: var(--cyan-soft); font: 9px "IBM Plex Mono"; text-overflow: ellipsis; white-space: nowrap; }
 .weapon-reserve-block.requests strong { font-size: 11px; }
 
 .weapon-turrets { min-width: 0; height: 100%; padding: 7px; overflow: hidden; border-left: 1px solid #385a63; background: #07141b; }
@@ -819,7 +819,7 @@ main { grid-row: 2; grid-column: 2; min-width: 0; overflow: auto; padding: 22px 
   cursor: pointer;
 }
 .tactical-panel-header:hover, .tactical-panel-header:focus-visible { outline: none; background: #12303a; }
-.tactical-panel-header span { font: 8px "IBM Plex Mono", monospace; letter-spacing: 1.1px; }
+.tactical-panel-header span { font: 12px "IBM Plex Mono", monospace; letter-spacing: 1.1px; }
 .tactical-panel-header i {
   padding: 2px 4px;
   color: var(--cyan);
@@ -911,10 +911,10 @@ main { grid-row: 2; grid-column: 2; min-width: 0; overflow: auto; padding: 22px 
 .scope-contact-list button:hover, .scope-contact-list button:focus-visible { outline: none; background: #12303a; }
 .scope-contact-list button.current { border-left: 3px solid var(--amber); background: #2a2415; }
 .scope-contact-list button.invalid strong { color: var(--red); }
-.scope-contact-list span { overflow: hidden; font: 7px "IBM Plex Mono", monospace; text-overflow: ellipsis; white-space: nowrap; }
-.scope-contact-list strong { color: var(--cyan); font: 7px "IBM Plex Mono", monospace; }
-.scope-contact-list small { grid-column: 1 / -1; overflow: hidden; color: var(--muted); font: 6px "IBM Plex Mono", monospace; text-overflow: ellipsis; white-space: nowrap; }
-.scope-contact-list .scope-more { display: block; color: var(--amber); font: 7px "IBM Plex Mono", monospace; text-align: center; }
+.scope-contact-list span { overflow: hidden; font: 11px "IBM Plex Mono", monospace; text-overflow: ellipsis; white-space: nowrap; }
+.scope-contact-list strong { color: var(--cyan); font: 11px "IBM Plex Mono", monospace; }
+.scope-contact-list small { grid-column: 1 / -1; overflow: hidden; color: var(--muted); font: 10px "IBM Plex Mono", monospace; text-overflow: ellipsis; white-space: nowrap; }
+.scope-contact-list .scope-more { display: block; color: var(--amber); font: 11px "IBM Plex Mono", monospace; text-align: center; }
 
 .target-empty {
   height: 100%;
@@ -940,12 +940,16 @@ main { grid-row: 2; grid-column: 2; min-width: 0; overflow: auto; padding: 22px 
 }
 .target-card:hover, .target-card:focus-visible { outline: none; background: #102832; }
 .target-card.invalid > strong { color: var(--red); }
-.target-kicker { color: var(--cyan-soft); font: 7px "IBM Plex Mono", monospace; letter-spacing: 1.3px; }
-.target-card > strong { overflow: hidden; color: #efffff; font: 19px "IBM Plex Mono", monospace; text-overflow: ellipsis; white-space: nowrap; }
+.target-kicker { color: var(--cyan-soft); font: 11px "IBM Plex Mono", monospace; letter-spacing: 1.3px; }
+.target-card > strong { overflow: hidden; color: #efffff; font: 23px "IBM Plex Mono", monospace; text-overflow: ellipsis; white-space: nowrap; }
+.target-class { overflow: hidden; color: var(--cyan-soft); font: 13px "IBM Plex Mono", monospace; text-overflow: ellipsis; white-space: nowrap; }
+.target-hud-readout { display: flex; flex-wrap: wrap; align-items: baseline; gap: 12px; padding: 7px 9px; color: #efffff; border-left: 2px solid var(--amber); background: #201b11; font: 15px "IBM Plex Mono", monospace; }
+.target-hud-readout span { color: var(--amber); }
+.target-hud-readout i { color: #a69472; font: 9px "IBM Plex Mono", monospace; font-style: normal; }
 .target-primary-metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
 .target-primary-metrics > div { min-width: 0; padding: 7px; border: 1px solid #244650; background: #07151c; }
-.target-primary-metrics span, .target-card dt { color: var(--muted); font: 6px "IBM Plex Mono", monospace; letter-spacing: .6px; }
-.target-primary-metrics strong { display: block; margin-top: 3px; color: var(--cyan); font: 11px "IBM Plex Mono", monospace; }
+.target-primary-metrics span, .target-card dt { color: var(--muted); font: 10px "IBM Plex Mono", monospace; letter-spacing: .6px; }
+.target-primary-metrics strong { display: block; margin-top: 3px; color: var(--cyan); font: 15px "IBM Plex Mono", monospace; }
 .target-badges { display: flex; flex-wrap: wrap; gap: 4px; }
 .target-badges i {
   padding: 4px 6px;
@@ -956,7 +960,7 @@ main { grid-row: 2; grid-column: 2; min-width: 0; overflow: auto; padding: 22px 
   font-style: normal;
 }
 .target-card dl { display: grid; grid-template-columns: 1fr 1fr; gap: 5px 8px; margin: 0; }
-.target-card dd { margin: 0; overflow: hidden; color: #cfe9e9; font: 8px "IBM Plex Mono", monospace; text-overflow: ellipsis; white-space: nowrap; }
+.target-card dd { margin: 0; overflow: hidden; color: #cfe9e9; font: 12px "IBM Plex Mono", monospace; text-overflow: ellipsis; white-space: nowrap; }
 .stealth-memory { padding: 6px; color: #a58acb; border: 1px dashed #685181; font: 7px "IBM Plex Mono", monospace; text-align: center; }
 
 .lock-list {
@@ -984,9 +988,9 @@ main { grid-row: 2; grid-column: 2; min-width: 0; overflow: auto; padding: 22px 
 .lock-list button.attempt { border-left: 3px solid var(--amber); }
 .lock-list button.invalid strong { color: var(--red); }
 .lock-list button > div:first-child { display: flex; justify-content: space-between; gap: 6px; }
-.lock-list span { overflow: hidden; font: 8px "IBM Plex Mono", monospace; text-overflow: ellipsis; white-space: nowrap; }
-.lock-list strong { color: var(--amber); font: 7px "IBM Plex Mono", monospace; }
-.lock-list small { color: var(--muted); font: 6px "IBM Plex Mono", monospace; }
+.lock-list span { overflow: hidden; font: 12px "IBM Plex Mono", monospace; text-overflow: ellipsis; white-space: nowrap; }
+.lock-list strong { color: var(--amber); font: 11px "IBM Plex Mono", monospace; }
+.lock-list small { color: var(--muted); font: 10px "IBM Plex Mono", monospace; }
 .lock-progress { height: 3px; overflow: hidden; background: #061016; }
 .lock-progress i { display: block; height: 100%; background: var(--amber); }
 .lock-list .lock-more { display: block; color: var(--amber); text-align: center; }
@@ -1003,9 +1007,9 @@ main { grid-row: 2; grid-column: 2; min-width: 0; overflow: auto; padding: 22px 
   background: #07151c;
   cursor: pointer;
 }
-.threat-level span { color: var(--muted); font: 7px "IBM Plex Mono", monospace; }
-.threat-level strong { color: var(--cyan); font: 14px "IBM Plex Mono", monospace; }
-.threat-level small { color: var(--muted); font: 7px "IBM Plex Mono", monospace; }
+.threat-level span { color: var(--muted); font: 11px "IBM Plex Mono", monospace; }
+.threat-level strong { color: var(--cyan); font: 18px "IBM Plex Mono", monospace; }
+.threat-level small { color: var(--muted); font: 11px "IBM Plex Mono", monospace; }
 .threat-level-2 .threat-level strong { color: var(--amber); }
 .threat-level-3 .threat-level strong { color: var(--red); text-shadow: 0 0 9px #ee6b6188; }
 .missile-rack { min-width: 0; display: grid; grid-template-columns: repeat(6, minmax(100px, 1fr)); }
@@ -1742,6 +1746,105 @@ main { grid-row: 2; grid-column: 2; min-width: 0; overflow: auto; padding: 22px 
   font: 8px "IBM Plex Mono";
   text-align: left;
   cursor: pointer;
+}
+
+/* Readability baseline for the cockpit-sized dashboard: panel geometry stays
+   compact, but labels and values remain legible from a normal SIM rig view. */
+.tab-rail::before,
+.tab-rail i,
+.section-heading > div > span,
+.eyebrow,
+.section-stats,
+.zone-title,
+.flight-panel > header span,
+.energy-panel > header span,
+.integrity-panel > header span,
+.weapon-panel > header span,
+.support-panel-header {
+  font-size: 11px;
+}
+
+.tab-rail span { font-size: 14px; }
+
+.cockpit-metric > span,
+.cockpit-metric > small,
+.energy-metric > span,
+.energy-metric > small,
+.integrity-metric > span,
+.integrity-metric > small,
+.weapon-mode-strip span,
+.weapon-rack-row > span small,
+.weapon-rack-row > em,
+.support-service-matrix span,
+.support-service-matrix small,
+.approach-metrics span,
+.approach-metrics small,
+.support-identity span,
+.support-phase span,
+.support-identity small,
+.support-phase small,
+.cargo-target span,
+.cargo-disclosure span,
+.cargo-progress span,
+.cargo-target small,
+.cargo-progress small {
+  font-size: 10px;
+}
+
+.cockpit-metric > strong,
+.energy-metric > strong,
+.integrity-metric > strong,
+.weapon-mode-strip strong,
+.weapon-rack-row > span strong,
+.support-service-matrix strong,
+.approach-metrics strong,
+.support-identity strong,
+.support-phase strong,
+.cargo-disclosure strong {
+  font-size: 15px;
+}
+
+.cockpit-vector .vector-title,
+.cockpit-vector i,
+.cockpit-vector small,
+.axis-row > span,
+.raw-flag,
+.semantic-note,
+.flag-chip,
+.resource-values span,
+.resource-values small,
+.ets-header span,
+.ets-column > span,
+.integrity-chip,
+.subsystem-summary span,
+.subsystem-tile b,
+.subsystem-tile small,
+.detail-values span,
+.object-row,
+.quality-table,
+.future-nd-list span,
+.energy-future-list span,
+.integrity-future-list span,
+.weapon-cooldown-line,
+.weapon-more,
+.support-flag-strip span,
+.cargo-validity span,
+.docking-ports span,
+.docking-node span,
+.support-future-strip > div span {
+  font-size: 9px;
+}
+
+.cockpit-vector strong,
+.axis-row > strong,
+.ets-header strong,
+.ets-column > strong,
+.shield-quadrant-labels strong,
+.subsystem-tile > i,
+.subsystem-tile > strong,
+.docking-ports strong,
+.docking-node strong {
+  font-size: 12px;
 }
 
 @media (max-width: 1450px) {

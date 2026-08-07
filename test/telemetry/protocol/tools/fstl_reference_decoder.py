@@ -1335,7 +1335,7 @@ def decode_record_payload(
         presence = reader.u64()
         sample = reader.u64()
         current = reader.u64()
-        require(entity and presence & ~0x3FFF == 0, 37, "TARGET_STATE presence")
+        require(entity and presence & ~0x7FFF == 0, 37, "TARGET_STATE presence")
         require(current or presence & ~0x0001 == 0, 37, "TARGET_STATE absent target")
         result = {
             "current_target_entity_id": u64s(current),
@@ -1383,6 +1383,9 @@ def decode_record_payload(
             result["nearest_locked_entity_id"] = u64s(reader.u64())
         if presence & 0x2000:
             result["exact_hud_distance"] = reader.f32()
+        if presence & 0x4000:
+            require(record_version == 2, 37, "TARGET_STATE v2 speed")
+            result["exact_hud_speed"] = reader.f32()
         return result
 
     if record_type == 17:
@@ -1862,8 +1865,8 @@ def decode_record(
     length = reader.u16()
     require(record_type != 0, 34, "RecordType zero")
     require(record_type in RECORD_NAMES, 26, "unknown required record")
-    radar_contacts_v2 = record_type == 18 and version == 2
-    require(version == 1 or radar_contacts_v2, 27, "unsupported record version")
+    phase3_v2 = record_type in (16, 18) and version == 2
+    require(version == 1 or phase3_v2, 27, "unsupported record version")
     require(length == reader.remaining, 28, "record_length mismatch")
     if container == "event" or (container == "standalone" and record_type in (27, 28)):
         require(record_type in (27, 28), 36, "state record in event batch")

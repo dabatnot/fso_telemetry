@@ -116,6 +116,13 @@ autorise une dernière observation ou une connaissance de menace distincte.
 
 ## 5. `TARGET_STATE`
 
+### 5.0 Version filaire
+
+Le layout v1 reste lisible pour les captures existantes. Le profil live
+`CockpitSensors` émet `record_version=2` sous FSTL 1.1. La variante v2 ajoute
+après `EXACT_HUD_DISTANCE` le groupe `EXACT_HUD_SPEED`; la variante est choisie
+uniquement par `record_version`, jamais par la longueur du payload.
+
 ### 5.1 Champs obligatoires
 
 `entity_id` est le joueur et `current_target_entity_id` vaut zéro en absence de
@@ -135,7 +142,8 @@ cible. `producer_sample_time_us` est l’instant de la décision de ciblage.
 | `IN_CONE` | décision autoritaire de cône, pas projection écran |
 | `LEAD` | position monde et banque valide, ensemble all-or-nothing |
 | `ATTACKER`, `DANGEROUS_WEAPON`, `NEAREST_LOCKED` | présents seulement si la référence est autorisée et résoluble dans l’espace public |
-| `EXACT_HUD_DISTANCE` | présent seulement lorsque la règle HUD n’est pas reproductible depuis les sources canoniques |
+| `EXACT_HUD_DISTANCE` | valeur D visible : `Player_ai->current_target_distance` après multiplicateur HUD |
+| `EXACT_HUD_SPEED` | v2 seulement ; valeur S visible calculée comme le target box, y compris le fallback docké et le multiplicateur HUD |
 
 Si la cible vaut zéro, tous les groupes sont absents sauf `PREVIOUS_TARGET`,
 comme l’impose FSTL.

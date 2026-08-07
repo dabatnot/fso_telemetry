@@ -75,6 +75,8 @@ décodé, pas seulement sur l’interface graphique.
 Les tests ciblés vérifient :
 
 - cible nulle, changement de cible et cible précédente ;
+- `TARGET_STATE` v2 : distance D et vitesse S visibles, multiplicateurs HUD,
+  tendances `+`/`-` et fallback de vaisseau docké ;
 - groupe de lead all-or-nothing et banque résolue ;
 - lock absent, tentative, acquis et sous-système ;
 - capteurs offline/degraded/online ;

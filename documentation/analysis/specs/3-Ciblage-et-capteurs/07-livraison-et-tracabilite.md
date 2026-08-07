@@ -28,7 +28,7 @@ des dépendances et ne sont pas recopiées.
 | `P3-REQ-016` | Une piste ne matérialise pas implicitement l’état complet d’une entité. | `telemetry_phase3_visibility_tests` | — |
 | `P3-REQ-017` | Toute classe révélée est installée avant référence et aucune classe cachée n’est cataloguée. | `telemetry_phase3_manifest_tests` | — |
 | `P3-REQ-018` | Nouvelle définition : manifeste puis keyframe; changement de piste seul : aucun manifeste. | `telemetry_phase3_manifest_tests` | — |
-| `P3-REQ-019` | `TARGET_STATE` reproduit cible et groupes conditionnels exacts. | `telemetry_phase3_targeting_tests` | — |
+| `P3-REQ-019` | `TARGET_STATE` v2 reproduit cible, groupes conditionnels et lectures HUD D/S exactes ; v1 reste décodable. | `telemetry_phase3_targeting_tests` | — |
 | `P3-REQ-020` | Identité et sous-systèmes ciblés ne sont présents que s’ils sont révélés et résolubles. | `telemetry_phase3_targeting_tests` | — |
 | `P3-REQ-021` | Le lead autoritaire est associé à une banque valide, sans données HUD dérivées. | `telemetry_phase3_targeting_tests` | — |
 | `P3-REQ-022` | `LOCK_STATE` contient la liste complète de 0 à 64 locks avec absence de tentative explicite. | `telemetry_phase3_lock_tests` | — |
@@ -42,7 +42,7 @@ des dépendances et ne sont pas recopiées.
 | `P3-REQ-030` | Phase et validités sont exactes; texte cargo présent si et seulement si révélé. | `telemetry_phase3_cargo_tests` | — |
 | `P3-REQ-031` | Navigation contient exactement les navpoints, route et destination autorisés. | `telemetry_phase3_navigation_tests` | — |
 | `P3-REQ-032` | Autopilote et refus sont cohérents avec `CONTROL_STATE`, sans commande distante. | `telemetry_phase3_navigation_tests` | — |
-| `P3-REQ-033` | Les dérivations tactiques restent client ; la coordonnée radar live utilise strictement les entrées v2, avec fallback seulement pour capture v1. | `telemetry_phase3_derived_value_tests` | — |
+| `P3-REQ-033` | Les dérivations tactiques restent client sauf D/S HUD cible v2 ; la coordonnée radar live utilise strictement les entrées v2, avec fallback seulement pour capture v1. | `telemetry_phase3_derived_value_tests` | — |
 | `P3-REQ-034` | Valeurs non finies, enums, IDs, temps et références invalides échouent fermés. | `telemetry_phase3_security_bounds_tests` | — |
 | `P3-REQ-035` | Snapshot, keyframe et resync sont exhaustifs et atomiques après `ACK APPLIED`. | `telemetry_phase3_replication_tests` | — |
 | `P3-REQ-036` | Les deltas sont cumulatifs, remplacent des atomes complets et basculent en keyframe au-delà de 1 Mio. | `telemetry_phase3_replication_tests` | — |

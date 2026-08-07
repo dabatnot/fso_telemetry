@@ -272,7 +272,7 @@ constexpr std::size_t Phase2CompleteDomainMaximumRecords =
 
 struct Phase2StateImageRebuildSet {
 	std::array<std::uint16_t,
-		Phase2CompleteDomainMaximumRecords> canonical_indices;
+		protocol::MaxIncrementalDirtyStateAtomCount> canonical_indices;
 	std::size_t count = 0U;
 	std::uint8_t patch_pool_slot = 0xffU;
 	std::uint8_t patch_layout_mask = 0U;

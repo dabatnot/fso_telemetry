@@ -197,11 +197,12 @@ ValidationError validate_business_record(const RecordEnvelopeView& record,
 	if (!business_record_metadata(record.raw_record_type, candidate)) {
 		return record.raw_record_type == 0 ? ValidationError::OutOfRange : ValidationError::None;
 	}
-	const auto radar_contacts_v2 =
-		candidate.type == RecordType::RadarContacts &&
+	const auto phase3_v2 =
+		(candidate.type == RecordType::RadarContacts ||
+		 candidate.type == RecordType::TargetState) &&
 		record.record_version == 2U &&
 		protocol_minor >= VersionMinorV1_1;
-	if (record.record_version != 1U && !radar_contacts_v2) {
+	if (record.record_version != 1U && !phase3_v2) {
 		return ValidationError::UnsupportedRecordVersion;
 	}
 	if (const auto error = validate_record_flags_v1(record.record_flags, RecordFlagPolicy::AllowV1Mutations);

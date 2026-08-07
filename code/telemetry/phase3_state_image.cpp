@@ -171,12 +171,6 @@ bool make_locks(const Phase3Projection& source, StateAtom& atom)
 bool make_target(const Phase3Projection& source, StateAtom& atom)
 {
 	const auto& target = source.target;
-	// Exact HUD distance is a reproducible client-side derivation. The legacy
-	// protocol bit remains recognized for older decoders, but Phase 3 producers
-	// must never materialize it on the wire.
-	if ((target.presence &
-		 protocol::TargetStatePresenceFlagExactHudDistance) != 0U)
-		return false;
 	constexpr std::uint64_t SubsystemPresenceFlags =
 		protocol::TargetStatePresenceFlagTargetSubsystem |
 		protocol::TargetStatePresenceFlagLockSubsystem;
@@ -230,10 +224,16 @@ bool make_target(const Phase3Projection& source, StateAtom& atom)
 		((target.presence & protocol::TargetStatePresenceFlagNearestLocked) != 0U &&
 			!writer.write_u64(target.nearest_locked_entity_id)) ||
 		((target.presence & protocol::TargetStatePresenceFlagExactHudDistance) != 0U &&
-			!writer.write_f32(target.exact_hud_distance)))
+			!writer.write_f32(target.exact_hud_distance)) ||
+		((target.presence & protocol::TargetStatePresenceFlagExactHudSpeed) != 0U &&
+			!writer.write_f32(target.exact_hud_speed)))
 		return false;
-	return set_entity_key(atom, RecordType::TargetState, source.player_entity_id) &&
-		assign_payload(writer, atom) && validate_encoded(atom);
+	if (!set_entity_key(atom, RecordType::TargetState, source.player_entity_id) ||
+		!assign_payload(writer, atom)) {
+		return false;
+	}
+	atom.record_version = 2U;
+	return validate_encoded(atom);
 }
 
 bool make_radar(const Phase3Projection& source, StateAtom& atom)
