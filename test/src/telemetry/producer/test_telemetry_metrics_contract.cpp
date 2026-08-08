@@ -32,6 +32,9 @@ TEST(TelemetryP91MetricsContract, FixedCardinalitySnapshotAndClosedLabelCatalogA
 	EXPECT_EQ(5U, static_cast<std::size_t>(detail::TelemetryDeltaDropReason::Count));
 	EXPECT_EQ(6U, static_cast<std::size_t>(detail::TelemetrySessionEndReason::Count));
 	EXPECT_EQ(7U, static_cast<std::size_t>(detail::TelemetryRuntimeFaultReason::Count));
+	EXPECT_EQ(7U, static_cast<std::size_t>(detail::TelemetryPhase3Block::Count));
+	EXPECT_EQ(9U,
+		static_cast<std::size_t>(detail::TelemetryPhase3CaptureFailure::Count));
 	EXPECT_EQ(9U, detail::TelemetryMetricHistogramBucketCount);
 	EXPECT_EQ(4U, detail::TelemetryMetricsMaxClients);
 
@@ -54,12 +57,20 @@ TEST(TelemetryP91MetricsContract, ProcessTotalsSurviveWhileSessionAndMissionScop
 	metrics.observe_session(0U, detail::TelemetryMetricHistogram::SerializationDuration, 25U);
 	metrics.observe_mission(detail::TelemetryMetricHistogram::CaptureDuration, 10U);
 	metrics.set_current_player_entity_id(42U);
+	metrics.record_phase3_capture_failure(detail::TelemetryPhase3Block::Radar,
+		detail::TelemetryPhase3CaptureFailure::InvalidSource);
 
 	const auto before = metrics.snapshot();
 	EXPECT_EQ(3U, before.process_counters[counter_index(detail::TelemetryMetricCounter::HeartbeatProbes)]);
 	EXPECT_EQ(3U, before.sessions[0].counters[counter_index(detail::TelemetryMetricCounter::HeartbeatProbes)]);
 	EXPECT_EQ(1U, before.mission_histograms[histogram_index(detail::TelemetryMetricHistogram::CaptureDuration)].count);
 	EXPECT_EQ(42U, before.current_player_entity_id);
+	EXPECT_EQ(1U, before.phase3_capture_failures[
+		static_cast<std::size_t>(detail::TelemetryPhase3Block::Radar)][
+		static_cast<std::size_t>(detail::TelemetryPhase3CaptureFailure::InvalidSource)]);
+	EXPECT_EQ(1U, before.mission_phase3_capture_failures[
+		static_cast<std::size_t>(detail::TelemetryPhase3Block::Radar)][
+		static_cast<std::size_t>(detail::TelemetryPhase3CaptureFailure::InvalidSource)]);
 
 	metrics.reset_session(0U);
 	metrics.reset_mission();
@@ -70,6 +81,12 @@ TEST(TelemetryP91MetricsContract, ProcessTotalsSurviveWhileSessionAndMissionScop
 	EXPECT_EQ(0U, after.sessions[0].histograms[histogram_index(detail::TelemetryMetricHistogram::SerializationDuration)].count);
 	EXPECT_EQ(0U, after.mission_histograms[histogram_index(detail::TelemetryMetricHistogram::CaptureDuration)].count);
 	EXPECT_EQ(0U, after.current_player_entity_id);
+	EXPECT_EQ(1U, after.phase3_capture_failures[
+		static_cast<std::size_t>(detail::TelemetryPhase3Block::Radar)][
+		static_cast<std::size_t>(detail::TelemetryPhase3CaptureFailure::InvalidSource)]);
+	EXPECT_EQ(0U, after.mission_phase3_capture_failures[
+		static_cast<std::size_t>(detail::TelemetryPhase3Block::Radar)][
+		static_cast<std::size_t>(detail::TelemetryPhase3CaptureFailure::InvalidSource)]);
 }
 
 TEST(TelemetryP91MetricsContract, ScalarDiagnosticsDoNotRequireCopyingTheMetricsSnapshot)

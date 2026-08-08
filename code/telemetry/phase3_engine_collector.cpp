@@ -604,13 +604,14 @@ Phase3EngineCollectStatus collect_target_and_locks(
 	std::uint64_t sample_time,
 	const Phase2ManifestCandidate* installed_manifest,
 	Phase3IdentityRegistry& identities,
+	object* current_target,
 	Phase3Projection& output) noexcept
 {
 	output.target.producer_sample_time_us = sample_time;
 	if (Player_ai == nullptr || Player_ship == nullptr) {
 		return Phase3EngineCollectStatus::InvalidSource;
 	}
-	if (auto* current_target = current_player_target()) {
+	if (current_target != nullptr) {
 		auto& target = *current_target;
 		// TARGET_STATE mirrors the Target Box, not the radar.  A selected HUD
 		// object may legitimately have no radar blip.
@@ -853,6 +854,8 @@ Phase3EngineCollectStatus collect_radar(
 	std::uint64_t sample_time,
 	const Phase2ManifestCandidate* installed_manifest,
 	Phase3IdentityRegistry& identities,
+	object* current_target,
+	int raw_target_objnum,
 	Phase3Projection& output) noexcept
 {
 	output.radar.producer_sample_time_us = sample_time;
@@ -915,7 +918,6 @@ Phase3EngineCollectStatus collect_radar(
 	matrix eye_orientation{};
 	object_get_eye(
 		&unused_eye_position, &eye_orientation, Player_obj, false);
-	const auto radar_target_objnum = Player_ai->target_objnum;
 	for (auto* source = GET_FIRST(&obj_used_list);
 		 source != END_OF_LIST(&obj_used_list);
 		 source = GET_NEXT(source)) {
@@ -932,6 +934,15 @@ Phase3EngineCollectStatus collect_radar(
 			type != protocol::ObjectType::JumpNode) {
 			continue;
 		}
+		// The AI may retain an object index for a fraction of a tick after the
+		// selected signature has disappeared. If that slot has already been
+		// reused, treating the replacement as the current target would disagree
+		// with TARGET_STATE and disclose a selection the Target Box no longer
+		// owns. Omit only that ambiguous track until the AI reference is coherent.
+		if (raw_target_objnum >= 0 && OBJ_INDEX(source) == raw_target_objnum &&
+			source != current_target) {
+			continue;
+		}
 		RadarContactProjection projected;
 		if (!radar_project_contact(source, projected)) {
 			continue;
@@ -940,8 +951,7 @@ Phase3EngineCollectStatus collect_radar(
 		// refreshed only after at least one contact has passed projection. The
 		// timer makes subsequent contacts in this tick no-ops.
 		radar_refresh_bright_range();
-		const auto is_current_target =
-			OBJ_INDEX(source) == radar_target_objnum;
+		const auto is_current_target = source == current_target;
 		RadarContactVisual visual;
 		if (!radar_resolve_contact_visual(
 				source, projected, is_current_target, visual)) {
@@ -1489,8 +1499,8 @@ Phase3EngineCollectStatus discover_phase3_catalog_dependencies(
 			target.instance >= 0 && target.instance < MAX_SHIPS &&
 			valid_live_object(&target)) {
 			const auto class_index = Ships[target.instance].ship_info_index;
-			if (class_index < 0 ||
-				class_index >= static_cast<int>(Ship_info.size()) ||
+			if (class_index >= 0 &&
+				class_index < static_cast<int>(Ship_info.size()) &&
 				!append(output.ship_class_source_keys,
 					output.ship_class_count,
 					static_cast<std::uint32_t>(class_index) + 1U)) {
@@ -1512,8 +1522,8 @@ Phase3EngineCollectStatus discover_phase3_catalog_dependencies(
 				static_cast<std::uint32_t>(target.signature) ==
 					cargo.target_capture_key.value) {
 				const auto class_index = Ships[target.instance].ship_info_index;
-				if (class_index < 0 ||
-					class_index >= static_cast<int>(Ship_info.size()) ||
+				if (class_index >= 0 &&
+					class_index < static_cast<int>(Ship_info.size()) &&
 					!append(output.ship_class_source_keys,
 						output.ship_class_count,
 						static_cast<std::uint32_t>(class_index) + 1U)) {
@@ -1552,39 +1562,71 @@ Phase3EngineCollectStatus collect_phase3_engine_projection(
 	const Phase3EngineCollectInput& input,
 	Phase3IdentityRegistry& identities,
 	Phase3Projection& output,
-	Phase3Projection& scratch) noexcept
+	Phase3Projection& scratch,
+	Phase3EngineCollectDiagnostic* diagnostic) noexcept
 {
+	if (diagnostic != nullptr) *diagnostic = {};
+	const auto reject_before_transaction = [diagnostic](
+		Phase3EngineCollectBlock block,
+		Phase3EngineCollectStatus failure) noexcept {
+		if (diagnostic != nullptr) {
+			diagnostic->block = block;
+			diagnostic->status = failure;
+		}
+		return failure;
+	};
 	if (!phase2_current_thread_is_main()) {
-		return Phase3EngineCollectStatus::NotMainThread;
+		return reject_before_transaction(
+			Phase3EngineCollectBlock::Precondition,
+			Phase3EngineCollectStatus::NotMainThread);
 	}
 	if ((Game_mode & GM_IN_MISSION) == 0 || Player == nullptr ||
 		Player_obj == nullptr || Player_ship == nullptr) {
-		return Phase3EngineCollectStatus::NoPlayer;
+		return reject_before_transaction(
+			Phase3EngineCollectBlock::Precondition,
+			Phase3EngineCollectStatus::NoPlayer);
 	}
 	if (!identities.ready() || input.player_entity_id == 0U ||
 		&output == &scratch ||
 		Player_obj->type != OBJ_SHIP || Player_obj->signature <= 0 ||
 		Player_ship->objnum < 0 || Player_ship->objnum >= MAX_OBJECTS ||
 		&Objects[Player_ship->objnum] != Player_obj) {
-		return Phase3EngineCollectStatus::InvalidSource;
+		return reject_before_transaction(
+			Phase3EngineCollectBlock::Precondition,
+			Phase3EngineCollectStatus::InvalidSource);
 	}
 	if (!identities.begin_transaction()) {
-		return Phase3EngineCollectStatus::InvalidSource;
+		return reject_before_transaction(
+			Phase3EngineCollectBlock::Precondition,
+			Phase3EngineCollectStatus::InvalidSource);
 	}
 	scratch = output;
-	const auto reject = [&identities](
+	const auto reject = [&identities, diagnostic](
+		Phase3EngineCollectBlock block,
 		Phase3EngineCollectStatus failure) noexcept {
 		identities.rollback_transaction();
+		if (diagnostic != nullptr) {
+			diagnostic->block = block;
+			diagnostic->status = failure;
+		}
 		return failure;
 	};
 	auto status = reconcile_phase2(input, identities);
-	if (status != Phase3EngineCollectStatus::Collected) return reject(status);
+	if (status != Phase3EngineCollectStatus::Collected)
+		return reject(Phase3EngineCollectBlock::Precondition, status);
 	const auto identity_changed =
 		scratch.player_entity_id != input.player_entity_id;
 	const auto refresh_flight =
 		input.refresh_flight_controls || identity_changed;
 	const auto refresh_systems =
 		input.refresh_systems || identity_changed;
+	// Resolve the mutable Target Box reference exactly once for this projection.
+	// When both cadence families fire, TARGET_STATE and RADAR_CONTACTS therefore
+	// observe the same validated index/signature/instance tuple. When only one
+	// family fires, the other retains its own older producer sample time.
+	auto* current_target = current_player_target();
+	const auto raw_target_objnum =
+		Player_ai != nullptr ? Player_ai->target_objnum : -1;
 	if (identity_changed) reconstruct_in_place(scratch);
 	scratch.player_entity_id = input.player_entity_id;
 	if (refresh_flight) {
@@ -1592,8 +1634,9 @@ Phase3EngineCollectStatus collect_phase3_engine_projection(
 		scratch.lock_count = 0U;
 		status = collect_target_and_locks(
 			input.producer_sample_time_us,
-			input.installed_manifest, identities, scratch);
-		if (status != Phase3EngineCollectStatus::Collected) return reject(status);
+			input.installed_manifest, identities, current_target, scratch);
+		if (status != Phase3EngineCollectStatus::Collected)
+			return reject(Phase3EngineCollectBlock::TargetLocks, status);
 	}
 	if (refresh_systems) {
 		reconstruct_in_place(scratch.radar);
@@ -1602,16 +1645,21 @@ Phase3EngineCollectStatus collect_phase3_engine_projection(
 		reconstruct_in_place(scratch.cargo);
 		reconstruct_in_place(scratch.navigation);
 		status = collect_radar(input.producer_sample_time_us,
-			input.installed_manifest, identities, scratch);
-		if (status != Phase3EngineCollectStatus::Collected) return reject(status);
+			input.installed_manifest, identities, current_target,
+			raw_target_objnum, scratch);
+		if (status != Phase3EngineCollectStatus::Collected)
+			return reject(Phase3EngineCollectBlock::Radar, status);
 		status = collect_threat(input.producer_sample_time_us,
 			input.installed_manifest, identities, scratch);
-		if (status != Phase3EngineCollectStatus::Collected) return reject(status);
+		if (status != Phase3EngineCollectStatus::Collected)
+			return reject(Phase3EngineCollectBlock::Threat, status);
 		status = collect_cargo(input, identities, scratch);
-		if (status != Phase3EngineCollectStatus::Collected) return reject(status);
+		if (status != Phase3EngineCollectStatus::Collected)
+			return reject(Phase3EngineCollectBlock::Cargo, status);
 		status = collect_navigation(
 			input.producer_sample_time_us, identities, scratch);
-		if (status != Phase3EngineCollectStatus::Collected) return reject(status);
+		if (status != Phase3EngineCollectStatus::Collected)
+			return reject(Phase3EngineCollectBlock::Navigation, status);
 	}
 	output = scratch;
 	identities.commit_transaction();

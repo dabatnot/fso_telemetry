@@ -109,6 +109,28 @@ enum class TelemetryPhase2Ring : std::uint8_t { Support = 0, Cleanup, Count };
 enum class TelemetryPhase2MemoryScope : std::uint8_t {
 	Shared = 0, ClientTotal, ProcessTotal, Count
 };
+enum class TelemetryPhase3Block : std::uint8_t {
+	Precondition = 0,
+	TargetLocks,
+	Radar,
+	Threat,
+	Cargo,
+	Navigation,
+	StateImage,
+	Count,
+};
+enum class TelemetryPhase3CaptureFailure : std::uint8_t {
+	NoPlayer = 0,
+	NotMainThread,
+	InvalidSource,
+	SourceLimitExceeded,
+	IdentityFailure,
+	InvalidInput,
+	CapacityExceeded,
+	EncodingFailed,
+	AllocationFailed,
+	Count,
+};
 
 enum class TelemetryMetricCounter : std::uint8_t {
 	RuntimeFaults = 0,
@@ -224,6 +246,10 @@ struct TelemetryMetricsSnapshot {
 			static_cast<std::size_t>(TelemetryPhase2CaptureFailure::Count)>,
 		static_cast<std::size_t>(TelemetryPhase2Block::Count)>
 		phase2_capture_failures{};
+	std::array<std::array<std::uint64_t,
+			static_cast<std::size_t>(TelemetryPhase3CaptureFailure::Count)>,
+		static_cast<std::size_t>(TelemetryPhase3Block::Count)>
+		phase3_capture_failures{};
 	std::array<std::uint64_t, static_cast<std::size_t>(TelemetryPhase2ClosureResult::Count)>
 		phase2_closure_results{};
 	std::array<std::uint64_t, static_cast<std::size_t>(TelemetryPhase2ManifestResult::Count)>
@@ -258,6 +284,10 @@ struct TelemetryMetricsSnapshot {
 			static_cast<std::size_t>(TelemetryPhase2CaptureFailure::Count)>,
 		static_cast<std::size_t>(TelemetryPhase2Block::Count)>
 		mission_phase2_capture_failures{};
+	std::array<std::array<std::uint64_t,
+			static_cast<std::size_t>(TelemetryPhase3CaptureFailure::Count)>,
+		static_cast<std::size_t>(TelemetryPhase3Block::Count)>
+		mission_phase3_capture_failures{};
 	std::array<std::uint64_t, static_cast<std::size_t>(TelemetryPhase2ClosureResult::Count)>
 		mission_phase2_closure_results{};
 	std::array<std::uint64_t, static_cast<std::size_t>(TelemetryPhase2LifecycleKind::Count)>
@@ -320,6 +350,8 @@ class TelemetryMetrics final {
 		std::uint64_t duration_us) noexcept;
 	void record_phase2_capture_failure(TelemetryPhase2Block block,
 		TelemetryPhase2CaptureFailure reason) noexcept;
+	void record_phase3_capture_failure(TelemetryPhase3Block block,
+		TelemetryPhase3CaptureFailure reason) noexcept;
 	void record_phase2_closure(TelemetryPhase2ClosureResult result) noexcept;
 	void set_phase2_closure(std::uint64_t classes, std::uint64_t ships,
 		std::uint64_t weapons, std::uint64_t subsystems) noexcept;

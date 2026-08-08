@@ -25,6 +25,7 @@ void TelemetryMetrics::reset_mission() noexcept
 	m_snapshot.mission_histograms = {};
 	m_snapshot.mission_phase2_capture_duration = {};
 	m_snapshot.mission_phase2_capture_failures = {};
+	m_snapshot.mission_phase3_capture_failures = {};
 	m_snapshot.mission_phase2_closure_results = {};
 	m_snapshot.mission_phase2_lifecycle_events = {};
 	m_snapshot.mission_phase2_support_transitions = {};
@@ -200,6 +201,25 @@ void TelemetryMetrics::record_phase2_capture_failure(
 		1U);
 	saturating_add(
 		m_snapshot.mission_phase2_capture_failures
+			[block_index][reason_index],
+		1U);
+}
+
+void TelemetryMetrics::record_phase3_capture_failure(
+	TelemetryPhase3Block block,
+	TelemetryPhase3CaptureFailure reason) noexcept
+{
+	if (!m_snapshot.provisioned) return;
+	const auto block_index = static_cast<std::size_t>(block);
+	const auto reason_index = static_cast<std::size_t>(reason);
+	if (block_index >= m_snapshot.phase3_capture_failures.size() ||
+		reason_index >=
+			m_snapshot.phase3_capture_failures[block_index].size())
+		return;
+	saturating_add(
+		m_snapshot.phase3_capture_failures[block_index][reason_index], 1U);
+	saturating_add(
+		m_snapshot.mission_phase3_capture_failures
 			[block_index][reason_index],
 		1U);
 }

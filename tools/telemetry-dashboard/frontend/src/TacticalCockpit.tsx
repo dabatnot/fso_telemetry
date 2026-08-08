@@ -159,7 +159,10 @@ function drawContact(
   x: number,
   y: number
 ) {
-  const target = (contact.flagBits & 0x02) !== 0;
+  // TARGET_STATE is sampled at flightHz and is the authority for the current
+  // cockpit selection. The contact flag describes the older/newer radar sample
+  // and remains available for inspection, but must not drive live emphasis.
+  const target = contact.current;
   const bomb = (contact.flagBits & 0x20) !== 0;
   const threat = (contact.flagBits & 0x80) !== 0;
   const homing = (contact.flagBits & 0x40) !== 0;
@@ -333,7 +336,7 @@ function RadarScope({
           {visibleList.map((contact) => (
             <button
               key={contact.id}
-              className={`${(contact.flagBits & 0x02) ? "current" : ""} ${contact.invalid ? "invalid" : ""}`}
+              className={`${contact.current ? "current" : ""} ${contact.invalid ? "invalid" : ""}`}
               data-color-provenance={contact.color.provenance}
               style={{ "--contact-color": contact.color.css } as CSSProperties}
               onClick={() => onInspect({

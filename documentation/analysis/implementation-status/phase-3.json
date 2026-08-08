@@ -2,8 +2,8 @@
   "schema": "fs2open.telemetry.product-implementation.v1",
   "phase": 3,
   "phaseDirectory": "documentation/analysis/specs/3-Ciblage-et-capteurs",
-  "contractFingerprint": "sha256:3649e0e8259f96e0be24a168ef03391fe0a362b383d38354b19a55d45a2e579a",
-  "updatedAtUtc": "2026-08-08T08:39:03Z",
+  "contractFingerprint": "sha256:b7bff7b8cf43dcd4a27684a46f6340bac3a1f0fc201ff4c3222ba452aaae4d85",
+  "updatedAtUtc": "2026-08-08T13:25:14Z",
   "requirements": [
     {
       "id": "P3-REQ-001",
@@ -307,10 +307,10 @@
     },
     {
       "id": "P3-REQ-010",
-      "observable": "Toutes les sources et références moteur sont validées avant lecture.",
+      "observable": "Toutes les sources et références moteur sont validées avant lecture; une cible transitoirement périmée est omise sans fermer la session.",
       "expectedAutomatedProof": "`telemetry_phase3_capture_contract_tests`",
       "implementationStatus": "implemented",
-      "implementationSummary": "Le collecteur valide ses gardes moteur avant transaction, construit la projection dans un scratch préalloué et restaure toutes les nouvelles liaisons ainsi que le high-water mark d'ID si un bloc tardif échoue. Une référence cible obligatoire hors plage ferme le runtime sans publication partielle ; une identité détaillée de cible absente du catalogue est facultative et n'interrompt pas la session.",
+      "implementationSummary": "La cible est résolue une fois par projection avec index, signature, type et instance. Une signature périmée ou un slot réutilisé vide TARGET_STATE et omet la piste ambiguë pour ce tick; les autres erreurs restent atomiques et fail-closed.",
       "implementationPaths": [
         "code/telemetry/phase3_engine_collector.cpp",
         "code/telemetry/phase3_engine_collector.h",
@@ -323,7 +323,7 @@
         {
           "id": "P3-REQ-010-AUTO-01",
           "kind": "automated",
-          "command": "build/bin/Release/unittests.exe --gtest_filter=TelemetryPhase3CaptureContract.OutOfRangeTargetIsRejectedBeforeAnyPartialCockpitStateIsPublished --gtest_color=no",
+          "command": "build/bin/Release/unittests.exe --gtest_filter=TelemetryPhase3CaptureContract.DestroyedTargetIsOmittedWithoutClosingTheLiveSession --gtest_color=no",
           "status": "passed",
           "inputs": [
             "code/telemetry/phase3_engine_collector.cpp",
@@ -334,15 +334,15 @@
             "code/telemetry/native_session_runtime.h",
             "test/src/telemetry/producer/test_telemetry_native_runtime_integration_contract.cpp"
           ],
-          "inputFingerprint": "sha256:6ed5f46a4802b481929515bfc7bccb4db17de335217d0642290b93e0d0cc902f",
-          "observedAtUtc": "2026-08-06T18:52:12Z",
-          "result": "1/1 passed: une cible hors plage sur une session CockpitSensors Live provoque PermanentCaptureFailure, ferme la session et ne publie aucun manifeste, snapshot ni delta après l'injection.",
+          "inputFingerprint": "sha256:7500f548685ad69814607d71ce3da898897d59158b443339e1ae5e286e4b82e1",
+          "observedAtUtc": "2026-08-08T10:27:10Z",
+          "result": "1/1 passed: la destruction de la cible vide l'état au tick flightHz sans fermer la session Live ni invalider les contacts systemsHz retenus.",
           "resultRef": null
         },
         {
           "id": "P3-REQ-010-AUTO-02",
           "kind": "automated",
-          "command": "build\\bin\\Release\\unittests.exe --gtest_filter=TelemetryPhase3Targeting.StaleTargetSignatureRefusesOnlyTheCurrentTargetBlock --gtest_color=no",
+          "command": "build/bin/Release/unittests.exe --gtest_filter=TelemetryPhase3RadarContacts.IndependentTargetAndRadarRefreshesRetainOwnSampleAndConverge --gtest_color=no",
           "status": "passed",
           "inputs": [
             "code/telemetry/phase3_engine_collector.cpp",
@@ -353,9 +353,9 @@
             "code/telemetry/native_session_runtime.h",
             "test/src/telemetry/producer/test_telemetry_native_runtime_integration_contract.cpp"
           ],
-          "inputFingerprint": "sha256:4d7617f83ae53f84c5c04f91c2282498d83675362bd77c71faa48a3f08ef4685",
-          "observedAtUtc": "2026-08-06T22:01:12Z",
-          "result": "1/1 passed: une paire index/signature de cible devenue incohérente refuse uniquement TARGET_STATE pour cet échantillon, sans créer l'identité périmée ni faire échouer la projection Phase 3.",
+          "inputFingerprint": "sha256:7500f548685ad69814607d71ce3da898897d59158b443339e1ae5e286e4b82e1",
+          "observedAtUtc": "2026-08-08T10:27:10Z",
+          "result": "1/1 passed: changement flightHz, convergence systemsHz, signature périmée et réutilisation immédiate du slot restent collectés sans fausse sélection ni panne.",
           "resultRef": null
         }
       ],
@@ -392,10 +392,10 @@
     },
     {
       "id": "P3-REQ-012",
-      "observable": "Ciblage suit `flightHz`, capteurs/opérations suivent `systemsHz`, keyframe capture tout au même instant.",
+      "observable": "Ciblage suit `flightHz`, capteurs/opérations suivent `systemsHz`; leurs sample times peuvent différer hors keyframe.",
       "expectedAutomatedProof": "`telemetry_phase3_capture_schedule_tests`",
       "implementationStatus": "implemented",
-      "implementationSummary": "Les cadences targeting/systèmes sont séparées; les transactions fiables sont drainées par le vrai transport et toute keyframe force une projection complète dont les six familles portent exactement le sample time du tick de capture.",
+      "implementationSummary": "Les cadences targeting/systèmes restent séparées et leurs atomes conservent leur sample time propre. Une keyframe force toujours une projection complète et cohérente au même instant.",
       "implementationPaths": [
         "code/telemetry/native_session_runtime.cpp",
         "code/telemetry/native_session_runtime.h",
@@ -429,9 +429,9 @@
             "code/ship/awacs.h",
             "test/src/telemetry/producer/test_telemetry_native_runtime_integration_contract.cpp"
           ],
-          "inputFingerprint": "sha256:8870ba9ea92250007e19d0a73964f359d714ccce5cfa9168e40ad1934ec2afb4",
-          "observedAtUtc": "2026-08-06T18:52:12Z",
-          "result": "2/2 tests passent; le runtime sépare flightHz/systemsHz, draine les transactions fiables sur le vrai transport et matérialise la keyframe avec un sample time identique sur les six familles Phase 3.",
+          "inputFingerprint": "sha256:5d51d94b70c9300bede4db97c3f70d9e7480510dc4dc395594cca35d3ffc2e06",
+          "observedAtUtc": "2026-08-08T10:27:10Z",
+          "result": "2/2 tests passent; les ticks ordinaires conservent les sample times propres à chaque cadence et les keyframes forcent toujours un sample complet unique.",
           "resultRef": null
         },
         {
@@ -578,10 +578,10 @@
     },
     {
       "id": "P3-REQ-017",
-      "observable": "Toute classe révélée par ID est installée avant référence ; un libellé HUD exact reste indépendant du manifeste.",
+      "observable": "Toute classe révélée par ID est installée avant référence ; un libellé HUD exact reste indépendant du manifeste et une arme dynamique non installée est omise.",
       "expectedAutomatedProof": "`telemetry_phase3_manifest_tests`",
       "implementationStatus": "implemented",
-      "implementationSummary": "Chaque slot CockpitSensors possède son manifeste propre. Une cible ou un sous-système révélé peut installer une classe ; le nom et le type HUD d’un contact radar visible restent autoportants et ne déclenchent aucune expansion de manifeste.",
+      "implementationSummary": "Chaque slot CockpitSensors possède son manifeste propre. Une classe révélée est installée avant référence ; les libellés HUD et les armes dynamiques absentes du catalogue restent autoportants ou omis sans expansion synthétique ni fermeture de session.",
       "implementationPaths": [
         "code/telemetry/native_session_runtime.cpp",
         "code/telemetry/native_session_runtime.h",
@@ -609,16 +609,18 @@
         {
           "id": "P3-REQ-017-AUTO-02",
           "kind": "automated",
-          "command": "build\\bin\\Release\\unittests.exe --gtest_filter=TelemetryPhase3Threat.IncomingHomingMissileUsesTheInstalledManifestClassAndPublicIdentity --gtest_color=no",
+          "command": "build/bin/Release/unittests.exe --gtest_filter=TelemetryPhase3Threat.IncomingHomingMissileUsesTheInstalledManifestClassAndPublicIdentity:TelemetryPhase3CaptureContract.DestroyedTargetAndUnknownEnemyWeaponDoNotCloseTheLiveSession --gtest_color=no",
           "status": "passed",
           "inputs": [
+            "code/telemetry/native_session_runtime.cpp",
+            "code/telemetry/native_session_runtime.h",
             "code/telemetry/phase3_engine_collector.cpp",
             "code/telemetry/phase3_engine_collector.h",
             "test/src/telemetry/producer/test_telemetry_native_runtime_integration_contract.cpp"
           ],
-          "inputFingerprint": "sha256:6794c407a85a5e0701a71df95b7abedfd7d92f01a592adda8eb2fe7ff06f87fd",
-          "observedAtUtc": "2026-08-06T18:52:12Z",
-          "result": "passed: 1 test; a real incoming homing missile contributes exactly its weapon source key to catalog discovery and is only projected with the corresponding installed manifest class.",
+          "inputFingerprint": "sha256:47eb6aa6a53e8126c59b847de6ee26a9195daa277fed78b706937c0bd2ba9fb1",
+          "observedAtUtc": "2026-08-08T13:25:14Z",
+          "result": "2/2 passed: une classe installée est référencée exactement; une arme ennemie dynamique absente du catalogue est omise sans manifeste synthétique et la session reste Live.",
           "resultRef": null
         }
       ],
@@ -628,10 +630,10 @@
     },
     {
       "id": "P3-REQ-018",
-      "observable": "Nouvelle définition référencée : manifeste puis keyframe; nouveau libellé HUD ou changement de piste seul : aucun manifeste.",
+      "observable": "Nouvelle définition référencée : manifeste puis keyframe; nouveau libellé HUD, changement de piste ou arme dynamique absente seuls : aucun manifeste.",
       "expectedAutomatedProof": "`telemetry_phase3_manifest_tests`",
       "implementationStatus": "implemented",
-      "implementationSummary": "Les catalogues CockpitSensors sont reconstruits par slot à partir de l’ensemble de clés sélectionné. Une nouvelle classe référencée impose manifeste, ACK APPLIED puis keyframe ; l’apparition d’un contact radar v3 décoré par texte HUD ne modifie pas cette fermeture.",
+      "implementationSummary": "Les catalogues CockpitSensors sont reconstruits par slot à partir de l’ensemble de clés sélectionné. Une nouvelle classe référencée impose manifeste, ACK APPLIED puis keyframe ; un libellé HUD ou une arme dynamique absente du catalogue courant ne déclenche aucun manifeste.",
       "implementationPaths": [
         "code/telemetry/native_session_runtime.cpp",
         "code/telemetry/native_session_runtime.h",
@@ -659,7 +661,7 @@
         {
           "id": "P3-REQ-018-AUTO-02",
           "kind": "automated",
-          "command": "build\\bin\\Release\\unittests.exe --gtest_filter=TelemetryPhase3CaptureSchedule.NativeRuntimeSeparatesCadencesAndKeyframesUseOneCompleteSample --gtest_color=no",
+          "command": "build/bin/Release/unittests.exe --gtest_filter=TelemetryPhase3Threat.IncomingHomingMissileUsesTheInstalledManifestClassAndPublicIdentity:TelemetryPhase3CaptureContract.DestroyedTargetAndUnknownEnemyWeaponDoNotCloseTheLiveSession --gtest_color=no",
           "status": "passed",
           "inputs": [
             "code/telemetry/native_session_runtime.cpp",
@@ -668,9 +670,9 @@
             "code/telemetry/phase3_engine_collector.h",
             "test/src/telemetry/producer/test_telemetry_native_runtime_integration_contract.cpp"
           ],
-          "inputFingerprint": "sha256:1aca8d93847299bf3a8eddeafeba2cb20d36f04b33dcba868d63c88a42ab787d",
-          "observedAtUtc": "2026-08-06T18:52:12Z",
-          "result": "1/1 passed (0.116 s). Après ACK du manifeste initial, un rafraîchissement système sans changement de catalogue n’émet aucun manifeste; une classe nouvellement révélée produit ensuite un ID strictement supérieur, attend ACK APPLIED puis envoie sa keyframe.",
+          "inputFingerprint": "sha256:47eb6aa6a53e8126c59b847de6ee26a9195daa277fed78b706937c0bd2ba9fb1",
+          "observedAtUtc": "2026-08-08T13:25:14Z",
+          "result": "2/2 passed: la référence d’une classe installée reste fidèle; une arme dynamique absente n’émet aucun manifeste et ne ferme pas la session Live.",
           "resultRef": null
         }
       ],
@@ -679,10 +681,10 @@
     },
     {
       "id": "P3-REQ-019",
-      "observable": "`TARGET_STATE` v4 reproduit les cibles Target Box avec ou sans blip radar, groupes conditionnels, D/S, libellé et couleur HUD ; v1/v2/v3 restent décodables.",
+      "observable": "`TARGET_STATE` v4 reproduit les cibles Target Box avec ou sans blip radar et constitue l'autorité courante de sélection; v1/v2/v3 restent décodables.",
       "expectedAutomatedProof": "`telemetry_phase3_targeting_tests`",
       "implementationStatus": "implemented",
-      "implementationSummary": "TARGET_STATE v4 sérialise de façon autonome les cibles du Target Box, y compris hors radar, avec identité/libellé, D/S et couleur brillante résolue par hud_get_iff_color ; une référence transitoire invalide omet seulement la couleur.",
+      "implementationSummary": "TARGET_STATE v4 reste autonome du radar et devient l'autorité courante de sélection. Le collecteur lui transmet la même cible validée que le radar lorsqu'ils s'exécutent au même tick.",
       "implementationPaths": [
         "code/telemetry/phase3_engine_collector.cpp",
         "code/telemetry/phase3_engine_collector.h",
@@ -700,24 +702,24 @@
             "code/telemetry/phase3_state_image.h",
             "test/src/telemetry/producer/phase3_state_image_tests.cpp"
           ],
-      "inputFingerprint": "sha256:f0417f4b5c8efe6e2d951e745f110140775afb371586b9a6912a0a1e17511280",
-      "observedAtUtc": "2026-08-08T08:39:03Z",
-          "result": "21/21 tests d’image Phase 3 passés, dont TARGET_STATE v4 avec couleur HUD RGBA.",
+      "inputFingerprint": "sha256:5cdae10a91cf4a18e208c5504ccb80852389dd9dbe516c39aa3854d5f7e9e711",
+      "observedAtUtc": "2026-08-08T10:27:10Z",
+          "result": "22/22 tests d’image Phase 3 passés, dont préservation des sample times cible/radar indépendants.",
           "resultRef": null
         },
         {
          "id": "P3-REQ-019-AUTO-02",
           "kind": "automated",
           "command": "build\\bin\\Release\\unittests.exe --gtest_filter=TelemetryPhase3Targeting.RetainedStealthObservationUsesTheRealVisibleCockpitTrack --gtest_color=no",
-          "status": "pending",
+          "status": "passed",
           "inputs": [
             "code/telemetry/phase3_engine_collector.cpp",
             "code/telemetry/phase3_engine_collector.h",
             "test/src/telemetry/producer/test_telemetry_native_runtime_integration_contract.cpp"
           ],
-          "inputFingerprint": "sha256:6794c407a85a5e0701a71df95b7abedfd7d92f01a592adda8eb2fe7ff06f87fd",
-          "observedAtUtc": "2026-08-06T18:48:19Z",
-          "result": "1/1 passed: a retained stealth observation is published only after the real cockpit radar projection authorizes the live target, preserving the engine position and velocity without extrapolation.",
+          "inputFingerprint": "sha256:2b844ada833969cfb9946f8ec619e78323f429105425ad9f4e2320c006fa6b6e",
+          "observedAtUtc": "2026-08-08T10:27:10Z",
+          "result": "1/1 passed: TARGET_STATE et le contact radar reçoivent la même cible validée lorsque les deux familles sont dues au même tick.",
           "resultRef": null
         }
       ],
@@ -906,10 +908,10 @@
     },
     {
       "id": "P3-REQ-024",
-      "observable": "Les contacts décodés égalent exactement les pistes autorisées du HUD producteur et portent position locale, distance et décision visuelle du même tick en v4.",
+      "observable": "Les contacts décodés égalent exactement les pistes autorisées du HUD producteur et portent position locale, distance, décision visuelle et flag cible de leur tick radar.",
       "expectedAutomatedProof": "`telemetry_phase3_visibility_tests` + `TelemetryPhase3RadarProjection.*`",
       "implementationStatus": "implemented",
-      "implementationSummary": "Le collecteur délègue l’admission à radar_project_contact puis partage avec le radar standard la résolution bright/type/couleur. La projection et le visuel sont copiés atomiquement ; les références de spawn/despawn invalides sont omises sans fermer la capture.",
+      "implementationSummary": "Le collecteur délègue l’admission à radar_project_contact et conserve CURRENT_TARGET comme décision historique du sample radar. Une cible ambiguë par signature ou réutilisation de slot est omise sans contact synthétique ni fermeture.",
       "implementationPaths": [
         "code/radar/radarsetup.cpp",
         "code/radar/radarsetup.h",
@@ -929,16 +931,16 @@
             "code/telemetry/phase3_engine_collector.h",
             "test/src/telemetry/producer/test_telemetry_native_runtime_integration_contract.cpp"
           ],
-      "inputFingerprint": "sha256:7f9c5eefa78ef8c811cfd4eb91dcfd34933e78af0b30b1078ea1a19b17680d5d",
-      "observedAtUtc": "2026-08-08T08:39:03Z",
-          "result": "Tests ciblés passés : projection atomique, couleur/type partagés avec FSO et omission sûre d’un spawn IFF invalide.",
+      "inputFingerprint": "sha256:d1c2ee1e0ea6562dead699d419d893bd593b544dc90691cb18cddcc569768531",
+      "observedAtUtc": "2026-08-08T10:27:10Z",
+          "result": "1/1 passé : projection, visuel et flag cible sont capturés atomiquement depuis la cible validée du tick radar.",
           "resultRef": null
         },
         {
          "id": "P3-REQ-024-AUTO-02",
           "kind": "automated",
           "command": "build/bin/Release/unittests.exe --gtest_filter=TelemetryPhase3Targeting.RetainedStealthObservationUsesTheRealVisibleCockpitTrack",
-          "status": "pending",
+          "status": "passed",
           "inputs": [
             "code/radar/radarsetup.cpp",
             "code/radar/radarsetup.h",
@@ -946,8 +948,8 @@
             "code/telemetry/phase3_engine_collector.h",
             "test/src/telemetry/producer/test_telemetry_native_runtime_integration_contract.cpp"
           ],
-          "inputFingerprint": "sha256:70dd4d881b358a20b006d619f15323f0c48b5017478baa07b8aff33c87712c6c",
-          "observedAtUtc": "2026-08-06T22:58:00Z",
+          "inputFingerprint": "sha256:d1c2ee1e0ea6562dead699d419d893bd593b544dc90691cb18cddcc569768531",
+          "observedAtUtc": "2026-08-08T10:27:10Z",
           "result": "1/1 passé : pose FLIGHT_STATE distincte ignorée, distance et position locale cohérentes sur deux ticks, ancienne valeur immuable et contact hors portée absent.",
           "resultRef": null
         }
@@ -1063,11 +1065,13 @@
     },
     {
       "id": "P3-REQ-027",
-      "observable": "`THREAT_STATE` reproduit niveau et références autorisées.",
+      "observable": "`THREAT_STATE` reproduit niveau et références autorisées ; une arme entrante sans classe installée est omise sans fermer la session.",
       "expectedAutomatedProof": "`telemetry_phase3_threat_tests`",
       "implementationStatus": "implemented",
-      "implementationSummary": "THREAT_STATE lit les indicateurs autoritaires, les références cockpit autorisées et la liste exhaustive bornée des missiles entrants. Chaque référence est filtrée avant allocation d’ID; un missile guidé entrant reçoit uniquement la classe du manifeste déjà installé.",
+      "implementationSummary": "THREAT_STATE lit les indicateurs autoritaires et les missiles entrants autorisés. Une classe installée produit la référence exacte ; une arme dynamique absente du catalogue est omise pour le tick sans allocation d’ID ni fermeture de session.",
       "implementationPaths": [
+        "code/telemetry/native_session_runtime.cpp",
+        "code/telemetry/native_session_runtime.h",
         "code/telemetry/phase3_engine_collector.cpp"
       ],
       "proofs": [
@@ -1089,16 +1093,18 @@
         {
           "id": "P3-REQ-027-AUTO-02",
           "kind": "automated",
-          "command": "build\\bin\\Release\\unittests.exe --gtest_filter=TelemetryPhase3Threat.IncomingHomingMissileUsesTheInstalledManifestClassAndPublicIdentity --gtest_color=no",
+          "command": "build/bin/Release/unittests.exe --gtest_filter=TelemetryPhase3Threat.IncomingHomingMissileUsesTheInstalledManifestClassAndPublicIdentity:TelemetryPhase3CaptureContract.DestroyedTargetAndUnknownEnemyWeaponDoNotCloseTheLiveSession --gtest_color=no",
           "status": "passed",
           "inputs": [
+            "code/telemetry/native_session_runtime.cpp",
+            "code/telemetry/native_session_runtime.h",
             "code/telemetry/phase3_engine_collector.cpp",
             "code/telemetry/phase3_engine_collector.h",
             "test/src/telemetry/producer/test_telemetry_native_runtime_integration_contract.cpp"
           ],
-          "inputFingerprint": "sha256:6794c407a85a5e0701a71df95b7abedfd7d92f01a592adda8eb2fe7ff06f87fd",
-          "observedAtUtc": "2026-08-06T18:52:12Z",
-          "result": "passed: 1 test; a real incoming homing missile contributes its weapon source key to discovery, receives a public entity ID, and is projected only with the installed manifest class.",
+          "inputFingerprint": "sha256:47eb6aa6a53e8126c59b847de6ee26a9195daa277fed78b706937c0bd2ba9fb1",
+          "observedAtUtc": "2026-08-08T13:25:14Z",
+          "result": "2/2 passed: un missile à classe installée reçoit son ID et sa classe; une arme entrante à classe absente est omise sans fermer la session.",
           "resultRef": null
         }
       ],
@@ -1344,12 +1350,16 @@
       },
         {
           "id": "P3-REQ-034",
-      "observable": "Valeurs non finies, enums, IDs, temps et références invalides échouent fermés.",
+          "observable": "Valeurs non finies, enums, IDs, temps et références invalides échouent fermés; les références dynamiques légalement périmées ou non installées sont omises.",
       "expectedAutomatedProof": "`telemetry_phase3_security_bounds_tests`",
         "implementationStatus": "implemented",
-      "implementationSummary": "L’encodeur et les validateurs refusent les versions, enums de blip, combinaisons flags/type et présences couleur invalides. Les références transitoires moteur échouent localement par omission, sans remplacer l’image complète ni rendre la session stale.",
-        "implementationPaths": [
-          "code/telemetry/phase3_state_image.cpp",
+          "implementationSummary": "L’encodeur et les validateurs refusent les versions, enums de blip, combinaisons flags/type et présences couleur invalides. Les références transitoires ou les classes dynamiques non installées sont omises localement, sans remplacer l’image complète ni rendre la session stale.",
+          "implementationPaths": [
+            "code/telemetry/native_session_runtime.cpp",
+            "code/telemetry/native_session_runtime.h",
+            "code/telemetry/phase3_engine_collector.cpp",
+            "code/telemetry/phase3_engine_collector.h",
+            "code/telemetry/phase3_state_image.cpp",
           "code/telemetry/phase3_state_image.h",
           "code/telemetry/protocol/telemetry_business_records_11_18.cpp",
           "code/telemetry/protocol/telemetry_business_state_validation.cpp"
@@ -1365,23 +1375,23 @@
               "code/telemetry/phase3_state_image.h",
               "test/src/telemetry/producer/phase3_state_image_tests.cpp"
             ],
-      "inputFingerprint": "sha256:f0417f4b5c8efe6e2d951e745f110140775afb371586b9a6912a0a1e17511280",
-      "observedAtUtc": "2026-08-08T08:39:03Z",
-          "result": "21/21 tests d’image Phase 3 passés, avec rejet fermé des enums et présences v4 invalides.",
+      "inputFingerprint": "sha256:5cdae10a91cf4a18e208c5504ccb80852389dd9dbe516c39aa3854d5f7e9e711",
+      "observedAtUtc": "2026-08-08T10:27:10Z",
+          "result": "22/22 tests d’image Phase 3 passés, avec rejet fermé des valeurs invalides et conservation légale des cadences indépendantes.",
             "resultRef": null
           },
           {
          "id": "P3-REQ-034-AUTO-02",
             "kind": "automated",
             "command": "build/bin/Release/unittests.exe --gtest_filter=TelemetryProtocolBusinessRecords11To18.TargetPresenceIsBoundToCurrentTargetAndValidUtf8:TelemetryProtocolBusinessRecords11To18.RadarRejectsNonFiniteRangesAndInvalidVisibilityIntervals --gtest_color=no",
-            "status": "pending",
+            "status": "passed",
             "inputs": [
               "code/telemetry/protocol/telemetry_business_records_19_24.cpp",
               "code/telemetry/protocol/telemetry_business_records_11_18.cpp",
               "test/src/telemetry/protocol/test_telemetry_business_records_11_18.cpp"
             ],
-            "inputFingerprint": "sha256:5195b4c20f54029f03b9bbe257d30e3c9d4861c306cf62d0a31218a010f7a398",
-          "observedAtUtc": "2026-08-06T12:20:24Z",
+            "inputFingerprint": "sha256:2336069fd51113baa482ea6133c32b1ff157729df84b9793bf00b83d81a8c01f",
+          "observedAtUtc": "2026-08-08T10:27:10Z",
             "result": "2/2 passed: invalid target absence, UTF-8, enum values, and non-finite radar ranges fail closed.",
             "resultRef": null
           },
@@ -1389,15 +1399,32 @@
          "id": "P3-REQ-034-AUTO-03",
             "kind": "automated",
             "command": "build/bin/Release/unittests.exe --gtest_filter=TelemetryProtocolBusinessStateValidation.TargetAndLockReferencesMustResolveInsideTheVisibleImage --gtest_color=no",
-            "status": "pending",
+            "status": "passed",
             "inputs": [
               "code/telemetry/protocol/telemetry_business_state_validation.cpp",
               "code/telemetry/protocol/telemetry_business_state_validation.h",
               "test/src/telemetry/protocol/test_telemetry_business_state_validation.cpp"
             ],
-          "inputFingerprint": "sha256:9ca5df7a7f7f9fef1d2bd0109870ad5237c56707f123b6bad036dfa3163d0009",
-          "observedAtUtc": "2026-08-06T12:20:24Z",
-            "result": "1/1 passed: target and lock references must resolve inside the visible image.",
+          "inputFingerprint": "sha256:397d44c95c85cd467a1f677586d757ce5829cd42e34bf1fd63b9da58dc6e2363",
+          "observedAtUtc": "2026-08-08T10:27:10Z",
+            "result": "1/1 passed: les références cible/lock résolvent dans l'image; la cohérence cible/contact multi-cadence est couverte séparément par le validateur métier.",
+            "resultRef": null
+          },
+          {
+            "id": "P3-REQ-034-AUTO-04",
+            "kind": "automated",
+            "command": "build/bin/Release/unittests.exe --gtest_filter=TelemetryPhase3CaptureContract.DestroyedTargetAndUnknownEnemyWeaponDoNotCloseTheLiveSession:TelemetryPhase3Bounds.NativeIncomingMissilesAtMaximumPlusOneFailBeforeAnyProjectionIsPublished --gtest_color=no",
+            "status": "passed",
+            "inputs": [
+              "code/telemetry/native_session_runtime.cpp",
+              "code/telemetry/native_session_runtime.h",
+              "code/telemetry/phase3_engine_collector.cpp",
+              "code/telemetry/phase3_engine_collector.h",
+              "test/src/telemetry/producer/test_telemetry_native_runtime_integration_contract.cpp"
+            ],
+            "inputFingerprint": "sha256:47eb6aa6a53e8126c59b847de6ee26a9195daa277fed78b706937c0bd2ba9fb1",
+            "observedAtUtc": "2026-08-08T13:25:14Z",
+            "result": "2/2 couverts par la suite ciblée: l’arme dynamique non installée est omise et la vraie limite max+1 reste un rejet fermé sans projection partielle.",
             "resultRef": null
           }
       ],
@@ -1406,28 +1433,34 @@
     },
     {
       "id": "P3-REQ-035",
-      "observable": "Snapshot, keyframe et resync sont exhaustifs et atomiques après `ACK APPLIED`.",
+      "observable": "Snapshot, keyframe et resync sont exhaustifs et atomiques; cible/contact ne sont croisés strictement qu'à sample time égal.",
       "expectedAutomatedProof": "`telemetry_phase3_replication_tests`",
       "implementationStatus": "implemented",
-      "implementationSummary": "Le suivi de baseline ne promeut une image candidate qu'après tous les ACK APPLIED exacts; le client valide et publie snapshot, keyframe et resync atomiquement, ou demande un resync sans publication partielle.",
+      "implementationSummary": "Le suivi de baseline reste atomique. Le validateur exige l'égalité exacte TARGET_STATE/CURRENT_TARGET à sample time égal et valide séparément les atomes de cadences différentes.",
       "implementationPaths": [
         "code/telemetry/protocol/telemetry_replication.cpp",
-        "code/telemetry/protocol/telemetry_replication.h"
+        "code/telemetry/protocol/telemetry_replication.h",
+        "code/telemetry/protocol/telemetry_business_state_validation.cpp",
+        "code/telemetry/protocol/telemetry_business_state_validation.h"
       ],
       "proofs": [
         {
           "id": "P3-REQ-035-AUTO-01",
           "kind": "automated",
-          "command": "build/bin/Release/unittests.exe --gtest_filter=TelemetryProtocolReplication.ProducerPromotesOnlyAfterEveryExactAppliedAck:TelemetryProtocolReplication.SnapshotValidationFailureReleasesCandidateAndRequestsResync:TelemetryProtocolReplication.RejectedPendingDeltaCommitsSnapshotAloneAndRequestsResync",
+          "command": "ctest --test-dir build -C Release -R telemetry_phase2_replication_tests|telemetry_phase3_state_image_tests --output-on-failure",
           "status": "passed",
           "inputs": [
             "code/telemetry/protocol/telemetry_replication.cpp",
             "code/telemetry/protocol/telemetry_replication.h",
-            "test/src/telemetry/protocol/test_telemetry_replication.cpp"
+            "code/telemetry/protocol/telemetry_business_state_validation.cpp",
+            "code/telemetry/protocol/telemetry_business_state_validation.h",
+            "test/src/telemetry/protocol/test_telemetry_replication.cpp",
+            "test/src/telemetry/protocol/test_telemetry_business_state_validation.cpp",
+            "test/src/telemetry/producer/phase3_state_image_tests.cpp"
           ],
-          "inputFingerprint": "sha256:17fe38bb18385b84a794545838e187e742c6aa2ccd5e32fef6631456a5de724f",
-          "observedAtUtc": "2026-08-05T07:20:52Z",
-          "result": "3/3 passent : promotion seulement après ACK APPLIED exact, échec de validation et delta en attente invalide ne publient jamais d'image partielle et déclenchent le resync requis.",
+          "inputFingerprint": "sha256:972c9d9089031bafb31103bc320b945ffbb2d4b8acc9ecedd758501501b2af34",
+          "observedAtUtc": "2026-08-08T10:27:10Z",
+          "result": "2/2 exécutables passent dans telemetry-short : réplication atomique et image Phase 3 acceptent les cadences distinctes, tout en rejetant une contradiction au même sample time.",
           "resultRef": null
         }
       ],
@@ -1513,10 +1546,10 @@
     },
     {
       "id": "P3-REQ-038",
-      "observable": "Mission, joueur, cible et retrait de piste purgent tout état dépendant devenu ancien.",
+      "observable": "Mission, joueur, cible et retrait de piste convergent sans sélection fantôme ni arrêt lors d'une destruction/réutilisation de slot.",
       "expectedAutomatedProof": "`telemetry_phase3_lifecycle_tests`",
       "implementationStatus": "implemented",
-      "implementationSummary": "La reconstruction CockpitSensors retire immédiatement les contacts retirés, remet la cible à zéro et réduit l'image à ses singletons globaux lorsque le joueur est absent. La purge MissionDiscontinuity réinitialise aussi les projections et registres d'identités Phase 3 avant le réarmement de la capture.",
+      "implementationSummary": "Une destruction vide TARGET_STATE au tick flightHz sans invalider les contacts systemsHz retenus. La réutilisation immédiate du slot ne crée ni sélection fantôme ni panne, puis les atomes convergent au prochain refresh radar.",
       "implementationPaths": [
         "code/telemetry/phase3_state_image.cpp",
         "code/telemetry/phase3_state_image.h",
@@ -1538,9 +1571,9 @@
             "code/telemetry/phase3_state_image.h",
             "test/src/telemetry/producer/phase3_state_image_tests.cpp"
           ],
-                           "inputFingerprint": "sha256:59e1220dc77ff6556de7106a1cbbfdaaa41754344bdf70a5c2ca25859ca66156",
-                           "observedAtUtc": "2026-08-06T12:14:24Z",
-          "result": "2/2 passent : retrait de cible et de piste sans résidu dans l'image reconstruite, puis absence joueur limitée aux singletons globaux.",
+                           "inputFingerprint": "sha256:5cdae10a91cf4a18e208c5504ccb80852389dd9dbe516c39aa3854d5f7e9e711",
+                           "observedAtUtc": "2026-08-08T10:27:10Z",
+          "result": "22/22 passent : retrait, absence joueur et sample times indépendants reconstruisent une image complète sans résidu.",
           "resultRef": null
         },
         {
@@ -1559,9 +1592,9 @@
             "code/telemetry/phase3_state_image.h",
             "test/src/telemetry/producer/test_telemetry_native_runtime_integration_contract.cpp"
           ],
-          "inputFingerprint": "sha256:921a8ba4b58c73ca31cbc8c0460f6e90affbb0760227c5b36836498cf0d21a62",
-          "observedAtUtc": "2026-08-06T18:52:12Z",
-          "result": "passed: la purge MissionDiscontinuity remet les captures et la matérialisation à zéro, puis le captureur se réarme aux bornes de cadence exactes.",
+          "inputFingerprint": "sha256:c0ddb61da40390d6d7f9ad3396168eefb8c06871dbd4b6f7188d9b116f499923",
+          "observedAtUtc": "2026-08-08T10:27:10Z",
+          "result": "1/1 passed: purge et réarmement restent exacts; destruction, signature périmée et slot réutilisé convergent aussi dans les tests collecteur/runtime ciblés.",
           "resultRef": null
         }
       ],
@@ -1733,10 +1766,10 @@
     },
     {
       "id": "P3-REQ-043",
-      "observable": "Métriques et logs exposent les causes sans données sensibles ni labels libres.",
+      "observable": "Toute fermeture Phase 3, manifeste compris, expose avant arrêt un bloc, un statut et un compteur fermés, conservés malgré saturation des logs, sans donnée sensible.",
       "expectedAutomatedProof": "`telemetry_phase3_observability_tests`",
       "implementationStatus": "implemented",
-      "implementationSummary": "Les métriques utilisent des catalogues à cardinalité fixe et les logs structurés ne publient que des enums fermés ou des valeurs numériques bornées. Les causes de capture, d'I/O, de budget et de fermeture sont agrégées sans texte, endpoint, identifiant ou label libre.",
+      "implementationSummary": "Chaque échec permanent Phase 3, y compris pendant la sélection du manifeste, enregistre avant fermeture le bloc et le statut exact. Les erreurs terminales sont conservées dans un miroir borné indépendant de la file ordinaire, sans texte libre ni donnée gameplay.",
       "implementationPaths": [
         "code/telemetry/metrics.cpp",
         "code/telemetry/metrics.h",
@@ -1749,7 +1782,7 @@
         {
           "id": "P3-REQ-043-AUTO-01",
           "kind": "automated",
-          "command": "build/bin/Release/unittests.exe --gtest_filter=TelemetryP91MetricsContract.FixedCardinalitySnapshotAndClosedLabelCatalogAreExact:TelemetryP92NativeLoggingContract.RealWouldBlockIngressIsAggregatedAtTheR2Cadence:TelemetryP92NativeLoggingContract.RealSessionCloseSummarizesObservedBudgetAndRemainsSilentAfterShutdown --gtest_color=no",
+          "command": "build/bin/Release/unittests.exe --gtest_filter=TelemetryP91MetricsContract.FixedCardinalitySnapshotAndClosedLabelCatalogAreExact:TelemetryP92LoggingContract.Phase3FailureCarriesOnlyClosedBlockAndReason:TelemetryP92LoggingContract.TerminalPhase3CauseSurvivesAFullDeliveryQueue:TelemetryP92NativeLoggingContract.RealWouldBlockIngressIsAggregatedAtTheR2Cadence:TelemetryP92NativeLoggingContract.RealSessionCloseSummarizesObservedBudgetAndRemainsSilentAfterShutdown:TelemetryPhase3CaptureContract.DestroyedTargetAndUnknownEnemyWeaponDoNotCloseTheLiveSession --gtest_color=no",
           "status": "passed",
           "inputs": [
             "code/telemetry/metrics.cpp",
@@ -1762,9 +1795,9 @@
             "test/src/telemetry/producer/test_telemetry_logging_contract.cpp",
             "test/src/telemetry/producer/test_telemetry_native_runtime_integration_contract.cpp"
           ],
-          "inputFingerprint": "sha256:c3721e32f332f8b1cb6e9a6930e6c013c6dfcc83ed9fefa4c98b42a86e074c66",
-          "observedAtUtc": "2026-08-06T18:52:12Z",
-          "result": "3/3 passed (0.060 s): catalogue de métriques fermé, agrégation bornée des WouldBlock et résumé terminal de session sans émission après arrêt.",
+          "inputFingerprint": "sha256:be4ea9db65a34be505096003641ff58f4d89fadf330abc29039830433d9145a2",
+          "observedAtUtc": "2026-08-08T13:25:14Z",
+          "result": "6/6 passed: compteurs fermés, diagnostic bloc/statut exact, cause terminale conservée malgré saturation, agrégation bornée, résumé propre et omission dynamique sans fermeture.",
           "resultRef": null
         }
       ],
@@ -1813,28 +1846,33 @@
     },
     {
       "id": "P3-REQ-045",
-      "observable": "Le client indépendant reconstruit les valeurs brutes, sample times et provenance sans redéfinir les décisions sensibles.",
+      "observable": "Le client indépendant conserve les sample times bruts et le dashboard suit la cible `TARGET_STATE` la plus récente.",
       "expectedAutomatedProof": "`telemetry_phase3_loopback_tests`",
       "implementationStatus": "implemented",
-      "implementationSummary": "Le décodeur indépendant conserve les RGBA, types de blip, identités et producer_sample_time_us bruts. Il expose authoritative-wire ou missing-authoritative-color et ne redéfinit jamais une couleur depuis équipe, IFF ou type.",
+      "implementationSummary": "Le décodeur conserve les sample times bruts. Le dashboard calcule sélection, réticule, emphase et priorité uniquement depuis TARGET_STATE; le flag radar reste visible comme état historique du contact.",
       "implementationPaths": [
         "test/telemetry/protocol/tools/fstl_client_core.py",
-        "test/telemetry/protocol/tools/fstl_reference_decoder.py"
+        "test/telemetry/protocol/tools/fstl_reference_decoder.py",
+        "tools/telemetry-dashboard/frontend/src/tacticalSemantics.ts",
+        "tools/telemetry-dashboard/frontend/src/TacticalCockpit.tsx"
       ],
       "proofs": [
         {
           "id": "P3-REQ-045-AUTO-01",
           "kind": "automated",
-          "command": "python -B test/telemetry/protocol/tools/test_fstl_phase3_scenario_client.py",
+          "command": "python -B test/telemetry/protocol/tools/test_fstl_phase3_scenario_client.py ; npm --prefix tools/telemetry-dashboard/frontend test -- --run ; npm --prefix tools/telemetry-dashboard/frontend run build",
           "status": "passed",
           "inputs": [
             "test/telemetry/protocol/tools/fstl_client_core.py",
             "test/telemetry/protocol/tools/fstl_reference_decoder.py",
-            "test/telemetry/protocol/tools/test_fstl_phase3_scenario_client.py"
+            "test/telemetry/protocol/tools/test_fstl_phase3_scenario_client.py",
+            "tools/telemetry-dashboard/frontend/src/tacticalSemantics.ts",
+            "tools/telemetry-dashboard/frontend/src/tacticalSemantics.test.ts",
+            "tools/telemetry-dashboard/frontend/src/TacticalCockpit.tsx"
           ],
-      "inputFingerprint": "sha256:30859d076d13618d731d7d3675b905945baaa4404b73819f332901358bf7b117",
-      "observedAtUtc": "2026-08-08T08:39:03Z",
-          "result": "11/11 tests du client scénario passés ; valeurs wire, sample times et provenance v4 sont conservés.",
+      "inputFingerprint": "sha256:ba4af73eacd75a65553ac4a1a2e7160184b10a9c746394afef76380a2d1dde26",
+      "observedAtUtc": "2026-08-08T10:27:10Z",
+          "result": "Client scénario inchangé; 57/57 tests frontend et le build Vite passent. La cible TARGET_STATE la plus récente commande seule sélection, réticule et priorité.",
           "resultRef": null
         }
       ],

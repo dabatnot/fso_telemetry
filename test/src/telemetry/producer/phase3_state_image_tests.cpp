@@ -595,6 +595,57 @@ TEST(TelemetryPhase3StateImage, CrossReferencesKeepOnePublicIdForOneObject)
 }
 
 TEST(TelemetryPhase3StateImage,
+	PreservesIndependentTargetAndRadarSampleTimes)
+{
+	constexpr std::uint64_t Player = 42U;
+	constexpr std::uint64_t First = 100U;
+	constexpr std::uint64_t Second = 200U;
+	auto base = make_base(Player);
+	auto projection = std::make_unique<telemetry::Phase3Projection>();
+	projection->player_entity_id = Player;
+	set_sample_times(*projection);
+	projection->target.producer_sample_time_us = 200U;
+	projection->target.current_target_entity_id = Second;
+	projection->contact_count = 2U;
+	for (std::size_t index = 0U; index < projection->contact_count; ++index) {
+		auto& contact = projection->contacts[index];
+		contact.producer_sample_time_us = 100U;
+		contact.entity_id = index == 0U ? First : Second;
+		contact.object_type = telemetry::protocol::ObjectType::Ship;
+		contact.category = static_cast<std::uint8_t>(
+			telemetry::protocol::RadarCategory::Ship);
+		contact.visibility = telemetry::protocol::RadarVisibility::Visible;
+		contact.radar_projection_distance = 1.0F;
+	}
+	projection->contacts[0].flags =
+		telemetry::protocol::ContactFlagCurrentTarget;
+
+	telemetry::protocol::StateImage image;
+	ASSERT_EQ(telemetry::Phase3StateImageBuildStatus::Created,
+		telemetry::build_phase3_cockpit_sensor_state_image(
+			base, *projection, image));
+	const auto* target = find(image, RecordType::TargetState);
+	const auto* first_contact = find(image, RecordType::RadarContacts);
+	ASSERT_NE(nullptr, target);
+	ASSERT_NE(nullptr, first_contact);
+	EXPECT_EQ(200U, read_u64(target->value, 16U));
+	EXPECT_EQ(100U, read_u64(first_contact->value, 24U));
+
+	// systemsHz may also be newer than flightHz; the inverse lag is legal and
+	// converges when the next target sample is captured.
+	projection->target.producer_sample_time_us = 100U;
+	projection->target.current_target_entity_id = First;
+	projection->contacts[0].producer_sample_time_us = 200U;
+	projection->contacts[1].producer_sample_time_us = 200U;
+	projection->contacts[0].flags = 0U;
+	projection->contacts[1].flags =
+		telemetry::protocol::ContactFlagCurrentTarget;
+	EXPECT_EQ(telemetry::Phase3StateImageBuildStatus::Created,
+		telemetry::build_phase3_cockpit_sensor_state_image(
+			base, *projection, image));
+}
+
+TEST(TelemetryPhase3StateImage,
 	NavigationPublishesItsExactCurrentDestinationRouteAndRefusal)
 {
 	constexpr std::uint64_t Player = 42U;

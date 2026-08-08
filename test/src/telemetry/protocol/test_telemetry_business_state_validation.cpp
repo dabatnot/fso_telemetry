@@ -458,14 +458,15 @@ std::vector<std::uint8_t> lock_payload(std::uint64_t entity_id,
 std::vector<std::uint8_t> target_payload(std::uint64_t entity_id,
 	std::uint64_t current_target,
 	ObjectType revealed_type = ObjectType::Unknown,
-	std::uint32_t revealed_class_id = 0)
+	std::uint32_t revealed_class_id = 0,
+	std::uint64_t sample_time = 100U)
 {
 	const auto presence = revealed_type == ObjectType::Unknown ? TargetStatePresenceFlagNone :
 		TargetStatePresenceFlagRevealedIdentity;
 	std::vector<std::uint8_t> bytes;
 	append_u64(bytes, entity_id);
 	append_u64(bytes, presence);
-	append_u64(bytes, 100U);
+	append_u64(bytes, sample_time);
 	append_u64(bytes, current_target);
 	if ((presence & TargetStatePresenceFlagRevealedIdentity) != 0U) {
 		append_u8(bytes, static_cast<std::uint8_t>(revealed_type));
@@ -508,7 +509,8 @@ std::vector<std::uint8_t> radar_contact_payload(std::uint64_t observer_entity_id
 	std::uint64_t contact_entity_id,
 	ObjectType object_type,
 	std::uint32_t flags,
-	std::uint32_t revealed_class_id = 0)
+	std::uint32_t revealed_class_id = 0,
+	std::uint64_t sample_time = 100U)
 {
 	const auto presence = revealed_class_id == 0U ? RadarContactsPresenceFlagNone :
 		RadarContactsPresenceFlagRevealedClass;
@@ -516,7 +518,7 @@ std::vector<std::uint8_t> radar_contact_payload(std::uint64_t observer_entity_id
 	append_u64(bytes, observer_entity_id);
 	append_u64(bytes, contact_entity_id);
 	append_u64(bytes, presence);
-	append_u64(bytes, 100U);
+	append_u64(bytes, sample_time);
 	append_u8(bytes, static_cast<std::uint8_t>(object_type));
 	append_u8(bytes, static_cast<std::uint8_t>(RadarCategory::Weapon));
 	append_u8(bytes, static_cast<std::uint8_t>(RadarVisibility::Visible));
@@ -535,13 +537,14 @@ std::vector<std::uint8_t> radar_contact_v4_payload(
 	std::uint64_t contact_entity_id,
 	ObjectType object_type,
 	std::uint32_t flags,
-	RadarBlipType blip_type)
+	RadarBlipType blip_type,
+	std::uint64_t sample_time = 100U)
 {
 	std::vector<std::uint8_t> bytes;
 	append_u64(bytes, observer_entity_id);
 	append_u64(bytes, contact_entity_id);
 	append_u64(bytes, RadarContactsPresenceFlagRadarVisual);
-	append_u64(bytes, 100U);
+	append_u64(bytes, sample_time);
 	append_u8(bytes, static_cast<std::uint8_t>(object_type));
 	append_u8(bytes, static_cast<std::uint8_t>(RadarCategory::Weapon));
 	append_u8(bytes, static_cast<std::uint8_t>(RadarVisibility::Visible));
@@ -1590,6 +1593,37 @@ TEST(TelemetryProtocolBusinessStateValidation, RadarContactMatchesLifecycleCatal
 	image = image_from_atoms(std::move(stale_target_atoms));
 	BusinessStateImageValidator stale_target(context);
 	EXPECT_EQ(ValidationError::InvalidStateTransition, stale_target.validate(image));
+
+	// TARGET_STATE follows flightHz while contacts follow systemsHz. The raw
+	// CURRENT_TARGET bit remains authoritative for the contact's own sample, but
+	// cannot be compared with a target record captured at another time.
+	auto newer_target_atoms = base;
+	for (auto& value : newer_target_atoms) {
+		if (value.key.record_type == static_cast<std::uint16_t>(RecordType::TargetState)) {
+			value.value = target_payload(
+				1U, 2U, ObjectType::Unknown, 0U, 200U);
+		}
+	}
+	newer_target_atoms.push_back(atom(RecordType::RadarContacts,
+		radar_contact_payload(
+			1U, 2U, ObjectType::Weapon, ContactFlagBomb, 3U, 100U),
+		16U, StateRecordLifecycle::ExplicitCreateDelete));
+	image = image_from_atoms(std::move(newer_target_atoms));
+	EXPECT_EQ(ValidationError::None, valid.validate(image));
+
+	auto newer_radar_atoms = base;
+	for (auto& value : newer_radar_atoms) {
+		if (value.key.record_type == static_cast<std::uint16_t>(RecordType::TargetState)) {
+			value.value = target_payload(
+				1U, 0U, ObjectType::Unknown, 0U, 100U);
+		}
+	}
+	newer_radar_atoms.push_back(atom(RecordType::RadarContacts,
+		radar_contact_payload(1U, 2U, ObjectType::Weapon,
+			ContactFlagBomb | ContactFlagCurrentTarget, 3U, 200U),
+		16U, StateRecordLifecycle::ExplicitCreateDelete));
+	image = image_from_atoms(std::move(newer_radar_atoms));
+	EXPECT_EQ(ValidationError::None, valid.validate(image));
 }
 
 TEST(TelemetryProtocolBusinessStateValidation,

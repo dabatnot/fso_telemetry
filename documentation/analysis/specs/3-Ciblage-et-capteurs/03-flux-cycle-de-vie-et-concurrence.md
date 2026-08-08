@@ -84,6 +84,10 @@ révélée n’est exposée en delta.
 - les groupes d’identité et sous-système sont recalculés après filtrage ;
 - `LOCK_STATE` est remplacé intégralement ;
 - les flags `CURRENT_TARGET` des contacts sont cohérents au même sample time ;
+- lorsque le radar n'est pas dû au même tick, ses contacts conservent leurs
+  anciens flags et leur propre sample time sans invalider le nouvel atome cible ;
+- le client détermine sélection, emphase et priorité depuis le
+  `TARGET_STATE.current_target_entity_id` le plus récent ;
 - la couleur HUD brillante de la nouvelle cible est remplacée avec le même
   atome et ne dépend pas de l'existence d'un blip radar ;
 - un événement `TARGET_CHANGED` reconstructible PEUT être émis avec la
@@ -92,6 +96,11 @@ révélée n’est exposée en delta.
 Le delta contient toutes les différences cumulées depuis la baseline. Si
 plusieurs changements surviennent entre deux captures, l’état final est
 correct ; aucune exactitude des transitions intermédiaires n’est annoncée.
+
+La cible est résolue une fois par projection avec index, signature, type et
+instance. Si sa signature a disparu ou si le slot a été réutilisé, la cible est
+vide et la piste de remplacement ambiguë est omise pour ce tick. Cette omission
+transitoire ne ferme pas la session et le prochain tick converge normalement.
 
 ### 5.2 Perte de cible furtive
 
@@ -154,6 +163,9 @@ alloués dans le même registre public :
 - un missile uniquement connu par l’autorité de menace peut être référencé sans
   devenir contact radar ni entité complète ;
 - sa classe d’arme est installée avant exposition ;
+- si sa classe dynamique est absente du catalogue Phase 2 courant, le missile
+  est omis pour ce tick sans expansion synthétique du manifeste ni fermeture
+  de session ;
 - sa disparition le retire de la liste suivante ;
 - plus de 256 missiles autorisés refuse l’image et provoque la perte propre du
   profil, jamais une sélection des « plus dangereux ».

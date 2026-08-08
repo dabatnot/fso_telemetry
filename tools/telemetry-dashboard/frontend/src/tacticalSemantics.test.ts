@@ -336,6 +336,21 @@ describe("tactical display semantics", () => {
     expect(contacts.every((contact) => !contact.invalid)).toBe(true);
   });
 
+	it("uses the latest TARGET_STATE instead of a retained radar target flag", () => {
+		const value = snapshot();
+		value.records.TARGET_STATE[0].producer_sample_time_us = "1100000";
+		value.records.TARGET_STATE[0].current_target_entity_id = "202";
+		// RADAR_CONTACTS is deliberately the older systemsHz sample: 101 still
+		// carries CURRENT_TARGET while 202 does not.
+		const contacts = prioritizedContacts(value);
+		expect(contacts[0].id).toBe("202");
+		expect(contacts.find((contact) => contact.id === "202")?.current).toBe(true);
+		expect(contacts.find((contact) => contact.id === "101")?.current).toBe(false);
+		const retained = contacts.find((contact) => contact.id === "101");
+		expect(retained).toBeDefined();
+		expect((retained?.flagBits ?? 0) & 0x02).toBe(0x02);
+	});
+
   it("uses authoritative target RGBA in v4 and neutralizes a missing v4 color", () => {
     const value = snapshot();
     const target = value.records.TARGET_STATE[0];

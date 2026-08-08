@@ -34,6 +34,7 @@ enum class TelemetryLogEvent : std::uint8_t {
 	Phase2SupportTerminal,
 	Phase2Resync,
 	Phase2SourceRejected,
+	Phase3SourceRejected,
 	Phase2Summary,
 	Shutdown,
 	Count,
@@ -105,6 +106,9 @@ struct TelemetryLogRecord {
 	TelemetryPhase2Block phase2_block = TelemetryPhase2Block::Identity;
 	TelemetryPhase2CaptureFailure phase2_capture_failure =
 		TelemetryPhase2CaptureFailure::Guard;
+	TelemetryPhase3Block phase3_block = TelemetryPhase3Block::Precondition;
+	TelemetryPhase3CaptureFailure phase3_capture_failure =
+		TelemetryPhase3CaptureFailure::InvalidSource;
 	TelemetryPhase2LifecycleKind phase2_lifecycle =
 		TelemetryPhase2LifecycleKind::Appeared;
 	TelemetryPhase2SupportKind phase2_support =
@@ -120,12 +124,20 @@ struct TelemetryLogRecord {
 };
 
 constexpr std::size_t TelemetryLogRecordCapacity = 32U;
+constexpr std::size_t TelemetryTerminalLogRecordCapacity = 2U;
 constexpr std::size_t TelemetryLogLineCapacity = 1024U;
 
 struct TelemetryLogSnapshot {
 	std::array<TelemetryLogRecord, TelemetryLogRecordCapacity> records{};
 	std::size_t count = 0U;
 	std::uint64_t dropped_records = 0U;
+	// Error records are mirrored independently from the delivery queue. The
+	// runtime owner outlives NativeSessionRuntime teardown, so the Phase 3 cause
+	// remains inspectable even when the ordinary bounded queue was already full.
+	std::array<TelemetryLogRecord, TelemetryTerminalLogRecordCapacity>
+		terminal_records{};
+	std::size_t terminal_count = 0U;
+	std::uint64_t superseded_terminal_records = 0U;
 };
 
 bool format_telemetry_log_record(
@@ -169,6 +181,8 @@ class TelemetryStructuredLog final {
 	void phase2_source_rejected(TelemetryPhase2Block block,
 		TelemetryPhase2CaptureFailure reason,
 		std::uint64_t now_us) noexcept;
+	void phase3_source_rejected(std::size_t slot, TelemetryPhase3Block block,
+		TelemetryPhase3CaptureFailure reason) noexcept;
 	void phase2_summary(std::size_t slot,
 		std::uint64_t aggregate_events,
 		std::uint64_t high_water_bytes) noexcept;

@@ -108,8 +108,9 @@ Les relations suivantes sont obligatoires :
   utilise le même ID ; son absence de `RADAR_CONTACTS` reste légitime pour une
   cible prise en charge par le Target Box mais non projetée par le radar ;
 - un lock vers cette cible utilise ce même ID ;
-- `ContactFlags.CURRENT_TARGET` est posé sur exactement le contact cible
-  lorsqu’il existe ;
+- à sample time égal, `ContactFlags.CURRENT_TARGET` est posé sur exactement le
+  contact cible lorsqu’il existe ; à sample times différents, le flag reste
+  l'historique du contact et `TARGET_STATE` reste l'autorité courante ;
 - un missile présent à la fois dans `RADAR_CONTACTS` et `THREAT_STATE` conserve
   le même ID ;
 - la cible de `CARGO_SCAN_STATE` réutilise l’ID cible ;
@@ -134,6 +135,9 @@ captures v1/v2/v3 restent décodables et byte-identiques.
 
 `entity_id` est le joueur et `current_target_entity_id` vaut zéro en absence de
 cible. `producer_sample_time_us` est l’instant de la décision de ciblage.
+Le dashboard emploie ce champ comme seule autorité pour sélection, réticule,
+emphase et priorité, y compris lorsque le radar conserve un échantillon plus
+ancien.
 
 ### 5.2 Présences
 
@@ -266,7 +270,10 @@ alpha autoritaires ; seule son animation reste une présentation client.
 
 Sous v1/v2/v3, `ContactFlags.BOMB` exige un objet arme et une classe manifestée
 portant le flag bombe. Sous v4, `BOMB`, `TAGGED` et `WARP` sont validés contre
-`radar_blip_type` et n'exigent aucun manifeste. `CURRENT_TARGET` est unique.
+`radar_blip_type` et n'exigent aucun manifeste. `CURRENT_TARGET` est unique dans
+un même échantillon radar et implique `BRIGHT`. Sa comparaison avec
+`TARGET_STATE` est stricte uniquement lorsque les deux records portent le même
+`producer_sample_time_us`.
 `STEALTH`, `HOMING` et `THREAT` ne peuvent révéler aucun champ conditionnel
 supplémentaire.
 

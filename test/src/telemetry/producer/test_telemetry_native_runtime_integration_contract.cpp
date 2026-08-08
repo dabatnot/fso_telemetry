@@ -585,6 +585,7 @@ struct Phase3EngineGlobalsScope final {
 		  prior_radar_bright_range(Radar_bright_range),
 		  prior_radar_bright_timer(Radar_calc_bright_dist_timer),
 		  prior_autopilot_engaged(AutoPilotEngaged), prior_hud_config(HUD_config),
+		  prior_ship_info_count(Ship_info.size()),
 		  prior_used_list_next(obj_used_list.next), prior_used_list_prev(obj_used_list.prev),
 		  prior_missile_list_next(Missile_obj_list.next),
 		  prior_missile_list_prev(Missile_obj_list.prev),
@@ -626,6 +627,12 @@ struct Phase3EngineGlobalsScope final {
 		Player_ship->weapons.clear();
 		Player_ship->objnum = ObjectIndex;
 		Player_ship->ai_index = AiIndex;
+		// object_get_eye() consults the player's ship class on every full radar
+		// refresh. Give the shared runtime fixture a valid minimal class so tests
+		// exercising a legal systems tick do not fail in unrelated model lookup.
+		Ship_info.emplace_back();
+		Player_ship->ship_info_index =
+			static_cast<int>(prior_ship_info_count);
 		*Player_ai = ai_info{};
 		Player_ai->shipnum = ShipIndex;
 		Player_ai->target_objnum = -1;
@@ -650,6 +657,7 @@ struct Phase3EngineGlobalsScope final {
 		Radar_calc_bright_dist_timer = prior_radar_bright_timer;
 		AutoPilotEngaged = prior_autopilot_engaged;
 		HUD_config = prior_hud_config;
+		Ship_info.resize(prior_ship_info_count);
 		obj_used_list.next = prior_used_list_next;
 		obj_used_list.prev = prior_used_list_prev;
 		Missile_obj_list.next = prior_missile_list_next;
@@ -677,6 +685,7 @@ struct Phase3EngineGlobalsScope final {
 	TIMESTAMP prior_radar_bright_timer = TIMESTAMP::never();
 	bool prior_autopilot_engaged = false;
 	HUD_CONFIG_TYPE prior_hud_config{};
+	std::size_t prior_ship_info_count = 0U;
 	object* prior_used_list_next = nullptr;
 	object* prior_used_list_prev = nullptr;
 	missile_obj* prior_missile_list_next = nullptr;
@@ -1435,13 +1444,18 @@ TEST(TelemetryPhase3CaptureContract,
 	auto scratch = std::make_unique<telemetry::Phase3Projection>();
 	detail::Phase3EngineCollectStatus status =
 		detail::Phase3EngineCollectStatus::Collected;
+	detail::Phase3EngineCollectDiagnostic diagnostic;
 	std::thread worker([&] {
 		status = detail::collect_phase3_engine_projection(
-			{}, *identities, *output, *scratch);
+			{}, *identities, *output, *scratch, &diagnostic);
 	});
 	worker.join();
 
 	EXPECT_EQ(detail::Phase3EngineCollectStatus::NotMainThread, status);
+	EXPECT_EQ(detail::Phase3EngineCollectBlock::Precondition,
+		diagnostic.block);
+	EXPECT_EQ(detail::Phase3EngineCollectStatus::NotMainThread,
+		diagnostic.status);
 	EXPECT_FALSE(identities->transaction_active());
 }
 
@@ -1798,7 +1812,7 @@ TEST(TelemetryPhase3Targeting,
 }
 
 TEST(TelemetryPhase3RadarContacts,
-	SystemsRefreshClearsCurrentTargetFlagFromThePreviousTarget)
+	IndependentTargetAndRadarRefreshesRetainOwnSampleAndConverge)
 {
 	auto engine_globals = std::make_unique<Phase3EngineGlobalsScope>();
 	detail::capture_phase2_main_thread_authority();
@@ -1867,13 +1881,54 @@ TEST(TelemetryPhase3RadarContacts,
 	Player_ai->target_signature = second.signature;
 	ASSERT_EQ(detail::Phase3EngineCollectStatus::Collected,
 		detail::collect_phase3_engine_projection(
-			{65U, 1U, phase2.get(), &binding, 1U, nullptr, true, true},
+			{65U, 1U, phase2.get(), &binding, 1U, nullptr, true, false},
 			identities, *output, *scratch));
 	EXPECT_EQ(second_id, output->target.current_target_entity_id);
+	EXPECT_EQ(65U, output->target.producer_sample_time_us);
 	for (std::size_t index = 0U; index < output->contact_count; ++index) {
 		const auto& contact = output->contacts[index];
+		EXPECT_EQ(64U, contact.producer_sample_time_us);
+		EXPECT_EQ(contact.entity_id == first_id,
+			(contact.flags & protocol::ContactFlagCurrentTarget) != 0U);
+	}
+
+	ASSERT_EQ(detail::Phase3EngineCollectStatus::Collected,
+		detail::collect_phase3_engine_projection(
+			{66U, 1U, phase2.get(), &binding, 1U, nullptr, false, true},
+			identities, *output, *scratch));
+	EXPECT_EQ(second_id, output->target.current_target_entity_id);
+	EXPECT_EQ(65U, output->target.producer_sample_time_us);
+	for (std::size_t index = 0U; index < output->contact_count; ++index) {
+		const auto& contact = output->contacts[index];
+		EXPECT_EQ(66U, contact.producer_sample_time_us);
 		EXPECT_EQ(contact.entity_id == second_id,
 			(contact.flags & protocol::ContactFlagCurrentTarget) != 0U);
+	}
+
+	// Reuse the selected object slot while the AI still retains the old
+	// signature. TARGET_STATE must become empty and the ambiguous replacement
+	// must not inherit CURRENT_TARGET or terminate the projection.
+	second.signature = 103;
+	ASSERT_EQ(detail::Phase3EngineCollectStatus::Collected,
+		detail::collect_phase3_engine_projection(
+			{67U, 1U, phase2.get(), &binding, 1U, nullptr, true, true},
+			identities, *output, *scratch));
+	EXPECT_EQ(0U, output->target.current_target_entity_id);
+	ASSERT_EQ(1U, output->contact_count);
+	EXPECT_EQ(first_id, output->contacts[0].entity_id);
+	EXPECT_EQ(0U, output->contacts[0].flags &
+		protocol::ContactFlagCurrentTarget);
+
+	Player_ai->target_objnum = -1;
+	Player_ai->target_signature = -1;
+	ASSERT_EQ(detail::Phase3EngineCollectStatus::Collected,
+		detail::collect_phase3_engine_projection(
+			{68U, 1U, phase2.get(), &binding, 1U, nullptr, false, true},
+			identities, *output, *scratch));
+	ASSERT_EQ(2U, output->contact_count);
+	for (std::size_t index = 0U; index < output->contact_count; ++index) {
+		EXPECT_EQ(0U, output->contacts[index].flags &
+			protocol::ContactFlagCurrentTarget);
 	}
 
 	list_remove(&obj_used_list, &second);
@@ -2472,7 +2527,7 @@ TEST(TelemetryPhase3Bounds,
 }
 
 TEST(TelemetryPhase3CaptureContract,
-	OutOfRangeTargetIsRejectedBeforeAnyPartialCockpitStateIsPublished)
+	DestroyedTargetAndUnknownEnemyWeaponDoNotCloseTheLiveSession)
 {
 	REQUIRE_NATIVE_PLAYER_D3();
 	auto engine_globals = std::make_unique<Phase3EngineGlobalsScope>();
@@ -2558,22 +2613,72 @@ TEST(TelemetryPhase3CaptureContract,
 		fixture.runtime.service_tick({bootstrap_sample + 9U, 1U, true}, player_view, &phase2_view));
 
 	ASSERT_NE(nullptr, Player_ai);
-	Player_ai->target_objnum = MAX_OBJECTS;
-	Player_ai->target_signature = 42;
+	Player_ai->target_objnum = -1;
+	Player_ai->target_signature = -1;
 	const auto sends_before_capture = fixture.backend.sent.size();
-	EXPECT_EQ(detail::NativeSessionTickStatus::PermanentCaptureFailure,
+	EXPECT_EQ(detail::NativeSessionTickStatus::Complete,
 		fixture.runtime.service_tick({bootstrap_sample + 1'000'000U, 1U, true}, player_view, &phase2_view));
 
-	// The invalid engine index is rejected before dereferencing Objects[] and
-	// before the Phase 3 image can enter snapshot or delta publication.  The
-	// runtime then fails closed, which deliberately tears down the affected
-	// session rather than retaining a partial cockpit baseline.
-	EXPECT_EQ(0U, fixture.runtime.active_sessions());
+	// Destroying the selected object clears TARGET_STATE on the next flight
+	// sample. Retained systemsHz contacts remain a legal older sample and must
+	// not turn a healthy cockpit stream into PermanentCaptureFailure.
+	EXPECT_EQ(1U, fixture.runtime.active_sessions());
+	EXPECT_NE(nullptr, slot(fixture));
+	EXPECT_EQ(detail::Phase1SnapshotProgress::Live,
+		slot(fixture)->snapshot.progress());
 	for (std::size_t index = sends_before_capture;
 		index < fixture.backend.sent.size(); ++index) {
 		EXPECT_NE(protocol::MessageType::Manifest, sent_type(fixture.backend, index));
-		EXPECT_NE(protocol::MessageType::FullSnapshot, sent_type(fixture.backend, index));
-		EXPECT_NE(protocol::MessageType::Delta, sent_type(fixture.backend, index));
+	}
+
+	// A newly spawned incoming weapon may use a class that is absent from the
+	// observer's current Phase 2 catalog.  It is a legal dynamic dependency:
+	// omit that missile until its class is installed, but keep the session Live.
+	constexpr int MissileObjectIndex = MAX_OBJECTS - 7;
+	constexpr int MissileWeaponIndex = MAX_WEAPONS - 5;
+	const auto weapon_info_count = Weapon_info.size();
+	Weapon_info.emplace_back();
+	auto& missile_object = Objects[MissileObjectIndex];
+	missile_object.clear();
+	missile_object.type = OBJ_WEAPON;
+	missile_object.instance = MissileWeaponIndex;
+	missile_object.signature = 1493;
+	missile_object.orient = vmd_identity_matrix;
+	missile_object.pos.xyz.z = 100.0F;
+	list_append(&obj_used_list, &missile_object);
+	auto& missile = Weapons[MissileWeaponIndex];
+	missile = weapon{};
+	missile.objnum = MissileObjectIndex;
+	missile.weapon_info_index = static_cast<int>(weapon_info_count);
+	missile.homing_object = Player_obj;
+	missile_obj missile_list_entry{};
+	missile_list_entry.objnum = MissileObjectIndex;
+	list_append(&Missile_obj_list, &missile_list_entry);
+
+	const auto sends_before_unknown_weapon = fixture.backend.sent.size();
+	const auto unknown_weapon_tick = fixture.runtime.service_tick(
+		{bootstrap_sample + 1'050'000U, 1U, true}, player_view, &phase2_view);
+	const auto active_sessions_after_unknown_weapon =
+		fixture.runtime.active_sessions();
+	const auto slot_present_after_unknown_weapon = slot(fixture) != nullptr;
+	const auto progress_after_unknown_weapon = slot(fixture) == nullptr
+		? detail::Phase1SnapshotProgress::Synchronizing
+		: slot(fixture)->snapshot.progress();
+
+	list_remove(&Missile_obj_list, &missile_list_entry);
+	list_remove(&obj_used_list, &missile_object);
+	missile = weapon{};
+	missile_object.clear();
+	Weapon_info.resize(weapon_info_count);
+
+	EXPECT_EQ(detail::NativeSessionTickStatus::Complete, unknown_weapon_tick);
+	EXPECT_EQ(1U, active_sessions_after_unknown_weapon);
+	EXPECT_TRUE(slot_present_after_unknown_weapon);
+	EXPECT_EQ(detail::Phase1SnapshotProgress::Live,
+		progress_after_unknown_weapon);
+	for (std::size_t index = sends_before_unknown_weapon;
+		index < fixture.backend.sent.size(); ++index) {
+		EXPECT_NE(protocol::MessageType::Manifest, sent_type(fixture.backend, index));
 	}
 }
 

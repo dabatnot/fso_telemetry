@@ -18,7 +18,27 @@ enum class Phase3EngineCollectStatus : std::uint8_t {
 	InvalidSource,
 	SourceLimitExceeded,
 	IdentityFailure,
+	AllocationFailure,
 	Count,
+};
+
+// Closed diagnostic dimensions for the exact Phase 3 projection stage that
+// rejected a sample. They are local observability values, never wire fields.
+enum class Phase3EngineCollectBlock : std::uint8_t {
+	None = 0,
+	Precondition,
+	TargetLocks,
+	Radar,
+	Threat,
+	Cargo,
+	Navigation,
+	StateImage,
+	Count,
+};
+
+struct Phase3EngineCollectDiagnostic {
+	Phase3EngineCollectBlock block = Phase3EngineCollectBlock::None;
+	Phase3EngineCollectStatus status = Phase3EngineCollectStatus::Collected;
 };
 
 struct Phase3EngineCollectInput {
@@ -52,6 +72,7 @@ Phase3EngineCollectStatus collect_phase3_engine_projection(
 	const Phase3EngineCollectInput& input,
 	Phase3IdentityRegistry& identities,
 	Phase3Projection& output,
-	Phase3Projection& scratch) noexcept;
+	Phase3Projection& scratch,
+	Phase3EngineCollectDiagnostic* diagnostic = nullptr) noexcept;
 
 } // namespace telemetry::detail

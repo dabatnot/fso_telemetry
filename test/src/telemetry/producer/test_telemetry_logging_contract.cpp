@@ -14,7 +14,7 @@ TEST(TelemetryP92LoggingContract, FixedSchemaUsesOnlyClosedEventLevelAndReasonFi
 {
 	static_assert(std::is_trivially_copyable_v<detail::TelemetryLogRecord>);
 	static_assert(std::is_trivially_copyable_v<detail::TelemetryLogSnapshot>);
-	EXPECT_EQ(13U, static_cast<std::size_t>(detail::TelemetryLogEvent::Count));
+	EXPECT_EQ(24U, static_cast<std::size_t>(detail::TelemetryLogEvent::Count));
 	EXPECT_EQ(14U, static_cast<std::size_t>(detail::TelemetryLogReason::Count));
 	EXPECT_EQ(3U, static_cast<std::size_t>(detail::TelemetryLogFamily::DualStack));
 	EXPECT_EQ(6U, static_cast<std::size_t>(detail::TelemetryLogBudget::Count));
@@ -29,6 +29,62 @@ TEST(TelemetryP92LoggingContract, FixedSchemaUsesOnlyClosedEventLevelAndReasonFi
 	EXPECT_EQ(1U, snapshot.dropped_records);
 	EXPECT_EQ(detail::TelemetryLogEvent::MissionEntered, snapshot.records.front().event);
 	EXPECT_EQ(0U, snapshot.records.front().value);
+}
+
+TEST(TelemetryP92LoggingContract, Phase3FailureCarriesOnlyClosedBlockAndReason)
+{
+	detail::TelemetryStructuredLog log;
+	log.phase3_source_rejected(2U, detail::TelemetryPhase3Block::Radar,
+		detail::TelemetryPhase3CaptureFailure::InvalidSource);
+
+	const auto snapshot = log.snapshot();
+	ASSERT_EQ(1U, snapshot.count);
+	const auto& record = snapshot.records[0];
+	EXPECT_EQ(detail::TelemetryLogEvent::Phase3SourceRejected, record.event);
+	EXPECT_EQ(detail::TelemetryLogLevel::Error, record.level);
+	EXPECT_EQ(3U, record.correlation_slot);
+	EXPECT_EQ(detail::TelemetryPhase3Block::Radar, record.phase3_block);
+	EXPECT_EQ(detail::TelemetryPhase3CaptureFailure::InvalidSource,
+		record.phase3_capture_failure);
+
+	std::array<char, detail::TelemetryLogLineCapacity> line{};
+	ASSERT_TRUE(detail::format_telemetry_log_record(record, line));
+	const std::string_view rendered{line.data()};
+	EXPECT_NE(std::string_view::npos, rendered.find("p3_block=2"));
+	EXPECT_NE(std::string_view::npos,
+		rendered.find("p3_capture_failure=2"));
+}
+
+TEST(TelemetryP92LoggingContract,
+	TerminalPhase3CauseSurvivesAFullDeliveryQueue)
+{
+	detail::TelemetryStructuredLog log;
+	for (std::uint64_t generation = 0U;
+		 generation < detail::TelemetryLogRecordCapacity; ++generation) {
+		log.mission_entered(generation);
+	}
+	log.phase3_source_rejected(1U, detail::TelemetryPhase3Block::Threat,
+		detail::TelemetryPhase3CaptureFailure::InvalidSource);
+	log.transport_fault(detail::TelemetryLogFamily::DualStack,
+		detail::TelemetryLogReason::ProtocolError, 0U,
+		detail::TelemetryLogFault::Capture);
+
+	const auto snapshot = log.snapshot();
+	ASSERT_EQ(detail::TelemetryLogRecordCapacity, snapshot.count);
+	EXPECT_EQ(2U, snapshot.dropped_records);
+	ASSERT_EQ(detail::TelemetryTerminalLogRecordCapacity,
+		snapshot.terminal_count);
+	EXPECT_EQ(detail::TelemetryLogEvent::Phase3SourceRejected,
+		snapshot.terminal_records[0].event);
+	EXPECT_EQ(detail::TelemetryPhase3Block::Threat,
+		snapshot.terminal_records[0].phase3_block);
+	EXPECT_EQ(detail::TelemetryPhase3CaptureFailure::InvalidSource,
+		snapshot.terminal_records[0].phase3_capture_failure);
+	EXPECT_EQ(detail::TelemetryLogEvent::TransportFault,
+		snapshot.terminal_records[1].event);
+	EXPECT_EQ(detail::TelemetryLogFault::Capture,
+		snapshot.terminal_records[1].fault);
+	EXPECT_EQ(0U, snapshot.superseded_terminal_records);
 }
 
 TEST(TelemetryP92LoggingContract, AggregatesDropsAndValidationAtMostOncePerSecond)

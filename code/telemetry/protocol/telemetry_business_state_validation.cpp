@@ -38,6 +38,7 @@ struct LifecycleFacts {
 
 struct TargetFacts {
 	std::uint64_t presence = 0;
+	std::uint64_t producer_sample_time_us = 0;
 	std::uint64_t current_target = 0;
 	std::uint64_t previous_target = 0;
 	ObjectType revealed_object_type = ObjectType::Unknown;
@@ -54,6 +55,7 @@ struct RadarContactFacts {
 	std::uint64_t observer_entity_id = 0;
 	std::uint64_t contact_entity_id = 0;
 	std::uint64_t presence = 0;
+	std::uint64_t producer_sample_time_us = 0;
 	ObjectType object_type = ObjectType::Unknown;
 	std::uint32_t flags = 0;
 	std::uint32_t revealed_class_id = 0;
@@ -275,8 +277,8 @@ ValidationError parse_target(const StateAtom& atom, TargetFacts& facts) noexcept
 	facts = TargetFacts{};
 	PacketReader reader(ByteView{atom.value.empty() ? nullptr : atom.value.data(), atom.value.size()});
 	std::uint64_t owner = 0;
-	std::uint64_t sample_time = 0;
-	if (!reader.read_u64(owner) || !reader.read_u64(facts.presence) || !reader.read_u64(sample_time) ||
+	if (!reader.read_u64(owner) || !reader.read_u64(facts.presence) ||
+		!reader.read_u64(facts.producer_sample_time_us) ||
 		!reader.read_u64(facts.current_target)) {
 		return ValidationError::BadRecordLength;
 	}
@@ -362,11 +364,12 @@ ValidationError parse_radar_contact(const StateAtom& atom, RadarContactFacts& fa
 	facts = RadarContactFacts{};
 	facts.record_version = atom.record_version;
 	PacketReader reader(ByteView{atom.value.empty() ? nullptr : atom.value.data(), atom.value.size()});
-	std::uint64_t sample_time = 0;
 	std::uint8_t object_type = 0;
 	std::uint8_t ignored_u8 = 0;
 	if (!reader.read_u64(facts.observer_entity_id) || !reader.read_u64(facts.contact_entity_id) ||
-		!reader.read_u64(facts.presence) || !reader.read_u64(sample_time) || !reader.read_u8(object_type) ||
+		!reader.read_u64(facts.presence) ||
+		!reader.read_u64(facts.producer_sample_time_us) ||
+		!reader.read_u8(object_type) ||
 		!reader.read_u8(ignored_u8) || !reader.read_u8(ignored_u8) ||
 		!reader.skip(atom.record_version >= 2U ? 44U : 28U) ||
 		!reader.read_u32(facts.flags)) {
@@ -898,8 +901,17 @@ ValidationError validate_radar_contact_references(const StateAtom& atom,
 		if (const auto error = parse_target(*target_atom, target); error != ValidationError::None) {
 			return error;
 		}
-		const auto is_current_target = target.current_target == facts.contact_entity_id;
-		if (((facts.flags & ContactFlagCurrentTarget) != 0U) != is_current_target) {
+		// Targeting and radar intentionally use independent capture cadences. A
+		// retained contact flag describes the target decision at the contact's own
+		// sample time and cannot be compared with a newer (or older) TARGET_STATE.
+		// When both records were captured together, keep the exact invariant.
+		const auto same_sample = target.producer_sample_time_us ==
+			facts.producer_sample_time_us;
+		const auto is_current_target =
+			target.current_target == facts.contact_entity_id;
+		if (same_sample &&
+			(((facts.flags & ContactFlagCurrentTarget) != 0U) !=
+			 is_current_target)) {
 			return ValidationError::InvalidStateTransition;
 		}
 	}

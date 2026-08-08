@@ -89,6 +89,8 @@ export interface ContactView {
   blipType: string | null;
   blipTypeCode: number | null;
   bright: boolean;
+  /** Latest cockpit selection from TARGET_STATE, independent of radar cadence. */
+  current: boolean;
   color: TacticalColor;
   flags: string[];
   flagBits: number;
@@ -325,6 +327,9 @@ function contactTypeLabel(
 
 export function contactViews(snapshot: DashboardSnapshot | null): ContactView[] {
   const player = String(snapshot?.playerEntityId ?? "");
+  const currentTargetId = String(
+    targetState(snapshot)?.current_target_entity_id ?? "0"
+  );
   const locks = lockState(snapshot)?.locks;
   const lockTargets = new Set(
     (Array.isArray(locks) ? locks : []).map((lock) =>
@@ -362,6 +367,7 @@ export function contactViews(snapshot: DashboardSnapshot | null): ContactView[] 
       blipType: blipTypeCode === null ? null : RADAR_BLIP_TYPES[blipTypeCode] ?? null,
       blipTypeCode,
       bright: ((flagBits ?? 0) & 0x01) !== 0,
+      current: id !== "" && id !== "0" && id === currentTargetId,
       color,
       flags: flags ?? [],
       flagBits: flagBits ?? 0,
@@ -377,7 +383,7 @@ export function contactViews(snapshot: DashboardSnapshot | null): ContactView[] 
       invalid
     };
     const priority =
-      ((view.flagBits & 0x02) ? 1_000_000 : 0) +
+      (view.current ? 1_000_000 : 0) +
       ((view.flagBits & 0xe0) ? 500_000 : 0) +
       (lockTargets.has(id) ? 250_000 : 0) +
       (view.visibilityCode === 1 ? 100_000 : view.visibilityCode === 2 ? 50_000 : 0) -
@@ -450,7 +456,7 @@ export function targetHudColor(snapshot: DashboardSnapshot | null): TacticalColo
   const version = targetRecordVersion(snapshot);
   const color = authoritativeColor(targetState(snapshot)?.hud_target_color, version);
   if (color !== null) return color;
-  if (version !== null && version > 4) {
+  if (version !== null && version >= 4) {
     return {
       rgba: null,
       css: LEGACY_NEUTRAL_COLOR,

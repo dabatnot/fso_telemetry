@@ -180,7 +180,15 @@ qu’à la réinitialisation de leur scope.
 | expansion manifeste | info | une fois/génération | ID, classes/armes comptées, octets |
 | limite source | warning | une fois puis résumé | catégorie, limite, compte |
 | perte de couverture | warning | une fois/session | domaine et raison fermée |
+| fermeture Phase 3 | error | une fois/fermeture | bloc, statut et compteur fermés |
 | bilan Phase 3 | info | fin session | high-water, captures, contacts, drops, resync |
+
+Les erreurs terminales sont recopiées dans un miroir borné indépendant de la
+file de livraison ordinaire. Le bloc et le statut de la fermeture Phase 3
+restent donc inspectables après saturation de cette file et après la purge du
+runtime natif. Le chemin de sélection du manifeste est couvert par le bloc
+fermé `precondition` ; aucune identité, classe ou donnée gameplay n’est ajoutée
+au diagnostic.
 
 Les logs ne contiennent jamais :
 

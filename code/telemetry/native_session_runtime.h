@@ -8,6 +8,7 @@
 #include "telemetry/phase2_observation.h"
 #include "telemetry/phase2_profile_gate.h"
 #include "telemetry/phase2_state_image.h"
+#include "telemetry/phase3_engine_collector.h"
 #include "telemetry/phase3_identity_registry.h"
 #include "telemetry/phase3_state_image.h"
 #include "telemetry/session_controller.h"
@@ -139,6 +140,9 @@ struct NativePhase2FailureDiagnostic {
 	Phase2StateImageBuildStatus image_status =
 		Phase2StateImageBuildStatus::Count;
 	Phase2StateImageBuildDiagnostic image_diagnostic{};
+	Phase3EngineCollectDiagnostic phase3_diagnostic{};
+	Phase3StateImageBuildStatus phase3_image_status =
+		Phase3StateImageBuildStatus::Count;
 	protocol::ProducerBaselineResult baseline_result =
 		protocol::ProducerBaselineResult::InvalidArgument;
 	bool capture_observed_this_tick = false;
@@ -231,7 +235,8 @@ class NativeSessionRuntime final : private DatagramIoWork {
 		const Phase2ObservationDto& observation,
 		const Phase2Wp05SubjectBinding* bindings,
 		std::size_t binding_count,
-		Phase2ManifestError& result) noexcept;
+		Phase2ManifestError& result,
+		Phase3EngineCollectDiagnostic& diagnostic) noexcept;
 	void release_unreferenced_phase2_manifest_generation() noexcept;
 	void release_phase2_manifest_state() noexcept;
 	void release_phase3_manifest_states() noexcept;

@@ -51,6 +51,81 @@ TelemetryPhase2Profile telemetry_profile(
 	}
 }
 
+TelemetryPhase3Block telemetry_phase3_block(
+	Phase3EngineCollectBlock block) noexcept
+{
+	switch (block) {
+	case Phase3EngineCollectBlock::TargetLocks:
+		return TelemetryPhase3Block::TargetLocks;
+	case Phase3EngineCollectBlock::Radar:
+		return TelemetryPhase3Block::Radar;
+	case Phase3EngineCollectBlock::Threat:
+		return TelemetryPhase3Block::Threat;
+	case Phase3EngineCollectBlock::Cargo:
+		return TelemetryPhase3Block::Cargo;
+	case Phase3EngineCollectBlock::Navigation:
+		return TelemetryPhase3Block::Navigation;
+	case Phase3EngineCollectBlock::StateImage:
+		return TelemetryPhase3Block::StateImage;
+	case Phase3EngineCollectBlock::None:
+	case Phase3EngineCollectBlock::Precondition:
+	case Phase3EngineCollectBlock::Count:
+	default:
+		return TelemetryPhase3Block::Precondition;
+	}
+}
+
+TelemetryPhase3CaptureFailure telemetry_phase3_failure(
+	Phase3EngineCollectStatus status) noexcept
+{
+	switch (status) {
+	case Phase3EngineCollectStatus::NoPlayer:
+		return TelemetryPhase3CaptureFailure::NoPlayer;
+	case Phase3EngineCollectStatus::NotMainThread:
+		return TelemetryPhase3CaptureFailure::NotMainThread;
+	case Phase3EngineCollectStatus::SourceLimitExceeded:
+		return TelemetryPhase3CaptureFailure::SourceLimitExceeded;
+	case Phase3EngineCollectStatus::IdentityFailure:
+		return TelemetryPhase3CaptureFailure::IdentityFailure;
+	case Phase3EngineCollectStatus::AllocationFailure:
+		return TelemetryPhase3CaptureFailure::AllocationFailed;
+	case Phase3EngineCollectStatus::Collected:
+	case Phase3EngineCollectStatus::InvalidSource:
+	case Phase3EngineCollectStatus::Count:
+	default:
+		return TelemetryPhase3CaptureFailure::InvalidSource;
+	}
+}
+
+TelemetryPhase3CaptureFailure telemetry_phase3_image_failure(
+	Phase3StateImageBuildStatus status) noexcept
+{
+	switch (status) {
+	case Phase3StateImageBuildStatus::InvalidInput:
+		return TelemetryPhase3CaptureFailure::InvalidInput;
+	case Phase3StateImageBuildStatus::CapacityExceeded:
+		return TelemetryPhase3CaptureFailure::CapacityExceeded;
+	case Phase3StateImageBuildStatus::AllocationFailed:
+		return TelemetryPhase3CaptureFailure::AllocationFailed;
+	case Phase3StateImageBuildStatus::Created:
+	case Phase3StateImageBuildStatus::EncodingFailed:
+	case Phase3StateImageBuildStatus::Count:
+	default:
+		return TelemetryPhase3CaptureFailure::EncodingFailed;
+	}
+}
+
+void record_phase3_failure(TelemetryMetrics* metrics,
+	TelemetryStructuredLog* log, std::size_t slot,
+	TelemetryPhase3Block block,
+	TelemetryPhase3CaptureFailure reason) noexcept
+{
+	if (metrics != nullptr)
+		metrics->record_phase3_capture_failure(block, reason);
+	if (log != nullptr)
+		log->phase3_source_rejected(slot, block, reason);
+}
+
 TelemetryPhase2ProfileRejection telemetry_profile_rejection(
 	Phase2ProfileError error) noexcept
 {
@@ -727,6 +802,16 @@ bool append_phase3_manifest_weapon(Phase2ManifestSource& output,
 	return false;
 }
 
+bool phase3_manifest_has_weapon_definition(
+	const Phase2ManifestSource& output, std::uint32_t source_key) noexcept
+{
+	if (source_key == 0U) return true;
+	for (std::uint32_t index = 0U; index < output.weapon_count; ++index)
+		if (output.weapons[index].source_key == source_key)
+			return true;
+	return false;
+}
+
 bool append_phase3_manifest_class(Phase2ManifestSource& output,
 	std::uint32_t source_key) noexcept
 {
@@ -793,10 +878,17 @@ bool select_phase3_manifest_references(const Phase2ManifestSource& raw,
 			dependencies.ship_class_source_keys[index]);
 	}
 	for (std::uint32_t index = 0U;
-		 index < dependencies.weapon_count; ++index)
-		if (!append_phase3_manifest_weapon(output,
-			dependencies.weapon_source_keys[index]))
+		 index < dependencies.weapon_count; ++index) {
+		const auto source_key = dependencies.weapon_source_keys[index];
+		// Incoming ordnance can legitimately use a class outside the Phase 2
+		// observer catalog.  collect_threat already omits such a missile until
+		// its class is installed; manifest selection must make the same optional
+		// omission instead of closing the whole cockpit stream.
+		if (!phase3_manifest_has_weapon_definition(output, source_key))
+			continue;
+		if (!append_phase3_manifest_weapon(output, source_key))
 			return false;
+	}
 	return true;
 }
 
@@ -1769,9 +1861,12 @@ bool NativeSessionRuntime::refresh_phase3_manifest(
 	const Phase2ObservationDto& observation,
 	const Phase2Wp05SubjectBinding* bindings,
 	std::size_t binding_count,
-	Phase2ManifestError& result) noexcept
+	Phase2ManifestError& result,
+	Phase3EngineCollectDiagnostic& diagnostic) noexcept
 {
 	result = Phase2ManifestError::InvalidSource;
+	diagnostic = {Phase3EngineCollectBlock::Precondition,
+		Phase3EngineCollectStatus::InvalidSource};
 	if (client_slot >= m_phase3_manifest_states.size() ||
 		m_phase2_manifest_source == nullptr)
 		return false;
@@ -1789,9 +1884,12 @@ bool NativeSessionRuntime::refresh_phase3_manifest(
 			state.slot->release_reliable_references(previous_manifest_id);
 	}
 	Phase3CatalogDependencies dependencies;
-	if (discover_phase3_catalog_dependencies(observation, dependencies) !=
-		Phase3EngineCollectStatus::Collected)
+	const auto dependency_status =
+		discover_phase3_catalog_dependencies(observation, dependencies);
+	if (dependency_status != Phase3EngineCollectStatus::Collected) {
+		diagnostic.status = dependency_status;
 		return false;
+	}
 	if (!select_phase3_manifest_references(*m_phase2_manifest_source,
 		observation, bindings, binding_count, dependencies,
 		*m_phase3_manifest_selection_source))
@@ -1812,12 +1910,14 @@ bool NativeSessionRuntime::refresh_phase3_manifest(
 			return false;
 		state.manifest = &state.slot->active_candidate();
 		state.catalog_projection_pending = false;
+		diagnostic = {};
 		return true;
 	}
 	if (result == Phase2ManifestError::NoCatalogChange ||
 		result == Phase2ManifestError::TopologyOnly) {
 		state.manifest = &state.slot->active_candidate();
 		state.catalog_projection_pending = false;
+		diagnostic = {};
 		return state.manifest->manifest_id != 0U;
 	}
 	if (result == Phase2ManifestError::RebuildCoalesced) {
@@ -1827,8 +1927,16 @@ bool NativeSessionRuntime::refresh_phase3_manifest(
 				*m_phase3_manifest_selection_source) ||
 			state.manifest->topology_fingerprint !=
 				m_phase3_manifest_selection_source->topology_fingerprint;
-		return state.manifest->manifest_id != 0U;
+		const auto ready = state.manifest->manifest_id != 0U;
+		if (ready) diagnostic = {};
+		return ready;
 	}
+	if (result == Phase2ManifestError::SourceLimitExceeded ||
+		result == Phase2ManifestError::TooManySubsystemsPerShip ||
+		result == Phase2ManifestError::TooManyAggregateSubsystems)
+		diagnostic.status = Phase3EngineCollectStatus::SourceLimitExceeded;
+	else if (result == Phase2ManifestError::AllocationFailed)
+		diagnostic.status = Phase3EngineCollectStatus::AllocationFailure;
 	m_phase3_manifest_workspace_owner = m_phase3_manifest_states.size();
 	return false;
 }
@@ -2474,13 +2582,15 @@ NativeSessionTickStatus NativeSessionRuntime::apply_collected_player_capture(con
 			if (m_selected_phase2_profile ==
 				Phase2Profile::CockpitSensors) {
 				Phase2ManifestError manifest_error{};
+				Phase3EngineCollectDiagnostic manifest_diagnostic;
 				if (!refresh_phase3_manifest(index, phase2, bindings.data(),
-						phase2.ships.size(), manifest_error)) {
-					// Catalog discovery reads the same validated target, sensor and
-					// missile authorities as the later Phase 3 projection.  A
-					// rejected discovery must therefore fail the capture atomically;
-					// returning Complete here would mask an invalid engine reference
-					// and retain a stale cockpit image.
+						phase2.ships.size(), manifest_error,
+						manifest_diagnostic)) {
+					m_last_phase2_failure_diagnostic.phase3_diagnostic =
+						manifest_diagnostic;
+					record_phase3_failure(m_metrics, m_log, index,
+						telemetry_phase3_block(manifest_diagnostic.block),
+						telemetry_phase3_failure(manifest_diagnostic.status));
 					if (auto* diagnostic = begin_phase2_failure_diagnostic(
 							NativePhase2FailureStage::Manifest);
 						diagnostic != nullptr) {
@@ -2488,6 +2598,8 @@ NativeSessionTickStatus NativeSessionRuntime::apply_collected_player_capture(con
 						diagnostic->player_key = phase2.player_key.value;
 						diagnostic->runtime_result =
 							Phase2RuntimeResult::InvalidInput;
+						diagnostic->phase3_diagnostic =
+							manifest_diagnostic;
 					}
 					fail_capture(NativePlayerCaptureStatus::CaptureInvariantFailure);
 					return NativeSessionTickStatus::PermanentCaptureFailure;
@@ -2876,6 +2988,12 @@ NativeSessionTickStatus NativeSessionRuntime::apply_collected_player_capture(con
 				if (phase3_projection == nullptr ||
 					phase3_projection_scratch == nullptr ||
 					phase3_identity_registry == nullptr) {
+					m_last_phase2_failure_diagnostic.phase3_diagnostic = {
+						Phase3EngineCollectBlock::Precondition,
+						Phase3EngineCollectStatus::InvalidSource};
+					record_phase3_failure(m_metrics, m_log, index,
+						TelemetryPhase3Block::Precondition,
+						TelemetryPhase3CaptureFailure::InvalidSource);
 					fail_capture(NativePlayerCaptureStatus::
 						CaptureInvariantFailure);
 					return NativeSessionTickStatus::
@@ -2901,12 +3019,20 @@ NativeSessionTickStatus NativeSessionRuntime::apply_collected_player_capture(con
 							m_phase2_capture_plan.capture_flight_controls,
 						m_phase2_capture_plan.phase3_refresh_systems &&
 							m_phase2_capture_plan.capture_systems};
-					if (collect_phase3_engine_projection(
+					Phase3EngineCollectDiagnostic phase3_diagnostic;
+					const auto phase3_status = collect_phase3_engine_projection(
 							phase3_input,
 							*phase3_identity_registry,
 							*phase3_projection,
-							*phase3_projection_scratch) !=
+							*phase3_projection_scratch,
+							&phase3_diagnostic);
+					if (phase3_status !=
 						Phase3EngineCollectStatus::Collected) {
+						m_last_phase2_failure_diagnostic.phase3_diagnostic =
+							phase3_diagnostic;
+						record_phase3_failure(m_metrics, m_log, index,
+							telemetry_phase3_block(phase3_diagnostic.block),
+							telemetry_phase3_failure(phase3_status));
 						fail_capture(NativePlayerCaptureStatus::
 							CaptureInvariantFailure);
 						return NativeSessionTickStatus::
@@ -2914,10 +3040,21 @@ NativeSessionTickStatus NativeSessionRuntime::apply_collected_player_capture(con
 					}
 				}
 				protocol::StateImage phase3_image;
-				if (build_phase3_cockpit_sensor_state_image(
+				const auto phase3_image_status =
+					build_phase3_cockpit_sensor_state_image(
 						image, *phase3_projection,
-						phase3_image) !=
+						phase3_image);
+				if (phase3_image_status !=
 					Phase3StateImageBuildStatus::Created) {
+					m_last_phase2_failure_diagnostic.phase3_diagnostic = {
+						Phase3EngineCollectBlock::StateImage,
+						Phase3EngineCollectStatus::InvalidSource};
+					m_last_phase2_failure_diagnostic.phase3_image_status =
+						phase3_image_status;
+					record_phase3_failure(m_metrics, m_log, index,
+						TelemetryPhase3Block::StateImage,
+						telemetry_phase3_image_failure(
+							phase3_image_status));
 					fail_capture(NativePlayerCaptureStatus::
 						CaptureInvariantFailure);
 					return NativeSessionTickStatus::
@@ -2931,6 +3068,14 @@ NativeSessionTickStatus NativeSessionRuntime::apply_collected_player_capture(con
 				// rather than waiting for the periodic keyframe.
 				if (image.records().size() >
 					rebuilt_atoms.canonical_indices.size()) {
+					m_last_phase2_failure_diagnostic.phase3_diagnostic = {
+						Phase3EngineCollectBlock::StateImage,
+						Phase3EngineCollectStatus::SourceLimitExceeded};
+					m_last_phase2_failure_diagnostic.phase3_image_status =
+						Phase3StateImageBuildStatus::CapacityExceeded;
+					record_phase3_failure(m_metrics, m_log, index,
+						TelemetryPhase3Block::StateImage,
+						TelemetryPhase3CaptureFailure::CapacityExceeded);
 					fail_capture(NativePlayerCaptureStatus::
 						CaptureInvariantFailure);
 					return NativeSessionTickStatus::PermanentCaptureFailure;

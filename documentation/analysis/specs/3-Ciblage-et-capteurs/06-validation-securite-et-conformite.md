@@ -48,7 +48,7 @@ Le résultat exact compare :
 - ensemble des IDs de pistes autorisées ;
 - visibilité de chaque piste ;
 - présence/absence de nom, classe, équipe et IFF ;
-- cible et flag `CURRENT_TARGET` ;
+- cible et flag `CURRENT_TARGET` lorsqu'ils partagent le même sample time ;
 - cardinalités de locks et missiles ;
 - phases cargo et navigation.
 
@@ -144,6 +144,16 @@ Sont également rejetés avant cast, allocation ou publication :
 
 Le produit conserve la dernière baseline cohérente ou termine la session selon
 la cause. Il ne publie jamais une couverture partielle sous `0x07CB`.
+
+Une cible et un contact de sample times différents sont validés séparément et
+leur décalage n'est pas une incohérence. Toute fermeture Phase 3 restante
+incrémente un compteur et consigne, avant `PermanentCaptureFailure`, le bloc
+fermé (`precondition`, `target-locks`, `radar`, `threat`, `cargo`, `navigation`
+ou `state-image`) et son statut fermé exact, sans texte libre ni donnée gameplay.
+Ce diagnostic terminal survit à la saturation de la file de logs ordinaire et
+à la purge du runtime. Une arme entrante dont la classe dynamique n’est pas
+installée est au contraire une omission transitoire normale : elle ne publie
+aucune référence de classe et ne ferme pas la session.
 
 ## 8. Sécurité réseau et lecture seule
 
