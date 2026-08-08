@@ -27,10 +27,11 @@ Un snapshot `CockpitSensors` contient :
 | `TARGET_STATE` | 1 pour le joueur |
 | `RADAR_STATE` | 1 pour le joueur |
 | `THREAT_STATE` | 1 pour le joueur |
+| `HUD_ALERT_STATE` | 1 pour le joueur |
 | `NAVIGATION_STATE` | 1 pour le joueur |
 | `RADAR_CONTACTS` | `C` |
 
-Le total est exactement `9 + 10K + N + C`. `CARGO_SCAN_STATE` appartient déjà
+Le total est exactement `10 + 10K + N + C`. `CARGO_SCAN_STATE` appartient déjà
 à la matrice Phase 2 et n’est pas compté deux fois.
 
 Les records communs à plusieurs domaines apparaissent une seule fois. L’ordre
@@ -306,7 +307,31 @@ Chaque `IncomingMissileV1` respecte :
 - position, quaternion et vitesse finis ;
 - aucune estimation de distance, TTC ou impact sur le fil.
 
-## 10. `CARGO_SCAN_STATE`
+## 10. `HUD_ALERT_STATE`
+
+Le profil live `CockpitSensors` publie `record_type=29`, `record_version=1`
+uniquement sous FSTL 1.1. Le record est un singleton joueur à `flightHz` :
+
+| Ordre | Champ | Wire | Présence et sémantique |
+|---:|---|---|---|
+| 1 | `entity_id` | `u64` | joueur observé non nul |
+| 2 | `presence` | `u64` | bit 0 `ACTIVE_WARNING`, tous les autres réservés |
+| 3 | `producer_sample_time_us` | `u64` | instant de capture du snapshot HUD |
+| 4 | `primary_fire_threat_active` | `u8` | booléen canonique indépendant du lock |
+| 5 | `missile_lock_state` | `u8` | `NONE`, `ATTEMPT` ou `ACQUIRED` |
+| 6 | `warning_kind` | `u8` | bit 0 ; `LAUNCH`, `EVADED`, `COLLISION`, `BLAST`, `ENGINE_WASH`, `EMP` ou `OTHER` |
+| 7 | `warning_instance_id` | `u64` | bit 0 ; non nul, renouvelé après acceptation native |
+| 8 | `warning_remaining_us` | `u64` | bit 0 ; durée strictement positive au sample time |
+| 9 | `warning_text` | `str<511>` | bit 0 ; texte UTF-8 exact, localisé et non vide |
+
+L'absence du bit 0 signifie qu'aucun avertissement textuel n'est actif et omet
+les quatre champs conditionnels. Un appel refusé par la priorité native ne
+modifie pas l'instance. Les voyants primaire et lock peuvent être actifs
+simultanément. La cadence d'affichage est dérivée côté client : 180 ms pour le
+tir primaire ou `ATTEMPT`, 90 ms pour `ACQUIRED`. Aucune donnée d'animation
+native ne traverse le wire.
+
+## 11. `CARGO_SCAN_STATE`
 
 La Phase 3 remplace la politique minimale Phase 2 :
 
@@ -323,9 +348,9 @@ ajouter son état complet. Si elle cesse d’être autorisée, le record revient
 `COMPLETED+HIDDEN` est un état valide. Une chaîne vide ne remplace jamais une
 absence de texte cargo.
 
-## 11. `NAVIGATION_STATE`
+## 12. `NAVIGATION_STATE`
 
-### 11.1 Navpoints
+### 12.1 Navpoints
 
 La liste contient tous et seulement les points autorisés par la mission :
 
@@ -339,7 +364,7 @@ Un point marqué `HIDDEN` n’est transmis que si la logique de mission l’auto
 néanmoins pour cet observateur. `NO_ACCESS` peut être transmis : il décrit une
 décision publique, pas un secret.
 
-### 11.2 Autopilote et route
+### 12.2 Autopilote et route
 
 - `current_navpoint_id` existe dans la liste ;
 - `autopilot_refusal` est présent si et seulement si l’état vaut `REFUSED` ;
@@ -350,7 +375,7 @@ décision publique, pas un secret.
 
 Le record ne contient aucun axe de commande, ordre IA ou commande distante.
 
-## 12. Valeurs dérivées
+## 13. Valeurs dérivées
 
 Le client calcule, sans modifier les atomes bruts :
 
@@ -380,7 +405,14 @@ autorisée seulement pour lire une ancienne capture v1 et ne doit jamais être
   décisions autoritaires consommées telles quelles, jamais des dérivations IFF
   du client.
 
-## 13. Validation croisée
+La compatibilité dashboard est déclarative : une capture
+`FSTL-dashboard-capture-v1` est une capture historique sans
+`HUD_ALERT_STATE`, tandis que `FSTL-dashboard-capture-v2` déclare la feature
+`HUD_ALERT_STATE/v1`. Le fallback `legacy-aggregated` depuis `THREAT_STATE`
+n'est autorisé que pour le schéma v1 ; l'absence du singleton dans une capture
+v2 ou une session live reste une absence de donnée autoritaire.
+
+## 14. Validation croisée
 
 Avant publication, le producteur vérifie :
 
@@ -396,7 +428,7 @@ Avant publication, le producteur vérifie :
 Le client indépendant applique les mêmes règles et rejette atomiquement la
 transaction en cas d’écart.
 
-## 14. Traçabilité
+## 15. Traçabilité
 
 Ce document couvre `P3-REQ-013` à `P3-REQ-018`, `P3-REQ-019` à
-`P3-REQ-034`, `P3-REQ-037` et `P3-REQ-040`.
+`P3-REQ-034`, `P3-REQ-037`, `P3-REQ-040` et `P3-REQ-047`.

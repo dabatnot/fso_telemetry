@@ -29,7 +29,8 @@ Pendant une mission solo en mode `Cockpit`, un client conforme :
 - expose l’état capteurs, AWACS et EMP, tandis que chaque piste porte son état
   `VISIBLE` ou `DISTORTED` ;
 - reconstruit les missiles entrants et le niveau de menace dans les bornes
-  FSTL ;
+  FSTL, ainsi que les voyants HUD indépendants et l'avertissement textuel
+  effectivement retenu par FSO ;
 - suit la phase de scan et ne reçoit le texte cargo qu’après divulgation
   autorisée ;
 - affiche uniquement les navpoints et waypoints autorisés, la destination
@@ -40,7 +41,8 @@ Pendant une mission solo en mode `Cockpit`, un client conforme :
 Les distances géométriques, angles, vitesses relatives, progressions, ETA et
 coordonnées d’affichage restent calculés côté client. La décision de visibilité,
 le lead complexe, le lock, la phase de scan et le niveau de menace restent
-autoritaires côté producteur.
+autoritaires côté producteur. La cadence des voyants est dérivée côté client
+depuis l'état discret FSO ; aucune frame ou phase d'animation HUD n'est publiée.
 
 ## 3. Profil livré
 

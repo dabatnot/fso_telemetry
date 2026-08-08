@@ -112,6 +112,7 @@ enum class TelemetryPhase2MemoryScope : std::uint8_t {
 enum class TelemetryPhase3Block : std::uint8_t {
 	Precondition = 0,
 	TargetLocks,
+	HudAlerts,
 	Radar,
 	Threat,
 	Cargo,

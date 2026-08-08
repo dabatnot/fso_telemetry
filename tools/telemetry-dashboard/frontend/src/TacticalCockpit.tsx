@@ -12,6 +12,7 @@ import {
   missileViews,
   prioritizedContacts,
   contactVisibilityAlpha,
+  hudAlertView,
   radarState,
   sensorLabels,
   subsystemNameForTarget,
@@ -540,10 +541,22 @@ function ThreatPanel({
   onInspect: Props["onInspect"];
 }) {
   const threat = threatState(snapshot);
+  const alerts = hudAlertView(snapshot);
   const labels = sensorLabels(snapshot);
   const missiles = missileViews(snapshot);
   const visible = missiles.slice(0, 6);
   const level = Number(threat?.threat_level ?? 0);
+  const warningKinds = [
+    [1, "LAUNCH"],
+    [2, "EVADED"],
+    [3, "COLLISION"],
+    [4, "BLAST"],
+    [5, "ENGINE WASH"],
+    [6, "EMP"],
+    [7, "OTHER"]
+  ] as const;
+  const lampStyle = (period: number | null): CSSProperties =>
+    period === null ? {} : ({ "--alert-period": `${period}ms` } as CSSProperties);
   return (
     <TacticalPanel
       definition={definition}
@@ -561,6 +574,55 @@ function ThreatPanel({
           <strong>{labels.threat ?? "ERR"}</strong>
           <small>{missiles.length} MISSILE{missiles.length > 1 ? "S" : ""}</small>
         </button>
+        <div
+          className="hud-alert-bank"
+          data-alert-provenance={alerts.provenance}
+          data-warning-instance={alerts.warning?.instanceId ?? "0"}
+        >
+          <button
+            className={`hud-alert-lamp threat-lamp ${alerts.primaryFireActive ? "active" : ""}`}
+            style={lampStyle(alerts.primaryBlinkMs)}
+            aria-pressed={alerts.primaryFireActive}
+            onClick={() => onInspect({ definition, record: alerts.record ?? undefined, title: "Menace tir primaire" })}
+          >
+            TIR PRIMAIRE
+          </button>
+          <button
+            className={`hud-alert-lamp threat-lamp lock-${alerts.missileLockState} ${alerts.missileLockState !== 0 ? "active" : ""}`}
+            style={lampStyle(alerts.lockBlinkMs)}
+            aria-pressed={alerts.missileLockState !== 0}
+            onClick={() => onInspect({ definition, record: alerts.record ?? undefined, title: "Menace verrouillage missile" })}
+          >
+            {alerts.missileLockState === 2 ? "LOCK ACQUIS" : "TENTATIVE LOCK"}
+          </button>
+          <div className="hud-warning-lamps" aria-live="polite">
+            {warningKinds.map(([kindCode, label]) => {
+              const active = alerts.warning?.kindCode === kindCode;
+              return (
+                <button
+                  key={label}
+                  className={`hud-alert-lamp warning-lamp ${active ? "active" : ""}`}
+                  aria-pressed={active}
+                  title={active ? alerts.warning?.text : label}
+                  onClick={() => onInspect({
+                    definition,
+                    record: alerts.record ?? undefined,
+                    title: active ? alerts.warning?.text : label
+                  })}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+          <small className="hud-warning-text">
+            {alerts.warning?.text ?? (alerts.provenance === "legacy-aggregated"
+              ? "CAPTURE HISTORIQUE · MENACE AGRÉGÉE"
+              : alerts.provenance === "missing-authoritative"
+                ? "ALERTES HUD INDISPONIBLES"
+                : "AUCUN AVERTISSEMENT HUD")}
+          </small>
+        </div>
         <div className="missile-rack">
           {visible.map((missile) => (
             <button

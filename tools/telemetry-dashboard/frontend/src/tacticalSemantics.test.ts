@@ -4,6 +4,7 @@ import { resolveInstrument } from "./data";
 import {
   CONTACT_FLAGS,
   GUIDANCE_TYPES,
+  HUD_WARNING_KINDS,
   RADAR_BLIP_TYPES,
   RADAR_CATEGORIES,
   RADAR_MODES,
@@ -13,6 +14,7 @@ import {
   contactVisibilityAlpha,
   contactViews,
   decodeContactFlags,
+  hudAlertView,
   lockViews,
   missileViews,
   prioritizedContacts,
@@ -197,6 +199,15 @@ describe("tactical closed registries", () => {
     expect(Object.keys(RADAR_CATEGORIES)).toHaveLength(8);
     expect(Object.keys(THREAT_LEVELS)).toHaveLength(4);
     expect(Object.keys(GUIDANCE_TYPES)).toHaveLength(6);
+    expect(HUD_WARNING_KINDS).toEqual({
+      1: "LAUNCH",
+      2: "EVADED",
+      3: "COLLISION",
+      4: "BLAST",
+      5: "ENGINE WASH",
+      6: "EMP",
+      7: "OTHER"
+    });
     expect(RADAR_BLIP_TYPES).toEqual({
       0: "NŒUD DE SAUT",
       1: "NAVBUOY/CARGO",
@@ -211,6 +222,79 @@ describe("tactical closed registries", () => {
 });
 
 describe("tactical display semantics", () => {
+  it("keeps primary fire and acquired missile lock simultaneous with authoritative timing", () => {
+    const value = snapshot();
+    value.records.HUD_ALERT_STATE = [{
+      entity_id: "1",
+      presence: "1",
+      producer_sample_time_us: "1000000",
+      primary_fire_threat_active: true,
+      missile_lock_state: 2,
+      warning_kind: 1,
+      warning_text: "Launch",
+      warning_remaining_us: "750000",
+      warning_instance_id: "9"
+    }];
+    expect(hudAlertView(value)).toMatchObject({
+      primaryFireActive: true,
+      primaryBlinkMs: 180,
+      missileLockState: 2,
+      lockBlinkMs: 90,
+      provenance: "authoritative-v1",
+      warning: {
+        kindCode: 1,
+        kind: "LAUNCH",
+        text: "Launch",
+        remainingUs: 750000,
+        instanceId: "9"
+      }
+    });
+  });
+
+  it("uses 180 ms for a lock attempt and never invents an incomplete warning", () => {
+    const value = snapshot();
+    value.records.HUD_ALERT_STATE = [{
+      entity_id: "1",
+      presence: "1",
+      producer_sample_time_us: "1000000",
+      primary_fire_threat_active: false,
+      missile_lock_state: 1,
+      warning_kind: 3
+    }];
+    expect(hudAlertView(value)).toMatchObject({
+      primaryFireActive: false,
+      primaryBlinkMs: null,
+      missileLockState: 1,
+      lockBlinkMs: 180,
+      warning: null,
+      provenance: "authoritative-v1"
+    });
+  });
+
+  it("falls back to aggregated threats only for replay and never invents warning text", () => {
+    const legacy = snapshot();
+    legacy.mode = "replay";
+    legacy.replay.captureSchema = "FSTL-dashboard-capture-v1";
+    expect(hudAlertView(legacy)).toMatchObject({
+      primaryFireActive: false,
+      missileLockState: 1,
+      lockBlinkMs: 180,
+      warning: null,
+      provenance: "legacy-aggregated"
+    });
+    legacy.mode = "live";
+    expect(hudAlertView(legacy)).toMatchObject({
+      primaryFireActive: false,
+      missileLockState: 0,
+      warning: null,
+      provenance: "missing-authoritative"
+    });
+    legacy.mode = "replay";
+    legacy.replay.captureSchema = "FSTL-dashboard-capture-v2";
+    legacy.replay.contractFeatures = ["HUD_ALERT_STATE/v1"];
+    expect(hudAlertView(legacy).provenance).toBe("missing-authoritative");
+  });
+
   it("does not leak an unrevealed identity from SHIP_IDENTITY", () => {
     const view = contactViews(snapshot()).find((contact) => contact.id === "101");
     expect(view?.name).toBe("CONTACT 101");

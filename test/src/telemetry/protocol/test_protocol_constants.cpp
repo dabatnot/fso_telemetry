@@ -103,7 +103,7 @@ TEST(TelemetryProtocolConstants, FreezesMessageFlagsAndPerClassLimits) {
 }
 
 TEST(TelemetryProtocolConstants, FreezesRecordTypeRegistry) {
-	const std::array<RecordType, 29> values{
+	const std::array<RecordType, 30> values{
 		RecordType::Invalid,
 		RecordType::SessionState,
 		RecordType::MissionState,
@@ -133,6 +133,7 @@ TEST(TelemetryProtocolConstants, FreezesRecordTypeRegistry) {
 		RecordType::CommViewState,
 		RecordType::CommViewEvent,
 		RecordType::Events,
+		RecordType::HudAlertState,
 	};
 	expect_sequential_registry(values);
 
@@ -141,6 +142,21 @@ TEST(TelemetryProtocolConstants, FreezesRecordTypeRegistry) {
 	EXPECT_EQ(0x02U, RecordFlagDelete);
 	EXPECT_EQ(0x04U, RecordFlagPartial);
 	EXPECT_EQ(0x07U, KnownRecordFlags);
+}
+
+TEST(TelemetryProtocolConstants, FreezesPhase3HudAlertContract)
+{
+	EXPECT_EQ(29U, static_cast<std::uint16_t>(RecordType::HudAlertState));
+	EXPECT_EQ(30U, FirstReservedRecordType);
+	EXPECT_EQ(0x1ULL, HudAlertStatePresenceFlagActiveWarning);
+	EXPECT_EQ(0U,
+		static_cast<std::uint8_t>(HudAlertMissileLockState::None));
+	EXPECT_EQ(1U,
+		static_cast<std::uint8_t>(HudAlertMissileLockState::Attempt));
+	EXPECT_EQ(2U,
+		static_cast<std::uint8_t>(HudAlertMissileLockState::Acquired));
+	EXPECT_EQ(1U, static_cast<std::uint8_t>(HudAlertWarningKind::Launch));
+	EXPECT_EQ(7U, static_cast<std::uint8_t>(HudAlertWarningKind::Other));
 }
 
 TEST(TelemetryProtocolConstants, FreezesPhase3VersionFourRadarVisualContract) {

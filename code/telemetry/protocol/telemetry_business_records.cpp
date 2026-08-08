@@ -35,7 +35,7 @@ constexpr bool is_state_record(RecordType type) noexcept
 	return type == RecordType::SessionState || type == RecordType::MissionState ||
 		   (value >= static_cast<std::uint16_t>(RecordType::EntityLifecycle) &&
 			   value <= static_cast<std::uint16_t>(RecordType::EffectState)) ||
-		   type == RecordType::CommViewState;
+		   type == RecordType::CommViewState || type == RecordType::HudAlertState;
 }
 
 constexpr bool is_explicit_lifecycle_record(RecordType type) noexcept
@@ -76,6 +76,7 @@ constexpr std::size_t key_size_for(RecordType type) noexcept
 	case RecordType::SupportState:
 	case RecordType::NavigationState:
 	case RecordType::EffectState:
+	case RecordType::HudAlertState:
 		return 8;
 	default:
 		return 0;
@@ -150,6 +151,9 @@ ValidationError validate_payload(RecordType type,
 	if (type == RecordType::Events) {
 		return detail::validate_business_record_28(payload, container == BusinessRecordContainer::EventBatchReliable);
 	}
+	if (type == RecordType::HudAlertState) {
+		return detail::validate_business_record_29(payload);
+	}
 	return ValidationError::UnknownRequiredRecord;
 }
 
@@ -170,6 +174,8 @@ bool business_record_metadata(std::uint16_t raw_record_type, BusinessRecordMetad
 	const auto value = static_cast<std::uint16_t>(type);
 	metadata.cascades_with_entity = value >= static_cast<std::uint16_t>(RecordType::ShipIdentity) &&
 									 value <= static_cast<std::uint16_t>(RecordType::EffectState);
+	metadata.cascades_with_entity = metadata.cascades_with_entity ||
+		type == RecordType::HudAlertState;
 	return true;
 }
 
@@ -196,6 +202,10 @@ ValidationError validate_business_record(const RecordEnvelopeView& record,
 	BusinessRecordMetadata candidate;
 	if (!business_record_metadata(record.raw_record_type, candidate)) {
 		return record.raw_record_type == 0 ? ValidationError::OutOfRange : ValidationError::None;
+	}
+	if (candidate.type == RecordType::HudAlertState &&
+		protocol_minor < VersionMinorV1_1) {
+		return ValidationError::UnsupportedRecordVersion;
 	}
 	const auto phase3_extended_version =
 		(candidate.type == RecordType::RadarContacts ||

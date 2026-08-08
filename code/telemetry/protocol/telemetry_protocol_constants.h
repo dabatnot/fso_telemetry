@@ -114,8 +114,9 @@ enum class RecordType : std::uint16_t {
 	CommViewState = 26,
 	CommViewEvent = 27,
 	Events = 28,
+	HudAlertState = 29,
 };
-constexpr std::uint16_t FirstReservedRecordType = 29;
+constexpr std::uint16_t FirstReservedRecordType = 30;
 
 enum RecordFlag : std::uint8_t {
 	RecordFlagNone = 0,
@@ -1011,6 +1012,29 @@ enum ThreatStatePresenceFlag : std::uint64_t {
 };
 constexpr std::uint64_t KnownThreatStatePresenceFlags = 0x0000000000000007ULL;
 constexpr std::uint64_t ReservedThreatStatePresenceFlags = 0xfffffffffffffff8ULL;
+
+enum HudAlertStatePresenceFlag : std::uint64_t {
+	HudAlertStatePresenceFlagNone = 0,
+	HudAlertStatePresenceFlagActiveWarning = 0x0000000000000001ULL,
+};
+constexpr std::uint64_t KnownHudAlertStatePresenceFlags = 0x0000000000000001ULL;
+constexpr std::uint64_t ReservedHudAlertStatePresenceFlags = 0xfffffffffffffffeULL;
+
+enum class HudAlertMissileLockState : std::uint8_t {
+	None = 0,
+	Attempt = 1,
+	Acquired = 2,
+};
+
+enum class HudAlertWarningKind : std::uint8_t {
+	Launch = 1,
+	Evaded = 2,
+	Collision = 3,
+	Blast = 4,
+	EngineWash = 5,
+	Emp = 6,
+	Other = 7,
+};
 
 enum CargoScanStatePresenceFlag : std::uint64_t {
 	CargoScanStatePresenceFlagNone = 0,

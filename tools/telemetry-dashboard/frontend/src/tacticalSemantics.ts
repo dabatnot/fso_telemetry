@@ -38,6 +38,39 @@ export const THREAT_LEVELS: Record<number, string> = {
   3: "LOCK ACQUIS"
 };
 
+export const HUD_WARNING_KINDS: Record<number, string> = {
+  1: "LAUNCH",
+  2: "EVADED",
+  3: "COLLISION",
+  4: "BLAST",
+  5: "ENGINE WASH",
+  6: "EMP",
+  7: "OTHER"
+};
+
+export type HudAlertProvenance =
+  | "authoritative-v1"
+  | "legacy-aggregated"
+  | "missing-authoritative";
+
+export interface HudWarningView {
+  kindCode: number;
+  kind: string;
+  text: string;
+  remainingUs: number;
+  instanceId: string;
+}
+
+export interface HudAlertView {
+  primaryFireActive: boolean;
+  primaryBlinkMs: 180 | null;
+  missileLockState: 0 | 1 | 2;
+  lockBlinkMs: 180 | 90 | null;
+  warning: HudWarningView | null;
+  provenance: HudAlertProvenance;
+  record: Record<string, unknown> | null;
+}
+
 export const GUIDANCE_TYPES: Record<number, string> = {
   0: "AUCUN",
   1: "CHALEUR",
@@ -259,6 +292,73 @@ export function lockState(snapshot: DashboardSnapshot | null) {
 
 export function threatState(snapshot: DashboardSnapshot | null) {
   return playerRecord(snapshot, "THREAT_STATE");
+}
+
+export function hudAlertState(snapshot: DashboardSnapshot | null) {
+  return playerRecord(snapshot, "HUD_ALERT_STATE");
+}
+
+export function hudAlertView(snapshot: DashboardSnapshot | null): HudAlertView {
+  const record = hudAlertState(snapshot);
+  if (record !== null) {
+    const lock = integer(record.missile_lock_state);
+    const primary = record.primary_fire_threat_active === true;
+    const presence = integer(record.presence) ?? 0;
+    let warning: HudWarningView | null = null;
+    if ((presence & 0x01) !== 0) {
+      const kindCode = integer(record.warning_kind);
+      const text = typeof record.warning_text === "string"
+        ? record.warning_text.trim()
+        : "";
+      const remainingUs = integer(record.warning_remaining_us);
+      const instanceId = String(record.warning_instance_id ?? "0");
+      if (kindCode !== null && HUD_WARNING_KINDS[kindCode] && text &&
+          remainingUs !== null && remainingUs > 0 && instanceId !== "0") {
+        warning = {
+          kindCode,
+          kind: HUD_WARNING_KINDS[kindCode],
+          text,
+          remainingUs,
+          instanceId
+        };
+      }
+    }
+    const lockState = lock === 1 || lock === 2 ? lock : 0;
+    return {
+      primaryFireActive: primary,
+      primaryBlinkMs: primary ? 180 : null,
+      missileLockState: lockState,
+      lockBlinkMs: lockState === 1 ? 180 : lockState === 2 ? 90 : null,
+      warning,
+      provenance: "authoritative-v1",
+      record
+    };
+  }
+
+  if (snapshot?.mode === "replay" &&
+      snapshot.replay.captureSchema === "FSTL-dashboard-capture-v1") {
+    const level = integer(threatState(snapshot)?.threat_level) ?? 0;
+    const lockState = level >= 3 ? 2 : level >= 2 ? 1 : 0;
+    return {
+      primaryFireActive: level === 1,
+      primaryBlinkMs: level === 1 ? 180 : null,
+      missileLockState: lockState,
+      lockBlinkMs: lockState === 1 ? 180 : lockState === 2 ? 90 : null,
+      warning: null,
+      provenance: "legacy-aggregated",
+      record: null
+    };
+  }
+
+  return {
+    primaryFireActive: false,
+    primaryBlinkMs: null,
+    missileLockState: 0,
+    lockBlinkMs: null,
+    warning: null,
+    provenance: "missing-authoritative",
+    record: null
+  };
 }
 
 export function radarContacts(snapshot: DashboardSnapshot | null) {

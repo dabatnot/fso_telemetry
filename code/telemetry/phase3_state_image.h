@@ -158,6 +158,19 @@ struct Phase3ThreatState {
 	std::array<Phase3IncomingMissile, MaximumPhase3IncomingMissiles> incoming_missiles{};
 };
 
+struct Phase3HudAlertState {
+	std::uint64_t presence = 0U;
+	std::uint64_t producer_sample_time_us = 0U;
+	bool primary_fire_threat_active = false;
+	protocol::HudAlertMissileLockState missile_lock_state =
+		protocol::HudAlertMissileLockState::None;
+	protocol::HudAlertWarningKind warning_kind =
+		protocol::HudAlertWarningKind::Other;
+	std::uint64_t warning_instance_id = 0U;
+	std::uint64_t warning_remaining_us = 0U;
+	Phase3OwnedString<511U> warning_text;
+};
+
 struct Phase3CargoState {
 	std::uint64_t presence = 0U;
 	std::uint64_t producer_sample_time_us = 0U;
@@ -219,6 +232,7 @@ struct Phase3Projection {
 	std::size_t contact_count = 0U;
 	std::array<Phase3RadarContact, MaximumPhase3Contacts> contacts{};
 	Phase3ThreatState threat;
+	Phase3HudAlertState hud_alert;
 	Phase3CargoState cargo;
 	Phase3NavigationState navigation;
 	std::size_t nav_identity_count = 0U;

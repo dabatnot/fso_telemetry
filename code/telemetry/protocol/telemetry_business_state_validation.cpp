@@ -1242,7 +1242,7 @@ bool requires_ship_scope(RecordType type) noexcept
 		   type == RecordType::PropulsionState || type == RecordType::WeaponState ||
 		   type == RecordType::LockState || type == RecordType::TargetState || type == RecordType::RadarState ||
 		   type == RecordType::ThreatState || type == RecordType::CargoScanState ||
-		   type == RecordType::NavigationState;
+		   type == RecordType::NavigationState || type == RecordType::HudAlertState;
 }
 
 bool observed_player_scope(RecordType type) noexcept
@@ -1250,7 +1250,7 @@ bool observed_player_scope(RecordType type) noexcept
 	return type == RecordType::ControlState || type == RecordType::LockState || type == RecordType::TargetState ||
 		   type == RecordType::RadarState || type == RecordType::RadarContacts ||
 		   type == RecordType::ThreatState || type == RecordType::CargoScanState ||
-		   type == RecordType::NavigationState;
+		   type == RecordType::NavigationState || type == RecordType::HudAlertState;
 }
 
 bool domain_allows_record(RecordType type, std::uint64_t coverage) noexcept
@@ -1261,7 +1261,8 @@ bool domain_allows_record(RecordType type, std::uint64_t coverage) noexcept
 	if (type == RecordType::LockState || type == RecordType::TargetState) {
 		return (coverage & StateDomainCoverageBitTargeting) != 0U;
 	}
-	if (type == RecordType::RadarState || type == RecordType::RadarContacts || type == RecordType::ThreatState) {
+	if (type == RecordType::RadarState || type == RecordType::RadarContacts ||
+		type == RecordType::ThreatState || type == RecordType::HudAlertState) {
 		return (coverage & StateDomainCoverageBitRadarSensors) != 0U;
 	}
 	if (type == RecordType::WeaponState) {
@@ -1642,6 +1643,9 @@ ValidationError BusinessStateImageValidator::validate(const StateImage& image) c
 	if (!require_observed(RecordType::ControlState, StateDomainCoverageBitControlInputs) ||
 		!require_observed(RecordType::RadarState, StateDomainCoverageBitRadarSensors) ||
 		!require_observed(RecordType::ThreatState, StateDomainCoverageBitRadarSensors) ||
+		(phase3_cockpit_sensors && m_context.require_hud_alert_state &&
+		 !require_observed(RecordType::HudAlertState,
+			 StateDomainCoverageBitRadarSensors)) ||
 		!require_observed(RecordType::LockState, StateDomainCoverageBitTargeting) ||
 		!require_observed(RecordType::TargetState, StateDomainCoverageBitTargeting) ||
 		!require_observed(RecordType::CargoScanState, StateDomainCoverageBitCargoDockSupport) ||

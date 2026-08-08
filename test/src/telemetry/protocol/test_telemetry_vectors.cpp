@@ -224,6 +224,17 @@ json_t* canonical_v11_record(CanonicalReader& region) {
 		const auto reserved=hex_string(reader.bytes(3));
 		put(fields,"phase",ji(phase)); put(fields,"reserved",json_string(reserved.c_str()));
 		put(fields,"support_flags",ji(support_flags));
+	} else if (type == 29U) {
+		name="HUD_ALERT_STATE"; const auto presence=entity_prefix(); const auto primary=reader.u8();
+		const auto lock=reader.u8(); put(fields,"primary_fire_threat_active",json_boolean(primary));
+		put(fields,"missile_lock_state",ji(lock));
+		if (presence&1U) {
+			const auto warning_kind=reader.u8(); const auto warning_instance=reader.u64();
+			const auto warning_remaining=reader.u64(); const auto warning_text=reader.utf8();
+			put(fields,"warning_instance_id",js(warning_instance)); put(fields,"warning_kind",ji(warning_kind));
+			put(fields,"warning_remaining_us",js(warning_remaining));
+			put(fields,"warning_text",json_string(warning_text.c_str()));
+		}
 	} else { ADD_FAILURE() << "unhandled FSTL 1.1 record type " << type; }
 	EXPECT_EQ(0U, reader.remaining());
 	auto* record=json_object(); put(record,"fields",fields); put(record,"kind",json_string("record")); put(record,"recordFlags",ji(flags));
@@ -1246,6 +1257,36 @@ TEST(TelemetryProtocolVectors, EveryValidFstl11VectorMatchesTheFixedCanonicalJso
 		}
 		json_decref(actual); json_decref(expected);
 	}
+}
+
+TEST(TelemetryProtocolVectors, HudAlertStateMatchesTheFstl11GoldenVector)
+{
+	const auto encoded = read_binary(asset_root() / "vectors-v1.1" /
+		"hud-alert-state" / "hud-alert-state.bin");
+	ASSERT_FALSE(encoded.empty());
+	RecordEnvelopeIterator iterator(byte_view(encoded), 1U,
+		RecordFlagPolicy::RequireNone);
+	RecordEnvelopeView record;
+	bool has_value = false;
+	ASSERT_EQ(ValidationError::None, iterator.next(record, has_value));
+	ASSERT_TRUE(has_value);
+	BusinessRecordMetadata metadata;
+	EXPECT_EQ(ValidationError::None, validate_business_record(record,
+		BusinessRecordContainer::FullSnapshot, VersionMinorV1_1, metadata));
+	EXPECT_EQ(static_cast<std::uint16_t>(RecordType::HudAlertState),
+		record.raw_record_type);
+	EXPECT_EQ(8U, metadata.key_size);
+
+	CanonicalReader reader(byte_view(encoded));
+	json_t* actual = canonical_v11_record(reader);
+	json_error_t json_error{};
+	json_t* expected = json_load_file((asset_root() / "expected-v1.1" /
+		"hud-alert-state.json").string().c_str(), JSON_REJECT_DUPLICATES,
+		&json_error);
+	ASSERT_NE(nullptr, expected) << json_error.text;
+	EXPECT_TRUE(json_equal(actual, expected));
+	json_decref(actual);
+	json_decref(expected);
 }
 
 } // namespace

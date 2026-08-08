@@ -21,8 +21,8 @@ des dépendances et ne sont pas recopiées.
 | `P3-REQ-009` | Toute capture Phase 3 se fait sur le thread principal sans worker ni seam de test. | `telemetry_phase3_capture_contract_tests` | — |
 | `P3-REQ-010` | Toutes les sources et références moteur sont validées avant lecture; une cible transitoirement périmée est omise sans fermer la session. | `telemetry_phase3_capture_contract_tests` | — |
 | `P3-REQ-011` | Les DTO possèdent toutes leurs données et ne conservent aucun index ou pointeur moteur. | `TelemetryPhase3Dto.OwnsCapturedData` | — |
-| `P3-REQ-012` | Ciblage suit `flightHz`, capteurs/opérations suivent `systemsHz`; leurs sample times peuvent différer hors keyframe. | `telemetry_phase3_capture_schedule_tests` | — |
-| `P3-REQ-013` | Le snapshot contient exactement la matrice `0x07CB` et ses cardinalités. | `telemetry_phase3_snapshot_matrix_tests` | — |
+| `P3-REQ-012` | Ciblage et voyants HUD suivent `flightHz`, capteurs/opérations suivent `systemsHz`; leurs sample times peuvent différer hors keyframe. | `telemetry_phase3_capture_schedule_tests` | — |
+| `P3-REQ-013` | Le snapshot contient exactement la matrice `0x07CB`, dont `HUD_ALERT_STATE`, et ses cardinalités. | `telemetry_phase3_snapshot_matrix_tests` | — |
 | `P3-REQ-014` | Le filtrage cockpit précède IDs, catalogue, diff et sérialisation. | `telemetry_phase3_visibility_tests` | — |
 | `P3-REQ-015` | Les IDs capteurs sont non nuls, stables, monotones, non réutilisés et bornés à 65 536. | `telemetry_phase3_identity_tests` | — |
 | `P3-REQ-016` | Une piste ne matérialise pas implicitement l’état complet d’une entité. | `telemetry_phase3_visibility_tests` | — |
@@ -36,26 +36,27 @@ des dépendances et ne sont pas recopiées.
 | `P3-REQ-024` | Les contacts décodés égalent exactement les pistes autorisées du HUD producteur et portent position locale, distance, décision visuelle et flag cible de leur tick radar. | `telemetry_phase3_visibility_tests` + `TelemetryPhase3RadarProjection.*` | — |
 | `P3-REQ-025` | Un vaisseau `VISIBLE` v3/v4 porte le nom affichable et le type exact du Target Box; chaque contact v4 porte la couleur et le type de blip FSO, les autres pistes restant anonymes. | `telemetry_phase3_visibility_tests` + golden v2/v3/v4 | — |
 | `P3-REQ-026` | Contacts `CREATE/DELETE` et remplacements complets restent cumulatifs contre la baseline. | `telemetry_phase3_replication_tests` | — |
-| `P3-REQ-027` | `THREAT_STATE` reproduit niveau et références autorisées ; une arme entrante sans classe installée est omise sans fermer la session. | `telemetry_phase3_threat_tests` | — |
+| `P3-REQ-027` | `THREAT_STATE` v1 reproduit niveau et références autorisées ; une arme entrante sans classe installée est omise sans fermer la session. | `telemetry_phase3_threat_tests` | — |
 | `P3-REQ-028` | La liste complète de missiles est exacte jusqu’à 256 et refuse 257 sans troncature. | `telemetry_phase3_threat_tests` | — |
 | `P3-REQ-029` | Le scan peut référencer une cible publique hors fermeture sans matérialiser son état complet. | `telemetry_phase3_cargo_tests` | — |
 | `P3-REQ-030` | Phase et validités sont exactes; texte cargo présent si et seulement si révélé. | `telemetry_phase3_cargo_tests` | — |
 | `P3-REQ-031` | Navigation contient exactement les navpoints, route et destination autorisés. | `telemetry_phase3_navigation_tests` | — |
 | `P3-REQ-032` | Autopilote et refus sont cohérents avec `CONTROL_STATE`, sans commande distante. | `telemetry_phase3_navigation_tests` | — |
-| `P3-REQ-033` | Les dérivations tactiques restent client sauf D/S, libellés et couleurs autoritaires ; la coordonnée radar live utilise strictement les entrées v2/v3/v4, avec fallback seulement pour capture v1. | `telemetry_phase3_derived_value_tests` | — |
+| `P3-REQ-033` | Les dérivations tactiques et cadences de voyants restent client sauf D/S, libellés, couleurs et états discrets autoritaires ; la coordonnée radar live utilise strictement les entrées v2/v3/v4, avec fallback seulement pour capture v1. | `telemetry_phase3_derived_value_tests` | — |
 | `P3-REQ-034` | Valeurs non finies, enums, IDs, temps et références invalides échouent fermés; les références dynamiques légalement périmées ou non installées sont omises. | `telemetry_phase3_security_bounds_tests` | — |
 | `P3-REQ-035` | Snapshot, keyframe et resync sont exhaustifs et atomiques; cible/contact ne sont croisés strictement qu'à sample time égal. | `telemetry_phase3_replication_tests` | — |
 | `P3-REQ-036` | Les deltas sont cumulatifs, remplacent des atomes complets et basculent en keyframe au-delà de 1 Mio. | `telemetry_phase3_replication_tests` | — |
 | `P3-REQ-037` | Toutes les références croisées emploient le même ID public pour le même objet. | `telemetry_phase3_reference_tests` | — |
 | `P3-REQ-038` | Mission, joueur, cible et retrait de piste convergent sans sélection fantôme ni arrêt lors d'une destruction/réutilisation de slot. | `telemetry_phase3_lifecycle_tests` | — |
-| `P3-REQ-039` | Couvertures événements exactes : state-derived `0x001D`, exact `0`. | `telemetry_phase3_event_coverage_tests` | — |
+| `P3-REQ-039` | Couvertures événements exactes : state-derived `0x001D`, exact `0`; les alertes HUD restent un état échantillonné. | `telemetry_phase3_event_coverage_tests` | — |
 | `P3-REQ-040` | Toutes les cardinalités et transactions respectent max/max+1 sans troncature. | `telemetry_phase3_security_bounds_tests` | — |
 | `P3-REQ-041` | La configuration v3 choisit un profil fermé et les versions v1/v2 restent inchangées. | `TelemetryConfigContract.VersionThreeProfileIsClosed` | — |
 | `P3-REQ-042` | Préallocation et budgets 160 Mio partagé, 88 Mio/client, 512 Mio total sont respectés. | `telemetry_phase3_resource_tests` | — |
-| `P3-REQ-043` | Toute fermeture Phase 3, manifeste compris, expose avant arrêt un bloc, un statut et un compteur fermés, conservés malgré saturation des logs, sans donnée sensible. | `telemetry_phase3_observability_tests` | — |
+| `P3-REQ-043` | Toute fermeture Phase 3, manifeste et alertes HUD compris, expose avant arrêt un bloc, un statut et un compteur fermés, conservés malgré saturation des logs, sans donnée sensible. | `telemetry_phase3_observability_tests` | — |
 | `P3-REQ-044` | Désactivé, le module est inerte; activé, le chemin reste borné et non bloquant. | `telemetry_native_runtime_integration_contract_tests` | — |
-| `P3-REQ-045` | Le client indépendant conserve les sample times bruts et le dashboard suit la cible `TARGET_STATE` la plus récente. | `telemetry_phase3_loopback_tests` | — |
+| `P3-REQ-045` | Le client indépendant conserve les sample times bruts ; le dashboard suit la cible `TARGET_STATE` et les alertes `HUD_ALERT_STATE` sans décision inventée. | `telemetry_phase3_loopback_tests` | — |
 | `P3-REQ-046` | Après perte d’un delta Phase 3, le client converge sans fuite ni référence pendante. | `telemetry_phase3_replication_tests` + loopback `--drop-once delta` | — |
+| `P3-REQ-047` | `HUD_ALERT_STATE` v1 expose à `flightHz` les voyants primaire/lock indépendants et l'unique avertissement accepté, sans animation native. | `telemetry_phase3_hud_alert_tests` + tests frontend | — |
 
 ## 3. Observations neutres et facultatives
 

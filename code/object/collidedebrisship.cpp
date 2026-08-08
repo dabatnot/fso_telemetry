@@ -169,7 +169,8 @@ int collide_debris_ship( obj_pair * pair )
 
 				// maybe print Collision on HUD
 				if ( ship_objp == Player_obj ) {					
-					hud_start_text_flash(XSTR("Collision", 1431), 2000);
+					hud_start_text_flash(XSTR("Collision", 1431), 2000, 200,
+						HudTextWarningKind::Collision);
 				}
 
 				collide_ship_ship_do_sound(&hitpos, ship_objp, debris_objp, ship_objp==Player_obj);
@@ -356,7 +357,8 @@ int collide_asteroid_ship( obj_pair * pair )
 
 				// maybe print Collision on HUD
 				if ( ship_objp == Player_obj ) {					
-					hud_start_text_flash(XSTR("Collision", 1431), 2000);
+					hud_start_text_flash(XSTR("Collision", 1431), 2000, 200,
+						HudTextWarningKind::Collision);
 				}
 
 				collide_ship_ship_do_sound(&hitpos, ship_objp, asteroid_objp, ship_objp==Player_obj);

@@ -17,6 +17,7 @@
 #include "gamesnd/gamesnd.h"
 #include "hud/hudmessage.h"
 #include "hud/hudshield.h"
+#include "hud/hud.h"
 #include "io/joy_ff.h"
 #include "io/timer.h"
 #include "network/multi.h"
@@ -884,7 +885,6 @@ static void get_I_inv (matrix* I_inv, matrix* I_inv_body, matrix* orient)
 #define	PLANET_DAMAGE_RANGE	3		//	If within this factor of radius, apply damage.
 
 fix	Last_planet_damage_time = 0;
-extern void hud_start_text_flash(char *txt, int t, int interval);
 
 /**
  * Procss player_ship:planet damage.
@@ -1269,7 +1269,8 @@ void collide_ship_ship_process(obj_pair * pair, const std::any& collision_data) 
 		if (ship_ship_hit_info.impulse > 0) {
 			//Only flash the "Collision" text if not landing
 			if ( ship_ship_hit_info.player_involved && !ship_ship_hit_info.is_landing) {
-				hud_start_text_flash(XSTR("Collision", 1431), 2000);
+				hud_start_text_flash(XSTR("Collision", 1431), 2000, 200,
+					HudTextWarningKind::Collision);
 			}
 		}
 
@@ -1747,7 +1748,8 @@ int collide_prop_ship(obj_pair* pair)
 				}
 
 				if (prop_ship_hit_info.impulse > 0 && ship_objp == Player_obj) {
-					hud_start_text_flash(XSTR("Collision", 1431), 2000);
+					hud_start_text_flash(XSTR("Collision", 1431), 2000, 200,
+						HudTextWarningKind::Collision);
 				}
 
 				collide_ship_ship_do_sound(&world_hit_pos, prop_objp, ship_objp, ship_objp == Player_obj);

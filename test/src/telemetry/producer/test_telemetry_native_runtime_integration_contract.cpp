@@ -20,6 +20,7 @@
 #include "ai/ai.h"
 #include "autopilot/autopilot.h"
 #include "globalincs/systemvars.h"
+#include "hud/hud.h"
 #include "hud/hudconfig.h"
 #include "iff_defs/iff_defs.h"
 #include "object/object.h"
@@ -2355,6 +2356,9 @@ TEST(TelemetryPhase3Threat,
 	// authority: dumbfire, lock attempt, then acquired lock in increasing
 	// severity.  No attacker or weapon object is installed in this fixture.
 	Player->threat_flags = (1 << 0) | (1 << 1) | (1 << 2);
+	hud_start_text_flash(nullptr, 0);
+	hud_start_text_flash("Collision", 5'000, 200,
+		HudTextWarningKind::Collision);
 
 	auto phase2 = std::make_unique<detail::Phase2ObservationDto>();
 	phase2->ships.resize(1U);
@@ -2377,6 +2381,62 @@ TEST(TelemetryPhase3Threat,
 	EXPECT_EQ(0U, output->threat.nearest_attacker_entity_id);
 	EXPECT_EQ(0U, output->threat.dangerous_weapon_entity_id);
 	EXPECT_EQ(0U, output->threat.nearest_homing_entity_id);
+	EXPECT_TRUE(output->hud_alert.primary_fire_threat_active);
+	EXPECT_EQ(protocol::HudAlertMissileLockState::Acquired,
+		output->hud_alert.missile_lock_state);
+	EXPECT_EQ(protocol::HudAlertStatePresenceFlagActiveWarning,
+		output->hud_alert.presence);
+	EXPECT_EQ(protocol::HudAlertWarningKind::Collision,
+		output->hud_alert.warning_kind);
+	EXPECT_NE(0U, output->hud_alert.warning_instance_id);
+	EXPECT_GT(output->hud_alert.warning_remaining_us, 0U);
+	EXPECT_EQ("Collision", std::string_view(
+		output->hud_alert.warning_text.bytes.data(),
+		output->hud_alert.warning_text.size));
+	hud_start_text_flash(nullptr, 0);
+}
+
+TEST(TelemetryPhase3Threat,
+	HudWarningPriorityAndRetriggerChangeOnlyAcceptedInstances)
+{
+	auto engine_globals = std::make_unique<Phase3EngineGlobalsScope>();
+	hud_start_text_flash(nullptr, 0);
+	HudAlertSnapshot first{};
+	hud_start_text_flash("Collision", 5'000, 200,
+		HudTextWarningKind::Collision);
+	ASSERT_TRUE(hud_get_alert_snapshot(first));
+	ASSERT_TRUE(first.warning_active);
+	const auto collision_instance = first.warning_instance_id;
+
+	// Native HUD priority refuses Launch while another warning is active.
+	hud_start_text_flash("Launch", 5'000, 200,
+		HudTextWarningKind::Launch);
+	HudAlertSnapshot refused{};
+	ASSERT_TRUE(hud_get_alert_snapshot(refused));
+	EXPECT_EQ(collision_instance, refused.warning_instance_id);
+	EXPECT_EQ(HudTextWarningKind::Collision, refused.warning_kind);
+
+	// A real retrigger accepted by the HUD produces a fresh identity.
+	hud_start_text_flash("Collision", 5'000, 200,
+		HudTextWarningKind::Collision);
+	HudAlertSnapshot retriggered{};
+	ASSERT_TRUE(hud_get_alert_snapshot(retriggered));
+	EXPECT_GT(retriggered.warning_instance_id, collision_instance);
+	EXPECT_EQ(HudTextWarningKind::Collision, retriggered.warning_kind);
+
+	// EMP may replace the current warning; once active it rejects Launch.
+	hud_start_text_flash("Emp", 5'000, 200, HudTextWarningKind::Emp);
+	HudAlertSnapshot emp{};
+	ASSERT_TRUE(hud_get_alert_snapshot(emp));
+	ASSERT_EQ(HudTextWarningKind::Emp, emp.warning_kind);
+	const auto emp_instance = emp.warning_instance_id;
+	hud_start_text_flash("Launch", 5'000, 200,
+		HudTextWarningKind::Launch);
+	HudAlertSnapshot emp_retained{};
+	ASSERT_TRUE(hud_get_alert_snapshot(emp_retained));
+	EXPECT_EQ(emp_instance, emp_retained.warning_instance_id);
+	EXPECT_EQ(HudTextWarningKind::Emp, emp_retained.warning_kind);
+	hud_start_text_flash(nullptr, 0);
 }
 
 TEST(TelemetryPhase3Threat,
@@ -2814,6 +2874,8 @@ TEST(TelemetryPhase3CaptureSchedule,
 		phase3_sample_time(after_systems, protocol::RecordType::LockState));
 	EXPECT_EQ(baseline_sample,
 		phase3_sample_time(after_systems, protocol::RecordType::TargetState));
+	EXPECT_EQ(baseline_sample,
+		phase3_sample_time(after_systems, protocol::RecordType::HudAlertState));
 	for (const auto type : {protocol::RecordType::RadarState,
 			 protocol::RecordType::ThreatState,
 			 protocol::RecordType::CargoScanState,
@@ -2900,6 +2962,7 @@ TEST(TelemetryPhase3CaptureSchedule,
 	const auto& captured_keyframe = slot(fixture)->snapshot.current_state();
 	for (const auto type : {protocol::RecordType::LockState,
 			 protocol::RecordType::TargetState,
+			 protocol::RecordType::HudAlertState,
 			 protocol::RecordType::RadarState,
 			 protocol::RecordType::ThreatState,
 			 protocol::RecordType::CargoScanState,

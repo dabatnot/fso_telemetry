@@ -1,0 +1,19 @@
+{
+  "context": {
+    "recordContainer": "full-snapshot"
+  },
+  "expectedCanonicalJson": "expected-v1.1/hud-alert-state.json",
+  "expectedValidationError": 0,
+  "expectedValidationErrorName": "NONE",
+  "inputFiles": [
+    "hud-alert-state.bin"
+  ],
+  "kind": "record",
+  "name": "hud-alert-state",
+  "notes": "Deterministic FSTL 1.1 HUD alert fixture; bytes are authoritative.",
+  "recordFlags": 0,
+  "recordType": 29,
+  "recordVersion": 1,
+  "schema": "FSTL-1.1",
+  "valid": true
+}

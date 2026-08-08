@@ -17,6 +17,10 @@
       "sha256": "6c12febcdab86267da01cf4b56b86e835dc0d4087639a2e86035de732e56a058"
     },
     {
+      "path": "expected-v1.1/hud-alert-state.json",
+      "sha256": "fc822bcdd79705610fd150734f34b700b82f56bacdebd28337b2f18bb2cff739"
+    },
+    {
       "path": "expected-v1.1/minimal-no-player.json",
       "sha256": "0ed821296a97d4a3a43384a9a17bce28d6a9d6070f13b281e608abbb4b83d6c8"
     },
@@ -103,6 +107,14 @@
     {
       "path": "vectors-v1.1/hello-minor-zero-only/hello-minor-zero-only.payload.bin",
       "sha256": "d0e1476c650f07d6f149942fafe7499324abc9c36fb2def09452c3a203fdd354"
+    },
+    {
+      "path": "vectors-v1.1/hud-alert-state/hud-alert-state.bin",
+      "sha256": "a6723cf62c3a0d057273b1bda65d73b89683209d8f2cf35551505a1439e3659e"
+    },
+    {
+      "path": "vectors-v1.1/hud-alert-state/hud-alert-state.json",
+      "sha256": "eb581bbc3a079ea1e3dab7a4bbc4d58cce5f7b1c0b2d9cf0e9fb4f358902fe7d"
     },
     {
       "path": "vectors-v1.1/minimal-no-player/minimal-no-player.bin",

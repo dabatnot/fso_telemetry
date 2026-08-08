@@ -2668,6 +2668,8 @@ def cpp_registry_bindings() -> dict[str, dict[str, object]]:
         "CommPlaybackMode",
         "CommColorMode",
         "CommStopReason",
+        "HudAlertMissileLockState",
+        "HudAlertWarningKind",
     )
     for name in direct_common_enums:
         bindings[name] = {"enum": name}
@@ -2744,6 +2746,7 @@ def cpp_registry_bindings() -> dict[str, dict[str, object]]:
         "SupportStatePresence",
         "TargetStatePresence",
         "ThreatStatePresence",
+        "HudAlertStatePresence",
         "TurretBankPresence",
         "TurretStatePresence",
         "WeaponManifestPresence",
@@ -2850,7 +2853,7 @@ def verify_cpp_correspondence(
 
     first_reserved_checks = {
         "FirstReservedMessageType": 21,
-        "FirstReservedRecordType": 29,
+        "FirstReservedRecordType": 30,
         "FirstReservedCapabilityBit": 5,
         "FirstReservedCapabilityExtensionType": 3,
     }
@@ -3217,7 +3220,8 @@ def validate_schema_shape(schema: dict[str, object]) -> None:
     if not isinstance(wire_conventions, dict):
         raise SchemaError("schema wire_conventions must be an object")
     require_contiguous(messages, "id", 1, 20, "schema MessageType")
-    require_contiguous(records, "id", 1, 28, "schema RecordType")
+    record_type_maximum = 29 if schema.get("wire_version") == "1.1" else 28
+    require_contiguous(records, "id", 1, record_type_maximum, "schema RecordType")
     require_contiguous(capabilities, "bit", 0, 4, "schema Capability")
     require_contiguous(errors, "id", 0, 47, "schema ValidationError")
     for registry_name, entries in (
@@ -3569,6 +3573,10 @@ def build_fstl_v1_1_schema() -> dict[str, object]:
             {"document": p3_doc04_path,
              "requirements": ["P3-REQ-024", "P3-REQ-025", "P3-REQ-033"]},
         ],
+        "phase3_hud_alerts": [
+            {"document": p3_doc04_path,
+             "requirements": ["P3-REQ-012", "P3-REQ-027", "P3-REQ-033", "P3-REQ-047"]},
+        ],
     }
 
     schema["supported_wire_versions"] = {
@@ -3622,6 +3630,58 @@ def build_fstl_v1_1_schema() -> dict[str, object]:
     registries = schema.get("numeric_registries")
     if not isinstance(registries, dict):
         raise SchemaError("base schema numeric registries are missing")
+    record_type_registry = registries["RecordType"]
+    record_type_registry["reserved"] = {"policy": "reject", "ranges": [[30, 65535]]}
+    record_type_registry["values"].append({
+        "name": "HUD_ALERT_STATE",
+        "value": 29,
+        "source": {"document": p3_doc04_path, "section": "10"},
+    })
+
+    registries["HudAlertStatePresence"] = {
+        "kind": "bitmask",
+        "width_bits": 64,
+        "unknown_policy": "reject",
+        "cpp": {
+            "enum": "HudAlertStatePresenceFlag",
+            "member_prefix": "HudAlertStatePresenceFlag",
+            "known_mask_constant": "KnownHudAlertStatePresenceFlags",
+            "reserved_mask_constant": "ReservedHudAlertStatePresenceFlags",
+        },
+        "source": {"document": p3_doc04_path, "section": "10"},
+        "reserved": {"known_mask": 0x1, "reserved_mask": 0xFFFFFFFFFFFFFFFE},
+        "values": [{"bit": 0, "name": "ACTIVE_WARNING", "value": 0x1}],
+    }
+    registries["HudAlertMissileLockState"] = {
+        "kind": "enum",
+        "width_bits": 8,
+        "unknown_policy": "reject",
+        "cpp": {"enum": "HudAlertMissileLockState"},
+        "source": {"document": p3_doc04_path, "section": "10"},
+        "reserved": {"policy": "reject", "ranges": [[3, 255]]},
+        "values": [
+            {"name": "NONE", "value": 0},
+            {"name": "ATTEMPT", "value": 1},
+            {"name": "ACQUIRED", "value": 2},
+        ],
+    }
+    registries["HudAlertWarningKind"] = {
+        "kind": "enum",
+        "width_bits": 8,
+        "unknown_policy": "reject",
+        "cpp": {"enum": "HudAlertWarningKind"},
+        "source": {"document": p3_doc04_path, "section": "10"},
+        "reserved": {"policy": "reject", "ranges": [[0, 0], [8, 255]]},
+        "values": [
+            {"name": "LAUNCH", "value": 1},
+            {"name": "EVADED", "value": 2},
+            {"name": "COLLISION", "value": 3},
+            {"name": "BLAST", "value": 4},
+            {"name": "ENGINE_WASH", "value": 5},
+            {"name": "EMP", "value": 6},
+            {"name": "OTHER", "value": 7},
+        ],
+    }
     state_coverage = registries["StateDomainCoverage"]
     state_coverage["cpp"] = {
         "enum": "StateDomainCoverageBit",
@@ -3839,13 +3899,38 @@ def build_fstl_v1_1_schema() -> dict[str, object]:
     ]
     target_state["phase3_live_record_version"] = 4
 
+    records.append({
+        "id": 29,
+        "name": "HUD_ALERT_STATE",
+        "version": 1,
+        "scope": "player",
+        "delta_atom": "entity_id",
+        "create_delete": "no",
+        "containers": ["FULL_SNAPSHOT", "DELTA"],
+        "minimum_minor": 1,
+        "required_profile": "CockpitSensors",
+        "source": {"document": p3_doc04_path, "section": "10"},
+        "fields": [
+            {"position": "1", "name": "entity_id", "wire": "u64", "constraint": "nonzero", "nature": "A", "semantics": "observed player"},
+            {"position": "2", "name": "presence", "wire": "u64", "constraint": "HudAlertStatePresence", "nature": "A", "semantics": "conditional active warning group"},
+            {"position": "3", "name": "producer_sample_time_us", "wire": "u64", "constraint": "monotonic sample time", "nature": "A", "semantics": "flightHz HUD sample"},
+            {"position": "4", "name": "primary_fire_threat_active", "wire": "bool8", "constraint": "0 or 1", "nature": "A", "semantics": "independent primary-fire threat lamp"},
+            {"position": "5", "name": "missile_lock_state", "wire": "HudAlertMissileLockState", "constraint": "closed enum", "nature": "A", "semantics": "independent missile lock lamp state"},
+            {"position": "6", "name": "warning_kind", "wire": "HudAlertWarningKind", "constraint": "closed enum", "nature": "A", "presence_condition": {"bits": [0], "selector": "presence"}, "semantics": "accepted active HUD warning"},
+            {"position": "7", "name": "warning_instance_id", "wire": "u64", "constraint": "nonzero", "nature": "A", "presence_condition": {"bits": [0], "selector": "presence"}, "semantics": "changes only on accepted warning"},
+            {"position": "8", "name": "warning_remaining_us", "wire": "u64", "constraint": "positive duration", "nature": "A", "presence_condition": {"bits": [0], "selector": "presence"}, "semantics": "remaining game time at sample"},
+            {"position": "9", "name": "warning_text", "wire": "str<511>", "constraint": "UTF-8 1..511 bytes", "nature": "A", "presence_condition": {"bits": [0], "selector": "presence"}, "semantics": "exact localized accepted HUD text"},
+        ],
+    })
+    records.sort(key=lambda record: int(record["id"]))
+
     correspondence = schema.get("cpp_correspondence")
     if not isinstance(correspondence, dict):
         raise SchemaError("base schema C++ correspondence is missing")
-    correspondence["verified_constant_count"] = 180
-    correspondence["verified_enum_count"] = 143
-    correspondence["document_registry_count"] = 135
-    correspondence["bound_registry_count"] = 135
+    correspondence["verified_constant_count"] = 182
+    correspondence["verified_enum_count"] = 146
+    correspondence["document_registry_count"] = 138
+    correspondence["bound_registry_count"] = 138
 
     validate_schema_shape(schema)
     return schema

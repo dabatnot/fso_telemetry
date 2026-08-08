@@ -525,6 +525,18 @@ class DashboardProjection:
             "p3.dashboard.missile-ttc.v1",
             ["derived:p3.dashboard.missile-distance.v1",
              "derived:p3.dashboard.missile-closing-speed.v1"]),
+        "primary_fire_threat_active ? 180ms : absent": (
+            "p3.dashboard.hud-alert-primary-period.v1",
+            ["wire:HUD_ALERT_STATE.primary_fire_threat_active"]),
+        "missile_lock_state == ATTEMPT ? 180ms : ACQUIRED ? 90ms : absent": (
+            "p3.dashboard.hud-alert-lock-period.v1",
+            ["wire:HUD_ALERT_STATE.missile_lock_state"]),
+        "HUD_ALERT_STATE warning group is authoritative": (
+            "p3.dashboard.hud-alert-warning.v1",
+            ["wire:HUD_ALERT_STATE.warning_kind",
+             "wire:HUD_ALERT_STATE.warning_text",
+             "wire:HUD_ALERT_STATE.warning_remaining_us",
+             "wire:HUD_ALERT_STATE.warning_instance_id"]),
     }
 
     def __init__(self, state: "ConsoleState", at_us: int,
@@ -1647,6 +1659,46 @@ class DashboardProjection:
                         "value": progress,
                     },
                 )
+
+        for entity, alert in self._per_entity("HUD_ALERT_STATE").items():
+            primary_period = 180 if alert.get("primary_fire_threat_active") is True else None
+            lock_state = int(alert.get("missile_lock_state", 0))
+            lock_period = 180 if lock_state == 1 else 90 if lock_state == 2 else None
+            self._add_derived(
+                f"entities.{entity}.hud_alert.primary_blink_period_ms",
+                "primary_fire_threat_active ? 180ms : absent",
+                {
+                    "available": primary_period is not None,
+                    "reason": None if primary_period is not None else "primary-fire-threat-inactive",
+                    "value": primary_period,
+                },
+            )
+            self._add_derived(
+                f"entities.{entity}.hud_alert.lock_blink_period_ms",
+                "missile_lock_state == ATTEMPT ? 180ms : ACQUIRED ? 90ms : absent",
+                {
+                    "available": lock_period is not None,
+                    "reason": None if lock_period is not None else "missile-lock-threat-inactive",
+                    "value": lock_period,
+                },
+            )
+            warning = None
+            if int(alert.get("presence", 0)) & 0x01:
+                warning = {
+                    "kind": alert.get("warning_kind"),
+                    "text": alert.get("warning_text"),
+                    "remaining_us": alert.get("warning_remaining_us"),
+                    "instance_id": alert.get("warning_instance_id"),
+                }
+            self._add_derived(
+                f"entities.{entity}.hud_alert.warning",
+                "HUD_ALERT_STATE warning group is authoritative",
+                {
+                    "available": warning is not None,
+                    "reason": None if warning is not None else "no-active-hud-warning",
+                    "value": warning,
+                },
+            )
 
         for entity, threat in self._per_entity("THREAT_STATE").items():
             owner_flight = flights.get(entity)

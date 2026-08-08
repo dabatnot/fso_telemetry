@@ -11,6 +11,7 @@ from pathlib import Path
 
 from dashboard_runtime import (
     CAPTURE_SCHEMA,
+    LEGACY_CAPTURE_SCHEMA,
     CaptureWriter,
     ChannelMeasurement,
     QualityTracker,
@@ -83,6 +84,17 @@ class DashboardRuntimeTest(unittest.TestCase):
             path.write_text(json.dumps({"schema": "other", "kind": "header"}) + "\n", encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "capture header"):
                 load_capture(path)
+
+    def test_capture_loader_accepts_only_the_explicit_legacy_schema(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "legacy.jsonl"
+            path.write_text(
+                json.dumps({"schema": LEGACY_CAPTURE_SCHEMA, "kind": "header"}) + "\n",
+                encoding="utf-8",
+            )
+            header, packets = load_capture(path)
+            self.assertEqual(LEGACY_CAPTURE_SCHEMA, header["schema"])
+            self.assertEqual([], packets)
 
     def test_empty_snapshot_exposes_five_state_contract_inputs(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

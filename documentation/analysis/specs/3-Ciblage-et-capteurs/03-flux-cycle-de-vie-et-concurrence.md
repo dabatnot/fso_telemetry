@@ -32,7 +32,7 @@ Sur chaque `EngineUpdate` :
 
 1. drainer les transitions héritées ;
 2. valider joueur et génération de mission ;
-3. si le bloc ciblage est dû, capturer cible et locks ;
+3. si le bloc ciblage est dû, capturer cible, locks et voyants HUD ;
 4. si le bloc systèmes est dû, capturer radar, contacts, menace, cargo et
    navigation ;
 5. appliquer le filtre `COCKPIT` à la projection complète ;
@@ -169,6 +169,13 @@ alloués dans le même registre public :
 - sa disparition le retire de la liste suivante ;
 - plus de 256 missiles autorisés refuse l’image et provoque la perte propre du
   profil, jamais une sélection des « plus dangereux ».
+
+`HUD_ALERT_STATE` est un atome distinct rafraîchi à `flightHz`. Il conserve
+simultanément le voyant de tir primaire et l'état de verrouillage missile. Son
+groupe d'avertissement est présent seulement tant que le texte retenu par FSO
+est actif ; son `warning_instance_id` change uniquement lorsqu'un appel est
+accepté après les priorités natives. Ce compteur d'instance ne transforme pas
+l'état échantillonné en couverture événementielle exacte.
 
 ## 8. Cargo et navigation
 

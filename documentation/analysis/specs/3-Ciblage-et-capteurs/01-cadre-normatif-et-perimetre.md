@@ -19,7 +19,8 @@ du joueur observé :
 
 - l’image `CompleteShip` héritée ;
 - `TARGET_STATE` et `LOCK_STATE` ;
-- `RADAR_STATE`, l’ensemble autorisé de `RADAR_CONTACTS` et `THREAT_STATE` ;
+- `RADAR_STATE`, l’ensemble autorisé de `RADAR_CONTACTS`, `THREAT_STATE` et
+  `HUD_ALERT_STATE` ;
 - `CARGO_SCAN_STATE` avec divulgation contrôlée ;
 - `NAVIGATION_STATE` avec les seuls points autorisés ;
 - les événements reconstructibles de cible et de scan annoncés ;
@@ -106,8 +107,8 @@ handshake et un nouveau `session_id`.
 | `P3-REQ-009` | Toute lecture moteur et toute décision publique Phase 3 DOIVENT être capturées sur le thread principal dans `EngineUpdate`; aucun worker, SPSC, dereference différée ou seam de test produit n’est introduit. |
 | `P3-REQ-010` | Joueur, IA, cible, signatures, types, instances, sous-systèmes, armes, navpoints et relations DOIVENT être validés avant lecture. Une référence cible transitoirement périmée ou un slot réutilisé retire la cible et toute piste ambiguë pour ce tick; les autres incohérences refusent atomiquement le bloc concerné. |
 | `P3-REQ-011` | Les DTO Phase 3 DOIVENT posséder toutes leurs chaînes, listes et valeurs; aucun pointeur, vue, itérateur, handle ou index moteur ne survit à la capture. |
-| `P3-REQ-012` | Cible et locks sont capturés à `flightHz`; radar, contacts, menace, cargo et navigation à `systemsHz`; toute keyframe force une capture cohérente de tous les blocs au même sample time. Un snapshot ou delta ordinaire peut légalement conserver ces familles à leurs sample times propres. |
-| `P3-REQ-013` | Avec joueur présent, chaque snapshot `0x07CB` DOIT contenir exactement la matrice Phase 2 plus les cinq singletons joueur Phase 3 et tous les contacts autorisés; sans joueur, seuls les singletons globaux hérités subsistent. |
+| `P3-REQ-012` | Cible, locks et voyants HUD sont capturés à `flightHz`; radar, contacts, menace, cargo et navigation à `systemsHz`; toute keyframe force une capture cohérente de tous les blocs au même sample time. Un snapshot ou delta ordinaire peut légalement conserver ces familles à leurs sample times propres. |
+| `P3-REQ-013` | Avec joueur présent, chaque snapshot `0x07CB` DOIT contenir exactement la matrice Phase 2 plus les six singletons joueur Phase 3 et tous les contacts autorisés; sans joueur, seuls les singletons globaux hérités subsistent. |
 | `P3-REQ-014` | Le filtrage `COCKPIT` DOIT précéder attribution d’ID public, construction de catalogue, diff et sérialisation. |
 | `P3-REQ-015` | Tout objet rendu public par ciblage, radar, menace, cargo ou navigation reçoit un `entity_id` non nul, stable pour sa signature dans la session, jamais réutilisé et issu d’un registre borné à 65 536 identités. |
 | `P3-REQ-016` | Un ID de piste capteur NE DOIT PAS matérialiser implicitement un `ENTITY_LIFECYCLE` ou l’état complet du contact; seule la fermeture joueur/support/docking héritée reçoit la matrice `CORE_SHIP`. |
@@ -131,7 +132,7 @@ handshake et un nouveau `session_id`.
 | `P3-REQ-024` | L’ensemble des `RADAR_CONTACTS` DOIT être exactement l’ensemble de pistes que la projection HUD autorise pour le joueur au même sample time, après AWACS, furtivité, cloak, équipe et règles mission. Chaque record v2/v3/v4 capture dans ce même tick `radar_local_position` dans le repère du radar standard et `radar_projection_distance=RadarContactProjection.distance`; v4 capture aussi la décision visuelle finale et le flag cible propres à ce sample radar. |
 | `P3-REQ-025` | Chaque vaisseau `VISIBLE` de `RADAR_CONTACTS` v3/v4 DOIT publier le nom affichable et le libellé de type produits par les mêmes helpers que le Target Box; un nom masqué reste absent. Chaque contact v4 publié porte la couleur RGBA et le type de blip finaux produits par le radar, palettes de mod, accessibilité et overrides inclus. Les pistes `DISTORTED`/`NOT_VISIBLE` omettent nom, classe, libellé, équipe et IFF mais conservent leur décision visuelle autorisée. Position et vitesse restent l’observation capteur autorisée, jamais la vérité cachée. |
 | `P3-REQ-026` | Apparition et retrait d’une piste utilisent les atomes `CREATE/DELETE` exacts; les deltas cumulatifs contiennent le remplacement net complet de chaque contact contre la baseline. |
-| `P3-REQ-027` | `THREAT_STATE` DOIT reproduire le niveau agrégé, les références autorisées et la liste complète des missiles entrants visant le joueur dont la classe est installée. Un missile à classe dynamique absente est omis pour le tick sans fermeture de session. |
+| `P3-REQ-027` | `THREAT_STATE` DOIT rester v1 et reproduire le niveau agrégé, les références autorisées et la liste complète des missiles entrants visant le joueur dont la classe est installée. Un missile à classe dynamique absente est omis pour le tick sans fermeture de session. |
 | `P3-REQ-028` | Chaque missile entrant DOIT porter un ID stable, une classe installée, un guidage, une visibilité, une pose et une vitesse valides; plus de 256 missiles autorisés fait perdre le profil sans troncature. |
 
 ### 5.5 Cargo, navigation et valeurs dérivées
@@ -142,7 +143,7 @@ handshake et un nouveau `session_id`.
 | `P3-REQ-030` | Phase, divulgation, temps et validités de scan DOIVENT suivre la décision gameplay; `cargo_text` est présent si et seulement si `disclosure=REVEALED`, et `COMPLETED+HIDDEN` reste valide. |
 | `P3-REQ-031` | `NAVIGATION_STATE` DOIT contenir la liste complète et ordonnée des navpoints et waypoints autorisés, leurs IDs stables, la destination courante, la route et la décision d’autopilote. |
 | `P3-REQ-032` | L’état et le refus d’autopilote DOIVENT être cohérents avec le mode de contrôle hérité sans dupliquer les axes ou modes de vol de `CONTROL_STATE`; aucune commande distante n’est créée. |
-| `P3-REQ-033` | Distances, relèvements, vitesses relatives, TTC, temps d’impact/interception, âge de piste, progressions et ETA DOIVENT rester dérivés côté client à partir des sources canoniques. Les lectures D/S, libellés HUD et couleurs radar/cible résolues sont les exceptions autoritaires. La coordonnée du radar standard est dérivée exclusivement des entrées autoritaires `RADAR_CONTACTS` v2/v3/v4 en live ; la reconstruction depuis `FLIGHT_STATE` est une compatibilité v1 explicite seulement. |
+| `P3-REQ-033` | Distances, relèvements, vitesses relatives, TTC, temps d’impact/interception, âge de piste, progressions, ETA et cadence visuelle des voyants DOIVENT rester dérivés côté client à partir des sources canoniques. Les lectures D/S, libellés HUD, couleurs radar/cible et états discrets d'alerte sont les exceptions autoritaires. La coordonnée du radar standard est dérivée exclusivement des entrées autoritaires `RADAR_CONTACTS` v2/v3/v4 en live ; la reconstruction depuis `FLIGHT_STATE` est une compatibilité v1 explicite seulement. |
 | `P3-REQ-034` | Tout flottant publié DOIT être fini et canonisé pour `-0`; enums, IDs, temps, listes et références hors borne provoquent un échec fermé observable, jamais un clamp ou une troncature non autorisés. Une omission explicitement autorisée pour une référence dynamique périmée ou dont la classe n’est pas installée n'est pas un échec de capture. |
 
 ### 5.6 Réplication, ressources et exploitation
@@ -153,14 +154,15 @@ handshake et un nouveau `session_id`.
 | `P3-REQ-036` | Chaque delta DOIT rester cumulatif contre la baseline acquittée et remplacer des atomes FSTL complets; un delta supérieur à 1 Mio est remplacé par une keyframe. |
 | `P3-REQ-037` | Lorsqu’une cible, un lock, un contact, une menace, un scan ou un navpoint désignent le même objet public, ils DOIVENT employer le même ID et respecter les règles de résolution du document 04. |
 | `P3-REQ-038` | Changement de mission, disparition du joueur, changement de cible et retrait de piste DOIVENT purger ou remplacer les atomes dépendants sans état ancien observable après commit. Un ancien flag radar peut subsister jusqu'au prochain tick `systemsHz`, mais ne commande jamais la sélection courante. |
-| `P3-REQ-039` | La couverture événementielle DOIT valoir exactement `state_derived=0x001D`, `exact=0`; aucun événement bref manqué n’est inventé comme capture exacte. |
+| `P3-REQ-039` | La couverture événementielle DOIT valoir exactement `state_derived=0x001D`, `exact=0`; `HUD_ALERT_STATE` reste un état échantillonné et aucun événement bref manqué n’est inventé comme capture exacte. |
 | `P3-REQ-040` | Contacts, locks, missiles, navpoints, waypoints, records, IDs et transactions DOIVENT respecter leurs plafonds; un dépassement retire le profil avant session ou termine proprement la session s’il survient ensuite. |
 | `P3-REQ-041` | La configuration v3 DOIT sélectionner explicitement un profil fermé; `CockpitSensors` produit `0x07CB`, tandis que les configurations v1/v2 conservent exactement leur comportement antérieur. |
 | `P3-REQ-042` | Toutes les ressources Phase 3 DOIVENT être préallouées avant `Ready`; le budget total reste inférieur ou égal à 512 Mio pour quatre clients et aucune croissance steady-state non bornée n’est permise. |
-| `P3-REQ-043` | Métriques et logs DOIVENT distinguer capture, filtrage, contacts, IDs, manifestes, limites et erreurs sans exposer nom, cargo, navpoint, adresse, ID public ou donnée cachée. Avant toute fermeture Phase 3, sélection du manifeste comprise, ils publient un bloc et un statut issus d'enums fermés ainsi qu'un compteur correspondant; le diagnostic terminal reste disponible malgré saturation de la file de logs et purge du runtime. |
+| `P3-REQ-043` | Métriques et logs DOIVENT distinguer capture, filtrage, contacts, alertes HUD, IDs, manifestes, limites et erreurs sans exposer nom, texte d'avertissement, cargo, navpoint, adresse, ID public ou donnée cachée. Avant toute fermeture Phase 3, sélection du manifeste comprise, ils publient un bloc et un statut issus d'enums fermés ainsi qu'un compteur correspondant; le diagnostic terminal reste disponible malgré saturation de la file de logs et purge du runtime. |
 | `P3-REQ-044` | Désactivé, le module reste inerte; activé, son chemin frame reste non bloquant, déterministe et borné, sans attente réseau ni allocation après warm-up. |
-| `P3-REQ-045` | Le client de référence DOIT décoder indépendamment le chemin moteur → projection filtrée → manifeste/snapshot/delta et exposer valeur brute, sample time et provenance sans recalculer une décision sensible. Le dashboard suit la cible la plus récente de `TARGET_STATE`, jamais un flag `CURRENT_TARGET` retenu à une cadence plus lente. |
+| `P3-REQ-045` | Le client de référence DOIT décoder indépendamment le chemin moteur → projection filtrée → manifeste/snapshot/delta et exposer valeur brute, sample time et provenance sans recalculer une décision sensible. Le dashboard suit la cible la plus récente de `TARGET_STATE`, jamais un flag `CURRENT_TARGET` retenu à une cadence plus lente, et utilise `HUD_ALERT_STATE` sans reconstruire un avertissement absent. |
 | `P3-REQ-046` | Après la perte contrôlée d’un delta contenant un changement Phase 3, le client DOIT converger sur le delta cumulatif suivant ou la prochaine keyframe sans fuite, référence pendante ni perte de session. |
+| `P3-REQ-047` | Le profil live `CockpitSensors` DOIT publier `HUD_ALERT_STATE` v1 à `flightHz`, avec menace primaire et verrouillage indépendants ainsi que l'unique avertissement textuel accepté par FSO, son temps restant et son instance. Aucune frame, phase, bitmap, couleur ou cadence d'animation n'est transmise. |
 
 ## 6. Exclusions et propriétaires ultérieurs
 

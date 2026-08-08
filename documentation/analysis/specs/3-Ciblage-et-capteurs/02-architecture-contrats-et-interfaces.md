@@ -12,6 +12,7 @@ socket ou de protocole parallèle.
 EngineUpdate (thread principal)
   -> EngineSourceGuard
   -> TargetingCollector
+  -> HudAlertCollector
   -> CockpitSensorProjection
   -> ThreatCargoNavigationCollector
   -> filtre COCKPIT
@@ -90,7 +91,14 @@ Les sources sont copiées au même tick que leur décision de visibilité. Une
 navigation liée à une entité cachée omet le lien si le layout le permet, ou
 omet le navpoint lorsque le point lui-même n’est pas autorisé.
 
-### 3.5 `SensorIdentityRegistry`
+### 3.5 `HudAlertCollector`
+
+Il copie à `flightHz` les deux voyants de menace indépendants et, lorsqu'il est
+encore actif, l'unique avertissement textuel accepté par le HUD. Il lit un
+snapshot moteur possédé qui expose catégorie, texte, temps restant et instance,
+sans bitmap, frame, phase d'animation, couleur ni pointeur de gauge.
+
+### 3.6 `SensorIdentityRegistry`
 
 Le registre mappe une clé interne validée `(object_signature, object_type)` vers
 un `entity_id` public :
@@ -117,6 +125,7 @@ Les DTO logiques sont :
 TargetingProjection
   target
   locks[0..64]
+  hud_alert
 
 SensorProjection
   radar

@@ -27,6 +27,17 @@
         ]
       }
     ],
+    "phase3_hud_alerts": [
+      {
+        "document": "documentation/analysis/specs/3-Ciblage-et-capteurs/04-modele-de-donnees-et-regles-metier.md",
+        "requirements": [
+          "P3-REQ-012",
+          "P3-REQ-027",
+          "P3-REQ-033",
+          "P3-REQ-047"
+        ]
+      }
+    ],
     "phase3_radar_projection": [
       {
         "document": "documentation/analysis/specs/3-Ciblage-et-capteurs/04-modele-de-donnees-et-regles-metier.md",
@@ -292,7 +303,7 @@
     ]
   },
   "cpp_correspondence": {
-    "bound_registry_count": 135,
+    "bound_registry_count": 138,
     "constant_bindings": [
       {
         "cpp_symbol": "HeaderSizeV1",
@@ -375,12 +386,12 @@
         "value": 0
       }
     ],
-    "document_registry_count": 135,
+    "document_registry_count": 138,
     "header": "code/telemetry/protocol/telemetry_protocol_constants.h",
     "unbound_registries": [],
     "verified_bool_constant_count": 2,
-    "verified_constant_count": 180,
-    "verified_enum_count": 143,
+    "verified_constant_count": 182,
+    "verified_enum_count": 146,
     "verified_symbol_alias_count": 1
   },
   "datagram_header": {
@@ -5039,6 +5050,122 @@
       ],
       "width_bits": 8
     },
+    "HudAlertMissileLockState": {
+      "cpp": {
+        "enum": "HudAlertMissileLockState"
+      },
+      "kind": "enum",
+      "reserved": {
+        "policy": "reject",
+        "ranges": [
+          [
+            3,
+            255
+          ]
+        ]
+      },
+      "source": {
+        "document": "documentation/analysis/specs/3-Ciblage-et-capteurs/04-modele-de-donnees-et-regles-metier.md",
+        "section": "10"
+      },
+      "unknown_policy": "reject",
+      "values": [
+        {
+          "name": "NONE",
+          "value": 0
+        },
+        {
+          "name": "ATTEMPT",
+          "value": 1
+        },
+        {
+          "name": "ACQUIRED",
+          "value": 2
+        }
+      ],
+      "width_bits": 8
+    },
+    "HudAlertStatePresence": {
+      "cpp": {
+        "enum": "HudAlertStatePresenceFlag",
+        "known_mask_constant": "KnownHudAlertStatePresenceFlags",
+        "member_prefix": "HudAlertStatePresenceFlag",
+        "reserved_mask_constant": "ReservedHudAlertStatePresenceFlags"
+      },
+      "kind": "bitmask",
+      "reserved": {
+        "known_mask": 1,
+        "reserved_mask": 18446744073709551614
+      },
+      "source": {
+        "document": "documentation/analysis/specs/3-Ciblage-et-capteurs/04-modele-de-donnees-et-regles-metier.md",
+        "section": "10"
+      },
+      "unknown_policy": "reject",
+      "values": [
+        {
+          "bit": 0,
+          "name": "ACTIVE_WARNING",
+          "value": 1
+        }
+      ],
+      "width_bits": 64
+    },
+    "HudAlertWarningKind": {
+      "cpp": {
+        "enum": "HudAlertWarningKind"
+      },
+      "kind": "enum",
+      "reserved": {
+        "policy": "reject",
+        "ranges": [
+          [
+            0,
+            0
+          ],
+          [
+            8,
+            255
+          ]
+        ]
+      },
+      "source": {
+        "document": "documentation/analysis/specs/3-Ciblage-et-capteurs/04-modele-de-donnees-et-regles-metier.md",
+        "section": "10"
+      },
+      "unknown_policy": "reject",
+      "values": [
+        {
+          "name": "LAUNCH",
+          "value": 1
+        },
+        {
+          "name": "EVADED",
+          "value": 2
+        },
+        {
+          "name": "COLLISION",
+          "value": 3
+        },
+        {
+          "name": "BLAST",
+          "value": 4
+        },
+        {
+          "name": "ENGINE_WASH",
+          "value": 5
+        },
+        {
+          "name": "EMP",
+          "value": 6
+        },
+        {
+          "name": "OTHER",
+          "value": 7
+        }
+      ],
+      "width_bits": 8
+    },
     "IncomingMissilePresence": {
       "cpp": {
         "enum": "IncomingMissilePresenceFlag",
@@ -6565,10 +6692,10 @@
       },
       "kind": "enum",
       "reserved": {
-        "policy": "ignore",
+        "policy": "reject",
         "ranges": [
           [
-            29,
+            30,
             65535
           ]
         ]
@@ -6733,6 +6860,14 @@
           "name": "EVENTS",
           "scope": "global événement",
           "value": 28
+        },
+        {
+          "name": "HUD_ALERT_STATE",
+          "source": {
+            "document": "documentation/analysis/specs/3-Ciblage-et-capteurs/04-modele-de-donnees-et-regles-metier.md",
+            "section": "10"
+          },
+          "value": 29
         }
       ],
       "width_bits": 16
@@ -19296,6 +19431,122 @@
       ],
       "position_kind": "order",
       "scope": "global événement",
+      "version": 1
+    },
+    {
+      "containers": [
+        "FULL_SNAPSHOT",
+        "DELTA"
+      ],
+      "create_delete": "no",
+      "delta_atom": "entity_id",
+      "fields": [
+        {
+          "constraint": "nonzero",
+          "name": "entity_id",
+          "nature": "A",
+          "position": "1",
+          "semantics": "observed player",
+          "wire": "u64"
+        },
+        {
+          "constraint": "HudAlertStatePresence",
+          "name": "presence",
+          "nature": "A",
+          "position": "2",
+          "semantics": "conditional active warning group",
+          "wire": "u64"
+        },
+        {
+          "constraint": "monotonic sample time",
+          "name": "producer_sample_time_us",
+          "nature": "A",
+          "position": "3",
+          "semantics": "flightHz HUD sample",
+          "wire": "u64"
+        },
+        {
+          "constraint": "0 or 1",
+          "name": "primary_fire_threat_active",
+          "nature": "A",
+          "position": "4",
+          "semantics": "independent primary-fire threat lamp",
+          "wire": "bool8"
+        },
+        {
+          "constraint": "closed enum",
+          "name": "missile_lock_state",
+          "nature": "A",
+          "position": "5",
+          "semantics": "independent missile lock lamp state",
+          "wire": "HudAlertMissileLockState"
+        },
+        {
+          "constraint": "closed enum",
+          "name": "warning_kind",
+          "nature": "A",
+          "position": "6",
+          "presence_condition": {
+            "bits": [
+              0
+            ],
+            "selector": "presence"
+          },
+          "semantics": "accepted active HUD warning",
+          "wire": "HudAlertWarningKind"
+        },
+        {
+          "constraint": "nonzero",
+          "name": "warning_instance_id",
+          "nature": "A",
+          "position": "7",
+          "presence_condition": {
+            "bits": [
+              0
+            ],
+            "selector": "presence"
+          },
+          "semantics": "changes only on accepted warning",
+          "wire": "u64"
+        },
+        {
+          "constraint": "positive duration",
+          "name": "warning_remaining_us",
+          "nature": "A",
+          "position": "8",
+          "presence_condition": {
+            "bits": [
+              0
+            ],
+            "selector": "presence"
+          },
+          "semantics": "remaining game time at sample",
+          "wire": "u64"
+        },
+        {
+          "constraint": "UTF-8 1..511 bytes",
+          "name": "warning_text",
+          "nature": "A",
+          "position": "9",
+          "presence_condition": {
+            "bits": [
+              0
+            ],
+            "selector": "presence"
+          },
+          "semantics": "exact localized accepted HUD text",
+          "wire": "str<511>"
+        }
+      ],
+      "id": 29,
+      "minimum_minor": 1,
+      "name": "HUD_ALERT_STATE",
+      "required_profile": "CockpitSensors",
+      "scope": "player",
+      "source": {
+        "document": "documentation/analysis/specs/3-Ciblage-et-capteurs/04-modele-de-donnees-et-regles-metier.md",
+        "section": "10"
+      },
       "version": 1
     }
   ],

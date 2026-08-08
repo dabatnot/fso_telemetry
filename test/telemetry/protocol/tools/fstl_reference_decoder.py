@@ -74,6 +74,7 @@ RECORD_NAMES = {
     26: "COMM_VIEW_STATE",
     27: "COMM_VIEW_EVENT",
     28: "EVENTS",
+    29: "HUD_ALERT_STATE",
 }
 
 
@@ -1517,6 +1518,40 @@ def decode_record_payload(
             result["radar_blip_type"] = blip_type
         return result
 
+    if record_type == 29:
+        entity = reader.u64()
+        presence = reader.u64()
+        sample = reader.u64()
+        primary_fire = reader.u8()
+        lock_state = reader.u8()
+        require(entity != 0, 34, "HUD_ALERT_STATE entity")
+        require(presence & ~0x0001 == 0, 36, "HUD_ALERT_STATE presence")
+        require(primary_fire <= 1, 34, "HUD_ALERT_STATE primary fire bool")
+        require(lock_state <= 2, 35, "HUD_ALERT_STATE lock state")
+        result = {
+            "entity_id": u64s(entity),
+            "presence": u64s(presence),
+            "producer_sample_time_us": u64s(sample),
+            "primary_fire_threat_active": bool(primary_fire),
+            "missile_lock_state": lock_state,
+        }
+        if presence & 0x0001:
+            warning_kind = reader.u8()
+            warning_instance = reader.u64()
+            warning_remaining = reader.u64()
+            warning_text = reader.utf8(511)
+            require(1 <= warning_kind <= 7, 35, "HUD_ALERT_STATE warning kind")
+            require(warning_instance != 0 and warning_remaining != 0,
+                    34, "HUD_ALERT_STATE warning identity/duration")
+            require(bool(warning_text), 34, "HUD_ALERT_STATE warning text")
+            result.update({
+                "warning_kind": warning_kind,
+                "warning_instance_id": u64s(warning_instance),
+                "warning_remaining_us": u64s(warning_remaining),
+                "warning_text": warning_text,
+            })
+        return result
+
     if record_type in (19, 20, 21, 22, 23, 24):
         entity = reader.u64()
         presence = reader.u64()
@@ -2870,13 +2905,18 @@ def verify_fstl11_corpus(root: Path) -> int:
             require(error_ids[actual] == metadata["expectedValidationError"] and
                     actual == metadata["expectedValidationErrorName"], 44,
                     f"FSTL 1.1 expected result drift for {metadata['name']}: {actual}")
+        elif kind == "record":
+            encoded = (metadata_path.parent / metadata["inputFiles"][0]).read_bytes()
+            decoded = decode_record(encoded, metadata.get("context", {}), "standalone")
+            require(metadata["valid"] and metadata["expectedValidationError"] == 0,
+                    44, f"FSTL 1.1 valid record metadata drift for {metadata['name']}")
         else:
             fail(44, f"unexpected FSTL 1.1 corpus kind {kind}")
         canonical = metadata.get("expectedCanonicalJson")
         if canonical:
             expected = json.loads((root / canonical).read_text(encoding="utf-8"))
             decoded["schema"] = "FSTL-1.1"
-            if metadata["messageType"] in (6, 7):
+            if metadata.get("messageType") in (6, 7):
                 for item in decoded["fields"]["records"]:
                     item["schema"] = "FSTL-1.1"
             require(decoded == expected, 44, f"FSTL 1.1 canonical JSON drift for {metadata['name']}")

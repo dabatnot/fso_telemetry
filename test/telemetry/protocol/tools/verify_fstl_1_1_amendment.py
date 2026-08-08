@@ -32,6 +32,7 @@ MISSION_STATE = 2
 ENTITY_LIFECYCLE = 5
 SHIP_IDENTITY = 6
 FLIGHT_STATE = 7
+HUD_ALERT_STATE = 29
 CORE_RECORDS = {1, 2, 5, 6, 7, 9, 10, 11, 12, 13}
 COMPLETE_SHIP_RECORDS = CORE_RECORDS | {8, 14, 20, 21, 22}
 ERROR_IDS = {"None": 0, "DuplicateRecord": 29, "ReservedFlag": 36,
@@ -101,6 +102,13 @@ def flight(player: int, presence: int = 0, changed: bool = False) -> bytes:
     if presence & 1:
         payload += struct.pack("<3f", 0, 0, 0)
     return record(FLIGHT_STATE, payload)
+
+
+def hud_alert_state(player: int) -> bytes:
+    text = "Launch".encode("utf-8")
+    payload = struct.pack("<QQQBBBQQH", player, 1, 1_000_000, 1, 2, 1,
+                          9, 750_000, len(text)) + text
+    return record(HUD_ALERT_STATE, payload)
 
 
 def snapshot(records: list[bytes], required_manifest_id: int = 0) -> bytes:
@@ -387,6 +395,47 @@ def generated() -> dict[str, bytes]:
         files[f"{name}/{name}.bin"] = encoded
         files[f"{name}/{name}.payload.bin"] = payload
         files[f"{name}/{name}.json"] = (json.dumps(metadata, indent=2, sort_keys=True) + "\n").encode()
+    alert = hud_alert_state(1)
+    alert_metadata = {
+        "context": {"recordContainer": "full-snapshot"},
+        "expectedCanonicalJson": "expected-v1.1/hud-alert-state.json",
+        "expectedValidationError": 0,
+        "expectedValidationErrorName": "NONE",
+        "inputFiles": ["hud-alert-state.bin"],
+        "kind": "record",
+        "name": "hud-alert-state",
+        "notes": "Deterministic FSTL 1.1 HUD alert fixture; bytes are authoritative.",
+        "recordFlags": 0,
+        "recordType": HUD_ALERT_STATE,
+        "recordVersion": 1,
+        "schema": "FSTL-1.1",
+        "valid": True,
+    }
+    alert_canonical = {
+        "fields": {
+            "entity_id": "1",
+            "missile_lock_state": 2,
+            "presence": "1",
+            "primary_fire_threat_active": True,
+            "producer_sample_time_us": "1000000",
+            "warning_instance_id": "9",
+            "warning_kind": 1,
+            "warning_remaining_us": "750000",
+            "warning_text": "Launch",
+        },
+        "kind": "record",
+        "recordFlags": 0,
+        "recordLength": len(alert) - 6,
+        "recordName": "HUD_ALERT_STATE",
+        "recordType": HUD_ALERT_STATE,
+        "recordVersion": 1,
+        "schema": "FSTL-1.1",
+    }
+    files["hud-alert-state/hud-alert-state.bin"] = alert
+    files["hud-alert-state/hud-alert-state.json"] = (
+        json.dumps(alert_metadata, indent=2, sort_keys=True) + "\n").encode()
+    files["../expected-v1.1/hud-alert-state.json"] = (
+        json.dumps(alert_canonical, indent=2, sort_keys=True) + "\n").encode()
     for name, data in sorted(files.items()):
         path = name[3:] if name.startswith("../") else f"vectors-v1.1/{name}"
         entries.append({"path": path, "sha256": sha(data)})

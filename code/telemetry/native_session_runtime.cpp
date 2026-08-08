@@ -57,6 +57,8 @@ TelemetryPhase3Block telemetry_phase3_block(
 	switch (block) {
 	case Phase3EngineCollectBlock::TargetLocks:
 		return TelemetryPhase3Block::TargetLocks;
+	case Phase3EngineCollectBlock::HudAlerts:
+		return TelemetryPhase3Block::HudAlerts;
 	case Phase3EngineCollectBlock::Radar:
 		return TelemetryPhase3Block::Radar;
 	case Phase3EngineCollectBlock::Threat:

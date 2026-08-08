@@ -598,6 +598,18 @@ std::vector<std::uint8_t> threat_payload(std::uint64_t entity_id,
 	return bytes;
 }
 
+std::vector<std::uint8_t> hud_alert_payload(std::uint64_t entity_id)
+{
+	std::vector<std::uint8_t> bytes;
+	append_u64(bytes, entity_id);
+	append_u64(bytes, HudAlertStatePresenceFlagNone);
+	append_u64(bytes, 100U);
+	append_u8(bytes, 0U);
+	append_u8(bytes,
+		static_cast<std::uint8_t>(HudAlertMissileLockState::None));
+	return bytes;
+}
+
 std::vector<std::uint8_t> cargo_payload(std::uint64_t entity_id,
 	std::uint64_t target_entity_id,
 	std::uint32_t subsystem_id = 0)
@@ -1418,6 +1430,18 @@ TEST(TelemetryProtocolBusinessStateValidation,
 	context.weapon_class_count = 1U;
 	BusinessStateImageValidator valid(context);
 	EXPECT_EQ(ValidationError::None, valid.validate(image));
+
+	context.require_hud_alert_state = true;
+	BusinessStateImageValidator current_missing_alert(context);
+	EXPECT_EQ(ValidationError::InvalidAbsence,
+		current_missing_alert.validate(image));
+	auto current_atoms = image.records();
+	current_atoms.push_back(atom(RecordType::HudAlertState,
+		hud_alert_payload(1U), 8U));
+	const auto current_image = image_from_atoms(std::move(current_atoms));
+	BusinessStateImageValidator current(context);
+	EXPECT_EQ(ValidationError::None, current.validate(current_image));
+	context.require_hud_alert_state = false;
 
 	const std::uint64_t observer_only[] = {1U};
 	context.enforce_cockpit_entity_allowlist = true;

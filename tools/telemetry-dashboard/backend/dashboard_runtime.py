@@ -27,7 +27,9 @@ import fstl_client_core as fstl  # noqa: E402
 import fstl_reference_decoder as decoder  # noqa: E402
 
 
-CAPTURE_SCHEMA = "FSTL-dashboard-capture-v1"
+LEGACY_CAPTURE_SCHEMA = "FSTL-dashboard-capture-v1"
+CAPTURE_SCHEMA = "FSTL-dashboard-capture-v2"
+HUD_ALERT_CAPTURE_FEATURE = "HUD_ALERT_STATE/v1"
 SNAPSHOT_SCHEMA = "DashboardSnapshotV1"
 WINDOWS_SIO_UDP_CONNRESET = 0x9800000C
 
@@ -292,8 +294,8 @@ def load_capture(path: Path) -> tuple[dict[str, Any], list[dict[str, Any]]]:
         for line_number, line in enumerate(stream, 1):
             item = json.loads(line)
             if line_number == 1:
-                if item.get("schema") != CAPTURE_SCHEMA or item.get("kind") != "header":
-                    raise ValueError("capture header is not FSTL-dashboard-capture-v1")
+                if item.get("schema") not in (LEGACY_CAPTURE_SCHEMA, CAPTURE_SCHEMA) or item.get("kind") != "header":
+                    raise ValueError("capture header is not a supported FSTL dashboard capture")
                 header = item
                 continue
             if item.get("kind") != "datagram":
@@ -345,6 +347,8 @@ class TelemetryRuntime:
             "speed": 1.0,
             "position": 0,
             "packetCount": 0,
+            "captureSchema": None,
+            "contractFeatures": [],
         }
         self._snapshot = self._empty_snapshot("Synchronizing" if replay_path else "Disconnected")
         self._version = 0
@@ -618,7 +622,12 @@ class TelemetryRuntime:
     def _run_replay(self) -> None:
         assert self.replay_path is not None
         try:
-            _, packets = load_capture(self.replay_path)
+            header, packets = load_capture(self.replay_path)
+            self.replay_state["captureSchema"] = header.get("schema")
+            features = header.get("contractFeatures", [])
+            self.replay_state["contractFeatures"] = (
+                list(features) if isinstance(features, list) else []
+            )
             self.replay_state["packetCount"] = len(packets)
             self.client = self._new_replay_client()
             self._prepare_replay_handshake(self.client, packets)
@@ -713,6 +722,7 @@ class TelemetryRuntime:
                 "flightHz": self.flight_hz,
                 "systemsHz": self.systems_hz,
                 "missionHeartbeatMs": self.mission_heartbeat_ms,
+                "contractFeatures": [HUD_ALERT_CAPTURE_FEATURE],
             }
         )
         # Force a fresh negotiation so every user-started capture contains the

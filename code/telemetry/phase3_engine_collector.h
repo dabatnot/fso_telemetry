@@ -28,6 +28,7 @@ enum class Phase3EngineCollectBlock : std::uint8_t {
 	None = 0,
 	Precondition,
 	TargetLocks,
+	HudAlerts,
 	Radar,
 	Threat,
 	Cargo,

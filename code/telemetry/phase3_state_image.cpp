@@ -21,6 +21,7 @@ constexpr std::size_t TargetPayloadCapacity = 704U;
 constexpr std::size_t RadarPayloadCapacity = 128U;
 constexpr std::size_t ContactPayloadCapacity = 704U;
 constexpr std::size_t ThreatPayloadCapacity = 32768U;
+constexpr std::size_t HudAlertPayloadCapacity = 640U;
 constexpr std::size_t CargoPayloadCapacity = 608U;
 constexpr std::size_t NavigationPayloadCapacity = 512U * 1024U;
 
@@ -395,6 +396,30 @@ bool make_threat(const Phase3Projection& source, StateAtom& atom)
 		assign_payload(writer, atom) && validate_encoded(atom);
 }
 
+bool make_hud_alert(const Phase3Projection& source, StateAtom& atom)
+{
+	const auto& alert = source.hud_alert;
+	std::array<std::uint8_t, HudAlertPayloadCapacity> bytes{};
+	PacketWriter writer({bytes.data(), bytes.size()});
+	if (!writer.write_u64(source.player_entity_id) ||
+		!writer.write_u64(alert.presence) ||
+		!writer.write_u64(alert.producer_sample_time_us) ||
+		!writer.write_bool8(alert.primary_fire_threat_active) ||
+		!writer.write_u8(static_cast<std::uint8_t>(alert.missile_lock_state)) ||
+		((alert.presence &
+			 protocol::HudAlertStatePresenceFlagActiveWarning) != 0U &&
+			(!writer.write_u8(static_cast<std::uint8_t>(alert.warning_kind)) ||
+			 !writer.write_u64(alert.warning_instance_id) ||
+			 !writer.write_u64(alert.warning_remaining_us) ||
+			 !writer.write_utf8({alert.warning_text.bytes.data(),
+				 alert.warning_text.size}, 511U)))) {
+		return false;
+	}
+	return set_entity_key(atom, RecordType::HudAlertState,
+			   source.player_entity_id) &&
+		assign_payload(writer, atom) && validate_encoded(atom);
+}
+
 bool make_cargo(const Phase3Projection& source, StateAtom& atom)
 {
 	const auto& cargo = source.cargo;
@@ -548,18 +573,19 @@ Phase3StateImageBuildStatus build_phase3_cockpit_sensor_state_image(
 							RecordType::CargoScanState);
 				}), records.end());
 			const auto start = records.size();
-			records.resize(start + 6U + projection.contact_count);
+			records.resize(start + 7U + projection.contact_count);
 			if (!make_locks(projection, records[start]) ||
 				!make_target(projection, records[start + 1U]) ||
 				!make_radar(projection, records[start + 2U]) ||
 				!make_threat(projection, records[start + 3U]) ||
-				!make_cargo(projection, records[start + 4U]) ||
-				!make_navigation(projection, records[start + 5U]))
+				!make_hud_alert(projection, records[start + 4U]) ||
+				!make_cargo(projection, records[start + 5U]) ||
+				!make_navigation(projection, records[start + 6U]))
 				return Phase3StateImageBuildStatus::EncodingFailed;
 			for (std::size_t index = 0U;
 				 index < projection.contact_count; ++index)
 				if (!make_contact(projection, projection.contacts[index],
-						records[start + 6U + index]))
+						records[start + 7U + index]))
 					return Phase3StateImageBuildStatus::EncodingFailed;
 		}
 		protocol::StateImage candidate;

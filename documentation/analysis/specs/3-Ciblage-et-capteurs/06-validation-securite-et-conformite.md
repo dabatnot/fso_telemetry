@@ -94,6 +94,9 @@ Les tests ciblés vérifient :
   entre deux ticks sans mélange avec `FLIGHT_STATE` ;
 - contact hors portée absent du collecteur ;
 - menace none/dumbfire/attempt/acquired ;
+- voyants primaire et lock simultanés, cadences dérivées 180/180/90 ms ;
+- avertissements Launch, Evaded, Collision, Blast, Engine Wash, EMP et Other,
+  priorités natives, redéclenchement, expiration et pause ;
 - liste de 0, 1, 256 et 257 missiles ;
 - scan idle/scanning/completed, hidden/revealed ;
 - navpoints autorisés, destination, route et refus d’autopilote ;
@@ -203,7 +206,7 @@ contrôle le jeu et décide de l’acceptation.
 |---|---|
 | profil | FSTL 1.1, masque `0x07CB` |
 | wire | artefacts antérieurs byte-identiques |
-| snapshot | exactement `9 + 10K + N + C` atomes |
+| snapshot | exactement `10 + 10K + N + C` atomes |
 | contacts | ensemble identique à la projection cockpit |
 | confidentialité | zéro champ ou objet non autorisé |
 | références | zéro ID incohérent ou classe non installée |

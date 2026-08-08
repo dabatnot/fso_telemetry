@@ -33,9 +33,6 @@
 namespace telemetry::detail {
 namespace {
 
-constexpr int ThreatDumbfire = 1 << 0;
-constexpr int ThreatAttemptLock = 1 << 1;
-constexpr int ThreatLock = 1 << 2;
 
 template <typename T>
 void reconstruct_in_place(T& value) noexcept
@@ -1064,6 +1061,78 @@ Phase3EngineCollectStatus collect_radar(
 	return Phase3EngineCollectStatus::Collected;
 }
 
+Phase3EngineCollectStatus collect_hud_alerts(
+	std::uint64_t sample_time,
+	Phase3Projection& output) noexcept
+{
+	HudAlertSnapshot snapshot;
+	if (!hud_get_alert_snapshot(snapshot)) {
+		return Phase3EngineCollectStatus::InvalidSource;
+	}
+
+	auto& alert = output.hud_alert;
+	alert.producer_sample_time_us = sample_time;
+	alert.primary_fire_threat_active = snapshot.primary_fire_threat_active;
+	switch (snapshot.missile_lock_state) {
+	case HudMissileLockState::None:
+		alert.missile_lock_state = protocol::HudAlertMissileLockState::None;
+		break;
+	case HudMissileLockState::Attempt:
+		alert.missile_lock_state = protocol::HudAlertMissileLockState::Attempt;
+		break;
+	case HudMissileLockState::Acquired:
+		alert.missile_lock_state = protocol::HudAlertMissileLockState::Acquired;
+		break;
+	default:
+		return Phase3EngineCollectStatus::InvalidSource;
+	}
+	if (!snapshot.warning_active) {
+		return Phase3EngineCollectStatus::Collected;
+	}
+	if (snapshot.warning_instance_id == 0U ||
+		snapshot.warning_remaining_us == 0U) {
+		return Phase3EngineCollectStatus::InvalidSource;
+	}
+	switch (snapshot.warning_kind) {
+	case HudTextWarningKind::Launch:
+		alert.warning_kind = protocol::HudAlertWarningKind::Launch;
+		break;
+	case HudTextWarningKind::Evaded:
+		alert.warning_kind = protocol::HudAlertWarningKind::Evaded;
+		break;
+	case HudTextWarningKind::Collision:
+		alert.warning_kind = protocol::HudAlertWarningKind::Collision;
+		break;
+	case HudTextWarningKind::Blast:
+		alert.warning_kind = protocol::HudAlertWarningKind::Blast;
+		break;
+	case HudTextWarningKind::EngineWash:
+		alert.warning_kind = protocol::HudAlertWarningKind::EngineWash;
+		break;
+	case HudTextWarningKind::Emp:
+		alert.warning_kind = protocol::HudAlertWarningKind::Emp;
+		break;
+	case HudTextWarningKind::Other:
+		alert.warning_kind = protocol::HudAlertWarningKind::Other;
+		break;
+	default:
+		return Phase3EngineCollectStatus::InvalidSource;
+	}
+	std::size_t text_length = 0U;
+	while (text_length < snapshot.warning_text.size() &&
+		snapshot.warning_text[text_length] != '\0') {
+		++text_length;
+	}
+	if (text_length == 0U || text_length > 511U ||
+		!alert.warning_text.assign(snapshot.warning_text.data(), text_length)) {
+		return Phase3EngineCollectStatus::InvalidSource;
+	}
+	alert.warning_instance_id = snapshot.warning_instance_id;
+	alert.warning_remaining_us = snapshot.warning_remaining_us;
+	alert.presence |= protocol::HudAlertStatePresenceFlagActiveWarning;
+	return Phase3EngineCollectStatus::Collected;
+}
+
 Phase3EngineCollectStatus collect_threat(
 	std::uint64_t sample_time,
 	const Phase2ManifestCandidate* installed_manifest,
@@ -1071,11 +1140,11 @@ Phase3EngineCollectStatus collect_threat(
 	Phase3Projection& output) noexcept
 {
 	output.threat.producer_sample_time_us = sample_time;
-	if ((Player->threat_flags & ThreatLock) != 0) {
+	if ((Player->threat_flags & HudThreatLockFlag) != 0) {
 		output.threat.threat_level = protocol::ThreatLevel::LockAcquired;
-	} else if ((Player->threat_flags & ThreatAttemptLock) != 0) {
+	} else if ((Player->threat_flags & HudThreatAttemptLockFlag) != 0) {
 		output.threat.threat_level = protocol::ThreatLevel::LockAttempt;
-	} else if ((Player->threat_flags & ThreatDumbfire) != 0) {
+	} else if ((Player->threat_flags & HudThreatDumbfireFlag) != 0) {
 		output.threat.threat_level = protocol::ThreatLevel::Dumbfire;
 	}
 	const auto resolve_ai_attacker = [&](int object_index,
@@ -1631,12 +1700,16 @@ Phase3EngineCollectStatus collect_phase3_engine_projection(
 	scratch.player_entity_id = input.player_entity_id;
 	if (refresh_flight) {
 		reconstruct_in_place(scratch.target);
+		reconstruct_in_place(scratch.hud_alert);
 		scratch.lock_count = 0U;
 		status = collect_target_and_locks(
 			input.producer_sample_time_us,
 			input.installed_manifest, identities, current_target, scratch);
 		if (status != Phase3EngineCollectStatus::Collected)
 			return reject(Phase3EngineCollectBlock::TargetLocks, status);
+		status = collect_hud_alerts(input.producer_sample_time_us, scratch);
+		if (status != Phase3EngineCollectStatus::Collected)
+			return reject(Phase3EngineCollectBlock::HudAlerts, status);
 	}
 	if (refresh_systems) {
 		reconstruct_in_place(scratch.radar);

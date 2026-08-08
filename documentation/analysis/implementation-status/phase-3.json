@@ -2,8 +2,8 @@
   "schema": "fs2open.telemetry.product-implementation.v1",
   "phase": 3,
   "phaseDirectory": "documentation/analysis/specs/3-Ciblage-et-capteurs",
-  "contractFingerprint": "sha256:b7bff7b8cf43dcd4a27684a46f6340bac3a1f0fc201ff4c3222ba452aaae4d85",
-  "updatedAtUtc": "2026-08-08T13:25:14Z",
+  "contractFingerprint": "sha256:4bf631b87dced774b1d497bf6f0c89a3605e229181881301025b30a324d231d6",
+  "updatedAtUtc": "2026-08-08T17:00:28Z",
   "requirements": [
     {
       "id": "P3-REQ-001",
@@ -392,10 +392,10 @@
     },
     {
       "id": "P3-REQ-012",
-      "observable": "Ciblage suit `flightHz`, capteurs/opérations suivent `systemsHz`; leurs sample times peuvent différer hors keyframe.",
+      "observable": "Ciblage et voyants HUD suivent `flightHz`, capteurs/opérations suivent `systemsHz`; leurs sample times peuvent différer hors keyframe.",
       "expectedAutomatedProof": "`telemetry_phase3_capture_schedule_tests`",
       "implementationStatus": "implemented",
-      "implementationSummary": "Les cadences targeting/systèmes restent séparées et leurs atomes conservent leur sample time propre. Une keyframe force toujours une projection complète et cohérente au même instant.",
+      "implementationSummary": "Les cadences ciblage/alertes HUD et systèmes restent séparées et leurs atomes conservent leur sample time propre. Une keyframe force toujours une projection complète et cohérente au même instant.",
       "implementationPaths": [
         "code/telemetry/native_session_runtime.cpp",
         "code/telemetry/native_session_runtime.h",
@@ -455,10 +455,10 @@
     },
     {
       "id": "P3-REQ-013",
-      "observable": "Le snapshot contient exactement la matrice `0x07CB` et ses cardinalités.",
+      "observable": "Le snapshot contient exactement la matrice `0x07CB`, dont `HUD_ALERT_STATE`, et ses cardinalités.",
       "expectedAutomatedProof": "`telemetry_phase3_snapshot_matrix_tests`",
       "implementationStatus": "implemented",
-      "implementationSummary": "Le builder Phase 3 étend CompleteShip avec les six singletons capteurs et les contacts à clé composite.",
+      "implementationSummary": "Le builder Phase 3 étend CompleteShip avec les sept singletons capteurs, dont HUD_ALERT_STATE, et les contacts à clé composite.",
       "implementationPaths": [
         "code/telemetry/phase3_state_image.cpp",
         "code/telemetry/phase3_state_image.h"
@@ -1065,7 +1065,7 @@
     },
     {
       "id": "P3-REQ-027",
-      "observable": "`THREAT_STATE` reproduit niveau et références autorisées ; une arme entrante sans classe installée est omise sans fermer la session.",
+      "observable": "`THREAT_STATE` v1 reproduit niveau et références autorisées ; une arme entrante sans classe installée est omise sans fermer la session.",
       "expectedAutomatedProof": "`telemetry_phase3_threat_tests`",
       "implementationStatus": "implemented",
       "implementationSummary": "THREAT_STATE lit les indicateurs autoritaires et les missiles entrants autorisés. Une classe installée produit la référence exacte ; une arme dynamique absente du catalogue est omise pour le tick sans allocation d’ID ni fermeture de session.",
@@ -1284,7 +1284,7 @@
     },
     {
       "id": "P3-REQ-033",
-      "observable": "Les dérivations tactiques restent client sauf D/S, libellés et couleurs autoritaires ; la coordonnée radar live utilise strictement les entrées v2/v3/v4, avec fallback seulement pour capture v1.",
+      "observable": "Les dérivations tactiques et cadences de voyants restent client sauf D/S, libellés, couleurs et états discrets autoritaires ; la coordonnée radar live utilise strictement les entrées v2/v3/v4, avec fallback seulement pour capture v1.",
       "expectedAutomatedProof": "`telemetry_phase3_derived_value_tests`",
         "implementationStatus": "implemented",
       "implementationSummary": "Le client et le dashboard appliquent les RGBA v4 au cadran, à la liste et au panneau cible, multiplient seulement l’alpha des pistes distordues et gardent la sélection par forme/réticule. Une couleur v4 absente devient neutre avec provenance missing-authoritative-color ; le style historique reste limité à v1-v3.",
@@ -1603,7 +1603,7 @@
     },
     {
       "id": "P3-REQ-039",
-      "observable": "Couvertures événements exactes : state-derived `0x001D`, exact `0`.",
+      "observable": "Couvertures événements exactes : state-derived `0x001D`, exact `0`; les alertes HUD restent un état échantillonné.",
       "expectedAutomatedProof": "`telemetry_phase3_event_coverage_tests`",
       "implementationStatus": "implemented",
       "implementationSummary": "SESSION_STATE Phase 3 publie exactement state-derived 0x001D et exact 0.",
@@ -1766,7 +1766,7 @@
     },
     {
       "id": "P3-REQ-043",
-      "observable": "Toute fermeture Phase 3, manifeste compris, expose avant arrêt un bloc, un statut et un compteur fermés, conservés malgré saturation des logs, sans donnée sensible.",
+      "observable": "Toute fermeture Phase 3, manifeste et alertes HUD compris, expose avant arrêt un bloc, un statut et un compteur fermés, conservés malgré saturation des logs, sans donnée sensible.",
       "expectedAutomatedProof": "`telemetry_phase3_observability_tests`",
       "implementationStatus": "implemented",
       "implementationSummary": "Chaque échec permanent Phase 3, y compris pendant la sélection du manifeste, enregistre avant fermeture le bloc et le statut exact. Les erreurs terminales sont conservées dans un miroir borné indépendant de la file ordinaire, sans texte libre ni donnée gameplay.",
@@ -1846,10 +1846,10 @@
     },
     {
       "id": "P3-REQ-045",
-      "observable": "Le client indépendant conserve les sample times bruts et le dashboard suit la cible `TARGET_STATE` la plus récente.",
+      "observable": "Le client indépendant conserve les sample times bruts ; le dashboard suit la cible `TARGET_STATE` et les alertes `HUD_ALERT_STATE` sans décision inventée.",
       "expectedAutomatedProof": "`telemetry_phase3_loopback_tests`",
       "implementationStatus": "implemented",
-      "implementationSummary": "Le décodeur conserve les sample times bruts. Le dashboard calcule sélection, réticule, emphase et priorité uniquement depuis TARGET_STATE; le flag radar reste visible comme état historique du contact.",
+      "implementationSummary": "Le décodeur conserve les sample times bruts. Le dashboard suit TARGET_STATE pour la sélection et HUD_ALERT_STATE pour deux voyants de menace indépendants et l'unique avertissement accepté ; le fallback agrégé est limité aux anciennes captures replay.",
       "implementationPaths": [
         "test/telemetry/protocol/tools/fstl_client_core.py",
         "test/telemetry/protocol/tools/fstl_reference_decoder.py",
@@ -1925,6 +1925,78 @@
           "inputFingerprint": "sha256:d878f9da024080926c08053cc965149ce4b4838b1768b84be80def18763c232d",
           "observedAtUtc": "2026-08-06T12:03:24Z",
           "result": "1/1 passed: after loss of a Phase 3 RADAR_CONTACTS replacement, the next cumulative replacement is applied from the ACKed baseline and the lost older sequence is ignored.",
+          "resultRef": null
+        }
+      ],
+      "requiredObservations": [],
+      "blocker": null
+    },
+    {
+      "id": "P3-REQ-047",
+      "observable": "`HUD_ALERT_STATE` v1 expose à `flightHz` les voyants primaire/lock indépendants et l'unique avertissement accepté, sans animation native.",
+      "expectedAutomatedProof": "`telemetry_phase3_hud_alert_tests` + tests frontend",
+      "implementationStatus": "implemented",
+      "implementationSummary": "Le moteur observe les flags de menace et l'avertissement réellement accepté par hud_start_text_flash, publie un singleton v1 autoritaire à flightHz et le dashboard dérive uniquement les cadences locales 180/180/90 ms. THREAT_STATE v1 et les artefacts FSTL 1.0 restent inchangés.",
+      "implementationPaths": [
+        "code/hud/hud.cpp",
+        "code/hud/hud.h",
+        "code/telemetry/phase3_engine_collector.cpp",
+        "code/telemetry/phase3_state_image.cpp",
+        "code/telemetry/phase3_state_image.h",
+        "code/telemetry/protocol/telemetry_business_records_29.cpp",
+        "code/telemetry/protocol/telemetry_protocol_constants.h",
+        "test/telemetry/protocol/tools/fstl_client_core.py",
+        "test/telemetry/protocol/tools/fstl_reference_decoder.py",
+        "tools/telemetry-dashboard/backend/dashboard_runtime.py",
+        "tools/telemetry-dashboard/frontend/src/TacticalCockpit.tsx",
+        "tools/telemetry-dashboard/frontend/src/tacticalSemantics.ts",
+        "tools/telemetry-dashboard/frontend/src/types.ts"
+      ],
+      "proofs": [
+        {
+          "id": "P3-REQ-047-AUTO-01",
+          "kind": "automated",
+          "command": "build\\bin\\Release\\unittests.exe --gtest_filter=TelemetryProtocolBusinessRecords29.*:TelemetryProtocolBusinessStateValidation.Phase3CockpitSensors*:TelemetryPhase3Threat.*:TelemetryProtocolVectors.HudAlertStateMatchesTheFstl11GoldenVector:TelemetryProtocolConstants.FreezesPhase3HudAlertContract:TelemetryPhase3CaptureSchedule.NativeRuntimeSeparatesCadencesAndKeyframesUseOneCompleteSample ; build\\bin\\Release\\telemetry_phase3_state_image_tests.exe",
+          "status": "passed",
+          "inputs": [
+            "code/hud/hud.cpp",
+            "code/hud/hud.h",
+            "code/telemetry/phase3_engine_collector.cpp",
+            "code/telemetry/phase3_state_image.cpp",
+            "code/telemetry/phase3_state_image.h",
+            "code/telemetry/protocol/telemetry_business_records_29.cpp",
+            "code/telemetry/protocol/telemetry_protocol_constants.h",
+            "test/src/telemetry/producer/phase3_state_image_tests.cpp",
+            "test/src/telemetry/producer/test_telemetry_native_runtime_integration_contract.cpp",
+            "test/src/telemetry/protocol/test_telemetry_business_records_28.cpp",
+            "test/src/telemetry/protocol/test_telemetry_business_state_validation.cpp",
+            "test/src/telemetry/protocol/test_telemetry_vectors.cpp"
+          ],
+          "inputFingerprint": "sha256:521d4636b99e444c0b6a00b9346a1fd8d790379c16a8e911455a6bb1380e7f60",
+          "observedAtUtc": "2026-08-08T17:00:28Z",
+          "result": "9 tests wire/moteur/cadence ciblés et 23 tests d'image Phase 3 passent en Release ; telemetry-short passe ensuite 18/18.",
+          "resultRef": null
+        },
+        {
+          "id": "P3-REQ-047-AUTO-02",
+          "kind": "automated",
+          "command": "python -B test/telemetry/protocol/tools/fstl_reference_decoder.py --check ; python -B test/telemetry/protocol/tools/test_fstl_console_client_contract.py ; python -B tools/telemetry-dashboard/backend/test_dashboard_runtime.py ; npm --prefix tools/telemetry-dashboard/frontend test -- --run ; npm --prefix tools/telemetry-dashboard/frontend run build",
+          "status": "passed",
+          "inputs": [
+            "test/telemetry/protocol/tools/fstl_client_core.py",
+            "test/telemetry/protocol/tools/fstl_reference_decoder.py",
+            "test/telemetry/protocol/tools/test_fstl_console_client_contract.py",
+            "tools/telemetry-dashboard/backend/dashboard_runtime.py",
+            "tools/telemetry-dashboard/backend/test_dashboard_runtime.py",
+            "tools/telemetry-dashboard/frontend/src/TacticalCockpit.tsx",
+            "tools/telemetry-dashboard/frontend/src/styles.css",
+            "tools/telemetry-dashboard/frontend/src/tacticalSemantics.test.ts",
+            "tools/telemetry-dashboard/frontend/src/tacticalSemantics.ts",
+            "tools/telemetry-dashboard/frontend/src/types.ts"
+          ],
+          "inputFingerprint": "sha256:eb6b9d1b78228a3099029052011021396151b37f95a126e8398125788c54c1ab",
+          "observedAtUtc": "2026-08-08T17:00:28Z",
+          "result": "Décodeur indépendant, 36 tests client Python, 10 tests backend, 60 tests frontend et build frontend de production passent.",
           "resultRef": null
         }
       ],

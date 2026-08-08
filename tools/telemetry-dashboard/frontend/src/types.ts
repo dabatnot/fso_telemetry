@@ -114,5 +114,7 @@ export interface DashboardSnapshot {
     speed: number;
     position: number;
     packetCount: number;
+    captureSchema?: string | null;
+    contractFeatures?: string[];
   };
 }

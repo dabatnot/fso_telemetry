@@ -141,6 +141,7 @@ void set_sample_times(telemetry::Phase3Projection& projection)
 	projection.target.producer_sample_time_us = 64U;
 	projection.radar.producer_sample_time_us = 64U;
 	projection.threat.producer_sample_time_us = 64U;
+	projection.hud_alert.producer_sample_time_us = 64U;
 	projection.cargo.producer_sample_time_us = 64U;
 	projection.navigation.producer_sample_time_us = 64U;
 }
@@ -157,7 +158,7 @@ TEST(TelemetryPhase3StateImage, FrozenCoverageAndEmptySensorMatrix)
 	ASSERT_EQ(telemetry::Phase3StateImageBuildStatus::Created,
 		telemetry::build_phase3_cockpit_sensor_state_image(
 			base, *projection, image));
-	EXPECT_EQ(base.records().size() + 5U, image.records().size());
+	EXPECT_EQ(base.records().size() + 6U, image.records().size());
 	const auto* session = find(image, RecordType::SessionState);
 	ASSERT_NE(nullptr, session);
 	EXPECT_EQ(0x07cbU, read_u64(session->value, 40U));
@@ -167,8 +168,46 @@ TEST(TelemetryPhase3StateImage, FrozenCoverageAndEmptySensorMatrix)
 	EXPECT_NE(nullptr, find(image, RecordType::TargetState));
 	EXPECT_NE(nullptr, find(image, RecordType::RadarState));
 	EXPECT_NE(nullptr, find(image, RecordType::ThreatState));
+	EXPECT_NE(nullptr, find(image, RecordType::HudAlertState));
 	EXPECT_NE(nullptr, find(image, RecordType::CargoScanState));
 	EXPECT_NE(nullptr, find(image, RecordType::NavigationState));
+}
+
+TEST(TelemetryPhase3StateImage, HudAlertCarriesSimultaneousThreatsAndAcceptedWarning)
+{
+	constexpr std::uint64_t Player = 42U;
+	auto base = make_base(Player);
+	auto projection = std::make_unique<telemetry::Phase3Projection>();
+	projection->player_entity_id = Player;
+	set_sample_times(*projection);
+	auto& alert = projection->hud_alert;
+	alert.presence = telemetry::protocol::HudAlertStatePresenceFlagActiveWarning;
+	alert.primary_fire_threat_active = true;
+	alert.missile_lock_state =
+		telemetry::protocol::HudAlertMissileLockState::Acquired;
+	alert.warning_kind = telemetry::protocol::HudAlertWarningKind::Launch;
+	alert.warning_instance_id = 9U;
+	alert.warning_remaining_us = 750'000U;
+	ASSERT_TRUE(alert.warning_text.assign("Launch", 6U));
+
+	telemetry::protocol::StateImage image;
+	ASSERT_EQ(telemetry::Phase3StateImageBuildStatus::Created,
+		telemetry::build_phase3_cockpit_sensor_state_image(
+			base, *projection, image));
+	const auto* encoded = find(image, RecordType::HudAlertState);
+	ASSERT_NE(nullptr, encoded);
+	ASSERT_EQ(51U, encoded->value.size());
+	EXPECT_EQ(Player, read_u64(encoded->value, 0U));
+	EXPECT_EQ(1U, read_u64(encoded->value, 8U));
+	EXPECT_EQ(64U, read_u64(encoded->value, 16U));
+	EXPECT_EQ(1U, encoded->value[24U]);
+	EXPECT_EQ(2U, encoded->value[25U]);
+	EXPECT_EQ(1U, encoded->value[26U]);
+	EXPECT_EQ(9U, read_u64(encoded->value, 27U));
+	EXPECT_EQ(750'000U, read_u64(encoded->value, 35U));
+	EXPECT_EQ(6U, read_u16(encoded->value, 43U));
+	EXPECT_EQ("Launch", std::string(encoded->value.begin() + 45U,
+		encoded->value.end()));
 }
 
 TEST(TelemetryPhase3StateImage, ContactsUseObserverAndContactIdentity)

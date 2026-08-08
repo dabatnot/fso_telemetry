@@ -30,7 +30,7 @@ fichier entier invalide avant bind.
 
 La Phase 3 n’ajoute aucune fréquence :
 
-- cible et locks suivent `flightHz`, `1..60`, défaut 30 ;
+- cible, locks et voyants HUD suivent `flightHz`, `1..60`, défaut 30 ;
 - radar, contacts, menace, cargo et navigation suivent `systemsHz`, `1..20`,
   défaut 10 ;
 - les deux schedulers restent indépendants ;
@@ -135,7 +135,7 @@ zéro log récurrent.
 | `telemetry_phase3_capture_failures_total{block,reason}` | counter | mission/process | échec primaire |
 | `telemetry_phase3_sample_age_us{block}` | gauge | session | âge du dernier bloc installé |
 
-`block={Targeting,Locks,Radar,Contacts,Threat,Cargo,Navigation}`.
+`block={Targeting,Locks,HudAlerts,Radar,Contacts,Threat,Cargo,Navigation}`.
 
 ### 6.2 Visibilité et contacts
 

@@ -1337,6 +1337,20 @@ class FstlConsoleClientContractTest(unittest.TestCase):
                     ],
                 },
             ),
+            "HUD_ALERT_STATE/entity_id=1": record(
+                "HUD_ALERT_STATE",
+                {
+                    "entity_id": "1",
+                    "presence": "1",
+                    "producer_sample_time_us": "900000",
+                    "primary_fire_threat_active": True,
+                    "missile_lock_state": 2,
+                    "warning_kind": 1,
+                    "warning_text": "Launch",
+                    "warning_remaining_us": "750000",
+                    "warning_instance_id": "9",
+                },
+            ),
         }
         state.manifest_records = {
             "WEAPON_MANIFEST/weapon_class_id=201": record(
@@ -1357,6 +1371,23 @@ class FstlConsoleClientContractTest(unittest.TestCase):
             ).build()["derived"]
 
         values = projection()
+        self.assertEqual(
+            180,
+            values["entities.1.hud_alert.primary_blink_period_ms"]["value"],
+        )
+        self.assertEqual(
+            90,
+            values["entities.1.hud_alert.lock_blink_period_ms"]["value"],
+        )
+        self.assertEqual(
+            {
+                "kind": 1,
+                "text": "Launch",
+                "remaining_us": "750000",
+                "instance_id": "9",
+            },
+            values["entities.1.hud_alert.warning"]["value"],
+        )
         self.assertEqual(
             [0.0, 0.0, 500.0],
             values["entities.1.tracks.101.relative_position_local"]["value"],
@@ -1519,7 +1550,7 @@ class FstlConsoleClientContractTest(unittest.TestCase):
             cwd=REPO, text=True, capture_output=True, check=False,
         )
         self.assertEqual(0, result.returncode, result.stderr + result.stdout)
-        self.assertIn("22 FSTL 1.1 corpus cases cross-decoded", result.stdout)
+        self.assertIn("23 FSTL 1.1 corpus cases cross-decoded", result.stdout)
         self.assertIn("CRC and simulated cross-endian checks passed", result.stdout)
 
     def test_phase1_independent_reader_keeps_decoding_known_v1_phase2_records(self) -> None:

@@ -35,6 +35,10 @@ struct BusinessStateValidationContext {
 	bool trusted_full_state_authorized = false;
 	bool source_endpoint_allowlisted = false;
 	bool communication_exact_hook_available = false;
+	// Current CockpitSensors sessions require HUD_ALERT_STATE. Replay callers
+	// leave this false when loading captures produced by an older Phase 3
+	// contract fingerprint.
+	bool require_hud_alert_state = false;
 	std::uint64_t exact_event_hook_families = 0;
 	bool class_manifest_installed = false;
 	bool weapon_manifest_installed = false;
