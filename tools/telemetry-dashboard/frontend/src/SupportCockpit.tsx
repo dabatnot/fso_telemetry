@@ -22,6 +22,7 @@ import {
   supportState,
   visibleDockingNodes
 } from "./supportSemantics";
+import { useI18n } from "./i18n";
 import type {
   DashboardSnapshot,
   InspectionTarget,
@@ -61,6 +62,7 @@ function Panel({
   children: ReactNode;
   className?: string;
 }) {
+  const { t } = useI18n();
   const resolved = resolveInstrument(definition, snapshot);
   const unavailable = !["live", "stale"].includes(resolved.state);
   const labels: Record<string, string> = {
@@ -74,16 +76,16 @@ function Panel({
       <button
         className="support-panel-header"
         onClick={() => onInspect({ definition })}
-        aria-label={`Inspecter ${title}: ${resolved.state}`}
+        aria-label={`${t("Inspecter")} ${t(title)}: ${resolved.state}`}
       >
-        <span>{title}</span>
-        <i>{resolved.state === "live" ? "LIVE" : resolved.state === "stale" ? "STALE" : labels[resolved.state]}</i>
+        <span>{t(title)}</span>
+        <i>{resolved.state === "live" ? "LIVE" : resolved.state === "stale" ? "STALE" : t(labels[resolved.state])}</i>
       </button>
       <div className="support-panel-body">
         {unavailable ? (
           <div className="support-unavailable">
-            <strong>{labels[resolved.state]}</strong>
-            <span>{resolved.reason}</span>
+            <strong>{t(labels[resolved.state])}</strong>
+            <span>{t(resolved.reason ?? "")}</span>
           </div>
         ) : children}
       </div>
@@ -100,6 +102,7 @@ function SupportOverview({
   definition: InstrumentDefinition;
   onInspect: Props["onInspect"];
 }) {
+  const { t } = useI18n();
   const support = supportState(snapshot);
   const phase = decodeClosed(support?.phase, SUPPORT_PHASES);
   const flags = decodeFlags(support?.support_flags, SUPPORT_FLAGS);
@@ -114,24 +117,24 @@ function SupportOverview({
           definition,
           kind: "support-entity",
           entityId: supportId === undefined ? undefined : String(supportId),
-          title: assigned ? entityName(snapshot, supportId) : "Aucun support assigné"
+          title: assigned ? entityName(snapshot, supportId) : t("Aucun support assigné")
         })}
       >
-        <span>VAISSEAU DE SUPPORT</span>
-        <strong>{invalid ? "ERR" : assigned ? entityName(snapshot, supportId) : "— AUCUN SUPPORT ASSIGNÉ"}</strong>
-        <small>{assigned ? `ENTITÉ ${String(supportId)}` : "aucune affectation active"}</small>
+        <span>{t("VAISSEAU DE SUPPORT")}</span>
+        <strong>{invalid ? "ERR" : assigned ? entityName(snapshot, supportId) : `— ${t("AUCUN SUPPORT ASSIGNÉ")}`}</strong>
+        <small>{assigned ? t(`ENTITÉ ${String(supportId)}`) : t("aucune affectation active")}</small>
       </button>
       <div className="support-phase">
-        <span>PHASE ACTUELLE</span>
-        <strong>{invalid ? "ERR" : phase}</strong>
-        <small>état courant · aucun verdict de réussite</small>
+        <span>{t("PHASE ACTUELLE")}</span>
+        <strong>{invalid ? "ERR" : t(phase ?? "")}</strong>
+        <small>{t("état courant · aucun verdict de réussite")}</small>
       </div>
       <div className="support-flag-strip">
         {SUPPORT_FLAGS.map((flag) => {
           const active = flags?.includes(flag.label) ?? false;
           return (
             <span key={flag.label} className={active ? "active" : ""}>
-              <i />{flag.label}
+              <i />{t(flag.label)}
             </span>
           );
         })}
@@ -141,16 +144,17 @@ function SupportOverview({
 }
 
 function ServiceMatrix({ snapshot }: { snapshot: DashboardSnapshot | null }) {
+  const { t } = useI18n();
   return (
     <div className="support-service-matrix">
       {serviceRows(snapshot).map((row) => (
         <div key={row.id} className={row.ratio === null ? "not-applicable" : ""}>
-          <span>{row.label}</span>
+          <span>{t(row.label)}</span>
           <strong>{row.value}</strong>
           <div className="support-service-track">
             <i style={{ width: `${(row.ratio ?? 0) * 100}%` }} />
           </div>
-          <small>{row.reason ?? "état courant · pas une promesse de remise à niveau"}</small>
+          <small>{t(row.reason ?? "état courant · pas une promesse de remise à niveau")}</small>
         </div>
       ))}
     </div>
@@ -158,6 +162,7 @@ function ServiceMatrix({ snapshot }: { snapshot: DashboardSnapshot | null }) {
 }
 
 function Approach({ snapshot }: { snapshot: DashboardSnapshot | null }) {
+  const { language, t } = useI18n();
   const player = String(snapshot?.playerEntityId ?? "");
   const support = supportState(snapshot);
   const assigned = support?.support_entity_id !== undefined;
@@ -166,16 +171,16 @@ function Approach({ snapshot }: { snapshot: DashboardSnapshot | null }) {
   const closing = derivedNumber(snapshot, `entities.${player}.support.closing_speed`);
   const metric = (label: string, value: number | null, unit: string) => (
     <div>
-      <span>{label}</span>
-      <strong>{value === null ? "—" : value.toLocaleString("fr-FR", { maximumFractionDigits: 1 })}</strong>
-      <small>{value === null ? "indisponible" : unit}</small>
+      <span>{t(label)}</span>
+      <strong>{value === null ? "—" : value.toLocaleString(language === "en" ? "en-US" : "fr-FR", { maximumFractionDigits: 1 })}</strong>
+      <small>{value === null ? t("indisponible") : t(unit)}</small>
     </div>
   );
-  if (!assigned) return <div className="approach-empty">— AUCUN SUPPORT ASSIGNÉ</div>;
+  if (!assigned) return <div className="approach-empty">— {t("AUCUN SUPPORT ASSIGNÉ")}</div>;
   return (
     <>
       <div className="approach-vector" aria-hidden="true">
-        <div className="approach-player">JOUEUR</div>
+        <div className="approach-player">{t("JOUEUR")}</div>
         <div className={`approach-line ${(closing ?? 0) > 0 ? "closing" : "opening"}`}>
           <i />
         </div>
@@ -186,7 +191,7 @@ function Approach({ snapshot }: { snapshot: DashboardSnapshot | null }) {
         {metric("VITESSE RELATIVE", relative, "unités monde/s")}
         {metric("RAPPROCHEMENT", closing, "positif = approche")}
       </div>
-      <p>MESURES GÉOMÉTRIQUES · AUCUNE ETA DÉDUITE</p>
+      <p>{t("MESURES GÉOMÉTRIQUES · AUCUNE ETA DÉDUITE")}</p>
     </>
   );
 }
@@ -200,6 +205,7 @@ function DockingDiagram({
   definition: InstrumentDefinition;
   onInspect: Props["onInspect"];
 }) {
+  const { t } = useI18n();
   const state = dockingState(snapshot);
   const phase = decodeClosed(state?.phase, DOCKING_PHASES);
   const nodes = visibleDockingNodes(snapshot);
@@ -223,9 +229,9 @@ function DockingDiagram({
   return (
     <div className="docking-diagram">
       <div className="docking-summary">
-        <span>PHASE <strong>{phase ?? "ERR"}</strong></span>
-        <span>RELATIONS <strong>{playerDockingRelations(snapshot).length}</strong></span>
-        <span>LEADER <strong>{state?.group_leader_entity_id &&
+        <span>{t("PHASE")} <strong>{t(phase ?? "ERR")}</strong></span>
+        <span>{t("RELATIONS")} <strong>{playerDockingRelations(snapshot).length}</strong></span>
+        <span>{t("LEADER")} <strong>{state?.group_leader_entity_id &&
           String(state.group_leader_entity_id) !== "0"
           ? entityName(snapshot, state.group_leader_entity_id)
           : "—"}</strong></span>
@@ -268,7 +274,7 @@ function DockingDiagram({
             })}
           >
             <strong>{node.name}</strong>
-            <span>{node.player ? "JOUEUR" : node.support ? "SUPPORT" : "DOCKÉ"}</span>
+            <span>{t(node.player ? "JOUEUR" : node.support ? "SUPPORT" : "DOCKÉ")}</span>
           </button>
         ))}
       </div>
@@ -278,10 +284,10 @@ function DockingDiagram({
           onClick={() => onInspect({
             definition,
             kind: "docking-component",
-            title: "Composante d’amarrage"
+            title: t("Composante d’amarrage")
           })}
         >
-          + {allNodes.length - nodes.length} AUTRES · COMPOSANTE COMPLÈTE
+          + {allNodes.length - nodes.length} {t("AUTRES · COMPOSANTE COMPLÈTE")}
         </button>
       ) : null}
       <div className="docking-ports">
@@ -301,7 +307,7 @@ function DockingDiagram({
             <strong>{relation.localBay} ↔ {relation.remoteBay}</strong>
           </button>
         ))}
-        {!playerDockingRelations(snapshot).length ? <span>— AUCUNE RELATION MATÉRIALISÉE</span> : null}
+        {!playerDockingRelations(snapshot).length ? <span>— {t("AUCUNE RELATION MATÉRIALISÉE")}</span> : null}
       </div>
     </div>
   );
@@ -316,6 +322,7 @@ function CargoScanner({
   definition: InstrumentDefinition;
   onInspect: Props["onInspect"];
 }) {
+  const { t } = useI18n();
   const cargo = cargoState(snapshot);
   const phase = decodeClosed(cargo?.scan_phase, CARGO_PHASES);
   const disclosure = decodeClosed(cargo?.disclosure, DISCLOSURE_STATES);
@@ -339,19 +346,19 @@ function CargoScanner({
           ? undefined
           : String(cargo.target_subsystem_id),
         record: cargo ?? undefined,
-        title: hidden ? "Cible cargo non exposée" : entityName(snapshot, targetId)
+        title: hidden ? t("Cible cargo non exposée") : entityName(snapshot, targetId)
       })}
     >
       <div className="cargo-target">
-        <span>CIBLE CARGO</span>
-        <strong>{invalid ? "ERR" : hidden ? "— CIBLE NON EXPOSÉE" : entityName(snapshot, targetId)}</strong>
+        <span>{t("CIBLE CARGO")}</span>
+        <strong>{invalid ? "ERR" : hidden ? `— ${t("CIBLE NON EXPOSÉE")}` : entityName(snapshot, targetId)}</strong>
         <small>{hidden ? "NOT_SCANNABLE · HIDDEN" :
           cargoSubsystemName(snapshot, targetId, cargo?.target_subsystem_id)}</small>
       </div>
       <div className="cargo-progress">
         <div>
-          <span>PHASE</span><strong>{invalid ? "ERR" : phase}</strong>
-          <small>{disclosure}</small>
+          <span>{t("PHASE")}</span><strong>{invalid ? "ERR" : t(phase ?? "")}</strong>
+          <small>{t(disclosure ?? "")}</small>
         </div>
         <div className="cargo-progress-ring">
           <svg viewBox="0 0 120 120" aria-hidden="true">
@@ -362,27 +369,28 @@ function CargoScanner({
           <strong>{ratio === null ? "—" : `${Math.round(ratio * 100)}%`}</strong>
         </div>
         <div>
-          <span>RESTANT</span>
+          <span>{t("RESTANT")}</span>
           <strong>{remainingUs === null ? "—" : `${(remainingUs / 1_000_000).toFixed(1)} s`}</strong>
-          <small>{Number(cargo?.scan_phase) === 1 ? "progression figée" : "accumulation théorique"}</small>
+          <small>{t(Number(cargo?.scan_phase) === 1 ? "progression figée" : "accumulation théorique")}</small>
         </div>
       </div>
       <div className="cargo-validity">
         {CARGO_VALIDITY_FLAGS.map((flag) => (
           <span key={flag.label} className={flags?.includes(flag.label) ? "active" : ""}>
-            <i />{flag.label}
+            <i />{t(flag.label)}
           </span>
         ))}
       </div>
       <div className="cargo-disclosure">
-        <span>CONTENU DIVULGUÉ</span>
-        <strong>{Number(cargo?.disclosure) === 1 ? String(cargo?.cargo_text ?? "ERR") : "— MASQUÉ"}</strong>
+        <span>{t("CONTENU DIVULGUÉ")}</span>
+        <strong>{Number(cargo?.disclosure) === 1 ? String(cargo?.cargo_text ?? "ERR") : `— ${t("MASQUÉ")}`}</strong>
       </div>
     </button>
   );
 }
 
 function FutureStrip({ definition }: { definition: InstrumentDefinition }) {
+  const { t } = useI18n();
   const labels = [
     "ETA SUPPORT / INTERVENTION",
     "PROGRESSION GLOBALE",
@@ -395,13 +403,14 @@ function FutureStrip({ definition }: { definition: InstrumentDefinition }) {
   ];
   return (
     <section className="support-future-strip">
-      <header><span>{definition.label}</span><i>ND</i></header>
-      <div>{labels.map((label) => <span key={label}><b>ND</b>{label}</span>)}</div>
+      <header><span>{t(definition.label)}</span><i>ND</i></header>
+      <div>{labels.map((label) => <span key={label}><b>ND</b>{t(label)}</span>)}</div>
     </section>
   );
 }
 
 export function SupportCockpit({ definitions, snapshot, onInspect }: Props) {
+  const { t } = useI18n();
   const overview = definitionById(definitions, "support-overview");
   const service = definitionById(definitions, "support-service");
   const approach = definitionById(definitions, "support-approach");
@@ -409,7 +418,7 @@ export function SupportCockpit({ definitions, snapshot, onInspect }: Props) {
   const cargo = definitionById(definitions, "support-cargo");
   const future = definitionById(definitions, "support-future");
   return (
-    <section className="support-cockpit" aria-label="Cockpit support docking cargo">
+    <section className="support-cockpit" aria-label={t("Cockpit support docking cargo")}>
       <Panel title="Support assigné et phase" definition={overview} snapshot={snapshot}
         onInspect={onInspect} className="support-overview-zone">
         <SupportOverview snapshot={snapshot} definition={overview} onInspect={onInspect} />

@@ -8,6 +8,7 @@ import {
   targetState,
   threatState
 } from "./tacticalSemantics";
+import { useI18n } from "./i18n";
 import type { DashboardSnapshot, InspectionTarget } from "./types";
 
 interface Props {
@@ -55,11 +56,12 @@ function ValueList({
 }
 
 function ContactList({ target, snapshot, onSelect }: Props) {
+  const { t } = useI18n();
   const contacts = contactViews(snapshot);
   return (
     <>
-      <span className="eyebrow">PISTES AUTORISÉES</span>
-      <h2>Contacts radar · {contacts.length}</h2>
+      <span className="eyebrow">{t("PISTES AUTORISÉES")}</span>
+      <h2>{t("Contacts radar")} · {contacts.length}</h2>
       <div className="inspection-choice-list">
         {contacts.map((contact) => (
           <button
@@ -73,8 +75,8 @@ function ContactList({ target, snapshot, onSelect }: Props) {
             })}
           >
             <span>{contact.name}</span>
-            <strong>{contact.invalid ? "ERR" : contact.category}</strong>
-            <small>{contact.visibility} · {contact.distance === null ? "—" : `${contact.distance.toFixed(0)} u`}</small>
+            <strong>{contact.invalid ? "ERR" : t(contact.category)}</strong>
+            <small>{t(contact.visibility)} · {contact.distance === null ? "—" : `${contact.distance.toFixed(0)} u`}</small>
           </button>
         ))}
       </div>
@@ -83,11 +85,12 @@ function ContactList({ target, snapshot, onSelect }: Props) {
 }
 
 function LockList({ target, snapshot, onSelect }: Props) {
+  const { t } = useI18n();
   const locks = lockViews(snapshot);
   return (
     <>
-      <span className="eyebrow">LISTE EXHAUSTIVE</span>
-      <h2>Verrouillages · {locks.length}</h2>
+      <span className="eyebrow">{t("LISTE EXHAUSTIVE")}</span>
+      <h2>{t("Verrouillages")} · {locks.length}</h2>
       <div className="inspection-choice-list">
         {locks.map((lock) => (
           <button
@@ -101,7 +104,7 @@ function LockList({ target, snapshot, onSelect }: Props) {
             })}
           >
             <span>{lock.targetName}</span>
-            <strong>{lock.invalid ? "ERR" : lock.locked ? "ACQUIS" : lock.attempt ? "EN COURS" : "AUCUNE TENTATIVE"}</strong>
+            <strong>{lock.invalid ? "ERR" : t(lock.locked ? "ACQUIS" : lock.attempt ? "EN COURS" : "AUCUNE TENTATIVE")}</strong>
             <small>{lock.remainingS === null ? "—" : `${lock.remainingS.toFixed(1)} s`}</small>
           </button>
         ))}
@@ -111,11 +114,12 @@ function LockList({ target, snapshot, onSelect }: Props) {
 }
 
 function MissileList({ target, snapshot, onSelect }: Props) {
+  const { t } = useI18n();
   const missiles = missileViews(snapshot);
   return (
     <>
-      <span className="eyebrow">LISTE EXHAUSTIVE</span>
-      <h2>Missiles entrants · {missiles.length}</h2>
+      <span className="eyebrow">{t("LISTE EXHAUSTIVE")}</span>
+      <h2>{t("Missiles entrants")} · {missiles.length}</h2>
       <div className="inspection-choice-list">
         {missiles.map((missile) => (
           <button
@@ -129,7 +133,7 @@ function MissileList({ target, snapshot, onSelect }: Props) {
             })}
           >
             <span>{missile.name}</span>
-            <strong>{missile.invalid ? "ERR" : missile.guidance}</strong>
+            <strong>{missile.invalid ? "ERR" : t(missile.guidance)}</strong>
             <small>{missile.ttcS === null ? "TTC —" : `TTC ${missile.ttcS.toFixed(1)} s · EST.`}</small>
           </button>
         ))}
@@ -139,6 +143,7 @@ function MissileList({ target, snapshot, onSelect }: Props) {
 }
 
 export function TacticalInspection(props: Props) {
+  const { t } = useI18n();
   const { target, snapshot } = props;
   if (target.kind === "radar-contact" && !target.entityId) {
     return <ContactList {...props} />;
@@ -201,28 +206,28 @@ export function TacticalInspection(props: Props) {
   const derived = derivedPrefix ? derivedForPrefix(snapshot, derivedPrefix) : [];
   return (
     <>
-      <span className="eyebrow">INSPECTION TACTIQUE</span>
+      <span className="eyebrow">{t("INSPECTION TACTIQUE")}</span>
       <h2>{title}</h2>
       <div className="detail-state state-live">{record ? "LIVE" : "—"}</div>
       <dl>
         <dt>Record</dt><dd><code>{recordName}</code></dd>
-        <dt>Entité</dt><dd>{target.entityId ?? String(record?.entity_id ?? "—")}</dd>
-        <dt>Présence</dt><dd>{String(record?.presence ?? "—")}</dd>
-        <dt>Échantillon</dt><dd>{String(sampleTime ?? "—")}</dd>
-        <dt>Âge estimé</dt><dd>{channel?.ageUs === null || channel?.ageUs === undefined ? "—" : `${channel.ageUs} µs`}</dd>
-        <dt>Cadence observée</dt><dd>{channel?.observedHz === null || channel?.observedHz === undefined ? "—" : `${channel.observedHz.toFixed(2)} Hz`}</dd>
+        <dt>{t("Entité")}</dt><dd>{target.entityId ?? String(record?.entity_id ?? "—")}</dd>
+        <dt>{t("Présence")}</dt><dd>{String(record?.presence ?? "—")}</dd>
+        <dt>{t("Échantillon")}</dt><dd>{String(sampleTime ?? "—")}</dd>
+        <dt>{t("Âge estimé")}</dt><dd>{channel?.ageUs === null || channel?.ageUs === undefined ? "—" : `${channel.ageUs} µs`}</dd>
+        <dt>{t("Cadence observée")}</dt><dd>{channel?.observedHz === null || channel?.observedHz === undefined ? "—" : `${channel.observedHz.toFixed(2)} Hz`}</dd>
       </dl>
-      <h3>Valeur brute</h3>
+      <h3>{t("Valeur brute")}</h3>
       <code className="inspection-json">{record ? JSON.stringify(record, null, 2) : "—"}</code>
       {derived.length > 0 && (
         <>
-          <h3>Dérivations et provenance</h3>
+          <h3>{t("Dérivations et provenance")}</h3>
           <ValueList values={derived.map(([path, value]) => [path, value])} />
         </>
       )}
       {manifest && (
         <>
-          <h3>Manifeste autorisé</h3>
+          <h3>{t("Manifeste autorisé")}</h3>
           <code className="inspection-json">{JSON.stringify(manifest, null, 2)}</code>
         </>
       )}

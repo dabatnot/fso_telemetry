@@ -56,7 +56,7 @@ body::before {
   z-index: 3;
 }
 
-.brand, .connection-block { display: flex; align-items: center; gap: 13px; }
+.brand, .connection-block, .topbar-actions { display: flex; align-items: center; gap: 13px; }
 .brand strong { display: block; font-size: 17px; letter-spacing: 2px; }
 .brand span, .connection-block small { display: block; color: var(--muted); font-size: 10px; letter-spacing: 1.5px; margin-top: 2px; }
 .brand-mark { width: 38px; height: 38px; border: 1px solid var(--cyan-soft); transform: rotate(45deg); display: grid; place-content: center; gap: 2px; }
@@ -67,7 +67,8 @@ body::before {
 .mission-strip div:last-child { border: 0; }
 .mission-strip span { display: block; color: var(--muted); font: 10px "IBM Plex Mono", monospace; letter-spacing: 1.4px; }
 .mission-strip strong { display: block; color: #eefeff; font: 14px "IBM Plex Mono", monospace; margin-top: 4px; max-width: 150px; overflow: hidden; text-overflow: ellipsis; }
-.connection-block { justify-self: end; font: 12px "IBM Plex Mono", monospace; }
+.topbar-actions { justify-self: end; }
+.connection-block { font: 12px "IBM Plex Mono", monospace; }
 .connection-block span { display: block; text-align: right; }
 .connection-block small { text-align: right; }
 .connection-light { width: 13px; height: 13px; border: 2px solid currentColor; border-radius: 50%; color: var(--muted); box-shadow: 0 0 9px currentColor; }
@@ -82,7 +83,20 @@ body::before {
   border-right: 1px solid var(--line);
   overflow-y: auto;
 }
-.tab-rail::before { content: "SYSTÈMES"; display: block; margin: 0 15px 10px; color: var(--muted); font: 10px "IBM Plex Mono"; letter-spacing: 2px; }
+.tab-rail::before { content: attr(data-heading); display: block; margin: 0 15px 10px; color: var(--muted); font: 10px "IBM Plex Mono"; letter-spacing: 2px; }
+.language-selector select {
+  min-width: 58px;
+  height: 30px;
+  padding: 0 22px 0 9px;
+  color: var(--cyan);
+  border: 1px solid var(--line-bright);
+  background: #061018;
+  font: 11px "IBM Plex Mono", monospace;
+  letter-spacing: 1px;
+  cursor: pointer;
+}
+.language-selector select:focus-visible { outline: 1px solid var(--cyan); outline-offset: 2px; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 .tab-rail button {
   width: 100%;
   min-height: 49px;

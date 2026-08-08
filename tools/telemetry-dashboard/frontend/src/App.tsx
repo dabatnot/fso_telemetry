@@ -12,6 +12,7 @@ import { SupportCockpit } from "./SupportCockpit";
 import { SupportInspection } from "./SupportInspection";
 import { TacticalCockpit } from "./TacticalCockpit";
 import { TacticalInspection } from "./TacticalInspection";
+import { LanguageSelector, useI18n } from "./i18n";
 import type { DashboardSnapshot, InspectionTarget, InstrumentDefinition } from "./types";
 import "./styles.css";
 
@@ -96,6 +97,7 @@ function useRenderFps() {
 }
 
 export default function App() {
+  const { t } = useI18n();
   const { snapshot, socketOnline } = useDashboardSocket();
   const renderFps = useRenderFps();
   const [tab, setTab] = useState("flight");
@@ -109,7 +111,7 @@ export default function App() {
       const result = await callback();
       setToast(`${label} — ${JSON.stringify(result)}`);
     } catch (error) {
-      setToast(`Erreur — ${error instanceof Error ? error.message : String(error)}`);
+      setToast(`${t("Erreur")} — ${error instanceof Error ? error.message : String(error)}`);
     }
     window.setTimeout(() => setToast(null), 5000);
   };
@@ -119,21 +121,24 @@ export default function App() {
       <header className="command-bar">
         <div className="brand">
           <div className="brand-mark"><i /><i /><i /></div>
-          <div><strong>FSO // SIMPIT LAB</strong><span>VALIDATION TÉLÉMÉTRIE</span></div>
+          <div><strong>FSO // SIMPIT LAB</strong><span>{t("VALIDATION TÉLÉMÉTRIE")}</span></div>
         </div>
         <div className="mission-strip">
-          <div><span>MISSION</span><strong>{formatValue(snapshot?.mission.phase ?? "—")}</strong></div>
-          <div><span>SESSION</span><strong>{snapshot?.connection.sessionId ?? "0"}</strong></div>
-          <div><span>JOUEUR</span><strong>{snapshot?.playerEntityId ?? "—"}</strong></div>
-          <div><span>MODE</span><strong>{snapshot?.mode?.toUpperCase() ?? "LIVE"}</strong></div>
+          <div><span>{t("MISSION")}</span><strong>{formatValue(snapshot?.mission.phase ?? "—")}</strong></div>
+          <div><span>{t("SESSION")}</span><strong>{snapshot?.connection.sessionId ?? "0"}</strong></div>
+          <div><span>{t("JOUEUR")}</span><strong>{snapshot?.playerEntityId ?? "—"}</strong></div>
+          <div><span>{t("MODE")}</span><strong>{snapshot?.mode?.toUpperCase() ?? "LIVE"}</strong></div>
         </div>
-        <div className="connection-block">
-          <div className={`connection-light status-${connection.toLowerCase()}`} />
-          <div><span>{socketOnline ? connection : "BRIDGE HORS LIGNE"}</span><small>{snapshot?.connection.host ?? "127.0.0.1"}:{snapshot?.connection.port ?? 42042}</small></div>
+        <div className="topbar-actions">
+          <LanguageSelector />
+          <div className="connection-block">
+            <div className={`connection-light status-${connection.toLowerCase()}`} />
+            <div><span>{t(socketOnline ? connection : "BRIDGE HORS LIGNE")}</span><small>{snapshot?.connection.host ?? "127.0.0.1"}:{snapshot?.connection.port ?? 42042}</small></div>
+          </div>
         </div>
       </header>
 
-      <nav className="tab-rail" aria-label="Sections du cockpit">
+      <nav className="tab-rail" aria-label={t("Sections du cockpit")} data-heading={t("SYSTÈMES")}>
         {TABS.map(([id, label], index) => (
           <button
             key={id}
@@ -141,16 +146,16 @@ export default function App() {
             onClick={() => setTab(id)}
             aria-current={tab === id ? "page" : undefined}
           >
-            <i>{String(index + 1).padStart(2, "0")}</i><span>{label}</span>
+            <i>{String(index + 1).padStart(2, "0")}</i><span>{t(label)}</span>
           </button>
         ))}
       </nav>
 
       <main>
         <section className="section-heading">
-          <div><span>MODULE ACTIF</span><h1>{TABS.find(([id]) => id === tab)?.[1]}</h1></div>
+          <div><span>{t("MODULE ACTIF")}</span><h1>{t(TABS.find(([id]) => id === tab)?.[1] ?? "")}</h1></div>
           <div className="section-stats">
-            <span><i className="live-dot" />{instruments.filter((item) => item.availability !== "nd").length} SOURCES</span>
+            <span><i className="live-dot" />{instruments.filter((item) => item.availability !== "nd").length} {t("SOURCES")}</span>
             <span className="nd-count">{instruments.filter((item) => item.availability === "nd").length} ND</span>
           </div>
         </section>
@@ -195,7 +200,7 @@ export default function App() {
       <aside className={`detail-panel ${selected ? "open" : ""}`} aria-hidden={!selected}>
         {selected && (
           <>
-            <button className="detail-close" onClick={() => setSelected(null)} aria-label="Fermer">×</button>
+            <button className="detail-close" onClick={() => setSelected(null)} aria-label={t("Fermer")}>×</button>
             {selected.kind === "subsystem" || selected.kind === "subsystem-list" ? (
               <IntegrityInspection target={selected} snapshot={snapshot} onSelect={setSelected} />
             ) : selected.kind === "weapon-bank" ||
@@ -219,25 +224,25 @@ export default function App() {
           const resolved = resolveInstrument(definition, snapshot);
           return (
             <>
-              <span className="eyebrow">INSPECTION INSTRUMENT</span>
-              <h2>{definition.label}</h2>
+              <span className="eyebrow">{t("INSPECTION INSTRUMENT")}</span>
+              <h2>{t(definition.label)}</h2>
               <div className={`detail-state state-${resolved.state}`}>{resolved.state.toUpperCase()}</div>
               <dl>
-                <dt>Valeur</dt><dd>{resolved.value === null ? "—" : formatValue(resolved.value)}</dd>
-                <dt>Valeur brute</dt><dd>{resolved.value === null ? "—" : <code>{JSON.stringify(resolved.value)}</code>}</dd>
-                <dt>Source</dt><dd><code>{definition.source}</code></dd>
-                <dt>Formule</dt><dd>{definition.formula ?? "valeur directe"}</dd>
-                <dt>Entité</dt><dd>{resolved.rawRecord?.entity_id === undefined ? "—" : String(resolved.rawRecord.entity_id)}</dd>
-                <dt>Présence</dt><dd>{resolved.rawRecord?.presence === undefined ? "—" : String(resolved.rawRecord.presence)}</dd>
-                <dt>Champs couverts</dt><dd>{definition.consumedFields?.join(", ") ?? "source directe"}</dd>
-                <dt>Échantillon</dt><dd>{resolved.sampleTimeUs ?? "—"}</dd>
-                <dt>Âge estimé</dt><dd>{resolved.ageUs === undefined ? "—" : `${resolved.ageUs} µs`}</dd>
-                <dt>Cadence observée</dt><dd>{resolved.observedHz === undefined ? "—" : `${resolved.observedHz.toFixed(2)} Hz`}</dd>
-                <dt>Raison</dt><dd>{resolved.reason ?? "aucun écart"}</dd>
+                <dt>{t("Valeur")}</dt><dd>{resolved.value === null ? "—" : formatValue(resolved.value)}</dd>
+                <dt>{t("Valeur brute")}</dt><dd>{resolved.value === null ? "—" : <code>{JSON.stringify(resolved.value)}</code>}</dd>
+                <dt>{t("Source")}</dt><dd><code>{definition.source}</code></dd>
+                <dt>{t("Formule")}</dt><dd>{t(definition.formula ?? "valeur directe")}</dd>
+                <dt>{t("Entité")}</dt><dd>{resolved.rawRecord?.entity_id === undefined ? "—" : String(resolved.rawRecord.entity_id)}</dd>
+                <dt>{t("Présence")}</dt><dd>{resolved.rawRecord?.presence === undefined ? "—" : String(resolved.rawRecord.presence)}</dd>
+                <dt>{t("Champs couverts")}</dt><dd>{definition.consumedFields?.join(", ") ?? t("source directe")}</dd>
+                <dt>{t("Échantillon")}</dt><dd>{resolved.sampleTimeUs ?? "—"}</dd>
+                <dt>{t("Âge estimé")}</dt><dd>{resolved.ageUs === undefined ? "—" : `${resolved.ageUs} µs`}</dd>
+                <dt>{t("Cadence observée")}</dt><dd>{resolved.observedHz === undefined ? "—" : `${resolved.observedHz.toFixed(2)} Hz`}</dd>
+                <dt>{t("Raison")}</dt><dd>{t(resolved.reason ?? "aucun écart")}</dd>
               </dl>
               {definition.detailFields?.length ? (
                 <div className="detail-values">
-                  <h3>Valeurs associées</h3>
+                  <h3>{t("Valeurs associées")}</h3>
                   {resolveDetailFields(definition, snapshot).map(({ field, value }) => (
                     <div key={field}>
                       <span>{field}</span><code>{value === undefined ? "—" : JSON.stringify(value)}</code>
@@ -256,18 +261,18 @@ export default function App() {
         <div className="dock-status">
           <span>BASELINE <strong>{snapshot?.transport.baseline ?? 0}</strong></span>
           <span>DELTA <strong>{snapshot?.transport.deltaSequence ?? 0}</strong></span>
-          <span>MANIFESTE <strong>{snapshot?.transport.manifestId ?? 0}</strong></span>
-          <span>RENDU <strong>{renderFps.toFixed(0)} FPS</strong></span>
+          <span>{t("MANIFESTE")} <strong>{snapshot?.transport.manifestId ?? 0}</strong></span>
+          <span>{t("RENDU")} <strong>{renderFps.toFixed(0)} FPS</strong></span>
         </div>
         <div className="dock-actions">
           {snapshot?.mode === "replay" ? (
             <>
               <button onClick={() => action("Replay", () => post("/api/replay/control", { playing: !snapshot.replay.playing }))}>
-                {snapshot.replay.playing ? "PAUSE" : "LECTURE"}
+                {snapshot.replay.playing ? "PAUSE" : t("LECTURE")}
               </button>
               {[0.5, 1, 2, 4].map((speed) => (
                 <button className={snapshot.replay.speed === speed ? "active" : ""} key={speed}
-                  onClick={() => action("Vitesse", () => post("/api/replay/control", { speed }))}>{speed}×</button>
+                  onClick={() => action(t("Vitesse"), () => post("/api/replay/control", { speed }))}>{speed}×</button>
               ))}
               <input
                 className="replay-slider"
@@ -275,9 +280,9 @@ export default function App() {
                 min="0"
                 max={snapshot.replay.packetCount}
                 value={snapshot.replay.position}
-                aria-label="Position du replay"
+                aria-label={t("Position du replay")}
                 onChange={(event) =>
-                  action("Position", () =>
+                  action(t("Position"), () =>
                     post("/api/replay/control", { position: Number(event.currentTarget.value) })
                   )
                 }
@@ -288,14 +293,14 @@ export default function App() {
             <button
               className={snapshot?.capture.active ? "danger" : ""}
               onClick={() => action(
-                snapshot?.capture.active ? "Capture arrêtée" : "Capture démarrée",
+                t(snapshot?.capture.active ? "Capture arrêtée" : "Capture démarrée"),
                 () => post(snapshot?.capture.active ? "/api/capture/stop" : "/api/capture/start")
               )}
             >
-              {snapshot?.capture.active ? "■ ARRÊTER CAPTURE" : "● CAPTURER"}
+              {t(snapshot?.capture.active ? "■ ARRÊTER CAPTURE" : "● CAPTURER")}
             </button>
           )}
-          <button onClick={() => action("Exports créés", () => post("/api/export"))}>EXPORTER</button>
+          <button onClick={() => action(t("Exports créés"), () => post("/api/export"))}>{t("EXPORTER")}</button>
         </div>
       </footer>
       {toast && <div className="toast">{toast}</div>}

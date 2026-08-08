@@ -1,5 +1,6 @@
 import type { DashboardSnapshot, InstrumentDefinition, InstrumentValue } from "./types";
 import { formatValue } from "./data";
+import { useI18n } from "./i18n";
 
 interface Props {
   definition: InstrumentDefinition;
@@ -63,8 +64,9 @@ function Vector({ value, unit }: { value: unknown; unit?: string }) {
 }
 
 function Segments({ value }: { value: unknown }) {
+  const { t } = useI18n();
   const values = Array.isArray(value) ? value : [];
-  if (!values.length) return <div className="empty-applicable">AUCUN SEGMENT</div>;
+  if (!values.length) return <div className="empty-applicable">{t("AUCUN SEGMENT")}</div>;
   const max = Math.max(...values.map((item) => Number(item) || 0), 1);
   return (
     <div className="segment-array">
@@ -92,8 +94,9 @@ function Attitude({ value }: { value: unknown }) {
 }
 
 function ObjectList({ value }: { value: unknown }) {
+  const { t } = useI18n();
   const rows = Array.isArray(value) ? value : value && typeof value === "object" ? Object.values(value) : [];
-  if (!rows.length) return <div className="empty-applicable">AUCUN</div>;
+  if (!rows.length) return <div className="empty-applicable">{t("AUCUN")}</div>;
   return (
     <div className="object-list">
       {rows.slice(0, 12).map((row, index) => {
@@ -112,21 +115,22 @@ function ObjectList({ value }: { value: unknown }) {
         return (
           <div className="object-row" key={`${name}-${index}`}>
             <span>{name}</span>
-            {ratio === null ? <strong>{formatValue(record.phase ?? record.cooldown_remaining_us ?? "ACTIF")}</strong> :
+            {ratio === null ? <strong>{t(formatValue(record.phase ?? record.cooldown_remaining_us ?? "ACTIF"))}</strong> :
               <div className="microbar"><i style={{ width: `${Math.max(0, Math.min(1, ratio)) * 100}%` }} /></div>}
           </div>
         );
       })}
-      {rows.length > 12 && <div className="more-rows">+ {rows.length - 12} éléments</div>}
+      {rows.length > 12 && <div className="more-rows">+ {t(`${rows.length - 12} éléments`)}</div>}
     </div>
   );
 }
 
 function Diagnostic({ snapshot }: { snapshot: DashboardSnapshot | null }) {
+  const { t } = useI18n();
   const channels = snapshot?.quality.channels ?? [];
   return (
     <div className="quality-table">
-      <div className="quality-head"><span>CANAL</span><span>HZ</span><span>ÂGE</span><span>JITTER</span></div>
+      <div className="quality-head"><span>{t("CANAL")}</span><span>HZ</span><span>{t("ÂGE")}</span><span>JITTER</span></div>
       {channels.slice(0, 14).map((channel) => (
         <div className="quality-row" key={channel.identity}>
           <span title={channel.identity}>{channel.recordName.replace("_STATE", "")}</span>
@@ -135,7 +139,7 @@ function Diagnostic({ snapshot }: { snapshot: DashboardSnapshot | null }) {
           <span>{channel.jitterUs === null ? "—" : `${(channel.jitterUs / 1000).toFixed(1)} ms`}</span>
         </div>
       ))}
-      {!channels.length && <div className="empty-applicable">AUCUN ÉCHANTILLON</div>}
+      {!channels.length && <div className="empty-applicable">{t("AUCUN ÉCHANTILLON")}</div>}
     </div>
   );
 }
@@ -156,6 +160,7 @@ function LiveInstrument({ definition, resolved, snapshot }: Omit<Props, "onInspe
 }
 
 export function InstrumentCard({ definition, resolved, snapshot, onInspect }: Props) {
+  const { t } = useI18n();
   const unavailable = resolved.state !== "live" && resolved.state !== "stale";
   const labels: Record<string, string> = {
     nd: "ND",
@@ -167,17 +172,17 @@ export function InstrumentCard({ definition, resolved, snapshot, onInspect }: Pr
     <button
       className={`instrument instrument-${definition.component} state-${resolved.state}`}
       onClick={onInspect}
-      aria-label={`${definition.label}: ${unavailable ? labels[resolved.state] : formatValue(resolved.value)}`}
+      aria-label={`${t(definition.label)}: ${unavailable ? t(labels[resolved.state]) : formatValue(resolved.value)}`}
     >
       <header>
-        <span>{definition.label}</span>
-        <i>{resolved.state === "live" ? "LIVE" : resolved.state === "stale" ? "STALE" : labels[resolved.state]}</i>
+        <span>{t(definition.label)}</span>
+        <i>{resolved.state === "live" ? "LIVE" : resolved.state === "stale" ? "STALE" : t(labels[resolved.state])}</i>
       </header>
       <div className="instrument-body">
         {unavailable ? (
           <div className="unavailable">
-            <strong>{labels[resolved.state]}</strong>
-            <span>{resolved.reason}</span>
+            <strong>{t(labels[resolved.state])}</strong>
+            <span>{t(resolved.reason ?? "")}</span>
           </div>
         ) : (
           <LiveInstrument definition={definition} resolved={resolved} snapshot={snapshot} />
@@ -185,7 +190,7 @@ export function InstrumentCard({ definition, resolved, snapshot, onInspect }: Pr
       </div>
       <footer>
         <span>{resolved.observedHz === undefined ? "— Hz" : `${resolved.observedHz.toFixed(1)} Hz`}</span>
-        <span>{resolved.ageUs === undefined ? "âge —" : `${(resolved.ageUs / 1000).toFixed(0)} ms`}</span>
+        <span>{resolved.ageUs === undefined ? `${t("ÂGE").toLowerCase()} —` : `${(resolved.ageUs / 1000).toFixed(0)} ms`}</span>
       </footer>
     </button>
   );

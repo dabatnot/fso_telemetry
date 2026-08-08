@@ -33,6 +33,7 @@ import type {
   InspectionTarget,
   InstrumentDefinition
 } from "./types";
+import { useI18n } from "./i18n";
 
 interface Props {
   definitions: InstrumentDefinition[];
@@ -54,7 +55,7 @@ function finite(value: unknown): number | null {
 function formatNumber(value: number | null, digits = 0): string {
   return value === null
     ? "—"
-    : value.toLocaleString("fr-FR", { maximumFractionDigits: digits });
+    : value.toLocaleString(document.documentElement.lang === "en" ? "en-US" : "fr-FR", { maximumFractionDigits: digits });
 }
 
 function formatDurationUs(value: unknown): string {
@@ -77,6 +78,7 @@ function TacticalPanel({
   onInspect: Props["onInspect"];
   children: ReactNode;
 }) {
+  const { t } = useI18n();
   const resolved = resolveInstrument(definition, snapshot);
   const unavailable = !["live", "stale"].includes(resolved.state);
   const label: Record<string, string> = {
@@ -90,16 +92,16 @@ function TacticalPanel({
       <button
         className="tactical-panel-header"
         onClick={() => onInspect({ definition })}
-        aria-label={`Inspecter ${title}: ${resolved.state}`}
+        aria-label={`${t("Inspecter")} ${t(title)}: ${resolved.state}`}
       >
-        <span>{title}</span>
-        <i>{resolved.state === "live" ? "LIVE" : resolved.state === "stale" ? "STALE" : label[resolved.state]}</i>
+        <span>{t(title)}</span>
+        <i>{resolved.state === "live" ? "LIVE" : resolved.state === "stale" ? "STALE" : t(label[resolved.state])}</i>
       </button>
       <div className="tactical-panel-body">
         {unavailable ? (
           <div className="tactical-unavailable">
-            <strong>{label[resolved.state]}</strong>
-            <span>{resolved.reason}</span>
+            <strong>{t(label[resolved.state])}</strong>
+            <span>{t(resolved.reason ?? "")}</span>
           </div>
         ) : children}
       </div>
@@ -116,6 +118,7 @@ function SensorStrip({
   definition: InstrumentDefinition;
   onInspect: Props["onInspect"];
 }) {
+  const { t } = useI18n();
   const radar = radarState(snapshot);
   const labels = sensorLabels(snapshot);
   const player = String(snapshot?.playerEntityId ?? "");
@@ -135,24 +138,24 @@ function SensorStrip({
       onInspect={onInspect}
     >
       <div className={`sensor-strip ${invalid ? "invalid" : ""}`}>
-        <div><span>MODE RADAR</span><strong>{labels.mode ?? "ERR"}</strong></div>
+        <div><span>{t("MODE RADAR")}</span><strong>{t(labels.mode ?? "ERR")}</strong></div>
         <div>
-          <span>PORTÉE</span>
-          <strong aria-label={range.text === "∞" ? "Portée infinie" : undefined}>
+          <span>{t("PORTÉE")}</span>
+          <strong aria-label={range.text === "∞" ? t("Portée infinie") : undefined}>
             {range.text ?? formatNumber(range.value, 0)}
           </strong>
-          <small>{range.detail}</small>
+          <small>{t(range.detail)}</small>
         </div>
         <div className="sensor-health">
-          <span>CAPTEURS</span>
-          <strong>{labels.state ?? "ERR"}</strong>
+          <span>{t("CAPTEURS")}</span>
+          <strong>{t(labels.state ?? "ERR")}</strong>
           <div><i style={{ width: `${Math.max(0, Math.min(1, ratio ?? 0)) * 100}%` }} /></div>
           <small>{formatNumber(current, 1)} / {formatNumber(maximum, 1)} HP</small>
         </div>
-        <div><span>AWACS</span><strong>{radar?.awacs_intensity === undefined ? "—" : formatNumber(finite(radar.awacs_intensity), 2)}</strong><small>{radar?.awacs_range === undefined ? "non applicable" : `portée ${formatNumber(finite(radar.awacs_range))}`}</small></div>
+        <div><span>AWACS</span><strong>{radar?.awacs_intensity === undefined ? "—" : formatNumber(finite(radar.awacs_intensity), 2)}</strong><small>{radar?.awacs_range === undefined ? t("non applicable") : `${t("PORTÉE").toLowerCase()} ${formatNumber(finite(radar.awacs_range))}`}</small></div>
         <div className={(emp ?? 0) > 0 ? "alert" : ""}>
           <span>EMP</span><strong>{radar?.emp_intensity === undefined ? "—" : formatNumber(emp, 2)}</strong>
-          <small>{radar?.emp_remaining_us === undefined ? "non applicable" : formatDurationUs(radar.emp_remaining_us)}</small>
+          <small>{radar?.emp_remaining_us === undefined ? t("non applicable") : formatDurationUs(radar.emp_remaining_us)}</small>
         </div>
       </div>
     </TacticalPanel>
@@ -231,6 +234,7 @@ function RadarScope({
   definition: InstrumentDefinition;
   onInspect: Props["onInspect"];
 }) {
+  const { t } = useI18n();
   const canvas = useRef<HTMLCanvasElement>(null);
   const hits = useRef<HitPoint[]>([]);
   const contacts = useMemo(() => prioritizedContacts(snapshot), [snapshot]);
@@ -278,14 +282,14 @@ function RadarScope({
       context.textAlign = "center";
       // Match FSO's standard directional radar: the nose is at the centre,
       // while the disc direction tells the pilot which way to turn or pitch.
-      context.fillText("HAUT", centerX, centerY - radius + 12);
-      context.fillText("BAS", centerX, centerY + radius - 5);
+      context.fillText(t("HAUT"), centerX, centerY - radius + 12);
+      context.fillText(t("BAS"), centerX, centerY + radius - 5);
       context.textAlign = "left";
-      context.fillText("DROITE", centerX + radius - 40, centerY - 6);
+      context.fillText(t("DROITE"), centerX + radius - 40, centerY - 6);
       context.textAlign = "right";
-      context.fillText("GAUCHE", centerX - radius + 40, centerY - 6);
+      context.fillText(t("GAUCHE"), centerX - radius + 40, centerY - 6);
       context.textAlign = "center";
-      context.fillText("AVANT", centerX, centerY + 20);
+      context.fillText(t("AVANT"), centerX, centerY + 20);
       context.beginPath();
       context.moveTo(centerX, centerY - 6);
       context.lineTo(centerX - 5, centerY + 5);
@@ -305,7 +309,7 @@ function RadarScope({
     const observer = new ResizeObserver(render);
     observer.observe(element);
     return () => observer.disconnect();
-  }, [contacts]);
+  }, [contacts, t]);
 
   const chooseAt = (event: MouseEvent<HTMLCanvasElement>) => {
     const bounds = event.currentTarget.getBoundingClientRect();
@@ -330,7 +334,7 @@ function RadarScope({
     <TacticalPanel
       definition={definition}
       snapshot={snapshot}
-      title={`SCOPE RADAR · ${contacts.length} PISTE${contacts.length > 1 ? "S" : ""}`}
+      title={t(`SCOPE RADAR · ${contacts.length} PISTE${contacts.length > 1 ? "S" : ""}`)}
       className="tactical-scope"
       onInspect={onInspect}
     >
@@ -338,9 +342,9 @@ function RadarScope({
         <canvas
           ref={canvas}
           onClick={chooseAt}
-          aria-label={`Scope radar affichant ${contacts.length} contacts`}
+          aria-label={`${t("SCOPE RADAR")} · ${contacts.length} ${t("CONTACTS")}`}
         />
-        <div className="scope-contact-list" aria-label="Contacts radar prioritaires">
+        <div className="scope-contact-list" aria-label={t("Contacts radar prioritaires")}>
           {visibleList.map((contact) => (
             <button
               key={contact.id}
@@ -361,21 +365,21 @@ function RadarScope({
                 <small className="contact-type">{contact.typeLabel}</small>
               )}
               <small className="contact-status">
-                {contact.category} · {contact.visibility}
+                {t(contact.category)} · {t(contact.visibility)}
               </small>
             </button>
           ))}
-          {!contacts.length && <div className="tactical-empty">AUCUN CONTACT AUTORISÉ</div>}
+          {!contacts.length && <div className="tactical-empty">{t("AUCUN CONTACT AUTORISÉ")}</div>}
           {contacts.length > visibleList.length && (
             <button
               className="scope-more"
               onClick={() => onInspect({
                 definition,
                 kind: "radar-contact",
-                title: "Tous les contacts"
+                title: t("Tous les contacts")
               })}
             >
-              + {contacts.length - visibleList.length} AUTRES
+              + {contacts.length - visibleList.length} {t("AUTRES")}
             </button>
           )}
         </div>
@@ -407,6 +411,7 @@ function TargetPanel({
   definition: InstrumentDefinition;
   onInspect: Props["onInspect"];
 }) {
+  const { t } = useI18n();
   const target = targetState(snapshot);
   const contact = targetContact(snapshot);
   const player = String(snapshot?.playerEntityId ?? "");
@@ -439,7 +444,7 @@ function TargetPanel({
       onInspect={onInspect}
     >
       {targetId === "0" ? (
-        <div className="target-empty">— AUCUNE CIBLE</div>
+        <div className="target-empty">— {t("AUCUNE CIBLE")}</div>
       ) : (
         <button
           className={`target-card ${invalid ? "invalid" : ""}`}
@@ -453,33 +458,33 @@ function TargetPanel({
             title: targetDisplayName(snapshot)
           })}
         >
-          <span className="target-kicker">ENTITÉ {targetId}</span>
-          <strong>{invalid ? "ERR · RÉFÉRENCE INCONNUE" : targetDisplayName(snapshot)}</strong>
+          <span className="target-kicker">{t(`ENTITÉ ${targetId}`)}</span>
+          <strong>{invalid ? `ERR · ${t("RÉFÉRENCE INCONNUE")}` : targetDisplayName(snapshot)}</strong>
           {(targetClass ?? targetHudLabel) !== null && <span className="target-class">{targetClass ?? targetHudLabel}</span>}
-          <div className="target-hud-readout" aria-label="Informations HUD FSO">
+          <div className="target-hud-readout" aria-label={t("Informations HUD FSO")}>
             <span>D : {formatNumber(distance)}{hudTrendSuffix(target?.distance_trend)}</span>
             <span>S : {formatNumber(hudSpeed)}{hudTrendSuffix(target?.speed_trend, (hudSpeed ?? 0) <= 1)}</span>
             {targetVersion !== null && targetVersion < 2 && <i>COMPAT. CAPTURE V1</i>}
           </div>
           <div className="target-primary-metrics">
-            <div><span>DISTANCE</span><strong>{formatNumber(distance)}</strong></div>
-            <div><span>RAPPROCHEMENT</span><strong>{formatNumber(contact?.closingSpeed ?? null, 1)}</strong></div>
-            <div><span>TEMPS CIBLE</span><strong>{formatDurationUs(target?.time_on_target_us)}</strong></div>
+            <div><span>{t("DISTANCE")}</span><strong>{formatNumber(distance)}</strong></div>
+            <div><span>{t("RAPPROCHEMENT")}</span><strong>{formatNumber(contact?.closingSpeed ?? null, 1)}</strong></div>
+            <div><span>{t("TEMPS CIBLE")}</span><strong>{formatDurationUs(target?.time_on_target_us)}</strong></div>
           </div>
           <div className="target-badges">
-            <i>{contact?.category ?? "CONTACT"}</i>
-            {target?.in_cone !== undefined && <i>{target.in_cone ? "DANS LE CÔNE" : "HORS CÔNE"}</i>}
-            {target?.lead_world !== undefined && <i>LEAD · BANQUE {String(target.lead_bank_id)}</i>}
+            <i>{t(contact?.category ?? "CONTACT")}</i>
+            {target?.in_cone !== undefined && <i>{t(target.in_cone ? "DANS LE CÔNE" : "HORS CÔNE")}</i>}
+            {target?.lead_world !== undefined && <i>LEAD · {t("BANQUE")} {String(target.lead_bank_id)}</i>}
           </div>
           <dl>
-            <dt>Tendance distance</dt><dd>{TRENDS[Number(target?.distance_trend)] ?? "—"}</dd>
-            <dt>Tendance vitesse</dt><dd>{TRENDS[Number(target?.speed_trend)] ?? "—"}</dd>
-            <dt>Sous-système ciblé</dt><dd>{targetSubsystem ?? "—"}</dd>
-            <dt>Sous-système lock</dt><dd>{lockSubsystem ?? "—"}</dd>
-            <dt>Cible précédente</dt><dd>{target?.previous_target_entity_id === undefined ? "—" : String(target.previous_target_entity_id)}</dd>
+            <dt>{t("Tendance distance")}</dt><dd>{t(TRENDS[Number(target?.distance_trend)] ?? "—")}</dd>
+            <dt>{t("Tendance vitesse")}</dt><dd>{t(TRENDS[Number(target?.speed_trend)] ?? "—")}</dd>
+            <dt>{t("Sous-système ciblé")}</dt><dd>{targetSubsystem ?? "—"}</dd>
+            <dt>{t("Sous-système lock")}</dt><dd>{lockSubsystem ?? "—"}</dd>
+            <dt>{t("Cible précédente")}</dt><dd>{target?.previous_target_entity_id === undefined ? "—" : String(target.previous_target_entity_id)}</dd>
           </dl>
           {target?.last_stealth_position !== undefined && (
-            <div className="stealth-memory">PISTE FURTIVE MÉMORISÉE · OBSERVATION ANCIENNE</div>
+            <div className="stealth-memory">{t("PISTE FURTIVE MÉMORISÉE · OBSERVATION ANCIENNE")}</div>
           )}
         </button>
       )}
@@ -496,13 +501,14 @@ function LockPanel({
   definition: InstrumentDefinition;
   onInspect: Props["onInspect"];
 }) {
+  const { t } = useI18n();
   const locks = lockViews(snapshot);
   const visible = locks.slice(0, 8);
   return (
     <TacticalPanel
       definition={definition}
       snapshot={snapshot}
-      title={`VERROUILLAGES · ${locks.length}`}
+      title={t(`VERROUILLAGES · ${locks.length}`)}
       className="tactical-locks"
       onInspect={onInspect}
     >
@@ -521,24 +527,24 @@ function LockPanel({
           >
             <div>
               <span>{lock.targetName}</span>
-              <strong>{lock.invalid ? "ERR" : lock.locked ? "ACQUIS" : lock.attempt ? "ACQUISITION" : "SANS TENTATIVE"}</strong>
+              <strong>{lock.invalid ? "ERR" : t(lock.locked ? "ACQUIS" : lock.attempt ? "ACQUISITION" : "SANS TENTATIVE")}</strong>
             </div>
             <div className="lock-progress">
               <i style={{ width: `${Math.max(0, Math.min(1, lock.progress ?? 0)) * 100}%` }} />
             </div>
             <small>
-              {lock.inCone ? "DANS LE CÔNE" : "HORS CÔNE"} ·
-              {lock.remainingS === null ? " progression —" : ` ${formatNumber(lock.remainingS, 1)} s`}
+              {t(lock.inCone ? "DANS LE CÔNE" : "HORS CÔNE")} ·
+              {lock.remainingS === null ? ` ${t("progression")} —` : ` ${formatNumber(lock.remainingS, 1)} s`}
             </small>
           </button>
         ))}
-        {!locks.length && <div className="tactical-empty">AUCUN LOCK</div>}
+        {!locks.length && <div className="tactical-empty">{t("AUCUN LOCK")}</div>}
         {locks.length > visible.length && (
           <button
             className="lock-more"
-            onClick={() => onInspect({ definition, kind: "lock-list", title: "Tous les verrouillages" })}
+            onClick={() => onInspect({ definition, kind: "lock-list", title: t("Tous les verrouillages") })}
           >
-            + {locks.length - visible.length} AUTRES
+            + {locks.length - visible.length} {t("AUTRES")}
           </button>
         )}
       </div>
@@ -555,6 +561,7 @@ function ThreatPanel({
   definition: InstrumentDefinition;
   onInspect: Props["onInspect"];
 }) {
+  const { t } = useI18n();
   const threat = threatState(snapshot);
   const alerts = hudAlertView(snapshot);
   const labels = sensorLabels(snapshot);
@@ -585,9 +592,9 @@ function ThreatPanel({
           className="threat-level"
           onClick={() => onInspect({ definition, record: threat ?? undefined })}
         >
-          <span>NIVEAU</span>
-          <strong>{labels.threat ?? "ERR"}</strong>
-          <small>{missiles.length} MISSILE{missiles.length > 1 ? "S" : ""}</small>
+          <span>{t("NIVEAU")}</span>
+          <strong>{t(labels.threat ?? "ERR")}</strong>
+          <small>{missiles.length} {t(missiles.length > 1 ? "MISSILES" : "MISSILE")}</small>
         </button>
         <div
           className="hud-alert-bank"
@@ -600,7 +607,7 @@ function ThreatPanel({
             aria-pressed={alerts.primaryFireActive}
             onClick={() => onInspect({ definition, record: alerts.record ?? undefined, title: "Menace tir primaire" })}
           >
-            TIR PRIMAIRE
+            {t("TIR PRIMAIRE")}
           </button>
           <button
             className={`hud-alert-lamp threat-lamp lock-${alerts.missileLockState} ${alerts.missileLockState !== 0 ? "active" : ""}`}
@@ -608,7 +615,7 @@ function ThreatPanel({
             aria-pressed={alerts.missileLockState !== 0}
             onClick={() => onInspect({ definition, record: alerts.record ?? undefined, title: "Menace verrouillage missile" })}
           >
-            {alerts.missileLockState === 2 ? "LOCK ACQUIS" : "TENTATIVE LOCK"}
+            {t(alerts.missileLockState === 2 ? "LOCK ACQUIS" : "TENTATIVE LOCK")}
           </button>
           <div className="hud-warning-lamps" aria-live="polite">
             {warningKinds.map(([kindCode, label]) => {
@@ -618,24 +625,24 @@ function ThreatPanel({
                   key={label}
                   className={`hud-alert-lamp warning-lamp ${active ? "active" : ""}`}
                   aria-pressed={active}
-                  title={active ? alerts.warning?.text : label}
+                  title={active ? alerts.warning?.text : t(label)}
                   onClick={() => onInspect({
                     definition,
                     record: alerts.record ?? undefined,
                     title: active ? alerts.warning?.text : label
                   })}
                 >
-                  {label}
+                  {t(label)}
                 </button>
               );
             })}
           </div>
           <small className="hud-warning-text">
             {alerts.warning?.text ?? (alerts.provenance === "legacy-aggregated"
-              ? "CAPTURE HISTORIQUE · MENACE AGRÉGÉE"
+              ? t("CAPTURE HISTORIQUE · MENACE AGRÉGÉE")
               : alerts.provenance === "missing-authoritative"
-                ? "ALERTES HUD INDISPONIBLES"
-                : "AUCUN AVERTISSEMENT HUD")}
+                ? t("ALERTES HUD INDISPONIBLES")
+                : t("AUCUN AVERTISSEMENT HUD"))}
           </small>
         </div>
         <div className="missile-rack">
@@ -653,14 +660,14 @@ function ThreatPanel({
             >
               <span>{missile.name}</span>
               <strong>{missile.invalid ? "ERR" : missile.ttcS === null ? "—" : `${formatNumber(missile.ttcS, 1)} s EST.`}</strong>
-              <small>{missile.guidance} · {formatNumber(missile.distance)} u</small>
+              <small>{t(missile.guidance)} · {formatNumber(missile.distance)} u</small>
             </button>
           ))}
-          {!missiles.length && <div className="tactical-empty">AUCUN MISSILE ENTRANT</div>}
+          {!missiles.length && <div className="tactical-empty">{t("AUCUN MISSILE ENTRANT")}</div>}
           {missiles.length > visible.length && (
             <button
               className="missile-more"
-              onClick={() => onInspect({ definition, kind: "missile-list", title: "Tous les missiles" })}
+              onClick={() => onInspect({ definition, kind: "missile-list", title: t("Tous les missiles") })}
             >
               + {missiles.length - visible.length}
             </button>
@@ -672,6 +679,7 @@ function ThreatPanel({
 }
 
 function FuturePanel({ definition }: { definition: InstrumentDefinition }) {
+  const { t } = useI18n();
   const items = [
     "Brouillage global quantifié",
     "Historique global de visibilité",
@@ -681,10 +689,10 @@ function FuturePanel({ definition }: { definition: InstrumentDefinition }) {
     "Vidéo de cible H.264"
   ];
   return (
-    <section className="tactical-future" aria-label="Données tactiques non disponibles">
+    <section className="tactical-future" aria-label={t("Données tactiques non disponibles")}>
       <strong>ND</strong>
-      {items.map((item) => <span key={item}>{item}</span>)}
-      <small>{definition.reason}</small>
+      {items.map((item) => <span key={item}>{t(item)}</span>)}
+      <small>{t(definition.reason ?? "")}</small>
     </section>
   );
 }

@@ -7,6 +7,7 @@ import {
   turretViews,
   type WeaponFamily
 } from "./weaponSemantics";
+import { useI18n } from "./i18n";
 import type { DashboardSnapshot, InspectionTarget } from "./types";
 
 interface Props {
@@ -22,10 +23,11 @@ function RawValues({
   title: string;
   values: Record<string, unknown> | null | undefined;
 }) {
+  const { t } = useI18n();
   if (!values) return null;
   return (
     <div className="detail-values">
-      <h3>{title}</h3>
+      <h3>{t(title)}</h3>
       {Object.entries(values).map(([field, value]) => (
         <div key={field}>
           <span>{field}</span>
@@ -41,6 +43,7 @@ function familyLabel(family: WeaponFamily): string {
 }
 
 export function WeaponInspection({ target, snapshot, onSelect }: Props) {
+  const { t } = useI18n();
   const [filter, setFilter] = useState("");
   useEffect(() => setFilter(""), [target.kind, target.family]);
   const family = target.family === "secondary" ? "secondary" : "primary";
@@ -54,11 +57,11 @@ export function WeaponInspection({ target, snapshot, onSelect }: Props) {
       : turrets;
     return (
       <>
-        <span className="eyebrow">INSPECTION EXHAUSTIVE</span>
-        <h2>Tourelles du joueur</h2>
-        <div className="detail-state state-live">{turrets.length} TOURELLES</div>
+        <span className="eyebrow">{t("INSPECTION EXHAUSTIVE")}</span>
+        <h2>{t("Tourelles du joueur")}</h2>
+        <div className="detail-state state-live">{turrets.length} {t("TOURELLES")}</div>
         <label className="subsystem-filter">
-          <span>FILTRER PAR NOM</span>
+          <span>{t("FILTRER PAR NOM")}</span>
           <input
             type="search"
             value={filter}
@@ -78,11 +81,11 @@ export function WeaponInspection({ target, snapshot, onSelect }: Props) {
                 title: turret.name
               })}
             >
-              <span><strong>{turret.name}</strong><small>TOURELLE</small></span>
-              <b>{turret.locked ? "LOCK" : turret.cooldownUs > 0 ? `${(turret.cooldownUs / 1_000_000).toFixed(2)} s` : "LIBRE"}</b>
+              <span><strong>{turret.name}</strong><small>{t("TOURELLE")}</small></span>
+              <b>{turret.locked ? "LOCK" : turret.cooldownUs > 0 ? `${(turret.cooldownUs / 1_000_000).toFixed(2)} s` : t("LIBRE")}</b>
             </button>
           ))}
-          {!filtered.length ? <p className="detail-empty">AUCUN RÉSULTAT</p> : null}
+          {!filtered.length ? <p className="detail-empty">{t("AUCUN RÉSULTAT")}</p> : null}
         </div>
       </>
     );
@@ -98,13 +101,13 @@ export function WeaponInspection({ target, snapshot, onSelect }: Props) {
       : banks;
     return (
       <>
-        <span className="eyebrow">INSPECTION EXHAUSTIVE</span>
-        <h2>Banques {family === "primary" ? "primaires" : "secondaires"}</h2>
+        <span className="eyebrow">{t("INSPECTION EXHAUSTIVE")}</span>
+        <h2>{t("Banques")} {t(family === "primary" ? "primaires" : "secondaires")}</h2>
         <div className="detail-state state-live">
-          {banks.length} BANQUES · {banks.filter((bank) => bank.selected).length} SÉLECTIONNÉE
+          {banks.length} {t("BANQUES")} · {banks.filter((bank) => bank.selected).length} {t("SÉLECTIONNÉE")}
         </div>
         <label className="subsystem-filter">
-          <span>FILTRER PAR NOM, TYPE OU CAPACITÉ</span>
+          <span>{t("FILTRER PAR NOM, TYPE OU CAPACITÉ")}</span>
           <input
             type="search"
             value={filter}
@@ -126,10 +129,10 @@ export function WeaponInspection({ target, snapshot, onSelect }: Props) {
               })}
             >
               <span><strong>{bank.name}</strong><small>{bank.subtype} · ID {bank.bankId}</small></span>
-              <b>{bank.selected ? "SÉLECTIONNÉE" : bank.state}</b>
+              <b>{t(bank.selected ? "SÉLECTIONNÉE" : bank.state)}</b>
             </button>
           ))}
-          {!filtered.length ? <p className="detail-empty">AUCUN RÉSULTAT</p> : null}
+          {!filtered.length ? <p className="detail-empty">{t("AUCUN RÉSULTAT")}</p> : null}
         </div>
       </>
     );
@@ -139,10 +142,10 @@ export function WeaponInspection({ target, snapshot, onSelect }: Props) {
   if (!bank) {
     return (
       <>
-        <span className="eyebrow">INSPECTION BANQUE</span>
-        <h2>{target.title ?? "Banque d’arme"}</h2>
+        <span className="eyebrow">{t("INSPECTION BANQUE")}</span>
+        <h2>{target.title ?? t("Banque d’arme")}</h2>
         <div className="detail-state state-invalid">ERR</div>
-        <p className="detail-empty">Banque absente du snapshot courant.</p>
+        <p className="detail-empty">{t("Banque absente du snapshot courant.")}</p>
       </>
     );
   }
@@ -166,32 +169,32 @@ export function WeaponInspection({ target, snapshot, onSelect }: Props) {
           family
         })}
       >
-        ← LISTE {familyLabel(family)}
+        ← {t("LISTE")} {t(familyLabel(family))}
       </button>
-      <span className="eyebrow">INSPECTION BANQUE</span>
+      <span className="eyebrow">{t("INSPECTION BANQUE")}</span>
       <h2>{bank.name}</h2>
       <div className={`detail-state state-${state}`}>{state.toUpperCase()}</div>
       <dl>
-        <dt>Famille</dt><dd>{familyLabel(family)}</dd>
-        <dt>Banque</dt><dd>ID {bank.bankId} · index {bank.index}</dd>
-        <dt>Sélectionnée</dt><dd>{bank.selected ? "OUI" : "NON"}</dd>
-        <dt>État temporel</dt><dd>{bank.state}</dd>
-        <dt>Classe</dt><dd>{formatValue(bank.record.weapon_class_id)}</dd>
-        <dt>Type</dt><dd>{bank.subtype}</dd>
-        <dt>Capacités</dt><dd>{bank.flags.join(", ") || "aucune"}</dd>
-        <dt>Munitions</dt><dd>{bank.ammoCurrent === null ? "— arme énergétique" : `${bank.ammoCurrent} / ${bank.ammoInitial}`}</dd>
+        <dt>{t("Famille")}</dt><dd>{t(familyLabel(family))}</dd>
+        <dt>{t("Banque")}</dt><dd>ID {bank.bankId} · index {bank.index}</dd>
+        <dt>{t("Sélectionnée")}</dt><dd>{t(bank.selected ? "OUI" : "NON")}</dd>
+        <dt>{t("État temporel")}</dt><dd>{t(bank.state)}</dd>
+        <dt>{t("Classe")}</dt><dd>{formatValue(bank.record.weapon_class_id)}</dd>
+        <dt>{t("Type")}</dt><dd>{t(bank.subtype)}</dd>
+        <dt>{t("Capacités")}</dt><dd>{bank.flags.map(t).join(", ") || t("aucune")}</dd>
+        <dt>{t("Munitions")}</dt><dd>{bank.ammoCurrent === null ? `— ${t("arme énergétique")}` : `${bank.ammoCurrent} / ${bank.ammoInitial}`}</dd>
         <dt>Cooldown</dt><dd>{bank.cooldownS === null ? "—" : `${bank.cooldownS.toFixed(3)} s`}</dd>
-        <dt>Réarmement</dt><dd>{bank.rearmS === null ? "—" : `${bank.rearmS.toFixed(3)} s`}</dd>
-        <dt>Cadence nominale</dt><dd>{bank.nominalRateHz === null ? "—" : `${bank.nominalRateHz.toFixed(2)} tir/s`}</dd>
-        <dt>Coût énergétique</dt><dd>{formatValue(fire?.energy_consumed)}</dd>
-        <dt>Dégâts nominaux</dt><dd>{formatValue(damage?.amount)}</dd>
-        <dt>Guidage</dt><dd>{guidance ? GUIDANCE_TYPES[Number(guidance.type)] ?? "INCONNU" : "—"}</dd>
-        <dt>Pattern</dt><dd>{FIRING_PATTERNS[Number(bank.record.pattern_id)] ?? "—"}</dd>
-        <dt>Points de tir</dt><dd>{Array.isArray(bank.definition?.fire_points) ? bank.definition.fire_points.length : "—"}</dd>
-        <dt>Entité</dt><dd>{snapshot?.playerEntityId ?? "—"}</dd>
-        <dt>Échantillon</dt><dd>{formatValue(weaponStateSample(snapshot))}</dd>
-        <dt>Âge estimé</dt><dd>{quality?.ageUs === null || quality?.ageUs === undefined ? "—" : `${quality.ageUs} µs`}</dd>
-        <dt>Cadence observée</dt><dd>{quality?.observedHz === null || quality?.observedHz === undefined ? "—" : `${quality.observedHz.toFixed(2)} Hz`}</dd>
+        <dt>{t("Réarmement")}</dt><dd>{bank.rearmS === null ? "—" : `${bank.rearmS.toFixed(3)} s`}</dd>
+        <dt>{t("Cadence nominale")}</dt><dd>{bank.nominalRateHz === null ? "—" : `${bank.nominalRateHz.toFixed(2)} ${t("tir/s")}`}</dd>
+        <dt>{t("Coût énergétique")}</dt><dd>{formatValue(fire?.energy_consumed)}</dd>
+        <dt>{t("Dégâts nominaux")}</dt><dd>{formatValue(damage?.amount)}</dd>
+        <dt>{t("Guidage")}</dt><dd>{guidance ? t(GUIDANCE_TYPES[Number(guidance.type)] ?? "INCONNU") : "—"}</dd>
+        <dt>Pattern</dt><dd>{t(FIRING_PATTERNS[Number(bank.record.pattern_id)] ?? "—")}</dd>
+        <dt>{t("Points de tir")}</dt><dd>{Array.isArray(bank.definition?.fire_points) ? bank.definition.fire_points.length : "—"}</dd>
+        <dt>{t("Entité")}</dt><dd>{snapshot?.playerEntityId ?? "—"}</dd>
+        <dt>{t("Échantillon")}</dt><dd>{formatValue(weaponStateSample(snapshot))}</dd>
+        <dt>{t("Âge estimé")}</dt><dd>{quality?.ageUs === null || quality?.ageUs === undefined ? "—" : `${quality.ageUs} µs`}</dd>
+        <dt>{t("Cadence observée")}</dt><dd>{quality?.observedHz === null || quality?.observedHz === undefined ? "—" : `${quality.observedHz.toFixed(2)} Hz`}</dd>
       </dl>
       <RawValues title="État runtime brut" values={bank.record} />
       <RawValues title="Manifeste de l’arme" values={manifest} />

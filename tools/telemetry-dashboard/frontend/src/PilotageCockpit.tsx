@@ -2,6 +2,7 @@ import type { CSSProperties, ReactNode } from "react";
 import { formatValue, resolveInstrument } from "./data";
 import { attitudeFromQuaternion, trajectoryFromLocalVelocity } from "./flightMath";
 import { CONTROL_FLAGS, PHYSICS_MODE_FLAGS, controlModeLabel, decodeFlags } from "./flightSemantics";
+import { useI18n } from "./i18n";
 import type { DashboardSnapshot, InstrumentDefinition, InstrumentValue } from "./types";
 
 interface Props {
@@ -42,17 +43,18 @@ function Panel({
   className?: string;
   children: ReactNode;
 }) {
+  const { t } = useI18n();
   const unavailable = resolved.state !== "live" && resolved.state !== "stale";
   return (
     <button
       className={`flight-panel state-${resolved.state} ${className}`}
       onClick={onInspect}
-      aria-label={`${definition.label}: ${STATE_LABELS[resolved.state]}`}
+      aria-label={`${t(definition.label)}: ${t(STATE_LABELS[resolved.state])}`}
     >
-      <header><span>{definition.label}</span><i>{STATE_LABELS[resolved.state]}</i></header>
+      <header><span>{t(definition.label)}</span><i>{t(STATE_LABELS[resolved.state])}</i></header>
       <div className="flight-panel-body">
         {unavailable ? (
-          <div className="flight-unavailable"><strong>{STATE_LABELS[resolved.state]}</strong><span>{resolved.reason}</span></div>
+          <div className="flight-unavailable"><strong>{t(STATE_LABELS[resolved.state])}</strong><span>{t(resolved.reason ?? "")}</span></div>
         ) : children}
       </div>
     </button>
@@ -60,18 +62,20 @@ function Panel({
 }
 
 function Metric({ label, value, unit }: { label: string; value: unknown; unit?: string }) {
+  const { t } = useI18n();
   return (
     <div className="cockpit-metric">
-      <span>{label}</span><strong>{formatValue(value)}</strong>{unit && <small>{unit}</small>}
+      <span>{t(label)}</span><strong>{t(formatValue(value))}</strong>{unit && <small>{unit}</small>}
     </div>
   );
 }
 
 function VectorRows({ label, value, unit }: { label: string; value: unknown; unit: string }) {
+  const { t } = useI18n();
   const vector = Array.isArray(value) ? value : [];
   return (
     <div className="cockpit-vector">
-      <span className="vector-title">{label}</span>
+      <span className="vector-title">{t(label)}</span>
       {["X", "Y", "Z"].map((axis, index) => (
         <span key={axis}><i>{axis}</i><strong>{formatValue(vector[index])}</strong><small>{unit}</small></span>
       ))}
@@ -86,6 +90,7 @@ function AttitudeSphere({
   quaternion: unknown;
   velocityLocal: unknown;
 }) {
+  const { t } = useI18n();
   const attitude = attitudeFromQuaternion(quaternion);
   if (!attitude) return null;
   const trajectory = trajectoryFromLocalVelocity(velocityLocal);
@@ -100,8 +105,8 @@ function AttitudeSphere({
   const heading = ((attitude.headingDeg % 360) + 360) % 360;
   return (
     <div className="attitude-cluster">
-      <div className="heading-tape" aria-label={`Cap ${heading.toFixed(1)} degrés`}>
-        <span>CAP</span><strong>{heading.toFixed(1)}°</strong>
+      <div className="heading-tape" aria-label={`${t("CAP")} ${heading.toFixed(1)}°`}>
+        <span>{t("CAP")}</span><strong>{heading.toFixed(1)}°</strong>
       </div>
       <div className="attitude-sphere" style={horizonStyle}>
         <div className="attitude-world">
@@ -118,10 +123,10 @@ function AttitudeSphere({
         </div>
         <div className="craft-reference"><i /><b /><i /></div>
         {trajectory ? (
-          <div className="trajectory-marker" style={markerStyle} aria-label={`Dérive ${trajectory.driftDeg.toFixed(1)} degrés`}>
+          <div className="trajectory-marker" style={markerStyle} aria-label={`${t("DÉRIVE")} ${trajectory.driftDeg.toFixed(1)}°`}>
             <i /><b /><i />
           </div>
-        ) : <div className="trajectory-unavailable" title="Vitesse quasi nulle">TRAJ —</div>}
+        ) : <div className="trajectory-unavailable" title={t("Vitesse quasi nulle")}>TRAJ —</div>}
       </div>
       <div className="attitude-readouts">
         <Metric label="TANGAGE" value={`${attitude.pitchDeg.toFixed(1)}°`} />
@@ -133,6 +138,7 @@ function AttitudeSphere({
 }
 
 function AxisBars({ record }: { record: Record<string, unknown> }) {
+  const { t } = useI18n();
   const axes: Array<[string, string]> = [
     ["pitch", "TANGAGE"], ["heading", "LACET"], ["bank", "ROULIS"],
     ["vertical", "VERTICAL"], ["sideways", "LATÉRAL"], ["forward", "LONGITUDINAL"]
@@ -145,7 +151,7 @@ function AxisBars({ record }: { record: Record<string, unknown> }) {
         const position = finite ? (Math.max(-1, Math.min(1, value)) + 1) * 50 : 50;
         return (
           <div className="axis-row" key={field}>
-            <span>{label}</span>
+            <span>{t(label)}</span>
             <div><i style={{ left: `${position}%` }} /></div>
             <strong>{finite ? value.toFixed(2) : "ERR"}</strong>
           </div>
@@ -156,11 +162,12 @@ function AxisBars({ record }: { record: Record<string, unknown> }) {
 }
 
 function FlagChips({ value, kind }: { value: unknown; kind: "control" | "physics" }) {
+  const { t } = useI18n();
   const definitions = kind === "control" ? CONTROL_FLAGS : PHYSICS_MODE_FLAGS;
   const flags = decodeFlags(value, definitions);
   if (flags === null) return <span className="inline-error">ERR</span>;
-  if (!flags.length) return <span className="flag-chip neutral">AUCUN</span>;
-  return <div className="flag-chips">{flags.map((flag) => <span className="flag-chip" key={flag}>{flag}</span>)}</div>;
+  if (!flags.length) return <span className="flag-chip neutral">{t("AUCUN")}</span>;
+  return <div className="flag-chips">{flags.map((flag) => <span className="flag-chip" key={flag}>{t(flag)}</span>)}</div>;
 }
 
 function findDefinition(definitions: InstrumentDefinition[], id: string): InstrumentDefinition {
@@ -170,6 +177,7 @@ function findDefinition(definitions: InstrumentDefinition[], id: string): Instru
 }
 
 export function PilotageCockpit({ definitions, snapshot, onInspect }: Props) {
+  const { t } = useI18n();
   const definition = (id: string) => findDefinition(definitions, id);
   const resolved = (id: string) => resolveInstrument(definition(id), snapshot);
   const flight = playerRecord(snapshot, "FLIGHT_STATE") ?? {};
@@ -194,9 +202,9 @@ export function PilotageCockpit({ definitions, snapshot, onInspect }: Props) {
 
   const cursor = control.flight_cursor as Record<string, unknown> | undefined;
   return (
-    <section className="flight-cockpit" aria-label="Cockpit de pilotage">
+    <section className="flight-cockpit" aria-label={t("Cockpit de pilotage")}>
       <div className="flight-zone movement-zone">
-        <div className="zone-title"><span>01</span><strong>MOUVEMENT</strong></div>
+        <div className="zone-title"><span>01</span><strong>{t("MOUVEMENT")}</strong></div>
         <Panel definition={movementDefinition} resolved={movementResolved} onInspect={() => onInspect(movementDefinition)}>
           <div className="movement-grid">
             <Metric label="VITESSE" value={derivedValue(snapshot, "speed")} unit="u/s" />
@@ -210,14 +218,14 @@ export function PilotageCockpit({ definitions, snapshot, onInspect }: Props) {
       </div>
 
       <div className="flight-zone attitude-zone">
-        <div className="zone-title"><span>02</span><strong>ATTITUDE INERTIELLE</strong></div>
+        <div className="zone-title"><span>02</span><strong>{t("ATTITUDE INERTIELLE")}</strong></div>
         <Panel definition={attitudeDefinition} resolved={attitudeResolved} onInspect={() => onInspect(attitudeDefinition)} className="attitude-panel">
           <AttitudeSphere quaternion={attitudeResolved.value} velocityLocal={velocityLocal} />
         </Panel>
       </div>
 
       <div className="flight-zone command-zone">
-        <div className="zone-title"><span>03</span><strong>COMMANDES</strong></div>
+        <div className="zone-title"><span>03</span><strong>{t("COMMANDES")}</strong></div>
         <Panel definition={controlsDefinition} resolved={controlsResolved} onInspect={() => onInspect(controlsDefinition)}>
           <AxisBars record={control} />
           <div className="control-summary">
@@ -229,18 +237,18 @@ export function PilotageCockpit({ definitions, snapshot, onInspect }: Props) {
       </div>
 
       <div className="flight-zone status-zone">
-        <div className="zone-title"><span>04</span><strong>ÉTATS DE VOL</strong></div>
+        <div className="zone-title"><span>04</span><strong>{t("ÉTATS DE VOL")}</strong></div>
         <Panel definition={statusDefinition} resolved={statusResolved} onInspect={() => onInspect(statusDefinition)}>
           <div className="status-summary">
             <Metric label="RAYON" value={flight.radius} unit="u" />
-            <span className="raw-flag">BRUT 0x{Number(flight.physics_mode_flags ?? 0).toString(16).padStart(8, "0")}</span>
+            <span className="raw-flag">{t("BRUT")} 0x{Number(flight.physics_mode_flags ?? 0).toString(16).padStart(8, "0")}</span>
           </div>
           <FlagChips value={flight.physics_mode_flags} kind="physics" />
         </Panel>
       </div>
 
       <div className="flight-zone activity-zone">
-        <div className="zone-title"><span>05</span><strong>ACTIVITÉ & CURSEUR</strong></div>
+        <div className="zone-title"><span>05</span><strong>{t("ACTIVITÉ & CURSEUR")}</strong></div>
         <div className="activity-split">
           <Panel definition={activityDefinition} resolved={activityResolved} onInspect={() => onInspect(activityDefinition)}>
             <div className="pulse-counters">
@@ -248,7 +256,7 @@ export function PilotageCockpit({ definitions, snapshot, onInspect }: Props) {
               <Metric label="DEMANDE SECONDAIRE" value={control.fire_secondary_count} />
               <Metric label="DEMANDE CONTRE-MESURE" value={control.fire_countermeasure_count} />
             </div>
-            <small className="semantic-note">Demandes du tick source · pas des tirs confirmés</small>
+            <small className="semantic-note">{t("Demandes du tick source · pas des tirs confirmés")}</small>
           </Panel>
           <Panel definition={cursorDefinition} resolved={cursorResolved} onInspect={() => onInspect(cursorDefinition)}>
             {cursor && <div className="cursor-grid">
@@ -265,9 +273,9 @@ export function PilotageCockpit({ definitions, snapshot, onInspect }: Props) {
         <Panel definition={futureDefinition} resolved={futureResolved} onInspect={() => onInspect(futureDefinition)}>
           <></>
         </Panel>
-        <div className="future-nd-list" aria-label="Données futures non disponibles">
+        <div className="future-nd-list" aria-label={t("Données futures non disponibles")}>
           {["COORDONNÉES HUD", "RÉFÉRENCE GRAVITATIONNELLE", "HORIZON PLANÉTAIRE", "VITESSE DÉSIRÉE", "ACCÉLÉRATION"].map((label) =>
-            <span key={label}><b>ND</b>{label}</span>
+            <span key={label}><b>ND</b>{t(label)}</span>
           )}
         </div>
       </div>

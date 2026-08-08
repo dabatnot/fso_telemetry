@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { formatValue } from "./data";
 import { subsystemViews } from "./integritySemantics";
+import { useI18n } from "./i18n";
 import type { DashboardSnapshot, InspectionTarget } from "./types";
 
 interface Props {
@@ -16,10 +17,11 @@ function RawValues({
   title: string;
   values: Record<string, unknown> | null | undefined;
 }) {
+  const { t } = useI18n();
   if (!values) return null;
   return (
     <div className="detail-values">
-      <h3>{title}</h3>
+      <h3>{t(title)}</h3>
       {Object.entries(values).map(([field, value]) => (
         <div key={field}>
           <span>{field}</span>
@@ -31,6 +33,7 @@ function RawValues({
 }
 
 export function IntegrityInspection({ target, snapshot, onSelect }: Props) {
+  const { t } = useI18n();
   const [filter, setFilter] = useState("");
   useEffect(() => setFilter(""), [target.kind]);
   const systems = useMemo(() => subsystemViews(snapshot), [snapshot]);
@@ -46,13 +49,13 @@ export function IntegrityInspection({ target, snapshot, onSelect }: Props) {
   if (target.kind === "subsystem-list") {
     return (
       <>
-        <span className="eyebrow">INSPECTION EXHAUSTIVE</span>
-        <h2>Sous-systèmes du joueur</h2>
+        <span className="eyebrow">{t("INSPECTION EXHAUSTIVE")}</span>
+        <h2>{t("Sous-systèmes du joueur")}</h2>
         <div className="detail-state state-live">
-          {systems.length} SYSTÈMES · {systems.filter((system) => system.destroyed).length} DÉTRUITS
+          {systems.length} {t("SYSTÈMES")} · {systems.filter((system) => system.destroyed).length} {t("DÉTRUITS")}
         </div>
         <label className="subsystem-filter">
-          <span>FILTRER PAR NOM, TYPE OU ÉTAT</span>
+          <span>{t("FILTRER PAR NOM, TYPE OU ÉTAT")}</span>
           <input
             type="search"
             value={filter}
@@ -71,11 +74,11 @@ export function IntegrityInspection({ target, snapshot, onSelect }: Props) {
                 title: system.name
               })}
             >
-              <span><strong>{system.name}</strong><small>{system.typeLabel}</small></span>
+              <span><strong>{t(system.name)}</strong><small>{t(system.typeLabel)}</small></span>
               <b>{system.ratio === null ? "—" : `${(system.ratio * 100).toFixed(0)}%`}</b>
             </button>
           ))}
-          {!filtered.length ? <p className="detail-empty">AUCUN RÉSULTAT</p> : null}
+          {!filtered.length ? <p className="detail-empty">{t("AUCUN RÉSULTAT")}</p> : null}
         </div>
       </>
     );
@@ -89,10 +92,10 @@ export function IntegrityInspection({ target, snapshot, onSelect }: Props) {
   if (!system) {
     return (
       <>
-        <span className="eyebrow">INSPECTION SOUS-SYSTÈME</span>
-        <h2>{target.title ?? "Sous-système"}</h2>
+        <span className="eyebrow">{t("INSPECTION SOUS-SYSTÈME")}</span>
+        <h2>{target.title ?? t("Sous-système")}</h2>
         <div className="detail-state state-invalid">ERR</div>
-        <p className="detail-empty">Sous-système absent du snapshot courant.</p>
+        <p className="detail-empty">{t("Sous-système absent du snapshot courant.")}</p>
       </>
     );
   }
@@ -118,27 +121,27 @@ export function IntegrityInspection({ target, snapshot, onSelect }: Props) {
           kind: target.definition.id === "weapon-turrets" ? "turret-list" : "subsystem-list"
         })}
       >
-        ← LISTE COMPLÈTE
+        ← {t("LISTE COMPLÈTE")}
       </button>
-      <span className="eyebrow">INSPECTION SOUS-SYSTÈME</span>
-      <h2>{system.name}</h2>
+      <span className="eyebrow">{t("INSPECTION SOUS-SYSTÈME")}</span>
+      <h2>{t(system.name)}</h2>
       <div className={`detail-state state-${state}`}>{state.toUpperCase()}</div>
       <dl>
-        <dt>Type</dt><dd>{system.typeLabel}</dd>
-        <dt>Entité</dt><dd>{system.entityId}</dd>
-        <dt>ID sous-système</dt><dd>{system.subsystemId}</dd>
-        <dt>Index canonique</dt><dd>{formatValue(system.record.canonical_index)}</dd>
-        <dt>Intégrité</dt><dd>{system.ratio === null ? "— sans réserve de HP" : `${(system.ratio * 100).toFixed(1)} %`}</dd>
+        <dt>{t("Type")}</dt><dd>{t(system.typeLabel)}</dd>
+        <dt>{t("Entité")}</dt><dd>{system.entityId}</dd>
+        <dt>{t("ID sous-système")}</dt><dd>{system.subsystemId}</dd>
+        <dt>{t("Index canonique")}</dt><dd>{formatValue(system.record.canonical_index)}</dd>
+        <dt>{t("Intégrité")}</dt><dd>{system.ratio === null ? `— ${t("sans réserve de HP")}` : `${(system.ratio * 100).toFixed(1)} %`}</dd>
         <dt>HP</dt><dd>{formatValue(system.record.current_hits)} / {formatValue(system.record.max_hits)}</dd>
-        <dt>HP manquants</dt><dd>{formatValue(snapshot?.derived[`${derivedPrefix}.missing_hits`]?.value)}</dd>
-        <dt>Détruit</dt><dd>{system.destroyed ? "OUI" : "NON"}</dd>
-        <dt>États</dt><dd>{system.flags.join(", ") || "aucun"}</dd>
-        <dt>Armure</dt><dd>{system.record.armor_id === undefined ? "—" : `ID ${system.record.armor_id}`}</dd>
-        <dt>Perturbation</dt><dd>{system.record.perturbation_remaining_us === undefined ? "—" : `${formatValue(system.record.perturbation_remaining_us)} µs`}</dd>
-        <dt>Cooldown tourelle</dt><dd>{turret?.cooldown_remaining_us === undefined ? "—" : `${formatValue(turret.cooldown_remaining_us)} µs`}</dd>
-        <dt>Échantillon</dt><dd>{formatValue(system.record.producer_sample_time_us)}</dd>
-        <dt>Âge estimé</dt><dd>{quality?.ageUs === null || quality?.ageUs === undefined ? "—" : `${quality.ageUs} µs`}</dd>
-        <dt>Cadence</dt><dd>{quality?.observedHz === null || quality?.observedHz === undefined ? "—" : `${quality.observedHz.toFixed(2)} Hz`}</dd>
+        <dt>{t("HP manquants")}</dt><dd>{formatValue(snapshot?.derived[`${derivedPrefix}.missing_hits`]?.value)}</dd>
+        <dt>{t("Détruit")}</dt><dd>{t(system.destroyed ? "OUI" : "NON")}</dd>
+        <dt>{t("États")}</dt><dd>{system.flags.map(t).join(", ") || t("aucun")}</dd>
+        <dt>{t("Armure")}</dt><dd>{system.record.armor_id === undefined ? "—" : `ID ${system.record.armor_id}`}</dd>
+        <dt>{t("Perturbation")}</dt><dd>{system.record.perturbation_remaining_us === undefined ? "—" : `${formatValue(system.record.perturbation_remaining_us)} µs`}</dd>
+        <dt>{t("Cooldown tourelle")}</dt><dd>{turret?.cooldown_remaining_us === undefined ? "—" : `${formatValue(turret.cooldown_remaining_us)} µs`}</dd>
+        <dt>{t("Échantillon")}</dt><dd>{formatValue(system.record.producer_sample_time_us)}</dd>
+        <dt>{t("Âge estimé")}</dt><dd>{quality?.ageUs === null || quality?.ageUs === undefined ? "—" : `${quality.ageUs} µs`}</dd>
+        <dt>{t("Cadence")}</dt><dd>{quality?.observedHz === null || quality?.observedHz === undefined ? "—" : `${quality.observedHz.toFixed(2)} Hz`}</dd>
       </dl>
       <RawValues title="Valeurs brutes" values={system.record} />
       <RawValues title="Définition de classe" values={system.definition} />

@@ -11,6 +11,7 @@ import {
   shieldQuadrantLabel,
   subsystemViews
 } from "./integritySemantics";
+import { useI18n } from "./i18n";
 import type {
   DashboardSnapshot,
   InspectionTarget,
@@ -57,19 +58,20 @@ function Panel({
   className?: string;
   children: ReactNode;
 }) {
+  const { t } = useI18n();
   const unavailable = resolved.state !== "live" && resolved.state !== "stale";
   return (
     <section className={`integrity-panel state-${resolved.state} ${className}`}>
       <header>
-        <button onClick={onInspect} aria-label={`Inspecter ${definition.label}`}>
-          {definition.label}
+        <button onClick={onInspect} aria-label={`${t("Inspecter")} ${t(definition.label)}`}>
+          {t(definition.label)}
         </button>
-        <i>{STATE_LABELS[resolved.state]}</i>
+        <i>{t(STATE_LABELS[resolved.state])}</i>
       </header>
       <div className="integrity-panel-body">
         {unavailable ? (
           <div className="integrity-unavailable">
-            <strong>{STATE_LABELS[resolved.state]}</strong><span>{resolved.reason}</span>
+            <strong>{t(STATE_LABELS[resolved.state])}</strong><span>{t(resolved.reason ?? "")}</span>
           </div>
         ) : children}
       </div>
@@ -78,22 +80,24 @@ function Panel({
 }
 
 function Metric({ label, value, unit }: { label: string; value: unknown; unit?: string }) {
+  const { t } = useI18n();
   const available = value !== undefined && value !== null;
   return (
     <div className="integrity-metric">
-      <span>{label}</span>
-      <strong>{available ? formatValue(value) : "—"}</strong>
+      <span>{t(label)}</span>
+      <strong>{available ? t(formatValue(value)) : "—"}</strong>
       {available && unit ? <small>{unit}</small> : null}
     </div>
   );
 }
 
 function Chips({ values, empty }: { values: string[] | null; empty: string }) {
+  const { t } = useI18n();
   if (values === null) return <span className="inline-error">ERR</span>;
-  if (!values.length) return <span className="integrity-chip neutral">{empty}</span>;
+  if (!values.length) return <span className="integrity-chip neutral">{t(empty)}</span>;
   return (
     <div className="integrity-chips">
-      {values.map((value) => <span className="integrity-chip" key={value}>{value}</span>)}
+      {values.map((value) => <span className="integrity-chip" key={value}>{t(value)}</span>)}
     </div>
   );
 }
@@ -107,6 +111,7 @@ function IntegrityCore({
   damage: Record<string, unknown>;
   shield: Record<string, unknown>;
 }) {
+  const { t } = useI18n();
   const hullRatio = derived(snapshot, "hull_ratio")?.value;
   const shieldRatio = derived(snapshot, "shield_ratio")?.value;
   const segmentRatios = derived(snapshot, "shield_segment_ratios")?.value;
@@ -171,7 +176,7 @@ function IntegrityCore({
             <div className="shield-quadrant-labels">
               {quadrantLayout.map((quadrant) => (
                 <span className={`quadrant-${quadrant.label.toLocaleLowerCase("fr")}`} key={quadrant.index}>
-                  <b>{quadrant.label}</b>
+                  <b>{t(quadrant.label)}</b>
                   <strong>{(segments[quadrant.index] * 100).toFixed(0)}%</strong>
                 </span>
               ))}
@@ -180,15 +185,15 @@ function IntegrityCore({
         ) : hasShields ? (
           <div className="shield-layout-error">
             <strong>ERR</strong>
-            <span>{segments.length} segments · configuration non prise en charge</span>
+            <span>{segments.length} {t("segments · configuration non prise en charge")}</span>
           </div>
         ) : (
-          <b className="shield-absent-label">AUCUN<br />BOUCLIER</b>
+          <b className="shield-absent-label">{t("AUCUN")}<br />{t("BOUCLIER")}</b>
         )}
         <div className="hull-core" style={hullStyle}>
           <div>
             <strong>{hull === null ? "—" : `${(hull * 100).toFixed(0)}%`}</strong>
-            <span>COQUE</span>
+            <span>{t("COQUE")}</span>
           </div>
         </div>
       </div>
@@ -201,11 +206,11 @@ function IntegrityCore({
         <Metric label="CHARGE TOTALE" value={shieldTotal === null ? null : shieldTotal * 100} unit="%" />
       </div>
       <div className="weakest-segment">
-        <span>QUADRANT LE PLUS FAIBLE</span>
+        <span>{t("QUADRANT LE PLUS FAIBLE")}</span>
         <strong>
           {weakestIndex === undefined
             ? "—"
-            : shieldQuadrantLabel(weakestIndex)}
+            : t(shieldQuadrantLabel(weakestIndex))}
         </strong>
         <b>
           {typeof derived(snapshot, "shield_weakest_segment_ratio")?.value === "number"
@@ -214,13 +219,14 @@ function IntegrityCore({
         </b>
       </div>
       <span className="segment-count">
-        {hasShields ? `${segments.length} QUADRANTS` : "— AUCUN BOUCLIER"}
+        {hasShields ? `${segments.length} ${t("QUADRANTS")}` : `— ${t("AUCUN BOUCLIER")}`}
       </span>
     </div>
   );
 }
 
 export function IntegrityCockpit({ definitions, snapshot, onInspect }: Props) {
+  const { t } = useI18n();
   const definition = (id: string) => definitionById(definitions, id);
   const resolved = (id: string) => resolveInstrument(definition(id), snapshot);
   const damage = playerRecord(snapshot, "DAMAGE_STATE") ?? {};
@@ -235,17 +241,17 @@ export function IntegrityCockpit({ definitions, snapshot, onInspect }: Props) {
   const futureDefinition = definition("integrity-future");
 
   return (
-    <section className="integrity-cockpit" aria-label="Cockpit d’intégrité">
+    <section className="integrity-cockpit" aria-label={t("Cockpit d’intégrité")}>
       <div className="integrity-zone integrity-protection-zone">
-        <div className="zone-title"><span>01</span><strong>PROTECTIONS</strong></div>
+        <div className="zone-title"><span>01</span><strong>{t("PROTECTIONS")}</strong></div>
         <Panel
           definition={protectionDefinition}
           resolved={resolved("integrity-protection")}
           onInspect={() => onInspect({ definition: protectionDefinition })}
         >
           <div className="lifecycle-strip">
-            <span>ÉTAT VAISSEAU</span>
-            <strong>{derived(snapshot, "lifecycle_label")?.value?.toString() ?? "—"}</strong>
+            <span>{t("ÉTAT VAISSEAU")}</span>
+            <strong>{t(derived(snapshot, "lifecycle_label")?.value?.toString() ?? "—")}</strong>
           </div>
           <Chips
             values={decodeFlags(damage.protection_flags, PROTECTION_FLAGS)}
@@ -269,7 +275,7 @@ export function IntegrityCockpit({ definitions, snapshot, onInspect }: Props) {
       </div>
 
       <div className="integrity-zone integrity-core-zone">
-        <div className="zone-title"><span>02</span><strong>STRUCTURE & BOUCLIERS</strong></div>
+        <div className="zone-title"><span>02</span><strong>{t("STRUCTURE & BOUCLIERS")}</strong></div>
         <Panel
           definition={coreDefinition}
           resolved={resolved("integrity-core")}
@@ -281,14 +287,14 @@ export function IntegrityCockpit({ definitions, snapshot, onInspect }: Props) {
       </div>
 
       <div className="integrity-zone integrity-recovery-zone">
-        <div className="zone-title"><span>03</span><strong>RÉCUPÉRATION</strong></div>
+        <div className="zone-title"><span>03</span><strong>{t("RÉCUPÉRATION")}</strong></div>
         <Panel
           definition={recoveryDefinition}
           resolved={resolved("integrity-recovery")}
           onInspect={() => onInspect({ definition: recoveryDefinition })}
         >
           {!shield.has_shields ? (
-            <div className="integrity-not-applicable"><strong>—</strong><span>aucun bouclier</span></div>
+            <div className="integrity-not-applicable"><strong>—</strong><span>{t("aucun bouclier")}</span></div>
           ) : (
             <div className="recovery-grid">
               <Metric label="DÉFICIT" value={derived(snapshot, "shield_deficit")?.value} unit="HP" />
@@ -302,21 +308,21 @@ export function IntegrityCockpit({ definitions, snapshot, onInspect }: Props) {
               />
             </div>
           )}
-          <p className="estimate-note">ESTIMATION AU TAUX INSTANTANÉ COURANT</p>
+          <p className="estimate-note">{t("ESTIMATION AU TAUX INSTANTANÉ COURANT")}</p>
         </Panel>
       </div>
 
       <div className="integrity-zone integrity-subsystems-zone">
-        <div className="zone-title"><span>04</span><strong>SOUS-SYSTÈMES</strong></div>
+        <div className="zone-title"><span>04</span><strong>{t("SOUS-SYSTÈMES")}</strong></div>
         <Panel
           definition={systemsDefinition}
           resolved={resolved("integrity-subsystems")}
           onInspect={() => onInspect({ definition: systemsDefinition, kind: "subsystem-list" })}
         >
           <div className="subsystem-summary">
-            <span>{systems.length} TOTAL</span>
-            <span>{systems.filter((system) => system.destroyed).length} DÉTRUITS</span>
-            <span>{systems.filter((system) => system.alert).length} ALERTES</span>
+            <span>{systems.length} {t("TOTAL")}</span>
+            <span>{systems.filter((system) => system.destroyed).length} {t("DÉTRUITS")}</span>
+            <span>{systems.filter((system) => system.alert).length} {t("ALERTES")}</span>
           </div>
           <div className="subsystem-matrix">
             {visibleSystems.map((system) => (
@@ -329,23 +335,23 @@ export function IntegrityCockpit({ definitions, snapshot, onInspect }: Props) {
                   record: system.record,
                   title: system.name
                 })}
-                aria-label={`Inspecter ${system.name}`}
+                aria-label={`${t("Inspecter")} ${system.name}`}
               >
-                <span><b>{system.name}</b><small>{system.typeLabel}</small></span>
+                <span><b>{t(system.name)}</b><small>{t(system.typeLabel)}</small></span>
                 <i>
                   {system.ratio === null ? "—" : `${(system.ratio * 100).toFixed(0)}%`}
                 </i>
                 <em><u style={{ width: `${(system.ratio ?? 0) * 100}%` }} /></em>
                 <strong>
                   {system.destroyed
-                    ? "DÉTRUIT"
+                    ? t("DÉTRUIT")
                     : system.flags.includes("PERTURBÉ")
-                      ? "PERTURBÉ"
+                      ? t("PERTURBÉ")
                       : system.flags.includes("MOUVEMENT VERROUILLÉ")
-                        ? "MVT VERROUILLÉ"
+                        ? t("MVT VERROUILLÉ")
                         : system.cooldownUs !== null
                           ? `CD ${formatValue(system.cooldownUs)} µs`
-                          : "NOMINAL"}
+                          : t("NOMINAL")}
                 </strong>
               </button>
             ))}
@@ -355,10 +361,10 @@ export function IntegrityCockpit({ definitions, snapshot, onInspect }: Props) {
               className="subsystem-more"
               onClick={() => onInspect({ definition: systemsDefinition, kind: "subsystem-list" })}
             >
-              + {systems.length - 12} AUTRES · OUVRIR LA LISTE COMPLÈTE
+              + {systems.length - 12} {t("AUTRES · OUVRIR LA LISTE COMPLÈTE")}
             </button>
           ) : null}
-          {!systems.length ? <div className="integrity-not-applicable">— aucun sous-système</div> : null}
+          {!systems.length ? <div className="integrity-not-applicable">— {t("aucun sous-système")}</div> : null}
         </Panel>
       </div>
 
@@ -368,14 +374,14 @@ export function IntegrityCockpit({ definitions, snapshot, onInspect }: Props) {
           resolved={resolved("integrity-future")}
           onInspect={() => onInspect({ definition: futureDefinition })}
         ><span /></Panel>
-        <div className="integrity-future-list" aria-label="Données d’intégrité futures non disponibles">
+        <div className="integrity-future-list" aria-label={t("Données d’intégrité futures non disponibles")}>
           {[
             "DIRECTION / POSITION IMPACT",
             "DERNIÈRE SOURCE",
             "DERNIÈRE ARME",
             "DÉGÂTS CUMULÉS",
             "CONTRIBUTEURS"
-          ].map((label) => <span key={label}><b>ND</b>{label}</span>)}
+          ].map((label) => <span key={label}><b>ND</b>{t(label)}</span>)}
         </div>
       </div>
     </section>

@@ -6,6 +6,7 @@ import {
   forwardComponent,
   playerClassManifest
 } from "./energySemantics";
+import { useI18n } from "./i18n";
 import type { DashboardSnapshot, InstrumentDefinition, InstrumentValue } from "./types";
 
 interface Props {
@@ -46,18 +47,19 @@ function Panel({
   className?: string;
   children: ReactNode;
 }) {
+  const { t } = useI18n();
   const unavailable = resolved.state !== "live" && resolved.state !== "stale";
   return (
     <button
       className={`energy-panel state-${resolved.state} ${className}`}
       onClick={onInspect}
-      aria-label={`${definition.label}: ${STATE_LABELS[resolved.state]}`}
+      aria-label={`${t(definition.label)}: ${t(STATE_LABELS[resolved.state])}`}
     >
-      <header><span>{definition.label}</span><i>{STATE_LABELS[resolved.state]}</i></header>
+      <header><span>{t(definition.label)}</span><i>{t(STATE_LABELS[resolved.state])}</i></header>
       <div className="energy-panel-body">
         {unavailable ? (
           <div className="energy-unavailable">
-            <strong>{STATE_LABELS[resolved.state]}</strong><span>{resolved.reason}</span>
+            <strong>{t(STATE_LABELS[resolved.state])}</strong><span>{t(resolved.reason ?? "")}</span>
           </div>
         ) : children}
       </div>
@@ -66,11 +68,12 @@ function Panel({
 }
 
 function Metric({ label, value, unit }: { label: string; value: unknown; unit?: string }) {
+  const { t } = useI18n();
   const available = value !== undefined && value !== null;
   return (
     <div className="energy-metric">
-      <span>{label}</span><strong>{available ? formatValue(value) : "—"}</strong>
-      {unit && available && <small>{unit}</small>}
+      <span>{t(label)}</span><strong>{available ? t(formatValue(value)) : "—"}</strong>
+      {unit && available && <small>{t(unit)}</small>}
     </div>
   );
 }
@@ -88,6 +91,7 @@ function ResourceGauge({
   maximum: unknown;
   unit: string;
 }) {
+  const { t } = useI18n();
   const numeric = typeof ratio === "number"
     ? ratio
     : typeof ratio === "string" && ratio.trim()
@@ -99,23 +103,24 @@ function ResourceGauge({
   return (
     <div className={`resource-gauge ${available ? "" : "resource-unavailable"}`} style={style}>
       <div className="resource-arc">
-        <div><strong>{available ? `${(normalized * 100).toFixed(0)}%` : "—"}</strong><span>{label}</span></div>
+        <div><strong>{available ? `${(normalized * 100).toFixed(0)}%` : "—"}</strong><span>{t(label)}</span></div>
       </div>
       <div className="resource-values">
-        <span>ACTUEL <b>{current === undefined ? "—" : formatValue(current)}</b></span>
+        <span>{t("ACTUEL")} <b>{current === undefined ? "—" : formatValue(current)}</b></span>
         <span>MAX <b>{maximum === undefined ? "—" : formatValue(maximum)}</b></span>
-        <small>{unit}</small>
+        <small>{t(unit)}</small>
       </div>
     </div>
   );
 }
 
 function EtsBar({ label, value }: { label: string; value: unknown }) {
+  const { t } = useI18n();
   const numeric = Number(value);
   const index = Number.isInteger(numeric) ? Math.max(0, Math.min(12, numeric)) : null;
   return (
     <div className="ets-column">
-      <span>{label}</span>
+      <span>{t(label)}</span>
       <div className="ets-segments">
         {Array.from({ length: 12 }, (_, position) => (
           <i className={index !== null && position < index ? "active" : ""} key={position} />
@@ -127,10 +132,11 @@ function EtsBar({ label, value }: { label: string; value: unknown }) {
 }
 
 function FlagChips({ value }: { value: unknown }) {
+  const { t } = useI18n();
   const flags = decodePropulsionFlags(value);
   if (flags === null) return <span className="inline-error">ERR</span>;
-  if (!flags.length) return <span className="flag-chip neutral">AUCUN MODE ACTIF</span>;
-  return <div className="flag-chips">{flags.map((flag) => <span className="flag-chip" key={flag}>{flag}</span>)}</div>;
+  if (!flags.length) return <span className="flag-chip neutral">{t("AUCUN MODE ACTIF")}</span>;
+  return <div className="flag-chips">{flags.map((flag) => <span className="flag-chip" key={flag}>{t(flag)}</span>)}</div>;
 }
 
 function findDefinition(definitions: InstrumentDefinition[], id: string): InstrumentDefinition {
@@ -140,6 +146,7 @@ function findDefinition(definitions: InstrumentDefinition[], id: string): Instru
 }
 
 export function EnergyCockpit({ definitions, snapshot, onInspect }: Props) {
+  const { t } = useI18n();
   const definition = (id: string) => findDefinition(definitions, id);
   const resolved = (id: string) => resolveInstrument(definition(id), snapshot);
   const energy = playerRecord(snapshot, "ENERGY_STATE");
@@ -157,12 +164,12 @@ export function EnergyCockpit({ definitions, snapshot, onInspect }: Props) {
   const readiness = value("afterburner_readiness");
 
   return (
-    <section className="energy-cockpit" aria-label="Cockpit propulsion et énergie">
+    <section className="energy-cockpit" aria-label={t("Cockpit propulsion et énergie")}>
       <div className="energy-zone energy-ets-zone">
-        <div className="zone-title"><span>01</span><strong>GESTION ETS</strong></div>
+        <div className="zone-title"><span>01</span><strong>{t("GESTION ETS")}</strong></div>
         <Panel definition={etsDefinition} resolved={resolved("energy-ets")} onInspect={() => onInspect(etsDefinition)}>
           <div className="ets-header">
-            <span>MODE ETS</span><strong>{etsModeLabel(energy.ets_mode)}</strong>
+            <span>{t("MODE ETS")}</span><strong>{t(etsModeLabel(energy.ets_mode))}</strong>
           </div>
           <div className="ets-bank">
             <EtsBar label="BOUCLIERS" value={energy.ets_shields_index} />
@@ -179,7 +186,7 @@ export function EnergyCockpit({ definitions, snapshot, onInspect }: Props) {
       </div>
 
       <div className="energy-zone energy-resources-zone">
-        <div className="zone-title"><span>02</span><strong>RESSOURCES</strong></div>
+        <div className="zone-title"><span>02</span><strong>{t("RESSOURCES")}</strong></div>
         <Panel
           definition={resourcesDefinition}
           resolved={resolved("energy-resources")}
@@ -204,14 +211,14 @@ export function EnergyCockpit({ definitions, snapshot, onInspect }: Props) {
           </div>
           <div className="readiness-strip">
             <span>AFTERBURNER</span>
-            <strong>{readiness === undefined ? "—" : formatValue(readiness)}</strong>
+            <strong>{readiness === undefined ? "—" : t(formatValue(readiness))}</strong>
             <Metric label="PRÊT DANS" value={value("afterburner_ready_delay_s")} unit="s" />
           </div>
         </Panel>
       </div>
 
       <div className="energy-zone energy-propulsion-zone">
-        <div className="zone-title"><span>03</span><strong>PROPULSION</strong></div>
+        <div className="zone-title"><span>03</span><strong>{t("PROPULSION")}</strong></div>
         <Panel
           definition={propulsionDefinition}
           resolved={resolved("energy-propulsion")}
@@ -238,7 +245,7 @@ export function EnergyCockpit({ definitions, snapshot, onInspect }: Props) {
       </div>
 
       <div className="energy-zone energy-engine-zone">
-        <div className="zone-title"><span>04</span><strong>MOTEURS</strong></div>
+        <div className="zone-title"><span>04</span><strong>{t("MOTEURS")}</strong></div>
         <Panel definition={engineDefinition} resolved={resolved("energy-engine")} onInspect={() => onInspect(engineDefinition)}>
           <div className="engine-overview">
             <ResourceGauge
@@ -280,7 +287,7 @@ export function EnergyCockpit({ definitions, snapshot, onInspect }: Props) {
         <Panel definition={futureDefinition} resolved={resolved("energy-future")} onInspect={() => onInspect(futureDefinition)}>
           <></>
         </Panel>
-        <div className="energy-future-list" aria-label="Données énergétiques futures non disponibles">
+        <div className="energy-future-list" aria-label={t("Données énergétiques futures non disponibles")}>
           {[
             "PUISSANCE MOTEUR DYNAMIQUE",
             "VITESSE MAX DISPONIBLE",
@@ -288,7 +295,7 @@ export function EnergyCockpit({ definitions, snapshot, onInspect }: Props) {
             "POUSSÉE EFFECTIVE",
             "CHARGES INSTANTANÉES",
             "RCS"
-          ].map((label) => <span key={label}><b>ND</b>{label}</span>)}
+          ].map((label) => <span key={label}><b>ND</b>{t(label)}</span>)}
         </div>
       </div>
     </section>
