@@ -1439,13 +1439,13 @@ def decode_record_payload(
         visibility = reader.u8()
         position = vec3(reader)
         velocity = vec3(reader)
-        radar_local_position = vec3(reader) if record_version == 2 else None
+        radar_local_position = vec3(reader) if record_version >= 2 else None
         radar_projection_distance = (
-            reader.f32() if record_version == 2 else None
+            reader.f32() if record_version >= 2 else None
         )
         radius = reader.f32()
         flags = reader.u32()
-        require(entity and contact and presence & ~0x003F == 0 and object_type <= 8 and category <= 7 and visibility <= 2, 34, "RADAR_CONTACTS invariant")
+        require(entity and contact and presence & ~0x007F == 0 and object_type <= 8 and category <= 7 and visibility <= 2, 34, "RADAR_CONTACTS invariant")
         result = {
             "category": category,
             "contact_entity_id": u64s(contact),
@@ -1459,7 +1459,7 @@ def decode_record_payload(
             "velocity_world": velocity,
             "visibility": visibility,
         }
-        if record_version == 2:
+        if record_version >= 2:
             result["radar_local_position"] = radar_local_position
             result["radar_projection_distance"] = radar_projection_distance
         if presence & 0x0001:
@@ -1476,6 +1476,13 @@ def decode_record_payload(
             result["last_detection_time_us"] = u64s(reader.u64())
         if presence & 0x0020:
             result["confidence"] = reader.f32()
+        if presence & 0x0040:
+            require(record_version == 3, 37, "RADAR_CONTACTS v3 HUD label")
+            require(object_type == 1 and visibility == 1, 37,
+                    "RADAR_CONTACTS HUD label visibility")
+            label = reader.utf8(255)
+            require(bool(label), 34, "RADAR_CONTACTS empty HUD label")
+            result["hud_type_label"] = label
         return result
 
     if record_type in (19, 20, 21, 22, 23, 24):
@@ -1869,8 +1876,8 @@ def decode_record(
     require(record_type != 0, 34, "RecordType zero")
     require(record_type in RECORD_NAMES, 26, "unknown required record")
     phase3_v2 = record_type in (16, 18) and version == 2
-    phase3_target_v3 = record_type == 16 and version == 3
-    require(version == 1 or phase3_v2 or phase3_target_v3, 27, "unsupported record version")
+    phase3_v3 = record_type in (16, 18) and version == 3
+    require(version == 1 or phase3_v2 or phase3_v3, 27, "unsupported record version")
     require(length == reader.remaining, 28, "record_length mismatch")
     if container == "event" or (container == "standalone" and record_type in (27, 28)):
         require(record_type in (27, 28), 36, "state record in event batch")

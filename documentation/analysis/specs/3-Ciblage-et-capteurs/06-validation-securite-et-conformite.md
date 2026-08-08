@@ -23,7 +23,8 @@ comportement produit.
 Les contrôles courts vérifient :
 
 - gel byte-identical FSTL 1.0 et 1.1 ;
-- absence de nouveau record, champ, bit ou enum ;
+- conservation byte-identique des layouts historiques et sélection explicite
+  du nouveau champ/bit uniquement par `RADAR_CONTACTS` v3 ;
 - masque exact `0x07CB` ;
 - matrice complète des records ;
 - acceptation de tous les vecteurs existants ;
@@ -82,7 +83,9 @@ Les tests ciblés vérifient :
 - capteurs offline/degraded/online ;
 - AWACS, EMP et état de piste `VISIBLE`/`DISTORTED` ;
 - contact create/replace/delete ;
-- projection radar v2 devant, droite, haut, gauche/bas et presque derrière ;
+- identité HUD exacte d'un vaisseau visible, nom masqué, type alternatif et
+  absence d'identité pour une piste distordue ;
+- projection radar v2/v3 devant, droite, haut, gauche/bas et presque derrière ;
 - orientation d'œil distincte de l'orientation brute et changement de pose
   entre deux ticks sans mélange avec `FLIGHT_STATE` ;
 - contact hors portée absent du collecteur ;

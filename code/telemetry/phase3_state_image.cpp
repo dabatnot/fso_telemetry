@@ -19,7 +19,7 @@ using protocol::StateAtom;
 constexpr std::size_t LockPayloadCapacity = 4096U;
 constexpr std::size_t TargetPayloadCapacity = 704U;
 constexpr std::size_t RadarPayloadCapacity = 128U;
-constexpr std::size_t ContactPayloadCapacity = 384U;
+constexpr std::size_t ContactPayloadCapacity = 704U;
 constexpr std::size_t ThreatPayloadCapacity = 32768U;
 constexpr std::size_t CargoPayloadCapacity = 608U;
 constexpr std::size_t NavigationPayloadCapacity = 512U * 1024U;
@@ -280,7 +280,8 @@ bool make_contact(const Phase3Projection& source,
 	constexpr std::uint64_t RevealedIdentityFlags =
 		protocol::RadarContactsPresenceFlagRevealedName |
 		protocol::RadarContactsPresenceFlagRevealedClass |
-		protocol::RadarContactsPresenceFlagRevealedTeamIff;
+		protocol::RadarContactsPresenceFlagRevealedTeamIff |
+		protocol::RadarContactsPresenceFlagHudTypeLabel;
 	// A distorted track is an authorized sensor observation, not an identity
 	// disclosure.  Keep this check at the serialization boundary as well as in
 	// the engine collector so an invalid intermediate projection cannot reveal
@@ -321,11 +322,14 @@ bool make_contact(const Phase3Projection& source,
 			(!writer.write_u64(contact.first_detection_time_us) ||
 			 !writer.write_u64(contact.last_detection_time_us))) ||
 		((contact.presence & protocol::RadarContactsPresenceFlagConfidence) != 0U &&
-			!writer.write_f32(contact.confidence)))
+			!writer.write_f32(contact.confidence)) ||
+		((contact.presence & protocol::RadarContactsPresenceFlagHudTypeLabel) != 0U &&
+			!writer.write_utf8({contact.hud_type_label.bytes.data(),
+				contact.hud_type_label.size}, 255U)))
 		return false;
 	if (!set_contact_key(atom, source.player_entity_id, contact.entity_id))
 		return false;
-	atom.record_version = 2U;
+	atom.record_version = 3U;
 	return assign_payload(writer, atom) && validate_encoded(atom);
 }
 

@@ -21,6 +21,7 @@
 #include "autopilot/autopilot.h"
 #include "globalincs/systemvars.h"
 #include "hud/hudconfig.h"
+#include "iff_defs/iff_defs.h"
 #include "object/object.h"
 #include "playerman/player.h"
 #include "ship/ship.h"
@@ -606,6 +607,11 @@ struct Phase3EngineGlobalsScope final {
 		list_init(&obj_used_list);
 		list_init(&Missile_obj_list);
 		Player_ship->clear();
+		if (Iff_info.empty()) {
+			Iff_info.emplace_back();
+			added_test_iff = true;
+		}
+		Player_ship->team = 0;
 		list_init(&Player_ship->subsys_list);
 		Player_ship->weapons.clear();
 		Player_ship->objnum = ObjectIndex;
@@ -636,6 +642,7 @@ struct Phase3EngineGlobalsScope final {
 		Missile_obj_list.prev = prior_missile_list_prev;
 		std::copy(prior_navs.begin(), prior_navs.end(), std::begin(Navs));
 		Waypoint_lists = std::move(prior_waypoint_lists);
+		if (added_test_iff) Iff_info.clear();
 	}
 
 	::player local_player{};
@@ -654,6 +661,7 @@ struct Phase3EngineGlobalsScope final {
 	missile_obj* prior_missile_list_prev = nullptr;
 	std::array<NavPoint, MAX_NAVPOINTS> prior_navs{};
 	SCP_vector<waypoint_list> prior_waypoint_lists;
+	bool added_test_iff = false;
 };
 
 std::uint64_t phase3_sample_time(const protocol::StateImage& image,
@@ -1491,6 +1499,8 @@ TEST(TelemetryPhase3Visibility,
 		detail::collect_phase3_engine_projection(
 			{64U, 1U, phase2.get(), &binding, 1U, nullptr, true, false},
 			identities, *output, *scratch));
+	list_remove(&obj_used_list, &target);
+	target.clear();
 	EXPECT_EQ(0U, output->target.current_target_entity_id);
 	EXPECT_EQ(0U, output->target.presence);
 	EXPECT_EQ(1U, identities.identity_count())
@@ -1530,6 +1540,8 @@ TEST(TelemetryPhase3Targeting,
 		detail::collect_phase3_engine_projection(
 			{64U, 1U, phase2.get(), &binding, 1U, nullptr, true, false},
 			identities, *output, *scratch));
+	list_remove(&obj_used_list, &target);
+	target.clear();
 	EXPECT_EQ(0U, output->target.current_target_entity_id);
 	EXPECT_EQ(0U, output->target.presence);
 	EXPECT_EQ(1U, identities.identity_count());
@@ -1565,6 +1577,8 @@ TEST(TelemetryPhase3Targeting,
 	target_ship.objnum = TargetObjectIndex;
 	target_ship.team = Player_ship->team;
 	target_ship.ship_info_index = static_cast<int>(ship_info_count);
+	std::strncpy(target_ship.ship_name, "Alpha 2",
+		sizeof(target_ship.ship_name) - 1U);
 	list_append(&obj_used_list, &target);
 	Player_ai->target_objnum = TargetObjectIndex;
 	Player_ai->target_signature = target.signature;
@@ -1656,6 +1670,13 @@ TEST(TelemetryPhase3Targeting,
 		output->contacts[0].radar_local_position[2]);
 	EXPECT_FLOAT_EQ(100.0F,
 		output->contacts[0].radar_projection_distance);
+	EXPECT_EQ("Alpha 2", std::string(output->contacts[0].revealed_name.bytes.data(),
+		output->contacts[0].revealed_name.size));
+	EXPECT_EQ("GTF Myrmidon",
+		std::string(output->contacts[0].hud_type_label.bytes.data(),
+			output->contacts[0].hud_type_label.size));
+	EXPECT_EQ(0U, output->contacts[0].revealed_class_id)
+		<< "The HUD label must not expand CLASS_MANIFEST.";
 	ASSERT_EQ(1U, moved_output->contact_count);
 	EXPECT_FLOAT_EQ(75.0F,
 		moved_output->contacts[0].radar_local_position[2]);

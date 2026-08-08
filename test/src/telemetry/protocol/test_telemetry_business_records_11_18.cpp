@@ -608,4 +608,49 @@ TEST(TelemetryProtocolBusinessRecords11To18,
 			VersionMinorV1_1, metadata));
 }
 
+TEST(TelemetryProtocolBusinessRecords11To18,
+	RadarContactsV3HudTypeLabelIsExplicitAndVisibleShipOnly)
+{
+	auto payload = radar_contact(
+		RadarContactsPresenceFlagHudTypeLabel, 3U,
+		static_cast<std::uint8_t>(ObjectType::Ship));
+	payload[34U] = static_cast<std::uint8_t>(RadarVisibility::Visible);
+	const auto insertion = payload.begin() + 59;
+	std::vector<std::uint8_t> projection;
+	vec3(projection, 10.0F, -20.0F, 30.0F);
+	f32(projection, 40.0F);
+	payload.insert(insertion, projection.begin(), projection.end());
+	string(payload, "GTF Myrmidon");
+	BusinessRecordMetadata metadata;
+	EXPECT_EQ(ValidationError::None,
+		validate_business_record(record(RecordType::RadarContacts,
+			payload, 3U), BusinessRecordContainer::FullSnapshot,
+			VersionMinorV1_1, metadata));
+	EXPECT_EQ(ValidationError::InvalidStateTransition,
+		validate_business_record(record(RecordType::RadarContacts,
+			payload, 2U), BusinessRecordContainer::FullSnapshot,
+			VersionMinorV1_1, metadata));
+
+	auto distorted = payload;
+	distorted[34U] = static_cast<std::uint8_t>(RadarVisibility::Distorted);
+	EXPECT_EQ(ValidationError::InvalidStateTransition,
+		validate_business_record(record(RecordType::RadarContacts,
+			distorted, 3U), BusinessRecordContainer::FullSnapshot,
+			VersionMinorV1_1, metadata));
+	auto weapon = payload;
+	weapon[32U] = static_cast<std::uint8_t>(ObjectType::Weapon);
+	EXPECT_EQ(ValidationError::InvalidStateTransition,
+		validate_business_record(record(RecordType::RadarContacts,
+			weapon, 3U), BusinessRecordContainer::FullSnapshot,
+			VersionMinorV1_1, metadata));
+
+	auto empty = payload;
+	empty.resize(empty.size() - std::strlen("GTF Myrmidon") - 2U);
+	string(empty, "");
+	EXPECT_EQ(ValidationError::OutOfRange,
+		validate_business_record(record(RecordType::RadarContacts,
+			empty, 3U), BusinessRecordContainer::FullSnapshot,
+			VersionMinorV1_1, metadata));
+}
+
 } // namespace

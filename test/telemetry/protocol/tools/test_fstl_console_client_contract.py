@@ -1245,7 +1245,7 @@ class FstlConsoleClientContractTest(unittest.TestCase):
                     "radar_local_position": [0.0, 0.0, 500.0],
                     "radar_projection_distance": 500.0,
                 },
-                version=2,
+                version=3,
             ),
             "TARGET_STATE/entity_id=1": record(
                 "TARGET_STATE",

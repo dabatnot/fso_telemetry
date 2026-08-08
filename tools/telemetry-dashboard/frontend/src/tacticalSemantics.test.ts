@@ -203,7 +203,34 @@ describe("tactical display semantics", () => {
   it("does not leak an unrevealed identity from SHIP_IDENTITY", () => {
     const view = contactViews(snapshot()).find((contact) => contact.id === "101");
     expect(view?.name).toBe("CONTACT 101");
+    expect(view?.typeLabel).toBeNull();
     expect(targetDisplayName(snapshot())).toBe("CONTACT 101");
+  });
+
+  it("uses the authoritative v3 HUD type label without manifest fallback", () => {
+    const value = snapshot();
+    const contact = value.records.RADAR_CONTACTS[0];
+    contact.revealed_name = "Alpha 2";
+    contact.revealed_class_id = 3;
+    contact.hud_type_label = "GTF Ulysses (alt)";
+    value.recordInstances["RADAR_CONTACTS/entity_id=1/contact_entity_id=101"] = {
+      recordName: "RADAR_CONTACTS",
+      recordVersion: 3,
+      fields: contact
+    };
+    expect(contactViews(value).find((item) => item.id === "101")).toMatchObject({
+      name: "Alpha 2",
+      typeLabel: "GTF Ulysses (alt)"
+    });
+    delete contact.hud_type_label;
+    expect(contactViews(value).find((item) => item.id === "101")?.typeLabel).toBeNull();
+  });
+
+  it("resolves the class manifest only for legacy radar captures", () => {
+    const value = snapshot();
+    value.records.RADAR_CONTACTS[0].revealed_class_id = 3;
+    expect(contactViews(value).find((item) => item.id === "101")?.typeLabel)
+      .toBe("GTF Myrmidon");
   });
 
   it("resolves a revealed target class from the CLASS_MANIFEST internal name", () => {
@@ -310,6 +337,7 @@ describe("tactical catalog coverage", () => {
       "RADAR_STATE.jamming_intensity",
       "RADAR_STATE.last_contact_time_us",
       "RADAR_CONTACTS.confidence",
+      "RADAR_CONTACTS.hud_type_label",
       "THREAT_STATE.threat_level",
       "THREAT_STATE.incoming_missiles[].orientation_local_to_world"
     ]) expect(covered.has(field), field).toBe(true);

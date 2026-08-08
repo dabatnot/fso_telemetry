@@ -3640,6 +3640,17 @@ def build_fstl_v1_1_schema() -> dict[str, object]:
     })
     values.sort(key=lambda item: int(item["value"]))
 
+    radar_contact_presence = registries["RadarContactsPresence"]
+    radar_contact_presence["reserved"]["known_mask"] = 0x7F
+    radar_contact_presence["reserved"]["reserved_mask"] = 0xFFFFFFFFFFFFFF80
+    radar_contact_presence["values"].append({
+        "bit": 6,
+        "name": "HUD_TYPE_LABEL",
+        "value": 0x40,
+        "source": {"document": p3_doc04_path, "section": "8.2"},
+    })
+    radar_contact_presence["values"].sort(key=lambda item: int(item["value"]))
+
     records = schema.get("record_types")
     if not isinstance(records, list):
         raise SchemaError("base schema record registry is missing")
@@ -3678,6 +3689,19 @@ def build_fstl_v1_1_schema() -> dict[str, object]:
     ]
     for index, field in enumerate(radar_v2_fields, start=1):
         field["position"] = str(index)
+    radar_v3_fields = json.loads(json.dumps(radar_v2_fields))
+    radar_v3_fields.append({
+        "constraint": "UTF-8 1..255 octets; vaisseau VISIBLE uniquement",
+        "name": "hud_type_label",
+        "nature": "A",
+        "position": str(len(radar_v3_fields) + 1),
+        "presence_condition": {"bits": [6], "selector": "presence"},
+        "semantics": (
+            "bit 6; exact second line rendered by the FSO Target Box; "
+            "independent from CLASS_MANIFEST"
+        ),
+        "wire": "str<255>",
+    })
     radar_contacts["versions"] = [
         {"version": 1, "compatibility": "frozen FSTL 1.0 layout",
          "fields": radar_v1_fields},
@@ -3685,8 +3709,12 @@ def build_fstl_v1_1_schema() -> dict[str, object]:
          "required_profile": "CockpitSensors",
          "compatibility": "explicit; no v1/v2 payload autodetection",
          "fields": radar_v2_fields},
+        {"version": 3, "minimum_minor": 1,
+         "required_profile": "CockpitSensors",
+         "compatibility": "explicit; v1/v2 byte-identical; no payload autodetection",
+         "fields": radar_v3_fields},
     ]
-    radar_contacts["phase3_live_record_version"] = 2
+    radar_contacts["phase3_live_record_version"] = 3
 
     target_presence = registries["TargetStatePresence"]
     target_presence["reserved"]["known_mask"] = 0xFFFF
@@ -3746,7 +3774,7 @@ def build_fstl_v1_1_schema() -> dict[str, object]:
     correspondence = schema.get("cpp_correspondence")
     if not isinstance(correspondence, dict):
         raise SchemaError("base schema C++ correspondence is missing")
-    correspondence["verified_constant_count"] = 179
+    correspondence["verified_constant_count"] = 180
     correspondence["verified_enum_count"] = 135
 
     validate_schema_shape(schema)

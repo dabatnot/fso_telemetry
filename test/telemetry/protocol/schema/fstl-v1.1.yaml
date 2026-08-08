@@ -379,7 +379,7 @@
     "header": "code/telemetry/protocol/telemetry_protocol_constants.h",
     "unbound_registries": [],
     "verified_bool_constant_count": 2,
-    "verified_constant_count": 179,
+    "verified_constant_count": 180,
     "verified_enum_count": 135,
     "verified_symbol_alias_count": 1
   },
@@ -6290,9 +6290,9 @@
         "Top-level presence bitmap for RecordType 18"
       ],
       "reserved": {
-        "known_mask": 63,
+        "known_mask": 127,
         "policy": "reject_nonzero",
-        "reserved_mask": 18446744073709551552
+        "reserved_mask": 18446744073709551488
       },
       "source": {
         "document": "documentation/analysis/specs/0-Contrat-de-protocole/04-modele-de-donnees-v1.md",
@@ -6329,6 +6329,15 @@
           "bit": 5,
           "name": "CONFIDENCE",
           "value": 32
+        },
+        {
+          "bit": 6,
+          "name": "HUD_TYPE_LABEL",
+          "source": {
+            "document": "documentation/analysis/specs/3-Ciblage-et-capteurs/04-modele-de-donnees-et-regles-metier.md",
+            "section": "8.2"
+          },
+          "value": 64
         }
       ],
       "width_bits": 64
@@ -16806,7 +16815,7 @@
       "layout_name": "RADAR_CONTACTS",
       "name": "RADAR_CONTACTS",
       "nested_types": [],
-      "phase3_live_record_version": 2,
+      "phase3_live_record_version": 3,
       "position_kind": "order",
       "scope": "contact d'un observateur",
       "version": 1,
@@ -17240,6 +17249,244 @@
           "minimum_minor": 1,
           "required_profile": "CockpitSensors",
           "version": 2
+        },
+        {
+          "compatibility": "explicit; v1/v2 byte-identical; no payload autodetection",
+          "fields": [
+            {
+              "constraint": "observateur",
+              "name": "entity_id",
+              "nature": "A",
+              "position": "1",
+              "semantics": "première partie de clé",
+              "wire": "entity_id"
+            },
+            {
+              "constraint": "contact",
+              "name": "contact_entity_id",
+              "nature": "A",
+              "position": "2",
+              "semantics": "seconde partie de clé ; stable dans la session",
+              "wire": "entity_id"
+            },
+            {
+              "constraint": "bits 0–5",
+              "name": "presence",
+              "nature": "A",
+              "position": "3",
+              "semantics": "obligatoire hors DELETE",
+              "wire": "u64"
+            },
+            {
+              "constraint": "monotone",
+              "name": "producer_sample_time_us",
+              "nature": "A",
+              "position": "4",
+              "semantics": "instant d'observation",
+              "wire": "sample_time_us"
+            },
+            {
+              "constraint": "enum fermé",
+              "name": "object_type",
+              "nature": "A",
+              "position": "5",
+              "semantics": "type révélé au niveau autorisé",
+              "wire": "ObjectType"
+            },
+            {
+              "constraint": "enum fermé",
+              "name": "category",
+              "nature": "A",
+              "position": "6",
+              "semantics": "catégorie radar",
+              "wire": "RadarCategory"
+            },
+            {
+              "constraint": "enum fermé",
+              "name": "visibility",
+              "nature": "A",
+              "position": "7",
+              "semantics": "état de piste, conservé même en TrustedFullState",
+              "wire": "RadarVisibility"
+            },
+            {
+              "constraint": "position bornée",
+              "name": "position_world",
+              "nature": "A",
+              "position": "8",
+              "semantics": "observation capteur en Cockpit, vérité courante possible en TrustedFullState",
+              "wire": "vec3f"
+            },
+            {
+              "constraint": "vitesse bornée",
+              "name": "velocity_world",
+              "nature": "A",
+              "position": "9",
+              "semantics": "même sémantique d'observation",
+              "wire": "vec3f"
+            },
+            {
+              "constraint": "position locale bornée",
+              "name": "radar_local_position",
+              "nature": "A",
+              "position": "10",
+              "semantics": "contact dans le repère du radar standard capturé au même tick que radar_project_contact",
+              "wire": "vec3f"
+            },
+            {
+              "constraint": "[0;1,0e12] wu",
+              "name": "radar_projection_distance",
+              "nature": "A",
+              "position": "11",
+              "semantics": "RadarContactProjection.distance du même tick",
+              "wire": "float32"
+            },
+            {
+              "constraint": "[0;1,0e9] wu",
+              "name": "radius",
+              "nature": "A",
+              "position": "12",
+              "semantics": "rayon révélé",
+              "wire": "float32"
+            },
+            {
+              "constraint": "bits connus",
+              "name": "contact_flags",
+              "nature": "A",
+              "position": "13",
+              "semantics": "bright, cible, stealth, bombe, menace, etc.",
+              "wire": "ContactFlags"
+            },
+            {
+              "constraint": "[0;1,0e9]",
+              "name": "icon_size",
+              "nature": "A",
+              "position": "14",
+              "presence_condition": {
+                "bits": [
+                  0
+                ],
+                "selector": "presence"
+              },
+              "semantics": "bit 0, taille logique et non pixels HUD",
+              "wire": "float32"
+            },
+            {
+              "constraint": "0–255",
+              "name": "revealed_name",
+              "nature": "A",
+              "position": "15",
+              "presence_condition": {
+                "bits": [
+                  1
+                ],
+                "selector": "presence"
+              },
+              "semantics": "bit 1",
+              "wire": "str<255>"
+            },
+            {
+              "constraint": "non nul",
+              "name": "revealed_class_id",
+              "nature": "A",
+              "position": "16",
+              "presence_condition": {
+                "bits": [
+                  2
+                ],
+                "selector": "presence"
+              },
+              "semantics": "bit 2, classe vaisseau ou arme selon type",
+              "wire": "u32"
+            },
+            {
+              "constraint": "[0;65535]",
+              "name": "revealed_team_id",
+              "nature": "A",
+              "position": "17",
+              "presence_condition": {
+                "bits": [
+                  3
+                ],
+                "selector": "presence"
+              },
+              "semantics": "bit 3",
+              "wire": "u32"
+            },
+            {
+              "constraint": "[0;65535]",
+              "name": "revealed_iff_id",
+              "nature": "A",
+              "position": "18",
+              "presence_condition": {
+                "bits": [
+                  3
+                ],
+                "selector": "presence"
+              },
+              "semantics": "bit 3",
+              "wire": "u32"
+            },
+            {
+              "constraint": "<= sample",
+              "name": "first_detected_time_us",
+              "nature": "A",
+              "position": "19",
+              "presence_condition": {
+                "bits": [
+                  4
+                ],
+                "selector": "presence"
+              },
+              "semantics": "bit 4",
+              "wire": "sample_time_us"
+            },
+            {
+              "constraint": "<= sample",
+              "name": "last_detected_time_us",
+              "nature": "A",
+              "position": "20",
+              "presence_condition": {
+                "bits": [
+                  4
+                ],
+                "selector": "presence"
+              },
+              "semantics": "bit 4",
+              "wire": "sample_time_us"
+            },
+            {
+              "constraint": "[0;1]",
+              "name": "confidence",
+              "nature": "A",
+              "position": "21",
+              "presence_condition": {
+                "bits": [
+                  5
+                ],
+                "selector": "presence"
+              },
+              "semantics": "bit 5",
+              "wire": "float32"
+            },
+            {
+              "constraint": "UTF-8 1..255 octets; vaisseau VISIBLE uniquement",
+              "name": "hud_type_label",
+              "nature": "A",
+              "position": "22",
+              "presence_condition": {
+                "bits": [
+                  6
+                ],
+                "selector": "presence"
+              },
+              "semantics": "bit 6; exact second line rendered by the FSO Target Box; independent from CLASS_MANIFEST",
+              "wire": "str<255>"
+            }
+          ],
+          "minimum_minor": 1,
+          "required_profile": "CockpitSensors",
+          "version": 3
         }
       ]
     },

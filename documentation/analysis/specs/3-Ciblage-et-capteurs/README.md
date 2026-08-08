@@ -23,7 +23,8 @@ Pendant une mission solo en mode `Cockpit`, un client conforme :
   ou distordu, sans révéler un objet caché ;
 - reproduit la position des blips du radar standard depuis la position locale
   du contact et la distance de projection capturées atomiquement dans chaque
-  `RADAR_CONTACTS` v2 ;
+  `RADAR_CONTACTS` v2/v3, et affiche en v3 l'identité HUD exacte des vaisseaux
+  `VISIBLE` sans la déduire du manifeste ;
 - expose l’état capteurs, AWACS et EMP, tandis que chaque piste porte son état
   `VISIBLE` ou `DISTORTED` ;
 - reconstruit les missiles entrants et le niveau de menace dans les bornes

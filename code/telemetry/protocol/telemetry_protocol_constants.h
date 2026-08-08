@@ -985,9 +985,10 @@ enum RadarContactsPresenceFlag : std::uint64_t {
 	RadarContactsPresenceFlagRevealedTeamIff = 0x0000000000000008ULL,
 	RadarContactsPresenceFlagDetectionTimes = 0x0000000000000010ULL,
 	RadarContactsPresenceFlagConfidence = 0x0000000000000020ULL,
+	RadarContactsPresenceFlagHudTypeLabel = 0x0000000000000040ULL,
 };
-constexpr std::uint64_t KnownRadarContactsPresenceFlags = 0x000000000000003fULL;
-constexpr std::uint64_t ReservedRadarContactsPresenceFlags = 0xffffffffffffffc0ULL;
+constexpr std::uint64_t KnownRadarContactsPresenceFlags = 0x000000000000007fULL;
+constexpr std::uint64_t ReservedRadarContactsPresenceFlags = 0xffffffffffffff80ULL;
 
 enum ThreatStatePresenceFlag : std::uint64_t {
 	ThreatStatePresenceFlagNone = 0,

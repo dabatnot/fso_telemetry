@@ -1336,7 +1336,7 @@ ValidationError validate_radar_contacts(
 		!vec3(reader, -PositionLimit, PositionLimit) || !vec3(reader, -VelocityLimit, VelocityLimit)) {
 		return reader.error();
 	}
-	if (record_version == 2U) {
+	if (record_version >= 2U) {
 		float projection_distance = 0.0F;
 		if (!vec3(reader, -PositionLimit, PositionLimit) ||
 			!reader.f32(projection_distance, 0.0F, PositionLimit)) {
@@ -1389,6 +1389,15 @@ ValidationError validate_radar_contacts(
 	}
 	if ((presence & RadarContactsPresenceFlagConfidence) != 0 && !reader.f32(value, 0.0F, 1.0F)) {
 		return reader.error();
+	}
+	if ((presence & RadarContactsPresenceFlagHudTypeLabel) != 0) {
+		if (record_version != 3U ||
+			object_type != static_cast<std::uint8_t>(ObjectType::Ship) ||
+			visibility != static_cast<std::uint8_t>(RadarVisibility::Visible)) {
+			return ValidationError::InvalidStateTransition;
+		}
+		std::string_view label;
+		if (!reader.string(1U, 255U, label)) return reader.error();
 	}
 	return reader.finish();
 }

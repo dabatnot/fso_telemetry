@@ -335,7 +335,12 @@ function RadarScope({
             >
               <span>{contact.name}</span>
               <strong>{contact.invalid ? "ERR" : formatNumber(contact.distance)}</strong>
-              <small>{contact.category} · {contact.visibility}</small>
+              {contact.typeLabel && (
+                <small className="contact-type">{contact.typeLabel}</small>
+              )}
+              <small className="contact-status">
+                {contact.category} · {contact.visibility}
+              </small>
             </button>
           ))}
           {!contacts.length && <div className="tactical-empty">AUCUN CONTACT AUTORISÉ</div>}

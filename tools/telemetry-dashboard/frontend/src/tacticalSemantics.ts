@@ -62,6 +62,7 @@ export interface ContactView {
   id: string;
   record: Record<string, unknown>;
   name: string;
+  typeLabel: string | null;
   category: string;
   visibility: string;
   visibilityCode: number;
@@ -200,6 +201,41 @@ function revealedContactName(record: Record<string, unknown>): string {
   return revealed || `CONTACT ${String(record.contact_entity_id)}`;
 }
 
+function radarContactRecordVersion(
+  snapshot: DashboardSnapshot | null,
+  contactId: string
+): number | null {
+  const player = String(snapshot?.playerEntityId ?? "");
+  for (const envelope of Object.values(snapshot?.recordInstances ?? {})) {
+    if (envelope.recordName === "RADAR_CONTACTS" &&
+        String(envelope.fields.entity_id ?? "") === player &&
+        String(envelope.fields.contact_entity_id ?? "") === contactId) {
+      return typeof envelope.recordVersion === "number" &&
+        Number.isInteger(envelope.recordVersion)
+        ? envelope.recordVersion
+        : null;
+    }
+  }
+  return null;
+}
+
+function contactTypeLabel(
+  snapshot: DashboardSnapshot | null,
+  record: Record<string, unknown>,
+  contactId: string
+): string | null {
+  const recordVersion = radarContactRecordVersion(snapshot, contactId);
+  const authoritative = typeof record.hud_type_label === "string"
+    ? record.hud_type_label.trim()
+    : "";
+  if (recordVersion === 3) return authoritative || null;
+  const definition = manifestRecord(
+    snapshot, "CLASS_MANIFEST", "class_id", record.revealed_class_id
+  );
+  const legacy = definition?.internal_name;
+  return typeof legacy === "string" && legacy.trim() ? legacy.trim() : null;
+}
+
 export function contactViews(snapshot: DashboardSnapshot | null): ContactView[] {
   const player = String(snapshot?.playerEntityId ?? "");
   const locks = lockState(snapshot)?.locks;
@@ -229,6 +265,7 @@ export function contactViews(snapshot: DashboardSnapshot | null): ContactView[] 
       id,
       record,
       name: revealedContactName(record),
+      typeLabel: contactTypeLabel(snapshot, record, id),
       category: categoryCode === null ? "ERR" : RADAR_CATEGORIES[categoryCode] ?? "ERR",
       visibility: visibilityCode === null ? "ERR" : RADAR_VISIBILITY[visibilityCode] ?? "ERR",
       visibilityCode: visibilityCode ?? -1,

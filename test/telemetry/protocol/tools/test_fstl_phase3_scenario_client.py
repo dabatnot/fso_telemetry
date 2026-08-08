@@ -56,6 +56,23 @@ def radar_contact(
 
 
 class FstlPhase3ScenarioClientTest(unittest.TestCase):
+    def test_radar_contact_v3_decodes_exact_hud_identity(self) -> None:
+        fixed = struct.pack(
+            "<QQQQBBB3f3f3fffI",
+            1, 101, 0x42, 1_000_000,
+            1, 1, 1,
+            0.0, 0.0, 500.0,
+            0.0, 0.0, -25.0,
+            0.0, 0.0, 500.0,
+            500.0, 10.0, 0,
+        )
+        payload = fixed + utf8("Alpha 2") + utf8("GTF Myrmidon")
+        decoded = reference.decode_record(encoded_record(18, payload, version=3))
+        self.assertEqual("Alpha 2", decoded["fields"]["revealed_name"])
+        self.assertEqual("GTF Myrmidon", decoded["fields"]["hud_type_label"])
+        with self.assertRaises(reference.DecodeFailure):
+            reference.decode_record(encoded_record(18, payload, version=2))
+
     def test_track_geometry_is_derived_from_raw_contact_and_flight_atoms(self) -> None:
         state = client.ConsoleState()
         state._apply_records([

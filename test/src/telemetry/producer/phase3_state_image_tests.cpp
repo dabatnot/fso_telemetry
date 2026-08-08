@@ -6,6 +6,7 @@
 #include <cstring>
 #include <limits>
 #include <memory>
+#include <string>
 #include <string_view>
 #include <type_traits>
 #include <vector>
@@ -300,8 +301,10 @@ TEST(TelemetryPhase3StateImage,
 	contact.object_type = telemetry::protocol::ObjectType::Ship;
 	contact.visibility = telemetry::protocol::RadarVisibility::Distorted;
 	contact.presence =
-		telemetry::protocol::RadarContactsPresenceFlagRevealedName;
+		telemetry::protocol::RadarContactsPresenceFlagRevealedName |
+		telemetry::protocol::RadarContactsPresenceFlagHudTypeLabel;
 	ASSERT_TRUE(contact.revealed_name.assign("Hidden", 6U));
+	ASSERT_TRUE(contact.hud_type_label.assign("GTF Hidden", 10U));
 
 	telemetry::protocol::StateImage image;
 	EXPECT_EQ(telemetry::Phase3StateImageBuildStatus::EncodingFailed,
@@ -715,7 +718,7 @@ TEST(TelemetryPhase3StateImage, CanonicalizesNegativeZeroBeforePublication)
 			base, *projection, image));
 	const auto* encoded = find(image, RecordType::RadarContacts);
 	ASSERT_NE(nullptr, encoded);
-	EXPECT_EQ(2U, encoded->record_version);
+	EXPECT_EQ(3U, encoded->record_version);
 	ASSERT_GE(encoded->value.size(), 79U);
 	EXPECT_FLOAT_EQ(10.0F, read_f32(encoded->value, 59U));
 	EXPECT_FLOAT_EQ(-20.0F, read_f32(encoded->value, 63U));
@@ -725,7 +728,46 @@ TEST(TelemetryPhase3StateImage, CanonicalizesNegativeZeroBeforePublication)
 }
 
 TEST(TelemetryPhase3StateImage,
-	PublishesExactHudTargetReadoutInExplicitVersionTwo)
+	PublishesVisibleShipHudIdentityInExplicitRadarVersionThree)
+{
+	constexpr std::uint64_t Player = 42U;
+	auto base = make_base(Player);
+	auto projection = std::make_unique<telemetry::Phase3Projection>();
+	projection->player_entity_id = Player;
+	set_sample_times(*projection);
+	projection->contact_count = 1U;
+	auto& contact = projection->contacts[0];
+	contact.producer_sample_time_us = 64U;
+	contact.entity_id = 100U;
+	contact.object_type = telemetry::protocol::ObjectType::Ship;
+	contact.category = static_cast<std::uint8_t>(
+		telemetry::protocol::RadarCategory::Ship);
+	contact.visibility = telemetry::protocol::RadarVisibility::Visible;
+	contact.radar_projection_distance = 1.0F;
+	contact.presence =
+		telemetry::protocol::RadarContactsPresenceFlagRevealedName |
+		telemetry::protocol::RadarContactsPresenceFlagHudTypeLabel;
+	ASSERT_TRUE(contact.revealed_name.assign("Alpha 2", 7U));
+	ASSERT_TRUE(contact.hud_type_label.assign("GTF Myrmidon", 12U));
+
+	telemetry::protocol::StateImage image;
+	ASSERT_EQ(telemetry::Phase3StateImageBuildStatus::Created,
+		telemetry::build_phase3_cockpit_sensor_state_image(
+			base, *projection, image));
+	const auto* encoded = find(image, RecordType::RadarContacts);
+	ASSERT_NE(nullptr, encoded);
+	EXPECT_EQ(3U, encoded->record_version);
+	ASSERT_GE(encoded->value.size(), 106U);
+	EXPECT_EQ(7U, read_u16(encoded->value, 83U));
+	EXPECT_EQ("Alpha 2", std::string(encoded->value.begin() + 85U,
+		encoded->value.begin() + 92U));
+	EXPECT_EQ(12U, read_u16(encoded->value, 92U));
+	EXPECT_EQ("GTF Myrmidon", std::string(encoded->value.begin() + 94U,
+		encoded->value.begin() + 106U));
+}
+
+TEST(TelemetryPhase3StateImage,
+	PublishesExactHudTargetReadoutInExplicitVersionThree)
 {
 	constexpr std::uint64_t Player = 42U;
 	auto base = make_base(Player);
@@ -748,7 +790,7 @@ TEST(TelemetryPhase3StateImage,
 			base, *projection, image));
 	const auto* target = find(image, RecordType::TargetState);
 	ASSERT_NE(nullptr, target);
-	EXPECT_EQ(2U, target->record_version);
+	EXPECT_EQ(3U, target->record_version);
 	EXPECT_EQ(published_count, image.records().size());
 	EXPECT_FLOAT_EQ(500.0F, read_f32(target->value, 32U));
 	EXPECT_FLOAT_EQ(92.0F, read_f32(target->value, 36U));

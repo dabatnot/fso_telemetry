@@ -201,7 +201,7 @@ ValidationError validate_business_record(const RecordEnvelopeView& record,
 		(candidate.type == RecordType::RadarContacts ||
 		 candidate.type == RecordType::TargetState) &&
 		(record.record_version == 2U ||
-		 (candidate.type == RecordType::TargetState && record.record_version == 3U)) &&
+		 record.record_version == 3U) &&
 		protocol_minor >= VersionMinorV1_1;
 	if (record.record_version != 1U && !phase3_v2_or_v3) {
 		return ValidationError::UnsupportedRecordVersion;

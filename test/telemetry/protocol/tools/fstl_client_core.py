@@ -441,7 +441,7 @@ class DashboardProjection:
         "atan2(track_relative_position_local.y,hypot(x,z))": (
             "p3.dashboard.track-local-elevation.v1",
             ["derived:p3.dashboard.track-relative-position-local.v1"]),
-        "radar-v2: normalize(local.x,local.y) * acos(local.z/projection_distance)/pi": (
+        "radar-v2/v3: normalize(local.x,local.y) * acos(local.z/projection_distance)/pi": (
             "p3.dashboard.track-scope-position.v2",
             ["wire:RADAR_CONTACTS.radar_local_position",
              "wire:RADAR_CONTACTS.radar_projection_distance"]),
@@ -457,7 +457,7 @@ class DashboardProjection:
             "p3.dashboard.track-scope-in-range.v1",
             ["derived:p3.dashboard.track-distance.v1",
              "wire:RADAR_STATE.selected_range"]),
-        "RADAR_CONTACTS v2 publication is authoritative": (
+        "RADAR_CONTACTS v2/v3 publication is authoritative": (
             "p3.dashboard.track-scope-published.v2",
             ["wire:RADAR_CONTACTS"]),
         "directional radar projection (already bounded to the scope disk)": (
@@ -1335,7 +1335,7 @@ class DashboardProjection:
                 contact.get("radar_projection_distance")
             )
             authoritative_radar_projection = (
-                contact_record_version == 2
+                contact_record_version >= 2
                 and radar_local is not None
                 and radar_distance is not None
                 and radar_distance >= 0.0
@@ -1376,7 +1376,7 @@ class DashboardProjection:
                 )
             scope_in_range = (
                 True
-                if contact_record_version == 2
+                if contact_record_version >= 2
                 else (
                     distance <= selected_range
                     if distance is not None and selected_range is not None
@@ -1429,9 +1429,9 @@ class DashboardProjection:
             )
             self._add_derived(
                 f"{prefix}.scope_position",
-                ("radar-v2: normalize(local.x,local.y) * "
+                ("radar-v2/v3: normalize(local.x,local.y) * "
                  "acos(local.z/projection_distance)/pi"
-                 if contact_record_version == 2
+                 if contact_record_version >= 2
                  else ("radar-v1-compat: normalize(local.x,local.y) * "
                        "acos(local.z/distance)/pi")),
                 {
@@ -1439,7 +1439,7 @@ class DashboardProjection:
                     "reason": (
                         None if scope_position is not None
                         else "missing-authoritative-radar-projection"
-                        if contact_record_version == 2
+                        if contact_record_version >= 2
                         else "missing-legacy-local-pose-or-nonzero-distance"
                     ),
                     "value": scope_position,
@@ -1459,8 +1459,8 @@ class DashboardProjection:
             )
             self._add_derived(
                 f"{prefix}.scope_in_range",
-                ("RADAR_CONTACTS v2 publication is authoritative"
-                 if contact_record_version == 2
+                ("RADAR_CONTACTS v2/v3 publication is authoritative"
+                 if contact_record_version >= 2
                  else "track_distance<=selected_range"),
                 {
                     "available": scope_in_range is not None,

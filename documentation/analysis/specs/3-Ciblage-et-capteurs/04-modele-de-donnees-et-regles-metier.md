@@ -208,8 +208,7 @@ maximale finie prévue par FSTL, jamais un infini IEEE.
 
 ### 8.0 Version filaire
 
-Le layout v1 reste gelé. Le profil live `CockpitSensors` émet la version 2,
-identifiée par `record_version=2`, uniquement sous FSTL 1.1. La version 2 insère
+Les layouts v1/v2 restent gelés. La version 2 insère
 après `velocity_world` :
 
 - `radar_local_position:vec3f`, calculé exactement comme le radar standard :
@@ -219,8 +218,12 @@ après `velocity_world` :
   `RadarContactProjection.distance`.
 
 Les deux valeurs sont capturées dans le même appel de collecte et le même tick
-que `radar_project_contact()`. Un décodeur choisit le layout par
-`record_version`, jamais par longueur. Un record v2 sous FSTL 1.0 est rejeté.
+que `radar_project_contact()`. La version 3 conserve ce préfixe byte-identique
+et ajoute en fin de payload le groupe `HUD_TYPE_LABEL`, bit de présence `0x40`,
+encodé par `hud_type_label:str<255>`. Le profil live `CockpitSensors` émet
+explicitement `record_version=3` sous FSTL 1.1. Un décodeur choisit le layout
+par `record_version`, jamais par longueur. Les records v2/v3 sous FSTL 1.0 sont
+rejetés.
 
 ### 8.1 Ensemble exact
 
@@ -240,8 +243,13 @@ cockpit ; un objet jamais détecté est absent.
 - la position locale radar et la distance de projection sont autoritaires,
   finies, capturées atomiquement et obligatoires en v2 ;
 - `radius`, flags et taille logique suivent la décision radar ;
-- `REVEALED_NAME`, `REVEALED_CLASS` et `REVEALED_TEAM_IFF` sont indépendants
-  et absents tant que non autorisés ;
+- pour un vaisseau `VISIBLE` en v3, `REVEALED_NAME` contient la première ligne
+  affichable du Target Box lorsqu'elle n'est pas masquée, et `HUD_TYPE_LABEL`
+  contient son libellé de classe exact, type alternatif et traduction inclus ;
+- `REVEALED_CLASS` reste indépendant et n'est présent que si son ID appartient
+  déjà au manifeste installé ; le libellé HUD ne force aucun manifeste ;
+- les groupes d'identité sont absents pour `DISTORTED`, `NOT_VISIBLE` et les
+  objets non-vaisseaux, hors groupes historiques explicitement autorisés ;
 - temps de détection et confiance sont présents seulement si l’autorité les
   fournit.
 

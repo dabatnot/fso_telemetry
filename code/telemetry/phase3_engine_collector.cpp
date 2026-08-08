@@ -1,11 +1,15 @@
 #include "telemetry/phase3_engine_collector.h"
 
 #include "ai/ai.h"
+#include "asteroid/asteroid.h"
 #include "autopilot/autopilot.h"
+#include "debris/debris.h"
 #include "globalincs/systemvars.h"
 #include "hud/hudconfig.h"
 #include "hud/hudparse.h"
 #include "hud/hudtarget.h"
+#include "iff_defs/iff_defs.h"
+#include "jumpnode/jumpnode.h"
 #include "mod_table/mod_table.h"
 #include "object/object.h"
 #include "object/objectdock.h"
@@ -151,10 +155,30 @@ object* current_player_target() noexcept
 	// Target selection is mutable gameplay state.  A stale index/signature pair
 	// is not an invalid telemetry session: it merely means that TARGET_STATE has
 	// no coherent current target at this sample time.
-	return valid_live_object(&target) &&
-		target.signature == Player_ai->target_signature
-		? &target
-		: nullptr;
+	if (target.signature != Player_ai->target_signature ||
+		!valid_live_object(&target)) {
+		return nullptr;
+	}
+	const auto object_index = Player_ai->target_objnum;
+	switch (target.type) {
+	case OBJ_SHIP:
+		return target.instance >= 0 && target.instance < MAX_SHIPS &&
+			Ships[target.instance].objnum == object_index ? &target : nullptr;
+	case OBJ_WEAPON:
+		return target.instance >= 0 && target.instance < MAX_WEAPONS &&
+			Weapons[target.instance].objnum == object_index ? &target : nullptr;
+	case OBJ_DEBRIS:
+		return target.instance >= 0 &&
+			static_cast<std::size_t>(target.instance) < Debris.size() &&
+			Debris[target.instance].objnum == object_index ? &target : nullptr;
+	case OBJ_ASTEROID:
+		return target.instance >= 0 && target.instance < MAX_ASTEROIDS &&
+			Asteroids[target.instance].objnum == object_index ? &target : nullptr;
+	case OBJ_JUMP_NODE:
+		return jumpnode_get_by_objnum(object_index) != nullptr ? &target : nullptr;
+	default:
+		return nullptr;
+	}
 }
 
 std::uint32_t installed_weapon_class_id(
@@ -205,6 +229,48 @@ const Phase2ClassRecord* installed_ship_class(
 		matched = &candidate;
 	}
 	return matched;
+}
+
+bool capture_hud_ship_text(const ship& source,
+	Phase3OwnedString<255U>& display_name,
+	Phase3OwnedString<255U>& type_label) noexcept
+{
+	// The object list may expose a ship for one frame while its dependent HUD
+	// tables are still being installed (spawn/despawn transitions). The native
+	// HUD only reaches these helpers once those indices are valid; telemetry
+	// observes the list independently and must omit decoration instead of
+	// dereferencing an incomplete reference and terminating the capture.
+	if (source.ship_info_index < 0 ||
+		static_cast<std::size_t>(source.ship_info_index) >= Ship_info.size() ||
+		source.team < 0 ||
+		static_cast<std::size_t>(source.team) >= Iff_info.size() ||
+		source.objnum < 0 || source.objnum >= MAX_OBJECTS) {
+		return false;
+	}
+	char hud_name[NAME_LENGTH * 2 + 3]{};
+	char hud_class[NAME_LENGTH]{};
+	char hud_callsign[NAME_LENGTH]{};
+	hud_stuff_ship_name(hud_name, &source);
+	hud_stuff_ship_class(hud_class, &source);
+	hud_stuff_ship_callsign(hud_callsign, &source);
+	auto name_size = std::strlen(hud_name);
+	const auto callsign_size = std::strlen(hud_callsign);
+	if (callsign_size != 0U) {
+		if (name_size == 0U) {
+			std::memcpy(hud_name, hud_callsign, callsign_size + 1U);
+			name_size = callsign_size;
+		} else if (name_size + callsign_size + 3U < sizeof(hud_name)) {
+			hud_name[name_size++] = ' ';
+			hud_name[name_size++] = '(';
+			std::memcpy(hud_name + name_size, hud_callsign, callsign_size);
+			name_size += callsign_size;
+			hud_name[name_size++] = ')';
+			hud_name[name_size] = '\0';
+		}
+	}
+	const auto class_size = std::strlen(hud_class);
+	return (name_size == 0U || display_name.assign(hud_name, name_size)) &&
+		(class_size == 0U || type_label.assign(hud_class, class_size));
 }
 
 std::uint32_t installed_hull_primary_bank_id(
@@ -569,44 +635,21 @@ Phase3EngineCollectStatus collect_target_and_locks(
 				// HudGaugeTargetBox::renderTargetShipInfo().  Target selection is
 				// its own HUD disclosure and does not require a radar contact or a
 				// CLASS_MANIFEST entry merely to reproduce visible text.
-				char hud_name[NAME_LENGTH * 2 + 3]{};
-				char hud_class[NAME_LENGTH]{};
-				char hud_callsign[NAME_LENGTH]{};
-				hud_stuff_ship_name(hud_name, &target_ship);
-				hud_stuff_ship_class(hud_class, &target_ship);
-				hud_stuff_ship_callsign(hud_callsign, &target_ship);
-				auto name_size = std::strlen(hud_name);
-				const auto callsign_size = std::strlen(hud_callsign);
-				if (callsign_size != 0U) {
-					if (name_size == 0U) {
-						std::memcpy(hud_name, hud_callsign, callsign_size + 1U);
-						name_size = callsign_size;
-					} else if (name_size + callsign_size + 3U < sizeof(hud_name)) {
-						hud_name[name_size++] = ' ';
-						hud_name[name_size++] = '(';
-						std::memcpy(hud_name + name_size, hud_callsign, callsign_size);
-						name_size += callsign_size;
-						hud_name[name_size++] = ')';
-						hud_name[name_size] = '\0';
+				if (capture_hud_ship_text(target_ship,
+						output.target.revealed_name,
+						output.target.hud_type_label) &&
+					output.target.hud_type_label.size != 0U) {
+					output.target.presence |=
+						protocol::TargetStatePresenceFlagRevealedIdentity |
+						protocol::TargetStatePresenceFlagHudTypeLabel;
+					output.target.revealed_object_type = object_type(target.type);
+					if (installed != nullptr) {
+						output.target.revealed_class_id =
+							installed->class_id;
+						output.target.revealed_iff_id = installed->iff_id;
 					}
+					output.target.revealed_team_id = 0U;
 				}
-				const auto class_size = std::strlen(hud_class);
-				if (name_size == 0U || class_size == 0U ||
-					!output.target.revealed_name.assign(hud_name, name_size) ||
-					!output.target.hud_type_label.assign(hud_class, class_size)) {
-					return Phase3EngineCollectStatus::
-						SourceLimitExceeded;
-				}
-				output.target.presence |=
-					protocol::TargetStatePresenceFlagRevealedIdentity |
-					protocol::TargetStatePresenceFlagHudTypeLabel;
-				output.target.revealed_object_type = object_type(target.type);
-				if (installed != nullptr) {
-					output.target.revealed_class_id =
-						installed->class_id;
-					output.target.revealed_iff_id = installed->iff_id;
-				}
-				output.target.revealed_team_id = 0U;
 			} else {
 				const auto* label = target_box_type_label(target.type);
 				if (label != nullptr &&
@@ -872,11 +915,36 @@ Phase3EngineCollectStatus collect_radar(
 		if (current_player_target() == source) {
 			contact.flags |= protocol::ContactFlagCurrentTarget;
 		}
-		// A HUD radar blip authorizes a track, not the ship's display name,
-		// class definition, team, or IFF value.  Those identity groups require
-		// their own authoritative targeting disclosure and must never be inferred
-		// from VISIBLE alone.  Keeping them absent also prevents a mere radar
-		// contact from expanding the manifest with a hidden class definition.
+		// A visible ship is targetable by the same cockpit and therefore exposes
+		// exactly the two Target Box strings.  Distorted/remembered tracks and
+		// non-ships stay anonymous.  The text is self-contained display data: it
+		// never expands CLASS_MANIFEST.  A class ID is added only when that class
+		// is already installed for an independent reason.
+		if (contact.object_type == protocol::ObjectType::Ship &&
+			contact.visibility == protocol::RadarVisibility::Visible &&
+			source->instance >= 0 && source->instance < MAX_SHIPS) {
+			Phase3OwnedString<255U> hud_name;
+			Phase3OwnedString<255U> hud_type_label;
+			const auto& source_ship = Ships[source->instance];
+			if (capture_hud_ship_text(source_ship, hud_name, hud_type_label)) {
+				if (hud_name.size != 0U) {
+					contact.revealed_name = hud_name;
+					contact.presence |=
+						protocol::RadarContactsPresenceFlagRevealedName;
+				}
+				if (hud_type_label.size != 0U) {
+					contact.hud_type_label = hud_type_label;
+					contact.presence |=
+						protocol::RadarContactsPresenceFlagHudTypeLabel;
+				}
+				if (const auto* installed = installed_ship_class(
+						installed_manifest, source_ship.ship_info_index)) {
+					contact.revealed_class_id = installed->class_id;
+					contact.presence |=
+						protocol::RadarContactsPresenceFlagRevealedClass;
+				}
+			}
+		}
 	}
 	return Phase3EngineCollectStatus::Collected;
 }
@@ -1325,9 +1393,9 @@ Phase3EngineCollectStatus discover_phase3_catalog_dependencies(
 			}
 		}
 	}
-	// Radar tracks intentionally carry no class identity.  In particular, a
-	// VISIBLE blip is not a manifest dependency: the manifest is limited to
-	// classes referenced by independently revealed target/cargo data below.
+	// Radar HUD labels are self-contained and never create manifest
+	// dependencies. A visible blip may reuse an already-installed class id, but
+	// it must not expand the manifest merely to decorate the radar list.
 	const auto& cargo = observation.player_cargo_scan;
 	if ((cargo.presence & protocol::CargoScanStatePresenceFlagSubsystem) != 0U) {
 		if ((cargo.presence & protocol::CargoScanStatePresenceFlagTarget) != 0U &&

@@ -126,6 +126,9 @@ struct Phase3RadarContact {
 	std::uint64_t first_detection_time_us = 0U;
 	std::uint64_t last_detection_time_us = 0U;
 	float confidence = 0.0F;
+	// Exact second line rendered by HudGaugeTargetBox for a visible ship.
+	// It is display text, not a reference that requires CLASS_MANIFEST.
+	Phase3OwnedString<255U> hud_type_label;
 };
 
 struct Phase3IncomingMissile {

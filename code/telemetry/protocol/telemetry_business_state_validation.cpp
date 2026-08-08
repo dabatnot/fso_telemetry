@@ -356,7 +356,7 @@ ValidationError parse_radar_contact(const StateAtom& atom, RadarContactFacts& fa
 	if (!reader.read_u64(facts.observer_entity_id) || !reader.read_u64(facts.contact_entity_id) ||
 		!reader.read_u64(facts.presence) || !reader.read_u64(sample_time) || !reader.read_u8(object_type) ||
 		!reader.read_u8(ignored_u8) || !reader.read_u8(ignored_u8) ||
-		!reader.skip(atom.record_version == 2U ? 44U : 28U) ||
+		!reader.skip(atom.record_version >= 2U ? 44U : 28U) ||
 		!reader.read_u32(facts.flags)) {
 		return ValidationError::BadRecordLength;
 	}
@@ -382,6 +382,12 @@ ValidationError parse_radar_contact(const StateAtom& atom, RadarContactFacts& fa
 	}
 	if ((facts.presence & RadarContactsPresenceFlagConfidence) != 0U && !reader.skip(4U)) {
 		return ValidationError::BadRecordLength;
+	}
+	if ((facts.presence & RadarContactsPresenceFlagHudTypeLabel) != 0U) {
+		std::string_view ignored_label;
+		if (!reader.read_utf8(255U, ignored_label)) {
+			return ValidationError::BadRecordLength;
+		}
 	}
 	return reader.at_end() ? ValidationError::None : ValidationError::BadRecordLength;
 }
