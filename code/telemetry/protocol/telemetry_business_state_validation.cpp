@@ -351,10 +351,24 @@ ValidationError parse_target(const StateAtom& atom, TargetFacts& facts) noexcept
 		}
 	}
 	if ((facts.presence & TargetStatePresenceFlagHudTargetColor) != 0U) {
-		if (atom.record_version != 4U) {
+		if (atom.record_version < 4U) {
 			return ValidationError::UnsupportedRecordVersion;
 		}
 		if (!reader.skip(4U)) return ValidationError::BadRecordLength;
+	}
+	if ((facts.presence & TargetStatePresenceFlagHudTargetSubsystemLabel) != 0U) {
+		if (atom.record_version < 5U) return ValidationError::UnsupportedRecordVersion;
+		std::string_view ignored_label;
+		if (!reader.read_utf8(255U, ignored_label) || ignored_label.empty()) {
+			return ValidationError::BadRecordLength;
+		}
+	}
+	if ((facts.presence & TargetStatePresenceFlagHudLockSubsystemLabel) != 0U) {
+		if (atom.record_version < 5U) return ValidationError::UnsupportedRecordVersion;
+		std::string_view ignored_label;
+		if (!reader.read_utf8(255U, ignored_label) || ignored_label.empty()) {
+			return ValidationError::BadRecordLength;
+		}
 	}
 	return reader.at_end() ? ValidationError::None : ValidationError::BadRecordLength;
 }
@@ -722,6 +736,14 @@ ValidationError validate_target_references(const StateAtom& atom,
 	TargetFacts facts;
 	if (const auto error = parse_target(atom, facts); error != ValidationError::None) {
 		return error;
+	}
+	constexpr std::uint64_t HudSubsystemLabelFlags =
+		TargetStatePresenceFlagHudTargetSubsystemLabel |
+		TargetStatePresenceFlagHudLockSubsystemLabel;
+	if ((facts.presence & HudSubsystemLabelFlags) != 0U &&
+		((facts.presence & TargetStatePresenceFlagRevealedIdentity) == 0U ||
+		 facts.revealed_object_type != ObjectType::Ship)) {
+		return ValidationError::InvalidAbsence;
 	}
 	const auto validate_if_present = [&](std::uint64_t flag, std::uint64_t entity_id) {
 		return (facts.presence & flag) == 0U ? ValidationError::None :

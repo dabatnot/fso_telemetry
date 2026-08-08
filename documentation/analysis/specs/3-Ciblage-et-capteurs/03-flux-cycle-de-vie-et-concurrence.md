@@ -102,6 +102,14 @@ instance. Si sa signature a disparu ou si le slot a été réutilisé, la cible 
 vide et la piste de remplacement ambiguë est omise pour ce tick. Cette omission
 transitoire ne ferme pas la session et le prochain tick converge normalement.
 
+Une réduction puis une extension de la fermeture Phase 2 ne réinterprète jamais
+ses clés locales comme des signatures. Chaque ligne retenue conserve la carte de
+signatures du dernier échantillon complet accepté ; une entité déjà connue du
+radar, du ciblage ou des menaces apporte son ID public à la fermeture. Le retrait
+d'un support, son remplacement ou l'apparition ultérieure d'un objet complet ne
+peut donc ni aliaser une ancienne piste ni produire un conflit d'identité
+permanent.
+
 ### 5.2 Perte de cible furtive
 
 Lorsque le moteur conserve une dernière observation autorisée :

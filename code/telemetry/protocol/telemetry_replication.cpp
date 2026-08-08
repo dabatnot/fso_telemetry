@@ -48,11 +48,14 @@ std::uint64_t saturating_add(std::uint64_t left, std::uint64_t right) noexcept
 
 bool structurally_valid_atom(const StateAtom& atom, std::size_t& encoded_size) noexcept
 {
-	const auto supported_record_version =
-		atom.record_version == 1U ||
+	const auto target_state =
+		atom.key.record_type == static_cast<std::uint16_t>(RecordType::TargetState);
+	const auto radar_contacts =
+		atom.key.record_type == static_cast<std::uint16_t>(RecordType::RadarContacts);
+	const auto supported_record_version = atom.record_version == 1U ||
 		((atom.record_version == 2U || atom.record_version == 3U || atom.record_version == 4U) &&
-		 (atom.key.record_type == static_cast<std::uint16_t>(RecordType::RadarContacts) ||
-		  atom.key.record_type == static_cast<std::uint16_t>(RecordType::TargetState)));
+		 (radar_contacts || target_state)) ||
+		(atom.record_version == 5U && target_state);
 	if (atom.key.record_type == 0 || !supported_record_version ||
 		!is_known_lifecycle(atom.lifecycle) ||
 		atom.key.identity.size() > std::numeric_limits<std::uint16_t>::max() ||
@@ -71,11 +74,14 @@ bool structurally_valid_atom(const StateAtom& atom, std::size_t& encoded_size) n
 
 bool structurally_valid_delete_atom(const StateAtom& atom) noexcept
 {
-	const auto supported_record_version =
-		atom.record_version == 1U ||
+	const auto target_state =
+		atom.key.record_type == static_cast<std::uint16_t>(RecordType::TargetState);
+	const auto radar_contacts =
+		atom.key.record_type == static_cast<std::uint16_t>(RecordType::RadarContacts);
+	const auto supported_record_version = atom.record_version == 1U ||
 		((atom.record_version == 2U || atom.record_version == 3U || atom.record_version == 4U) &&
-		 (atom.key.record_type == static_cast<std::uint16_t>(RecordType::RadarContacts) ||
-		  atom.key.record_type == static_cast<std::uint16_t>(RecordType::TargetState)));
+		 (radar_contacts || target_state)) ||
+		(atom.record_version == 5U && target_state);
 	return atom.key.record_type != 0 && supported_record_version &&
 		   atom.lifecycle == StateRecordLifecycle::ExplicitCreateDelete &&
 		   atom.key.identity.size() <= std::numeric_limits<std::uint16_t>::max() && atom.value.empty() &&

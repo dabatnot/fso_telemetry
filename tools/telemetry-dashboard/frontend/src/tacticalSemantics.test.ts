@@ -22,7 +22,8 @@ import {
   targetDisplayName,
   targetHudTypeLabel,
   targetHudColor,
-  targetReferenceInvalid
+  targetReferenceInvalid,
+  subsystemNameForTarget
 } from "./tacticalSemantics";
 import type { DashboardSnapshot, InstrumentDefinition } from "./types";
 
@@ -144,7 +145,15 @@ function snapshot(): DashboardSnapshot {
       records: {
         "CLASS_MANIFEST/class_id=3": {
           recordName: "CLASS_MANIFEST",
-          fields: { class_id: 3, internal_name: "GTF Myrmidon" }
+          fields: {
+            class_id: 3,
+            internal_name: "GTF Myrmidon",
+            subsystems: [{
+              subsystem_id: 4,
+              internal_name: "engine",
+              hud_name: "Moteurs"
+            }]
+          }
         },
         "WEAPON_MANIFEST/weapon_class_id=9": {
           recordName: "WEAPON_MANIFEST",
@@ -408,6 +417,36 @@ describe("tactical display semantics", () => {
     };
     expect(targetDisplayName(value)).toBe("Alpha 2");
     expect(targetClassDisplayName(value)).toBe("GTF Myrmidon");
+  });
+
+  it("uses authoritative target and lock subsystem labels in TARGET_STATE v5", () => {
+    const value = snapshot();
+    const target = value.records.TARGET_STATE[0];
+    target.revealed_identity = { name: "Alpha 2", class_id: 0, object_type: 1 };
+    target.hud_target_subsystem_label = "Laser turret";
+    target.hud_lock_subsystem_label = "Navigation";
+    value.recordInstances["TARGET_STATE/entity_id=1"] = {
+      recordName: "TARGET_STATE",
+      recordVersion: 5,
+      fields: target
+    };
+    expect(subsystemNameForTarget(value, undefined, target.hud_target_subsystem_label))
+      .toBe("Laser turret");
+    expect(subsystemNameForTarget(value, undefined, target.hud_lock_subsystem_label))
+      .toBe("Navigation");
+  });
+
+  it("resolves historical target subsystem IDs from CLASS_MANIFEST.subsystems", () => {
+    const value = snapshot();
+    value.records.TARGET_STATE[0].revealed_identity = {
+      name: "Alpha 2", class_id: 3, object_type: 1
+    };
+    value.recordInstances["TARGET_STATE/entity_id=1"] = {
+      recordName: "TARGET_STATE",
+      recordVersion: 4,
+      fields: value.records.TARGET_STATE[0]
+    };
+    expect(subsystemNameForTarget(value, 4)).toBe("Moteurs");
   });
 
   it("keeps authoritative zero distance and prioritizes target and threat contacts", () => {

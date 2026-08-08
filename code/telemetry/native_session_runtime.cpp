@@ -2527,20 +2527,77 @@ NativeSessionTickStatus NativeSessionRuntime::apply_collected_player_capture(con
 				continue;
 			}
 			std::array<Phase2CaptureLocalKey,
-				MaximumPhase2ObservationShips> signatures{};
+				MaximumPhase2ObservationShips> binding_keys{};
+			std::array<Phase2CaptureLocalKey,
+				MaximumPhase2ObservationShips> identity_signatures{};
+			std::array<std::uint64_t,
+				MaximumPhase2ObservationShips> public_entity_ids{};
 			std::array<Phase2Wp05SubjectBinding,
 				MaximumPhase2ObservationShips> bindings{};
 			for (std::size_t subject = 0U;
 				 subject < phase2.ships.size(); ++subject)
-				signatures[subject] =
+				binding_keys[subject] =
 					phase2.ships[subject].capture_key;
+			const auto cockpit_sensors = m_selected_phase2_profile ==
+				Phase2Profile::CockpitSensors;
+			if (cockpit_sensors) {
+				// Flight-only refreshes deliberately clear the diagnostics for the
+				// current attempt while retaining the CompleteShip observation. Use
+				// the accepted full-capture map that owns those ship rows.
+				const auto& capture_diagnostics =
+					m_phase2_observation.accepted_capture_map();
+				auto* identities =
+					m_phase3_identity_registries[index].get();
+				if (identities == nullptr ||
+					capture_diagnostics.source_count !=
+						phase2.ships.size()) {
+					m_last_phase2_failure_diagnostic.phase3_diagnostic = {
+						Phase3EngineCollectBlock::Precondition,
+						Phase3EngineCollectStatus::InvalidSource};
+					record_phase3_failure(m_metrics, m_log, index,
+						TelemetryPhase3Block::Precondition,
+						TelemetryPhase3CaptureFailure::InvalidSource);
+					fail_capture(NativePlayerCaptureStatus::
+						CaptureInvariantFailure);
+					return NativeSessionTickStatus::
+						PermanentCaptureFailure;
+				}
+				for (std::size_t subject = 0U;
+					 subject < phase2.ships.size(); ++subject) {
+					identity_signatures[subject].value =
+						capture_diagnostics.source_signatures[subject];
+					const auto identity = identities->resolve({
+						identity_signatures[subject].value,
+						static_cast<std::uint8_t>(
+							protocol::ObjectType::Ship)});
+					if (identity.status !=
+							Phase3IdentityResolveStatus::Existing &&
+						identity.status !=
+							Phase3IdentityResolveStatus::Allocated) {
+						m_last_phase2_failure_diagnostic.phase3_diagnostic = {
+							Phase3EngineCollectBlock::Precondition,
+							Phase3EngineCollectStatus::IdentityFailure};
+						record_phase3_failure(m_metrics, m_log, index,
+							TelemetryPhase3Block::Precondition,
+							TelemetryPhase3CaptureFailure::IdentityFailure);
+						fail_capture(NativePlayerCaptureStatus::
+							CaptureInvariantFailure);
+						return NativeSessionTickStatus::
+							PermanentCaptureFailure;
+					}
+					public_entity_ids[subject] = identity.entity_id;
+				}
+			}
 			const auto manifest_started =
 				std::chrono::steady_clock::now();
-			const auto closure =
-				m_controller.reconcile_phase2_closure(
-					index, signatures.data(),
-					phase2.ships.size(), bindings.data(),
-					bindings.size());
+			const auto closure = cockpit_sensors
+				? m_controller.reconcile_phase2_closure_with_public_ids(
+					index, identity_signatures.data(), binding_keys.data(),
+					public_entity_ids.data(), phase2.ships.size(),
+					bindings.data(), bindings.size())
+				: m_controller.reconcile_phase2_closure(
+					index, binding_keys.data(), phase2.ships.size(),
+					bindings.data(), bindings.size());
 			if (m_metrics != nullptr)
 				m_metrics->record_phase2_closure(
 					closure == Phase2RuntimeResult::Applied
@@ -3020,7 +3077,9 @@ NativeSessionTickStatus NativeSessionRuntime::apply_collected_player_capture(con
 						m_phase2_capture_plan.phase3_refresh_targeting &&
 							m_phase2_capture_plan.capture_flight_controls,
 						m_phase2_capture_plan.phase3_refresh_systems &&
-							m_phase2_capture_plan.capture_systems};
+							m_phase2_capture_plan.capture_systems,
+						identity_signatures.data(),
+						phase2.ships.size()};
 					Phase3EngineCollectDiagnostic phase3_diagnostic;
 					const auto phase3_status = collect_phase3_engine_projection(
 							phase3_input,

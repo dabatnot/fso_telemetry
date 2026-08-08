@@ -1340,7 +1340,7 @@ def decode_record_payload(
         presence = reader.u64()
         sample = reader.u64()
         current = reader.u64()
-        require(entity and presence & ~0x1FFFF == 0, 37, "TARGET_STATE presence")
+        require(entity and presence & ~0x7FFFF == 0, 37, "TARGET_STATE presence")
         require(current or presence & ~0x0001 == 0, 37, "TARGET_STATE absent target")
         result = {
             "current_target_entity_id": u64s(current),
@@ -1395,8 +1395,14 @@ def decode_record_payload(
             require(record_version >= 3, 37, "TARGET_STATE v3 HUD label")
             result["hud_type_label"] = reader.utf8(255)
         if presence & 0x10000:
-            require(record_version == 4, 37, "TARGET_STATE v4 HUD color")
+            require(record_version >= 4, 37, "TARGET_STATE v4 HUD color")
             result["hud_target_color"] = rgba8(reader)
+        if presence & 0x20000:
+            require(record_version >= 5, 37, "TARGET_STATE v5 target subsystem label")
+            result["hud_target_subsystem_label"] = reader.utf8(255)
+        if presence & 0x40000:
+            require(record_version >= 5, 37, "TARGET_STATE v5 lock subsystem label")
+            result["hud_lock_subsystem_label"] = reader.utf8(255)
         return result
 
     if record_type == 17:
@@ -1945,7 +1951,8 @@ def decode_record(
     phase3_v2 = record_type in (16, 18) and version == 2
     phase3_v3 = record_type in (16, 18) and version == 3
     phase3_v4 = record_type in (16, 18) and version == 4
-    require(version == 1 or phase3_v2 or phase3_v3 or phase3_v4, 27, "unsupported record version")
+    phase3_v5 = record_type == 16 and version == 5
+    require(version == 1 or phase3_v2 or phase3_v3 or phase3_v4 or phase3_v5, 27, "unsupported record version")
     require(length == reader.remaining, 28, "record_length mismatch")
     if container == "event" or (container == "standalone" and record_type in (27, 28)):
         require(record_type in (27, 28), 36, "state record in event batch")

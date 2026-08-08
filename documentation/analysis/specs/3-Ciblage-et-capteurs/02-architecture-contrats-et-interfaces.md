@@ -113,9 +113,14 @@ un `entity_id` public :
 Le mapping privé peut retenir une signature momentanément non visible afin de
 réutiliser son ID si la même piste réapparaît. Il n’est jamais sérialisé.
 
-Les entités de la fermeture Phase 2 utilisent le registre hérité. Lorsqu’un
-objet de cette fermeture apparaît aussi comme contact, cible ou menace, tous les
-records réutilisent le même `entity_id`.
+Pour le profil `CockpitSensors`, le registre capteurs choisit l'identité
+publique avant la matérialisation de la fermeture Phase 2. Le rapprochement
+utilise exclusivement la signature moteur réelle ; les clés de capture locales
+`1..N`, dont la signification change quand la fermeture grandit ou rétrécit, ne
+sont jamais des clés d'identité. Lorsqu'un objet capteur rejoint ensuite la
+fermeture Phase 2, celle-ci adopte l'ID public déjà attribué. Tous les records
+conservent ainsi le même `entity_id` sans conflit, remappage ni fermeture de
+session.
 
 ## 4. DTO publics internes
 

@@ -119,8 +119,8 @@ handshake et un nouveau `session_id`.
 
 | ID | Exigence normative |
 |---|---|
-| `P3-REQ-019` | `TARGET_STATE` DOIT reproduire la cible courante et précédente indépendamment de `RADAR_CONTACTS`, pour vaisseau, arme, débris, astéroïde et jump node. Il est l'autorité courante de sélection côté client; `CURRENT_TARGET` décrit seulement la décision au sample time du contact. Le profil live `CockpitSensors` utilise explicitement v4 pour les valeurs visibles D/S, le libellé HUD conditionnel et la couleur HUD brillante autoritaire ; v1/v2/v3 restent des compatibilités de capture. |
-| `P3-REQ-020` | Identité, classe, équipe, IFF et sous-systèmes ciblés DOIVENT être présents seulement lorsqu’ils sont révélés et résolubles; une cible perdue ne conserve que les groupes de dernière observation explicitement autorisés. |
+| `P3-REQ-019` | `TARGET_STATE` DOIT reproduire la cible courante et précédente indépendamment de `RADAR_CONTACTS`, pour vaisseau, arme, débris, astéroïde et jump node. Il est l'autorité courante de sélection côté client; `CURRENT_TARGET` décrit seulement la décision au sample time du contact. Le profil live `CockpitSensors` utilise explicitement v5 pour les valeurs visibles D/S, le libellé HUD conditionnel, la couleur HUD brillante et les libellés HUD des sous-systèmes ciblé et lock ; v1/v2/v3/v4 restent des compatibilités de capture. |
+| `P3-REQ-020` | Identité, classe, équipe, IFF et sous-systèmes ciblés DOIVENT être présents seulement lorsqu’ils sont révélés et résolubles; les IDs de sous-système exigent le manifeste installé, tandis que leurs libellés HUD v5 proviennent de l'instance live validée et restent indépendants du manifeste. Une cible perdue ne conserve que les groupes de dernière observation explicitement autorisés. |
 | `P3-REQ-021` | Le lead publié DOIT être le résultat autoritaire monde associé à une banque valide; distances géométriques, angles, pixels, brackets et progressions restent absents. |
 | `P3-REQ-022` | `LOCK_STATE` DOIT publier la liste complète de 0 à 64 points de lock, avec absence explicite de tentative, IDs cohérents, état locked, cône, position monde et durée restante bornée. |
 

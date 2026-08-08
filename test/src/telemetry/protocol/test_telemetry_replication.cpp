@@ -218,6 +218,20 @@ TEST(TelemetryProtocolReplication, RadarContactsVersionFourSupportsUpsertAndDele
 		validate_cumulative_state_delta(delta(1U, 1U, {deletion})));
 }
 
+TEST(TelemetryProtocolReplication, TargetStateVersionFiveSupportsCanonicalUpsert)
+{
+	std::vector<std::uint8_t> key(8U, 0U);
+	key[0] = 1U;
+	auto value = key;
+	value.push_back(0x42U);
+	auto target = atom(static_cast<std::uint16_t>(RecordType::TargetState),
+		key, value);
+	target.record_version = 5U;
+	StateImage state;
+	EXPECT_EQ(StateImageResult::Created, StateImage::create({target}, state));
+	EXPECT_EQ(5U, state.records().front().record_version);
+}
+
 TEST(TelemetryProtocolReplication, DeltaValidationRequiresCanonicalUniqueCompleteMutationsAndExactLimit)
 {
 	const auto first = upsert(atom(1U, {}, {0x01U}));

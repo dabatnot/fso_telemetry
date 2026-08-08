@@ -126,11 +126,13 @@ autorise une dernière observation ou une connaissance de menace distincte.
 ### 5.0 Version filaire
 
 Le layout v1 reste lisible pour les captures existantes. Le profil live
-`CockpitSensors` émet `record_version=4` sous FSTL 1.1. La variante v2 ajoute
+`CockpitSensors` émet `record_version=5` sous FSTL 1.1. La variante v2 ajoute
 après `EXACT_HUD_DISTANCE` le groupe `EXACT_HUD_SPEED`; v3 ajoute ensuite
-`HUD_TYPE_LABEL`; v4 ajoute `HUD_TARGET_COLOR`. La variante est choisie
+`HUD_TYPE_LABEL`; v4 ajoute `HUD_TARGET_COLOR`; v5 ajoute enfin les libellés
+HUD autoritaires `HUD_TARGET_SUBSYSTEM_LABEL` et `HUD_LOCK_SUBSYSTEM_LABEL`.
+La variante est choisie
 uniquement par `record_version`, jamais par la longueur du payload. Les
-captures v1/v2/v3 restent décodables et byte-identiques.
+captures v1/v2/v3/v4 restent décodables et byte-identiques.
 
 ### 5.1 Champs obligatoires
 
@@ -157,7 +159,9 @@ ancien.
 | `EXACT_HUD_DISTANCE` | valeur D visible : `Player_ai->current_target_distance` après multiplicateur HUD |
 | `EXACT_HUD_SPEED` | depuis v2 ; valeur S visible calculée comme le target box, y compris le fallback docké et le multiplicateur HUD |
 | `HUD_TYPE_LABEL` | depuis v3 ; seconde ligne exacte du Target Box, y compris la classe affichée d’un vaisseau ciblé même si aucune entrée `CLASS_MANIFEST` ne lui est encore applicable ; aucune classe n’est inventée côté client |
-| `HUD_TARGET_COLOR` | v4 seulement ; couleur RGBA brillante retournée par `hud_get_iff_color(target,1)` pour les brackets et accents de cible, accessibilité et overrides inclus |
+| `HUD_TARGET_COLOR` | depuis v4 ; couleur RGBA brillante retournée par `hud_get_iff_color(target,1)` pour les brackets et accents de cible, accessibilité et overrides inclus |
+| `HUD_TARGET_SUBSYSTEM_LABEL` | depuis v5 ; texte exact, localisé et instance-aware retourné par `ship_subsys_get_name_on_hud()` pour le sous-système ciblé ; indépendant de `CLASS_MANIFEST` |
+| `HUD_LOCK_SUBSYSTEM_LABEL` | depuis v5 ; même texte HUD autoritaire pour le sous-système de lock validé sur la cible courante ; indépendant de `CLASS_MANIFEST` |
 
 Si la cible vaut zéro, tous les groupes sont absents sauf `PREVIOUS_TARGET`,
 comme l’impose FSTL.

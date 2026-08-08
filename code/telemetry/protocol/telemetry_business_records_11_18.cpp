@@ -1257,11 +1257,21 @@ ValidationError validate_target_state(std::uint8_t record_version, ByteView payl
 		if (!reader.string(1U, 255U, label)) return reader.error();
 	}
 	if ((presence & TargetStatePresenceFlagHudTargetColor) != 0) {
-		if (record_version != 4U) return ValidationError::UnsupportedRecordVersion;
+		if (record_version < 4U) return ValidationError::UnsupportedRecordVersion;
 		std::uint8_t component = 0U;
 		for (std::size_t index = 0U; index < 4U; ++index) {
 			if (!reader.u8(component)) return reader.error();
 		}
+	}
+	if ((presence & TargetStatePresenceFlagHudTargetSubsystemLabel) != 0) {
+		if (record_version < 5U) return ValidationError::UnsupportedRecordVersion;
+		std::string_view label;
+		if (!reader.string(1U, 255U, label)) return reader.error();
+	}
+	if ((presence & TargetStatePresenceFlagHudLockSubsystemLabel) != 0) {
+		if (record_version < 5U) return ValidationError::UnsupportedRecordVersion;
+		std::string_view label;
+		if (!reader.string(1U, 255U, label)) return reader.error();
 	}
 	return reader.finish();
 }

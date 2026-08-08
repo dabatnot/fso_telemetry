@@ -81,6 +81,8 @@ struct Phase3TargetState {
 	float exact_hud_distance = 0.0F;
 	float exact_hud_speed = 0.0F;
 	std::array<std::uint8_t, 4U> hud_target_color{};
+	Phase3OwnedString<255U> hud_target_subsystem_label;
+	Phase3OwnedString<255U> hud_lock_subsystem_label;
 };
 
 struct Phase3RadarState {

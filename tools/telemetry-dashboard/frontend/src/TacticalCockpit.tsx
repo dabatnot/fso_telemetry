@@ -413,8 +413,16 @@ function TargetPanel({
   const targetColor = targetHudColor(snapshot);
   const targetId = String(target?.current_target_entity_id ?? "0");
   const invalid = targetReferenceInvalid(snapshot);
-  const targetSubsystem = subsystemNameForTarget(snapshot, target?.target_subsystem_id);
-  const lockSubsystem = subsystemNameForTarget(snapshot, target?.lock_subsystem_id);
+  const targetSubsystem = subsystemNameForTarget(
+    snapshot,
+    target?.target_subsystem_id,
+    target?.hud_target_subsystem_label
+  );
+  const lockSubsystem = subsystemNameForTarget(
+    snapshot,
+    target?.lock_subsystem_id,
+    target?.hud_lock_subsystem_label
+  );
   return (
     <TacticalPanel
       definition={definition}

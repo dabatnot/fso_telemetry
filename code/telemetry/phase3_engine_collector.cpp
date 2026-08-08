@@ -467,6 +467,36 @@ std::uint32_t installed_subsystem_id_from_source_key(
 	return 0U;
 }
 
+bool capture_hud_subsystem_label(const object& owner,
+	const ship_subsys* candidate,
+	Phase3OwnedString<255U>& destination) noexcept
+{
+	if (candidate == nullptr || owner.type != OBJ_SHIP ||
+		owner.instance < 0 || owner.instance >= MAX_SHIPS) {
+		return false;
+	}
+	const auto& owner_ship = Ships[owner.instance];
+	const ship_subsys* matched = nullptr;
+	for (auto* subsystem = GET_FIRST(&owner_ship.subsys_list);
+		 subsystem != END_OF_LIST(&owner_ship.subsys_list);
+		 subsystem = GET_NEXT(subsystem)) {
+		if (subsystem == candidate) {
+			matched = subsystem;
+			break;
+		}
+	}
+	// Dynamic target changes can leave a pointer from the previous ship visible
+	// for part of a tick.  Never dereference it unless it belongs to the current
+	// target's live subsystem list.
+	if (matched == nullptr || matched->system_info == nullptr) return false;
+	const auto* label = ship_subsys_get_name_on_hud(matched);
+	if (label == nullptr) return false;
+	std::size_t length = 0U;
+	while (length <= 255U && label[length] != '\0') ++length;
+	return length != 0U && length <= 255U &&
+		destination.assign(label, length);
+}
+
 std::uint8_t guidance_type(const weapon_info& info) noexcept
 {
 	if (info.wi_flags[Weapon::Info_Flags::Swarm])
@@ -574,19 +604,24 @@ Phase3EngineCollectStatus reconcile_phase2(
 {
 	if (input.phase2_observation == nullptr ||
 		input.phase2_binding_count != input.phase2_observation->ships.size() ||
+		(input.phase2_source_signatures != nullptr &&
+		 input.phase2_source_signature_count != input.phase2_binding_count) ||
 		(input.phase2_binding_count != 0U && input.phase2_bindings == nullptr)) {
 		return Phase3EngineCollectStatus::InvalidSource;
 	}
 	for (std::size_t index = 0U; index < input.phase2_binding_count; ++index) {
 		const auto& source = input.phase2_observation->ships[index];
 		const auto& binding = input.phase2_bindings[index];
-		if (source.capture_key.value == 0U ||
+		const auto source_signature = input.phase2_source_signatures != nullptr
+			? input.phase2_source_signatures[index]
+			: source.capture_key;
+		if (source.capture_key.value == 0U || source_signature.value == 0U ||
 			binding.capture_key.value != source.capture_key.value ||
 			binding.entity_id == 0U) {
 			return Phase3EngineCollectStatus::InvalidSource;
 		}
 		const auto status = identities.reconcile_phase2_binding(
-			{source.capture_key.value,
+			{source_signature.value,
 			 static_cast<std::uint8_t>(protocol::ObjectType::Ship)},
 			binding.entity_id);
 		if (status != Phase3IdentityReconcileStatus::Existing &&
@@ -729,14 +764,23 @@ Phase3EngineCollectStatus collect_target_and_locks(
 					output.target.revealed_object_type = object_type(target.type);
 				}
 			}
-		// Subsystem IDs are an identity disclosure.  A distorted track, or a
-		// visible track whose class has not yet been installed, must not expose
-		// either targeted subsystem even when legacy player state retains it.
+		// The Target Box renders the instance-aware, localized HUD subsystem name.
+		// Capture it independently from CLASS_MANIFEST so newly spawned ship
+		// classes remain reproducible without rebuilding the installed manifest.
+		// Stable subsystem IDs remain optional catalog references for consumers of
+		// older record versions.
 		const auto identity_revealed =
 			(output.target.presence &
 				protocol::TargetStatePresenceFlagRevealedIdentity) != 0U;
 		if (identity_revealed && target.type == OBJ_SHIP &&
-			Player_ai->targeted_subsys != nullptr) {
+			Player_ai->targeted_subsys != nullptr &&
+			Player_ai->targeted_subsys_parent == OBJ_INDEX(&target)) {
+			if (capture_hud_subsystem_label(target,
+					Player_ai->targeted_subsys,
+					output.target.hud_target_subsystem_label)) {
+				output.target.presence |=
+					protocol::TargetStatePresenceFlagHudTargetSubsystemLabel;
+			}
 			const auto subsystem_id = installed_subsystem_id(
 				installed_manifest, target,
 				Player_ai->targeted_subsys);
@@ -749,7 +793,13 @@ Phase3EngineCollectStatus collect_target_and_locks(
 		if (identity_revealed && target.type == OBJ_SHIP &&
 			Player->locking_subsys != nullptr &&
 			Player->locking_subsys_parent ==
-				Player_ai->target_objnum) {
+				OBJ_INDEX(&target)) {
+			if (capture_hud_subsystem_label(target,
+					Player->locking_subsys,
+					output.target.hud_lock_subsystem_label)) {
+				output.target.presence |=
+					protocol::TargetStatePresenceFlagHudLockSubsystemLabel;
+			}
 			const auto subsystem_id = installed_subsystem_id(
 				installed_manifest, target,
 				Player->locking_subsys);

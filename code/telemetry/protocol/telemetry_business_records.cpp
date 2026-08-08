@@ -208,11 +208,12 @@ ValidationError validate_business_record(const RecordEnvelopeView& record,
 		return ValidationError::UnsupportedRecordVersion;
 	}
 	const auto phase3_extended_version =
-		(candidate.type == RecordType::RadarContacts ||
-		 candidate.type == RecordType::TargetState) &&
-		(record.record_version == 2U ||
-		 record.record_version == 3U ||
-		 record.record_version == 4U) &&
+		(((candidate.type == RecordType::RadarContacts) &&
+		  (record.record_version == 2U || record.record_version == 3U ||
+		   record.record_version == 4U)) ||
+		 ((candidate.type == RecordType::TargetState) &&
+		  (record.record_version == 2U || record.record_version == 3U ||
+		   record.record_version == 4U || record.record_version == 5U))) &&
 		protocol_minor >= VersionMinorV1_1;
 	if (record.record_version != 1U && !phase3_extended_version) {
 		return ValidationError::UnsupportedRecordVersion;

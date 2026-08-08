@@ -1671,9 +1671,32 @@ TEST(TelemetryPhase3Targeting,
 	target_ship.ship_info_index = static_cast<int>(ship_info_count);
 	std::strncpy(target_ship.ship_name, "Alpha 2",
 		sizeof(target_ship.ship_name) - 1U);
+	list_init(&target_ship.subsys_list);
+	model_subsystem target_subsystem_info;
+	std::strncpy(target_subsystem_info.name, "Engine array",
+		sizeof(target_subsystem_info.name) - 1U);
+	target_subsystem_info.type = SUBSYSTEM_ENGINE;
+	ship_subsys target_subsystem;
+	target_subsystem.clear();
+	target_subsystem.system_info = &target_subsystem_info;
+	target_subsystem.parent_objnum = TargetObjectIndex;
+	list_append(&target_ship.subsys_list, &target_subsystem);
+	model_subsystem lock_subsystem_info;
+	std::strncpy(lock_subsystem_info.name, "Navigation",
+		sizeof(lock_subsystem_info.name) - 1U);
+	lock_subsystem_info.type = SUBSYSTEM_NAVIGATION;
+	ship_subsys lock_subsystem;
+	lock_subsystem.clear();
+	lock_subsystem.system_info = &lock_subsystem_info;
+	lock_subsystem.parent_objnum = TargetObjectIndex;
+	list_append(&target_ship.subsys_list, &lock_subsystem);
 	list_append(&obj_used_list, &target);
 	Player_ai->target_objnum = TargetObjectIndex;
 	Player_ai->target_signature = target.signature;
+	Player_ai->targeted_subsys = &target_subsystem;
+	Player_ai->targeted_subsys_parent = TargetObjectIndex;
+	Player->locking_subsys = &lock_subsystem;
+	Player->locking_subsys_parent = TargetObjectIndex;
 	Player_ai->stealth_last_visible_stamp = 1;
 	Player_ai->stealth_last_pos.xyz = {10.0F, 20.0F, 30.0F};
 	Player_ai->stealth_velocity.xyz = {1.0F, 2.0F, 3.0F};
@@ -1696,6 +1719,14 @@ TEST(TelemetryPhase3Targeting,
 	const auto status = detail::collect_phase3_engine_projection(
 		{64U, 1U, phase2.get(), &binding, 1U, nullptr, true, false},
 		identities, *output, *scratch);
+	// The remainder of this older fixture exercises the primary-weapon lead
+	// using a deliberately model-less ship class.  Do not feed its synthetic
+	// subsystem into get_subsystem_world_pos(); the first collection above is
+	// the subsystem-label scenario under test.
+	Player_ai->targeted_subsys = nullptr;
+	Player_ai->targeted_subsys_parent = -1;
+	Player->locking_subsys = nullptr;
+	Player->locking_subsys_parent = -1;
 	telemetry::Phase2ManifestCandidate manifest;
 	manifest.class_record_count = 1U;
 	manifest.class_records[0].source_key = 1U;
@@ -1737,6 +1768,12 @@ TEST(TelemetryPhase3Targeting,
 			{67U, 1U, phase2.get(), &binding, 1U, &manifest, true, true},
 			identities, *out_of_range_output, *out_of_range_scratch);
 
+	Player_ai->targeted_subsys = nullptr;
+	Player_ai->targeted_subsys_parent = -1;
+	Player->locking_subsys = nullptr;
+	Player->locking_subsys_parent = -1;
+	list_remove(&target_ship.subsys_list, &lock_subsystem);
+	list_remove(&target_ship.subsys_list, &target_subsystem);
 	list_remove(&obj_used_list, &target);
 	target_ship.clear();
 	target.clear();
@@ -1774,6 +1811,20 @@ TEST(TelemetryPhase3Targeting,
 		 protocol::ContactFlagBomb));
 	EXPECT_NE(0U, output->target.presence &
 		protocol::TargetStatePresenceFlagHudTargetColor);
+	EXPECT_NE(0U, output->target.presence &
+		protocol::TargetStatePresenceFlagHudTargetSubsystemLabel);
+	EXPECT_EQ("Engine array",
+		std::string(output->target.hud_target_subsystem_label.bytes.data(),
+			output->target.hud_target_subsystem_label.size));
+	EXPECT_NE(0U, output->target.presence &
+		protocol::TargetStatePresenceFlagHudLockSubsystemLabel);
+	EXPECT_EQ("Navigation",
+		std::string(output->target.hud_lock_subsystem_label.bytes.data(),
+			output->target.hud_lock_subsystem_label.size));
+	EXPECT_EQ(0U, output->target.presence &
+		(protocol::TargetStatePresenceFlagTargetSubsystem |
+		 protocol::TargetStatePresenceFlagLockSubsystem))
+		<< "HUD subsystem labels remain available without installed manifest IDs.";
 	EXPECT_EQ(output->contacts[0].radar_blip_color,
 		output->target.hud_target_color)
 		<< "A normal selected ship keeps its bright IFF hue on both radar and HUD.";
@@ -2531,6 +2582,7 @@ TEST(TelemetryPhase3Bounds,
 			{64U, 1U, phase2.get(), &binding, 1U, nullptr, true, false},
 			identities, *output, *scratch));
 	EXPECT_EQ(0U, output->lock_count);
+	Player_ship->missile_locks.clear();
 }
 
 TEST(TelemetryPhase3Bounds,
@@ -2626,8 +2678,19 @@ TEST(TelemetryPhase3CaptureContract,
 	ASSERT_LT(manifest_datagram, fixture.backend.sent.size());
 	fixture.backend.receives.push_back({detail::IoStatus::Complete,
 		ack_for(fixture.backend.sent[manifest_datagram], endpoint, 925U)});
-	ASSERT_EQ(detail::NativeSessionTickStatus::Complete,
-		fixture.runtime.service_tick({bootstrap_sample + 2U, 1U, true}, player_view, &phase2_view));
+	const auto manifest_ack_tick = fixture.runtime.service_tick(
+		{bootstrap_sample + 2U, 1U, true}, player_view, &phase2_view);
+	const auto manifest_ack_diagnostic =
+		NativePlayerAccess::last_phase2_failure_diagnostic(fixture.runtime);
+	ASSERT_EQ(detail::NativeSessionTickStatus::Complete, manifest_ack_tick)
+		<< "stage=" << static_cast<unsigned>(manifest_ack_diagnostic.stage)
+		<< " runtime=" << static_cast<unsigned>(manifest_ack_diagnostic.runtime_result)
+		<< " phase3_block=" << static_cast<unsigned>(
+			manifest_ack_diagnostic.phase3_diagnostic.block)
+		<< " phase3_status=" << static_cast<unsigned>(
+			manifest_ack_diagnostic.phase3_diagnostic.status)
+		<< " phase3_image=" << static_cast<unsigned>(
+			manifest_ack_diagnostic.phase3_image_status);
 	const auto sends_before_initial_egress = fixture.backend.sent.size();
 	ASSERT_EQ(detail::NativeSessionTickStatus::Complete,
 		fixture.runtime.service_tick({bootstrap_sample + 3U, 1U, true}, player_view, &phase2_view));
@@ -2798,8 +2861,22 @@ TEST(TelemetryPhase3CaptureSchedule,
 	// The APPLIED manifest ACK consumes the staged intent, performs
 	// a complete capture and starts the initial snapshot.  Its egress/ACK stays
 	// on the normal transport path so periodic scheduling begins only once Live.
+	const auto schedule_manifest_ack_tick = fixture.runtime.service_tick(
+		{bootstrap_sample + 2U, 1U, true}, player_view, &phase2_view);
+	const auto schedule_manifest_ack_diagnostic =
+		NativePlayerAccess::last_phase2_failure_diagnostic(fixture.runtime);
 	ASSERT_EQ(detail::NativeSessionTickStatus::Complete,
-		fixture.runtime.service_tick({bootstrap_sample + 2U, 1U, true}, player_view, &phase2_view));
+		schedule_manifest_ack_tick)
+		<< "stage=" << static_cast<unsigned>(
+			schedule_manifest_ack_diagnostic.stage)
+		<< " runtime=" << static_cast<unsigned>(
+			schedule_manifest_ack_diagnostic.runtime_result)
+		<< " phase3_block=" << static_cast<unsigned>(
+			schedule_manifest_ack_diagnostic.phase3_diagnostic.block)
+		<< " phase3_status=" << static_cast<unsigned>(
+			schedule_manifest_ack_diagnostic.phase3_diagnostic.status)
+		<< " phase3_image=" << static_cast<unsigned>(
+			schedule_manifest_ack_diagnostic.phase3_image_status);
 	ASSERT_NE(nullptr, slot(fixture));
 	EXPECT_TRUE(slot(fixture)->required_manifest_applied);
 	EXPECT_EQ(manifest_id, slot(fixture)->required_manifest_id);

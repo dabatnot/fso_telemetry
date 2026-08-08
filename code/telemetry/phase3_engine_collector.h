@@ -51,6 +51,11 @@ struct Phase3EngineCollectInput {
 	const Phase2ManifestCandidate* installed_manifest = nullptr;
 	bool refresh_flight_controls = false;
 	bool refresh_systems = false;
+	// Actual engine object signatures corresponding to phase2_bindings. Phase 2
+	// capture keys are closure-local and must never be used as sensor identity
+	// keys when the closure shrinks or grows.
+	const Phase2CaptureLocalKey* phase2_source_signatures = nullptr;
+	std::size_t phase2_source_signature_count = 0U;
 };
 
 // Private, pre-ID discovery used to select the next observer-specific

@@ -293,6 +293,14 @@ class SessionController final {
 		const Phase2CaptureLocalKey* signatures, std::size_t count,
 		Phase2Wp05SubjectBinding* bindings,
 		std::size_t binding_capacity) noexcept;
+	Phase2RuntimeResult reconcile_phase2_closure_with_public_ids(
+		std::size_t slot_index,
+		const Phase2CaptureLocalKey* identity_signatures,
+		const Phase2CaptureLocalKey* binding_keys,
+		const std::uint64_t* public_entity_ids,
+		std::size_t count,
+		Phase2Wp05SubjectBinding* bindings,
+		std::size_t binding_capacity) noexcept;
 	Phase2RuntimeResult observe_phase2_lifecycle(std::size_t slot_index,
 		const Phase2ObservationDto& observation,
 		const Phase2Wp05SubjectBinding* bindings,

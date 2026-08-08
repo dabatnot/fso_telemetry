@@ -703,7 +703,7 @@ async function mockTacticalSnapshot(
           fields: {
             class_id: 7,
             internal_name: "GTF Tactical",
-            subsystem_definitions: [{ subsystem_id: 4, internal_name: "Moteurs" }]
+            subsystems: [{ subsystem_id: 4, internal_name: "Moteurs" }]
           }
         }
       }

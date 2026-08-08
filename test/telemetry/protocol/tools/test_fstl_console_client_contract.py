@@ -1510,6 +1510,18 @@ class FstlConsoleClientContractTest(unittest.TestCase):
             [0xaa, 0xbb, 0xcc, 0xdd],
             colored["entities.1.target.hud_color"]["value"],
         )
+        target_envelope["recordVersion"] = 5
+        target["hud_target_subsystem_label"] = "Laser turret"
+        target["hud_lock_subsystem_label"] = "Navigation"
+        subsystem_labels = projection()
+        self.assertEqual(
+            "Laser turret",
+            subsystem_labels["entities.1.target.target_subsystem_label"]["value"],
+        )
+        self.assertEqual(
+            "Navigation",
+            subsystem_labels["entities.1.target.lock_subsystem_label"]["value"],
+        )
 
         track.pop("radar_blip_color")
         missing = projection()["entities.1.tracks.101.radar_visual"]

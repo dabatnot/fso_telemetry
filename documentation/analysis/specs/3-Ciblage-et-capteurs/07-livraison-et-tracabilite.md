@@ -28,8 +28,8 @@ des dépendances et ne sont pas recopiées.
 | `P3-REQ-016` | Une piste ne matérialise pas implicitement l’état complet d’une entité. | `telemetry_phase3_visibility_tests` | — |
 | `P3-REQ-017` | Toute classe révélée par ID est installée avant référence ; un libellé HUD exact reste indépendant du manifeste et une arme dynamique non installée est omise. | `telemetry_phase3_manifest_tests` | — |
 | `P3-REQ-018` | Nouvelle définition référencée : manifeste puis keyframe; nouveau libellé HUD, changement de piste ou arme dynamique absente seuls : aucun manifeste. | `telemetry_phase3_manifest_tests` | — |
-| `P3-REQ-019` | `TARGET_STATE` v4 reproduit les cibles Target Box avec ou sans blip radar et constitue l'autorité courante de sélection; v1/v2/v3 restent décodables. | `telemetry_phase3_targeting_tests` | — |
-| `P3-REQ-020` | Identité et sous-systèmes ciblés ne sont présents que s’ils sont révélés et résolubles. | `telemetry_phase3_targeting_tests` | — |
+| `P3-REQ-019` | `TARGET_STATE` v5 reproduit les cibles Target Box avec ou sans blip radar, y compris les libellés HUD des sous-systèmes ciblé et lock, et constitue l'autorité courante de sélection; v1/v2/v3/v4 restent décodables. | `telemetry_phase3_targeting_tests` | — |
+| `P3-REQ-020` | Identité et sous-systèmes ciblés ne sont présents que s’ils sont révélés et résolubles; les libellés HUD v5 validés restent disponibles sans ID de manifeste. | `telemetry_phase3_targeting_tests` | — |
 | `P3-REQ-021` | Le lead autoritaire est associé à une banque valide, sans données HUD dérivées. | `telemetry_phase3_targeting_tests` | — |
 | `P3-REQ-022` | `LOCK_STATE` contient la liste complète de 0 à 64 locks avec absence de tentative explicite. | `telemetry_phase3_lock_tests` | — |
 | `P3-REQ-023` | `RADAR_STATE` publie mode, portée, capteurs, AWACS et EMP applicables ; `VISIBLE`/`DISTORTED` reste porté par chaque contact. | `telemetry_phase3_sensor_state_tests` | — |

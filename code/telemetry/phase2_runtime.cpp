@@ -99,18 +99,39 @@ Phase2RuntimeResult Phase2RuntimeSlot::reconcile_closure(
 	std::size_t count,
 	Phase2Wp05SubjectBinding* bindings,
 	std::size_t binding_capacity) noexcept
+
+{
+	return reconcile_closure_with_public_ids(signatures, signatures, nullptr,
+		count, bindings, binding_capacity);
+}
+
+Phase2RuntimeResult Phase2RuntimeSlot::reconcile_closure_with_public_ids(
+	const Phase2CaptureLocalKey* identity_signatures,
+	const Phase2CaptureLocalKey* binding_keys,
+	const std::uint64_t* public_entity_ids,
+	std::size_t count,
+	Phase2Wp05SubjectBinding* bindings,
+	std::size_t binding_capacity) noexcept
 {
 	if (!m_configured || count > ClosureCapacity ||
 		(m_profile == Phase2Profile::CoreGate && count > 1U) ||
 		(count != 0U &&
-		 (signatures == nullptr || bindings == nullptr)) ||
+		 (identity_signatures == nullptr || binding_keys == nullptr ||
+		  bindings == nullptr)) ||
 		binding_capacity < count)
 		return Phase2RuntimeResult::InvalidInput;
 	for (std::size_t index = 0U; index < count; ++index) {
-		if (signatures[index].value == 0U)
+		if (identity_signatures[index].value == 0U ||
+			binding_keys[index].value == 0U ||
+			(public_entity_ids != nullptr &&
+			 public_entity_ids[index] == 0U))
 			return Phase2RuntimeResult::InvalidInput;
 		for (std::size_t previous = 0U; previous < index; ++previous)
-			if (signatures[previous].value == signatures[index].value)
+			if (identity_signatures[previous].value ==
+					identity_signatures[index].value ||
+				binding_keys[previous].value == binding_keys[index].value ||
+				(public_entity_ids != nullptr &&
+				 public_entity_ids[previous] == public_entity_ids[index]))
 				return Phase2RuntimeResult::InvalidInput;
 	}
 
@@ -127,27 +148,33 @@ Phase2RuntimeResult Phase2RuntimeSlot::reconcile_closure(
 			 existing < m_entry_count; ++existing)
 			if (m_entries[existing].active &&
 				m_entries[existing].signature ==
-				signatures[index].value) {
+					identity_signatures[index].value) {
 				previous_entry = &m_entries[existing];
 				break;
 			}
 		auto& entry = candidate[candidate_count++];
 		if (previous_entry == nullptr) {
-			if (next_id == 0U ||
-				next_id == std::numeric_limits<std::uint64_t>::max() ||
+			const auto requested_id = public_entity_ids != nullptr
+				? public_entity_ids[index] : next_id;
+			if (requested_id == 0U ||
+				requested_id == std::numeric_limits<std::uint64_t>::max() ||
 				next_generation == 0U ||
 				next_generation ==
 					std::numeric_limits<std::uint32_t>::max())
 				return Phase2RuntimeResult::CounterExhausted;
-			entry.signature = signatures[index].value;
-			entry.entity_id = next_id++;
+			entry.signature = identity_signatures[index].value;
+			entry.entity_id = requested_id;
+			next_id = std::max(next_id, requested_id + 1U);
 			entry.generation = next_generation++;
 			changed = true;
 		} else {
+			if (public_entity_ids != nullptr &&
+				previous_entry->entity_id != public_entity_ids[index])
+				return Phase2RuntimeResult::InvalidInput;
 			entry = *previous_entry;
 		}
 		entry.active = true;
-		candidate_bindings[index].capture_key = signatures[index];
+		candidate_bindings[index].capture_key = binding_keys[index];
 		candidate_bindings[index].entity_id = entry.entity_id;
 	}
 	m_entries = candidate;
@@ -265,10 +292,16 @@ Phase2RuntimeResult Phase2RuntimeSlot::observe_lifecycle(
 	for (std::size_t index = 0U; index < binding_count; ++index) {
 		const auto& ship = observation.ships[index];
 		const auto& binding = bindings[index];
+		if (binding.capture_key.value != ship.capture_key.value ||
+			binding.entity_id == 0U) {
+			m_pending_lifecycle = candidate_pending;
+			m_pending_lifecycle_count = pending_before;
+			m_next_event_id = event_before;
+			return Phase2RuntimeResult::InvalidInput;
+		}
 		EntityEntry* entry = nullptr;
 		for (auto& value : m_entries)
 			if (value.active &&
-				value.signature == binding.capture_key.value &&
 				value.entity_id == binding.entity_id) {
 				entry = &value;
 				break;

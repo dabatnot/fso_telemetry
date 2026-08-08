@@ -89,6 +89,13 @@ class Phase2RuntimeSlot final {
 		std::size_t count,
 		Phase2Wp05SubjectBinding* bindings,
 		std::size_t binding_capacity) noexcept;
+	Phase2RuntimeResult reconcile_closure_with_public_ids(
+		const Phase2CaptureLocalKey* identity_signatures,
+		const Phase2CaptureLocalKey* binding_keys,
+		const std::uint64_t* public_entity_ids,
+		std::size_t count,
+		Phase2Wp05SubjectBinding* bindings,
+		std::size_t binding_capacity) noexcept;
 	Phase2RuntimeResult stage_manifest(
 		std::uint32_t manifest_id,
 		const protocol::Sha256Digest& catalog_fingerprint) noexcept;

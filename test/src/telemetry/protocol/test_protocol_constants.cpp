@@ -167,7 +167,9 @@ TEST(TelemetryProtocolConstants, FreezesPhase3VersionFourRadarVisualContract) {
 	EXPECT_EQ(4U, static_cast<std::uint8_t>(RadarBlipType::TaggedShip));
 	EXPECT_EQ(5U, static_cast<std::uint8_t>(RadarBlipType::NormalShip));
 	EXPECT_EQ(0x0000000000010000ULL, TargetStatePresenceFlagHudTargetColor);
-	EXPECT_EQ(0x000000000001ffffULL, KnownTargetStatePresenceFlags);
+	EXPECT_EQ(0x0000000000020000ULL, TargetStatePresenceFlagHudTargetSubsystemLabel);
+	EXPECT_EQ(0x0000000000040000ULL, TargetStatePresenceFlagHudLockSubsystemLabel);
+	EXPECT_EQ(0x000000000007ffffULL, KnownTargetStatePresenceFlags);
 	EXPECT_EQ(0x0000000000000080ULL, RadarContactsPresenceFlagRadarVisual);
 	EXPECT_EQ(0x00000000000000ffULL, KnownRadarContactsPresenceFlags);
 }

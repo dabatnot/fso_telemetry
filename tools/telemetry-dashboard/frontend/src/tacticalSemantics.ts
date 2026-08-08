@@ -685,8 +685,15 @@ export function sensorLabels(snapshot: DashboardSnapshot | null) {
 
 export function subsystemNameForTarget(
   snapshot: DashboardSnapshot | null,
-  subsystemId: unknown
+  subsystemId: unknown,
+  authoritativeLabel?: unknown
 ): string | null {
+  const version = targetRecordVersion(snapshot);
+  if (version !== null && version >= 5) {
+    return typeof authoritativeLabel === "string" && authoritativeLabel.trim()
+      ? authoritativeLabel.trim()
+      : null;
+  }
   const target = targetState(snapshot);
   const identity = target?.revealed_identity;
   const classId = identity && typeof identity === "object"
@@ -694,8 +701,8 @@ export function subsystemNameForTarget(
     : undefined;
   if (!subsystemId || !classId) return null;
   const manifest = manifestRecord(snapshot, "CLASS_MANIFEST", "class_id", classId);
-  const definitions = Array.isArray(manifest?.subsystem_definitions)
-    ? manifest.subsystem_definitions as Array<Record<string, unknown>>
+  const definitions = Array.isArray(manifest?.subsystems)
+    ? manifest.subsystems as Array<Record<string, unknown>>
     : [];
   const definition = definitions.find(
     (candidate) => String(candidate.subsystem_id) === String(subsystemId)

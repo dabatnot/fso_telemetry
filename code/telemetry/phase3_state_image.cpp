@@ -17,7 +17,7 @@ using protocol::RecordType;
 using protocol::StateAtom;
 
 constexpr std::size_t LockPayloadCapacity = 4096U;
-constexpr std::size_t TargetPayloadCapacity = 704U;
+constexpr std::size_t TargetPayloadCapacity = 1280U;
 constexpr std::size_t RadarPayloadCapacity = 128U;
 constexpr std::size_t ContactPayloadCapacity = 704U;
 constexpr std::size_t ThreatPayloadCapacity = 32768U;
@@ -174,7 +174,9 @@ bool make_target(const Phase3Projection& source, StateAtom& atom)
 	const auto& target = source.target;
 	constexpr std::uint64_t SubsystemPresenceFlags =
 		protocol::TargetStatePresenceFlagTargetSubsystem |
-		protocol::TargetStatePresenceFlagLockSubsystem;
+		protocol::TargetStatePresenceFlagLockSubsystem |
+		protocol::TargetStatePresenceFlagHudTargetSubsystemLabel |
+		protocol::TargetStatePresenceFlagHudLockSubsystemLabel;
 	// Subsystem IDs are an identity disclosure.  Reject any intermediate
 	// projection that attempts to expose one without the revealed target group.
 	if ((target.presence & SubsystemPresenceFlags) != 0U &&
@@ -235,13 +237,19 @@ bool make_target(const Phase3Projection& source, StateAtom& atom)
 			(!writer.write_u8(target.hud_target_color[0]) ||
 			 !writer.write_u8(target.hud_target_color[1]) ||
 			 !writer.write_u8(target.hud_target_color[2]) ||
-			 !writer.write_u8(target.hud_target_color[3]))))
+			 !writer.write_u8(target.hud_target_color[3]))) ||
+		((target.presence & protocol::TargetStatePresenceFlagHudTargetSubsystemLabel) != 0U &&
+			!writer.write_utf8({target.hud_target_subsystem_label.bytes.data(),
+				target.hud_target_subsystem_label.size}, 255U)) ||
+		((target.presence & protocol::TargetStatePresenceFlagHudLockSubsystemLabel) != 0U &&
+			!writer.write_utf8({target.hud_lock_subsystem_label.bytes.data(),
+				target.hud_lock_subsystem_label.size}, 255U)))
 		return false;
 	if (!set_entity_key(atom, RecordType::TargetState, source.player_entity_id) ||
 		!assign_payload(writer, atom)) {
 		return false;
 	}
-	atom.record_version = 4U;
+	atom.record_version = 5U;
 	return validate_encoded(atom);
 }
 

@@ -1869,6 +1869,56 @@ TEST(Phase2Runtime, TST069SupportOrDockedSignatureReentryNeverReactivatesTheOldE
 	EXPECT_NE(bindings[1].entity_id, old_related_id);
 }
 
+TEST(Phase2Runtime, CockpitClosureAdoptsSensorIdentityAcrossRemovalAndReentry)
+{
+	detail::Phase2RuntimeSlot slot;
+	ASSERT_TRUE(slot.configure(
+		telemetry::Phase2Profile::CockpitSensors, 0U));
+	const std::array<detail::Phase2CaptureLocalKey, 2U> first_signatures{{
+		{4101U}, {7701U}}};
+	const std::array<detail::Phase2CaptureLocalKey, 2U> first_binding_keys{{
+		{1U}, {2U}}};
+	const std::array<std::uint64_t, 2U> first_public_ids{{1U, 2U}};
+	std::array<telemetry::Phase2Wp05SubjectBinding, 2U> bindings{};
+	ASSERT_EQ(detail::Phase2RuntimeResult::SnapshotRequired,
+		slot.reconcile_closure_with_public_ids(first_signatures.data(),
+			first_binding_keys.data(), first_public_ids.data(),
+			first_signatures.size(), bindings.data(), bindings.size()));
+	EXPECT_EQ(1U, bindings[0].capture_key.value);
+	EXPECT_EQ(2U, bindings[1].capture_key.value);
+	EXPECT_EQ(2U, bindings[1].entity_id);
+
+	ASSERT_EQ(detail::Phase2RuntimeResult::SnapshotRequired,
+		slot.reconcile_closure_with_public_ids(first_signatures.data(),
+			first_binding_keys.data(), first_public_ids.data(), 1U,
+			bindings.data(), bindings.size()));
+
+	// The replacement already existed as a sensor-only radar identity before
+	// it joined the CompleteShip closure. Its authoritative public ID must be
+	// adopted instead of allocating the closure-local key "2" again.
+	const std::array<detail::Phase2CaptureLocalKey, 2U> replacement_signatures{{
+		{4101U}, {8801U}}};
+	const std::array<std::uint64_t, 2U> replacement_public_ids{{1U, 21U}};
+	ASSERT_EQ(detail::Phase2RuntimeResult::SnapshotRequired,
+		slot.reconcile_closure_with_public_ids(replacement_signatures.data(),
+			first_binding_keys.data(), replacement_public_ids.data(),
+			replacement_signatures.size(), bindings.data(), bindings.size()));
+	EXPECT_EQ(2U, bindings[1].capture_key.value);
+	EXPECT_EQ(21U, bindings[1].entity_id);
+	auto observation = std::make_unique<detail::Phase2ObservationDto>();
+	observation->ships.resize(2U);
+	observation->ships[0].capture_key = first_binding_keys[0];
+	observation->ships[1].capture_key = first_binding_keys[1];
+	observation->ships[0].lifecycle.state =
+		detail::ShipLifecycleState::Present;
+	observation->ships[1].lifecycle.state =
+		detail::ShipLifecycleState::Present;
+	observation->ships[0].lifecycle.sample_time_us = 100U;
+	observation->ships[1].lifecycle.sample_time_us = 100U;
+	EXPECT_EQ(detail::Phase2RuntimeResult::SnapshotRequired,
+		slot.observe_lifecycle(*observation, bindings.data(), bindings.size()));
+}
+
 TEST(Phase2Runtime, TST018FaultsOnlyTargetAndPreservesOtherExposedOutput)
 {
 	ControllerIdentity identity;

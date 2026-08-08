@@ -974,9 +974,11 @@ enum TargetStatePresenceFlag : std::uint64_t {
 	TargetStatePresenceFlagExactHudSpeed = 0x0000000000004000ULL,
 	TargetStatePresenceFlagHudTypeLabel = 0x0000000000008000ULL,
 	TargetStatePresenceFlagHudTargetColor = 0x0000000000010000ULL,
+	TargetStatePresenceFlagHudTargetSubsystemLabel = 0x0000000000020000ULL,
+	TargetStatePresenceFlagHudLockSubsystemLabel = 0x0000000000040000ULL,
 };
-constexpr std::uint64_t KnownTargetStatePresenceFlags = 0x000000000001ffffULL;
-constexpr std::uint64_t ReservedTargetStatePresenceFlags = 0xfffffffffffe0000ULL;
+constexpr std::uint64_t KnownTargetStatePresenceFlags = 0x000000000007ffffULL;
+constexpr std::uint64_t ReservedTargetStatePresenceFlags = 0xfffffffffff80000ULL;
 
 enum RadarStatePresenceFlag : std::uint64_t {
 	RadarStatePresenceFlagNone = 0,

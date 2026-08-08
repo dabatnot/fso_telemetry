@@ -572,6 +572,34 @@ TEST(TelemetryProtocolBusinessRecords11To18,
 			BusinessRecordContainer::FullSnapshot, VersionMinorV1_1, metadata));
 }
 
+TEST(TelemetryProtocolBusinessRecords11To18,
+	TargetStateV5SubsystemHudLabelsAreExplicitAndAppended)
+{
+	auto payload = target(TargetStatePresenceFlagRevealedIdentity |
+		TargetStatePresenceFlagHudTargetSubsystemLabel |
+		TargetStatePresenceFlagHudLockSubsystemLabel, 2U);
+	u8(payload, static_cast<std::uint8_t>(ObjectType::Ship));
+	string(payload, "Alpha 2");
+	u32(payload, 0U);
+	u32(payload, 0U);
+	u32(payload, 0U);
+	string(payload, "Laser turret");
+	string(payload, "Navigation");
+	BusinessRecordMetadata metadata;
+	EXPECT_EQ(ValidationError::None,
+		validate_business_record(record(RecordType::TargetState, payload, 5U),
+			BusinessRecordContainer::FullSnapshot, VersionMinorV1_1, metadata));
+	EXPECT_EQ(ValidationError::UnsupportedRecordVersion,
+		validate_business_record(record(RecordType::TargetState, payload, 4U),
+			BusinessRecordContainer::FullSnapshot, VersionMinorV1_1, metadata));
+
+	auto empty_label = target(TargetStatePresenceFlagHudTargetSubsystemLabel, 2U);
+	string(empty_label, "");
+	EXPECT_EQ(ValidationError::OutOfRange,
+		validate_business_record(record(RecordType::TargetState, empty_label, 5U),
+			BusinessRecordContainer::FullSnapshot, VersionMinorV1_1, metadata));
+}
+
 TEST(TelemetryProtocolBusinessRecords11To18, RadarRejectsNonFiniteRangesAndInvalidVisibilityIntervals)
 {
 	auto infinite = radar(0, 3, static_cast<std::uint8_t>(RadarMode::Infinite), 1.0e12F);

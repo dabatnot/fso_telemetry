@@ -2259,6 +2259,25 @@ Phase2RuntimeResult SessionController::reconcile_phase2_closure(
 		signatures, count, bindings, binding_capacity);
 }
 
+Phase2RuntimeResult SessionController::reconcile_phase2_closure_with_public_ids(
+	std::size_t slot_index,
+	const Phase2CaptureLocalKey* identity_signatures,
+	const Phase2CaptureLocalKey* binding_keys,
+	const std::uint64_t* public_entity_ids,
+	std::size_t count,
+	Phase2Wp05SubjectBinding* bindings,
+	std::size_t binding_capacity) noexcept
+{
+	if (!m_ready || m_faulted ||
+		slot_index >= m_config.max_clients ||
+		m_config.phase2_profile != Phase2Profile::CockpitSensors)
+		return Phase2RuntimeResult::InvalidInput;
+	return m_slots[slot_index].phase2_runtime
+		.reconcile_closure_with_public_ids(identity_signatures,
+			binding_keys, public_entity_ids, count, bindings,
+			binding_capacity);
+}
+
 Phase2RuntimeResult SessionController::observe_phase2_lifecycle(
 	std::size_t slot_index, const Phase2ObservationDto& observation,
 	const Phase2Wp05SubjectBinding* bindings,

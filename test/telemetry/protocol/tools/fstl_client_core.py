@@ -493,6 +493,18 @@ class DashboardProjection:
         "missing-authoritative-target-hud-color": (
             "p3.dashboard.target-hud-color.v4-missing",
             ["wire:TARGET_STATE.hud_target_color"]),
+        "TARGET_STATE v5 target subsystem HUD label is authoritative": (
+            "p3.dashboard.target-subsystem-label.v5",
+            ["wire:TARGET_STATE.hud_target_subsystem_label"]),
+        "TARGET_STATE v5 lock subsystem HUD label is authoritative": (
+            "p3.dashboard.lock-subsystem-label.v5",
+            ["wire:TARGET_STATE.hud_lock_subsystem_label"]),
+        "missing-authoritative-target-subsystem-label": (
+            "p3.dashboard.target-subsystem-label.v5-missing",
+            ["wire:TARGET_STATE.hud_target_subsystem_label"]),
+        "missing-authoritative-lock-subsystem-label": (
+            "p3.dashboard.lock-subsystem-label.v5-missing",
+            ["wire:TARGET_STATE.hud_lock_subsystem_label"]),
         "clamp(1-time_to_lock_remaining_us/weapon.lock.time_us,0,1)": (
             "p3.dashboard.lock-progress.v1",
             ["wire:LOCK_STATE.locks.time_to_lock_remaining_us",
@@ -1609,6 +1621,30 @@ class DashboardProjection:
                     "value": hud_target_color if authoritative_hud_color else None,
                 },
             )
+            for field, suffix, present_provenance, missing_provenance in (
+                ("hud_target_subsystem_label", "target_subsystem_label",
+                 "TARGET_STATE v5 target subsystem HUD label is authoritative",
+                 "missing-authoritative-target-subsystem-label"),
+                ("hud_lock_subsystem_label", "lock_subsystem_label",
+                 "TARGET_STATE v5 lock subsystem HUD label is authoritative",
+                 "missing-authoritative-lock-subsystem-label"),
+            ):
+                label = target.get(field)
+                authoritative_label = (
+                    target_record_version >= 5
+                    and isinstance(label, str)
+                    and bool(label.strip())
+                )
+                self._add_derived(
+                    f"entities.{entity}.target.{suffix}",
+                    present_provenance if authoritative_label else missing_provenance,
+                    {
+                        "available": authoritative_label,
+                        "reason": None if authoritative_label
+                        else "missing-authoritative-subsystem-label",
+                        "value": label if authoritative_label else None,
+                    },
+                )
 
         weapon_manifests = {
             str(record.get("weapon_class_id")): record

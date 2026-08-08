@@ -3825,8 +3825,8 @@ def build_fstl_v1_1_schema() -> dict[str, object]:
     radar_contacts["phase3_live_record_version"] = 4
 
     target_presence = registries["TargetStatePresence"]
-    target_presence["reserved"]["known_mask"] = 0x1FFFF
-    target_presence["reserved"]["reserved_mask"] = 0xFFFFFFFFFFFE0000
+    target_presence["reserved"]["known_mask"] = 0x7FFFF
+    target_presence["reserved"]["reserved_mask"] = 0xFFFFFFFFFFF80000
     target_presence["values"].append({
         "bit": 14,
         "name": "EXACT_HUD_SPEED",
@@ -3837,6 +3837,18 @@ def build_fstl_v1_1_schema() -> dict[str, object]:
         "bit": 16,
         "name": "HUD_TARGET_COLOR",
         "value": 0x10000,
+        "source": {"document": p3_doc04_path, "section": "5.2"},
+    })
+    target_presence["values"].append({
+        "bit": 17,
+        "name": "HUD_TARGET_SUBSYSTEM_LABEL",
+        "value": 0x20000,
+        "source": {"document": p3_doc04_path, "section": "5.2"},
+    })
+    target_presence["values"].append({
+        "bit": 18,
+        "name": "HUD_LOCK_SUBSYSTEM_LABEL",
+        "value": 0x40000,
         "source": {"document": p3_doc04_path, "section": "5.2"},
     })
     target_presence["values"].append({
@@ -3879,6 +3891,27 @@ def build_fstl_v1_1_schema() -> dict[str, object]:
         "semantics": "bit 16; couleur HUD brillante autoritaire de la cible",
         "wire": "rgba8",
     })
+    target_v5_fields = json.loads(json.dumps(target_v4_fields))
+    target_v5_fields.extend([
+        {
+            "constraint": "UTF-8 1..255 octets",
+            "name": "hud_target_subsystem_label",
+            "nature": "A",
+            "position": str(len(target_v5_fields) + 1),
+            "presence_condition": {"bits": [17], "selector": "presence"},
+            "semantics": "bit 17; exact instance-aware subsystem label rendered by the FSO Target Box",
+            "wire": "utf8-string",
+        },
+        {
+            "constraint": "UTF-8 1..255 octets",
+            "name": "hud_lock_subsystem_label",
+            "nature": "A",
+            "position": str(len(target_v5_fields) + 2),
+            "presence_condition": {"bits": [18], "selector": "presence"},
+            "semantics": "bit 18; exact instance-aware subsystem label used by the FSO missile lock",
+            "wire": "utf8-string",
+        },
+    ])
     for index, field in enumerate(target_v2_fields, start=1):
         field["position"] = str(index)
     target_state["versions"] = [
@@ -3896,8 +3929,12 @@ def build_fstl_v1_1_schema() -> dict[str, object]:
          "required_profile": "CockpitSensors",
          "compatibility": "explicit; v4 appends the authoritative HUD target color",
          "fields": target_v4_fields},
+        {"version": 5, "minimum_minor": 1,
+         "required_profile": "CockpitSensors",
+         "compatibility": "explicit; v5 appends authoritative target and lock subsystem HUD labels",
+         "fields": target_v5_fields},
     ]
-    target_state["phase3_live_record_version"] = 4
+    target_state["phase3_live_record_version"] = 5
 
     records.append({
         "id": 29,

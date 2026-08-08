@@ -867,7 +867,7 @@ TEST(TelemetryPhase3StateImage,
 }
 
 TEST(TelemetryPhase3StateImage,
-	PublishesExactHudTargetReadoutAndColorInExplicitVersionFour)
+	PublishesExactHudTargetReadoutAndColorInExplicitVersionFive)
 {
 	constexpr std::uint64_t Player = 42U;
 	auto base = make_base(Player);
@@ -892,7 +892,7 @@ TEST(TelemetryPhase3StateImage,
 			base, *projection, image));
 	const auto* target = find(image, RecordType::TargetState);
 	ASSERT_NE(nullptr, target);
-	EXPECT_EQ(4U, target->record_version);
+	EXPECT_EQ(5U, target->record_version);
 	EXPECT_EQ(published_count, image.records().size());
 	EXPECT_FLOAT_EQ(500.0F, read_f32(target->value, 32U));
 	EXPECT_FLOAT_EQ(92.0F, read_f32(target->value, 36U));
@@ -900,6 +900,47 @@ TEST(TelemetryPhase3StateImage,
 	EXPECT_EQ(0xbbU, target->value[41U]);
 	EXPECT_EQ(0xccU, target->value[42U]);
 	EXPECT_EQ(0xddU, target->value[43U]);
+}
+
+TEST(TelemetryPhase3StateImage,
+	PublishesAuthoritativeTargetAndLockSubsystemLabelsInVersionFive)
+{
+	constexpr std::uint64_t Player = 42U;
+	auto base = make_base(Player);
+	auto projection = std::make_unique<telemetry::Phase3Projection>();
+	projection->player_entity_id = Player;
+	set_sample_times(*projection);
+	projection->target.current_target_entity_id = 100U;
+	projection->target.presence =
+		telemetry::protocol::TargetStatePresenceFlagRevealedIdentity |
+		telemetry::protocol::TargetStatePresenceFlagHudTargetSubsystemLabel |
+		telemetry::protocol::TargetStatePresenceFlagHudLockSubsystemLabel;
+	projection->target.revealed_object_type =
+		telemetry::protocol::ObjectType::Ship;
+	ASSERT_TRUE(projection->target.revealed_name.assign("Alpha", 5U));
+	ASSERT_TRUE(projection->target.hud_target_subsystem_label.assign(
+		"Engine array", 12U));
+	ASSERT_TRUE(projection->target.hud_lock_subsystem_label.assign(
+		"Navigation", 10U));
+
+	telemetry::protocol::StateImage image;
+	ASSERT_EQ(telemetry::Phase3StateImageBuildStatus::Created,
+		telemetry::build_phase3_cockpit_sensor_state_image(
+			base, *projection, image));
+	const auto* target = find(image, RecordType::TargetState);
+	ASSERT_NE(nullptr, target);
+	EXPECT_EQ(5U, target->record_version);
+	// Header (32), object type (1), revealed name (2+5) and three u32s.
+	constexpr std::size_t TargetLabelOffset = 52U;
+	EXPECT_EQ(12U, read_u16(target->value, TargetLabelOffset));
+	EXPECT_EQ("Engine array", std::string(
+		reinterpret_cast<const char*>(target->value.data() + TargetLabelOffset + 2U),
+		12U));
+	constexpr std::size_t LockLabelOffset = TargetLabelOffset + 14U;
+	EXPECT_EQ(10U, read_u16(target->value, LockLabelOffset));
+	EXPECT_EQ("Navigation", std::string(
+		reinterpret_cast<const char*>(target->value.data() + LockLabelOffset + 2U),
+		10U));
 }
 
 TEST(TelemetryPhase3StateImage, PlayerAbsentRetainsOnlyGlobalSingletons)
