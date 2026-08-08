@@ -3,7 +3,7 @@
   "phase": 3,
   "phaseDirectory": "documentation/analysis/specs/3-Ciblage-et-capteurs",
   "contractFingerprint": "sha256:942e8ada4756238765113418c07663ba4fb339a74e30c2c454f24f09fb61af7f",
-  "updatedAtUtc": "2026-08-08T21:12:32Z",
+  "updatedAtUtc": "2026-08-08T22:00:22Z",
   "requirements": [
     {
       "id": "P3-REQ-001",
@@ -897,7 +897,7 @@
         {
           "id": "P3-REQ-023-AUTO-01",
           "kind": "automated",
-          "command": "build\\bin\\Release\\unittests.exe --gtest_filter=TelemetryPhase3SensorState.PrimitiveSensorRangeComesFromTheLivePlayerShip:TelemetryPhase3SensorState.EmpIntensityAndRemainingTimeComeFromTheLivePlayerShip --gtest_color=no",
+          "command": "build\\bin\\Release\\unittests.exe --gtest_filter=TelemetryPhase3SensorState.* --gtest_color=no",
           "status": "passed",
           "inputs": [
             "code/telemetry/phase3_engine_collector.cpp",
@@ -908,9 +908,9 @@
             "code/ship/awacs.h",
             "test/src/telemetry/producer/test_telemetry_native_runtime_integration_contract.cpp"
           ],
-          "inputFingerprint": "sha256:4351fbb18aa35d3584563881270d17cd0e35ff4b0061a9f2b962cdcc96889598",
-          "observedAtUtc": "2026-08-06T18:52:12Z",
-      "result": "passed: 2 tests. L'EMP actif provient du vaisseau joueur avec durée exacte, et la portée primitive est publiée seulement depuis le vaisseau joueur dont le flag capteurs primitifs est actif.",
+          "inputFingerprint": "sha256:09aa0427e66c42b548e7d1a56b444ffc66c495140803bdd529d00b2bd5da3425",
+          "observedAtUtc": "2026-08-08T21:44:35Z",
+          "result": "3/3 passed: EMP and primitive range retain their live-engine sources; INFINITE radar mode converts the gameplay cutoff to the exact finite FSTL 1e12 sentinel.",
           "resultRef": null
         }
       ],
@@ -1299,7 +1299,7 @@
       "observable": "Les dérivations tactiques et cadences de voyants restent client sauf D/S, libellés, couleurs et états discrets autoritaires ; la coordonnée radar live utilise strictement les entrées v2/v3/v4, avec fallback seulement pour capture v1.",
       "expectedAutomatedProof": "`telemetry_phase3_derived_value_tests`",
         "implementationStatus": "implemented",
-      "implementationSummary": "Le client et le dashboard appliquent les RGBA v4 au cadran, à la liste et au panneau cible, multiplient seulement l’alpha des pistes distordues et gardent la sélection par forme/réticule. Une couleur v4 absente devient neutre avec provenance missing-authoritative-color ; le style historique reste limité à v1-v3.",
+      "implementationSummary": "Le client et le dashboard appliquent les RGBA radar v4 au cadran et à la liste ainsi que la couleur cible introduite en v4 et conservée en TARGET_STATE v5 au panneau cible. Ils multiplient seulement l’alpha des pistes distordues et gardent la sélection par forme/réticule. Une couleur autoritaire absente devient neutre avec provenance missing-authoritative-color ; le style historique reste limité à v1-v3. Le mode radar autoritaire INFINITE est présenté par le symbole ∞ sans remplacer ni altérer selected_range dans les données brutes.",
         "implementationPaths": [
           "code/telemetry/phase3_state_image.cpp",
           "code/telemetry/phase3_state_image.h",
@@ -1320,9 +1320,9 @@
               "code/telemetry/phase3_state_image.h",
               "test/src/telemetry/producer/phase3_state_image_tests.cpp"
             ],
-          "inputFingerprint": "sha256:30e2f5af2ef2ee74ee1413e9ce6e25c9bf8c51430aed1829ea64b1512a3376f3",
-          "observedAtUtc": "2026-08-08T18:19:01Z",
-          "result": "2/2 tests ciblés passés ; les libellés HUD v5 restent des valeurs autoritaires distinctes des dérivations client.",
+          "inputFingerprint": "sha256:de9adee380c8fcf865e3c632734a7e1c9d0da04af0a94c14ea988ba458568569",
+          "observedAtUtc": "2026-08-08T21:53:46Z",
+          "result": "25/25 tests de l'image Phase 3 passés, dont la sentinelle finie du mode radar INFINITE et les libellés HUD v5 autoritaires.",
             "resultRef": null
           },
           {
@@ -1355,9 +1355,9 @@
             "tools/telemetry-dashboard/frontend/src/tacticalSemantics.ts",
             "tools/telemetry-dashboard/frontend/src/tacticalSemantics.test.ts"
           ],
-          "inputFingerprint": "sha256:1e7656d346dbb012b90381169115275966c67385d29987c8999ac437ed715bfa",
-          "observedAtUtc": "2026-08-08T18:19:01Z",
-          "result": "36 tests client Python, 62 tests frontend, build Vite et 2 tests de sérialisation TARGET_STATE v5 passés.",
+          "inputFingerprint": "sha256:151aeaaa6f1e4328ec607ddee9deb4fc0966d7af21a5ae5798254da3280c01eb",
+          "observedAtUtc": "2026-08-08T22:00:22Z",
+          "result": "36 tests client Python, 63 tests frontend, build Vite et 2 tests de sérialisation TARGET_STATE v5 passés ; la couleur HUD autoritaire reste appliquée en v5, INFINITE est affiché ∞ et les portées finies restent numériques.",
             "resultRef": "test/telemetry/protocol/tools/test_fstl_console_client_contract.py"
           }
         ],
@@ -1384,16 +1384,16 @@
         {
           "id": "P3-REQ-034-AUTO-01",
           "kind": "automated",
-          "command": "build\\bin\\Release\\telemetry_phase3_state_image_tests.exe --gtest_filter=TelemetryPhase3StateImage.RejectsInvalidRadarEnumAndNullContactIdentityBeforePublication --gtest_color=no",
+          "command": "build\\bin\\Release\\telemetry_phase3_state_image_tests.exe --gtest_color=no",
             "status": "passed",
             "inputs": [
               "code/telemetry/phase3_state_image.cpp",
               "code/telemetry/phase3_state_image.h",
               "test/src/telemetry/producer/phase3_state_image_tests.cpp"
             ],
-      "inputFingerprint": "sha256:30e2f5af2ef2ee74ee1413e9ce6e25c9bf8c51430aed1829ea64b1512a3376f3",
-      "observedAtUtc": "2026-08-08T10:27:10Z",
-          "result": "22/22 tests d’image Phase 3 passés, avec rejet fermé des valeurs invalides et conservation légale des cadences indépendantes.",
+          "inputFingerprint": "sha256:de9adee380c8fcf865e3c632734a7e1c9d0da04af0a94c14ea988ba458568569",
+          "observedAtUtc": "2026-08-08T21:44:35Z",
+          "result": "25/25 passed: the Phase 3 image accepts the exact finite INFINITE radar sentinel while retaining fail-closed validation for invalid radar values.",
             "resultRef": null
           },
           {
@@ -1406,8 +1406,8 @@
               "code/telemetry/protocol/telemetry_business_records_11_18.cpp",
               "test/src/telemetry/protocol/test_telemetry_business_records_11_18.cpp"
             ],
-            "inputFingerprint": "sha256:2336069fd51113baa482ea6133c32b1ff157729df84b9793bf00b83d81a8c01f",
-          "observedAtUtc": "2026-08-08T10:27:10Z",
+            "inputFingerprint": "sha256:b951c3171f62726322f2c21fafbf1611b03c7b51643a38379a623c8d55517667",
+            "observedAtUtc": "2026-08-08T21:46:12Z",
             "result": "2/2 passed: invalid target absence, UTF-8, enum values, and non-finite radar ranges fail closed.",
             "resultRef": null
           },
@@ -1421,8 +1421,8 @@
               "code/telemetry/protocol/telemetry_business_state_validation.h",
               "test/src/telemetry/protocol/test_telemetry_business_state_validation.cpp"
             ],
-          "inputFingerprint": "sha256:397d44c95c85cd467a1f677586d757ce5829cd42e34bf1fd63b9da58dc6e2363",
-          "observedAtUtc": "2026-08-08T10:27:10Z",
+          "inputFingerprint": "sha256:fd6c307611dcffe4178260ca7eb05db6fac866ec93236db423e71b4e52880365",
+          "observedAtUtc": "2026-08-08T21:46:12Z",
             "result": "1/1 passed: les références cible/lock résolvent dans l'image; la cohérence cible/contact multi-cadence est couverte séparément par le validateur métier.",
             "resultRef": null
           },
@@ -1438,8 +1438,8 @@
               "code/telemetry/phase3_engine_collector.h",
               "test/src/telemetry/producer/test_telemetry_native_runtime_integration_contract.cpp"
             ],
-            "inputFingerprint": "sha256:47eb6aa6a53e8126c59b847de6ee26a9195daa277fed78b706937c0bd2ba9fb1",
-            "observedAtUtc": "2026-08-08T13:25:14Z",
+          "inputFingerprint": "sha256:462de7d37180ffb256457cc023f5d8098d2e2319329ac84955278bb6cbce4dba",
+          "observedAtUtc": "2026-08-08T21:44:35Z",
             "result": "2/2 couverts par la suite ciblée: l’arme dynamique non installée est omise et la vraie limite max+1 reste un rejet fermé sans projection partielle.",
             "resultRef": null
           }
@@ -1883,7 +1883,7 @@
       "observable": "Le client indépendant conserve les sample times bruts ; le dashboard suit la cible `TARGET_STATE` et les alertes `HUD_ALERT_STATE` sans décision inventée.",
       "expectedAutomatedProof": "`telemetry_phase3_loopback_tests`",
       "implementationStatus": "implemented",
-      "implementationSummary": "Le décodeur conserve les sample times bruts et expose les deux libellés HUD de sous-système v5 avec provenance. Le dashboard suit TARGET_STATE pour la sélection, emploie strictement ces libellés en live v5 et réserve la résolution CLASS_MANIFEST.subsystems aux captures v1-v4.",
+      "implementationSummary": "Le décodeur conserve les sample times et valeurs brutes. Le dashboard suit TARGET_STATE pour la sélection, emploie strictement les libellés HUD v5 et la couleur cible autoritaire v4/v5 en live, et réserve la résolution CLASS_MANIFEST.subsystems aux captures v1-v4. Il présente le mode radar INFINITE par ∞ tout en conservant la portée filaire autoritaire dans l'inspection.",
       "implementationPaths": [
         "test/telemetry/protocol/tools/fstl_client_core.py",
         "test/telemetry/protocol/tools/fstl_reference_decoder.py",
@@ -1908,9 +1908,9 @@
             "tools/telemetry-dashboard/frontend/src/instrument-catalog.json",
             "tools/telemetry-dashboard/frontend/src/styles.css"
           ],
-          "inputFingerprint": "sha256:3c8391c66bad1d6cc9d61fd1389e5a1c5a23bbd7532df8380599f720d74f0551",
-          "observedAtUtc": "2026-08-08T18:19:01Z",
-          "result": "36 tests du client Python, 62 tests frontend et le build Vite passent; TARGET_STATE v5 priorise les libellés cible/lock et v1-v4 résolvent CLASS_MANIFEST.subsystems.",
+          "inputFingerprint": "sha256:71953fae29e5c4bab843e946a6bbcb759e1df324cafe8e3457b1650a0d7020eb",
+          "observedAtUtc": "2026-08-08T22:00:22Z",
+          "result": "36 tests du client Python, 63 tests frontend et le build Vite passent ; la carte cible applique la couleur HUD autoritaire en TARGET_STATE v4/v5 et la présentation radar affiche ∞ uniquement pour le mode INFINITE sans modifier la valeur brute.",
           "resultRef": null
         }
       ],

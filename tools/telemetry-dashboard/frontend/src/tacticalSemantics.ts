@@ -178,6 +178,8 @@ function integer(value: unknown): number | null {
 const LEGACY_NEUTRAL_COLOR = "#70e4d1";
 const LEGACY_TARGET_COLOR = "#ffd466";
 const LEGACY_THREAT_COLOR = "#ff6b55";
+const RADAR_COLOR_RECORD_VERSIONS = [4] as const;
+const TARGET_COLOR_RECORD_VERSIONS = [4, 5] as const;
 
 function byte(value: unknown): number | null {
   const numeric = Number(value);
@@ -212,7 +214,7 @@ function contactColor(
   version: number | null,
   flagBits: number
 ): TacticalColor {
-  const authoritative = authoritativeColor(value, version);
+  const authoritative = authoritativeColor(value, version, RADAR_COLOR_RECORD_VERSIONS);
   if (authoritative !== null) return authoritative;
   if (version !== null && version > 3) {
     return {
@@ -224,8 +226,12 @@ function contactColor(
   return legacyContactColor(flagBits);
 }
 
-function authoritativeColor(value: unknown, version: number | null): TacticalColor | null {
-  if (version !== 4) return null;
+function authoritativeColor(
+  value: unknown,
+  version: number | null,
+  supportedVersions: readonly number[]
+): TacticalColor | null {
+  if (version === null || !supportedVersions.includes(version)) return null;
   const rgba = rgba8(value);
   return rgba === null
     ? { rgba: null, css: LEGACY_NEUTRAL_COLOR, provenance: "missing-authoritative-color" }
@@ -284,6 +290,22 @@ export function targetState(snapshot: DashboardSnapshot | null) {
 
 export function radarState(snapshot: DashboardSnapshot | null) {
   return playerRecord(snapshot, "RADAR_STATE");
+}
+
+export function radarRangeDisplay(snapshot: DashboardSnapshot | null) {
+  const radar = radarState(snapshot);
+  if (integer(radar?.radar_mode) === 2) {
+    return {
+      value: null,
+      text: "∞",
+      detail: "portée illimitée"
+    } as const;
+  }
+  return {
+    value: finite(radar?.selected_range),
+    text: null,
+    detail: "unités monde"
+  } as const;
 }
 
 export function lockState(snapshot: DashboardSnapshot | null) {
@@ -554,7 +576,11 @@ export function targetRecordVersion(snapshot: DashboardSnapshot | null): number 
 
 export function targetHudColor(snapshot: DashboardSnapshot | null): TacticalColor {
   const version = targetRecordVersion(snapshot);
-  const color = authoritativeColor(targetState(snapshot)?.hud_target_color, version);
+  const color = authoritativeColor(
+    targetState(snapshot)?.hud_target_color,
+    version,
+    TARGET_COLOR_RECORD_VERSIONS
+  );
   if (color !== null) return color;
   if (version !== null && version >= 4) {
     return {

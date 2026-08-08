@@ -786,6 +786,24 @@ TEST(TelemetryPhase3StateImage,
 	EXPECT_EQ(published_count, image.records().size());
 }
 
+TEST(TelemetryPhase3StateImage,
+	AcceptsTheFiniteInfiniteRadarRangeSentinel)
+{
+	constexpr std::uint64_t Player = 42U;
+	auto base = make_base(Player);
+	auto projection = std::make_unique<telemetry::Phase3Projection>();
+	projection->player_entity_id = Player;
+	set_sample_times(*projection);
+	projection->radar.mode = telemetry::protocol::RadarMode::Infinite;
+	projection->radar.selected_range = 1.0e12F;
+
+	telemetry::protocol::StateImage image;
+	EXPECT_EQ(telemetry::Phase3StateImageBuildStatus::Created,
+		telemetry::build_phase3_cockpit_sensor_state_image(
+			base, *projection, image));
+	EXPECT_NE(nullptr, find(image, RecordType::RadarState));
+}
+
 TEST(TelemetryPhase3StateImage, CanonicalizesNegativeZeroBeforePublication)
 {
 	constexpr std::uint64_t Player = 42U;

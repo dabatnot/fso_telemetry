@@ -18,6 +18,7 @@ import {
   lockViews,
   missileViews,
   prioritizedContacts,
+  radarRangeDisplay,
   targetClassDisplayName,
   targetDisplayName,
   targetHudTypeLabel,
@@ -231,6 +232,26 @@ describe("tactical closed registries", () => {
 });
 
 describe("tactical display semantics", () => {
+  it("renders the authoritative infinite radar mode as an infinity symbol", () => {
+    const value = snapshot();
+    const radar = value.records.RADAR_STATE?.[0];
+    expect(radar).toBeDefined();
+    Object.assign(radar!, { radar_mode: 2, selected_range: 1.0e12 });
+
+    expect(radarRangeDisplay(value)).toEqual({
+      value: null,
+      text: "∞",
+      detail: "portée illimitée"
+    });
+
+    Object.assign(radar!, { radar_mode: 1, selected_range: 10_000 });
+    expect(radarRangeDisplay(value)).toEqual({
+      value: 10_000,
+      text: null,
+      detail: "unités monde"
+    });
+  });
+
   it("keeps primary fire and acquired missile lock simultaneous with authoritative timing", () => {
     const value = snapshot();
     value.records.HUD_ALERT_STATE = [{
@@ -474,26 +495,29 @@ describe("tactical display semantics", () => {
 		expect((retained?.flagBits ?? 0) & 0x02).toBe(0x02);
 	});
 
-  it("uses authoritative target RGBA in v4 and neutralizes a missing v4 color", () => {
+  it("uses authoritative target RGBA in v4/v5 and neutralizes a missing authoritative color", () => {
     const value = snapshot();
     const target = value.records.TARGET_STATE[0];
     target.hud_target_color = [9, 180, 70, 255];
-    value.recordInstances["TARGET_STATE/entity_id=1"] = {
-      recordName: "TARGET_STATE",
-      recordVersion: 4,
-      fields: target
-    };
-    expect(targetHudColor(value)).toEqual({
-      rgba: [9, 180, 70, 255],
-      css: "#09b446ff",
-      provenance: "authoritative-v4"
-    });
-    delete target.hud_target_color;
-    expect(targetHudColor(value)).toEqual({
-      rgba: null,
-      css: "#70e4d1",
-      provenance: "missing-authoritative-color"
-    });
+    for (const recordVersion of [4, 5]) {
+      value.recordInstances["TARGET_STATE/entity_id=1"] = {
+        recordName: "TARGET_STATE",
+        recordVersion,
+        fields: target
+      };
+      expect(targetHudColor(value)).toEqual({
+        rgba: [9, 180, 70, 255],
+        css: "#09b446ff",
+        provenance: "authoritative-v4"
+      });
+      delete target.hud_target_color;
+      expect(targetHudColor(value)).toEqual({
+        rgba: null,
+        css: "#70e4d1",
+        provenance: "missing-authoritative-color"
+      });
+      target.hud_target_color = [9, 180, 70, 255];
+    }
   });
 
   it("keeps the historical target accent for v1-v3 captures", () => {

@@ -33,6 +33,10 @@
 namespace telemetry::detail {
 namespace {
 
+// FSO implements the infinity radar range with a large, finite gameplay
+// distance. FSTL deliberately uses its own finite upper-bound sentinel for an
+// INFINITE RADAR_STATE so the wire never depends on that engine constant.
+constexpr float FstlInfiniteRadarRange = 1.0e12F;
 
 template <typename T>
 void reconstruct_in_place(T& value) noexcept
@@ -906,14 +910,17 @@ Phase3EngineCollectStatus collect_radar(
 	Phase3Projection& output) noexcept
 {
 	output.radar.producer_sample_time_us = sample_time;
+	const auto radar_range = HUD_config.rp_dist;
 	output.radar.selected_range =
-		HUD_config.rp_dist >= 0 && HUD_config.rp_dist < RR_MAX_RANGES
-		? Radar_ranges[HUD_config.rp_dist]
+		radar_range == RR_INFINITY
+		? FstlInfiniteRadarRange
+		: radar_range >= 0 && radar_range < RR_MAX_RANGES
+		? Radar_ranges[radar_range]
 		: 0.0F;
 	output.radar.mode =
-		HUD_config.rp_dist == RR_SHORT ? protocol::RadarMode::Short :
-		HUD_config.rp_dist == RR_LONG ? protocol::RadarMode::Long :
-		HUD_config.rp_dist == RR_INFINITY ? protocol::RadarMode::Infinite :
+		radar_range == RR_SHORT ? protocol::RadarMode::Short :
+		radar_range == RR_LONG ? protocol::RadarMode::Long :
+		radar_range == RR_INFINITY ? protocol::RadarMode::Infinite :
 		protocol::RadarMode::Custom;
 	const auto sensor_strength =
 		std::clamp(ship_get_subsystem_strength(Player_ship, SUBSYSTEM_SENSORS),

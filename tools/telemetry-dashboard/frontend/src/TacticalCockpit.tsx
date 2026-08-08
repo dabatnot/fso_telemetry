@@ -13,6 +13,7 @@ import {
   prioritizedContacts,
   contactVisibilityAlpha,
   hudAlertView,
+  radarRangeDisplay,
   radarState,
   sensorLabels,
   subsystemNameForTarget,
@@ -122,7 +123,7 @@ function SensorStrip({
   const ratio = ratioItem?.available ? finite(ratioItem.value) : null;
   const current = finite(radar?.sensor_current_hits);
   const maximum = finite(radar?.sensor_max_hits);
-  const range = finite(radar?.selected_range);
+  const range = radarRangeDisplay(snapshot);
   const emp = finite(radar?.emp_intensity);
   const invalid = labels.mode === null || labels.state === null || ratio === null;
   return (
@@ -135,7 +136,13 @@ function SensorStrip({
     >
       <div className={`sensor-strip ${invalid ? "invalid" : ""}`}>
         <div><span>MODE RADAR</span><strong>{labels.mode ?? "ERR"}</strong></div>
-        <div><span>PORTÉE</span><strong>{formatNumber(range, 0)}</strong><small>unités monde</small></div>
+        <div>
+          <span>PORTÉE</span>
+          <strong aria-label={range.text === "∞" ? "Portée infinie" : undefined}>
+            {range.text ?? formatNumber(range.value, 0)}
+          </strong>
+          <small>{range.detail}</small>
+        </div>
         <div className="sensor-health">
           <span>CAPTEURS</span>
           <strong>{labels.state ?? "ERR"}</strong>

@@ -2206,6 +2206,35 @@ TEST(TelemetryPhase3SensorState,
 	EXPECT_FLOAT_EQ(1234.0F, output->radar.primitive_range);
 }
 
+TEST(TelemetryPhase3SensorState,
+	InfiniteRadarRangeUsesTheFiniteFstlSentinel)
+{
+	auto engine_globals = std::make_unique<Phase3EngineGlobalsScope>();
+	detail::capture_phase2_main_thread_authority();
+	HUD_config.rp_dist = RR_INFINITY;
+
+	auto phase2 = std::make_unique<detail::Phase2ObservationDto>();
+	phase2->ships.resize(1U);
+	phase2->ships[0].capture_key.value =
+		static_cast<std::uint32_t>(Player_obj->signature);
+	const telemetry::Phase2Wp05SubjectBinding binding{
+		phase2->ships[0].capture_key, 1U};
+	detail::Phase3IdentityRegistry identities;
+	ASSERT_EQ(detail::Phase3IdentityProvisionStatus::Ready,
+		identities.provision());
+	auto output = std::make_unique<telemetry::Phase3Projection>();
+	auto scratch = std::make_unique<telemetry::Phase3Projection>();
+	ASSERT_EQ(detail::Phase3EngineCollectStatus::Collected,
+		detail::collect_phase3_engine_projection(
+			{64U, 1U, phase2.get(), &binding, 1U, nullptr, false, true},
+			identities, *output, *scratch));
+	EXPECT_EQ(protocol::RadarMode::Infinite, output->radar.mode);
+	EXPECT_TRUE(std::isfinite(output->radar.selected_range));
+	EXPECT_FLOAT_EQ(1.0e12F, output->radar.selected_range);
+	EXPECT_NE(Radar_ranges[RR_INFINITY], output->radar.selected_range)
+		<< "The engine's gameplay cutoff is not the FSTL infinity sentinel.";
+}
+
 TEST(TelemetryPhase3Navigation,
 	EngineCollectorKeepsMissionOrderCurrentDestinationAndWaypointRoute)
 {
