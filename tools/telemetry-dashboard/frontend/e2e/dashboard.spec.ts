@@ -684,6 +684,10 @@ async function mockTacticalSnapshot(
           position_world: [0, 0, 600], orientation_local_to_world: [1, 0, 0, 0],
           velocity_world: [0, 0, -120]
         }]
+      }],
+      HUD_ALERT_STATE: [{
+        entity_id: "1", presence: "0", producer_sample_time_us: "1000000",
+        primary_fire_threat_active: false, missile_lock_state: 1
       }]
     },
     recordInstances: {},
@@ -774,6 +778,13 @@ test("the 1920x1080 tactical cockpit keeps its five combat zones readable", asyn
   expect(dimensions[6]).toBeGreaterThan(dimensions[7]);
   await expect(page.getByText("COURTE", { exact: true })).toBeVisible();
   await expect(page.getByText("Cible Alpha", { exact: true }).first()).toBeVisible();
+  await expect(page.locator(".tactical-target .target-card > strong")).toHaveText("Cible Alpha");
+  await expect(page.locator(".tactical-target .target-class")).toHaveText("GTF Tactical");
+  const identityLinesFit = await page.locator(".tactical-target").evaluate((panel) =>
+    Array.from(panel.querySelectorAll<HTMLElement>(".target-card > strong, .target-class"))
+      .every((line) => line.clientHeight >= line.scrollHeight)
+  );
+  expect(identityLinesFit).toBe(true);
   await expect(page.getByText("ACQUISITION", { exact: true })).toBeVisible();
   await expect(page.getByText("LOCK EN COURS", { exact: true })).toBeVisible();
   await expect(page.getByText("Harpoon entrant", { exact: true })).toBeVisible();

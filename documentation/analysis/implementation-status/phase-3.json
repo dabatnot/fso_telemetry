@@ -3,7 +3,7 @@
   "phase": 3,
   "phaseDirectory": "documentation/analysis/specs/3-Ciblage-et-capteurs",
   "contractFingerprint": "sha256:4bf631b87dced774b1d497bf6f0c89a3605e229181881301025b30a324d231d6",
-  "updatedAtUtc": "2026-08-08T17:00:28Z",
+  "updatedAtUtc": "2026-08-08T17:36:01Z",
   "requirements": [
     {
       "id": "P3-REQ-001",
@@ -1854,13 +1854,14 @@
         "test/telemetry/protocol/tools/fstl_client_core.py",
         "test/telemetry/protocol/tools/fstl_reference_decoder.py",
         "tools/telemetry-dashboard/frontend/src/tacticalSemantics.ts",
-        "tools/telemetry-dashboard/frontend/src/TacticalCockpit.tsx"
+        "tools/telemetry-dashboard/frontend/src/TacticalCockpit.tsx",
+        "tools/telemetry-dashboard/frontend/src/styles.css"
       ],
       "proofs": [
         {
           "id": "P3-REQ-045-AUTO-01",
           "kind": "automated",
-          "command": "python -B test/telemetry/protocol/tools/test_fstl_phase3_scenario_client.py ; npm --prefix tools/telemetry-dashboard/frontend test -- --run ; npm --prefix tools/telemetry-dashboard/frontend run build",
+          "command": "python -B test/telemetry/protocol/tools/test_fstl_phase3_scenario_client.py ; npm --prefix tools/telemetry-dashboard/frontend test -- --run ; npm --prefix tools/telemetry-dashboard/frontend run build ; npm --prefix tools/telemetry-dashboard/frontend run test:e2e",
           "status": "passed",
           "inputs": [
             "test/telemetry/protocol/tools/fstl_client_core.py",
@@ -1868,11 +1869,13 @@
             "test/telemetry/protocol/tools/test_fstl_phase3_scenario_client.py",
             "tools/telemetry-dashboard/frontend/src/tacticalSemantics.ts",
             "tools/telemetry-dashboard/frontend/src/tacticalSemantics.test.ts",
-            "tools/telemetry-dashboard/frontend/src/TacticalCockpit.tsx"
+            "tools/telemetry-dashboard/frontend/src/TacticalCockpit.tsx",
+            "tools/telemetry-dashboard/frontend/src/styles.css",
+            "tools/telemetry-dashboard/frontend/e2e/dashboard.spec.ts"
           ],
-      "inputFingerprint": "sha256:ba4af73eacd75a65553ac4a1a2e7160184b10a9c746394afef76380a2d1dde26",
-      "observedAtUtc": "2026-08-08T10:27:10Z",
-          "result": "Client scénario inchangé; 57/57 tests frontend et le build Vite passent. La cible TARGET_STATE la plus récente commande seule sélection, réticule et priorité.",
+      "inputFingerprint": "sha256:b7fa32e6d374aad6d5818fd1c22b2de0e4a791903ce3192a8a9dbc79c3dd0b69",
+      "observedAtUtc": "2026-08-08T17:36:01Z",
+          "result": "11 tests client scénario, 60 tests frontend, le build Vite et 14 tests E2E passent. À 1920×1080, le nom et la classe de la cible conservent leur hauteur complète sans rognage.",
           "resultRef": null
         }
       ],

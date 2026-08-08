@@ -932,9 +932,10 @@ main { grid-row: 2; grid-column: 2; min-width: 0; overflow: auto; padding: 22px 
   height: 100%;
   min-height: 0;
   display: grid;
+  grid-auto-rows: max-content;
   align-content: start;
-  gap: 9px;
-  padding: 14px;
+  gap: 6px;
+  padding: 11px 14px;
   overflow: hidden;
   color: inherit;
   text-align: left;
@@ -945,8 +946,8 @@ main { grid-row: 2; grid-column: 2; min-width: 0; overflow: auto; padding: 22px 
 .target-card:hover, .target-card:focus-visible { outline: none; background: #102832; }
 .target-card.invalid > strong { color: var(--red); }
 .target-kicker { color: var(--cyan-soft); font: 11px "IBM Plex Mono", monospace; letter-spacing: 1.3px; }
-.target-card > strong { overflow: hidden; color: var(--target-color); font: 23px "IBM Plex Mono", monospace; text-overflow: ellipsis; white-space: nowrap; }
-.target-class { overflow: hidden; color: var(--target-color); font: 13px "IBM Plex Mono", monospace; text-overflow: ellipsis; white-space: nowrap; }
+.target-card > strong { min-height: 1.2em; overflow: hidden; color: var(--target-color); font: 23px/1.2 "IBM Plex Mono", monospace; text-overflow: ellipsis; white-space: nowrap; }
+.target-class { min-height: 1.25em; overflow: hidden; color: var(--target-color); font: 13px/1.25 "IBM Plex Mono", monospace; text-overflow: ellipsis; white-space: nowrap; }
 .target-hud-readout { display: flex; flex-wrap: wrap; align-items: baseline; gap: 12px; padding: 7px 9px; color: #efffff; border-left: 2px solid var(--target-color); background: #0b171c; font: 15px "IBM Plex Mono", monospace; }
 .target-hud-readout span { color: var(--target-color); }
 .target-hud-readout i { color: #a69472; font: 9px "IBM Plex Mono", monospace; font-style: normal; }
