@@ -84,6 +84,8 @@ révélée n’est exposée en delta.
 - les groupes d’identité et sous-système sont recalculés après filtrage ;
 - `LOCK_STATE` est remplacé intégralement ;
 - les flags `CURRENT_TARGET` des contacts sont cohérents au même sample time ;
+- la couleur HUD brillante de la nouvelle cible est remplacée avec le même
+  atome et ne dépend pas de l'existence d'un blip radar ;
 - un événement `TARGET_CHANGED` reconstructible PEUT être émis avec la
   dépendance de baseline correspondante.
 
@@ -128,7 +130,8 @@ Une piste nouvellement autorisée :
 
 ### 6.2 Mise à jour
 
-Une modification de visibilité, position observée, vitesse, flags ou identité
+Une modification de visibilité, position observée, vitesse, flags, identité,
+couleur ou type de blip
 remplace l’atome complet `(observer_id,contact_entity_id)`. Un champ auparavant
 présent et devenu caché disparaît du nouveau masque de présence.
 

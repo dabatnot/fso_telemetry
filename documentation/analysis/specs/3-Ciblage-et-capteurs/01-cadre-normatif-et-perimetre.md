@@ -6,11 +6,11 @@ Ce document fixe le résultat produit, le profil FSTL et le catalogue complet de
 exigences `P3-REQ-*`. Il est normatif pour toute implémentation de la Phase 3.
 
 La Phase 3 est additive. Elle conserve les contrats actifs des
-[Phases 0, 1 et 2](../README.md). Les layouts `RADAR_CONTACTS` v1/v2 et leurs
+[Phases 0, 1 et 2](../README.md). Les layouts `RADAR_CONTACTS` v1/v2/v3 et leurs
 golden vectors restent byte-identiques. Le profil `CockpitSensors` utilise
-explicitement `RADAR_CONTACTS` v3 sous FSTL 1.1 afin d'ajouter au préfixe de
-projection radar v2 le libellé HUD exact des vaisseaux visibles ; aucun
-décodeur ne détecte la variante par sa longueur.
+explicitement `RADAR_CONTACTS` v4 sous FSTL 1.1 afin d'ajouter au préfixe v3 la
+couleur RGBA et le type de blip résolus par le radar FSO ; aucun décodeur ne
+détecte la variante par sa longueur.
 
 ## 2. Résultat observable
 
@@ -91,7 +91,7 @@ handshake et un nouveau `session_id`.
 | ID | Exigence normative |
 |---|---|
 | `P3-REQ-001` | La Phase 3 conserve tous les comportements, limites et garanties produit de la Phase 2. |
-| `P3-REQ-002` | Les artefacts FSTL 1.0 existants et les records `RADAR_CONTACTS` v1/v2 DOIVENT rester byte-identiques. `CockpitSensors` utilise explicitement `RADAR_CONTACTS` v3 sous FSTL 1.1 ; v1, v2 et v3 ne sont jamais autodétectés par longueur. |
+| `P3-REQ-002` | Les artefacts FSTL 1.0 existants et les records `RADAR_CONTACTS` v1/v2/v3 DOIVENT rester byte-identiques. `CockpitSensors` utilise explicitement `RADAR_CONTACTS` v4 sous FSTL 1.1 ; v1 à v4 ne sont jamais autodétectés par longueur. |
 | `P3-REQ-003` | Une session `CockpitSensors` DOIT négocier exactement FSTL 1.1 et refuser tout intervalle qui n’inclut pas la minor 1. |
 | `P3-REQ-004` | Le masque `CockpitSensors` DOIT valoir exactement `0x07CB`. |
 | `P3-REQ-005` | Le profil et les couvertures DOIVENT être figés avant `WELCOME`; toute promotion ou perte ultérieure exige une nouvelle session. |
@@ -118,7 +118,7 @@ handshake et un nouveau `session_id`.
 
 | ID | Exigence normative |
 |---|---|
-| `P3-REQ-019` | `TARGET_STATE` DOIT reproduire la cible courante et précédente indépendamment de `RADAR_CONTACTS`, pour vaisseau, arme, débris, astéroïde et jump node. Le profil live `CockpitSensors` utilise explicitement v3 pour les valeurs visibles D/S et le libellé HUD conditionnel ; v1/v2 restent des compatibilités de capture. |
+| `P3-REQ-019` | `TARGET_STATE` DOIT reproduire la cible courante et précédente indépendamment de `RADAR_CONTACTS`, pour vaisseau, arme, débris, astéroïde et jump node. Le profil live `CockpitSensors` utilise explicitement v4 pour les valeurs visibles D/S, le libellé HUD conditionnel et la couleur HUD brillante autoritaire ; v1/v2/v3 restent des compatibilités de capture. |
 | `P3-REQ-020` | Identité, classe, équipe, IFF et sous-systèmes ciblés DOIVENT être présents seulement lorsqu’ils sont révélés et résolubles; une cible perdue ne conserve que les groupes de dernière observation explicitement autorisés. |
 | `P3-REQ-021` | Le lead publié DOIT être le résultat autoritaire monde associé à une banque valide; distances géométriques, angles, pixels, brackets et progressions restent absents. |
 | `P3-REQ-022` | `LOCK_STATE` DOIT publier la liste complète de 0 à 64 points de lock, avec absence explicite de tentative, IDs cohérents, état locked, cône, position monde et durée restante bornée. |
@@ -128,8 +128,8 @@ handshake et un nouveau `session_id`.
 | ID | Exigence normative |
 |---|---|
 | `P3-REQ-023` | `RADAR_STATE` DOIT reproduire mode, portée, état/intégrité capteurs et groupes AWACS et EMP applicables. La visibilité `VISIBLE` ou `DISTORTED` est une propriété de chaque `RADAR_CONTACT`, jamais une intensité globale de radar. |
-| `P3-REQ-024` | L’ensemble des `RADAR_CONTACTS` DOIT être exactement l’ensemble de pistes que la projection HUD autorise pour le joueur au même sample time, après AWACS, furtivité, cloak, équipe et règles mission. Chaque record v2/v3 capture dans ce même tick `radar_local_position` dans le repère du radar standard et `radar_projection_distance=RadarContactProjection.distance`. |
-| `P3-REQ-025` | Chaque vaisseau `VISIBLE` de `RADAR_CONTACTS` v3 DOIT publier le nom affichable et le libellé de type produits par les mêmes helpers que le Target Box; un nom masqué reste absent. Les pistes `DISTORTED`/`NOT_VISIBLE` omettent nom, classe, libellé, équipe et IFF. Position et vitesse restent l’observation capteur autorisée, jamais la vérité cachée. |
+| `P3-REQ-024` | L’ensemble des `RADAR_CONTACTS` DOIT être exactement l’ensemble de pistes que la projection HUD autorise pour le joueur au même sample time, après AWACS, furtivité, cloak, équipe et règles mission. Chaque record v2/v3/v4 capture dans ce même tick `radar_local_position` dans le repère du radar standard et `radar_projection_distance=RadarContactProjection.distance`; v4 capture aussi la décision visuelle finale du même contact. |
+| `P3-REQ-025` | Chaque vaisseau `VISIBLE` de `RADAR_CONTACTS` v3/v4 DOIT publier le nom affichable et le libellé de type produits par les mêmes helpers que le Target Box; un nom masqué reste absent. Chaque contact v4 publié porte la couleur RGBA et le type de blip finaux produits par le radar, palettes de mod, accessibilité et overrides inclus. Les pistes `DISTORTED`/`NOT_VISIBLE` omettent nom, classe, libellé, équipe et IFF mais conservent leur décision visuelle autorisée. Position et vitesse restent l’observation capteur autorisée, jamais la vérité cachée. |
 | `P3-REQ-026` | Apparition et retrait d’une piste utilisent les atomes `CREATE/DELETE` exacts; les deltas cumulatifs contiennent le remplacement net complet de chaque contact contre la baseline. |
 | `P3-REQ-027` | `THREAT_STATE` DOIT reproduire le niveau agrégé, les références autorisées et la liste complète des missiles entrants visant le joueur. |
 | `P3-REQ-028` | Chaque missile entrant DOIT porter un ID stable, une classe installée, un guidage, une visibilité, une pose et une vitesse valides; plus de 256 missiles autorisés fait perdre le profil sans troncature. |
@@ -142,7 +142,7 @@ handshake et un nouveau `session_id`.
 | `P3-REQ-030` | Phase, divulgation, temps et validités de scan DOIVENT suivre la décision gameplay; `cargo_text` est présent si et seulement si `disclosure=REVEALED`, et `COMPLETED+HIDDEN` reste valide. |
 | `P3-REQ-031` | `NAVIGATION_STATE` DOIT contenir la liste complète et ordonnée des navpoints et waypoints autorisés, leurs IDs stables, la destination courante, la route et la décision d’autopilote. |
 | `P3-REQ-032` | L’état et le refus d’autopilote DOIVENT être cohérents avec le mode de contrôle hérité sans dupliquer les axes ou modes de vol de `CONTROL_STATE`; aucune commande distante n’est créée. |
-| `P3-REQ-033` | Distances, relèvements, vitesses relatives, TTC, temps d’impact/interception, âge de piste, progressions et ETA DOIVENT rester dérivés côté client à partir des sources canoniques. Les lectures D/S visibles du HUD cible et les libellés HUD autoritaires sont les exceptions. La coordonnée du radar standard est dérivée exclusivement des entrées autoritaires `RADAR_CONTACTS` v2/v3 en live ; la reconstruction depuis `FLIGHT_STATE` est une compatibilité v1 explicite seulement. |
+| `P3-REQ-033` | Distances, relèvements, vitesses relatives, TTC, temps d’impact/interception, âge de piste, progressions et ETA DOIVENT rester dérivés côté client à partir des sources canoniques. Les lectures D/S, libellés HUD et couleurs radar/cible résolues sont les exceptions autoritaires. La coordonnée du radar standard est dérivée exclusivement des entrées autoritaires `RADAR_CONTACTS` v2/v3/v4 en live ; la reconstruction depuis `FLIGHT_STATE` est une compatibilité v1 explicite seulement. |
 | `P3-REQ-034` | Tout flottant publié DOIT être fini et canonisé pour `-0`; enums, IDs, temps, listes et références hors borne provoquent un échec fermé observable, jamais un clamp ou une troncature non autorisés. |
 
 ### 5.6 Réplication, ressources et exploitation

@@ -143,6 +143,19 @@ TEST(TelemetryProtocolConstants, FreezesRecordTypeRegistry) {
 	EXPECT_EQ(0x07U, KnownRecordFlags);
 }
 
+TEST(TelemetryProtocolConstants, FreezesPhase3VersionFourRadarVisualContract) {
+	EXPECT_EQ(0U, static_cast<std::uint8_t>(RadarBlipType::JumpNode));
+	EXPECT_EQ(1U, static_cast<std::uint8_t>(RadarBlipType::NavbuoyCargo));
+	EXPECT_EQ(2U, static_cast<std::uint8_t>(RadarBlipType::Bomb));
+	EXPECT_EQ(3U, static_cast<std::uint8_t>(RadarBlipType::WarpingShip));
+	EXPECT_EQ(4U, static_cast<std::uint8_t>(RadarBlipType::TaggedShip));
+	EXPECT_EQ(5U, static_cast<std::uint8_t>(RadarBlipType::NormalShip));
+	EXPECT_EQ(0x0000000000010000ULL, TargetStatePresenceFlagHudTargetColor);
+	EXPECT_EQ(0x000000000001ffffULL, KnownTargetStatePresenceFlags);
+	EXPECT_EQ(0x0000000000000080ULL, RadarContactsPresenceFlagRadarVisual);
+	EXPECT_EQ(0x00000000000000ffULL, KnownRadarContactsPresenceFlags);
+}
+
 TEST(TelemetryProtocolConstants, FreezesCapabilitiesAndControlRegistries) {
 	EXPECT_EQ(0x00ULL, CapabilityNone);
 	EXPECT_EQ(0x01ULL, CapabilityCommViewLocalAssets);

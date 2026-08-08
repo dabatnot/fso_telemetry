@@ -441,7 +441,7 @@ class DashboardProjection:
         "atan2(track_relative_position_local.y,hypot(x,z))": (
             "p3.dashboard.track-local-elevation.v1",
             ["derived:p3.dashboard.track-relative-position-local.v1"]),
-        "radar-v2/v3: normalize(local.x,local.y) * acos(local.z/projection_distance)/pi": (
+        "radar-v2-v4: normalize(local.x,local.y) * acos(local.z/projection_distance)/pi": (
             "p3.dashboard.track-scope-position.v2",
             ["wire:RADAR_CONTACTS.radar_local_position",
              "wire:RADAR_CONTACTS.radar_projection_distance"]),
@@ -457,9 +457,17 @@ class DashboardProjection:
             "p3.dashboard.track-scope-in-range.v1",
             ["derived:p3.dashboard.track-distance.v1",
              "wire:RADAR_STATE.selected_range"]),
-        "RADAR_CONTACTS v2/v3 publication is authoritative": (
+        "RADAR_CONTACTS v2-v4 publication is authoritative": (
             "p3.dashboard.track-scope-published.v2",
             ["wire:RADAR_CONTACTS"]),
+        "RADAR_CONTACTS v4 radar visual is authoritative": (
+            "p3.dashboard.track-radar-visual.v4",
+            ["wire:RADAR_CONTACTS.radar_blip_color",
+             "wire:RADAR_CONTACTS.radar_blip_type"]),
+        "missing-authoritative-radar-visual": (
+            "p3.dashboard.track-radar-visual.v4-missing",
+            ["wire:RADAR_CONTACTS.radar_blip_color",
+             "wire:RADAR_CONTACTS.radar_blip_type"]),
         "directional radar projection (already bounded to the scope disk)": (
             "p3.dashboard.track-scope-clamped-position.v1",
             ["derived:p3.dashboard.track-scope-position.v1"]),
@@ -479,6 +487,12 @@ class DashboardProjection:
         "missing-authoritative-target-hud-speed": (
             "p3.dashboard.target-hud-speed.v2-missing",
             ["wire:TARGET_STATE.exact_hud_speed"]),
+        "TARGET_STATE v4 HUD target color is authoritative": (
+            "p3.dashboard.target-hud-color.v4",
+            ["wire:TARGET_STATE.hud_target_color"]),
+        "missing-authoritative-target-hud-color": (
+            "p3.dashboard.target-hud-color.v4-missing",
+            ["wire:TARGET_STATE.hud_target_color"]),
         "clamp(1-time_to_lock_remaining_us/weapon.lock.time_us,0,1)": (
             "p3.dashboard.lock-progress.v1",
             ["wire:LOCK_STATE.locks.time_to_lock_remaining_us",
@@ -1429,7 +1443,7 @@ class DashboardProjection:
             )
             self._add_derived(
                 f"{prefix}.scope_position",
-                ("radar-v2/v3: normalize(local.x,local.y) * "
+                ("radar-v2-v4: normalize(local.x,local.y) * "
                  "acos(local.z/projection_distance)/pi"
                  if contact_record_version >= 2
                  else ("radar-v1-compat: normalize(local.x,local.y) * "
@@ -1459,7 +1473,7 @@ class DashboardProjection:
             )
             self._add_derived(
                 f"{prefix}.scope_in_range",
-                ("RADAR_CONTACTS v2/v3 publication is authoritative"
+                ("RADAR_CONTACTS v2-v4 publication is authoritative"
                  if contact_record_version >= 2
                  else "track_distance<=selected_range"),
                 {
@@ -1475,6 +1489,28 @@ class DashboardProjection:
                     "available": scope_clamped is not None,
                     "reason": None if scope_clamped is not None else "missing-scope-position",
                     "value": scope_clamped,
+                },
+            )
+            radar_color = contact.get("radar_blip_color")
+            radar_blip_type = contact.get("radar_blip_type")
+            authoritative_visual = (
+                contact_record_version >= 4
+                and isinstance(radar_color, list)
+                and len(radar_color) == 4
+                and all(isinstance(component, int) and 0 <= component <= 255
+                        for component in radar_color)
+                and isinstance(radar_blip_type, int)
+                and 0 <= radar_blip_type <= 5
+            )
+            self._add_derived(
+                f"{prefix}.radar_visual",
+                ("RADAR_CONTACTS v4 radar visual is authoritative"
+                 if authoritative_visual else "missing-authoritative-radar-visual"),
+                {
+                    "available": authoritative_visual,
+                    "reason": None if authoritative_visual else "missing-authoritative-color",
+                    "value": ({"color": radar_color, "blip_type": radar_blip_type}
+                              if authoritative_visual else None),
                 },
             )
             self._add_derived(f"{prefix}.distance", "norm(track.position_world-owner.position_world)",
@@ -1540,6 +1576,25 @@ class DashboardProjection:
                     "reason": None if target_record_version >= 2 and exact_speed is not None
                     else "legacy-target-state-has-no-authoritative-hud-speed",
                     "value": exact_speed if target_record_version >= 2 else None,
+                },
+            )
+            hud_target_color = target.get("hud_target_color")
+            authoritative_hud_color = (
+                target_record_version >= 4
+                and isinstance(hud_target_color, list)
+                and len(hud_target_color) == 4
+                and all(isinstance(component, int) and 0 <= component <= 255
+                        for component in hud_target_color)
+            )
+            self._add_derived(
+                f"entities.{entity}.target.hud_color",
+                ("TARGET_STATE v4 HUD target color is authoritative"
+                 if authoritative_hud_color
+                 else "missing-authoritative-target-hud-color"),
+                {
+                    "available": authoritative_hud_color,
+                    "reason": None if authoritative_hud_color else "missing-authoritative-color",
+                    "value": hud_target_color if authoritative_hud_color else None,
                 },
             )
 

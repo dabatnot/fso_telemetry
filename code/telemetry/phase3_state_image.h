@@ -80,6 +80,7 @@ struct Phase3TargetState {
 	std::uint64_t nearest_locked_entity_id = 0U;
 	float exact_hud_distance = 0.0F;
 	float exact_hud_speed = 0.0F;
+	std::array<std::uint8_t, 4U> hud_target_color{};
 };
 
 struct Phase3RadarState {
@@ -129,6 +130,9 @@ struct Phase3RadarContact {
 	// Exact second line rendered by HudGaugeTargetBox for a visible ship.
 	// It is display text, not a reference that requires CLASS_MANIFEST.
 	Phase3OwnedString<255U> hud_type_label;
+	std::array<std::uint8_t, 4U> radar_blip_color{};
+	std::uint8_t radar_blip_type =
+		static_cast<std::uint8_t>(protocol::RadarBlipType::NormalShip);
 };
 
 struct Phase3IncomingMissile {

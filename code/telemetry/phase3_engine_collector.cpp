@@ -93,6 +93,67 @@ protocol::RadarVisibility radar_visibility(RadarVisibility visibility) noexcept
 	}
 }
 
+void copy_color(const color& source,
+	std::array<std::uint8_t, 4U>& destination) noexcept
+{
+	destination = {{source.red, source.green, source.blue, source.alpha}};
+}
+
+bool valid_iff_team(int team) noexcept
+{
+	return team >= 0 && static_cast<std::size_t>(team) < Iff_info.size();
+}
+
+bool capture_hud_target_color(object& target,
+	std::array<std::uint8_t, 4U>& destination) noexcept
+{
+	if (Player_ship == nullptr || !valid_iff_team(Player_ship->team)) {
+		return false;
+	}
+
+	switch (target.type) {
+	case OBJ_SHIP:
+		if (target.instance < 0 || target.instance >= MAX_SHIPS) return false;
+		{
+			const auto& source = Ships[target.instance];
+			if (!valid_iff_team(source.team) || source.ship_info_index < 0 ||
+				static_cast<std::size_t>(source.ship_info_index) >= Ship_info.size()) {
+				return false;
+			}
+		}
+		break;
+	case OBJ_WEAPON:
+		if (target.instance < 0 || target.instance >= MAX_WEAPONS ||
+			!valid_iff_team(Weapons[target.instance].team)) {
+			return false;
+		}
+		break;
+	case OBJ_DEBRIS:
+		if (target.instance < 0 ||
+			static_cast<std::size_t>(target.instance) >= Debris.size() ||
+			!valid_iff_team(Debris[target.instance].team)) {
+			return false;
+		}
+		break;
+	case OBJ_ASTEROID:
+		if (target.instance < 0 || target.instance >= MAX_ASTEROIDS ||
+			!valid_iff_team(Iff_traitor)) {
+			return false;
+		}
+		break;
+	case OBJ_JUMP_NODE:
+		break;
+	default:
+		return false;
+	}
+
+	if (auto* target_color = hud_get_iff_color(&target, 1)) {
+		copy_color(*target_color, destination);
+		return true;
+	}
+	return false;
+}
+
 bool valid_live_object(const object* candidate) noexcept
 {
 	if (candidate == nullptr || candidate->signature <= 0 ||
@@ -557,6 +618,15 @@ Phase3EngineCollectStatus collect_target_and_locks(
 			const auto identity = resolve_object(identities, target);
 			if (!resolved(identity)) return Phase3EngineCollectStatus::IdentityFailure;
 			output.target.current_target_entity_id = identity.entity_id;
+		// Brackets and the target box use the bright HUD IFF color for the
+		// selected object. Copy the already-resolved RGBA value so a remote
+		// client never has to reproduce team maps, accessibility palettes or
+		// per-object/per-class overrides.
+		if (capture_hud_target_color(
+				target, output.target.hud_target_color)) {
+			output.target.presence |=
+				protocol::TargetStatePresenceFlagHudTargetColor;
+		}
 		output.target.presence |=
 			protocol::TargetStatePresenceFlagDistanceTrend |
 			protocol::TargetStatePresenceFlagSpeedTrend;
@@ -806,8 +876,6 @@ Phase3EngineCollectStatus collect_radar(
 		: sensor_strength < SENSOR_STR_RADAR_NO_EFFECTS
 		? protocol::SensorState::Degraded
 		: protocol::SensorState::Online;
-	output.radar.presence |= protocol::RadarStatePresenceFlagBrightRange;
-	output.radar.bright_range = std::max(0.0F, Radar_bright_range);
 	const auto awacs = awacs_observer_telemetry(Player_ship);
 	if (awacs.intensity > 0.0F || awacs.range > 0.0F) {
 		output.radar.presence |= protocol::RadarStatePresenceFlagAwacs;
@@ -847,6 +915,7 @@ Phase3EngineCollectStatus collect_radar(
 	matrix eye_orientation{};
 	object_get_eye(
 		&unused_eye_position, &eye_orientation, Player_obj, false);
+	const auto radar_target_objnum = Player_ai->target_objnum;
 	for (auto* source = GET_FIRST(&obj_used_list);
 		 source != END_OF_LIST(&obj_used_list);
 		 source = GET_NEXT(source)) {
@@ -865,6 +934,19 @@ Phase3EngineCollectStatus collect_radar(
 		}
 		RadarContactProjection projected;
 		if (!radar_project_contact(source, projected)) {
+			continue;
+		}
+		// Match radar_plot_object() exactly: the one-second bright-range cache is
+		// refreshed only after at least one contact has passed projection. The
+		// timer makes subsequent contacts in this tick no-ops.
+		radar_refresh_bright_range();
+		const auto is_current_target =
+			OBJ_INDEX(source) == radar_target_objnum;
+		RadarContactVisual visual;
+		if (!radar_resolve_contact_visual(
+				source, projected, is_current_target, visual)) {
+			// A legal spawn/despawn transition may invalidate an instance after
+			// projection. Withdraw only that contact and retry next systems tick.
 			continue;
 		}
 		// Telemetry owns a separate bounded contact model.  The HUD display pool
@@ -912,8 +994,29 @@ Phase3EngineCollectStatus collect_radar(
 		copy_position(radar_local, contact.radar_local_position);
 		contact.radar_projection_distance = projected.distance;
 		contact.radius = std::max(0.0F, source->radius);
-		if (current_player_target() == source) {
+		copy_color(*visual.blip_color, contact.radar_blip_color);
+		contact.radar_blip_type =
+			static_cast<std::uint8_t>(visual.blip_type);
+		contact.presence |=
+			protocol::RadarContactsPresenceFlagRadarVisual;
+		if (visual.bright) {
+			contact.flags |= protocol::ContactFlagBright;
+		}
+		if (is_current_target) {
 			contact.flags |= protocol::ContactFlagCurrentTarget;
+		}
+		switch (visual.blip_type) {
+		case BLIP_TYPE_TAGGED_SHIP:
+			contact.flags |= protocol::ContactFlagTagged;
+			break;
+		case BLIP_TYPE_WARPING_SHIP:
+			contact.flags |= protocol::ContactFlagWarp;
+			break;
+		case BLIP_TYPE_BOMB:
+			contact.flags |= protocol::ContactFlagBomb;
+			break;
+		default:
+			break;
 		}
 		// A visible ship is targetable by the same cockpit and therefore exposes
 		// exactly the two Target Box strings.  Distorted/remembered tracks and
@@ -946,6 +1049,8 @@ Phase3EngineCollectStatus collect_radar(
 			}
 		}
 	}
+	output.radar.presence |= protocol::RadarStatePresenceFlagBrightRange;
+	output.radar.bright_range = std::max(0.0F, Radar_bright_range);
 	return Phase3EngineCollectStatus::Collected;
 }
 

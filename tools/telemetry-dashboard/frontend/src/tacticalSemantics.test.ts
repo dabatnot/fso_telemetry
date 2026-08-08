@@ -4,11 +4,13 @@ import { resolveInstrument } from "./data";
 import {
   CONTACT_FLAGS,
   GUIDANCE_TYPES,
+  RADAR_BLIP_TYPES,
   RADAR_CATEGORIES,
   RADAR_MODES,
   RADAR_VISIBILITY,
   SENSOR_STATES,
   THREAT_LEVELS,
+  contactVisibilityAlpha,
   contactViews,
   decodeContactFlags,
   lockViews,
@@ -17,6 +19,7 @@ import {
   targetClassDisplayName,
   targetDisplayName,
   targetHudTypeLabel,
+  targetHudColor,
   targetReferenceInvalid
 } from "./tacticalSemantics";
 import type { DashboardSnapshot, InstrumentDefinition } from "./types";
@@ -194,6 +197,14 @@ describe("tactical closed registries", () => {
     expect(Object.keys(RADAR_CATEGORIES)).toHaveLength(8);
     expect(Object.keys(THREAT_LEVELS)).toHaveLength(4);
     expect(Object.keys(GUIDANCE_TYPES)).toHaveLength(6);
+    expect(RADAR_BLIP_TYPES).toEqual({
+      0: "NŒUD DE SAUT",
+      1: "NAVBUOY/CARGO",
+      2: "BOMBE",
+      3: "WARP",
+      4: "TAGUÉ",
+      5: "VAISSEAU NORMAL"
+    });
     expect(decodeContactFlags(0xff)).toEqual(CONTACT_FLAGS.map((flag) => flag.label));
     expect(decodeContactFlags(0x100)).toBeNull();
   });
@@ -233,6 +244,79 @@ describe("tactical display semantics", () => {
       .toBe("GTF Myrmidon");
   });
 
+  it("uses the authoritative v4 radar RGBA and blip type without target recoloring", () => {
+    const value = snapshot();
+    const contact = value.records.RADAR_CONTACTS[0];
+    contact.contact_flags = 0x03;
+    contact.radar_blip_color = [12, 34, 56, 128];
+    contact.radar_blip_type = 5;
+    value.recordInstances["RADAR_CONTACTS/entity_id=1/contact_entity_id=101"] = {
+      recordName: "RADAR_CONTACTS",
+      recordVersion: 4,
+      fields: contact
+    };
+    expect(contactViews(value).find((item) => item.id === "101")).toMatchObject({
+      blipType: "VAISSEAU NORMAL",
+      blipTypeCode: 5,
+      bright: true,
+      color: {
+        rgba: [12, 34, 56, 128],
+        css: "#0c223880",
+        provenance: "authoritative-v4"
+      }
+    });
+  });
+
+  it("uses neutral missing-authoritative-color instead of deriving a v4 radar color", () => {
+    const value = snapshot();
+    const contact = value.records.RADAR_CONTACTS[0];
+    value.recordInstances["RADAR_CONTACTS/entity_id=1/contact_entity_id=101"] = {
+      recordName: "RADAR_CONTACTS",
+      recordVersion: 4,
+      fields: contact
+    };
+    expect(contactViews(value).find((item) => item.id === "101")?.color).toEqual({
+      rgba: null,
+      css: "#70e4d1",
+      provenance: "missing-authoritative-color"
+    });
+  });
+
+  it("dims distorted contacts without replacing their authoritative hue", () => {
+    const value = snapshot();
+    const contact = value.records.RADAR_CONTACTS[0];
+    contact.visibility = 2;
+    contact.radar_blip_color = [200, 30, 90, 180];
+    contact.radar_blip_type = 4;
+    value.recordInstances["RADAR_CONTACTS/entity_id=1/contact_entity_id=101"] = {
+      recordName: "RADAR_CONTACTS",
+      recordVersion: 4,
+      fields: contact
+    };
+    expect(contactViews(value).find((item) => item.id === "101")?.color.css)
+      .toBe("#c81e5ab4");
+    expect(contactVisibilityAlpha(2)).toBe(0.6);
+  });
+
+  it("keeps the historical contact palette only for v1-v3 captures", () => {
+    const value = snapshot();
+    const contact = value.records.RADAR_CONTACTS[0];
+    for (const recordVersion of [1, 2, 3]) {
+      value.recordInstances["RADAR_CONTACTS/entity_id=1/contact_entity_id=101"] = {
+        recordName: "RADAR_CONTACTS",
+        recordVersion,
+        fields: contact
+      };
+      expect(contactViews(value).find((item) => item.id === "101")?.color).toEqual({
+        rgba: null,
+        css: "#ffd466",
+        provenance: "legacy-v1-v3"
+      });
+    }
+    expect(contactViews(value).find((item) => item.id === "202")?.color.css)
+      .toBe("#ff6b55");
+  });
+
   it("resolves a revealed target class from the CLASS_MANIFEST internal name", () => {
     const value = snapshot();
     value.records.TARGET_STATE[0].revealed_identity = {
@@ -250,6 +334,44 @@ describe("tactical display semantics", () => {
       new Set(["101", "202"])
     );
     expect(contacts.every((contact) => !contact.invalid)).toBe(true);
+  });
+
+  it("uses authoritative target RGBA in v4 and neutralizes a missing v4 color", () => {
+    const value = snapshot();
+    const target = value.records.TARGET_STATE[0];
+    target.hud_target_color = [9, 180, 70, 255];
+    value.recordInstances["TARGET_STATE/entity_id=1"] = {
+      recordName: "TARGET_STATE",
+      recordVersion: 4,
+      fields: target
+    };
+    expect(targetHudColor(value)).toEqual({
+      rgba: [9, 180, 70, 255],
+      css: "#09b446ff",
+      provenance: "authoritative-v4"
+    });
+    delete target.hud_target_color;
+    expect(targetHudColor(value)).toEqual({
+      rgba: null,
+      css: "#70e4d1",
+      provenance: "missing-authoritative-color"
+    });
+  });
+
+  it("keeps the historical target accent for v1-v3 captures", () => {
+    const value = snapshot();
+    for (const recordVersion of [1, 2, 3]) {
+      value.recordInstances["TARGET_STATE/entity_id=1"] = {
+        recordName: "TARGET_STATE",
+        recordVersion,
+        fields: value.records.TARGET_STATE[0]
+      };
+      expect(targetHudColor(value)).toEqual({
+        rgba: null,
+        css: "#ffd466",
+        provenance: "legacy-v1-v3"
+      });
+    }
   });
 
   it("resolves lock progression and missile estimates without making them authoritative", () => {
@@ -338,6 +460,9 @@ describe("tactical catalog coverage", () => {
       "RADAR_STATE.last_contact_time_us",
       "RADAR_CONTACTS.confidence",
       "RADAR_CONTACTS.hud_type_label",
+      "RADAR_CONTACTS.radar_blip_color",
+      "RADAR_CONTACTS.radar_blip_type",
+      "TARGET_STATE.hud_target_color",
       "THREAT_STATE.threat_level",
       "THREAT_STATE.incoming_missiles[].orientation_local_to_world"
     ]) expect(covered.has(field), field).toBe(true);

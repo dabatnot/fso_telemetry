@@ -549,6 +549,29 @@ TEST(TelemetryProtocolBusinessRecords11To18, TargetPresenceIsBoundToCurrentTarge
 	EXPECT_EQ(ValidationError::UnknownEnum, validate(RecordType::TargetState, unknown_trend));
 }
 
+TEST(TelemetryProtocolBusinessRecords11To18,
+	TargetStateV4HudColorIsExplicitAndAppended)
+{
+	auto payload = target(TargetStatePresenceFlagHudTargetColor, 2U);
+	u8(payload, 0x10U);
+	u8(payload, 0x20U);
+	u8(payload, 0x30U);
+	u8(payload, 0x40U);
+	BusinessRecordMetadata metadata;
+	EXPECT_EQ(ValidationError::None,
+		validate_business_record(record(RecordType::TargetState, payload, 4U),
+			BusinessRecordContainer::FullSnapshot, VersionMinorV1_1, metadata));
+	EXPECT_EQ(ValidationError::UnsupportedRecordVersion,
+		validate_business_record(record(RecordType::TargetState, payload, 3U),
+			BusinessRecordContainer::FullSnapshot, VersionMinorV1_1, metadata));
+
+	auto no_target = target(TargetStatePresenceFlagHudTargetColor, 0U);
+	u32(no_target, 0x40302010U);
+	EXPECT_EQ(ValidationError::InvalidAbsence,
+		validate_business_record(record(RecordType::TargetState, no_target, 4U),
+			BusinessRecordContainer::FullSnapshot, VersionMinorV1_1, metadata));
+}
+
 TEST(TelemetryProtocolBusinessRecords11To18, RadarRejectsNonFiniteRangesAndInvalidVisibilityIntervals)
 {
 	auto infinite = radar(0, 3, static_cast<std::uint8_t>(RadarMode::Infinite), 1.0e12F);
@@ -650,6 +673,49 @@ TEST(TelemetryProtocolBusinessRecords11To18,
 	EXPECT_EQ(ValidationError::OutOfRange,
 		validate_business_record(record(RecordType::RadarContacts,
 			empty, 3U), BusinessRecordContainer::FullSnapshot,
+			VersionMinorV1_1, metadata));
+}
+
+TEST(TelemetryProtocolBusinessRecords11To18,
+	RadarContactsV4VisualIsExplicitAndUsesTheClosedFsoBlipEnum)
+{
+	auto payload = radar_contact(RadarContactsPresenceFlagRadarVisual, 3U,
+		static_cast<std::uint8_t>(ObjectType::Ship));
+	const auto insertion = payload.begin() + 59;
+	std::vector<std::uint8_t> projection;
+	vec3(projection, 10.0F, -20.0F, 30.0F);
+	f32(projection, 40.0F);
+	payload.insert(insertion, projection.begin(), projection.end());
+	u8(payload, 0x11U);
+	u8(payload, 0x22U);
+	u8(payload, 0x33U);
+	u8(payload, 0x44U);
+	u8(payload, static_cast<std::uint8_t>(RadarBlipType::NormalShip));
+
+	BusinessRecordMetadata metadata;
+	EXPECT_EQ(ValidationError::None,
+		validate_business_record(record(RecordType::RadarContacts, payload, 4U),
+			BusinessRecordContainer::FullSnapshot, VersionMinorV1_1, metadata));
+	EXPECT_EQ(ValidationError::UnsupportedRecordVersion,
+		validate_business_record(record(RecordType::RadarContacts, payload, 3U),
+			BusinessRecordContainer::FullSnapshot, VersionMinorV1_1, metadata));
+
+	payload.back() = static_cast<std::uint8_t>(RadarBlipType::TaggedShip);
+	EXPECT_EQ(ValidationError::InvalidStateTransition,
+		validate_business_record(record(RecordType::RadarContacts, payload, 4U),
+			BusinessRecordContainer::FullSnapshot, VersionMinorV1_1, metadata));
+	payload.back() = 6U;
+	EXPECT_EQ(ValidationError::UnknownEnum,
+		validate_business_record(record(RecordType::RadarContacts, payload, 4U),
+			BusinessRecordContainer::FullSnapshot, VersionMinorV1_1, metadata));
+
+	std::vector<std::uint8_t> delete_key;
+	u64(delete_key, 1U);
+	u64(delete_key, 2U);
+	RecordEnvelopeView delete_record{static_cast<std::uint16_t>(RecordType::RadarContacts),
+		4U, RecordFlagDelete, view(delete_key)};
+	EXPECT_EQ(ValidationError::None,
+		validate_business_record(delete_record, BusinessRecordContainer::Delta,
 			VersionMinorV1_1, metadata));
 }
 

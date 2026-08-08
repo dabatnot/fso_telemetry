@@ -1252,9 +1252,16 @@ ValidationError validate_target_state(std::uint8_t record_version, ByteView payl
 		if (!reader.f32(speed, 0.0F, QuantityLimit)) return reader.error();
 	}
 	if ((presence & TargetStatePresenceFlagHudTypeLabel) != 0) {
-		if (record_version != 3U) return ValidationError::UnsupportedRecordVersion;
+		if (record_version < 3U) return ValidationError::UnsupportedRecordVersion;
 		std::string_view label;
 		if (!reader.string(1U, 255U, label)) return reader.error();
+	}
+	if ((presence & TargetStatePresenceFlagHudTargetColor) != 0) {
+		if (record_version != 4U) return ValidationError::UnsupportedRecordVersion;
+		std::uint8_t component = 0U;
+		for (std::size_t index = 0U; index < 4U; ++index) {
+			if (!reader.u8(component)) return reader.error();
+		}
 	}
 	return reader.finish();
 }
@@ -1391,13 +1398,42 @@ ValidationError validate_radar_contacts(
 		return reader.error();
 	}
 	if ((presence & RadarContactsPresenceFlagHudTypeLabel) != 0) {
-		if (record_version != 3U ||
+		if (record_version < 3U ||
 			object_type != static_cast<std::uint8_t>(ObjectType::Ship) ||
 			visibility != static_cast<std::uint8_t>(RadarVisibility::Visible)) {
 			return ValidationError::InvalidStateTransition;
 		}
 		std::string_view label;
 		if (!reader.string(1U, 255U, label)) return reader.error();
+	}
+	if ((presence & RadarContactsPresenceFlagRadarVisual) != 0) {
+		if (record_version != 4U) return ValidationError::UnsupportedRecordVersion;
+		std::uint8_t component = 0U;
+		for (std::size_t index = 0U; index < 4U; ++index) {
+			if (!reader.u8(component)) return reader.error();
+		}
+		std::uint8_t blip_type = 0U;
+		if (!enum8(reader, static_cast<std::uint8_t>(RadarBlipType::NormalShip), blip_type)) {
+			return reader.error();
+		}
+		const auto type_is = [blip_type](RadarBlipType type) {
+			return blip_type == static_cast<std::uint8_t>(type);
+		};
+		if (((flags & ContactFlagBomb) != 0U) != type_is(RadarBlipType::Bomb) ||
+			(((flags & ContactFlagTagged) != 0U) != type_is(RadarBlipType::TaggedShip)) ||
+			(((flags & ContactFlagWarp) != 0U) != type_is(RadarBlipType::WarpingShip)) ||
+			((flags & ContactFlagCurrentTarget) != 0U &&
+			 (flags & ContactFlagBright) == 0U)) {
+			return ValidationError::InvalidStateTransition;
+		}
+		const auto revealed_type = static_cast<ObjectType>(object_type);
+		const auto compatible_object =
+			type_is(RadarBlipType::JumpNode) ? revealed_type == ObjectType::JumpNode :
+			type_is(RadarBlipType::Bomb) ? revealed_type == ObjectType::Weapon :
+			type_is(RadarBlipType::WarpingShip) ?
+				(revealed_type == ObjectType::Ship || revealed_type == ObjectType::Weapon) :
+			revealed_type == ObjectType::Ship;
+		if (!compatible_object) return ValidationError::InvalidStateTransition;
 	}
 	return reader.finish();
 }

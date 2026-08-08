@@ -24,7 +24,9 @@
 #include "iff_defs/iff_defs.h"
 #include "object/object.h"
 #include "playerman/player.h"
+#include "radar/radarsetup.h"
 #include "ship/ship.h"
+#include "weapon/weapon.h"
 #include "telemetry_native_session_runtime_player_test_access.h"
 #include "telemetry_runtime_adapter_player_test_access.h"
 #define FSO_HAS_NATIVE_SESSION_RUNTIME 1
@@ -580,6 +582,8 @@ struct Phase3EngineGlobalsScope final {
 		  prior_player_ship(Player_ship), prior_player_ai(Player_ai),
 		  prior_game_mode(Game_mode), prior_current_nav(CurrentNav),
 		  prior_see_all(See_all),
+		  prior_radar_bright_range(Radar_bright_range),
+		  prior_radar_bright_timer(Radar_calc_bright_dist_timer),
 		  prior_autopilot_engaged(AutoPilotEngaged), prior_hud_config(HUD_config),
 		  prior_used_list_next(obj_used_list.next), prior_used_list_prev(obj_used_list.prev),
 		  prior_missile_list_next(Missile_obj_list.next),
@@ -611,6 +615,12 @@ struct Phase3EngineGlobalsScope final {
 			Iff_info.emplace_back();
 			added_test_iff = true;
 		}
+		prior_iff_color_index = Iff_info[0].color_index;
+		prior_iff_accessibility_color_index =
+			Iff_info[0].accessibility_color_index;
+		const auto test_iff_color = iff_init_color(64, 192, 255);
+		Iff_info[0].color_index = test_iff_color;
+		Iff_info[0].accessibility_color_index = test_iff_color;
 		Player_ship->team = 0;
 		list_init(&Player_ship->subsys_list);
 		Player_ship->weapons.clear();
@@ -623,6 +633,8 @@ struct Phase3EngineGlobalsScope final {
 		Player_ai->attacker_objnum = -1;
 		Player_ai->danger_weapon_objnum = -1;
 		Player_ai->nearest_locked_object = -1;
+		Radar_bright_range = 1'500.0F;
+		Radar_calc_bright_dist_timer = TIMESTAMP::never();
 	}
 
 	~Phase3EngineGlobalsScope()
@@ -634,6 +646,8 @@ struct Phase3EngineGlobalsScope final {
 		Game_mode = prior_game_mode;
 		CurrentNav = prior_current_nav;
 		See_all = prior_see_all;
+		Radar_bright_range = prior_radar_bright_range;
+		Radar_calc_bright_dist_timer = prior_radar_bright_timer;
 		AutoPilotEngaged = prior_autopilot_engaged;
 		HUD_config = prior_hud_config;
 		obj_used_list.next = prior_used_list_next;
@@ -642,7 +656,13 @@ struct Phase3EngineGlobalsScope final {
 		Missile_obj_list.prev = prior_missile_list_prev;
 		std::copy(prior_navs.begin(), prior_navs.end(), std::begin(Navs));
 		Waypoint_lists = std::move(prior_waypoint_lists);
-		if (added_test_iff) Iff_info.clear();
+		if (added_test_iff) {
+			Iff_info.clear();
+		} else {
+			Iff_info[0].color_index = prior_iff_color_index;
+			Iff_info[0].accessibility_color_index =
+				prior_iff_accessibility_color_index;
+		}
 	}
 
 	::player local_player{};
@@ -653,6 +673,8 @@ struct Phase3EngineGlobalsScope final {
 	int prior_game_mode = 0;
 	int prior_current_nav = -1;
 	int prior_see_all = 0;
+	float prior_radar_bright_range = 0.0F;
+	TIMESTAMP prior_radar_bright_timer = TIMESTAMP::never();
 	bool prior_autopilot_engaged = false;
 	HUD_CONFIG_TYPE prior_hud_config{};
 	object* prior_used_list_next = nullptr;
@@ -662,6 +684,8 @@ struct Phase3EngineGlobalsScope final {
 	std::array<NavPoint, MAX_NAVPOINTS> prior_navs{};
 	SCP_vector<waypoint_list> prior_waypoint_lists;
 	bool added_test_iff = false;
+	int prior_iff_color_index = 0;
+	int prior_iff_accessibility_color_index = 0;
 };
 
 std::uint64_t phase3_sample_time(const protocol::StateImage& image,
@@ -1548,6 +1572,59 @@ TEST(TelemetryPhase3Targeting,
 }
 
 TEST(TelemetryPhase3Targeting,
+	TransientInvalidIffOmitsOnlyHudColorWithoutFailingCapture)
+{
+	auto engine_globals = std::make_unique<Phase3EngineGlobalsScope>();
+	detail::capture_phase2_main_thread_authority();
+	const auto ship_info_count = Ship_info.size();
+	Ship_info.emplace_back();
+	Player_ship->ship_info_index = static_cast<int>(ship_info_count);
+	constexpr int TargetObjectIndex = MAX_OBJECTS - 3;
+	constexpr int TargetShipIndex = MAX_SHIPS - 3;
+	auto& target = Objects[TargetObjectIndex];
+	auto& target_ship = Ships[TargetShipIndex];
+	target.clear();
+	target.type = OBJ_SHIP;
+	target.instance = TargetShipIndex;
+	target.signature = 79;
+	target_ship.clear();
+	target_ship.objnum = TargetObjectIndex;
+	target_ship.team = -1;
+	target_ship.ship_info_index = static_cast<int>(ship_info_count);
+	std::strncpy(target_ship.ship_name, "Transient ship",
+		sizeof(target_ship.ship_name) - 1U);
+	list_append(&obj_used_list, &target);
+	Player_ai->target_objnum = TargetObjectIndex;
+	Player_ai->target_signature = target.signature;
+
+	auto phase2 = std::make_unique<detail::Phase2ObservationDto>();
+	phase2->ships.resize(1U);
+	phase2->ships[0].capture_key.value =
+		static_cast<std::uint32_t>(Player_obj->signature);
+	const telemetry::Phase2Wp05SubjectBinding binding{
+		phase2->ships[0].capture_key, 1U};
+	detail::Phase3IdentityRegistry identities;
+	ASSERT_EQ(detail::Phase3IdentityProvisionStatus::Ready,
+		identities.provision());
+	auto output = std::make_unique<telemetry::Phase3Projection>();
+	auto scratch = std::make_unique<telemetry::Phase3Projection>();
+
+	const auto status = detail::collect_phase3_engine_projection(
+		{64U, 1U, phase2.get(), &binding, 1U, nullptr, true, false},
+		identities, *output, *scratch);
+
+	list_remove(&obj_used_list, &target);
+	target_ship.clear();
+	target.clear();
+	Ship_info.resize(ship_info_count);
+	ASSERT_EQ(detail::Phase3EngineCollectStatus::Collected, status);
+	EXPECT_NE(0U, output->target.current_target_entity_id);
+	EXPECT_EQ(0U, output->target.presence &
+		protocol::TargetStatePresenceFlagHudTargetColor)
+		<< "A transient invalid IFF relation withdraws color, not TARGET_STATE or the session.";
+}
+
+TEST(TelemetryPhase3Targeting,
 	RetainedStealthObservationUsesTheRealVisibleCockpitTrack)
 {
 	auto engine_globals = std::make_unique<Phase3EngineGlobalsScope>();
@@ -1642,7 +1719,7 @@ TEST(TelemetryPhase3Targeting,
 	target.pos.xyz.z = Radar_ranges[HUD_config.rp_dist] + 1.0F;
 	const auto out_of_range_status =
 		detail::collect_phase3_engine_projection(
-			{67U, 1U, phase2.get(), &binding, 1U, &manifest, false, true},
+			{67U, 1U, phase2.get(), &binding, 1U, &manifest, true, true},
 			identities, *out_of_range_output, *out_of_range_scratch);
 
 	list_remove(&obj_used_list, &target);
@@ -1670,6 +1747,21 @@ TEST(TelemetryPhase3Targeting,
 		output->contacts[0].radar_local_position[2]);
 	EXPECT_FLOAT_EQ(100.0F,
 		output->contacts[0].radar_projection_distance);
+	EXPECT_NE(0U, output->contacts[0].presence &
+		protocol::RadarContactsPresenceFlagRadarVisual);
+	EXPECT_EQ(static_cast<std::uint8_t>(protocol::RadarBlipType::NormalShip),
+		output->contacts[0].radar_blip_type);
+	EXPECT_NE(0U, output->contacts[0].flags & protocol::ContactFlagBright);
+	EXPECT_NE(0U, output->contacts[0].flags &
+		protocol::ContactFlagCurrentTarget);
+	EXPECT_EQ(0U, output->contacts[0].flags &
+		(protocol::ContactFlagTagged | protocol::ContactFlagWarp |
+		 protocol::ContactFlagBomb));
+	EXPECT_NE(0U, output->target.presence &
+		protocol::TargetStatePresenceFlagHudTargetColor);
+	EXPECT_EQ(output->contacts[0].radar_blip_color,
+		output->target.hud_target_color)
+		<< "A normal selected ship keeps its bright IFF hue on both radar and HUD.";
 	EXPECT_EQ("Alpha 2", std::string(output->contacts[0].revealed_name.bytes.data(),
 		output->contacts[0].revealed_name.size));
 	EXPECT_EQ("GTF Myrmidon",
@@ -1686,6 +1778,10 @@ TEST(TelemetryPhase3Targeting,
 		output->contacts[0].radar_local_position[2])
 		<< "The previous tick remains atomically self-consistent.";
 	EXPECT_EQ(0U, out_of_range_output->contact_count);
+	EXPECT_NE(0U, out_of_range_output->target.current_target_entity_id)
+		<< "A Target Box target remains public without a radar blip.";
+	EXPECT_NE(0U, out_of_range_output->target.presence &
+		protocol::TargetStatePresenceFlagHudTargetColor);
 	EXPECT_NE(0U, output->target.current_target_entity_id);
 	EXPECT_NE(0U, output->target.presence &
 		protocol::TargetStatePresenceFlagLastStealthObservation);
@@ -1787,6 +1883,99 @@ TEST(TelemetryPhase3RadarContacts,
 	first_ship.clear();
 	first.clear();
 	Ship_info.resize(ship_info_count);
+}
+
+TEST(TelemetryPhase3RadarVisual,
+	SharedResolverMatchesFsoBrightnessAndSpecialTypePrecedence)
+{
+	auto engine_globals = std::make_unique<Phase3EngineGlobalsScope>();
+	const auto prior_color_index = Iff_info[0].color_index;
+	const auto prior_accessibility_color_index =
+		Iff_info[0].accessibility_color_index;
+	const auto test_color_index = iff_init_color(23, 117, 201);
+	Iff_info[0].color_index = test_color_index;
+	Iff_info[0].accessibility_color_index = test_color_index;
+
+	const auto ship_info_count = Ship_info.size();
+	Ship_info.emplace_back();
+	constexpr int ShipIndex = MAX_SHIPS - 5;
+	auto& source_ship = Ships[ShipIndex];
+	source_ship.clear();
+	source_ship.team = Player_ship->team;
+	source_ship.ship_info_index = static_cast<int>(ship_info_count);
+	object source;
+	source.clear();
+	source.type = OBJ_SHIP;
+	source.instance = ShipIndex;
+
+	RadarContactProjection projection;
+	projection.distance = 2'000.0F;
+	const auto prior_bright_range = Radar_bright_range;
+	Radar_bright_range = 1'500.0F;
+	RadarContactVisual visual;
+	ASSERT_TRUE(radar_resolve_contact_visual(
+		&source, projection, false, visual));
+	EXPECT_FALSE(visual.bright);
+	EXPECT_EQ(BLIP_TYPE_NORMAL_SHIP, visual.blip_type);
+	EXPECT_EQ(iff_get_color_by_team_and_object(
+		source_ship.team, Player_ship->team, 0, &source), visual.blip_color);
+
+	ASSERT_TRUE(radar_resolve_contact_visual(
+		&source, projection, true, visual));
+	EXPECT_TRUE(visual.bright);
+	EXPECT_EQ(BLIP_TYPE_NORMAL_SHIP, visual.blip_type);
+	EXPECT_EQ(iff_get_color_by_team_and_object(
+		source_ship.team, Player_ship->team, 1, &source), visual.blip_color);
+
+	Ship_info.back().flags.set(Ship::Info_Flags::Cargo);
+	ASSERT_TRUE(radar_resolve_contact_visual(
+		&source, projection, false, visual));
+	EXPECT_EQ(BLIP_TYPE_NAVBUOY_CARGO, visual.blip_type);
+	EXPECT_EQ(&Radar_colors[RCOL_NAVBUOY_CARGO][0], visual.blip_color);
+
+	source_ship.tag_left = 1.0F;
+	ASSERT_TRUE(radar_resolve_contact_visual(
+		&source, projection, false, visual));
+	EXPECT_EQ(BLIP_TYPE_TAGGED_SHIP, visual.blip_type);
+	EXPECT_EQ(&Radar_colors[RCOL_TAGGED][0], visual.blip_color);
+
+	source_ship.flags.set(Ship::Ship_Flags::Arriving_stage_1);
+	ASSERT_TRUE(radar_resolve_contact_visual(
+		&source, projection, false, visual));
+	EXPECT_EQ(BLIP_TYPE_WARPING_SHIP, visual.blip_type)
+		<< "Warp stage 1 has priority over tagged and cargo colors.";
+	EXPECT_EQ(&Radar_colors[RCOL_WARPING_SHIP][0], visual.blip_color);
+
+	constexpr int WeaponIndex = MAX_WEAPONS - 5;
+	const auto prior_lssm_stage = Weapons[WeaponIndex].lssm_stage;
+	source.clear();
+	source.type = OBJ_WEAPON;
+	source.instance = WeaponIndex;
+	Weapons[WeaponIndex].lssm_stage = 0;
+	ASSERT_TRUE(radar_resolve_contact_visual(
+		&source, projection, false, visual));
+	EXPECT_EQ(BLIP_TYPE_BOMB, visual.blip_type);
+	EXPECT_EQ(&Radar_colors[RCOL_BOMB][0], visual.blip_color);
+	Weapons[WeaponIndex].lssm_stage = 2;
+	ASSERT_TRUE(radar_resolve_contact_visual(
+		&source, projection, false, visual));
+	EXPECT_EQ(BLIP_TYPE_WARPING_SHIP, visual.blip_type);
+	EXPECT_EQ(&Radar_colors[RCOL_WARPING_SHIP][0], visual.blip_color);
+
+	source.clear();
+	source.type = OBJ_JUMP_NODE;
+	ASSERT_TRUE(radar_resolve_contact_visual(
+		&source, projection, false, visual));
+	EXPECT_EQ(BLIP_TYPE_JUMP_NODE, visual.blip_type);
+	EXPECT_EQ(&Radar_colors[RCOL_JUMP_NODE][0], visual.blip_color);
+
+	Weapons[WeaponIndex].lssm_stage = prior_lssm_stage;
+	Radar_bright_range = prior_bright_range;
+	source_ship.clear();
+	Ship_info.resize(ship_info_count);
+	Iff_info[0].color_index = prior_color_index;
+	Iff_info[0].accessibility_color_index =
+		prior_accessibility_color_index;
 }
 
 TEST(TelemetryPhase3Locks, RealVisibleCockpitTrackProducesAuthorizedLock)

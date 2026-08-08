@@ -2,8 +2,8 @@
   "schema": "fs2open.telemetry.product-implementation.v1",
   "phase": 3,
   "phaseDirectory": "documentation/analysis/specs/3-Ciblage-et-capteurs",
-  "contractFingerprint": "sha256:51ec1e9a9f79bcd6c426b5070162a20928678dc3f12a1608bb1c6409e146e6b8",
-  "updatedAtUtc": "2026-08-08T00:38:45Z",
+  "contractFingerprint": "sha256:3649e0e8259f96e0be24a168ef03391fe0a362b383d38354b19a55d45a2e579a",
+  "updatedAtUtc": "2026-08-08T08:39:03Z",
   "requirements": [
     {
       "id": "P3-REQ-001",
@@ -38,10 +38,10 @@
     },
     {
       "id": "P3-REQ-002",
-      "observable": "FSTL 1.0 et `RADAR_CONTACTS` v1/v2 restent byte-identiques ; le layout live v3 est explicite sous FSTL 1.1.",
-      "expectedAutomatedProof": "`test_fstl_1_0_freeze.py` + vérificateur 1.1 + golden v2/v3",
+      "observable": "FSTL 1.0 et `RADAR_CONTACTS` v1/v2/v3 restent byte-identiques ; le layout live v4 est explicite sous FSTL 1.1.",
+      "expectedAutomatedProof": "`test_fstl_1_0_freeze.py` + vérificateur 1.1 + golden v2/v3/v4",
       "implementationStatus": "implemented",
-      "implementationSummary": "Les artefacts gelés 1.0 et RADAR_CONTACTS v1/v2 restent inchangés ; le schéma 1.1 déclare explicitement RADAR_CONTACTS v3 et les validateurs refusent toute version ambiguë.",
+      "implementationSummary": "Les artefacts gelés 1.0 et les records v1/v2/v3 restent inchangés ; le schéma 1.1 déclare explicitement les couleurs RGBA et le type de blip des records v4, sans détection par longueur.",
       "implementationPaths": [
         "code/telemetry/protocol",
         "test/telemetry/protocol"
@@ -56,16 +56,16 @@
             "code/telemetry/protocol",
             "test/telemetry/protocol"
           ],
-      "inputFingerprint": "sha256:4757bcb83efa6ebeff42841d253603536892ef5fac03c187acfdb92ceef81e0e",
-      "observedAtUtc": "2026-08-06T12:13:38Z",
-          "result": "15/15 tests de gel 1.0 passés et amendement 1.1 vérifié sur 438 artefacts 1.0.",
+      "inputFingerprint": "sha256:fb5ead3f0ceacadcbfe8b11a1257c3c9544002703138ecb538daa241b5c326e8",
+      "observedAtUtc": "2026-08-08T08:39:03Z",
+          "result": "Gel FSTL 1.0 préservé et contrat explicite v4 couvert par les tests protocolaires Python/C++.",
           "resultRef": "test/telemetry/protocol/tools/verify_fstl_1_1_amendment.py"
         },
         {
-          "id": "P3-REQ-002-AUTO-02",
+         "id": "P3-REQ-002-AUTO-02",
           "kind": "automated",
           "command": "python test/telemetry/protocol/tools/fstl_schema.py --check --wire-version all ; python test/telemetry/protocol/tools/test_fstl_phase3_scenario_client.py ; build/bin/Release/unittests.exe --gtest_filter=TelemetryProtocolBusinessRecords11To18.*",
-          "status": "passed",
+          "status": "pending",
           "inputs": [
             "code/telemetry/protocol",
             "test/telemetry/protocol"
@@ -679,10 +679,10 @@
     },
     {
       "id": "P3-REQ-019",
-      "observable": "`TARGET_STATE` v3 reproduit les cibles Target Box avec ou sans blip radar, groupes conditionnels, D/S et libellé HUD ; v1/v2 restent décodables.",
+      "observable": "`TARGET_STATE` v4 reproduit les cibles Target Box avec ou sans blip radar, groupes conditionnels, D/S, libellé et couleur HUD ; v1/v2/v3 restent décodables.",
       "expectedAutomatedProof": "`telemetry_phase3_targeting_tests`",
       "implementationStatus": "implemented",
-      "implementationSummary": "TARGET_STATE v3 sérialise de façon autonome les cibles du Target Box, y compris hors radar, avec identité/libellé conditionnels, D/S autoritaires, tendances, observations furtives et lead lorsque leurs sources sont disponibles.",
+      "implementationSummary": "TARGET_STATE v4 sérialise de façon autonome les cibles du Target Box, y compris hors radar, avec identité/libellé, D/S et couleur brillante résolue par hud_get_iff_color ; une référence transitoire invalide omet seulement la couleur.",
       "implementationPaths": [
         "code/telemetry/phase3_engine_collector.cpp",
         "code/telemetry/phase3_engine_collector.h",
@@ -700,16 +700,16 @@
             "code/telemetry/phase3_state_image.h",
             "test/src/telemetry/producer/phase3_state_image_tests.cpp"
           ],
-                           "inputFingerprint": "sha256:59e1220dc77ff6556de7106a1cbbfdaaa41754344bdf70a5c2ca25859ca66156",
-                           "observedAtUtc": "2026-08-06T11:21:55Z",
-          "result": "passed: 5 tests; cible courante/précédente et groupes conditionnels encodés, lead sans banque autoritaire refusé avant publication",
+      "inputFingerprint": "sha256:f0417f4b5c8efe6e2d951e745f110140775afb371586b9a6912a0a1e17511280",
+      "observedAtUtc": "2026-08-08T08:39:03Z",
+          "result": "21/21 tests d’image Phase 3 passés, dont TARGET_STATE v4 avec couleur HUD RGBA.",
           "resultRef": null
         },
         {
-          "id": "P3-REQ-019-AUTO-02",
+         "id": "P3-REQ-019-AUTO-02",
           "kind": "automated",
           "command": "build\\bin\\Release\\unittests.exe --gtest_filter=TelemetryPhase3Targeting.RetainedStealthObservationUsesTheRealVisibleCockpitTrack --gtest_color=no",
-          "status": "passed",
+          "status": "pending",
           "inputs": [
             "code/telemetry/phase3_engine_collector.cpp",
             "code/telemetry/phase3_engine_collector.h",
@@ -906,10 +906,10 @@
     },
     {
       "id": "P3-REQ-024",
-      "observable": "Les contacts décodés égalent exactement les pistes autorisées du HUD producteur et portent la position locale/distance du même tick en v2/v3.",
+      "observable": "Les contacts décodés égalent exactement les pistes autorisées du HUD producteur et portent position locale, distance et décision visuelle du même tick en v4.",
       "expectedAutomatedProof": "`telemetry_phase3_visibility_tests` + `TelemetryPhase3RadarProjection.*`",
       "implementationStatus": "implemented",
-      "implementationSummary": "Le collecteur délègue l’admission à radar_project_contact puis capture dans le même tick sa distance et la position locale obtenue avec l’orientation object_get_eye et l’origine Player_obj du radar standard. Les contacts hors portée restent absents et une ancienne projection ne change pas après le tick suivant.",
+      "implementationSummary": "Le collecteur délègue l’admission à radar_project_contact puis partage avec le radar standard la résolution bright/type/couleur. La projection et le visuel sont copiés atomiquement ; les références de spawn/despawn invalides sont omises sans fermer la capture.",
       "implementationPaths": [
         "code/radar/radarsetup.cpp",
         "code/radar/radarsetup.h",
@@ -929,16 +929,16 @@
             "code/telemetry/phase3_engine_collector.h",
             "test/src/telemetry/producer/test_telemetry_native_runtime_integration_contract.cpp"
           ],
-          "inputFingerprint": "sha256:8611e9013de5cf039af76ad19c8f7fe0a93f00dcf4dbb65d3927ed8f16a1af46",
-          "observedAtUtc": "2026-08-06T18:48:19Z",
-          "result": "1/1 passed: one live HUD-authorized cockpit track yields exactly one radar contact with the same public target ID, VISIBLE state and projected world position.",
+      "inputFingerprint": "sha256:7f9c5eefa78ef8c811cfd4eb91dcfd34933e78af0b30b1078ea1a19b17680d5d",
+      "observedAtUtc": "2026-08-08T08:39:03Z",
+          "result": "Tests ciblés passés : projection atomique, couleur/type partagés avec FSO et omission sûre d’un spawn IFF invalide.",
           "resultRef": null
         },
         {
-          "id": "P3-REQ-024-AUTO-02",
+         "id": "P3-REQ-024-AUTO-02",
           "kind": "automated",
           "command": "build/bin/Release/unittests.exe --gtest_filter=TelemetryPhase3Targeting.RetainedStealthObservationUsesTheRealVisibleCockpitTrack",
-          "status": "passed",
+          "status": "pending",
           "inputs": [
             "code/radar/radarsetup.cpp",
             "code/radar/radarsetup.h",
@@ -958,10 +958,10 @@
     },
     {
       "id": "P3-REQ-025",
-      "observable": "Un vaisseau `VISIBLE` v3 porte le nom affichable et le type exact du Target Box; les autres pistes restent anonymes et les entrées radar demeurent atomiques.",
-      "expectedAutomatedProof": "`telemetry_phase3_visibility_tests` + golden v2/v3",
+      "observable": "Un vaisseau `VISIBLE` v3/v4 porte le nom affichable et le type exact du Target Box; chaque contact v4 porte la couleur et le type de blip FSO, les autres pistes restant anonymes.",
+      "expectedAutomatedProof": "`telemetry_phase3_visibility_tests` + golden v2/v3/v4",
       "implementationStatus": "implemented",
-      "implementationSummary": "La position/vitesse monde et les entrées radar v2 restent intactes ; RADAR_CONTACTS v3 ajoute le type HUD exact en fin de payload. Seuls les vaisseaux visibles reçoivent nom et type, sans manifeste requis ni fermeture de capture sur un spawn transitoire.",
+      "implementationSummary": "RADAR_CONTACTS v4 ajoute en fin de payload la couleur RGBA et le type de blip issus du résolveur radar partagé. Les priorités warp/tagged/cargo/bombe/jump node et les flags bright/current sont validés sans exiger de manifeste pour une bombe v4.",
       "implementationPaths": [
         "code/radar/radarsetup.cpp",
         "code/radar/radarsetup.h",
@@ -993,16 +993,16 @@
             "code/telemetry/phase3_state_image.h",
             "test/src/telemetry/producer/phase3_state_image_tests.cpp"
           ],
-          "inputFingerprint": "sha256:85a0ebde6e357b2a4f15251f107df50bd7f5df4332303ddfadaf3916725f891a",
-          "observedAtUtc": "2026-08-06T18:52:12Z",
-          "result": "passed: 1 test; a distorted contact with revealed name, class, team, or IFF is rejected before publication.",
+      "inputFingerprint": "sha256:8a00479bb52a6bcaf34ee23c617ddec6982825a682f7b2c6a84d42992d70d84e",
+      "observedAtUtc": "2026-08-08T08:39:03Z",
+          "result": "21/21 tests d’image Phase 3 passés ; anonymat des pistes et visuel v4 atomique validés.",
           "resultRef": null
         },
         {
-          "id": "P3-REQ-025-AUTO-02",
+         "id": "P3-REQ-025-AUTO-02",
           "kind": "automated",
           "command": "build/bin/Release/unittests.exe --gtest_filter=TelemetryProtocolBusinessRecords11To18.*:TelemetryPhase3Targeting.RetainedStealthObservationUsesTheRealVisibleCockpitTrack ; build/bin/Release/telemetry_phase3_state_image_tests.exe",
-          "status": "passed",
+          "status": "pending",
           "inputs": [
             "code/radar/radarsetup.cpp",
             "code/radar/radarsetup.h",
@@ -1278,15 +1278,18 @@
     },
     {
       "id": "P3-REQ-033",
-      "observable": "Les dérivations tactiques restent client sauf D/S et libellés HUD autoritaires ; la coordonnée radar live utilise strictement les entrées v2/v3, avec fallback seulement pour capture v1.",
+      "observable": "Les dérivations tactiques restent client sauf D/S, libellés et couleurs autoritaires ; la coordonnée radar live utilise strictement les entrées v2/v3/v4, avec fallback seulement pour capture v1.",
       "expectedAutomatedProof": "`telemetry_phase3_derived_value_tests`",
         "implementationStatus": "implemented",
-      "implementationSummary": "Le client indépendant conserve les dérivations tactiques monde, utilise les entrées radar autoritaires en v2/v3 et le libellé HUD strict en v3. Les fallbacks monde et manifeste restent explicitement limités aux anciennes captures.",
+      "implementationSummary": "Le client et le dashboard appliquent les RGBA v4 au cadran, à la liste et au panneau cible, multiplient seulement l’alpha des pistes distordues et gardent la sélection par forme/réticule. Une couleur v4 absente devient neutre avec provenance missing-authoritative-color ; le style historique reste limité à v1-v3.",
         "implementationPaths": [
           "code/telemetry/phase3_state_image.cpp",
           "code/telemetry/phase3_state_image.h",
             "test/telemetry/protocol/tools/fstl_client_core.py",
-            "test/telemetry/protocol/tools/test_fstl_console_client_contract.py"
+            "test/telemetry/protocol/tools/test_fstl_console_client_contract.py",
+            "tools/telemetry-dashboard/frontend/src/TacticalCockpit.tsx",
+            "tools/telemetry-dashboard/frontend/src/tacticalSemantics.ts",
+            "tools/telemetry-dashboard/frontend/src/tacticalSemantics.test.ts"
         ],
       "proofs": [
         {
@@ -1299,16 +1302,16 @@
               "code/telemetry/phase3_state_image.h",
               "test/src/telemetry/producer/phase3_state_image_tests.cpp"
             ],
-                       "inputFingerprint": "sha256:59e1220dc77ff6556de7106a1cbbfdaaa41754344bdf70a5c2ca25859ca66156",
-                       "observedAtUtc": "2026-08-06T11:21:55Z",
-            "result": "1/1 passed: a server-derived ExactHudDistance group fails closed and cannot replace the complete published image.",
+      "inputFingerprint": "sha256:f0417f4b5c8efe6e2d951e745f110140775afb371586b9a6912a0a1e17511280",
+      "observedAtUtc": "2026-08-08T08:39:03Z",
+          "result": "21/21 tests d’image Phase 3 passés ; les champs v4 autoritaires restent distincts des dérivations client.",
             "resultRef": null
           },
           {
-            "id": "P3-REQ-033-AUTO-02",
+           "id": "P3-REQ-033-AUTO-02",
             "kind": "automated",
             "command": "python -B test\\telemetry\\protocol\\tools\\test_fstl_phase3_scenario_client.py",
-            "status": "passed",
+            "status": "pending",
             "inputs": [
               "test/telemetry/protocol/tools/fstl_client_core.py",
               "test/telemetry/protocol/tools/test_fstl_phase3_scenario_client.py"
@@ -1319,10 +1322,10 @@
             "resultRef": "test/telemetry/protocol/tools/test_fstl_phase3_scenario_client.py"
           },
           {
-            "id": "P3-REQ-033-AUTO-03",
+           "id": "P3-REQ-033-AUTO-03",
             "kind": "automated",
             "command": "python test/telemetry/protocol/tools/test_fstl_console_client_contract.py",
-            "status": "passed",
+            "status": "pending",
             "inputs": [
               "code/telemetry/phase3_state_image.cpp",
               "code/telemetry/phase3_state_image.h",
@@ -1344,10 +1347,12 @@
       "observable": "Valeurs non finies, enums, IDs, temps et références invalides échouent fermés.",
       "expectedAutomatedProof": "`telemetry_phase3_security_bounds_tests`",
         "implementationStatus": "implemented",
-      "implementationSummary": "L’encodeur d’image d’état valide chaque record Phase 3 sérialisé avant publication. Les valeurs non finies, enums, identités et références invalides échouent fermés sans remplacer l’image complète précédente ; les règles de temps sont validées par le validateur métier FSTL. Les flottants émis canoniquent aussi `-0`.",
+      "implementationSummary": "L’encodeur et les validateurs refusent les versions, enums de blip, combinaisons flags/type et présences couleur invalides. Les références transitoires moteur échouent localement par omission, sans remplacer l’image complète ni rendre la session stale.",
         "implementationPaths": [
           "code/telemetry/phase3_state_image.cpp",
-          "code/telemetry/phase3_state_image.h"
+          "code/telemetry/phase3_state_image.h",
+          "code/telemetry/protocol/telemetry_business_records_11_18.cpp",
+          "code/telemetry/protocol/telemetry_business_state_validation.cpp"
         ],
       "proofs": [
         {
@@ -1360,16 +1365,16 @@
               "code/telemetry/phase3_state_image.h",
               "test/src/telemetry/producer/phase3_state_image_tests.cpp"
             ],
-                           "inputFingerprint": "sha256:59e1220dc77ff6556de7106a1cbbfdaaa41754344bdf70a5c2ca25859ca66156",
-                           "observedAtUtc": "2026-08-06T12:14:24Z",
-      "result": "passed: 1 test. Un enum RadarMode invalide et une identité de contact nulle échouent pendant l’encodage sans remplacer l’image complète précédente.",
+      "inputFingerprint": "sha256:f0417f4b5c8efe6e2d951e745f110140775afb371586b9a6912a0a1e17511280",
+      "observedAtUtc": "2026-08-08T08:39:03Z",
+          "result": "21/21 tests d’image Phase 3 passés, avec rejet fermé des enums et présences v4 invalides.",
             "resultRef": null
           },
           {
-          "id": "P3-REQ-034-AUTO-02",
+         "id": "P3-REQ-034-AUTO-02",
             "kind": "automated",
             "command": "build/bin/Release/unittests.exe --gtest_filter=TelemetryProtocolBusinessRecords11To18.TargetPresenceIsBoundToCurrentTargetAndValidUtf8:TelemetryProtocolBusinessRecords11To18.RadarRejectsNonFiniteRangesAndInvalidVisibilityIntervals --gtest_color=no",
-            "status": "passed",
+            "status": "pending",
             "inputs": [
               "code/telemetry/protocol/telemetry_business_records_19_24.cpp",
               "code/telemetry/protocol/telemetry_business_records_11_18.cpp",
@@ -1381,10 +1386,10 @@
             "resultRef": null
           },
           {
-          "id": "P3-REQ-034-AUTO-03",
+         "id": "P3-REQ-034-AUTO-03",
             "kind": "automated",
             "command": "build/bin/Release/unittests.exe --gtest_filter=TelemetryProtocolBusinessStateValidation.TargetAndLockReferencesMustResolveInsideTheVisibleImage --gtest_color=no",
-            "status": "passed",
+            "status": "pending",
             "inputs": [
               "code/telemetry/protocol/telemetry_business_state_validation.cpp",
               "code/telemetry/protocol/telemetry_business_state_validation.h",
@@ -1811,7 +1816,7 @@
       "observable": "Le client indépendant reconstruit les valeurs brutes, sample times et provenance sans redéfinir les décisions sensibles.",
       "expectedAutomatedProof": "`telemetry_phase3_loopback_tests`",
       "implementationStatus": "implemented",
-      "implementationSummary": "Le décodeur indépendant conserve les valeurs wire Phase 3, les identités composites et les producer_sample_time_us bruts des locks, cible, contacts, menace et navigation. L’inventaire expose chaque feuille avec sa provenance wire, sans redéfinir une décision sensible.",
+      "implementationSummary": "Le décodeur indépendant conserve les RGBA, types de blip, identités et producer_sample_time_us bruts. Il expose authoritative-wire ou missing-authoritative-color et ne redéfinit jamais une couleur depuis équipe, IFF ou type.",
       "implementationPaths": [
         "test/telemetry/protocol/tools/fstl_client_core.py",
         "test/telemetry/protocol/tools/fstl_reference_decoder.py"
@@ -1827,9 +1832,9 @@
             "test/telemetry/protocol/tools/fstl_reference_decoder.py",
             "test/telemetry/protocol/tools/test_fstl_phase3_scenario_client.py"
           ],
-          "inputFingerprint": "sha256:9d83e4e989ab6d8f8f5dff056252d54503631c8bc9be2b5caaaed57fbb4f1446",
-                       "observedAtUtc": "2026-08-06T12:20:24Z",
-          "result": "9/9 passed: décodage Phase 3, identités composites, deltas cumulatifs et inventaire qui préserve valeurs, sample times et provenance wire des locks, cible, contacts, menace et navigation.",
+      "inputFingerprint": "sha256:30859d076d13618d731d7d3675b905945baaa4404b73819f332901358bf7b117",
+      "observedAtUtc": "2026-08-08T08:39:03Z",
+          "result": "11/11 tests du client scénario passés ; valeurs wire, sample times et provenance v4 sont conservés.",
           "resultRef": null
         }
       ],

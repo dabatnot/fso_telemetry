@@ -24,7 +24,7 @@ Les contrôles courts vérifient :
 
 - gel byte-identical FSTL 1.0 et 1.1 ;
 - conservation byte-identique des layouts historiques et sélection explicite
-  du nouveau champ/bit uniquement par `RADAR_CONTACTS` v3 ;
+  des nouveaux champs/bits uniquement par les records v4 ;
 - masque exact `0x07CB` ;
 - matrice complète des records ;
 - acceptation de tous les vecteurs existants ;
@@ -85,6 +85,10 @@ Les tests ciblés vérifient :
 - contact create/replace/delete ;
 - identité HUD exacte d'un vaisseau visible, nom masqué, type alternatif et
   absence d'identité pour une piste distordue ;
+- couleur radar exacte pour ami, ennemi, neutre, override observateur,
+  accessibilité, warp, tagged, navbuoy/cargo, bombe/LSSM et jump node ;
+- cible courante brillante conservant sa teinte et cible hors radar recevant
+  sa couleur HUD autoritaire ;
 - projection radar v2/v3 devant, droite, haut, gauche/bas et presque derrière ;
 - orientation d'œil distincte de l'orientation brute et changement de pose
   entre deux ticks sans mélange avec `FLIGHT_STATE` ;

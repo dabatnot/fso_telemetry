@@ -1,9 +1,17 @@
-import { useEffect, useMemo, useRef, type MouseEvent, type ReactNode } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  type CSSProperties,
+  type MouseEvent,
+  type ReactNode
+} from "react";
 import { resolveInstrument } from "./data";
 import {
   lockViews,
   missileViews,
   prioritizedContacts,
+  contactVisibilityAlpha,
   radarState,
   sensorLabels,
   subsystemNameForTarget,
@@ -11,6 +19,7 @@ import {
   targetContact,
   targetDisplayName,
   targetHudTypeLabel,
+  targetHudColor,
   targetRecordVersion,
   targetReferenceInvalid,
   targetState,
@@ -156,8 +165,8 @@ function drawContact(
   const homing = (contact.flagBits & 0x40) !== 0;
   context.save();
   context.translate(x, y);
-  context.globalAlpha = contact.visibilityCode === 0 ? 0.35 : 1;
-  context.strokeStyle = threat || bomb ? "#ff6b55" : target ? "#ffd466" : "#70e4d1";
+  context.globalAlpha = contactVisibilityAlpha(contact.visibilityCode);
+  context.strokeStyle = contact.color.css;
   context.fillStyle = context.strokeStyle;
   context.lineWidth = target ? 2.6 : 1.5;
   context.setLineDash(contact.visibilityCode === 2 ? [3, 3] : []);
@@ -325,6 +334,8 @@ function RadarScope({
             <button
               key={contact.id}
               className={`${(contact.flagBits & 0x02) ? "current" : ""} ${contact.invalid ? "invalid" : ""}`}
+              data-color-provenance={contact.color.provenance}
+              style={{ "--contact-color": contact.color.css } as CSSProperties}
               onClick={() => onInspect({
                 definition,
                 kind: "radar-contact",
@@ -395,6 +406,7 @@ function TargetPanel({
   const targetVersion = targetRecordVersion(snapshot);
   const targetClass = targetClassDisplayName(snapshot);
   const targetHudLabel = targetHudTypeLabel(snapshot);
+  const targetColor = targetHudColor(snapshot);
   const targetId = String(target?.current_target_entity_id ?? "0");
   const invalid = targetReferenceInvalid(snapshot);
   const targetSubsystem = subsystemNameForTarget(snapshot, target?.target_subsystem_id);
@@ -412,6 +424,8 @@ function TargetPanel({
       ) : (
         <button
           className={`target-card ${invalid ? "invalid" : ""}`}
+          data-color-provenance={targetColor.provenance}
+          style={{ "--target-color": targetColor.css } as CSSProperties}
           onClick={() => onInspect({
             definition,
             kind: "target",

@@ -896,6 +896,7 @@ main { grid-row: 2; grid-column: 2; min-width: 0; overflow: auto; padding: 22px 
   background: #061219;
 }
 .scope-contact-list button {
+  --contact-color: var(--cyan);
   min-width: 0;
   display: grid;
   grid-template-columns: 1fr auto;
@@ -909,12 +910,12 @@ main { grid-row: 2; grid-column: 2; min-width: 0; overflow: auto; padding: 22px 
   cursor: pointer;
 }
 .scope-contact-list button:hover, .scope-contact-list button:focus-visible { outline: none; background: #12303a; }
-.scope-contact-list button.current { border-left: 3px solid var(--amber); background: #2a2415; }
+.scope-contact-list button.current { border-left: 3px solid var(--contact-color); background: #11242c; }
 .scope-contact-list button.invalid strong { color: var(--red); }
-.scope-contact-list span { overflow: hidden; font: 11px "IBM Plex Mono", monospace; text-overflow: ellipsis; white-space: nowrap; }
-.scope-contact-list strong { color: var(--cyan); font: 11px "IBM Plex Mono", monospace; }
+.scope-contact-list span { overflow: hidden; color: var(--contact-color); font: 11px "IBM Plex Mono", monospace; text-overflow: ellipsis; white-space: nowrap; }
+.scope-contact-list strong { color: var(--contact-color); font: 11px "IBM Plex Mono", monospace; }
 .scope-contact-list small { grid-column: 1 / -1; overflow: hidden; font-family: "IBM Plex Mono", monospace; text-overflow: ellipsis; white-space: nowrap; }
-.scope-contact-list .contact-type { color: #dfffff; font-size: 11px; }
+.scope-contact-list .contact-type { color: var(--contact-color); font-size: 11px; }
 .scope-contact-list .contact-status { color: var(--muted); font-size: 10px; }
 .scope-contact-list .scope-more { display: block; color: var(--amber); font: 11px "IBM Plex Mono", monospace; text-align: center; }
 
@@ -926,6 +927,7 @@ main { grid-row: 2; grid-column: 2; min-width: 0; overflow: auto; padding: 22px 
   font: 11px "IBM Plex Mono", monospace;
 }
 .target-card {
+  --target-color: var(--amber);
   width: 100%;
   height: 100%;
   min-height: 0;
@@ -943,10 +945,10 @@ main { grid-row: 2; grid-column: 2; min-width: 0; overflow: auto; padding: 22px 
 .target-card:hover, .target-card:focus-visible { outline: none; background: #102832; }
 .target-card.invalid > strong { color: var(--red); }
 .target-kicker { color: var(--cyan-soft); font: 11px "IBM Plex Mono", monospace; letter-spacing: 1.3px; }
-.target-card > strong { overflow: hidden; color: #efffff; font: 23px "IBM Plex Mono", monospace; text-overflow: ellipsis; white-space: nowrap; }
-.target-class { overflow: hidden; color: var(--cyan-soft); font: 13px "IBM Plex Mono", monospace; text-overflow: ellipsis; white-space: nowrap; }
-.target-hud-readout { display: flex; flex-wrap: wrap; align-items: baseline; gap: 12px; padding: 7px 9px; color: #efffff; border-left: 2px solid var(--amber); background: #201b11; font: 15px "IBM Plex Mono", monospace; }
-.target-hud-readout span { color: var(--amber); }
+.target-card > strong { overflow: hidden; color: var(--target-color); font: 23px "IBM Plex Mono", monospace; text-overflow: ellipsis; white-space: nowrap; }
+.target-class { overflow: hidden; color: var(--target-color); font: 13px "IBM Plex Mono", monospace; text-overflow: ellipsis; white-space: nowrap; }
+.target-hud-readout { display: flex; flex-wrap: wrap; align-items: baseline; gap: 12px; padding: 7px 9px; color: #efffff; border-left: 2px solid var(--target-color); background: #0b171c; font: 15px "IBM Plex Mono", monospace; }
+.target-hud-readout span { color: var(--target-color); }
 .target-hud-readout i { color: #a69472; font: 9px "IBM Plex Mono", monospace; font-style: normal; }
 .target-primary-metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
 .target-primary-metrics > div { min-width: 0; padding: 7px; border: 1px solid #244650; background: #07151c; }
@@ -955,9 +957,9 @@ main { grid-row: 2; grid-column: 2; min-width: 0; overflow: auto; padding: 22px 
 .target-badges { display: flex; flex-wrap: wrap; gap: 4px; }
 .target-badges i {
   padding: 4px 6px;
-  color: var(--amber);
-  border: 1px solid #594a28;
-  background: #201b11;
+  color: var(--target-color);
+  border: 1px solid var(--target-color);
+  background: #0b171c;
   font: 6px "IBM Plex Mono", monospace;
   font-style: normal;
 }

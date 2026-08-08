@@ -70,7 +70,8 @@ télémétrie. Ce helper :
 - ne dépend pas de l’activation réseau ;
 - ne connaît ni FSTL, ni client, ni test ;
 - reçoit uniquement des sources moteur validées ;
-- retourne une décision de visibilité et les valeurs publiques autorisées ;
+- retourne une décision de visibilité et les valeurs publiques autorisées,
+  dont la couleur RGBA, le type de blip et l'état bright résolus ;
 - ne modifie aucun objet moteur.
 
 Dupliquer approximativement la logique du HUD dans le sérialiseur ou injecter
@@ -225,6 +226,8 @@ Le client de référence :
 - maintient les atomes de contacts par clé ;
 - expose valeur brute, sample time et provenance ;
 - calcule les valeurs `D` dans une couche séparée ;
+- consomme les couleurs radar et cible finales sans recalculer l'IFF, les
+  palettes, l'accessibilité ou leurs overrides ;
 - ne reconstruit jamais une identité omise ;
 - ne transforme pas `NOT_VISIBLE` en vérité monde ;
 - purge les atomes à `DELETE`, keyframe ou changement de session.

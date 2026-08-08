@@ -229,13 +229,18 @@ bool make_target(const Phase3Projection& source, StateAtom& atom)
 			!writer.write_f32(target.exact_hud_speed)) ||
 		((target.presence & protocol::TargetStatePresenceFlagHudTypeLabel) != 0U &&
 			!writer.write_utf8({target.hud_type_label.bytes.data(),
-				target.hud_type_label.size}, 255U)))
+				target.hud_type_label.size}, 255U)) ||
+		((target.presence & protocol::TargetStatePresenceFlagHudTargetColor) != 0U &&
+			(!writer.write_u8(target.hud_target_color[0]) ||
+			 !writer.write_u8(target.hud_target_color[1]) ||
+			 !writer.write_u8(target.hud_target_color[2]) ||
+			 !writer.write_u8(target.hud_target_color[3]))))
 		return false;
 	if (!set_entity_key(atom, RecordType::TargetState, source.player_entity_id) ||
 		!assign_payload(writer, atom)) {
 		return false;
 	}
-	atom.record_version = 3U;
+	atom.record_version = 4U;
 	return validate_encoded(atom);
 }
 
@@ -325,11 +330,17 @@ bool make_contact(const Phase3Projection& source,
 			!writer.write_f32(contact.confidence)) ||
 		((contact.presence & protocol::RadarContactsPresenceFlagHudTypeLabel) != 0U &&
 			!writer.write_utf8({contact.hud_type_label.bytes.data(),
-				contact.hud_type_label.size}, 255U)))
+				contact.hud_type_label.size}, 255U)) ||
+		((contact.presence & protocol::RadarContactsPresenceFlagRadarVisual) != 0U &&
+			(!writer.write_u8(contact.radar_blip_color[0]) ||
+			 !writer.write_u8(contact.radar_blip_color[1]) ||
+			 !writer.write_u8(contact.radar_blip_color[2]) ||
+			 !writer.write_u8(contact.radar_blip_color[3]) ||
+			 !writer.write_u8(contact.radar_blip_type))))
 		return false;
 	if (!set_contact_key(atom, source.player_entity_id, contact.entity_id))
 		return false;
-	atom.record_version = 3U;
+	atom.record_version = 4U;
 	return assign_payload(writer, atom) && validate_encoded(atom);
 }
 

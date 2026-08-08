@@ -256,6 +256,46 @@ class FstlConsoleClientContractTest(unittest.TestCase):
         self.assertEqual(18.0, fields["logical_size"])
         self.assertEqual(0x000F, fields["sensor_visibility_flags"])
 
+    def test_reference_decoder_decodes_explicit_phase3_version_four_colors(self) -> None:
+        target_payload = (
+            struct.pack("<QQQQ", 1, 0x10000, 100, 2)
+            + bytes((0x10, 0x20, 0x30, 0x40))
+        )
+        target_record = (
+            struct.pack("<HBBH", 16, 4, 0, len(target_payload))
+            + target_payload
+        )
+        self.assertEqual(
+            [0x10, 0x20, 0x30, 0x40],
+            reference.decode_record(target_record)["fields"]["hud_target_color"],
+        )
+
+        contact_payload = (
+            struct.pack("<QQQQBBB", 1, 2, 0x80, 100, 1, 1, 1)
+            + struct.pack("<6f", 0.0, 0.0, 10.0, 0.0, 0.0, 0.0)
+            + struct.pack("<3fffI", 0.0, 0.0, 10.0, 10.0, 1.0, 0)
+            + bytes((0x11, 0x22, 0x33, 0x44, 5))
+        )
+        contact_record = (
+            struct.pack("<HBBH", 18, 4, 0, len(contact_payload))
+            + contact_payload
+        )
+        fields = reference.decode_record(contact_record)["fields"]
+        self.assertEqual([0x11, 0x22, 0x33, 0x44], fields["radar_blip_color"])
+        self.assertEqual(5, fields["radar_blip_type"])
+
+        invalid_version = bytearray(contact_record)
+        invalid_version[2] = 3
+        with self.assertRaises(reference.DecodeFailure) as version_error:
+            reference.decode_record(bytes(invalid_version))
+        self.assertEqual(37, version_error.exception.code)
+
+        invalid_type = bytearray(contact_record)
+        invalid_type[-1] = 6
+        with self.assertRaises(reference.DecodeFailure) as type_error:
+            reference.decode_record(bytes(invalid_type))
+        self.assertEqual(34, type_error.exception.code)
+
     def test_phase2_scenario_tool_is_external_and_keeps_the_neutral_console_unchanged(self) -> None:
         self.assertTrue(SCENARIO.is_file())
         tree = ast.parse(SCENARIO.read_text(encoding="utf-8"))
@@ -1328,6 +1368,11 @@ class FstlConsoleClientContractTest(unittest.TestCase):
         self.assertTrue(values["entities.1.tracks.101.scope_in_range"]["value"])
         self.assertEqual(0.0, values["entities.1.tracks.101.bearing_local_rad"]["value"])
         self.assertEqual(0.0, values["entities.1.tracks.101.elevation_local_rad"]["value"])
+        self.assertFalse(values["entities.1.tracks.101.radar_visual"]["available"])
+        self.assertEqual(
+            "missing-authoritative-color",
+            values["entities.1.tracks.101.radar_visual"]["reason"],
+        )
 
         # The standard FSO radar is a directional disc: its centre is the
         # forward axis, with local right/left and up/down determining the
@@ -1416,6 +1461,29 @@ class FstlConsoleClientContractTest(unittest.TestCase):
                 offset_filter_valid=True,
             ).build()["inventory"] if item["path"] == "entities.1.target.distance"),
         )
+
+        contact_envelope = state.record_instances[
+            "RADAR_CONTACTS/entity_id=1/contact_entity_id=101"
+        ]
+        contact_envelope["recordVersion"] = 4
+        track["radar_blip_color"] = [0x11, 0x22, 0x33, 0x44]
+        track["radar_blip_type"] = 5
+        target_envelope["recordVersion"] = 4
+        target["hud_target_color"] = [0xaa, 0xbb, 0xcc, 0xdd]
+        colored = projection()
+        self.assertEqual(
+            {"color": [0x11, 0x22, 0x33, 0x44], "blip_type": 5},
+            colored["entities.1.tracks.101.radar_visual"]["value"],
+        )
+        self.assertEqual(
+            [0xaa, 0xbb, 0xcc, 0xdd],
+            colored["entities.1.target.hud_color"]["value"],
+        )
+
+        track.pop("radar_blip_color")
+        missing = projection()["entities.1.tracks.101.radar_visual"]
+        self.assertFalse(missing["available"])
+        self.assertEqual("missing-authoritative-color", missing["reason"])
 
         weapon = state.record_instances["WEAPON_STATE/entity_id=1"]["fields"]
         weapon["current_secondary_bank_id"] = 999

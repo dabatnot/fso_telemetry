@@ -156,6 +156,10 @@ def vec3(reader: Reader) -> list[float]:
     return [reader.f32(), reader.f32(), reader.f32()]
 
 
+def rgba8(reader: Reader) -> list[int]:
+    return [reader.u8(), reader.u8(), reader.u8(), reader.u8()]
+
+
 def mat3(reader: Reader) -> list[list[float]]:
     return [[reader.f32(), reader.f32(), reader.f32()] for _ in range(3)]
 
@@ -1335,7 +1339,7 @@ def decode_record_payload(
         presence = reader.u64()
         sample = reader.u64()
         current = reader.u64()
-        require(entity and presence & ~0xFFFF == 0, 37, "TARGET_STATE presence")
+        require(entity and presence & ~0x1FFFF == 0, 37, "TARGET_STATE presence")
         require(current or presence & ~0x0001 == 0, 37, "TARGET_STATE absent target")
         result = {
             "current_target_entity_id": u64s(current),
@@ -1387,8 +1391,11 @@ def decode_record_payload(
             require(record_version >= 2, 37, "TARGET_STATE v2 speed")
             result["exact_hud_speed"] = reader.f32()
         if presence & 0x8000:
-            require(record_version == 3, 37, "TARGET_STATE v3 HUD label")
+            require(record_version >= 3, 37, "TARGET_STATE v3 HUD label")
             result["hud_type_label"] = reader.utf8(255)
+        if presence & 0x10000:
+            require(record_version == 4, 37, "TARGET_STATE v4 HUD color")
+            result["hud_target_color"] = rgba8(reader)
         return result
 
     if record_type == 17:
@@ -1445,7 +1452,10 @@ def decode_record_payload(
         )
         radius = reader.f32()
         flags = reader.u32()
-        require(entity and contact and presence & ~0x007F == 0 and object_type <= 8 and category <= 7 and visibility <= 2, 34, "RADAR_CONTACTS invariant")
+        require(entity and contact and presence & ~0x00FF == 0 and object_type <= 8 and category <= 7 and visibility <= 2, 34, "RADAR_CONTACTS invariant")
+        require(flags & ~0xFF == 0, 37, "RADAR_CONTACTS flags")
+        require(not (flags & 0x20) or object_type == 2, 35,
+                "RADAR_CONTACTS bomb object type")
         result = {
             "category": category,
             "contact_entity_id": u64s(contact),
@@ -1477,12 +1487,34 @@ def decode_record_payload(
         if presence & 0x0020:
             result["confidence"] = reader.f32()
         if presence & 0x0040:
-            require(record_version == 3, 37, "RADAR_CONTACTS v3 HUD label")
+            require(record_version >= 3, 37, "RADAR_CONTACTS v3 HUD label")
             require(object_type == 1 and visibility == 1, 37,
                     "RADAR_CONTACTS HUD label visibility")
             label = reader.utf8(255)
             require(bool(label), 34, "RADAR_CONTACTS empty HUD label")
             result["hud_type_label"] = label
+        if presence & 0x0080:
+            require(record_version == 4, 37, "RADAR_CONTACTS v4 radar visual")
+            result["radar_blip_color"] = rgba8(reader)
+            blip_type = reader.u8()
+            require(blip_type <= 5, 34, "RADAR_CONTACTS radar blip type")
+            require(bool(flags & 0x20) == (blip_type == 2), 35,
+                    "RADAR_CONTACTS bomb visual")
+            require(bool(flags & 0x08) == (blip_type == 4), 35,
+                    "RADAR_CONTACTS tagged visual")
+            require(bool(flags & 0x10) == (blip_type == 3), 35,
+                    "RADAR_CONTACTS warp visual")
+            require(not (flags & 0x02) or bool(flags & 0x01), 35,
+                    "RADAR_CONTACTS selected visual must be bright")
+            compatible_object = (
+                object_type == 5 if blip_type == 0 else
+                object_type == 2 if blip_type == 2 else
+                object_type in (1, 2) if blip_type == 3 else
+                object_type == 1
+            )
+            require(compatible_object, 35,
+                    "RADAR_CONTACTS blip type object compatibility")
+            result["radar_blip_type"] = blip_type
         return result
 
     if record_type in (19, 20, 21, 22, 23, 24):
@@ -1877,7 +1909,8 @@ def decode_record(
     require(record_type in RECORD_NAMES, 26, "unknown required record")
     phase3_v2 = record_type in (16, 18) and version == 2
     phase3_v3 = record_type in (16, 18) and version == 3
-    require(version == 1 or phase3_v2 or phase3_v3, 27, "unsupported record version")
+    phase3_v4 = record_type in (16, 18) and version == 4
+    require(version == 1 or phase3_v2 or phase3_v3 or phase3_v4, 27, "unsupported record version")
     require(length == reader.remaining, 28, "record_length mismatch")
     if container == "event" or (container == "standalone" and record_type in (27, 28)):
         require(record_type in (27, 28), 36, "state record in event batch")

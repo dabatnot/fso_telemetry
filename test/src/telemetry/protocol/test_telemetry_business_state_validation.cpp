@@ -530,6 +530,35 @@ std::vector<std::uint8_t> radar_contact_payload(std::uint64_t observer_entity_id
 	return bytes;
 }
 
+std::vector<std::uint8_t> radar_contact_v4_payload(
+	std::uint64_t observer_entity_id,
+	std::uint64_t contact_entity_id,
+	ObjectType object_type,
+	std::uint32_t flags,
+	RadarBlipType blip_type)
+{
+	std::vector<std::uint8_t> bytes;
+	append_u64(bytes, observer_entity_id);
+	append_u64(bytes, contact_entity_id);
+	append_u64(bytes, RadarContactsPresenceFlagRadarVisual);
+	append_u64(bytes, 100U);
+	append_u8(bytes, static_cast<std::uint8_t>(object_type));
+	append_u8(bytes, static_cast<std::uint8_t>(RadarCategory::Weapon));
+	append_u8(bytes, static_cast<std::uint8_t>(RadarVisibility::Visible));
+	append_vec3(bytes);
+	append_vec3(bytes);
+	append_vec3(bytes);
+	append_f32(bytes, 1.0F);
+	append_f32(bytes, 1.0F);
+	append_u32(bytes, flags);
+	append_u8(bytes, 0x10U);
+	append_u8(bytes, 0x20U);
+	append_u8(bytes, 0x30U);
+	append_u8(bytes, 0x40U);
+	append_u8(bytes, static_cast<std::uint8_t>(blip_type));
+	return bytes;
+}
+
 std::vector<std::uint8_t> threat_payload(std::uint64_t entity_id,
 	std::uint64_t missile_entity_id = 0,
 	std::uint32_t weapon_class_id = 0,
@@ -634,12 +663,13 @@ StateImage image_from_atoms(std::vector<StateAtom> atoms)
 StateAtom atom(RecordType type,
 	std::vector<std::uint8_t> value,
 	std::size_t key_size,
-	StateRecordLifecycle lifecycle = StateRecordLifecycle::UpsertOnly)
+	StateRecordLifecycle lifecycle = StateRecordLifecycle::UpsertOnly,
+	std::uint8_t record_version = 1U)
 {
 	StateAtom result;
 	result.key.record_type = static_cast<std::uint16_t>(type);
 	result.key.identity.assign(value.begin(), value.begin() + static_cast<std::ptrdiff_t>(key_size));
-	result.record_version = 1;
+	result.record_version = record_version;
 	result.lifecycle = lifecycle;
 	result.value = std::move(value);
 	return result;
@@ -1560,6 +1590,60 @@ TEST(TelemetryProtocolBusinessStateValidation, RadarContactMatchesLifecycleCatal
 	image = image_from_atoms(std::move(stale_target_atoms));
 	BusinessStateImageValidator stale_target(context);
 	EXPECT_EQ(ValidationError::InvalidStateTransition, stale_target.validate(image));
+}
+
+TEST(TelemetryProtocolBusinessStateValidation,
+	RadarContactV4VisualValidatesBlipFlagsWithoutRequiringAWeaponManifest)
+{
+	constexpr auto coverage =
+		StateDomainCoverageBitPlayerKinematics |
+		StateDomainCoverageBitCoreShip |
+		StateDomainCoverageBitControlInputs |
+		StateDomainCoverageBitRadarSensors |
+		StateDomainCoverageBitTargeting |
+		StateDomainCoverageBitWeapons |
+		StateDomainCoverageBitCargoDockSupport |
+		StateDomainCoverageBitNavigation;
+	static_assert(coverage == 0x07cbULL);
+	std::vector<StateAtom> base = make_phase2_complete_image().records();
+	auto session = std::find_if(base.begin(), base.end(), [](const StateAtom& value) {
+		return value.key.record_type ==
+			static_cast<std::uint16_t>(RecordType::SessionState);
+	});
+	ASSERT_NE(base.end(), session);
+	session->value = session_payload(
+		VisibilityMode::Cockpit, 1U, coverage, 1U);
+	base.push_back(atom(RecordType::LockState, lock_payload(1U), 8U));
+	base.push_back(atom(RecordType::TargetState, target_payload(1U, 2U), 8U));
+	base.push_back(atom(RecordType::RadarState, radar_payload(1U), 8U));
+	base.push_back(atom(RecordType::ThreatState, threat_payload(1U), 8U));
+	base.push_back(atom(RecordType::NavigationState,
+		navigation_none_payload(1U), 8U));
+
+	auto context = phase2_complete_context();
+	context.protocol_minor = VersionMinorV1_1;
+	BusinessStateImageValidator validator(context);
+
+	auto with_contact = [&](std::uint32_t flags, RadarBlipType type) {
+		auto atoms = base;
+		atoms.push_back(atom(RecordType::RadarContacts,
+			radar_contact_v4_payload(1U, 2U, ObjectType::Weapon, flags, type),
+			16U, StateRecordLifecycle::ExplicitCreateDelete, 4U));
+		return image_from_atoms(std::move(atoms));
+	};
+
+	EXPECT_EQ(ValidationError::None,
+		validator.validate(with_contact(ContactFlagBomb | ContactFlagCurrentTarget |
+			ContactFlagBright, RadarBlipType::Bomb)));
+	EXPECT_EQ(ValidationError::InvalidStateTransition,
+		validator.validate(with_contact(ContactFlagBomb | ContactFlagCurrentTarget |
+			ContactFlagBright, RadarBlipType::NormalShip)));
+	EXPECT_EQ(ValidationError::InvalidStateTransition,
+		validator.validate(with_contact(ContactFlagCurrentTarget | ContactFlagBright,
+			RadarBlipType::TaggedShip)));
+	EXPECT_EQ(ValidationError::InvalidStateTransition,
+		validator.validate(with_contact(ContactFlagBomb | ContactFlagCurrentTarget,
+			RadarBlipType::Bomb)));
 }
 
 TEST(TelemetryProtocolBusinessStateValidation, ThreatMissilesResolveAndMatchTheirWeaponCatalogClass)

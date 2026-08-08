@@ -174,11 +174,113 @@ void radar_stuff_blip_info(object *objp, int is_bright, color **blip_color, int 
 	}
 }
 
+void radar_refresh_bright_range() noexcept
+{
+	if (!timestamp_elapsed(Radar_calc_bright_dist_timer)) {
+		return;
+	}
+
+	Radar_calc_bright_dist_timer = _timestamp(1000);
+	Radar_bright_range = player_farthest_weapon_range();
+	if (Radar_bright_range <= 0.0f) {
+		Radar_bright_range = 1500.0f;
+	}
+}
+
+bool radar_resolve_contact_visual(object* objp,
+	const RadarContactProjection& projection,
+	bool current_target,
+	RadarContactVisual& visual) noexcept
+{
+	visual = {};
+	if (objp == nullptr || !std::isfinite(projection.distance) ||
+		projection.distance < 0.0f) {
+		return false;
+	}
+
+	// radar_stuff_blip_info() accepts exactly the object kinds plotted by the
+	// standard radar. Validate the instance-bearing kinds before consulting it
+	// so a transient spawn/despawn entry is an omission, never a fatal HUD error.
+	switch (objp->type) {
+	case OBJ_SHIP:
+		if (objp->instance < 0 || objp->instance >= MAX_SHIPS ||
+			Player_ship == nullptr ||
+			Player_ship->team < 0 ||
+			static_cast<std::size_t>(Player_ship->team) >= Iff_info.size()) {
+			return false;
+		}
+		{
+			const auto& source_ship = Ships[objp->instance];
+			if (source_ship.ship_info_index < 0 ||
+				static_cast<std::size_t>(source_ship.ship_info_index) >= Ship_info.size() ||
+				source_ship.team < 0 ||
+				static_cast<std::size_t>(source_ship.team) >= Iff_info.size()) {
+				return false;
+			}
+		}
+		break;
+	case OBJ_WEAPON:
+		if (objp->instance < 0 || objp->instance >= MAX_WEAPONS) return false;
+		break;
+	case OBJ_JUMP_NODE:
+		break;
+	default:
+		return false;
+	}
+
+	visual.bright = current_target || projection.distance <= Radar_bright_range;
+	radar_stuff_blip_info(objp,
+		visual.bright ? 1 : 0,
+		&visual.blip_color,
+		&visual.blip_type);
+	return visual.blip_color != nullptr && visual.blip_type >= 0 &&
+		visual.blip_type < MAX_BLIP_TYPES;
+}
+
 bool radar_project_contact(object* objp, RadarContactProjection& projection)
 {
 	projection = {};
 	if (objp == nullptr || Player_obj == nullptr || Player_ship == nullptr ||
 		Player_ai == nullptr || objp->flags[Object::Object_Flags::Should_be_dead]) {
+		return false;
+	}
+	// Object creation/destruction can expose a list entry before (or after) all
+	// of the instance-owned radar dependencies are coherent.  Validate those
+	// references before visibility helpers inspect team bitsets or object-owned
+	// tables.  This does not change the result for a valid HUD object; it makes a
+	// transient entry equivalent to an object the radar cannot project yet.
+	const auto objnum = OBJ_INDEX(objp);
+	switch (objp->type) {
+	case OBJ_SHIP:
+		if (objp->instance < 0 || objp->instance >= MAX_SHIPS ||
+			Ships[objp->instance].objnum != objnum ||
+			Ships[objp->instance].team < 0 ||
+			static_cast<std::size_t>(Ships[objp->instance].team) >= Iff_info.size() ||
+			Ships[objp->instance].ship_info_index < 0 ||
+			Ships[objp->instance].ship_info_index >= ship_info_size()) {
+			return false;
+		}
+		break;
+	case OBJ_WEAPON:
+		if (objp->instance < 0 || objp->instance >= MAX_WEAPONS ||
+			Weapons[objp->instance].objnum != objnum ||
+			Weapons[objp->instance].team < 0 ||
+			static_cast<std::size_t>(Weapons[objp->instance].team) >= Iff_info.size() ||
+			Weapons[objp->instance].weapon_info_index < 0 ||
+			Weapons[objp->instance].weapon_info_index >= weapon_info_size()) {
+			return false;
+		}
+		break;
+	case OBJ_JUMP_NODE:
+		if (jumpnode_get_by_objp(objp) == nullptr) {
+			return false;
+		}
+		break;
+	default:
+		return false;
+	}
+	if (Player_ship->team < 0 ||
+		static_cast<std::size_t>(Player_ship->team) >= Iff_info.size()) {
 		return false;
 	}
 	if ((Game_mode & GM_STANDALONE_SERVER) || (Game_mode & GM_LAB) ||
@@ -299,13 +401,7 @@ void radar_plot_object(object* objp)
 	vm_vec_sub(&tempv, &projection.world_position, &Player_obj->pos);
 	vm_vec_rotate(&pos, &tempv, &eye_orient);
 
-	if (timestamp_elapsed(Radar_calc_bright_dist_timer)) {
-		Radar_calc_bright_dist_timer = _timestamp(1000);
-		Radar_bright_range = player_farthest_weapon_range();
-		if (Radar_bright_range <= 0) {
-			Radar_bright_range = 1500.0f;
-		}
-	}
+	radar_refresh_bright_range();
 	if (N_blips >= MAX_BLIPS) {
 		return;
 	}
@@ -314,19 +410,21 @@ void radar_plot_object(object* objp)
 	auto* b = &Blips[N_blips];
 	b->rad = 0;
 	b->flags = 0;
-	auto blip_bright = projection.distance <= Radar_bright_range ? 1 : 0;
-	if (objnum == Player_ai->target_objnum) {
+	const auto current_target = objnum == Player_ai->target_objnum;
+	if (current_target) {
 		b->flags |= BLIP_CURRENT_TARGET;
-		blip_bright = 1;
 	}
 
-	int blip_type = 0;
-	radar_stuff_blip_info(
-		objp, blip_bright, &b->blip_color, &blip_type);
-	if (blip_bright) {
-		list_append(&Blip_bright_list[blip_type], b);
+	RadarContactVisual visual;
+	if (!radar_resolve_contact_visual(
+			objp, projection, current_target, visual)) {
+		return;
+	}
+	b->blip_color = visual.blip_color;
+	if (visual.bright) {
+		list_append(&Blip_bright_list[visual.blip_type], b);
 	} else {
-		list_append(&Blip_dim_list[blip_type], b);
+		list_append(&Blip_dim_list[visual.blip_type], b);
 	}
 
 	b->position = pos;

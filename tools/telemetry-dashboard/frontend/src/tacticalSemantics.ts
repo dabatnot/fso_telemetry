@@ -58,6 +58,26 @@ export const CONTACT_FLAGS = [
   { mask: 0x80, label: "MENACE" }
 ] as const;
 
+export const RADAR_BLIP_TYPES: Record<number, string> = {
+  0: "NŒUD DE SAUT",
+  1: "NAVBUOY/CARGO",
+  2: "BOMBE",
+  3: "WARP",
+  4: "TAGUÉ",
+  5: "VAISSEAU NORMAL"
+};
+
+export type TacticalColorProvenance =
+  | "authoritative-v4"
+  | "legacy-v1-v3"
+  | "missing-authoritative-color";
+
+export interface TacticalColor {
+  rgba: [number, number, number, number] | null;
+  css: string;
+  provenance: TacticalColorProvenance;
+}
+
 export interface ContactView {
   id: string;
   record: Record<string, unknown>;
@@ -66,6 +86,10 @@ export interface ContactView {
   category: string;
   visibility: string;
   visibilityCode: number;
+  blipType: string | null;
+  blipTypeCode: number | null;
+  bright: boolean;
+  color: TacticalColor;
   flags: string[];
   flagBits: number;
   distance: number | null;
@@ -116,6 +140,63 @@ function integer(value: unknown): number | null {
   return Number.isInteger(numeric) && numeric >= 0 ? numeric : null;
 }
 
+const LEGACY_NEUTRAL_COLOR = "#70e4d1";
+const LEGACY_TARGET_COLOR = "#ffd466";
+const LEGACY_THREAT_COLOR = "#ff6b55";
+
+function byte(value: unknown): number | null {
+  const numeric = Number(value);
+  return Number.isInteger(numeric) && numeric >= 0 && numeric <= 0xff
+    ? numeric
+    : null;
+}
+
+function rgba8(value: unknown): [number, number, number, number] | null {
+  if (!Array.isArray(value) || value.length !== 4) return null;
+  const components = value.map(byte);
+  return components.some((component) => component === null)
+    ? null
+    : components as [number, number, number, number];
+}
+
+function rgba8Css(value: [number, number, number, number]): string {
+  return `#${value.map((component) => component.toString(16).padStart(2, "0")).join("")}`;
+}
+
+function legacyContactColor(flagBits: number): TacticalColor {
+  const css = (flagBits & 0xa0) !== 0
+    ? LEGACY_THREAT_COLOR
+    : (flagBits & 0x02) !== 0
+      ? LEGACY_TARGET_COLOR
+      : LEGACY_NEUTRAL_COLOR;
+  return { rgba: null, css, provenance: "legacy-v1-v3" };
+}
+
+function contactColor(
+  value: unknown,
+  version: number | null,
+  flagBits: number
+): TacticalColor {
+  const authoritative = authoritativeColor(value, version);
+  if (authoritative !== null) return authoritative;
+  if (version !== null && version > 3) {
+    return {
+      rgba: null,
+      css: LEGACY_NEUTRAL_COLOR,
+      provenance: "missing-authoritative-color"
+    };
+  }
+  return legacyContactColor(flagBits);
+}
+
+function authoritativeColor(value: unknown, version: number | null): TacticalColor | null {
+  if (version !== 4) return null;
+  const rgba = rgba8(value);
+  return rgba === null
+    ? { rgba: null, css: LEGACY_NEUTRAL_COLOR, provenance: "missing-authoritative-color" }
+    : { rgba, css: rgba8Css(rgba), provenance: "authoritative-v4" };
+}
+
 function derivedNumber(
   snapshot: DashboardSnapshot | null,
   path: string
@@ -154,6 +235,12 @@ export function decodeContactFlags(value: unknown): string[] | null {
   return CONTACT_FLAGS
     .filter((definition) => (numeric & definition.mask) !== 0)
     .map((definition) => definition.label);
+}
+
+export function contactVisibilityAlpha(visibilityCode: number): number {
+  if (visibilityCode === 0) return 0.35;
+  if (visibilityCode === 2) return 0.6;
+  return 1;
 }
 
 export function targetState(snapshot: DashboardSnapshot | null) {
@@ -228,7 +315,7 @@ function contactTypeLabel(
   const authoritative = typeof record.hud_type_label === "string"
     ? record.hud_type_label.trim()
     : "";
-  if (recordVersion === 3) return authoritative || null;
+  if (recordVersion !== null && recordVersion >= 3) return authoritative || null;
   const definition = manifestRecord(
     snapshot, "CLASS_MANIFEST", "class_id", record.revealed_class_id
   );
@@ -251,6 +338,9 @@ export function contactViews(snapshot: DashboardSnapshot | null): ContactView[] 
     const visibilityCode = integer(record.visibility);
     const flags = decodeContactFlags(record.contact_flags);
     const flagBits = integer(record.contact_flags);
+    const recordVersion = radarContactRecordVersion(snapshot, id);
+    const blipTypeCode = integer(record.radar_blip_type);
+    const color = contactColor(record.radar_blip_color, recordVersion, flagBits ?? 0);
     const scope = derivedPair(snapshot, `${prefix}.scope_clamped_position`);
     const invalid =
       !id ||
@@ -269,6 +359,10 @@ export function contactViews(snapshot: DashboardSnapshot | null): ContactView[] 
       category: categoryCode === null ? "ERR" : RADAR_CATEGORIES[categoryCode] ?? "ERR",
       visibility: visibilityCode === null ? "ERR" : RADAR_VISIBILITY[visibilityCode] ?? "ERR",
       visibilityCode: visibilityCode ?? -1,
+      blipType: blipTypeCode === null ? null : RADAR_BLIP_TYPES[blipTypeCode] ?? null,
+      blipTypeCode,
+      bright: ((flagBits ?? 0) & 0x01) !== 0,
+      color,
       flags: flags ?? [],
       flagBits: flagBits ?? 0,
       distance: derivedNumber(snapshot, `${prefix}.distance`),
@@ -332,7 +426,7 @@ export function targetClassDisplayName(snapshot: DashboardSnapshot | null): stri
   return typeof name === "string" && name.trim() ? name.trim() : null;
 }
 
-/** The exact second Target Box line captured by TARGET_STATE v3. */
+/** The exact second Target Box line captured by TARGET_STATE v3 and later. */
 export function targetHudTypeLabel(snapshot: DashboardSnapshot | null): string | null {
   const label = targetState(snapshot)?.hud_type_label;
   return typeof label === "string" && label.trim() ? label.trim() : null;
@@ -352,8 +446,22 @@ export function targetRecordVersion(snapshot: DashboardSnapshot | null): number 
   return null;
 }
 
+export function targetHudColor(snapshot: DashboardSnapshot | null): TacticalColor {
+  const version = targetRecordVersion(snapshot);
+  const color = authoritativeColor(targetState(snapshot)?.hud_target_color, version);
+  if (color !== null) return color;
+  if (version !== null && version > 4) {
+    return {
+      rgba: null,
+      css: LEGACY_NEUTRAL_COLOR,
+      provenance: "missing-authoritative-color"
+    };
+  }
+  return { rgba: null, css: LEGACY_TARGET_COLOR, provenance: "legacy-v1-v3" };
+}
+
 export function targetReferenceInvalid(snapshot: DashboardSnapshot | null): boolean {
-  // TARGET_STATE v3 is an independent projection of the FSO Target Box.  A
+  // TARGET_STATE v3 and later are independent projections of the FSO Target Box. A
   // selected object can intentionally have no RADAR_CONTACTS entry.
   return false;
 }

@@ -366,6 +366,17 @@ enum class RadarCategory : std::uint8_t {
 	Other = 7,
 };
 
+// Numeric values intentionally match BLIP_TYPE_* in radar/radarsetup.h.  They
+// are serialized in RADAR_CONTACTS v4 and must not be reordered.
+enum class RadarBlipType : std::uint8_t {
+	JumpNode = 0,
+	NavbuoyCargo = 1,
+	Bomb = 2,
+	WarpingShip = 3,
+	TaggedShip = 4,
+	NormalShip = 5,
+};
+
 enum class ThreatLevel : std::uint8_t {
 	None = 0,
 	Dumbfire = 1,
@@ -961,9 +972,10 @@ enum TargetStatePresenceFlag : std::uint64_t {
 	TargetStatePresenceFlagExactHudDistance = 0x0000000000002000ULL,
 	TargetStatePresenceFlagExactHudSpeed = 0x0000000000004000ULL,
 	TargetStatePresenceFlagHudTypeLabel = 0x0000000000008000ULL,
+	TargetStatePresenceFlagHudTargetColor = 0x0000000000010000ULL,
 };
-constexpr std::uint64_t KnownTargetStatePresenceFlags = 0x000000000000ffffULL;
-constexpr std::uint64_t ReservedTargetStatePresenceFlags = 0xffffffffffff0000ULL;
+constexpr std::uint64_t KnownTargetStatePresenceFlags = 0x000000000001ffffULL;
+constexpr std::uint64_t ReservedTargetStatePresenceFlags = 0xfffffffffffe0000ULL;
 
 enum RadarStatePresenceFlag : std::uint64_t {
 	RadarStatePresenceFlagNone = 0,
@@ -986,9 +998,10 @@ enum RadarContactsPresenceFlag : std::uint64_t {
 	RadarContactsPresenceFlagDetectionTimes = 0x0000000000000010ULL,
 	RadarContactsPresenceFlagConfidence = 0x0000000000000020ULL,
 	RadarContactsPresenceFlagHudTypeLabel = 0x0000000000000040ULL,
+	RadarContactsPresenceFlagRadarVisual = 0x0000000000000080ULL,
 };
-constexpr std::uint64_t KnownRadarContactsPresenceFlags = 0x000000000000007fULL;
-constexpr std::uint64_t ReservedRadarContactsPresenceFlags = 0xffffffffffffff80ULL;
+constexpr std::uint64_t KnownRadarContactsPresenceFlags = 0x00000000000000ffULL;
+constexpr std::uint64_t ReservedRadarContactsPresenceFlags = 0xffffffffffffff00ULL;
 
 enum ThreatStatePresenceFlag : std::uint64_t {
 	ThreatStatePresenceFlagNone = 0,

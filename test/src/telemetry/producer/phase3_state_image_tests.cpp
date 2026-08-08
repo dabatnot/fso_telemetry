@@ -718,7 +718,7 @@ TEST(TelemetryPhase3StateImage, CanonicalizesNegativeZeroBeforePublication)
 			base, *projection, image));
 	const auto* encoded = find(image, RecordType::RadarContacts);
 	ASSERT_NE(nullptr, encoded);
-	EXPECT_EQ(3U, encoded->record_version);
+	EXPECT_EQ(4U, encoded->record_version);
 	ASSERT_GE(encoded->value.size(), 79U);
 	EXPECT_FLOAT_EQ(10.0F, read_f32(encoded->value, 59U));
 	EXPECT_FLOAT_EQ(-20.0F, read_f32(encoded->value, 63U));
@@ -728,7 +728,7 @@ TEST(TelemetryPhase3StateImage, CanonicalizesNegativeZeroBeforePublication)
 }
 
 TEST(TelemetryPhase3StateImage,
-	PublishesVisibleShipHudIdentityInExplicitRadarVersionThree)
+	PublishesVisibleShipHudIdentityAndVisualInExplicitRadarVersionFour)
 {
 	constexpr std::uint64_t Player = 42U;
 	auto base = make_base(Player);
@@ -746,9 +746,13 @@ TEST(TelemetryPhase3StateImage,
 	contact.radar_projection_distance = 1.0F;
 	contact.presence =
 		telemetry::protocol::RadarContactsPresenceFlagRevealedName |
-		telemetry::protocol::RadarContactsPresenceFlagHudTypeLabel;
+		telemetry::protocol::RadarContactsPresenceFlagHudTypeLabel |
+		telemetry::protocol::RadarContactsPresenceFlagRadarVisual;
 	ASSERT_TRUE(contact.revealed_name.assign("Alpha 2", 7U));
 	ASSERT_TRUE(contact.hud_type_label.assign("GTF Myrmidon", 12U));
+	contact.radar_blip_color = {{0x11U, 0x22U, 0x33U, 0x44U}};
+	contact.radar_blip_type = static_cast<std::uint8_t>(
+		telemetry::protocol::RadarBlipType::NormalShip);
 
 	telemetry::protocol::StateImage image;
 	ASSERT_EQ(telemetry::Phase3StateImageBuildStatus::Created,
@@ -756,18 +760,24 @@ TEST(TelemetryPhase3StateImage,
 			base, *projection, image));
 	const auto* encoded = find(image, RecordType::RadarContacts);
 	ASSERT_NE(nullptr, encoded);
-	EXPECT_EQ(3U, encoded->record_version);
-	ASSERT_GE(encoded->value.size(), 106U);
+	EXPECT_EQ(4U, encoded->record_version);
+	ASSERT_GE(encoded->value.size(), 111U);
 	EXPECT_EQ(7U, read_u16(encoded->value, 83U));
 	EXPECT_EQ("Alpha 2", std::string(encoded->value.begin() + 85U,
 		encoded->value.begin() + 92U));
 	EXPECT_EQ(12U, read_u16(encoded->value, 92U));
 	EXPECT_EQ("GTF Myrmidon", std::string(encoded->value.begin() + 94U,
 		encoded->value.begin() + 106U));
+	EXPECT_EQ(0x11U, encoded->value[106U]);
+	EXPECT_EQ(0x22U, encoded->value[107U]);
+	EXPECT_EQ(0x33U, encoded->value[108U]);
+	EXPECT_EQ(0x44U, encoded->value[109U]);
+	EXPECT_EQ(static_cast<std::uint8_t>(telemetry::protocol::RadarBlipType::NormalShip),
+		encoded->value[110U]);
 }
 
 TEST(TelemetryPhase3StateImage,
-	PublishesExactHudTargetReadoutInExplicitVersionThree)
+	PublishesExactHudTargetReadoutAndColorInExplicitVersionFour)
 {
 	constexpr std::uint64_t Player = 42U;
 	auto base = make_base(Player);
@@ -781,19 +791,25 @@ TEST(TelemetryPhase3StateImage,
 	const auto published_count = image.records().size();
 	projection->target.presence =
 		telemetry::protocol::TargetStatePresenceFlagExactHudDistance |
-		telemetry::protocol::TargetStatePresenceFlagExactHudSpeed;
+		telemetry::protocol::TargetStatePresenceFlagExactHudSpeed |
+		telemetry::protocol::TargetStatePresenceFlagHudTargetColor;
 	projection->target.current_target_entity_id = 100U;
 	projection->target.exact_hud_distance = 500.0F;
 	projection->target.exact_hud_speed = 92.0F;
+	projection->target.hud_target_color = {{0xaaU, 0xbbU, 0xccU, 0xddU}};
 	ASSERT_EQ(telemetry::Phase3StateImageBuildStatus::Created,
 		telemetry::build_phase3_cockpit_sensor_state_image(
 			base, *projection, image));
 	const auto* target = find(image, RecordType::TargetState);
 	ASSERT_NE(nullptr, target);
-	EXPECT_EQ(3U, target->record_version);
+	EXPECT_EQ(4U, target->record_version);
 	EXPECT_EQ(published_count, image.records().size());
 	EXPECT_FLOAT_EQ(500.0F, read_f32(target->value, 32U));
 	EXPECT_FLOAT_EQ(92.0F, read_f32(target->value, 36U));
+	EXPECT_EQ(0xaaU, target->value[40U]);
+	EXPECT_EQ(0xbbU, target->value[41U]);
+	EXPECT_EQ(0xccU, target->value[42U]);
+	EXPECT_EQ(0xddU, target->value[43U]);
 }
 
 TEST(TelemetryPhase3StateImage, PlayerAbsentRetainsOnlyGlobalSingletons)

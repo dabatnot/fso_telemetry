@@ -3641,15 +3641,38 @@ def build_fstl_v1_1_schema() -> dict[str, object]:
     values.sort(key=lambda item: int(item["value"]))
 
     radar_contact_presence = registries["RadarContactsPresence"]
-    radar_contact_presence["reserved"]["known_mask"] = 0x7F
-    radar_contact_presence["reserved"]["reserved_mask"] = 0xFFFFFFFFFFFFFF80
+    radar_contact_presence["reserved"]["known_mask"] = 0xFF
+    radar_contact_presence["reserved"]["reserved_mask"] = 0xFFFFFFFFFFFFFF00
     radar_contact_presence["values"].append({
         "bit": 6,
         "name": "HUD_TYPE_LABEL",
         "value": 0x40,
         "source": {"document": p3_doc04_path, "section": "8.2"},
     })
+    radar_contact_presence["values"].append({
+        "bit": 7,
+        "name": "RADAR_VISUAL",
+        "value": 0x80,
+        "source": {"document": p3_doc04_path, "section": "8.2"},
+    })
     radar_contact_presence["values"].sort(key=lambda item: int(item["value"]))
+
+    registries["RadarBlipType"] = {
+        "kind": "enum",
+        "width_bits": 8,
+        "unknown_policy": "reject",
+        "cpp": {"enum": "RadarBlipType"},
+        "source": {"document": p3_doc04_path, "section": "8.2"},
+        "reserved": {"policy": "reject", "ranges": [[6, 255]]},
+        "values": [
+            {"name": "JUMP_NODE", "value": 0},
+            {"name": "NAVBUOY_CARGO", "value": 1},
+            {"name": "BOMB", "value": 2},
+            {"name": "WARPING_SHIP", "value": 3},
+            {"name": "TAGGED_SHIP", "value": 4},
+            {"name": "NORMAL_SHIP", "value": 5},
+        ],
+    }
 
     records = schema.get("record_types")
     if not isinstance(records, list):
@@ -3702,6 +3725,27 @@ def build_fstl_v1_1_schema() -> dict[str, object]:
         ),
         "wire": "str<255>",
     })
+    radar_v4_fields = json.loads(json.dumps(radar_v3_fields))
+    radar_v4_fields.extend([
+        {
+            "constraint": "RGBA final rÃ©solu par FSO",
+            "name": "radar_blip_color",
+            "nature": "A",
+            "position": str(len(radar_v4_fields) + 1),
+            "presence_condition": {"bits": [7], "selector": "presence"},
+            "semantics": "bit 7; couleur autoritaire du blip, alpha inclus",
+            "wire": "rgba8",
+        },
+        {
+            "constraint": "enum FSO fermÃ© 0..5",
+            "name": "radar_blip_type",
+            "nature": "A",
+            "position": str(len(radar_v4_fields) + 2),
+            "presence_condition": {"bits": [7], "selector": "presence"},
+            "semantics": "bit 7; BLIP_TYPE_* autoritaire correspondant Ã  la couleur",
+            "wire": "RadarBlipType",
+        },
+    ])
     radar_contacts["versions"] = [
         {"version": 1, "compatibility": "frozen FSTL 1.0 layout",
          "fields": radar_v1_fields},
@@ -3713,16 +3757,26 @@ def build_fstl_v1_1_schema() -> dict[str, object]:
          "required_profile": "CockpitSensors",
          "compatibility": "explicit; v1/v2 byte-identical; no payload autodetection",
          "fields": radar_v3_fields},
+        {"version": 4, "minimum_minor": 1,
+         "required_profile": "CockpitSensors",
+         "compatibility": "explicit; v4 appends the authoritative radar visual group",
+         "fields": radar_v4_fields},
     ]
-    radar_contacts["phase3_live_record_version"] = 3
+    radar_contacts["phase3_live_record_version"] = 4
 
     target_presence = registries["TargetStatePresence"]
-    target_presence["reserved"]["known_mask"] = 0xFFFF
-    target_presence["reserved"]["reserved_mask"] = 0xFFFFFFFFFFFF0000
+    target_presence["reserved"]["known_mask"] = 0x1FFFF
+    target_presence["reserved"]["reserved_mask"] = 0xFFFFFFFFFFFE0000
     target_presence["values"].append({
         "bit": 14,
         "name": "EXACT_HUD_SPEED",
         "value": 0x4000,
+        "source": {"document": p3_doc04_path, "section": "5.2"},
+    })
+    target_presence["values"].append({
+        "bit": 16,
+        "name": "HUD_TARGET_COLOR",
+        "value": 0x10000,
         "source": {"document": p3_doc04_path, "section": "5.2"},
     })
     target_presence["values"].append({
@@ -3755,6 +3809,16 @@ def build_fstl_v1_1_schema() -> dict[str, object]:
         "semantics": "bit 15; exact second line rendered by the FSO Target Box",
         "wire": "utf8-string",
     })
+    target_v4_fields = json.loads(json.dumps(target_v3_fields))
+    target_v4_fields.append({
+        "constraint": "RGBA bright final rÃ©solu par FSO",
+        "name": "hud_target_color",
+        "nature": "A",
+        "position": str(len(target_v4_fields) + 1),
+        "presence_condition": {"bits": [16], "selector": "presence"},
+        "semantics": "bit 16; couleur HUD brillante autoritaire de la cible",
+        "wire": "rgba8",
+    })
     for index, field in enumerate(target_v2_fields, start=1):
         field["position"] = str(index)
     target_state["versions"] = [
@@ -3768,14 +3832,20 @@ def build_fstl_v1_1_schema() -> dict[str, object]:
          "required_profile": "CockpitSensors",
          "compatibility": "explicit; v3 adds the conditional HUD target type label",
          "fields": target_v3_fields},
+        {"version": 4, "minimum_minor": 1,
+         "required_profile": "CockpitSensors",
+         "compatibility": "explicit; v4 appends the authoritative HUD target color",
+         "fields": target_v4_fields},
     ]
-    target_state["phase3_live_record_version"] = 3
+    target_state["phase3_live_record_version"] = 4
 
     correspondence = schema.get("cpp_correspondence")
     if not isinstance(correspondence, dict):
         raise SchemaError("base schema C++ correspondence is missing")
     correspondence["verified_constant_count"] = 180
-    correspondence["verified_enum_count"] = 135
+    correspondence["verified_enum_count"] = 143
+    correspondence["document_registry_count"] = 135
+    correspondence["bound_registry_count"] = 135
 
     validate_schema_shape(schema)
     return schema

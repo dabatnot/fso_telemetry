@@ -50,12 +50,14 @@ struct TargetFacts {
 };
 
 struct RadarContactFacts {
+	std::uint8_t record_version = 1U;
 	std::uint64_t observer_entity_id = 0;
 	std::uint64_t contact_entity_id = 0;
 	std::uint64_t presence = 0;
 	ObjectType object_type = ObjectType::Unknown;
 	std::uint32_t flags = 0;
 	std::uint32_t revealed_class_id = 0;
+	RadarBlipType radar_blip_type = RadarBlipType::NormalShip;
 };
 
 struct DockingRelationFacts {
@@ -338,10 +340,19 @@ ValidationError parse_target(const StateAtom& atom, TargetFacts& facts) noexcept
 		return ValidationError::BadRecordLength;
 	}
 	if ((facts.presence & TargetStatePresenceFlagHudTypeLabel) != 0U) {
+		if (atom.record_version < 3U) {
+			return ValidationError::UnsupportedRecordVersion;
+		}
 		std::string_view ignored_label;
 		if (!reader.read_utf8(255U, ignored_label)) {
 			return ValidationError::BadRecordLength;
 		}
+	}
+	if ((facts.presence & TargetStatePresenceFlagHudTargetColor) != 0U) {
+		if (atom.record_version != 4U) {
+			return ValidationError::UnsupportedRecordVersion;
+		}
+		if (!reader.skip(4U)) return ValidationError::BadRecordLength;
 	}
 	return reader.at_end() ? ValidationError::None : ValidationError::BadRecordLength;
 }
@@ -349,6 +360,7 @@ ValidationError parse_target(const StateAtom& atom, TargetFacts& facts) noexcept
 ValidationError parse_radar_contact(const StateAtom& atom, RadarContactFacts& facts) noexcept
 {
 	facts = RadarContactFacts{};
+	facts.record_version = atom.record_version;
 	PacketReader reader(ByteView{atom.value.empty() ? nullptr : atom.value.data(), atom.value.size()});
 	std::uint64_t sample_time = 0;
 	std::uint8_t object_type = 0;
@@ -384,10 +396,26 @@ ValidationError parse_radar_contact(const StateAtom& atom, RadarContactFacts& fa
 		return ValidationError::BadRecordLength;
 	}
 	if ((facts.presence & RadarContactsPresenceFlagHudTypeLabel) != 0U) {
+		if (atom.record_version < 3U) {
+			return ValidationError::UnsupportedRecordVersion;
+		}
 		std::string_view ignored_label;
 		if (!reader.read_utf8(255U, ignored_label)) {
 			return ValidationError::BadRecordLength;
 		}
+	}
+	if ((facts.presence & RadarContactsPresenceFlagRadarVisual) != 0U) {
+		if (atom.record_version != 4U) {
+			return ValidationError::UnsupportedRecordVersion;
+		}
+		std::uint8_t blip_type = 0U;
+		if (!reader.skip(4U) || !reader.read_u8(blip_type)) {
+			return ValidationError::BadRecordLength;
+		}
+		if (blip_type > static_cast<std::uint8_t>(RadarBlipType::NormalShip)) {
+			return ValidationError::UnknownEnum;
+		}
+		facts.radar_blip_type = static_cast<RadarBlipType>(blip_type);
 	}
 	return reader.at_end() ? ValidationError::None : ValidationError::BadRecordLength;
 }
@@ -822,7 +850,31 @@ ValidationError validate_radar_contact_references(const StateAtom& atom,
 		}
 	}
 	const auto radar_bomb = (facts.flags & ContactFlagBomb) != 0U;
-	if (facts.object_type == ObjectType::Weapon) {
+	const auto has_authoritative_visual =
+		facts.record_version == 4U &&
+		(facts.presence & RadarContactsPresenceFlagRadarVisual) != 0U;
+	if (has_authoritative_visual) {
+		const auto type_is = [&facts](RadarBlipType type) {
+			return facts.radar_blip_type == type;
+		};
+		if (radar_bomb != type_is(RadarBlipType::Bomb) ||
+			(((facts.flags & ContactFlagTagged) != 0U) != type_is(RadarBlipType::TaggedShip)) ||
+			(((facts.flags & ContactFlagWarp) != 0U) != type_is(RadarBlipType::WarpingShip)) ||
+			((facts.flags & ContactFlagCurrentTarget) != 0U &&
+			 (facts.flags & ContactFlagBright) == 0U)) {
+			return ValidationError::InvalidStateTransition;
+		}
+		if (radar_bomb && facts.object_type != ObjectType::Weapon) {
+			return ValidationError::InvalidStateTransition;
+		}
+		const auto compatible_object =
+			type_is(RadarBlipType::JumpNode) ? facts.object_type == ObjectType::JumpNode :
+			type_is(RadarBlipType::Bomb) ? facts.object_type == ObjectType::Weapon :
+			type_is(RadarBlipType::WarpingShip) ?
+				(facts.object_type == ObjectType::Ship || facts.object_type == ObjectType::Weapon) :
+			facts.object_type == ObjectType::Ship;
+		if (!compatible_object) return ValidationError::InvalidStateTransition;
+	} else if (facts.object_type == ObjectType::Weapon) {
 		const auto class_id = lifecycle != nullptr
 			? contact.class_id
 			: facts.revealed_class_id;

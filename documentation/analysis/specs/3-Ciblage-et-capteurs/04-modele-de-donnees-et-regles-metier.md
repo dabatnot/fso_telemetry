@@ -124,10 +124,11 @@ autorise une dernière observation ou une connaissance de menace distincte.
 ### 5.0 Version filaire
 
 Le layout v1 reste lisible pour les captures existantes. Le profil live
-`CockpitSensors` émet `record_version=3` sous FSTL 1.1. La variante v2 ajoute
+`CockpitSensors` émet `record_version=4` sous FSTL 1.1. La variante v2 ajoute
 après `EXACT_HUD_DISTANCE` le groupe `EXACT_HUD_SPEED`; v3 ajoute ensuite
-`HUD_TYPE_LABEL`. La variante est choisie uniquement par `record_version`,
-jamais par la longueur du payload. Les captures v1/v2 restent décodables.
+`HUD_TYPE_LABEL`; v4 ajoute `HUD_TARGET_COLOR`. La variante est choisie
+uniquement par `record_version`, jamais par la longueur du payload. Les
+captures v1/v2/v3 restent décodables et byte-identiques.
 
 ### 5.1 Champs obligatoires
 
@@ -149,8 +150,9 @@ cible. `producer_sample_time_us` est l’instant de la décision de ciblage.
 | `LEAD` | position monde et banque valide, ensemble all-or-nothing |
 | `ATTACKER`, `DANGEROUS_WEAPON`, `NEAREST_LOCKED` | présents seulement si la référence est autorisée et résoluble dans l’espace public |
 | `EXACT_HUD_DISTANCE` | valeur D visible : `Player_ai->current_target_distance` après multiplicateur HUD |
-| `EXACT_HUD_SPEED` | v2 seulement ; valeur S visible calculée comme le target box, y compris le fallback docké et le multiplicateur HUD |
-| `HUD_TYPE_LABEL` | v3 seulement ; seconde ligne exacte du Target Box, y compris la classe affichée d’un vaisseau ciblé même si aucune entrée `CLASS_MANIFEST` ne lui est encore applicable ; aucune classe n’est inventée côté client |
+| `EXACT_HUD_SPEED` | depuis v2 ; valeur S visible calculée comme le target box, y compris le fallback docké et le multiplicateur HUD |
+| `HUD_TYPE_LABEL` | depuis v3 ; seconde ligne exacte du Target Box, y compris la classe affichée d’un vaisseau ciblé même si aucune entrée `CLASS_MANIFEST` ne lui est encore applicable ; aucune classe n’est inventée côté client |
+| `HUD_TARGET_COLOR` | v4 seulement ; couleur RGBA brillante retournée par `hud_get_iff_color(target,1)` pour les brackets et accents de cible, accessibilité et overrides inclus |
 
 Si la cible vaut zéro, tous les groupes sont absents sauf `PREVIOUS_TARGET`,
 comme l’impose FSTL.
@@ -208,7 +210,7 @@ maximale finie prévue par FSTL, jamais un infini IEEE.
 
 ### 8.0 Version filaire
 
-Les layouts v1/v2 restent gelés. La version 2 insère
+Les layouts v1/v2/v3 restent gelés. La version 2 insère
 après `velocity_world` :
 
 - `radar_local_position:vec3f`, calculé exactement comme le radar standard :
@@ -220,10 +222,12 @@ après `velocity_world` :
 Les deux valeurs sont capturées dans le même appel de collecte et le même tick
 que `radar_project_contact()`. La version 3 conserve ce préfixe byte-identique
 et ajoute en fin de payload le groupe `HUD_TYPE_LABEL`, bit de présence `0x40`,
-encodé par `hud_type_label:str<255>`. Le profil live `CockpitSensors` émet
-explicitement `record_version=3` sous FSTL 1.1. Un décodeur choisit le layout
-par `record_version`, jamais par longueur. Les records v2/v3 sous FSTL 1.0 sont
-rejetés.
+encodé par `hud_type_label:str<255>`. La version 4 ajoute ensuite le groupe
+`RADAR_VISUAL`, bit `0x80`, composé de `radar_blip_color:rgba8` et
+`radar_blip_type:u8` selon l'enum fermé FSO 0..5. Le profil live
+`CockpitSensors` émet explicitement `record_version=4` sous FSTL 1.1. Un
+décodeur choisit le layout par `record_version`, jamais par longueur. Les
+records v2/v3/v4 sous FSTL 1.0 sont rejetés.
 
 ### 8.1 Ensemble exact
 
@@ -243,7 +247,7 @@ cockpit ; un objet jamais détecté est absent.
 - la position locale radar et la distance de projection sont autoritaires,
   finies, capturées atomiquement et obligatoires en v2 ;
 - `radius`, flags et taille logique suivent la décision radar ;
-- pour un vaisseau `VISIBLE` en v3, `REVEALED_NAME` contient la première ligne
+- pour un vaisseau `VISIBLE` en v3/v4, `REVEALED_NAME` contient la première ligne
   affichable du Target Box lorsqu'elle n'est pas masquée, et `HUD_TYPE_LABEL`
   contient son libellé de classe exact, type alternatif et traduction inclus ;
 - `REVEALED_CLASS` reste indépendant et n'est présent que si son ID appartient
@@ -253,9 +257,18 @@ cockpit ; un objet jamais détecté est absent.
 - temps de détection et confiance sont présents seulement si l’autorité les
   fournit.
 
-`ContactFlags.BOMB` exige un objet arme et une classe manifestée portant le
-flag bombe. `CURRENT_TARGET` est unique. `STEALTH`, `TAGGED`, `HOMING` et
-`THREAT` ne peuvent révéler aucun champ conditionnel supplémentaire.
+En v4, chaque contact projeté porte le groupe `RADAR_VISUAL` capturé juste
+après `radar_project_contact()` : couleur RGBA finale, alpha compris, et type
+de blip exact après les priorités warp, tagged, navbuoy/cargo, IFF, bombe/LSSM
+et jump node. La sélection force `BRIGHT` mais ne remplace jamais cette couleur
+par une teinte de dashboard. Une piste distordue conserve sa teinte et son
+alpha autoritaires ; seule son animation reste une présentation client.
+
+Sous v1/v2/v3, `ContactFlags.BOMB` exige un objet arme et une classe manifestée
+portant le flag bombe. Sous v4, `BOMB`, `TAGGED` et `WARP` sont validés contre
+`radar_blip_type` et n'exigent aucun manifeste. `CURRENT_TARGET` est unique.
+`STEALTH`, `HOMING` et `THREAT` ne peuvent révéler aucun champ conditionnel
+supplémentaire.
 
 ### 8.3 Remplacement
 
@@ -340,7 +353,7 @@ Le client calcule, sans modifier les atomes bruts :
 - progression de lock et de scan ;
 - âge courant d’une piste ;
 - distance, relèvement et ETA de navigation ;
-- coordonnées radar, brackets, couleurs et animations ; la coordonnée radar
+- coordonnées radar, brackets et animations ; la coordonnée radar
   live utilise exclusivement les deux champs v2 selon :
   `transverse=hypot(local.x,local.y)`,
   `radius=0` si `distance<local.z`, sinon
@@ -356,7 +369,9 @@ contact avant, mais aucune direction latérale/verticale n'est définie. La
 portée sélectionnée ne participe jamais au rayon : le collecteur a déjà omis
 les contacts hors portée. La reconstruction monde + `FLIGHT_STATE` est
 autorisée seulement pour lire une ancienne capture v1 et ne doit jamais être
-prioritaire sur un record v2.
+  prioritaire sur un record v2. Les couleurs radar et cible v4 sont des
+  décisions autoritaires consommées telles quelles, jamais des dérivations IFF
+  du client.
 
 ## 13. Validation croisée
 
