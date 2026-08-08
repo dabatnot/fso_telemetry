@@ -100,6 +100,13 @@ export const RADAR_BLIP_TYPES: Record<number, string> = {
   5: "VAISSEAU NORMAL"
 };
 
+/** Static scope presentation only; FSO blip coordinates are unchanged. */
+export const RADAR_SCOPE_GRID = {
+  axisRotationRad: Math.PI / 4,
+  ringFractions: [0.5],
+  axisInnerCutoutFraction: 0.5
+} as const;
+
 export type TacticalColorProvenance =
   | "authoritative-v4"
   | "legacy-v1-v3"

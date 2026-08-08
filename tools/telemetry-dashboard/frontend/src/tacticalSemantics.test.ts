@@ -6,6 +6,7 @@ import {
   GUIDANCE_TYPES,
   HUD_WARNING_KINDS,
   RADAR_BLIP_TYPES,
+  RADAR_SCOPE_GRID,
   RADAR_CATEGORIES,
   RADAR_MODES,
   RADAR_VISIBILITY,
@@ -202,6 +203,14 @@ function snapshot(): DashboardSnapshot {
 }
 
 describe("tactical closed registries", () => {
+  it("defines the rotated scope grid with only the middle reference ring", () => {
+    expect(RADAR_SCOPE_GRID).toEqual({
+      axisRotationRad: Math.PI / 4,
+      ringFractions: [0.5],
+      axisInnerCutoutFraction: 0.5
+    });
+  });
+
   it("decodes every Phase 3 tactical enum and contact flag", () => {
     expect(Object.keys(RADAR_MODES)).toHaveLength(4);
     expect(Object.keys(SENSOR_STATES)).toHaveLength(3);

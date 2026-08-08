@@ -11,6 +11,7 @@ import {
   lockViews,
   missileViews,
   prioritizedContacts,
+  RADAR_SCOPE_GRID,
   contactVisibilityAlpha,
   hudAlertView,
   radarRangeDisplay,
@@ -266,22 +267,31 @@ function RadarScope({
       context.arc(centerX, centerY, radius, 0, Math.PI * 2);
       context.fill();
       context.stroke();
-      for (const fraction of [0.25, 0.5, 0.75]) {
+      for (const fraction of RADAR_SCOPE_GRID.ringFractions) {
         context.beginPath();
         context.arc(centerX, centerY, radius * fraction, 0, Math.PI * 2);
         context.stroke();
       }
+      context.save();
+      context.translate(centerX, centerY);
+      context.rotate(RADAR_SCOPE_GRID.axisRotationRad);
+      const axisInnerRadius = radius * RADAR_SCOPE_GRID.axisInnerCutoutFraction;
       context.beginPath();
-      context.moveTo(centerX - radius, centerY);
-      context.lineTo(centerX + radius, centerY);
-      context.moveTo(centerX, centerY - radius);
-      context.lineTo(centerX, centerY + radius);
+      context.moveTo(-radius, 0);
+      context.lineTo(-axisInnerRadius, 0);
+      context.moveTo(axisInnerRadius, 0);
+      context.lineTo(radius, 0);
+      context.moveTo(0, -radius);
+      context.lineTo(0, -axisInnerRadius);
+      context.moveTo(0, axisInnerRadius);
+      context.lineTo(0, radius);
       context.stroke();
+      context.restore();
       context.fillStyle = "#d5f8f1";
       context.font = "13px ui-monospace, monospace";
       context.textAlign = "center";
-      // Match FSO's standard directional radar: the nose is at the centre,
-      // while the disc direction tells the pilot which way to turn or pitch.
+      // The visual axes rotate, while the cockpit directions keep their
+      // stable cardinal positions so the labels remain immediately readable.
       context.fillText(t("HAUT"), centerX, centerY - radius + 12);
       context.fillText(t("BAS"), centerX, centerY + radius - 5);
       context.textAlign = "left";

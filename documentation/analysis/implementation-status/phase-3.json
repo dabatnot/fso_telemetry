@@ -3,7 +3,7 @@
   "phase": 3,
   "phaseDirectory": "documentation/analysis/specs/3-Ciblage-et-capteurs",
   "contractFingerprint": "sha256:942e8ada4756238765113418c07663ba4fb339a74e30c2c454f24f09fb61af7f",
-  "updatedAtUtc": "2026-08-08T22:27:18Z",
+  "updatedAtUtc": "2026-08-08T23:00:35Z",
   "requirements": [
     {
       "id": "P3-REQ-001",
@@ -1359,6 +1359,21 @@
           "observedAtUtc": "2026-08-08T22:00:22Z",
           "result": "36 tests client Python, 63 tests frontend, build Vite et 2 tests de sérialisation TARGET_STATE v5 passés ; la couleur HUD autoritaire reste appliquée en v5, INFINITE est affiché ∞ et les portées finies restent numériques.",
             "resultRef": "test/telemetry/protocol/tools/test_fstl_console_client_contract.py"
+          },
+          {
+            "id": "P3-REQ-033-AUTO-04",
+            "kind": "automated",
+            "command": "npm --prefix tools/telemetry-dashboard/frontend test -- --run tacticalSemantics.test.ts ; npm --prefix tools/telemetry-dashboard/frontend run build",
+            "status": "passed",
+            "inputs": [
+              "tools/telemetry-dashboard/frontend/src/TacticalCockpit.tsx",
+              "tools/telemetry-dashboard/frontend/src/tacticalSemantics.ts",
+              "tools/telemetry-dashboard/frontend/src/tacticalSemantics.test.ts"
+            ],
+            "inputFingerprint": "sha256:b974f597dcfdedbdd84ddd11c105242ca0c9b2a9809b18e15b80201da73999cd",
+            "observedAtUtc": "2026-08-08T23:00:35Z",
+            "result": "66 tests frontend et le build Vite passent ; la grille radar n’affiche plus que l’anneau médian, ses axes sont tournés de 45 degrés uniquement hors du cercle central et les libellés directionnels restent aux positions cardinales fixes.",
+            "resultRef": null
           }
         ],
         "requiredObservations": [],
