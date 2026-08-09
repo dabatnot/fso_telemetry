@@ -7,6 +7,13 @@ param(
     [int]$UiPort = 43100,
     [string]$TelemetryConfig,
     [string]$Replay,
+    [string]$CaptureDirectory,
+    [ValidateRange(0, 1048576)]
+    [double]$CaptureWarningGiB = 5,
+    [ValidateRange(0, 1048576)]
+    [double]$CaptureStopGiB = 10,
+    [ValidateRange(0, 1048576)]
+    [double]$CaptureFreeReserveGiB = 2,
     [switch]$NoBrowser
 )
 
@@ -71,10 +78,16 @@ $Arguments = @(
     "--ui-port", "$UiPort",
     "--flight-hz", "$FlightHz",
     "--systems-hz", "$SystemsHz",
-    "--mission-heartbeat-ms", "$MissionHeartbeatMs"
+    "--mission-heartbeat-ms", "$MissionHeartbeatMs",
+    "--capture-warning-gib", "$CaptureWarningGiB",
+    "--capture-stop-gib", "$CaptureStopGiB",
+    "--capture-free-reserve-gib", "$CaptureFreeReserveGiB"
 )
 if ($Replay) {
     $Arguments += @("--replay", (Resolve-Path -LiteralPath $Replay).Path)
+}
+if ($CaptureDirectory) {
+    $Arguments += @("--capture-dir", $CaptureDirectory)
 }
 
 if (-not $NoBrowser) {

@@ -2464,7 +2464,11 @@ class ConsoleClient:
             raise ValueError("message CRC")
         self.fragments.pop(key, None)
         decoded = reference.decode_message(header["message_type"], header["flags"], payload,
-                                           {"senderRole": "producer", "allowedSenderRoles": ["producer"]})
+                                           {
+                                               "senderRole": "producer",
+                                               "allowedSenderRoles": ["producer"],
+                                               "retainEncodedRecord": True,
+                                           })
         control_identity = (
             header["session_id"],
             header["message_id"],

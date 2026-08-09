@@ -1973,12 +1973,14 @@ def decode_record(
     payload.finish()
     reader.finish()
     record = canonical_record(record_type, version, flags, length, fields)
+    if (context or {}).get("retainEncodedRecord") is True:
+        record["_encodedRecordHex"] = encoded.hex()
     validate_record_semantics(record, context or {})
     return record
 
 
 def decode_record_region(
-    reader: Reader, count: int, container: str
+    reader: Reader, count: int, container: str, context: dict[str, Any] | None = None
 ) -> list[dict[str, Any]]:
     records: list[dict[str, Any]] = []
     for _ in range(count):
@@ -1986,7 +1988,7 @@ def decode_record_region(
         start = reader.offset
         length = int.from_bytes(reader.data[start + 4 : start + 6], "little")
         encoded = reader.take(6 + length)
-        records.append(decode_record(encoded, container=container))
+        records.append(decode_record(encoded, context=context, container=container))
     return records
 
 
@@ -2236,7 +2238,7 @@ def decode_message(message_type: int, flags: int, payload: bytes, context: dict[
         require(count > 0, 34, "empty transaction part")
         enforce_record_count_quota(count, context)
         records = decode_record_region(
-            reader, count, "manifest" if message_type == 5 else "snapshot"
+            reader, count, "manifest" if message_type == 5 else "snapshot", context
         )
         fields = {
             ("manifest_id" if message_type == 5 else "snapshot_id"): transaction_id,
@@ -2261,7 +2263,7 @@ def decode_message(message_type: int, flags: int, payload: bytes, context: dict[
         reserved = reader.u16()
         require(count > 0, 34, "empty DELTA")
         enforce_record_count_quota(count, context)
-        records = decode_record_region(reader, count, "delta")
+        records = decode_record_region(reader, count, "delta", context)
         fields = {
             "baseline_snapshot_id": baseline,
             "delta_sequence": sequence,
@@ -2279,7 +2281,7 @@ def decode_message(message_type: int, flags: int, payload: bytes, context: dict[
         count = reader.u16()
         require(count > 0, 34, "empty EVENT_BATCH")
         enforce_record_count_quota(count, context)
-        records = decode_record_region(reader, count, "event")
+        records = decode_record_region(reader, count, "event", context)
         fields = {
             "batch_id": batch,
             "delivery_class": delivery,

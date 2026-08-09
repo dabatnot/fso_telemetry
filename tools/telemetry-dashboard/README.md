@@ -22,14 +22,50 @@ web n’écoutent que sur `127.0.0.1`.
 
 ## Captures et replay
 
-Le menu **Données → Capturer** écrit des datagrammes bruts horodatés dans
-`build/telemetry-dashboard/captures`. Une capture utilise le format JSONL
-`FSTL-dashboard-capture-v2` et repasse par le même décodeur que le mode live.
+Le menu **Données → Bibliothèque des captures** ouvre l’atelier de capture et
+de replay. Les nouvelles captures sont des fichiers SQLite autonomes
+`.fstlcap`, versionnés et compressés avec Zstandard. Les datagrammes validés
+sont regroupés en blocs d’au plus une seconde ou 4 Mio, protégés par checksum,
+et complétés par un checkpoint toutes les cinq secondes. Une interruption du
+bridge laisse ainsi lisible tout bloc déjà validé.
+
+La bibliothèque se trouve par défaut dans
+`Documents/FSO Simpit Lab/Captures`. `-CaptureDirectory` permet de choisir un
+autre emplacement. Les seuils par défaut sont un avertissement à 5 Gio, une
+finalisation automatique à 10 Gio et une réserve de sécurité de 2 Gio ; les
+paramètres `-CaptureWarningGiB`, `-CaptureStopGiB` et
+`-CaptureFreeReserveGiB` les rendent configurables. L’interface affiche la
+taille réelle, le débit glissant, les projections à dix minutes et une heure,
+l’espace libre et, lorsqu’une durée prévue est fournie, la taille finale
+estimée.
+
+Les anciennes captures JSONL `FSTL-dashboard-capture-v1/v2` restent lisibles
+en lecture seule. Leur import dans la bibliothèque effectue une conversion
+explicite vers `.fstlcap` ; aucun format n’est deviné depuis la longueur des
+données.
 
 ```powershell
 .\tools\telemetry-dashboard\start-dashboard.ps1 `
-  -Replay "build\telemetry-dashboard\captures\telemetry-YYYYMMDD-HHMMSS.fstlcap.jsonl"
+  -Replay "$HOME\Documents\FSO Simpit Lab\Captures\session.fstlcap"
 ```
+
+Le replay fonctionne uniquement à vitesse réelle. La timeline est exprimée en
+microsecondes et permet lecture, pause et seek. Pendant un glissement, les
+instruments sont reconstruits localement sans toucher aux sessions UDP ; le
+seek réseau FSTL est validé au relâchement. Les
+plages nommées possèdent un point d’entrée et de sortie, restent dans une seule
+session source et peuvent être lues une fois ou en boucle. Chaque seek, retour
+arrière, boucle ou frontière de session ferme les sessions UDP de replay avec
+`SESSION_END(Restart)` avant une nouvelle négociation.
+
+Le menu **Replay** peut démarrer un producteur UDP FSTL 1.1 sur loopback. Le
+bind LAN doit être activé explicitement. Jusqu’à quatre clients cockpit sont
+acceptés ; chacun reçoit son propre `session_id`, ses séquences, sa baseline,
+sa fenêtre fiable, les heartbeats et un snapshot synthétique correspondant au
+curseur courant. Les ACK, resync et retransmissions sont régénérés, sans
+reproduire les pertes ou doublons réseau de la capture. Une pause conserve
+l’horloge virtuelle figée et envoie des keyframes périodiques afin que les
+clients restent `Live`.
 
 Le menu **Données → Exporter** produit dans `build/telemetry-dashboard/exports` :
 
@@ -63,7 +99,8 @@ La barre inférieure regroupe les actions dans **Session**, **Données** et
 **Affichage**. Figer l’affichage immobilise seulement les instruments : le
 statut de connexion et la réception des snapshots continuent en arrière-plan.
 En replay, le menu **Replay** remplace **Session** et contient lecture, pause,
-vitesse et position.
+boucle, état du producteur UDP et retour au direct. La timeline persistante
+porte la position et les marqueurs.
 
 ## Onglet Pilotage
 
@@ -143,6 +180,8 @@ preuve de réussite.
 ```powershell
 python -B test\telemetry\protocol\tools\test_fstl_console_client_contract.py
 python -B tools\telemetry-dashboard\backend\test_dashboard_runtime.py
+python -B tools\telemetry-dashboard\backend\test_capture_store.py
+python -B tools\telemetry-dashboard\backend\test_replay_udp.py
 
 Set-Location tools\telemetry-dashboard\frontend
 npm ci

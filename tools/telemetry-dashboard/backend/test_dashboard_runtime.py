@@ -98,6 +98,126 @@ class DashboardRuntimeTest(unittest.TestCase):
             self.assertEqual(LEGACY_CAPTURE_SCHEMA, header["schema"])
             self.assertEqual([], packets)
 
+    def test_runtime_switches_live_to_time_based_replay_without_bridge_restart(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            nonce, t0 = 77, 88
+            hello = fstl.pack_header(
+                message_type=2, flags=0, session_id=0, sequence=1,
+                sent_us=t0, message_id=1, payload=fstl.hello_payload(nonce, t0),
+            )
+            session = 0xAABBCCDD
+            writer = CaptureWriter(root)
+            path = writer.start({"name": "dynamic replay"})
+            writer.packet(contract.packet(3, contract.welcome_for(hello), session_id=session, sequence=1, sent_us=100, flags=2), 100, "1970-01-01T00:00:00.000100Z")
+            writer.packet(contract.packet(4, contract.session_begin_payload(), session_id=session, sequence=2, sent_us=101, flags=2), 101, "1970-01-01T00:00:00.000101Z")
+            writer.packet(contract.packet(6, contract.v11_payload("minimal-with-player", ".bin"), session_id=session, sequence=3, sent_us=102, flags=6), 102, "1970-01-01T00:00:00.000102Z")
+            writer.stop()
+            runtime = TelemetryRuntime(
+                host="127.0.0.1", port=42042, flight_hz=30, systems_hz=10,
+                mission_heartbeat_ms=500, capture_dir=root,
+            )
+            runtime.start()
+            try:
+                capture_id = runtime.captures()[0]["id"]
+                replay = runtime.load_replay(capture_id)
+                self.assertEqual("microseconds", replay["timelineUnit"])
+                runtime.replay_control(playing=True)
+                self.assertTrue(self.wait_for(lambda: runtime.latest()["connection"]["status"] == "Live"))
+                self.assertEqual("replay", runtime.latest()["mode"])
+                self.assertEqual(session, int(runtime.latest()["connection"]["sessionId"]))
+                runtime.replay_control(position_us=0, playing=False)
+                self.assertTrue(self.wait_for(lambda: runtime.latest()["replay"]["positionUs"] == 0))
+            finally:
+                runtime.stop()
+
+    def test_replay_crosses_recorded_reconnect_without_session_end(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            writer = CaptureWriter(root)
+            writer.start({"name": "two source sessions"})
+            sessions = (0x1111222233334444, 0xAAAABBBBCCCCDDDD)
+            received_us = 100
+            for index, session in enumerate(sessions):
+                nonce = 1000 + index
+                t0 = 2000 + index
+                hello = fstl.pack_header(
+                    message_type=2,
+                    flags=0,
+                    session_id=0,
+                    sequence=1,
+                    sent_us=t0,
+                    message_id=1,
+                    payload=fstl.hello_payload(nonce, t0),
+                )
+                writer.session_boundary(index, session, received_us - 100, "welcome")
+                writer.packet(
+                    contract.packet(
+                        3,
+                        contract.welcome_for(hello),
+                        session_id=session,
+                        sequence=1,
+                        sent_us=received_us,
+                        flags=2,
+                    ),
+                    received_us,
+                    f"1970-01-01T00:00:00.{received_us:06d}Z",
+                )
+                writer.packet(
+                    contract.packet(
+                        4,
+                        contract.session_begin_payload(),
+                        session_id=session,
+                        sequence=2,
+                        sent_us=received_us + 1,
+                        flags=2,
+                    ),
+                    received_us + 1,
+                    f"1970-01-01T00:00:00.{received_us + 1:06d}Z",
+                )
+                writer.packet(
+                    contract.packet(
+                        6,
+                        contract.v11_payload("minimal-with-player", ".bin"),
+                        session_id=session,
+                        sequence=3,
+                        sent_us=received_us + 2,
+                        flags=6,
+                    ),
+                    received_us + 2,
+                    f"1970-01-01T00:00:00.{received_us + 2:06d}Z",
+                )
+                received_us += 1_000
+            writer.stop()
+
+            runtime = TelemetryRuntime(
+                host="127.0.0.1",
+                port=42042,
+                flight_hz=30,
+                systems_hz=10,
+                mission_heartbeat_ms=500,
+                capture_dir=root,
+            )
+            runtime.start()
+            try:
+                capture_id = runtime.captures()[0]["id"]
+                runtime.load_replay(capture_id)
+                runtime.replay_control(playing=True)
+                second_session = str(sessions[1])
+                snapshot = self.wait_for(
+                    lambda: (
+                        current
+                        if (current := runtime.latest())["connection"]["status"] == "Live"
+                        and current["connection"]["sessionId"] == second_session
+                        else None
+                    )
+                )
+                self.assertIsNotNone(snapshot)
+                self.assertNotIn("error", snapshot["connection"])
+                self.assertEqual(6, snapshot["replay"]["position"])
+            finally:
+                runtime.stop()
+
     def test_empty_snapshot_exposes_five_state_contract_inputs(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             runtime = TelemetryRuntime(

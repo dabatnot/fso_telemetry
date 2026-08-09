@@ -1059,3 +1059,52 @@ test("the bottom dock exposes one compact upward menu at a time", async ({ page 
   await page.keyboard.press("Escape");
   await expect(page.getByText("OPTIONS D’AFFICHAGE", { exact: true })).toHaveCount(0);
 });
+
+test("replay workbench exposes the microsecond timeline, marker library and UDP controls", async ({ page }) => {
+  const replaySnapshot = {
+    schema: "DashboardSnapshotV1", publishedAtUtc: "2026-08-09T10:00:00Z", mode: "replay",
+    connection: { status: "Live", host: "127.0.0.1", port: 42042, sessionId: "88", lastLiveObservedUtc: null, staleReason: null },
+    session: {}, mission: { phase: "ACTIVE" }, playerEntityId: null, records: {}, recordInstances: {},
+    manifest: { id: 0, records: {} }, derived: {},
+    transport: { synchronized: true, baseline: 3, deltaSequence: 4, manifestId: 0 },
+    quality: { packets: 20, transportGapCount: 0, decodeErrorCount: 0, resyncCount: 0, channels: [] },
+    capture: { active: false, path: null },
+    replay: {
+      path: "session.fstlcap", captureId: "cap-1", playing: false, speed: 1,
+      position: 10, packetCount: 20, positionUs: 5_000_000, durationUs: 10_000_000,
+      ranges: [{ id: "range-1", name: "Missile launch", sessionIndex: 0, startUs: 2_000_000, endUs: 4_000_000 }],
+      sessionBoundaries: [{ sessionIndex: 0, sessionId: "88", startUs: 0, endUs: 10_000_000, reason: "welcome" }]
+    },
+    replayUdp: { running: false, bindHost: "127.0.0.1", port: 42042, lanEnabled: false, clientCount: 0, maxClients: 4, endpoint: null, error: null }
+  };
+  await page.addInitScript((payload) => {
+    class MockWebSocket {
+      static OPEN = 1;
+      readyState = 1;
+      onopen: ((event: Event) => void) | null = null;
+      onmessage: ((event: MessageEvent) => void) | null = null;
+      onclose: ((event: CloseEvent) => void) | null = null;
+      constructor() { setTimeout(() => { this.onopen?.(new Event("open")); this.onmessage?.(new MessageEvent("message", { data: JSON.stringify(payload) })); }, 0); }
+      close() { this.onclose?.(new CloseEvent("close")); }
+    }
+    Object.defineProperty(window, "WebSocket", { value: MockWebSocket });
+  }, replaySnapshot);
+  await page.route("**/api/captures**", async (route) => {
+    if (route.request().method() === "GET") await route.fulfill({ status: 200, contentType: "application/json", body: "[]" });
+    else await route.fulfill({ status: 200, contentType: "application/json", body: "{}" });
+  });
+  await page.goto("/");
+  await expect(page.locator(".connection-block")).toContainText("REPLAY · PAUSE");
+  await expect(page.locator(".connection-block")).not.toContainText("Live");
+  await expect(page.getByRole("region", { name: "Timeline du replay" })).toBeVisible();
+  await expect(page.getByTitle("Missile launch")).toBeVisible();
+  await page.getByRole("button", { name: "REPLAY" }).click();
+  await expect(page.getByText("SERVEUR UDP", { exact: true })).toBeVisible();
+  await expect(page.getByRole("menuitem", { name: "DÉMARRER LE SERVEUR UDP" })).toBeVisible();
+  await page.getByRole("button", { name: "DONNÉES" }).click();
+  await page.getByRole("menuitem", { name: "BIBLIOTHÈQUE DES CAPTURES" }).click();
+  await expect(page.getByRole("dialog", { name: "Bibliothèque des captures" })).toBeVisible();
+  await expect(page.getByText("Le replay est en pause. Les données affichées ne proviennent pas directement de FSO.")).toBeVisible();
+  await expect(page.getByRole("button", { name: "RETOUR AU DIRECT" })).toBeVisible();
+  await expect(page.getByText("Aucune capture")).toBeVisible();
+});

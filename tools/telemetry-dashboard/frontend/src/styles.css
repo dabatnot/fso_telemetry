@@ -73,8 +73,12 @@ body::before {
 .connection-block small { text-align: right; }
 .connection-light { width: 13px; height: 13px; border: 2px solid currentColor; border-radius: 50%; color: var(--muted); box-shadow: 0 0 9px currentColor; }
 .connection-light.status-live { color: var(--cyan); background: var(--cyan); }
+.connection-light.status-replay { color: var(--amber); background: var(--amber); }
 .connection-light.status-stale { color: var(--amber); background: var(--amber); }
 .connection-light.status-disconnected { color: var(--red); }
+
+.capture-replay-notice { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.capture-replay-notice p { margin: 0; color: var(--amber); }
 
 .tab-rail {
   grid-row: 2;
@@ -736,6 +740,80 @@ main { grid-row: 2; grid-column: 2; min-width: 0; overflow: auto; padding: 22px 
 .dock-rec { color: var(--red); }
 .dock-frozen { color: var(--amber); }
 .toast { position: fixed; right: 25px; bottom: 78px; max-width: 650px; padding: 12px 16px; background: #0b242c; border: 1px solid var(--cyan); box-shadow: 0 8px 30px #000a; z-index: 15; font: 10px "IBM Plex Mono"; }
+.dock-udp-state, .dock-capture-size { display: grid; grid-template-columns: 1fr auto; gap: 3px 8px; padding: 7px; border: 1px solid var(--line); font: 9px "IBM Plex Mono"; }
+.dock-udp-state strong, .dock-capture-size span { color: var(--muted); }
+.dock-udp-state small, .dock-capture-size small { grid-column: 1 / -1; color: var(--cyan-soft); }
+.dock-udp-settings { display: grid; grid-template-columns: 1fr 88px; gap: 6px; }
+.dock-udp-settings label { display: grid; gap: 3px; color: var(--muted); font: 8px "IBM Plex Mono"; }
+.dock-udp-settings label:nth-child(3), .dock-udp-settings button { grid-column: 1 / -1; }
+.dock-udp-settings label:nth-child(3) { display: flex; align-items: center; }
+.dock-udp-settings input { min-width: 0; color: #d9f3f4; border: 1px solid var(--line); background: #061018; padding: 5px; font: 9px "IBM Plex Mono"; }
+
+.replay-timeline { position: fixed; z-index: 10; left: 224px; right: 0; bottom: 64px; min-height: 132px; padding: 8px 14px 10px; border-top: 1px solid var(--line-bright); background: linear-gradient(180deg, #0a1d26f8, #061018fa); box-shadow: 0 -12px 32px #0009; }
+.replay-timeline.collapsed { min-height: 34px; height: 34px; padding-block: 4px; }
+.replay-timeline > header { height: 26px; display: flex; align-items: center; gap: 10px; color: var(--muted); font: 9px "IBM Plex Mono"; }
+.replay-timeline > header strong { color: var(--cyan); letter-spacing: 1px; }
+.replay-timeline > header span { margin-right: auto; color: #d9f3f4; }
+.replay-timeline button { color: #bfe5e7; border: 1px solid var(--line); background: #091a22; padding: 5px 8px; font: 8px "IBM Plex Mono"; cursor: pointer; }
+.timeline-body { display: grid; gap: 6px; }
+.timeline-track-wrap { height: 52px; position: relative; padding-top: 26px; }
+.timeline-track-wrap > input { position: relative; z-index: 3; width: 100%; accent-color: var(--cyan); }
+.timeline-overlays { position: absolute; z-index: 2; inset: 0 8px 12px; pointer-events: none; }
+.timeline-session-boundary { position: absolute; top: 20px; bottom: 0; width: 1px; background: var(--red); }
+.timeline-range { pointer-events: auto; position: absolute; bottom: 5px; min-width: 4px; height: 14px; padding: 0 !important; border-color: #2f737d !important; background: #1c6b7155 !important; }
+.timeline-range i { position: absolute; left: -2px; top: -20px; width: 7px; height: 20px; border-left: 2px solid var(--cyan); background: linear-gradient(135deg, var(--cyan) 0 50%, transparent 52%); }
+.timeline-range.active { border-color: var(--amber) !important; background: #f2b65333 !important; }
+.timeline-range.active i { border-color: var(--amber); background: linear-gradient(135deg, var(--amber) 0 50%, transparent 52%); }
+.timeline-actions { display: flex; align-items: center; gap: 7px; color: var(--muted); font: 8px "IBM Plex Mono"; }
+.timeline-actions span:first-of-type { margin-left: auto; }
+.marker-drawer { position: absolute; right: 14px; bottom: calc(100% + 8px); width: min(520px, calc(100vw - 250px)); max-height: 55vh; display: grid; gap: 8px; padding: 12px; overflow: auto; border: 1px solid var(--line-bright); background: #081a22; box-shadow: 0 14px 40px #000d; }
+.marker-create { display: grid; grid-template-columns: 1fr auto; gap: 6px; }
+.marker-drawer input { min-width: 0; padding: 7px; color: #d9f3f4; border: 1px solid var(--line); background: #061018; font: 9px "IBM Plex Mono"; }
+.marker-list { display: grid; gap: 4px; }
+.marker-list > div { display: grid; grid-template-columns: 1fr 32px 32px; gap: 4px; border-left: 2px solid transparent; }
+.marker-list > div.active { border-left-color: var(--amber); }
+.marker-list > div > button:first-child { display: flex; justify-content: space-between; gap: 8px; text-align: left; }
+.marker-list span { color: var(--muted); }
+
+.capture-library-backdrop { position: fixed; z-index: 30; inset: 0; display: grid; place-items: center; padding: 28px; background: #01060bd9; }
+.capture-library { width: min(1180px, 96vw); height: min(820px, 92vh); display: grid; grid-template-rows: auto auto auto minmax(0, 1fr); gap: 12px; padding: 18px; overflow: hidden; border: 1px solid var(--line-bright); background: linear-gradient(145deg, #0b2029, #061117); box-shadow: 0 24px 80px #000; }
+.capture-library > header { display: flex; justify-content: space-between; align-items: start; border-bottom: 1px solid var(--line); padding-bottom: 10px; }
+.capture-library > header span { color: var(--cyan-soft); font: 9px "IBM Plex Mono"; letter-spacing: 1.5px; }
+.capture-library h2 { margin: 3px 0 0; font-size: 22px; }
+.capture-library button, .capture-library a { color: #c9edef; border: 1px solid #285460; background: #0a1f28; padding: 7px 10px; font: 9px "IBM Plex Mono"; text-decoration: none; cursor: pointer; }
+.capture-library button.danger { color: #ffaaa4; border-color: var(--red); }
+.capture-recorder { display: grid; gap: 9px; padding: 10px; border: 1px solid var(--line); background: #07171f; }
+.capture-recorder > div:first-child { display: flex; justify-content: space-between; gap: 12px; color: var(--muted); font: 9px "IBM Plex Mono"; }
+.capture-recorder > dl { margin: 0; display: grid; grid-template-columns: repeat(7, 1fr); gap: 1px; background: var(--line); }
+.capture-recorder dl div { padding: 7px; background: #081820; }
+.capture-recorder dt, .capture-table dt { color: var(--muted); font: 7px "IBM Plex Mono"; }
+.capture-recorder dd, .capture-table dd { margin: 3px 0 0; color: var(--cyan); font: 10px "IBM Plex Mono"; }
+.capture-start-form { display: grid !important; grid-template-columns: 1fr 220px auto; align-items: end; }
+.capture-start-form label { display: grid; gap: 3px; }
+.capture-start-form input, .capture-library-tools input { color: #d9f3f4; border: 1px solid var(--line); background: #061018; padding: 7px; }
+.capture-warning { margin: 0; color: var(--amber); font: 9px "IBM Plex Mono"; }
+.capture-library-tools { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
+.capture-table { overflow: auto; display: grid; align-content: start; gap: 5px; }
+.capture-table article { display: grid; grid-template-columns: minmax(230px, 1.2fr) minmax(340px, 1fr) 85px auto; gap: 12px; align-items: center; padding: 10px; border: 1px solid var(--line); background: #07151d; }
+.capture-table article > div:first-child { display: grid; gap: 2px; }
+.capture-table article span, .capture-table article small { color: var(--muted); font: 8px "IBM Plex Mono"; }
+.capture-table article dl { margin: 0; display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.capture-complete { color: var(--cyan) !important; }
+.capture-incomplete { color: var(--amber) !important; }
+.capture-row-actions { display: flex; flex-wrap: wrap; justify-content: end; gap: 4px; }
+
+@media (max-width: 1050px) {
+  .replay-timeline { left: 0; bottom: 64px; }
+  .timeline-actions span { display: none; }
+  .marker-drawer { left: 10px; right: 10px; width: auto; }
+  .capture-library-backdrop { padding: 8px; }
+  .capture-library { width: 100%; height: 98vh; }
+  .capture-recorder > dl { grid-template-columns: repeat(2, 1fr); }
+  .capture-start-form { grid-template-columns: 1fr !important; }
+  .capture-table article { grid-template-columns: 1fr; }
+  .capture-table article dl { grid-template-columns: repeat(2, 1fr); }
+  .capture-row-actions { justify-content: start; }
+}
 
 .weapons-cockpit {
   height: calc(100% - 60px);

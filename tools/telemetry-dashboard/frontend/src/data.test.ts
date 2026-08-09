@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { resolveInstrument } from "./data";
+import { dashboardSourcePresentation, resolveInstrument } from "./data";
 import type { DashboardSnapshot, InstrumentDefinition } from "./types";
 
 const baseSnapshot: DashboardSnapshot = {
@@ -58,6 +58,25 @@ const pitch: InstrumentDefinition = {
 };
 
 describe("instrument availability", () => {
+  it("distinguishes replay freshness from a direct live connection", () => {
+    const replay = {
+      ...baseSnapshot,
+      mode: "replay" as const,
+      replay: { ...baseSnapshot.replay, path: "session.fstlcap", playing: false }
+    };
+    expect(dashboardSourcePresentation(replay, true)).toEqual({
+      label: "REPLAY · PAUSE",
+      statusClass: "replay"
+    });
+    expect(dashboardSourcePresentation({ ...replay, replay: { ...replay.replay, playing: true } }, true).label)
+      .toBe("REPLAY · LECTURE");
+    expect(dashboardSourcePresentation(replay, false).label).toBe("BRIDGE HORS LIGNE");
+    expect(dashboardSourcePresentation({
+      ...baseSnapshot,
+      connection: { ...baseSnapshot.connection, status: "Disconnected" }
+    }, true)).toEqual({ label: "Disconnected", statusClass: "disconnected" });
+  });
+
   it("preserves a real zero as live data", () => {
     const result = resolveInstrument(pitch, baseSnapshot);
     expect(result.state).toBe("live");

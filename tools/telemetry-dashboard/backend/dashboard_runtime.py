@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import base64
 import copy
+import bisect
 import csv
 import json
 import math
@@ -25,10 +25,19 @@ if str(PROTOCOL_TOOLS) not in sys.path:
 
 import fstl_client_core as fstl  # noqa: E402
 import fstl_reference_decoder as decoder  # noqa: E402
+from capture_store import (  # noqa: E402
+    CAPTURE_SCHEMA,
+    LEGACY_CAPTURE_SCHEMAS,
+    CaptureLibrary,
+    CaptureWriter,
+    default_capture_directory,
+    load_capture,
+    load_checkpoint,
+)
+from replay_udp import ReplayUdpProducer  # noqa: E402
 
 
-LEGACY_CAPTURE_SCHEMA = "FSTL-dashboard-capture-v1"
-CAPTURE_SCHEMA = "FSTL-dashboard-capture-v2"
+LEGACY_CAPTURE_SCHEMA = LEGACY_CAPTURE_SCHEMAS[0]
 HUD_ALERT_CAPTURE_FEATURE = "HUD_ALERT_STATE/v1"
 SNAPSHOT_SCHEMA = "DashboardSnapshotV1"
 WINDOWS_SIO_UDP_CONNRESET = 0x9800000C
@@ -44,6 +53,13 @@ def percentile(values: list[float], ratio: float) -> float | None:
     ordered = sorted(values)
     index = min(len(ordered) - 1, max(0, math.ceil(ratio * len(ordered)) - 1))
     return ordered[index]
+
+
+def public_record(record: dict[str, Any]) -> dict[str, Any]:
+    """Remove capture-only wire bytes from the dashboard JSON projection."""
+    result = copy.deepcopy(record)
+    result.pop("_encodedRecordHex", None)
+    return result
 
 
 def configure_live_udp_socket(sock: socket.socket) -> None:
@@ -226,93 +242,6 @@ class QualityTracker:
         }
 
 
-class CaptureWriter:
-    def __init__(self, capture_dir: Path) -> None:
-        self.capture_dir = capture_dir
-        self.capture_dir.mkdir(parents=True, exist_ok=True)
-        self.path: Path | None = None
-        self._stream: Any = None
-        self._lock = threading.RLock()
-
-    @property
-    def active(self) -> bool:
-        return self._stream is not None
-
-    def start(self, metadata: dict[str, Any]) -> Path:
-        with self._lock:
-            self.stop()
-            stamp = time.strftime("%Y%m%d-%H%M%S", time.localtime())
-            self.path = self.capture_dir / f"telemetry-{stamp}.fstlcap.jsonl"
-            self._stream = self.path.open("w", encoding="utf-8", newline="\n")
-            self._stream.write(
-                json.dumps(
-                    {
-                        "schema": CAPTURE_SCHEMA,
-                        "kind": "header",
-                        "createdAtUtc": utc_now(),
-                        **metadata,
-                    },
-                    separators=(",", ":"),
-                )
-                + "\n"
-            )
-            self._stream.flush()
-            return self.path
-
-    def stop(self) -> Path | None:
-        with self._lock:
-            path = self.path
-            if self._stream is not None:
-                self._stream.flush()
-                self._stream.close()
-            self._stream = None
-            return path
-
-    def packet(self, datagram: bytes, monotonic_us: int, observed_at_utc: str) -> None:
-        with self._lock:
-            if self._stream is None:
-                return
-            self._stream.write(
-                json.dumps(
-                    {
-                        "kind": "datagram",
-                        "observedAtUtc": observed_at_utc,
-                        "receivedMonotonicUs": str(monotonic_us),
-                        "datagramBase64": base64.b64encode(datagram).decode("ascii"),
-                    },
-                    separators=(",", ":"),
-                )
-                + "\n"
-            )
-            self._stream.flush()
-
-
-def load_capture(path: Path) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-    header: dict[str, Any] | None = None
-    packets: list[dict[str, Any]] = []
-    with path.open("r", encoding="utf-8") as stream:
-        for line_number, line in enumerate(stream, 1):
-            item = json.loads(line)
-            if line_number == 1:
-                if item.get("schema") not in (LEGACY_CAPTURE_SCHEMA, CAPTURE_SCHEMA) or item.get("kind") != "header":
-                    raise ValueError("capture header is not a supported FSTL dashboard capture")
-                header = item
-                continue
-            if item.get("kind") != "datagram":
-                raise ValueError(f"invalid capture item on line {line_number}")
-            datagram = base64.b64decode(item["datagramBase64"], validate=True)
-            packets.append(
-                {
-                    **item,
-                    "datagram": datagram,
-                    "receivedMonotonicUs": int(item["receivedMonotonicUs"]),
-                }
-            )
-    if header is None:
-        raise ValueError("empty capture")
-    return header, packets
-
-
 class TelemetryRuntime:
     """Own one FSTL client and publish immutable dashboard snapshots."""
 
@@ -328,13 +257,22 @@ class TelemetryRuntime:
         replay_path: Path | None = None,
         stale_us: int = 3_000_000,
         recovery_reconnect_us: int = 10_000_000,
+        capture_warn_bytes: int = 5 * 1024**3,
+        capture_stop_bytes: int = 10 * 1024**3,
+        capture_free_reserve_bytes: int = 2 * 1024**3,
     ) -> None:
         self.host = host
         self.port = port
         self.flight_hz = flight_hz
         self.systems_hz = systems_hz
         self.mission_heartbeat_ms = mission_heartbeat_ms
-        self.capture = CaptureWriter(capture_dir)
+        self.capture = CaptureWriter(
+            capture_dir,
+            warn_bytes=capture_warn_bytes,
+            stop_bytes=capture_stop_bytes,
+            free_reserve_bytes=capture_free_reserve_bytes,
+        )
+        self.capture_library = CaptureLibrary(capture_dir)
         self.replay_path = replay_path
         self.stale_us = stale_us
         self.recovery_reconnect_us = recovery_reconnect_us
@@ -343,12 +281,33 @@ class TelemetryRuntime:
         self.mode = "replay" if replay_path else "live"
         self.replay_state = {
             "path": str(replay_path) if replay_path else None,
+            "captureId": None,
             "playing": bool(replay_path),
             "speed": 1.0,
             "position": 0,
             "packetCount": 0,
+            "positionUs": 0,
+            "durationUs": 0,
+            "timelineUnit": "microseconds",
+            "seeking": False,
+            "previewing": False,
+            "previewPositionUs": None,
+            "activeRangeId": None,
+            "loop": False,
+            "ranges": [],
+            "sessionBoundaries": [],
             "captureSchema": None,
             "contractFeatures": [],
+        }
+        self.replay_udp_state = {
+            "running": False,
+            "bindHost": "127.0.0.1",
+            "port": self.port,
+            "lanEnabled": False,
+            "clientCount": 0,
+            "maxClients": 4,
+            "endpoint": None,
+            "error": None,
         }
         self._recovery_state = "idle"
         self._snapshot = self._empty_snapshot("Synchronizing" if replay_path else "Disconnected")
@@ -356,10 +315,24 @@ class TelemetryRuntime:
         self._lock = threading.RLock()
         self._stop = threading.Event()
         self._replay_wakeup = threading.Event()
+        self._mode_change = threading.Event()
         self._soft_resync_live = threading.Event()
         self._restart_live = threading.Event()
         self._replay_seek_target: int | None = None
+        self._replay_seek_time_us: int | None = None
+        self._replay_preview_time_us: int | None = None
+        self._replay_udp_client: fstl.ConsoleClient | None = None
+        self._capture_session_index = -1
+        self._capture_session_id = 0
+        self._capture_last_checkpoint_us = -5_000_000
+        self._replay_source_session = 0
         self._thread: threading.Thread | None = None
+        self.replay_udp = ReplayUdpProducer(
+            lambda: self._replay_udp_client.state if self.mode == "replay" and self._replay_udp_client is not None else None,
+            lambda: int(self.replay_state.get("positionUs", 0)),
+            self._on_replay_udp_state,
+            lambda: bool(self.replay_state.get("playing", False)),
+        )
 
     @property
     def version(self) -> int:
@@ -369,6 +342,14 @@ class TelemetryRuntime:
     def latest(self) -> dict[str, Any]:
         with self._lock:
             return copy.deepcopy(self._snapshot)
+
+    def _on_replay_udp_state(self, state: dict[str, Any]) -> None:
+        with self._lock:
+            self.replay_udp_state = copy.deepcopy(state)
+            if hasattr(self, "_snapshot"):
+                self._snapshot["replayUdp"] = copy.deepcopy(state)
+                self._snapshot["publishedAtUtc"] = utc_now()
+                self._version += 1
 
     def _empty_snapshot(self, status: str) -> dict[str, Any]:
         return {
@@ -399,8 +380,9 @@ class TelemetryRuntime:
                 "resyncCount": 0,
                 "channels": [],
             },
-            "capture": {"active": False, "path": None},
+            "capture": {"active": False, "path": None, **self.capture.metrics()},
             "replay": copy.deepcopy(self.replay_state),
+            "replayUdp": copy.deepcopy(self.replay_udp_state),
         }
 
     def _publish(self, at_us: int, at_utc: str) -> None:
@@ -441,10 +423,16 @@ class TelemetryRuntime:
             "mission": mission,
             "playerEntityId": session.get("observed_player_entity_id"),
             "records": records_by_name,
-            "recordInstances": copy.deepcopy(state.record_instances),
+            "recordInstances": {
+                identity: public_record(record)
+                for identity, record in state.record_instances.items()
+            },
             "manifest": {
                 "id": state.manifest_id,
-                "records": copy.deepcopy(state.manifest_records),
+                "records": {
+                    identity: public_record(record)
+                    for identity, record in state.manifest_records.items()
+                },
             },
             "derived": projection["derived"],
             "transport": {
@@ -456,8 +444,14 @@ class TelemetryRuntime:
                 "requiredManifestId": state.required_manifest_id,
             },
             "quality": self.quality.snapshot(projection),
-            "capture": {"active": self.capture.active, "path": str(self.capture.path) if self.capture.path else None},
+            "capture": {
+                "active": self.capture.active,
+                "path": str(self.capture.path) if self.capture.path else None,
+                "id": self.capture.capture_id,
+                **self.capture.metrics(),
+            },
             "replay": copy.deepcopy(self.replay_state),
+            "replayUdp": copy.deepcopy(self.replay_udp_state),
         }
         with self._lock:
             self._snapshot = snapshot
@@ -467,13 +461,24 @@ class TelemetryRuntime:
         if self._thread is not None and self._thread.is_alive():
             return
         self._stop.clear()
-        target = self._run_replay if self.replay_path else self._run_live
-        self._thread = threading.Thread(target=target, name="telemetry-dashboard-runtime", daemon=True)
+        self._thread = threading.Thread(target=self._run, name="telemetry-dashboard-runtime", daemon=True)
         self._thread.start()
+
+    def _run(self) -> None:
+        while not self._stop.is_set():
+            self._mode_change.clear()
+            if self.mode == "replay":
+                self._run_replay()
+            else:
+                self._run_live()
+            if not self._mode_change.is_set():
+                break
 
     def stop(self) -> None:
         self._stop.set()
+        self._mode_change.set()
         self._replay_wakeup.set()
+        self.replay_udp.stop()
         self.capture.stop()
         if self._thread is not None:
             self._thread.join(timeout=3.0)
@@ -554,11 +559,55 @@ class TelemetryRuntime:
             for rejected_socket in rejected:
                 rejected_socket.close()
 
+    def _capture_checkpoint(self) -> None:
+        if not self.capture.active or self.client is None or self.client.state.status != "Live":
+            return
+        metrics = self.capture.metrics()
+        timeline_us = int(metrics["durationUs"])
+        if timeline_us - self._capture_last_checkpoint_us < 5_000_000:
+            return
+        state = self.client.state
+        mission = state.records.get("MISSION_STATE", {})
+        if mission.get("mission_name"):
+            self.capture.metadata(mission=mission["mission_name"])
+        payload = json.dumps(
+            {
+                "sessionId": str(state.session_id),
+                "baseline": state.baseline,
+                "deltaSequence": state.delta_sequence,
+                "manifestId": state.manifest_id,
+                "requiredManifestId": state.required_manifest_id,
+                "recordInstances": state.record_instances,
+                "baselineRecordInstances": state.baseline_record_instances,
+                "manifestRecords": state.manifest_records,
+            },
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("utf-8")
+        self.capture.checkpoint(max(0, self._capture_session_index), timeline_us, payload)
+        self._capture_last_checkpoint_us = timeline_us
+
+    def _capture_observe_lifecycle(self, datagram: bytes) -> None:
+        if not self.capture.active:
+            return
+        try:
+            header = decoder.read_header(datagram)
+        except decoder.DecodeFailure:
+            return
+        if header["message_type"] != 3 or header["session_id"] == 0 or header["session_id"] == self._capture_session_id:
+            return
+        self._capture_session_index += 1
+        self._capture_session_id = int(header["session_id"])
+        timeline_us = int(self.capture.metrics()["durationUs"])
+        self.capture.session_boundary(self._capture_session_index, self._capture_session_id, timeline_us, "welcome")
+        self._capture_last_checkpoint_us = timeline_us - 5_000_000
+
     def _run_live(self) -> None:
         family = socket.AF_INET6 if ":" in self.host else socket.AF_INET
         recovering_from_silence = False
         previous_endpoint: tuple[Any, ...] | None = None
-        while not self._stop.is_set():
+        while not self._stop.is_set() and not self._mode_change.is_set():
             try:
                 sock, previous_endpoint = self._open_live_socket(family, previous_endpoint)
                 with sock:
@@ -570,7 +619,7 @@ class TelemetryRuntime:
                     if not recovering_from_silence:
                         self._publish(at_us, at_utc)
                     next_recovery_request_us = 0
-                    while not self._stop.is_set():
+                    while not self._stop.is_set() and not self._mode_change.is_set():
                         if self._restart_live.is_set():
                             self._restart_live.clear()
                             recovering_from_silence = True
@@ -602,6 +651,7 @@ class TelemetryRuntime:
                             datagram = sock.recv(fstl.MAX_DATAGRAM)
                             received_us, received_utc = fstl.local_observation()
                             self.capture.packet(datagram, received_us, received_utc)
+                            self._capture_observe_lifecycle(datagram)
                             self.quality.observe_packet(datagram)
                             changed = self.client.receive(datagram, received_us, received_utc)
                             if changed:
@@ -614,6 +664,7 @@ class TelemetryRuntime:
                                     )
                                     next_recovery_request_us = 0
                                     self._publish(received_us, received_utc)
+                                    self._capture_checkpoint()
                                 elif not recovering_from_silence:
                                     self._publish(received_us, received_utc)
                         except socket.timeout:
@@ -681,70 +732,165 @@ class TelemetryRuntime:
                         self._snapshot = self._empty_snapshot("Disconnected")
                         self._snapshot["connection"]["error"] = str(exc)
                         self._version += 1
-            if self.capture.active and not self._stop.is_set():
+            if self.capture.active and not self._stop.is_set() and not self._mode_change.is_set():
                 continue
-            if not self._stop.wait(1.0):
+            if self._mode_change.wait(1.0):
+                return
+            if not self._stop.is_set():
                 continue
 
     def _new_replay_client(self) -> fstl.ConsoleClient:
         client = fstl.ConsoleClient(None, 3_000_000)
         return client
 
-    def _prepare_replay_handshake(self, client: fstl.ConsoleClient, packets: list[dict[str, Any]]) -> None:
-        for item in packets:
-            datagram = item["datagram"]
-            header = decoder.read_header(datagram)
-            if header["message_type"] != 3 or header["fragment_count"] != 1:
-                continue
-            welcome = decoder.decode_message(
-                3,
-                header["flags"],
-                datagram[fstl.HEADER_SIZE :],
-                {"senderRole": "producer", "allowedSenderRoles": ["producer"]},
-            )["fields"]
-            nonce, t0 = int(welcome["client_nonce"]), int(welcome["client_send_t0_us"])
-            client.state.hello_sent = True
-            client.state.hello_nonce = nonce
-            client.state.hello_t0_us = t0
-            client.hello_message_id = 1
-            client.hello_payload_bytes = fstl.hello_payload(nonce, t0)
-            client.hello_first_us = t0
-            return
+    def _restore_replay_checkpoint(
+        self,
+        client: fstl.ConsoleClient,
+        checkpoint: dict[str, Any],
+        *,
+        update_source_session: bool = True,
+    ) -> None:
+        saved = checkpoint["state"]
+        state = client.state
+        state.session_id = int(saved["sessionId"])
+        state.baseline = int(saved["baseline"])
+        state.delta_sequence = int(saved["deltaSequence"])
+        state.manifest_id = int(saved["manifestId"])
+        state.required_manifest_id = int(saved["requiredManifestId"])
+        state.record_instances = copy.deepcopy(saved["recordInstances"])
+        state.baseline_record_instances = copy.deepcopy(saved["baselineRecordInstances"])
+        state.manifest_records = copy.deepcopy(saved["manifestRecords"])
+        state.records = {}
+        for identity in sorted(state.record_instances):
+            record = state.record_instances[identity]
+            state.records[record["recordName"]] = copy.deepcopy(record["fields"])
+        state.baseline_records = {}
+        for identity in sorted(state.baseline_record_instances):
+            record = state.baseline_record_instances[identity]
+            state.baseline_records[record["recordName"]] = copy.deepcopy(record["fields"])
+        state.welcomed = True
+        state.session_begun = True
+        state.manifest_applied = state.required_manifest_id in (0, state.manifest_id)
+        state.keyframe_applied = True
+        state.status = "Live"
+        if update_source_session:
+            self._replay_source_session = state.session_id
+
+    def _reconstruct_replay_client(
+        self,
+        packets: list[dict[str, Any]],
+        timeline: list[int],
+        target: int,
+        *,
+        preview: bool,
+    ) -> fstl.ConsoleClient:
+        client = self._new_replay_client()
+        checkpoint = load_checkpoint(
+            self.replay_path,
+            timeline[target - 1] if target else 0,
+        ) if self.replay_path is not None else None
+        start_index = 0
+        if checkpoint is not None:
+            self._restore_replay_checkpoint(
+                client, checkpoint, update_source_session=not preview
+            )
+            start_index = bisect.bisect_right(timeline, int(checkpoint["timelineUs"]))
+        for seek_index in range(start_index, target):
+            item = packets[seek_index]
+            client = self._prepare_replay_packet_client(
+                client,
+                item["datagram"],
+                preview=preview,
+                restart_udp=False,
+            )
+            client.receive(
+                item["datagram"],
+                int(item["receivedMonotonicUs"]),
+                item["observedAtUtc"],
+            )
+        return client
 
     def _run_replay(self) -> None:
         assert self.replay_path is not None
         try:
             header, packets = load_capture(self.replay_path)
             self.replay_state["captureSchema"] = header.get("schema")
+            self.replay_state["captureId"] = header.get("captureId")
             features = header.get("contractFeatures", [])
             self.replay_state["contractFeatures"] = (
                 list(features) if isinstance(features, list) else []
             )
             self.replay_state["packetCount"] = len(packets)
+            timeline = [int(item.get("timelineUs", 0)) for item in packets]
+            self.replay_state["durationUs"] = timeline[-1] if timeline else 0
+            capture_id = self.replay_state.get("captureId")
+            self.replay_state["ranges"] = self.capture_library.ranges(str(capture_id)) if capture_id else []
+            self.replay_state["sessionBoundaries"] = self.capture_library.sessions(str(capture_id)) if capture_id else []
             self.client = self._new_replay_client()
-            self._prepare_replay_handshake(self.client, packets)
+            self._replay_udp_client = self.client
+            self._replay_source_session = 0
             self.quality = QualityTracker(self.flight_hz, self.systems_hz, self.mission_heartbeat_ms)
             previous_us: int | None = None
-            while not self._stop.is_set():
+            while not self._stop.is_set() and not self._mode_change.is_set():
+                if self._replay_preview_time_us is not None:
+                    preview_us = min(
+                        int(self.replay_state["durationUs"]),
+                        max(0, self._replay_preview_time_us),
+                    )
+                    self._replay_preview_time_us = None
+                    preview_target = bisect.bisect_right(timeline, preview_us)
+                    preview_client = self._reconstruct_replay_client(
+                        packets, timeline, preview_target, preview=True
+                    )
+                    committed_client = self.client
+                    self.client = preview_client
+                    self.replay_state["previewing"] = True
+                    self.replay_state["previewPositionUs"] = preview_us
+                    if preview_target:
+                        preview_item = packets[preview_target - 1]
+                        self._publish(
+                            int(preview_item["receivedMonotonicUs"]),
+                            preview_item["observedAtUtc"],
+                        )
+                    else:
+                        with self._lock:
+                            self._snapshot = self._empty_snapshot("Synchronizing")
+                            self._snapshot["replay"] = copy.deepcopy(self.replay_state)
+                            self._version += 1
+                    self.client = committed_client
+                    continue
+                if self._replay_seek_time_us is not None:
+                    requested_us = min(int(self.replay_state["durationUs"]), max(0, self._replay_seek_time_us))
+                    self._replay_seek_time_us = None
+                    self.replay_state["seeking"] = True
+                    target = bisect.bisect_right(timeline, requested_us)
+                    self._replay_seek_target = target
                 if self._replay_seek_target is not None:
                     target = min(len(packets), max(0, self._replay_seek_target))
                     self._replay_seek_target = None
-                    self.client = self._new_replay_client()
-                    self._prepare_replay_handshake(self.client, packets)
+                    self.replay_udp.restart_sessions()
+                    self.client = self._reconstruct_replay_client(
+                        packets, timeline, target, preview=False
+                    )
+                    self._replay_udp_client = self.client
                     self.quality = QualityTracker(
                         self.flight_hz, self.systems_hz, self.mission_heartbeat_ms
                     )
-                    for seek_index in range(target):
-                        item = packets[seek_index]
-                        received_us = int(item["receivedMonotonicUs"])
-                        self.quality.observe_packet(item["datagram"])
-                        if self.client.receive(item["datagram"], received_us, item["observedAtUtc"]):
-                            self.quality.observe_state(self.client.state, received_us)
                     self.replay_state["position"] = target
+                    self.replay_state["positionUs"] = timeline[target - 1] if target else 0
+                    self.replay_state["seeking"] = False
+                    self.replay_state["previewing"] = False
+                    self.replay_state["previewPositionUs"] = None
                     previous_us = None
                     if target:
                         item = packets[target - 1]
                         self._publish(int(item["receivedMonotonicUs"]), item["observedAtUtc"])
+                        self.replay_udp.state_available()
+                    else:
+                        with self._lock:
+                            self._snapshot = self._empty_snapshot("Synchronizing")
+                            self._snapshot["replay"] = copy.deepcopy(self.replay_state)
+                            self._version += 1
                     continue
                 if self.replay_state["position"] >= len(packets):
                     self.replay_state["playing"] = False
@@ -759,23 +905,49 @@ class TelemetryRuntime:
                 index = int(self.replay_state["position"])
                 item = packets[index]
                 received_us = int(item["receivedMonotonicUs"])
+                item_timeline_us = int(item.get("timelineUs", 0))
+                active_range = next((item_range for item_range in self.replay_state["ranges"] if item_range["id"] == self.replay_state.get("activeRangeId")), None)
+                if active_range is not None and item_timeline_us > int(active_range["endUs"]):
+                    if self.replay_state.get("loop"):
+                        self._replay_seek_time_us = int(active_range["startUs"])
+                    else:
+                        self.replay_state["playing"] = False
+                        self._replay_seek_time_us = int(active_range["endUs"])
+                    self._replay_wakeup.set()
+                    continue
                 if previous_us is not None:
-                    delay = max(0.0, (received_us - previous_us) / 1_000_000.0 / self.replay_state["speed"])
+                    delay = max(0.0, (item_timeline_us - previous_us) / 1_000_000.0)
                     deadline = time.monotonic() + delay
-                    while not self._stop.is_set() and time.monotonic() < deadline:
+                    while not self._stop.is_set() and not self._mode_change.is_set() and time.monotonic() < deadline:
                         if self._replay_wakeup.wait(min(0.1, deadline - time.monotonic())):
                             self._replay_wakeup.clear()
                             break
                     if self._stop.is_set():
                         return
-                previous_us = received_us
+                previous_us = item_timeline_us
                 datagram = item["datagram"]
                 observed_utc = item["observedAtUtc"]
+                self.replay_state["position"] = index + 1
+                self.replay_state["positionUs"] = item_timeline_us
+                previous_client = self.client
+                self.client = self._prepare_replay_packet_client(
+                    self.client,
+                    datagram,
+                    preview=False,
+                    restart_udp=True,
+                )
+                if self.client is not previous_client:
+                    self._replay_udp_client = self.client
+                    self.quality = QualityTracker(
+                        self.flight_hz, self.systems_hz, self.mission_heartbeat_ms
+                    )
                 self.quality.observe_packet(datagram)
-                if self.client.receive(datagram, received_us, observed_utc):
+                changed = self.client.receive(datagram, received_us, observed_utc)
+                self.replay_udp.observe_capture_datagram(datagram)
+                if changed:
                     self.quality.observe_state(self.client.state, received_us)
                     self._publish(received_us, observed_utc)
-                self.replay_state["position"] = index + 1
+                    self.replay_udp.state_available()
         except (OSError, ValueError, KeyError, json.JSONDecodeError, decoder.DecodeFailure) as exc:
             with self._lock:
                 self._snapshot = self._empty_snapshot("Disconnected")
@@ -788,27 +960,174 @@ class TelemetryRuntime:
         playing: bool | None = None,
         speed: float | None = None,
         position: int | None = None,
+        position_us: int | None = None,
+        active_range_id: str | None | object = ...,
+        loop: bool | None = None,
     ) -> dict[str, Any]:
         if self.mode != "replay":
             raise ValueError("not in replay mode")
         if speed is not None:
-            if speed not in (0.25, 0.5, 1.0, 2.0, 4.0):
-                raise ValueError("unsupported replay speed")
-            self.replay_state["speed"] = speed
+            if speed != 1.0:
+                raise ValueError("replay speed is fixed at 1.0")
         if playing is not None:
             self.replay_state["playing"] = playing
         if position is not None:
             if position < 0 or position > int(self.replay_state["packetCount"]):
                 raise ValueError("replay position out of range")
             self._replay_seek_target = position
+        if position_us is not None:
+            if position_us < 0 or position_us > int(self.replay_state["durationUs"]):
+                raise ValueError("replay time out of range")
+            self._replay_seek_time_us = position_us
+        if active_range_id is not ...:
+            if active_range_id is not None and not any(item["id"] == active_range_id for item in self.replay_state["ranges"]):
+                raise ValueError("capture range not found")
+            self.replay_state["activeRangeId"] = active_range_id
+            if active_range_id is not None:
+                selected = next(item for item in self.replay_state["ranges"] if item["id"] == active_range_id)
+                self._replay_seek_time_us = int(selected["startUs"])
+        if loop is not None:
+            self.replay_state["loop"] = loop
         self._replay_wakeup.set()
         return copy.deepcopy(self.replay_state)
 
-    def start_capture(self) -> Path:
+    def replay_preview(self, position_us: int) -> dict[str, Any]:
+        if self.mode != "replay":
+            raise ValueError("not in replay mode")
+        if position_us < 0 or position_us > int(self.replay_state["durationUs"]):
+            raise ValueError("replay time out of range")
+        self._replay_preview_time_us = position_us
+        self._replay_wakeup.set()
+        return {"accepted": True, "positionUs": position_us}
+
+    def captures(self, query: str = "") -> list[dict[str, Any]]:
+        return self.capture_library.list(query)
+
+    def load_replay(self, capture_id: str) -> dict[str, Any]:
+        path = self.capture_library.resolve(capture_id)
+        if self.capture.active:
+            raise ValueError("stop the active capture before loading a replay")
+        with self._lock:
+            self.mode = "replay"
+            self.replay_path = path
+            self.replay_state.update({
+                "path": str(path), "captureId": capture_id, "playing": False,
+                "speed": 1.0, "position": 0, "positionUs": 0, "packetCount": 0,
+                "durationUs": 0, "seeking": False, "activeRangeId": None,
+                "loop": False, "ranges": [], "sessionBoundaries": [],
+            })
+            self._snapshot = self._empty_snapshot("Synchronizing")
+            self._version += 1
+        self._mode_change.set()
+        self._replay_wakeup.set()
+        return copy.deepcopy(self.replay_state)
+
+    def return_to_live(self) -> dict[str, Any]:
+        self.replay_udp.stop()
+        self._replay_udp_client = None
+        with self._lock:
+            self.mode = "live"
+            self.replay_path = None
+            self.replay_state.update({"path": None, "captureId": None, "playing": False, "position": 0, "positionUs": 0, "packetCount": 0, "durationUs": 0, "activeRangeId": None, "loop": False, "ranges": [], "sessionBoundaries": []})
+            self._snapshot = self._empty_snapshot("Disconnected")
+            self._version += 1
+        self._mode_change.set()
+        self._replay_wakeup.set()
+        return {"mode": "live"}
+
+    def _prepare_replay_packet_client(
+        self,
+        client: fstl.ConsoleClient,
+        datagram: bytes,
+        *,
+        preview: bool,
+        restart_udp: bool,
+    ) -> fstl.ConsoleClient:
+        try:
+            header = decoder.read_header(datagram)
+        except (ValueError, decoder.DecodeFailure):
+            return client
+        if header["message_type"] != 3 or header["fragment_count"] != 1:
+            return client
+        source_session = int(header["session_id"])
+        if client.state.session_id not in (0, source_session):
+            if restart_udp:
+                self.replay_udp.restart_sessions()
+            client = self._new_replay_client()
+        if not preview:
+            self._replay_source_session = source_session
+        welcome = decoder.decode_message(
+            3,
+            header["flags"],
+            datagram[fstl.HEADER_SIZE :],
+            {"senderRole": "producer", "allowedSenderRoles": ["producer"]},
+        )["fields"]
+        client.state.hello_sent = True
+        nonce = int(welcome["client_nonce"])
+        t0 = int(welcome["client_send_t0_us"])
+        client.state.hello_nonce = nonce
+        client.state.hello_t0_us = t0
+        client.hello_message_id = 1
+        client.hello_payload_bytes = fstl.hello_payload(nonce, t0)
+        client.hello_first_us = t0
+        return client
+
+    def replay_udp_settings(
+        self, *, bind_host: str, port: int, lan_enabled: bool
+    ) -> dict[str, Any]:
+        if self.mode != "replay":
+            raise ValueError("replay UDP is available only in replay mode")
+        return self.replay_udp.configure(
+            bind_host=bind_host, port=port, lan_enabled=lan_enabled
+        )
+
+    def start_replay_udp(self) -> dict[str, Any]:
+        if self.mode != "replay":
+            raise ValueError("replay UDP is available only in replay mode")
+        result = self.replay_udp.start()
+        self.replay_udp.state_available()
+        return result
+
+    def stop_replay_udp(self) -> dict[str, Any]:
+        return self.replay_udp.stop()
+
+    def create_range(self, capture_id: str, name: str, start_us: int, end_us: int) -> dict[str, Any]:
+        result = self.capture_library.create_range(capture_id, name, start_us, end_us)
+        if self.replay_state.get("captureId") == capture_id:
+            self.replay_state["ranges"] = self.capture_library.ranges(capture_id)
+            self._publish_replay_metadata()
+        return result
+
+    def update_range(self, capture_id: str, range_id: str, name: str, start_us: int, end_us: int) -> dict[str, Any]:
+        result = self.capture_library.update_range(capture_id, range_id, name=name, start_us=start_us, end_us=end_us)
+        if self.replay_state.get("captureId") == capture_id:
+            self.replay_state["ranges"] = self.capture_library.ranges(capture_id)
+            self._publish_replay_metadata()
+        return result
+
+    def delete_range(self, capture_id: str, range_id: str) -> None:
+        self.capture_library.delete_range(capture_id, range_id)
+        if self.replay_state.get("captureId") == capture_id:
+            if self.replay_state.get("activeRangeId") == range_id:
+                self.replay_state["activeRangeId"] = None
+            self.replay_state["ranges"] = self.capture_library.ranges(capture_id)
+            self._publish_replay_metadata()
+
+    def _publish_replay_metadata(self) -> None:
+        with self._lock:
+            self._snapshot["replay"] = copy.deepcopy(self.replay_state)
+            self._snapshot["publishedAtUtc"] = utc_now()
+            self._version += 1
+
+    def start_capture(self, *, name: str | None = None, expected_duration_us: int | None = None) -> Path:
         if self.mode != "live":
             raise ValueError("capture is available only in live mode")
+        if expected_duration_us is not None and expected_duration_us <= 0:
+            raise ValueError("expected duration must be positive")
         path = self.capture.start(
             {
+                "name": name or f"Session {time.strftime('%Y-%m-%d %H:%M:%S')}",
+                "expectedDurationUs": expected_duration_us,
                 "telemetryHost": self.host,
                 "telemetryPort": self.port,
                 "flightHz": self.flight_hz,
@@ -820,6 +1139,9 @@ class TelemetryRuntime:
         # Force a fresh negotiation so every user-started capture contains the
         # WELCOME, SESSION_BEGIN, manifest and keyframe needed for standalone replay.
         self._soft_resync_live.clear()
+        self._capture_session_index = -1
+        self._capture_session_id = 0
+        self._capture_last_checkpoint_us = -5_000_000
         self._restart_live.set()
         self._set_recovery_overlay("reconnecting", status="Disconnected", clear_session=True)
         return path

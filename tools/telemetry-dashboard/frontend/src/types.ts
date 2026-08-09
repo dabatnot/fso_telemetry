@@ -108,14 +108,85 @@ export interface DashboardSnapshot {
     resyncCount: number;
     channels: ChannelQuality[];
   };
-  capture: { active: boolean; path: string | null };
+  capture: {
+    active: boolean;
+    path: string | null;
+    id?: string | null;
+    bytes?: number;
+    durationUs?: number;
+    packetCount?: number;
+    rollingBytesPerSecond?: number;
+    projectedBytes10Minutes?: number;
+    projectedBytes1Hour?: number;
+    projectedFinalBytes?: number | null;
+    freeBytes?: number;
+    secondsUntilLimit?: number | null;
+    warning?: string | null;
+  };
   replay: {
     path: string | null;
     playing: boolean;
     speed: number;
     position: number;
     packetCount: number;
+    positionUs?: number;
+    durationUs?: number;
+    timelineUnit?: "microseconds";
+    seeking?: boolean;
+    previewing?: boolean;
+    previewPositionUs?: number | null;
+    captureId?: string | null;
+    activeRangeId?: string | null;
+    loop?: boolean;
+    ranges?: CaptureRange[];
+    sessionBoundaries?: CaptureSessionBoundary[];
     captureSchema?: string | null;
     contractFeatures?: string[];
   };
+  replayUdp?: ReplayUdpState;
+}
+
+export interface CaptureRange {
+  id: string;
+  name: string;
+  sessionIndex: number;
+  startUs: number;
+  endUs: number;
+  createdAtUtc?: string;
+  updatedAtUtc?: string;
+}
+
+export interface CaptureSessionBoundary {
+  sessionIndex: number;
+  sessionId: string;
+  startUs: number;
+  endUs: number | null;
+  reason: string;
+}
+
+export interface ReplayUdpState {
+  running: boolean;
+  bindHost: string;
+  port: number;
+  lanEnabled: boolean;
+  clientCount: number;
+  maxClients: number;
+  endpoint: string | null;
+  error: string | null;
+  refusedClients?: number;
+  rejectedCommands?: number;
+}
+
+export interface CaptureLibraryItem {
+  id: string;
+  name: string;
+  path: string;
+  mission?: string | null;
+  createdAtUtc?: string | null;
+  durationUs: number;
+  sizeBytes: number;
+  packetCount: number;
+  sessionCount: number;
+  complete: boolean;
+  schema: string;
 }

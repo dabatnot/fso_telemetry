@@ -14,7 +14,11 @@ interface ControlDockProps {
   onReconnect: () => void;
   onToggleCapture: () => void;
   onExport: () => void;
-  onReplayControl: (control: { playing?: boolean; speed?: number; position?: number }) => void;
+  onOpenLibrary: () => void;
+  onReturnLive: () => void;
+  onToggleReplayUdp: () => void;
+  onReplayUdpSettings: (settings: { bindHost: string; port: number; lanEnabled: boolean }) => void;
+  onReplayControl: (control: Record<string, unknown>) => void;
 }
 
 function sessionValue(value: unknown): string {
@@ -31,12 +35,19 @@ export function ControlDock({
   onReconnect,
   onToggleCapture,
   onExport,
+  onOpenLibrary,
+  onReturnLive,
+  onToggleReplayUdp,
+  onReplayUdpSettings,
   onReplayControl
 }: ControlDockProps) {
   const { t } = useI18n();
   const [openMenu, setOpenMenu] = useState<MenuName | null>(null);
   const [confirmReconnect, setConfirmReconnect] = useState(false);
   const [fullscreen, setFullscreen] = useState(Boolean(document.fullscreenElement));
+  const [udpHost, setUdpHost] = useState(snapshot?.replayUdp?.bindHost ?? "127.0.0.1");
+  const [udpPort, setUdpPort] = useState(snapshot?.replayUdp?.port ?? 42042);
+  const [lanEnabled, setLanEnabled] = useState(snapshot?.replayUdp?.lanEnabled ?? false);
   const dockRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const replay = snapshot?.mode === "replay";
@@ -146,28 +157,24 @@ export function ControlDock({
       <button role="menuitem" onClick={() => runAndClose(() => onReplayControl({ playing: !snapshot?.replay.playing }))}>
         {snapshot?.replay.playing ? t("PAUSE") : t("LECTURE")}
       </button>
-      <div className="dock-speed-row" aria-label={t("Vitesse")}>
-        {[0.5, 1, 2, 4].map((speed) => (
-          <button
-            role="menuitem"
-            className={snapshot?.replay.speed === speed ? "active" : ""}
-            key={speed}
-            onClick={() => runAndClose(() => onReplayControl({ speed }))}
-          >{speed}×</button>
-        ))}
+      <button role="menuitem" className={snapshot?.replay.loop ? "active" : ""} onClick={() => runAndClose(() => onReplayControl({ loop: !snapshot?.replay.loop }))}>
+        {t(snapshot?.replay.loop ? "DÉSACTIVER LA BOUCLE" : "LIRE LA PLAGE EN BOUCLE")}
+      </button>
+      <div className="dock-udp-state">
+        <strong>{t("SERVEUR UDP")}</strong>
+        <span>{snapshot?.replayUdp?.running ? snapshot.replayUdp.endpoint : t("ARRÊTÉ")}</span>
+        <small>{snapshot?.replayUdp?.clientCount ?? 0} / {snapshot?.replayUdp?.maxClients ?? 4} {t("CLIENTS")}</small>
       </div>
-      <label className="dock-replay-position">
-        <span>{t("Position du replay")}</span>
-        <input
-          type="range"
-          min="0"
-          max={snapshot?.replay.packetCount ?? 0}
-          value={snapshot?.replay.position ?? 0}
-          aria-label={t("Position du replay")}
-          onChange={(event) => onReplayControl({ position: Number(event.currentTarget.value) })}
-        />
-        <strong>{snapshot?.replay.position ?? 0} / {snapshot?.replay.packetCount ?? 0}</strong>
-      </label>
+      {!snapshot?.replayUdp?.running && <div className="dock-udp-settings">
+        <label>{t("INTERFACE")}<input value={udpHost} onChange={(event) => setUdpHost(event.currentTarget.value)} /></label>
+        <label>{t("PORT")}<input type="number" min="1" max="65535" value={udpPort} onChange={(event) => setUdpPort(Number(event.currentTarget.value))} /></label>
+        <label><input type="checkbox" checked={lanEnabled} onChange={(event) => setLanEnabled(event.currentTarget.checked)} />{t("ACTIVER LE LAN")}</label>
+        <button role="menuitem" onClick={() => onReplayUdpSettings({ bindHost: udpHost, port: udpPort, lanEnabled })}>{t("APPLIQUER")}</button>
+      </div>}
+      <button role="menuitem" className={snapshot?.replayUdp?.running ? "danger" : ""} onClick={() => runAndClose(onToggleReplayUdp)}>
+        {t(snapshot?.replayUdp?.running ? "ARRÊTER LE SERVEUR UDP" : "DÉMARRER LE SERVEUR UDP")}
+      </button>
+      <button role="menuitem" onClick={() => runAndClose(onReturnLive)}>{t("RETOUR AU DIRECT")}</button>
     </div>
   ) : null;
 
@@ -179,6 +186,11 @@ export function ControlDock({
           {t(snapshot?.capture.active ? "■ ARRÊTER CAPTURE" : "● CAPTURER")}
         </button>
       )}
+      <button role="menuitem" onClick={() => runAndClose(onOpenLibrary)}>{t("BIBLIOTHÈQUE DES CAPTURES")}</button>
+      {snapshot?.capture.active && <div className="dock-capture-size">
+        <span>{t("TAILLE")}</span><strong>{Math.round((snapshot.capture.bytes ?? 0) / 1048576)} Mio</strong>
+        <small>{Math.round((snapshot.capture.rollingBytesPerSecond ?? 0) / 1024)} Kio/s</small>
+      </div>}
       <button role="menuitem" onClick={() => runAndClose(onExport)}>{t("EXPORTER")}</button>
     </div>
   ) : null;

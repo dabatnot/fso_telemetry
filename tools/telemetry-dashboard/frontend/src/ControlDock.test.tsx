@@ -33,6 +33,8 @@ function renderDock(value = snapshot()) {
   const callbacks = {
     onToggleFreeze: vi.fn(), onOpenDiagnostics: vi.fn(), onResync: vi.fn(),
     onReconnect: vi.fn(), onToggleCapture: vi.fn(), onExport: vi.fn(),
+    onOpenLibrary: vi.fn(), onReturnLive: vi.fn(), onToggleReplayUdp: vi.fn(),
+    onReplayUdpSettings: vi.fn(),
     onReplayControl: vi.fn()
   };
   render(

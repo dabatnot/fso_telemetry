@@ -2,6 +2,21 @@ import type { DashboardSnapshot, InstrumentDefinition, InstrumentValue } from ".
 import { attitudeFromQuaternion } from "./flightMath";
 import { playerClassManifest } from "./energySemantics";
 
+export function dashboardSourcePresentation(
+  snapshot: DashboardSnapshot | null,
+  socketOnline: boolean
+): { label: string; statusClass: string } {
+  if (!socketOnline) return { label: "BRIDGE HORS LIGNE", statusClass: "disconnected" };
+  if (snapshot?.mode === "replay") {
+    return {
+      label: snapshot.replay.playing ? "REPLAY · LECTURE" : "REPLAY · PAUSE",
+      statusClass: "replay"
+    };
+  }
+  const status = snapshot?.connection.status ?? "Synchronizing";
+  return { label: status, statusClass: status.toLowerCase() };
+}
+
 function pathValue(value: unknown, path: string): unknown {
   return path.split(".").filter(Boolean).reduce<unknown>((current, part) => {
     if (current === null || current === undefined || typeof current !== "object") return undefined;

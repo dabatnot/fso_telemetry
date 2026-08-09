@@ -3,7 +3,7 @@
   "phase": 3,
   "phaseDirectory": "documentation/analysis/specs/3-Ciblage-et-capteurs",
   "contractFingerprint": "sha256:942e8ada4756238765113418c07663ba4fb339a74e30c2c454f24f09fb61af7f",
-  "updatedAtUtc": "2026-08-09T10:17:35Z",
+  "updatedAtUtc": "2026-08-09T13:04:37Z",
   "requirements": [
     {
       "id": "P3-REQ-001",
@@ -1898,14 +1898,18 @@
       "observable": "Le client indépendant conserve les sample times bruts ; le dashboard suit la cible `TARGET_STATE` et les alertes `HUD_ALERT_STATE` sans décision inventée.",
       "expectedAutomatedProof": "`telemetry_phase3_loopback_tests`",
       "implementationStatus": "implemented",
-      "implementationSummary": "Le décodeur conserve les sample times et valeurs brutes. Le dashboard suit TARGET_STATE pour la sélection, emploie strictement les libellés HUD v5 et la couleur cible autoritaire v4/v5 en live, et réserve la résolution CLASS_MANIFEST.subsystems aux captures v1-v4. Il présente le mode radar INFINITE par ∞ tout en conservant la portée filaire autoritaire dans l'inspection. Toute l'interface active est disponible en français et en anglais. La barre inférieure regroupe session, données et affichage, conserve la dernière image pendant la récupération et expose resync/reconnexion sans commande gameplay.",
+      "implementationSummary": "Le décodeur conserve les sample times, valeurs brutes et enveloppes de records validées nécessaires au replay. Le dashboard suit TARGET_STATE pour la sélection et conserve les décisions HUD autoritaires. Simpit Lab ajoute une bibliothèque .fstlcap compressée et indexée, une timeline microseconde avec plages nommées, une prévisualisation locale sans restart réseau et un producteur UDP FSTL 1.1 à quatre clients indépendants. Toute l'interface active reste disponible en français et en anglais.",
       "implementationPaths": [
         "test/telemetry/protocol/tools/fstl_client_core.py",
         "test/telemetry/protocol/tools/fstl_reference_decoder.py",
         "tools/telemetry-dashboard/backend/app.py",
+        "tools/telemetry-dashboard/backend/capture_store.py",
         "tools/telemetry-dashboard/backend/dashboard_runtime.py",
+        "tools/telemetry-dashboard/backend/replay_udp.py",
         "tools/telemetry-dashboard/frontend/src/App.tsx",
+        "tools/telemetry-dashboard/frontend/src/CaptureLibrary.tsx",
         "tools/telemetry-dashboard/frontend/src/ControlDock.tsx",
+        "tools/telemetry-dashboard/frontend/src/ReplayTimeline.tsx",
         "tools/telemetry-dashboard/frontend/src/EnergyCockpit.tsx",
         "tools/telemetry-dashboard/frontend/src/InstrumentCard.tsx",
         "tools/telemetry-dashboard/frontend/src/IntegrityCockpit.tsx",
@@ -2000,6 +2004,55 @@
           "observedAtUtc": "2026-08-09T10:17:35Z",
           "result": "36 tests du client Python, 15 tests backend, 70 tests frontend, le build Vite et 15 scénarios Playwright passent. La barre compacte, les modes live/replay, le gel local et les actions de récupération sont couverts.",
           "resultRef": null
+        },
+        {
+          "id": "P3-REQ-045-AUTO-03",
+          "kind": "automated",
+          "command": "python -B test/telemetry/protocol/tools/test_fstl_console_client_contract.py ; python -B tools/telemetry-dashboard/backend/test_capture_store.py ; python -B tools/telemetry-dashboard/backend/test_dashboard_runtime.py ; python -B tools/telemetry-dashboard/backend/test_replay_udp.py ; python -B tools/telemetry-dashboard/backend/test_app.py ; npm --prefix tools/telemetry-dashboard/frontend test ; npm --prefix tools/telemetry-dashboard/frontend run build ; npx --prefix tools/telemetry-dashboard/frontend playwright test --workers=1",
+          "status": "passed",
+          "inputs": [
+            "test/telemetry/protocol/tools/fstl_client_core.py",
+            "test/telemetry/protocol/tools/fstl_reference_decoder.py",
+            "tools/telemetry-dashboard/README.md",
+            "tools/telemetry-dashboard/backend/app.py",
+            "tools/telemetry-dashboard/backend/capture_store.py",
+            "tools/telemetry-dashboard/backend/dashboard_runtime.py",
+            "tools/telemetry-dashboard/backend/replay_udp.py",
+            "tools/telemetry-dashboard/backend/test_app.py",
+            "tools/telemetry-dashboard/backend/test_capture_store.py",
+            "tools/telemetry-dashboard/backend/test_dashboard_runtime.py",
+            "tools/telemetry-dashboard/backend/test_replay_udp.py",
+            "tools/telemetry-dashboard/frontend/e2e/dashboard.spec.ts",
+            "tools/telemetry-dashboard/frontend/src/App.tsx",
+            "tools/telemetry-dashboard/frontend/src/CaptureLibrary.tsx",
+            "tools/telemetry-dashboard/frontend/src/ControlDock.tsx",
+            "tools/telemetry-dashboard/frontend/src/data.test.ts",
+            "tools/telemetry-dashboard/frontend/src/data.ts",
+            "tools/telemetry-dashboard/frontend/src/EnergyCockpit.tsx",
+            "tools/telemetry-dashboard/frontend/src/InstrumentCard.tsx",
+            "tools/telemetry-dashboard/frontend/src/IntegrityCockpit.tsx",
+            "tools/telemetry-dashboard/frontend/src/IntegrityInspection.tsx",
+            "tools/telemetry-dashboard/frontend/src/PilotageCockpit.tsx",
+            "tools/telemetry-dashboard/frontend/src/ReplayTimeline.test.tsx",
+            "tools/telemetry-dashboard/frontend/src/ReplayTimeline.tsx",
+            "tools/telemetry-dashboard/frontend/src/SupportCockpit.tsx",
+            "tools/telemetry-dashboard/frontend/src/SupportInspection.tsx",
+            "tools/telemetry-dashboard/frontend/src/TacticalCockpit.tsx",
+            "tools/telemetry-dashboard/frontend/src/TacticalInspection.tsx",
+            "tools/telemetry-dashboard/frontend/src/WeaponInspection.tsx",
+            "tools/telemetry-dashboard/frontend/src/WeaponsCockpit.tsx",
+            "tools/telemetry-dashboard/frontend/src/i18n.tsx",
+            "tools/telemetry-dashboard/frontend/src/instrument-catalog.json",
+            "tools/telemetry-dashboard/frontend/src/main.tsx",
+            "tools/telemetry-dashboard/frontend/src/styles.css",
+            "tools/telemetry-dashboard/frontend/src/tacticalSemantics.ts",
+            "tools/telemetry-dashboard/frontend/src/types.ts",
+            "tools/telemetry-dashboard/start-dashboard.ps1"
+          ],
+          "inputFingerprint": "sha256:98ce91d4bca2ce08a61dbd44675a050a331f2ccfce659c970eec77955810cb26",
+          "observedAtUtc": "2026-08-09T13:38:25Z",
+          "result": "36 tests du client indépendant, 31 tests backend de capture/replay, 73 tests frontend, le build Vite et 16 scénarios Playwright passent. Le format .fstlcap, la route POST de démarrage, les reconnexions source sans SESSION_END, la timeline, le seek local, la distinction explicite direct/replay, la bibliothèque et l'UDP loopback multi-client sont couverts.",
+          "resultRef": null
         }
       ],
       "requiredObservations": [],
@@ -2010,7 +2063,7 @@
       "observable": "Après perte d’un delta Phase 3, le client converge sans fuite ni référence pendante.",
       "expectedAutomatedProof": "`telemetry_phase3_replication_tests` + loopback `--drop-once delta`",
       "implementationStatus": "implemented",
-      "implementationSummary": "Le client indépendant ignore une perte unique de delta puis reconstruit le delta cumulatif suivant depuis la baseline ACKée. Le bridge conserve la dernière image pendant Stale, demande un resync puis abandonne après dix secondes le client, le nonce, le socket et la session périmés. Il renégocie sur un endpoint frais jusqu'à la publication atomique d'une nouvelle keyframe Live.",
+      "implementationSummary": "Le client indépendant ignore une perte unique de delta puis reconstruit le delta cumulatif suivant depuis la baseline ACKée. Le bridge conserve sa reconnexion durable. Le producteur de replay régénère pour chaque client baseline, séquences, ACK, retransmissions, heartbeat et resync ; un seek, une boucle ou une frontière source ferme la session précédente avant la nouvelle négociation.",
       "implementationPaths": [
         "code/telemetry/protocol/telemetry_replication.cpp",
         "code/telemetry/protocol/telemetry_replication.h",
@@ -2019,7 +2072,9 @@
         "test/src/telemetry/protocol/test_telemetry_business_state_validation.cpp",
         "test/telemetry/protocol/tools/fstl_client_core.py",
         "tools/telemetry-dashboard/backend/app.py",
-        "tools/telemetry-dashboard/backend/dashboard_runtime.py"
+        "tools/telemetry-dashboard/backend/capture_store.py",
+        "tools/telemetry-dashboard/backend/dashboard_runtime.py",
+        "tools/telemetry-dashboard/backend/replay_udp.py"
       ],
       "proofs": [
         {
@@ -2069,6 +2124,28 @@
           "inputFingerprint": "sha256:2cc1a21e90ac65728ae54b83d25e594e61a9b84b4cd272e43091259838982818",
           "observedAtUtc": "2026-08-09T10:17:35Z",
           "result": "15/15 tests backend passent : resync doux, reconnexion dure idempotente, image stale conservée, endpoint frais et récupération après plusieurs fenêtres HELLO sans producteur.",
+          "resultRef": null
+        },
+        {
+          "id": "P3-REQ-046-AUTO-04",
+          "kind": "automated",
+          "command": "python -B test/telemetry/protocol/tools/test_fstl_console_client_contract.py ; python -B tools/telemetry-dashboard/backend/test_capture_store.py ; python -B tools/telemetry-dashboard/backend/test_dashboard_runtime.py ; python -B tools/telemetry-dashboard/backend/test_replay_udp.py ; python -B tools/telemetry-dashboard/backend/test_app.py",
+          "status": "passed",
+          "inputs": [
+            "test/telemetry/protocol/tools/fstl_client_core.py",
+            "test/telemetry/protocol/tools/fstl_reference_decoder.py",
+            "tools/telemetry-dashboard/backend/app.py",
+            "tools/telemetry-dashboard/backend/capture_store.py",
+            "tools/telemetry-dashboard/backend/dashboard_runtime.py",
+            "tools/telemetry-dashboard/backend/replay_udp.py",
+            "tools/telemetry-dashboard/backend/test_app.py",
+            "tools/telemetry-dashboard/backend/test_capture_store.py",
+            "tools/telemetry-dashboard/backend/test_dashboard_runtime.py",
+            "tools/telemetry-dashboard/backend/test_replay_udp.py"
+          ],
+          "inputFingerprint": "sha256:d3adfc0dd13d956bb563fc1950a6464cac4ef2e886ab3a74bd66457f1dded882",
+          "observedAtUtc": "2026-08-09T13:04:37Z",
+          "result": "36 tests client et 31 tests backend passent, dont la route POST réelle de capture, une frontière de reconnexion enregistrée sans SESSION_END, deux clients loopback simultanés, refus du cinquième, resync vers une baseline synthétique neuve, seek temporel, API replay et changement live/replay sans redémarrage du bridge.",
           "resultRef": null
         }
       ],

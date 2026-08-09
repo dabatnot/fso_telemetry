@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import catalogData from "./instrument-catalog.json";
-import { resolveDetailFields, resolveInstrument, formatValue } from "./data";
+import { dashboardSourcePresentation, resolveDetailFields, resolveInstrument, formatValue } from "./data";
 import { InstrumentCard } from "./InstrumentCard";
 import { PilotageCockpit } from "./PilotageCockpit";
 import { EnergyCockpit } from "./EnergyCockpit";
@@ -13,6 +13,8 @@ import { SupportInspection } from "./SupportInspection";
 import { TacticalCockpit } from "./TacticalCockpit";
 import { TacticalInspection } from "./TacticalInspection";
 import { ControlDock } from "./ControlDock";
+import { CaptureLibrary } from "./CaptureLibrary";
+import { ReplayTimeline } from "./ReplayTimeline";
 import { LanguageSelector, useI18n } from "./i18n";
 import type { DashboardSnapshot, InspectionTarget, InstrumentDefinition } from "./types";
 import "./styles.css";
@@ -42,6 +44,17 @@ async function post(path: string, body?: unknown): Promise<unknown> {
     const detail = await response.text();
     throw new Error(detail || response.statusText);
   }
+  return response.json();
+}
+
+async function api(path: string, method: "POST" | "PATCH" | "DELETE", body?: unknown): Promise<unknown> {
+  const response = await fetch(path, {
+    method,
+    headers: body ? { "Content-Type": "application/json" } : undefined,
+    body: body ? JSON.stringify(body) : undefined
+  });
+  if (!response.ok) throw new Error(await response.text() || response.statusText);
+  if (response.status === 204) return null;
   return response.json();
 }
 
@@ -105,9 +118,10 @@ export default function App() {
   const [selected, setSelected] = useState<InspectionTarget | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [frozenSnapshot, setFrozenSnapshot] = useState<DashboardSnapshot | null>(null);
+  const [libraryOpen, setLibraryOpen] = useState(false);
   const snapshot = frozenSnapshot ?? latestSnapshot;
   const instruments = useMemo(() => catalog.filter((item) => item.tab === tab), [tab]);
-  const connection = latestSnapshot?.connection.status ?? "Synchronizing";
+  const sourcePresentation = dashboardSourcePresentation(latestSnapshot, socketOnline);
 
   useEffect(() => {
     if (latestSnapshot?.mode === "replay") setFrozenSnapshot(null);
@@ -139,8 +153,8 @@ export default function App() {
         <div className="topbar-actions">
           <LanguageSelector />
           <div className="connection-block">
-            <div className={`connection-light status-${connection.toLowerCase()}`} />
-            <div><span>{t(socketOnline ? connection : "BRIDGE HORS LIGNE")}</span><small>{latestSnapshot?.connection.host ?? "127.0.0.1"}:{latestSnapshot?.connection.port ?? 42042}</small></div>
+            <div className={`connection-light status-${sourcePresentation.statusClass}`} />
+            <div><span>{t(sourcePresentation.label)}</span><small>{latestSnapshot?.connection.host ?? "127.0.0.1"}:{latestSnapshot?.connection.port ?? 42042}</small></div>
           </div>
         </div>
       </header>
@@ -264,6 +278,23 @@ export default function App() {
         )}
       </aside>
 
+      {latestSnapshot?.mode === "replay" && <ReplayTimeline
+        snapshot={latestSnapshot}
+        onControl={(control) => void action("Replay", () => post("/api/replay/control", control))}
+        onPreview={(positionUs) => { void post("/api/replay/preview", { positionUs }).catch(() => undefined); }}
+        onCreateRange={(name, startUs, endUs) => {
+          const captureId = latestSnapshot.replay.captureId;
+          if (captureId) void action(t("Marqueur ajouté"), () => api(`/api/captures/${captureId}/ranges`, "POST", { name, startUs, endUs }));
+        }}
+        onUpdateRange={(range) => {
+          const captureId = latestSnapshot.replay.captureId;
+          if (captureId) void action(t("Marqueur modifié"), () => api(`/api/captures/${captureId}/ranges/${range.id}`, "PATCH", range));
+        }}
+        onDeleteRange={(rangeId) => {
+          const captureId = latestSnapshot.replay.captureId;
+          if (captureId) void action(t("Marqueur supprimé"), () => api(`/api/captures/${captureId}/ranges/${rangeId}`, "DELETE"));
+        }}
+      />}
       <ControlDock
         snapshot={latestSnapshot}
         renderFps={renderFps}
@@ -277,7 +308,32 @@ export default function App() {
           () => post(latestSnapshot?.capture.active ? "/api/capture/stop" : "/api/capture/start")
         )}
         onExport={() => void action(t("Exports créés"), () => post("/api/export"))}
+        onOpenLibrary={() => setLibraryOpen(true)}
+        onReturnLive={() => void action(t("Retour au direct"), () => post("/api/replay/live"))}
+        onToggleReplayUdp={() => void action(
+          t(latestSnapshot?.replayUdp?.running ? "Serveur UDP arrêté" : "Serveur UDP démarré"),
+          () => post(latestSnapshot?.replayUdp?.running ? "/api/replay/udp/stop" : "/api/replay/udp/start")
+        )}
+        onReplayUdpSettings={(settings) => void action(t("Paramètres UDP appliqués"), () => post("/api/replay/udp/settings", settings))}
         onReplayControl={(control) => void action("Replay", () => post("/api/replay/control", control))}
+      />
+      <CaptureLibrary
+        open={libraryOpen}
+        snapshot={latestSnapshot}
+        onClose={() => setLibraryOpen(false)}
+        onChanged={() => undefined}
+        onLoad={(id) => void action(t("Capture chargée"), async () => {
+          const result = await post(`/api/captures/${id}/load`);
+          setLibraryOpen(false);
+          return result;
+        })}
+        onStart={(name, expectedDurationUs) => void action(t("Capture démarrée"), () => post("/api/captures/start", { name: name || undefined, expectedDurationUs }))}
+        onStop={() => void action(t("Capture arrêtée"), () => post("/api/captures/stop"))}
+        onReturnLive={() => void action(t("Retour au direct"), () => post("/api/replay/live"))}
+        notify={(message) => {
+          setToast(message);
+          window.setTimeout(() => setToast(null), 5000);
+        }}
       />
       {toast && <div className="toast">{toast}</div>}
     </div>
