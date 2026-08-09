@@ -3,7 +3,7 @@
   "phase": 3,
   "phaseDirectory": "documentation/analysis/specs/3-Ciblage-et-capteurs",
   "contractFingerprint": "sha256:942e8ada4756238765113418c07663ba4fb339a74e30c2c454f24f09fb61af7f",
-  "updatedAtUtc": "2026-08-09T13:04:37Z",
+  "updatedAtUtc": "2026-08-09T15:33:59Z",
   "requirements": [
     {
       "id": "P3-REQ-001",
@@ -1898,7 +1898,7 @@
       "observable": "Le client indépendant conserve les sample times bruts ; le dashboard suit la cible `TARGET_STATE` et les alertes `HUD_ALERT_STATE` sans décision inventée.",
       "expectedAutomatedProof": "`telemetry_phase3_loopback_tests`",
       "implementationStatus": "implemented",
-      "implementationSummary": "Le décodeur conserve les sample times, valeurs brutes et enveloppes de records validées nécessaires au replay. Le dashboard suit TARGET_STATE pour la sélection et conserve les décisions HUD autoritaires. Simpit Lab ajoute une bibliothèque .fstlcap compressée et indexée, une timeline microseconde avec plages nommées, une prévisualisation locale sans restart réseau et un producteur UDP FSTL 1.1 à quatre clients indépendants. Toute l'interface active reste disponible en français et en anglais.",
+      "implementationSummary": "Le décodeur conserve les sample times, valeurs brutes et enveloppes de records validées nécessaires au replay. Le dashboard suit TARGET_STATE pour la sélection et conserve les décisions HUD autoritaires. Simpit Lab ajoute une bibliothèque .fstlcap compressée et indexée, une timeline microseconde avec plages nommées, une prévisualisation locale sans restart réseau et un producteur UDP FSTL 1.1 à quatre clients indépendants. Le replay élimine les groupes fragmentaires incomplets dus aux pertes brutes enregistrées sans interrompre les états applicatifs, et toute autre erreur de lecture met la lecture en pause sans tuer le worker. Chaque commande Pause/Lecture est publiée immédiatement afin que les contrôles UI restent synchronisés même lorsqu'aucun paquet d'état ne suit. Toute l'interface active reste disponible en français et en anglais.",
       "implementationPaths": [
         "test/telemetry/protocol/tools/fstl_client_core.py",
         "test/telemetry/protocol/tools/fstl_reference_decoder.py",
@@ -2008,7 +2008,7 @@
         {
           "id": "P3-REQ-045-AUTO-03",
           "kind": "automated",
-          "command": "python -B test/telemetry/protocol/tools/test_fstl_console_client_contract.py ; python -B tools/telemetry-dashboard/backend/test_capture_store.py ; python -B tools/telemetry-dashboard/backend/test_dashboard_runtime.py ; python -B tools/telemetry-dashboard/backend/test_replay_udp.py ; python -B tools/telemetry-dashboard/backend/test_app.py ; npm --prefix tools/telemetry-dashboard/frontend test ; npm --prefix tools/telemetry-dashboard/frontend run build ; npx --prefix tools/telemetry-dashboard/frontend playwright test --workers=1",
+          "command": "build/telemetry-dashboard/.venv/Scripts/python.exe -B test/telemetry/protocol/tools/test_fstl_console_client_contract.py ; build/telemetry-dashboard/.venv/Scripts/python.exe -B tools/telemetry-dashboard/backend/test_capture_store.py ; build/telemetry-dashboard/.venv/Scripts/python.exe -B tools/telemetry-dashboard/backend/test_dashboard_runtime.py ; build/telemetry-dashboard/.venv/Scripts/python.exe -B tools/telemetry-dashboard/backend/test_replay_udp.py ; build/telemetry-dashboard/.venv/Scripts/python.exe -B tools/telemetry-dashboard/backend/test_app.py ; npm --prefix tools/telemetry-dashboard/frontend test ; npm --prefix tools/telemetry-dashboard/frontend run build ; npm --prefix tools/telemetry-dashboard/frontend run test:e2e -- --workers=1",
           "status": "passed",
           "inputs": [
             "test/telemetry/protocol/tools/fstl_client_core.py",
@@ -2049,9 +2049,23 @@
             "tools/telemetry-dashboard/frontend/src/types.ts",
             "tools/telemetry-dashboard/start-dashboard.ps1"
           ],
-          "inputFingerprint": "sha256:98ce91d4bca2ce08a61dbd44675a050a331f2ccfce659c970eec77955810cb26",
-          "observedAtUtc": "2026-08-09T13:38:25Z",
-          "result": "36 tests du client indépendant, 31 tests backend de capture/replay, 73 tests frontend, le build Vite et 16 scénarios Playwright passent. Le format .fstlcap, la route POST de démarrage, les reconnexions source sans SESSION_END, la timeline, le seek local, la distinction explicite direct/replay, la bibliothèque et l'UDP loopback multi-client sont couverts.",
+          "inputFingerprint": "sha256:e86748a4f569ec12b4bf5ae9c5c9e91107e6c141c1f2aeb09303705109ea0b62",
+          "observedAtUtc": "2026-08-09T14:45:29Z",
+          "result": "36 tests du client indépendant, 32 tests backend de capture/replay, 73 tests frontend, le build Vite et 16 scénarios Playwright passent. Le format .fstlcap, la publication d'une capture chargée en pause, la récupération d'un preview/seek en échec, le rechargement du worker, les reconnexions source sans SESSION_END, la timeline, la bibliothèque et l'UDP loopback multi-client sont couverts.",
+          "resultRef": null
+        },
+        {
+          "id": "P3-REQ-045-AUTO-04",
+          "kind": "automated",
+          "command": "build/telemetry-dashboard/.venv/Scripts/python.exe -m unittest test_capture_store test_dashboard_runtime test_replay_udp test_app -v (cwd tools/telemetry-dashboard/backend)",
+          "status": "passed",
+          "inputs": [
+            "tools/telemetry-dashboard/backend/dashboard_runtime.py",
+            "tools/telemetry-dashboard/backend/test_dashboard_runtime.py"
+          ],
+          "inputFingerprint": "sha256:797e300107885a11e327bd59908e643f662761d6f5eaab9d85095c9424107748",
+          "observedAtUtc": "2026-08-09T15:33:59Z",
+          "result": "34 tests backend passent. Un replay contenant quatre groupes fragmentaires incomplets franchit le paquet suivant, atteint la fin et accepte un seek complet. Pause et Lecture sont publiées immédiatement dans le snapshot, puis la lecture reprend sans erreur ni arrêt du worker.",
           "resultRef": null
         }
       ],
@@ -2063,7 +2077,7 @@
       "observable": "Après perte d’un delta Phase 3, le client converge sans fuite ni référence pendante.",
       "expectedAutomatedProof": "`telemetry_phase3_replication_tests` + loopback `--drop-once delta`",
       "implementationStatus": "implemented",
-      "implementationSummary": "Le client indépendant ignore une perte unique de delta puis reconstruit le delta cumulatif suivant depuis la baseline ACKée. Le bridge conserve sa reconnexion durable. Le producteur de replay régénère pour chaque client baseline, séquences, ACK, retransmissions, heartbeat et resync ; un seek, une boucle ou une frontière source ferme la session précédente avant la nouvelle négociation.",
+      "implementationSummary": "Le client indépendant ignore une perte unique de delta puis reconstruit le delta cumulatif suivant depuis la baseline ACKée. Le bridge conserve sa reconnexion durable. Le lecteur de capture écarte le plus ancien groupe fragmentaire incomplet lorsqu'une perte réseau brute enregistrée épuiserait le quota de réassemblage, sans interrompre les états applicatifs. Pause, Lecture et seek réveillent le worker et publient immédiatement leur état courant. Le producteur de replay régénère pour chaque client baseline, séquences, ACK, retransmissions, heartbeat et resync ; un seek, une boucle ou une frontière source ferme la session précédente avant la nouvelle négociation.",
       "implementationPaths": [
         "code/telemetry/protocol/telemetry_replication.cpp",
         "code/telemetry/protocol/telemetry_replication.h",
@@ -2129,7 +2143,7 @@
         {
           "id": "P3-REQ-046-AUTO-04",
           "kind": "automated",
-          "command": "python -B test/telemetry/protocol/tools/test_fstl_console_client_contract.py ; python -B tools/telemetry-dashboard/backend/test_capture_store.py ; python -B tools/telemetry-dashboard/backend/test_dashboard_runtime.py ; python -B tools/telemetry-dashboard/backend/test_replay_udp.py ; python -B tools/telemetry-dashboard/backend/test_app.py",
+          "command": "build/telemetry-dashboard/.venv/Scripts/python.exe -B test/telemetry/protocol/tools/test_fstl_console_client_contract.py ; build/telemetry-dashboard/.venv/Scripts/python.exe -B tools/telemetry-dashboard/backend/test_capture_store.py ; build/telemetry-dashboard/.venv/Scripts/python.exe -B tools/telemetry-dashboard/backend/test_dashboard_runtime.py ; build/telemetry-dashboard/.venv/Scripts/python.exe -B tools/telemetry-dashboard/backend/test_replay_udp.py ; build/telemetry-dashboard/.venv/Scripts/python.exe -B tools/telemetry-dashboard/backend/test_app.py",
           "status": "passed",
           "inputs": [
             "test/telemetry/protocol/tools/fstl_client_core.py",
@@ -2143,9 +2157,23 @@
             "tools/telemetry-dashboard/backend/test_dashboard_runtime.py",
             "tools/telemetry-dashboard/backend/test_replay_udp.py"
           ],
-          "inputFingerprint": "sha256:d3adfc0dd13d956bb563fc1950a6464cac4ef2e886ab3a74bd66457f1dded882",
-          "observedAtUtc": "2026-08-09T13:04:37Z",
-          "result": "36 tests client et 31 tests backend passent, dont la route POST réelle de capture, une frontière de reconnexion enregistrée sans SESSION_END, deux clients loopback simultanés, refus du cinquième, resync vers une baseline synthétique neuve, seek temporel, API replay et changement live/replay sans redémarrage du bridge.",
+          "inputFingerprint": "sha256:8b97569c073abd6830b587627ecf80192b50ff584927f961e10e3de7a9b69d2d",
+          "observedAtUtc": "2026-08-09T14:45:29Z",
+          "result": "36 tests client et 32 tests backend passent, dont la route POST réelle de capture, une frontière de reconnexion enregistrée sans SESSION_END, le seek temporel récupérable, le rechargement après échec, deux clients loopback simultanés, le resync vers une baseline synthétique neuve et le changement live/replay sans redémarrage du bridge.",
+          "resultRef": null
+        },
+        {
+          "id": "P3-REQ-046-AUTO-05",
+          "kind": "automated",
+          "command": "build/telemetry-dashboard/.venv/Scripts/python.exe -m unittest test_capture_store test_dashboard_runtime test_replay_udp test_app -v (cwd tools/telemetry-dashboard/backend)",
+          "status": "passed",
+          "inputs": [
+            "tools/telemetry-dashboard/backend/dashboard_runtime.py",
+            "tools/telemetry-dashboard/backend/test_dashboard_runtime.py"
+          ],
+          "inputFingerprint": "sha256:797e300107885a11e327bd59908e643f662761d6f5eaab9d85095c9424107748",
+          "observedAtUtc": "2026-08-09T15:33:59Z",
+          "result": "34 tests backend passent, dont la convergence après quatre messages fragmentés incomplets, le seek ultérieur et la publication immédiate des transitions Pause/Lecture sans attendre un nouvel état FSTL.",
           "resultRef": null
         }
       ],

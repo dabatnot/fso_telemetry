@@ -122,6 +122,16 @@ class DashboardRuntimeTest(unittest.TestCase):
                 capture_id = runtime.captures()[0]["id"]
                 replay = runtime.load_replay(capture_id)
                 self.assertEqual("microseconds", replay["timelineUnit"])
+                loaded = self.wait_for(
+                    lambda: (
+                        snapshot
+                        if (snapshot := runtime.latest())["replay"]["packetCount"] == 3
+                        and snapshot["replay"]["durationUs"] == 2
+                        else None
+                    )
+                )
+                self.assertIsNotNone(loaded)
+                self.assertFalse(loaded["replay"]["playing"])
                 runtime.replay_control(playing=True)
                 self.assertTrue(self.wait_for(lambda: runtime.latest()["connection"]["status"] == "Live"))
                 self.assertEqual("replay", runtime.latest()["mode"])
@@ -130,6 +140,150 @@ class DashboardRuntimeTest(unittest.TestCase):
                 self.assertTrue(self.wait_for(lambda: runtime.latest()["replay"]["positionUs"] == 0))
             finally:
                 runtime.stop()
+
+    def test_failed_preview_and_seek_keep_replay_reloadable(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            nonce, t0 = 177, 188
+            hello = fstl.pack_header(
+                message_type=2, flags=0, session_id=0, sequence=1,
+                sent_us=t0, message_id=1, payload=fstl.hello_payload(nonce, t0),
+            )
+            session = 0x1122AABB
+            writer = CaptureWriter(root)
+            writer.start({"name": "recoverable seek"})
+            writer.packet(contract.packet(3, contract.welcome_for(hello), session_id=session, sequence=1, sent_us=100, flags=2), 100, "1970-01-01T00:00:00.000100Z")
+            writer.packet(contract.packet(4, contract.session_begin_payload(), session_id=session, sequence=2, sent_us=101, flags=2), 101, "1970-01-01T00:00:00.000101Z")
+            writer.packet(contract.packet(6, contract.v11_payload("minimal-with-player", ".bin"), session_id=session, sequence=3, sent_us=102, flags=6), 102, "1970-01-01T00:00:00.000102Z")
+            writer.stop()
+
+            runtime = TelemetryRuntime(
+                host="127.0.0.1", port=42042, flight_hz=30, systems_hz=10,
+                mission_heartbeat_ms=500, capture_dir=root,
+            )
+            runtime.start()
+            try:
+                capture_id = runtime.captures()[0]["id"]
+                runtime.load_replay(capture_id)
+                runtime.replay_control(playing=True)
+                self.assertTrue(self.wait_for(lambda: runtime.latest()["connection"]["status"] == "Live"))
+
+                with mock.patch.object(
+                    runtime,
+                    "_reconstruct_replay_client",
+                    side_effect=ValueError("seek reconstruction failed"),
+                ) as reconstruct:
+                    runtime.replay_preview(1)
+                    self.assertTrue(self.wait_for(lambda: reconstruct.call_count >= 1))
+                    self.assertEqual("seek reconstruction failed", runtime.latest()["connection"].get("error"))
+                    self.assertTrue(runtime._thread.is_alive())
+
+                    runtime.replay_control(position_us=1, playing=False)
+                    self.assertTrue(self.wait_for(lambda: reconstruct.call_count >= 2))
+                    self.assertFalse(runtime.latest()["replay"]["seeking"])
+                    self.assertTrue(runtime._thread.is_alive())
+
+                runtime.load_replay(capture_id)
+                runtime.replay_control(playing=True)
+                recovered = self.wait_for(
+                    lambda: (
+                        snapshot
+                        if (snapshot := runtime.latest())["connection"]["status"] == "Live"
+                        and snapshot["replay"]["packetCount"] == 3
+                        else None
+                    )
+                )
+                self.assertIsNotNone(recovered)
+                self.assertNotIn("error", recovered["connection"])
+            finally:
+                runtime.stop()
+
+    def test_replay_drops_oldest_incomplete_fragment_group_instead_of_blocking(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            nonce, t0 = 277, 288
+            hello = fstl.pack_header(
+                message_type=2, flags=0, session_id=0, sequence=1,
+                sent_us=t0, message_id=1, payload=fstl.hello_payload(nonce, t0),
+            )
+            session = 1
+            writer = CaptureWriter(root)
+            writer.start({"name": "captured fragment loss"})
+            packets = [
+                contract.packet(3, contract.welcome_for(hello), session_id=session, sequence=1, sent_us=100, flags=2),
+                contract.packet(4, contract.session_begin_payload(), session_id=session, sequence=2, sent_us=101, flags=2),
+                contract.packet(6, contract.v11_payload("minimal-with-player", ".bin"), session_id=session, sequence=3, sent_us=102, flags=6),
+                *(contract.incomplete_fragment(message_id) for message_id in range(10, 14)),
+                contract.packet(
+                    9,
+                    fstl.heartbeat_payload(1, 1, 108, 0, 0),
+                    session_id=session,
+                    sequence=14,
+                    sent_us=108,
+                ),
+            ]
+            for index, datagram in enumerate(packets):
+                observed_us = 100 + index
+                writer.packet(
+                    datagram,
+                    observed_us,
+                    f"1970-01-01T00:00:00.{observed_us:06d}Z",
+                )
+            writer.stop()
+
+            runtime = TelemetryRuntime(
+                host="127.0.0.1", port=42042, flight_hz=30, systems_hz=10,
+                mission_heartbeat_ms=500, capture_dir=root,
+            )
+            runtime.start()
+            try:
+                capture_id = runtime.captures()[0]["id"]
+                runtime.load_replay(capture_id)
+                runtime.replay_control(playing=True)
+                self.assertTrue(
+                    self.wait_for(
+                        lambda: runtime.replay_state["position"] == len(packets)
+                        and not runtime.replay_state["playing"]
+                    )
+                )
+                self.assertTrue(runtime._thread.is_alive())
+                self.assertNotIn("error", runtime.latest()["connection"])
+
+                runtime.replay_control(position_us=len(packets) - 1, playing=False)
+                self.assertTrue(
+                    self.wait_for(
+                        lambda: runtime.replay_state["position"] == len(packets)
+                        and not runtime.replay_state["seeking"]
+                    )
+                )
+                self.assertNotIn("error", runtime.latest()["connection"])
+            finally:
+                runtime.stop()
+
+    def test_replay_control_publishes_pause_and_resume_immediately(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            runtime = TelemetryRuntime(
+                host="127.0.0.1", port=42042, flight_hz=30, systems_hz=10,
+                mission_heartbeat_ms=500, replay_path=Path(directory) / "unused.fstlcap",
+                capture_dir=Path(directory),
+            )
+            runtime.replay_state.update({
+                "packetCount": 10,
+                "durationUs": 1_000_000,
+                "position": 4,
+                "positionUs": 400_000,
+                "playing": True,
+            })
+            runtime._publish_replay_metadata()
+
+            paused = runtime.replay_control(playing=False)
+            self.assertFalse(paused["playing"])
+            self.assertFalse(runtime.latest()["replay"]["playing"])
+            self.assertEqual(400_000, runtime.latest()["replay"]["positionUs"])
+
+            resumed = runtime.replay_control(playing=True)
+            self.assertTrue(resumed["playing"])
+            self.assertTrue(runtime.latest()["replay"]["playing"])
 
     def test_replay_crosses_recorded_reconnect_without_session_end(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
