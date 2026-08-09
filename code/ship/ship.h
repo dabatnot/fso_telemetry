@@ -27,6 +27,7 @@
 #include "weapon/trails.h"
 #include "ship/anchor_t.h"
 #include "ship/ship_flags.h"
+#include "utils/reset_on_move.h"
 #include "weapon/weapon_flags.h"
 #include "weapon/weapon.h"
 #include "ai/ai.h"
@@ -102,7 +103,7 @@ public:
 	int secondary_bank_weapons[MAX_SHIP_SECONDARY_BANKS];		// Weapon_info[] index for the weapon in the bank
 
 	int primary_bank_external_model_instance[MAX_SHIP_PRIMARY_BANKS];
-	bool primary_bank_model_instance_check[MAX_SHIP_PRIMARY_BANKS];
+	int primary_bank_model_instance_weapon[MAX_SHIP_PRIMARY_BANKS];	// the weapon the model instance was created for, or -1 if not yet checked
 
 	int current_primary_bank;			// currently selected primary bank
 	int current_secondary_bank;		// currently selected secondary bank
@@ -449,6 +450,64 @@ public:
 	void clear();
 };
 
+// The head sentinel of a ship's intrusive subsystem list.  The sentinel's
+// address is meaningful: the first node's prev and the last node's next point
+// back at it, and an empty list is self-referential (after list_init) or
+// null-linked (after construction or ship::clear).  Moving a ship would
+// otherwise leave the bookend nodes pointing at the old sentinel address, so
+// the move operations re-link them.  Copying is deleted: a copied sentinel
+// would alias another list's nodes.
+struct ship_subsys_sentinel : public ship_subsys
+{
+	ship_subsys_sentinel() = default;
+
+	ship_subsys_sentinel(const ship_subsys_sentinel &) = delete;
+	ship_subsys_sentinel &operator=(const ship_subsys_sentinel &) = delete;
+
+	ship_subsys_sentinel(ship_subsys_sentinel &&other) noexcept
+	{
+		take_links_from(other);
+	}
+
+	ship_subsys_sentinel &operator=(ship_subsys_sentinel &&other) noexcept
+	{
+		if (this != &other)
+		{
+			Assertion(next == nullptr || next == this, "Move-assigning over a sentinel whose subsystem list is not empty!  The destination's subsystems would be orphaned.");
+			take_links_from(other);
+		}
+		return *this;
+	}
+
+private:
+	void take_links_from(ship_subsys_sentinel &other) noexcept
+	{
+		if (other.next == nullptr)
+		{
+			// other was never list_init'd; match that state
+			next = nullptr;
+			prev = nullptr;
+		}
+		else if (other.next == &other)
+		{
+			// other is an initialized empty list
+			next = this;
+			prev = this;
+		}
+		else
+		{
+			// take ownership of the chain and re-point the bookends
+			next = other.next;
+			prev = other.prev;
+			next->prev = this;
+			prev->next = this;
+		}
+		// leave other as an initialized empty list, which is safe to iterate
+		other.next = &other;
+		other.prev = &other;
+	}
+};
+
 // structure for subsystems which tells us the total count of a particular type of subsystem (i.e.
 // we might have 3 engines), and the relative strength of the subsystem.  The #defines in model.h
 // for SUBSYSTEM_xxx will be used as indices into this array.
@@ -591,8 +650,8 @@ public:
 	int	really_final_death_time;	// Time until ship breaks up and disappears
 	vec3d	deathroll_rotvel;			// Desired death rotational velocity
 
-	WarpEffect *warpin_effect;
-	WarpEffect *warpout_effect;
+	std::unique_ptr<WarpEffect> warpin_effect;
+	std::unique_ptr<WarpEffect> warpout_effect;
 
 	int warpin_params_index;
 	int warpout_params_index;
@@ -654,7 +713,7 @@ public:
 	// of a particular subsystem, like engines).  The subsys_info struct is information for particular
 	// types of subsystems.  (i.e. the list might contain 3 engines.  There will be one subsys_info entry
 	// describing the state of all engines combined) -- MWA 4/1/97
-	ship_subsys	subsys_list;									//	linked list of subsystems for this ship.
+	ship_subsys_sentinel	subsys_list;						//	linked list of subsystems for this ship.
 	std::unique_ptr<ship_subsys*[]> subsys_list_indexer;		//	provides random-access lookup to the linked list
 	ship_subsys	*last_targeted_subobject[MAX_PLAYERS];	// Last subobject that has been targeted.  NULL if none;(player specific)
 	ship_subsys_info	subsys_info[SUBSYSTEM_MAX];		// info on particular generic types of subsystems	
@@ -850,13 +909,35 @@ public:
 		BOTH,
 	};
 
+	// Ships support moving but not copying.  The defaulted moves are correct
+	// because the members carry the smarts: the subsys_list sentinel re-links
+	// its bookend nodes, and the owning pointers are unique_ptrs.  Callers must
+	// still fix up external back-references (Objects[].instance,
+	// Ai_info[].shipnum, etc.) -- see reassign_ship_slot in
+	// missioneditor/common.cpp.
+	// All the defaulted special member functions are defaulted in ship.cpp
+	// rather than here because they need the complete WarpEffect type.
+	// The moves are not declared noexcept because the implicit exception
+	// specification differs by standard library: MSVC and clang compute
+	// nothrow, but libstdc++ computes potentially-throwing for some members,
+	// making an explicit noexcept ill-formed there (a defaulted redeclaration
+	// may not strengthen the implicit specification).  The NOLINTs suppress
+	// clang-tidy's performance-noexcept-move-constructor, which only sees
+	// clang's computation.
+	ship();
+	~ship();
+	ship(const ship &) = delete;
+	ship &operator=(const ship &) = delete;
+	ship(ship &&);				// NOLINT(performance-noexcept-move-constructor)
+	ship &operator=(ship &&);	// NOLINT(performance-noexcept-move-constructor)
+
 	// reset to a completely blank ship
 	void clear();
 
     //Helper functions
 	bool is_arriving(ship::warpstage stage = ship::warpstage::BOTH, bool dock_leader_or_single = false) const;
-	inline bool is_departing() const { return flags[Ship::Ship_Flags::Depart_warp, Ship::Ship_Flags::Depart_dockbay]; }
-	inline bool cannot_warp_flags() const { return flags[Ship::Ship_Flags::Warp_broken, Ship::Ship_Flags::Warp_never, Ship::Ship_Flags::Disabled, Ship::Ship_Flags::No_subspace_drive]; }
+	inline bool is_departing() const { return flags.any_of(Ship::Ship_Flags::Depart_warp,Ship::Ship_Flags::Depart_dockbay); }
+	inline bool cannot_warp_flags() const { return flags.any_of(Ship::Ship_Flags::Warp_broken,Ship::Ship_Flags::Warp_never,Ship::Ship_Flags::Disabled,Ship::Ship_Flags::No_subspace_drive); }
 	inline bool is_dying_or_departing() const { return is_departing() || flags[Ship::Ship_Flags::Dying]; }
 
 	const char* get_display_name() const;
@@ -1269,8 +1350,10 @@ public:
 	int			    generic_debris_spew_num;
 
 	// subsystem information
-	int		n_subsystems;						// this number comes from ships.tbl
-    model_subsystem *subsystems;				// see model.h for structure definition
+	// (n_subsystems describes the subsystems array; the wrapper keeps it
+	// consistent with the array by resetting it to 0 in a moved-from ship_info)
+	util::reset_on_move<int> n_subsystems;			// this number comes from ships.tbl
+	std::unique_ptr<model_subsystem[]> subsystems;	// see model.h for structure definition
 	particle::ParticleEffectHandle default_subsys_death_effect;
 
 	// Energy Transfer System fields
@@ -1504,7 +1587,7 @@ public:
 
 	SCP_map<SCP_string, path_metadata> pathMetadata;
 
-	SCP_unordered_map<int, void*> glowpoint_bank_override_map;
+	SCP_unordered_map<int, int> glowpoint_bank_override_map;	// key: glowpoint bank (-1 = all banks); value: index into the growable global glowpoint_bank_overrides vector
 
 	animation::ModelAnimationSet animations;
 	animation::ModelAnimationSet cockpit_animations;
@@ -1512,34 +1595,31 @@ public:
 	SCP_vector<ship_passive_arc_info> ship_passive_arcs;
 
 	ship_info();
-	~ship_info();
+	~ship_info() = default;
 	void clone(const ship_info& other);
 
-	ship_info(ship_info&& other) noexcept;
+	ship_info(ship_info&& other) = default;					// NOLINT(performance-noexcept-move-constructor) - not declared noexcept because the implicit exception specification differs by standard library
+	ship_info &operator=(ship_info&& other) = default;		// NOLINT(performance-noexcept-move-constructor) - ditto
 
-	ship_info &operator=(ship_info&& other) noexcept;
+	// Deleted so nobody copies a ship class by accident; use clone() for a deliberate deep copy.
+	ship_info(const ship_info& other) = delete;
+	ship_info &operator=(const ship_info& other) = delete;
 
     //Helper functions
     
-    inline bool is_small_ship() const { return flags[Ship::Info_Flags::Fighter, Ship::Info_Flags::Bomber, Ship::Info_Flags::Support, Ship::Info_Flags::Escapepod]; }
-    inline bool is_big_ship() const { return flags[Ship::Info_Flags::Cruiser, Ship::Info_Flags::Freighter, Ship::Info_Flags::Transport, Ship::Info_Flags::Corvette, Ship::Info_Flags::Gas_miner, Ship::Info_Flags::Awacs]; }
-    inline bool is_huge_ship() const  { return flags[Ship::Info_Flags::Capital, Ship::Info_Flags::Supercap, Ship::Info_Flags::Drydock, Ship::Info_Flags::Knossos_device]; }
-    inline bool is_flyable() const { return !(flags[Ship::Info_Flags::Cargo, Ship::Info_Flags::Navbuoy, Ship::Info_Flags::Sentrygun]); }	// AL 11-24-97: this useful to know for targeting reasons
-// note: code that previously used is_harmless() / SIF_HARMLESS now uses several flags defined in objecttypes.tbl
+    inline bool is_small_ship() const { return flags.any_of(Ship::Info_Flags::Fighter,Ship::Info_Flags::Bomber,Ship::Info_Flags::Support,Ship::Info_Flags::Escapepod); }
+	inline bool is_big_ship() const { return flags.any_of(Ship::Info_Flags::Cruiser,Ship::Info_Flags::Freighter,Ship::Info_Flags::Transport,Ship::Info_Flags::Corvette,Ship::Info_Flags::Gas_miner,Ship::Info_Flags::Awacs); }
+	inline bool is_huge_ship() const { return flags.any_of(Ship::Info_Flags::Capital,Ship::Info_Flags::Supercap,Ship::Info_Flags::Drydock,Ship::Info_Flags::Knossos_device); }
+	inline bool is_flyable() const { return flags.none_of(Ship::Info_Flags::Cargo,Ship::Info_Flags::Navbuoy,Ship::Info_Flags::Sentrygun); } // AL 11-24-97: this useful to know for targeting reasons
+	  // note: code that previously used is_harmless() / SIF_HARMLESS now uses several flags defined in objecttypes.tbl
 //	inline bool is_harmless() const { return flags[Ship::Info_Flags::Cargo, Ship::Info_Flags::Navbuoy, Ship::Info_Flags::Escapepod]; }		// AL 12-3-97: ships that are not a threat
-    inline bool is_fighter_bomber() const { return flags[Ship::Info_Flags::Fighter, Ship::Info_Flags::Bomber]; }
+	inline bool is_fighter_bomber() const { return flags.any_of(Ship::Info_Flags::Fighter,Ship::Info_Flags::Bomber); }
     inline bool is_big_or_huge() const { return is_big_ship() || is_huge_ship(); }
     inline bool avoids_shockwaves() const { return is_small_ship(); }
 
 	const char* get_display_name() const;
 	bool has_display_name() const;
 
-private:
-	void move(ship_info&& other);
-
-	// Private and unimplemented so nobody tries to use them by accident.
-	ship_info(const ship_info& other);
-	const ship_info &operator=(const ship_info& other);
 };
 
 extern flag_def_list_new<Ship::Info_Flags> Ship_flags[];
@@ -1655,6 +1735,8 @@ extern char TVT_wing_names[MAX_TVT_WINGS][NAME_LENGTH];
 extern int ai_paused;
 
 extern SCP_vector<ship_info> Ship_info;
+extern SCP_vector<const char *> Ship_class_names;
+
 extern SCP_vector<reinforcements> Reinforcements;
 
 // structure definition for ship type counts.  Used to give a count of the number of ships
@@ -1733,7 +1815,11 @@ extern void ship_actually_depart(int shipnum, int method = SHIP_DEPARTED_WARP);
 extern bool in_autoaim_fov(ship *shipp, int bank_to_fire, object *obj);
 extern int ship_stop_fire_primary(object * obj);
 extern int ship_fire_primary(object * objp, int force = 0, bool rollback_shot = false);
+extern vec3d ship_get_external_model_fp_offset(ship_weapon *swp, const weapon_info *wip, const polymodel *weapon_model, int fp_counter_index, bool advance_counter, int sub_shot = 0);
+extern void ship_get_weapon_model_slot_transform(const w_bank *bank, int slot, float reload_slide_back, vec3d *outpnt, matrix *outorient);
+extern int ship_get_external_weapon_model_instance(ship_weapon *swp, int bank);
 extern int ship_fire_secondary(object * objp, int allow_swarm = 0, bool rollback_shot = false );
+extern bool ship_secondary_bank_can_dual_fire(const ship *shipp, int bank);
 bool ship_start_secondary_fire(object* objp);
 bool ship_stop_secondary_fire(object* objp);
 extern int ship_launch_countermeasure(object *objp, int rand_val = -1);

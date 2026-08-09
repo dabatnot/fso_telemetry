@@ -5,6 +5,7 @@
 #include "FredRenderer.h"
 #include "Editor.h"
 #include "IDialogProvider.h"
+#include "ui/ThemeMode.h"
 
 #include <object/object.h>
 
@@ -26,6 +27,12 @@ enum class CreateKind {
 enum class OtherKind {
 	Waypoint,
 	JumpNode,
+};
+
+enum class DataMenuStyle {
+	Auto = 0,
+	Columns = 1,
+	Searchable = 2,
 };
 
 struct ViewSettings {
@@ -126,6 +133,7 @@ class EditorViewport {
 	SCP_vector<SCP_string> getLayerNames() const;
 	bool addLayer(const SCP_string& name, SCP_string* errorMessage = nullptr);
 	bool deleteLayer(const SCP_string& name, SCP_string* errorMessage = nullptr);
+	bool renameLayer(const SCP_string& oldName, const SCP_string& newName, SCP_string* errorMessage = nullptr);
 	bool setLayerVisibility(const SCP_string& name, bool visible, SCP_string* errorMessage = nullptr);
 	bool getLayerVisibility(const SCP_string& name, bool* visible, SCP_string* errorMessage = nullptr) const;
 	void showAllLayers();
@@ -229,7 +237,9 @@ class EditorViewport {
 	bool Show_sexp_help_ship_editor = false;
 	bool Show_sexp_help_wing_editor = false;
 
-	bool Dark_mode = false;
+	ThemeMode Theme_mode = ThemeMode::System;
+
+	DataMenuStyle Data_menu_style = DataMenuStyle::Auto;
 
 	void saveSettings() const;
 

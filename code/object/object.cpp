@@ -735,7 +735,8 @@ void obj_delete(int objnum)
 	case OBJ_POINT:
 		break;  // requires no action, handled by the Fred code.
 	case OBJ_JUMP_NODE:
-		break;  // requires no further action, handled by jumpnode deconstructor.
+		jumpnode_delete(objp);
+		break;
 	case OBJ_DEBRIS:
 		debris_delete( objp );
 		break;
@@ -1372,8 +1373,12 @@ void obj_move_all_post(object *objp, float frametime)
 
 					light_color.multiply_rgbai(r_mult, g_mult, b_mult, 1.f, intensity_mult);
 
-					if(light_radius > 0.0f && intensity_mult > 0.0f && light_color.i() > 0.0f)
-						light_add_point(&objp->pos, light_radius, light_radius, &light_color, source_radius);
+					if(light_radius > 0.0f && intensity_mult > 0.0f && light_color.i() > 0.0f) {
+						// LASER-rendered weapons (the common case: primary bolts) fire far more often
+						// than missiles, so excluding them from raytraced-shadow candidacy is a large,
+						// cheap cut to the number of lights that pass through that selection each frame.
+						light_add_point(&objp->pos, light_radius, light_radius, &light_color, source_radius, wi->render_type == WRT_LASER);
+					}
 				}
 			}
 
@@ -1412,7 +1417,9 @@ void obj_move_all_post(object *objp, float frametime)
 
 			//Check for changing team colors
 			ship* shipp = &Ships[objp->instance];
-			if (Ship_info[shipp->ship_info_index].uses_team_colors && stricmp(shipp->secondary_team_name.c_str(), "none") != 0) {
+			// team_change_time is nonzero only while a fade is in progress (see sexp_change_team_color),
+			// so use that as the initial short-circuit check before the string match
+			if (shipp->team_change_time != 0 && Ship_info[shipp->ship_info_index].uses_team_colors && stricmp(shipp->secondary_team_name.c_str(), "none") != 0) {
 				if (f2fl(Missiontime) * 1000 > f2fl(shipp->team_change_timestamp) * 1000 + shipp->team_change_time) {
 					shipp->team_name = shipp->secondary_team_name;
 					shipp->team_change_timestamp = 0;
@@ -1641,8 +1648,12 @@ void obj_move_all(float frametime)
 		}
 
 		// Goober5000 - accommodate objects that aren't supposed to move in some way (at least until they're destroyed)
-		bool dont_change_position = objp->flags[Object::Object_Flags::Dont_change_position, Object::Object_Flags::Immobile] && objp->hull_strength > 0.0f;
-		bool dont_change_orientation = objp->flags[Object::Object_Flags::Dont_change_orientation, Object::Object_Flags::Immobile] && objp->hull_strength > 0.0f;
+		bool dont_change_position =
+			objp->flags.any_of(Object::Object_Flags::Dont_change_position, Object::Object_Flags::Immobile) &&
+			objp->hull_strength > 0.0f;
+		bool dont_change_orientation =
+			objp->flags.any_of(Object::Object_Flags::Dont_change_orientation, Object::Object_Flags::Immobile) &&
+			objp->hull_strength > 0.0f;
 
 		// skip the physics if we're totally immobile
 		if (!dont_change_position || !dont_change_orientation) {
@@ -1702,7 +1713,7 @@ void obj_move_all(float frametime)
 		obj_move_all_post(objp, frametime);
 
 		// Equipment script processing
-		if (objp->type == OBJ_SHIP) {
+		if (objp->type == OBJ_SHIP && scripting::hooks::OnWeaponEquipped->isActive()) {
 			ship* shipp = &Ships[objp->instance];
 			object* target;
 
@@ -1713,13 +1724,11 @@ void obj_move_all(float frametime)
 			if (objp == Player_obj && Player_ai->target_objnum != -1)
 				target = &Objects[Player_ai->target_objnum];
 
-			if (scripting::hooks::OnWeaponEquipped->isActive()) {
-				scripting::hooks::OnWeaponEquipped->run(scripting::hooks::WeaponEquippedConditions{ shipp, target },
-					scripting::hook_param_list(
-						scripting::hook_param("User", 'o', objp),
-						scripting::hook_param("Target", 'o', target)
-					));
-			}
+			scripting::hooks::OnWeaponEquipped->run(scripting::hooks::WeaponEquippedConditions{ shipp, target },
+				scripting::hook_param_list(
+					scripting::hook_param("User", 'o', objp),
+					scripting::hook_param("Target", 'o', target)
+				));
 		}
 	}
 
@@ -1940,15 +1949,17 @@ void obj_queue_render(object* obj, model_draw_list* scene)
 	case OBJ_ASTEROID:
 		asteroid_render(obj, scene);
 		break;
-	case OBJ_JUMP_NODE:
-		for ( SCP_list<CJumpNode>::iterator jnp = Jump_nodes.begin(); jnp != Jump_nodes.end(); ++jnp ) {
-			if ( jnp->GetSCPObject() != obj ) {
+	case OBJ_JUMP_NODE: {
+		int objnum = OBJ_INDEX(obj);
+		for ( auto &jnp : Jump_nodes ) {
+			if ( jnp.GetSCPObjectNumber() != objnum ) {
 				continue;
 			}
 
-			jnp->Render(scene, &obj->pos, &Eye_position);
+			jnp.Render(scene, &obj->pos, &Eye_position);
 		}
 		break;
+	}
 	case OBJ_WAYPOINT:
 		// 		if (Show_waypoints)	{
 		// 			gr_set_color( 128, 128, 128 );

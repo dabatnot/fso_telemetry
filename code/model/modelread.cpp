@@ -35,6 +35,7 @@
 #include "model/modelreplace.h"
 #include "model/modelsinc.h"
 #include "parse/parselo.h"
+#include "prop/prop.h"
 #include "render/3dinternal.h"
 #include "ship/ship.h"
 #include "starfield/starfield.h"
@@ -271,6 +272,8 @@ void model_unload(int modelnum, int force)
 
 	mprintf(("Unloading model '%s' from slot '%i'\n", pm->filename, num));
 
+	gr_model_unloaded(pm->id);
+
 	// so that the textures can be released
 	pm->used_this_mission = 0;
 
@@ -309,6 +312,16 @@ void model_unload(int modelnum, int force)
 		}
 		if (pm->id == wi.external_model_num) {
 			wi.external_model_num = -1;
+		}
+	}
+
+	// and props, for the same reason: props_level_close() only clears the prop
+	// instances, so without this the class-level handle survives the model being
+	// freed and the next placement of that prop class reads a slot that has since
+	// been reused by an unrelated model.
+	for (auto& pip : Prop_info) {
+		if (pm->id == pip.model_num) {
+			pip.model_num = -1;
 		}
 	}
 
@@ -2093,7 +2106,8 @@ modelread_status read_model_file_no_subsys(polymodel * pm, const char* filename,
 
 				// Genghis: if we have a thruster and none of the collision 
 				// properties were provided, then set "nocollide_this_only".
-				if (sm->flags[Model::Submodel_flags::Is_thruster] && !(sm->flags[Model::Submodel_flags::No_collisions, Model::Submodel_flags::Nocollide_this_only, Model::Submodel_flags::Collide_invisible]) )
+				if (sm->flags[Model::Submodel_flags::Is_thruster] &&
+					sm->flags.none_of(Model::Submodel_flags::No_collisions,Model::Submodel_flags::Nocollide_this_only,Model::Submodel_flags::Collide_invisible))
 				{
 					sm->flags.set(Model::Submodel_flags::Nocollide_this_only);
 				}
@@ -3245,7 +3259,7 @@ int model_load(const  char* filename, ship_info* sip, ErrorType error_type, bool
 
 	if (sip != nullptr) {
 		n_subsystems = sip->n_subsystems;
-		subsystems = sip->subsystems;
+		subsystems = sip->subsystems.get();
 	}
 
 	num = -1;
@@ -3445,7 +3459,9 @@ int model_load(const  char* filename, ship_info* sip, ErrorType error_type, bool
 				dl2 = SCP_tolower(sm2->name[first_diff]) - 'a';
 
 				// Handle LODs named "detail0/1/2/etc" too (as opposed to "detaila/b/c/etc")
-				if (sm1->parent == -1 && sm2->parent == -1 && !sm1->flags[Model::Submodel_flags::Is_damaged, Model::Submodel_flags::Is_live_debris] && !sm2->flags[Model::Submodel_flags::Is_damaged, Model::Submodel_flags::Is_live_debris]) {
+				if (sm1->parent == -1 && sm2->parent == -1 &&
+					sm1->flags.none_of(Model::Submodel_flags::Is_damaged, Model::Submodel_flags::Is_live_debris) &&
+					sm2->flags.none_of(Model::Submodel_flags::Is_damaged, Model::Submodel_flags::Is_live_debris)) {
 					dl2 = dl2 - dl1;
 					dl1 = 0;
 				}
@@ -3524,6 +3540,9 @@ int model_load(const  char* filename, ship_info* sip, ErrorType error_type, bool
 	unpause_parse();
 	if (sip != nullptr)
 		sip->model_num = pm->id;
+
+	gr_model_loaded(pm->id);
+
 	return pm->id;
 }
 
@@ -6025,6 +6044,11 @@ void parse_glowpoint_table(const char *filename)
 
 void glowpoint_init()
 {
+	// ship_info and prop_info store indices into glowpoint_bank_overrides
+	extern bool Ships_inited;
+	extern bool Props_inited;
+	Assertion(!Ships_inited && !Props_inited, "glowpoint_init() must be called before ship_init() and prop_init()");
+
 	glowpoint_bank_overrides.clear();
 	parse_glowpoint_table("glowpoints.tbl");
 	parse_modular_table(NOX("*-gpo.tbm"), parse_glowpoint_table);

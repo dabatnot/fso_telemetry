@@ -224,12 +224,31 @@
            <item>
             <layout class="QHBoxLayout" name="eventUpDownLayout">
              <item>
+              <widget class="QPushButton" name="eventMoveTopBtn">
+               <property name="sizePolicy">
+                <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+                 <horstretch>0</horstretch>
+                 <verstretch>0</verstretch>
+                </sizepolicy>
+               </property>
+               <property name="toolTip">
+                <string>Move to top</string>
+               </property>
+               <property name="text">
+                <string/>
+               </property>
+              </widget>
+             </item>
+             <item>
               <widget class="QPushButton" name="eventUpBtn">
                <property name="sizePolicy">
                 <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
                  <horstretch>0</horstretch>
                  <verstretch>0</verstretch>
                 </sizepolicy>
+               </property>
+               <property name="toolTip">
+                <string>Move up</string>
                </property>
                <property name="text">
                 <string/>
@@ -243,6 +262,25 @@
                  <horstretch>0</horstretch>
                  <verstretch>0</verstretch>
                 </sizepolicy>
+               </property>
+               <property name="toolTip">
+                <string>Move down</string>
+               </property>
+               <property name="text">
+                <string/>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <widget class="QPushButton" name="eventMoveBottomBtn">
+               <property name="sizePolicy">
+                <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+                 <horstretch>0</horstretch>
+                 <verstretch>0</verstretch>
+                </sizepolicy>
+               </property>
+               <property name="toolTip">
+                <string>Move to bottom</string>
                </property>
                <property name="text">
                 <string/>
@@ -537,7 +575,7 @@ in Milliseconds</string>
             </property>
            </widget>
           </item>
-          <item row="3" column="0" colspan="2">
+          <item row="4" column="0" colspan="2">
            <widget class="QPlainTextEdit" name="messageContent">
             <property name="statusTip">
              <string>Message Text</string>
@@ -550,7 +588,7 @@ in Milliseconds</string>
             </property>
            </widget>
           </item>
-          <item row="4" column="0" colspan="2">
+          <item row="2" column="0" colspan="2">
            <layout class="QHBoxLayout" name="horizontalLayout_2">
             <property name="spacing">
              <number>0</number>
@@ -596,20 +634,42 @@ in Milliseconds</string>
             </item>
            </layout>
           </item>
-          <item row="1" column="0">
-           <layout class="QHBoxLayout" name="horizontalLayout_3">
+          <item row="1" column="0" colspan="2">
+           <layout class="QHBoxLayout" name="msgMoveButtonsLayout">
+            <property name="leftMargin">
+             <number>4</number>
+            </property>
+            <property name="rightMargin">
+             <number>4</number>
+            </property>
             <item>
-             <widget class="QLabel" name="label_9">
-              <property name="text">
-               <string>Name</string>
+             <spacer name="msgMoveButtonsSpacerLeft">
+              <property name="orientation">
+               <enum>Qt::Horizontal</enum>
               </property>
-              <property name="buddy">
-               <cstring>messageName</cstring>
+              <property name="sizeHint" stdset="0">
+               <size>
+                <width>40</width>
+                <height>20</height>
+               </size>
               </property>
-             </widget>
+             </spacer>
             </item>
             <item>
-             <widget class="QLineEdit" name="messageName"/>
+             <widget class="QPushButton" name="msgMoveTopBtn">
+              <property name="sizePolicy">
+               <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+                <horstretch>0</horstretch>
+                <verstretch>0</verstretch>
+               </sizepolicy>
+              </property>
+              <property name="toolTip">
+               <string>Move to top</string>
+              </property>
+              <property name="text">
+               <string/>
+              </property>
+             </widget>
             </item>
             <item>
              <widget class="QPushButton" name="msgUpBtn">
@@ -618,6 +678,9 @@ in Milliseconds</string>
                 <horstretch>0</horstretch>
                 <verstretch>0</verstretch>
                </sizepolicy>
+              </property>
+              <property name="toolTip">
+               <string>Move up</string>
               </property>
               <property name="text">
                <string/>
@@ -632,10 +695,59 @@ in Milliseconds</string>
                 <verstretch>0</verstretch>
                </sizepolicy>
               </property>
+              <property name="toolTip">
+               <string>Move down</string>
+              </property>
               <property name="text">
                <string/>
               </property>
              </widget>
+            </item>
+            <item>
+             <widget class="QPushButton" name="msgMoveBottomBtn">
+              <property name="sizePolicy">
+               <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+                <horstretch>0</horstretch>
+                <verstretch>0</verstretch>
+               </sizepolicy>
+              </property>
+              <property name="toolTip">
+               <string>Move to bottom</string>
+              </property>
+              <property name="text">
+               <string/>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <spacer name="msgMoveButtonsSpacerRight">
+              <property name="orientation">
+               <enum>Qt::Horizontal</enum>
+              </property>
+              <property name="sizeHint" stdset="0">
+               <size>
+                <width>40</width>
+                <height>20</height>
+               </size>
+              </property>
+             </spacer>
+            </item>
+           </layout>
+          </item>
+          <item row="3" column="0" colspan="2">
+           <layout class="QHBoxLayout" name="horizontalLayout_3">
+            <item>
+             <widget class="QLabel" name="label_9">
+              <property name="text">
+               <string>Name</string>
+              </property>
+              <property name="buddy">
+               <cstring>messageName</cstring>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLineEdit" name="messageName"/>
             </item>
            </layout>
           </item>
@@ -686,6 +798,55 @@ in Milliseconds</string>
    <header>ui/widgets/sexp_tree_view.h</header>
   </customwidget>
  </customwidgets>
+ <tabstops>
+  <tabstop>eventTree</tabstop>
+  <tabstop>btnNewEvent</tabstop>
+  <tabstop>btnInsertEvent</tabstop>
+  <tabstop>btnDeleteEvent</tabstop>
+  <tabstop>eventMoveTopBtn</tabstop>
+  <tabstop>eventUpBtn</tabstop>
+  <tabstop>eventDownBtn</tabstop>
+  <tabstop>eventMoveBottomBtn</tabstop>
+  <tabstop>repeatCountBox</tabstop>
+  <tabstop>triggerCountBox</tabstop>
+  <tabstop>intervalTimeBox</tabstop>
+  <tabstop>chainedCheckBox</tabstop>
+  <tabstop>chainDelayBox</tabstop>
+  <tabstop>useMsecsCheckBox</tabstop>
+  <tabstop>scoreBox</tabstop>
+  <tabstop>teamCombo</tabstop>
+  <tabstop>editDirectiveText</tabstop>
+  <tabstop>editDirectiveKeypressText</tabstop>
+  <tabstop>checkLogTrue</tabstop>
+  <tabstop>checkLogPrevious</tabstop>
+  <tabstop>checkLogFirstRepeat</tabstop>
+  <tabstop>checkLogFirstTrigger</tabstop>
+  <tabstop>checkLogFalse</tabstop>
+  <tabstop>checkLogAlwaysFalse</tabstop>
+  <tabstop>checkLogLastRepeat</tabstop>
+  <tabstop>checkLogLastTrigger</tabstop>
+  <tabstop>messageList</tabstop>
+  <tabstop>msgMoveTopBtn</tabstop>
+  <tabstop>msgUpBtn</tabstop>
+  <tabstop>msgDownBtn</tabstop>
+  <tabstop>msgMoveBottomBtn</tabstop>
+  <tabstop>messageName</tabstop>
+  <tabstop>messageContent</tabstop>
+  <tabstop>btnNewMsg</tabstop>
+  <tabstop>btnInsertMsg</tabstop>
+  <tabstop>btnDeleteMsg</tabstop>
+  <tabstop>btnMsgNote</tabstop>
+  <tabstop>aniCombo</tabstop>
+  <tabstop>btnAniBrowse</tabstop>
+  <tabstop>waveCombo</tabstop>
+  <tabstop>btnBrowseWave</tabstop>
+  <tabstop>btnWavePlay</tabstop>
+  <tabstop>personaCombo</tabstop>
+  <tabstop>btnUpdateStuff</tabstop>
+  <tabstop>messageTeamCombo</tabstop>
+  <tabstop>miniHelpBox</tabstop>
+  <tabstop>helpBox</tabstop>
+ </tabstops>
  <resources>
   <include location="../resources/resources.qrc"/>
  </resources>

@@ -1,5 +1,7 @@
 #include "MissionEventsDialog.h"
 #include "ui_MissionEventsDialog.h"
+
+#include <QShortcut>
 #include "ui/Theme.h"
 #include "ui/util/default_dir.h"
 #include "ui/util/SignalBlockers.h"
@@ -59,11 +61,15 @@ MissionEventsDialog::MissionEventsDialog(QWidget* parent, EditorViewport* viewpo
 	ui->mainSplitter->setStretchFactor(1, 1);
 	ui->mainSplitter->setSizes({600, 350});
 
-	fso::fred::bindStandardIcon(ui->eventUpBtn,   QStyle::SP_ArrowUp);
-	fso::fred::bindStandardIcon(ui->eventDownBtn, QStyle::SP_ArrowDown);
-	fso::fred::bindStandardIcon(ui->msgUpBtn,     QStyle::SP_ArrowUp);
-	fso::fred::bindStandardIcon(ui->msgDownBtn,   QStyle::SP_ArrowDown);
-	fso::fred::bindStandardIcon(ui->btnWavePlay,  QStyle::SP_MediaPlay);
+	fso::fred::bindCustomIcon(ui->eventMoveTopBtn,    CustomIcon::MoveToTop);
+	fso::fred::bindStandardIcon(ui->eventUpBtn,       QStyle::SP_ArrowUp);
+	fso::fred::bindStandardIcon(ui->eventDownBtn,     QStyle::SP_ArrowDown);
+	fso::fred::bindCustomIcon(ui->eventMoveBottomBtn, CustomIcon::MoveToBottom);
+	fso::fred::bindCustomIcon(ui->msgMoveTopBtn,      CustomIcon::MoveToTop);
+	fso::fred::bindStandardIcon(ui->msgUpBtn,         QStyle::SP_ArrowUp);
+	fso::fred::bindStandardIcon(ui->msgDownBtn,       QStyle::SP_ArrowDown);
+	fso::fred::bindCustomIcon(ui->msgMoveBottomBtn,   CustomIcon::MoveToBottom);
+	fso::fred::bindStandardIcon(ui->btnWavePlay,      QStyle::SP_MediaPlay);
 
 	ui->editDirectiveText->setMaxLength(NAME_LENGTH - 1);
 	ui->editDirectiveKeypressText->setMaxLength(NAME_LENGTH - 1);
@@ -202,6 +208,14 @@ void MissionEventsDialog::initEventWidgets() {
 	ui->miniHelpBox->setVisible(_viewport->Show_sexp_help_mission_events);
 	ui->helpBox->setVisible(_viewport->Show_sexp_help_mission_events);
 
+	// Shift+F1 toggles the sexp help panes for this session without changing the saved preference.
+	auto* helpToggle = new QShortcut(QKeySequence(QStringLiteral("Shift+F1")), this);
+	connect(helpToggle, &QShortcut::activated, this, [this] {
+		const bool show = !ui->helpBox->isVisible();
+		ui->miniHelpBox->setVisible(show);
+		ui->helpBox->setVisible(show);
+	});
+
 	// connect the sexp tree stuff
 	connect(ui->eventTree, &sexp_tree_view::modified, this, [this]() { _model->setModified(); });
 	connect(ui->eventTree, &sexp_tree_view::rootNodeDeleted, this, &MissionEventsDialog::rootNodeDeleted);
@@ -288,7 +302,15 @@ bool MissionEventsDialog::hasDefaultMessageParameter()
 void MissionEventsDialog::closeEvent(QCloseEvent* e)
 {
 	reject();
-	e->ignore(); // Don't let the base class close the window
+	// reject() hides the dialog when it actually closes. Let that close
+	// proceed (so a dialog created with WA_DeleteOnClose is destroyed),
+	// and only veto it when reject() decided to keep the dialog open (e.g.
+	// the user cancelled the unsaved-changes prompt).
+	if (isVisible()) {
+		e->ignore();
+	} else {
+		e->accept();
+	}
 }
 
 void MissionEventsDialog::initMessageWidgets() {
@@ -367,6 +389,18 @@ void MissionEventsDialog::rebuildMessageList() {
 	}
 }
 
+// The log-state checkboxes only apply to a selected event, so gray them out (and
+// clear their stale state) when nothing is selected.
+void MissionEventsDialog::setEventLogEnabled(bool enable)
+{
+	for (auto* cb : {ui->checkLogTrue, ui->checkLogFalse, ui->checkLogPrevious, ui->checkLogAlwaysFalse,
+			ui->checkLogFirstRepeat, ui->checkLogLastRepeat, ui->checkLogFirstTrigger, ui->checkLogLastTrigger}) {
+		cb->setEnabled(enable);
+		if (!enable)
+			cb->setChecked(false);
+	}
+}
+
 void MissionEventsDialog::updateEventUi() {
 	util::SignalBlockers blockers(this);
 
@@ -390,6 +424,7 @@ void MissionEventsDialog::updateEventUi() {
 		ui->teamCombo->setEnabled(false);
 		ui->editDirectiveText->setEnabled(false);
 		ui->editDirectiveKeypressText->setEnabled(false);
+		setEventLogEnabled(false);
 		return;
 	}
 
@@ -432,6 +467,7 @@ void MissionEventsDialog::updateEventUi() {
 	ui->teamCombo->setEnabled(_model->getMissionIsMultiTeam());
 
 	// handle event log flags
+	setEventLogEnabled(true);
 	ui->checkLogTrue->setChecked(_model->getLogTrue());
 	ui->checkLogFalse->setChecked(_model->getLogFalse());
 	ui->checkLogPrevious->setChecked(_model->getLogLogPrevious());
@@ -457,8 +493,10 @@ void MissionEventsDialog::updateEventMoveButtons()
 		canDown = (idx >= 0 && idx < count - 1);
 	}
 
+	ui->eventMoveTopBtn->setEnabled(canUp);
 	ui->eventUpBtn->setEnabled(canUp);
 	ui->eventDownBtn->setEnabled(canDown);
+	ui->eventMoveBottomBtn->setEnabled(canDown);
 }
 
 void MissionEventsDialog::initHeadCombo() {
@@ -565,8 +603,10 @@ void MissionEventsDialog::updateMessageMoveButtons()
 	const bool canUp = hasSel && row > 0;
 	const bool canDown = hasSel && row < count - 1;
 
+	ui->msgMoveTopBtn->setEnabled(canUp);
 	ui->msgUpBtn->setEnabled(canUp);
 	ui->msgDownBtn->setEnabled(canDown);
+	ui->msgMoveBottomBtn->setEnabled(canDown);
 }
 
 SCP_vector<int> MissionEventsDialog::read_root_formula_order(sexp_tree_view* tree)
@@ -641,6 +681,23 @@ void MissionEventsDialog::on_btnDeleteEvent_clicked()
 	updateEventUi();
 }
 
+void MissionEventsDialog::on_eventMoveTopBtn_clicked()
+{
+	auto* cur = ui->eventTree->currentItem();
+	if (!cur || cur->parent())
+		return; // roots only
+	const int idx = ui->eventTree->indexOfTopLevelItem(cur);
+	if (idx <= 0)
+		return; // already at top
+
+	QTreeWidgetItem* dest = ui->eventTree->topLevelItem(0);
+	ui->eventTree->move_root(cur, dest, /*insert_before=*/true); // visual move + modified()
+
+	ui->eventTree->setCurrentItem(cur);
+	ui->eventTree->scrollToItem(cur);
+	updateEventMoveButtons();
+}
+
 void MissionEventsDialog::on_eventUpBtn_clicked()
 {
 	auto* cur = ui->eventTree->currentItem();
@@ -677,6 +734,24 @@ void MissionEventsDialog::on_eventDownBtn_clicked()
 	updateEventMoveButtons();
 }
 
+void MissionEventsDialog::on_eventMoveBottomBtn_clicked()
+{
+	auto* cur = ui->eventTree->currentItem();
+	if (!cur || cur->parent())
+		return; // roots only
+	const int idx = ui->eventTree->indexOfTopLevelItem(cur);
+	const int last = ui->eventTree->topLevelItemCount() - 1;
+	if (idx < 0 || idx >= last)
+		return; // already at bottom
+
+	QTreeWidgetItem* dest = ui->eventTree->topLevelItem(last);
+	ui->eventTree->move_root(cur, dest, /*insert_before=*/false); // visual move + modified()
+
+	ui->eventTree->setCurrentItem(cur);
+	ui->eventTree->scrollToItem(cur);
+	updateEventMoveButtons();
+}
+
 void MissionEventsDialog::on_repeatCountBox_valueChanged(int value)
 {
 	_model->setRepeatCount(value);
@@ -701,7 +776,7 @@ void MissionEventsDialog::on_chainedCheckBox_stateChanged(int state)
 	updateEventUi();
 }
 
-void MissionEventsDialog::on_chainedDelayBox_valueChanged(int value)
+void MissionEventsDialog::on_chainDelayBox_valueChanged(int value)
 {
 	_model->setChainDelay(value);
 }
@@ -821,6 +896,11 @@ void MissionEventsDialog::on_btnNewMsg_clicked()
 
 	rebuildMessageList();
 	updateMessageUi();
+
+	// Let the user name the new message right away: focus the name field and
+	// select its placeholder text so typing immediately replaces it.
+	ui->messageName->setFocus();
+	ui->messageName->selectAll();
 }
 
 void MissionEventsDialog::on_btnInsertMsg_clicked()
@@ -838,6 +918,11 @@ void MissionEventsDialog::on_btnInsertMsg_clicked()
 			w->scrollToItem(it);
 	}
 	updateMessageUi();
+
+	// Let the user name the new message right away: focus the name field and
+	// select its placeholder text so typing immediately replaces it.
+	ui->messageName->setFocus();
+	ui->messageName->selectAll();
 }
 
 void MissionEventsDialog::on_btnDeleteMsg_clicked()
@@ -845,6 +930,19 @@ void MissionEventsDialog::on_btnDeleteMsg_clicked()
 	_model->deleteMessage();
 
 	rebuildMessageList();
+	updateMessageUi();
+}
+
+void MissionEventsDialog::on_msgMoveTopBtn_clicked()
+{
+	_model->moveMessageToTop();
+	rebuildMessageList();
+	const int sel = _model->getCurrentlySelectedMessage();
+	if (auto* w = ui->messageList) {
+		w->setCurrentRow(sel);
+		if (auto* it = w->item(sel))
+			w->scrollToItem(it);
+	}
 	updateMessageUi();
 }
 
@@ -864,6 +962,19 @@ void MissionEventsDialog::on_msgUpBtn_clicked()
 void MissionEventsDialog::on_msgDownBtn_clicked()
 {
 	_model->moveMessageDown();
+	rebuildMessageList();
+	const int sel = _model->getCurrentlySelectedMessage();
+	if (auto* w = ui->messageList) {
+		w->setCurrentRow(sel);
+		if (auto* it = w->item(sel))
+			w->scrollToItem(it);
+	}
+	updateMessageUi();
+}
+
+void MissionEventsDialog::on_msgMoveBottomBtn_clicked()
+{
+	_model->moveMessageToBottom();
 	rebuildMessageList();
 	const int sel = _model->getCurrentlySelectedMessage();
 	if (auto* w = ui->messageList) {

@@ -1429,7 +1429,7 @@ int object_check_collision(object *objp, vec3d *p0, vec3d *p1, vec3d *hitpos) {
 			return 0;
 	}
 
-	if (objp->flags[Object::Object_Flags::Hidden, Object::Object_Flags::Locked_from_editing])
+	if (objp->flags.any_of(Object::Object_Flags::Hidden, Object::Object_Flags::Locked_from_editing))
 		return 0;
 
 	mc.model_instance_num = -1;
@@ -2080,6 +2080,9 @@ void render_one_model_htl(object *objp) {
 		g3_done_instance(0);
 
 		if (Show_ship_models) {
+			if (Ship_info[Ships[z].ship_info_index].uses_team_colors)
+				render_info.set_team_color(Ships[z].team_name, Ships[z].secondary_team_name, Ships[z].team_change_timestamp, Ships[z].team_change_time);
+
 			render_info.set_flags(flags);
 			model_render_immediate(&render_info, Ship_info[Ships[z].ship_info_index].model_num, Ships[z].model_instance_num, &objp->orient, &objp->pos);
 		}

@@ -18,8 +18,10 @@
 
 #include "freespace.h"
 
-#include "extensions/ImGuizmo.h"
 #include "io/mouse.h"
+
+#undef LOCAL
+#include "extensions/ImGuizmo.h"
 
 //Turret firing forward declarations
 void ai_turret_execute_behavior(const ship* shipp, ship_subsys* ss);
@@ -112,10 +114,7 @@ void LabManager::resetGraphicsSettings() {
 }
 
 void LabManager::onFrame(float frametime) {
-	if (gr_screen.mode == GR_OPENGL)
-		ImGui_ImplOpenGL3_NewFrame();
-	ImGui_ImplSDL2_NewFrame(gr_screen.max_w, gr_screen.max_h);
-	ImGui::NewFrame();
+	gr_imgui_begin_frame();
 
 	Renderer->onFrame(frametime);
 
@@ -417,8 +416,7 @@ void LabManager::onFrame(float frametime) {
 	if (Cmdline_show_imgui_debug)
 		ImGui::ShowDemoWindow();
 	ImGui::Render();
-	if (gr_screen.mode == GR_OPENGL)
-		ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+	gr_imgui_render_draw_data();
 
 	if (CloseThis)
 		close();

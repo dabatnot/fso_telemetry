@@ -1,11 +1,12 @@
 #include "Editor.h"
 
+#include <algorithm>
 #include <array>
 #include <vector>
 #include <stdexcept>
 #include <clocale>
 
-#include <SDL.h>
+#include <SDL3/SDL.h>
 #include <ai/ai.h>
 #include <parse/parselo.h>
 #include <mission/missiongoals.h>
@@ -497,6 +498,12 @@ void Editor::unmarkObject(int obj) {
 }
 
 void Editor::clearMission(bool fast_reload) {
+	// drop cached model numbers while the models are still loaded; model_free_all() below invalidates
+	// them and the next mission reuses the slots, so a later unload would hit an unrelated model
+	for (auto& viewport : _viewports) {
+		viewport->renderer->freeVolumetricModel();
+	}
+
 	// clean up everything we need to before we reset back to defaults.
 	clean_up_selections();
 
@@ -767,7 +774,17 @@ int Editor::create_ship(matrix* orient, vec3d* pos, int ship_type) {
 	}
 
 	Ai_info[shipp->ai_index].kamikaze_damage = (int) std::min(1000.0f, 200.0f + (temp_max_hull_strength / 4.0f));
-
+	auto replacements = sip->replacement_textures;
+	for (auto& tr : replacements) {
+		if (!stricmp(tr.new_texture, "invisible")) {
+			// invisible is a special case
+			tr.new_texture_id = REPLACE_WITH_INVISIBLE;
+		} else {
+			// try to load texture or anim as normal
+			tr.new_texture_id = bm_load_either(tr.new_texture);
+		}
+	}
+	shipp->apply_replacement_textures(replacements);
 	missionChanged();
 
 	return obj;
@@ -974,7 +991,7 @@ int Editor::common_object_delete(int obj) {
 	char msg[255];
 	const char *name;
 	int i, z, r, type;
-	SCP_list<CJumpNode>::iterator jnp;
+	auto jnp = Jump_nodes.end();
 
 	type = Objects[obj].type;
 	if (type == OBJ_START) {
@@ -1096,32 +1113,20 @@ int Editor::common_object_delete(int obj) {
 		}
 
 	} else if (type == OBJ_JUMP_NODE) {
-		for (jnp = Jump_nodes.begin(); jnp != Jump_nodes.end(); ++jnp) {
-			if (jnp->GetSCPObject() == &Objects[obj]) {
-				break;
-			}
-		}
-
-		// come on, WMC, we don't want to call obj_delete twice...
-		// fool the destructor into not calling obj_delete yet
-		Objects[obj].type = OBJ_NONE;
-
-		// now call the destructor
-		if (jnp != Jump_nodes.end())
-			Jump_nodes.erase(jnp);
-
-		// now restore the jump node type so that the below unmark and obj_delete will work
-		Objects[obj].type = OBJ_JUMP_NODE;
+		// find the jump node while the object still exists; the defunct entry is removed below
+		jnp = std::find_if(Jump_nodes.begin(), Jump_nodes.end(),
+			[obj](const CJumpNode &jn) { return jn.GetSCPObjectNumber() == obj; });
 	}
 
 	unmarkObject(obj);
 
-	//we need to call obj_delete() even if obj is a jump node
-	//the statement "delete Objects[obj].jnp" deletes the jnp object
-	//obj_delete() frees up the object slot where the node used to reside.
-	//if we don't call this then the node will still show up in fred and you can try to delete it twice
-	//this causes an ugly crash.
+	//obj_delete() handles all type-specific cleanup and frees up the object slot where the object used to reside
 	obj_delete(obj);
+
+	//for jump nodes, obj_delete() frees the node's resources via jumpnode_delete(), but the
+	//editor is responsible for removing the defunct entry from the Jump_nodes vector
+	if (jnp != Jump_nodes.end())
+		Jump_nodes.erase(jnp);
 
 	return 0;
 }

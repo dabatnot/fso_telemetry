@@ -29,8 +29,6 @@
 #include "mission/missionparse.h"
 #include "missioneditor/common.h"
 #include "model/model.h"
-#include "starfield/starfield.h"
-#include "jumpnode/jumpnode.h"
 #include "ShipFlagsDlg.h"
 #include "mission/missionmessage.h"
 #include "ShipSpecialDamage.h"
@@ -1092,123 +1090,18 @@ int CShipEditorDlg::update_data(int redraw)
 		update_ship(player_ship);
 
 	} else if (single_ship >= 0) {  // editing a single ship
-		m_ship_name.TrimLeft(); 
+		m_ship_name.TrimLeft();
 		m_ship_name.TrimRight();
-		if (m_ship_name.IsEmpty()) {
+
+		SCP_string conflict = check_name_conflict("ship", m_ship_name, single_ship);
+		if (!conflict.empty()) {
 			if (bypass_errors)
 				return 1;
 
 			bypass_errors = 1;
-			z = MessageBox("A ship name cannot be empty\n"
-				"Press OK to restore old name", "Error", MB_ICONEXCLAMATION | MB_OKCANCEL);
-
-			if (z == IDCANCEL)
-				return -1;
-
-			m_ship_name = _T(Ships[single_ship].ship_name);
-			UpdateData(FALSE);
-		}
-
-		ptr = GET_FIRST(&obj_used_list);
-		while (ptr != END_OF_LIST(&obj_used_list)) {
-			if (((ptr->type == OBJ_SHIP) || (ptr->type == OBJ_START)) && (single_ship != ptr->instance)) {
-				str = Ships[ptr->instance].ship_name;
-				if (!stricmp(m_ship_name, str)) {
-					if (bypass_errors)
-						return 1;
-
-					bypass_errors = 1;
-					z = MessageBox("This ship name is already being used by another ship\n"
-						"Press OK to restore old name", "Error", MB_ICONEXCLAMATION | MB_OKCANCEL);
-
-					if (z == IDCANCEL)
-						return -1;
-
-					m_ship_name = _T(Ships[single_ship].ship_name);
-					UpdateData(FALSE);
-				}
-			}
-
-			ptr = GET_NEXT(ptr);
-		}
-
-		for (i=0; i<MAX_WINGS; i++) {
-			if (Wings[i].wave_count && !stricmp(Wings[i].name, m_ship_name)) {
-				if (bypass_errors)
-					return 1;
-
-				bypass_errors = 1;
-				z = MessageBox("This ship name is already being used by a wing\n"
-					"Press OK to restore old name", "Error", MB_ICONEXCLAMATION | MB_OKCANCEL);
-
-				if (z == IDCANCEL)
-					return -1;
-
-				m_ship_name = _T(Ships[single_ship].ship_name);
-				UpdateData(FALSE);
-			}
-		}
-
-		// We don't need to check teams.  "Unknown" is a valid name and also an IFF.
-
-		for ( i=0; i < (int)Ai_tp_list.size(); i++) {
-			if (!stricmp(m_ship_name, Ai_tp_list[i].name)) 
-			{
-				if (bypass_errors)
-					return 1;
-
-				bypass_errors = 1;
-				z = MessageBox("This ship name is already being used by a target priority group.\n"
-					"Press OK to restore old name", "Error", MB_ICONEXCLAMATION | MB_OKCANCEL);
-
-				if (z == IDCANCEL)
-					return -1;
-
-				m_ship_name = _T(Ships[single_ship].ship_name);
-				UpdateData(FALSE);
-			}
-		}
-
-		if (find_matching_waypoint_list((LPCSTR) m_ship_name) != NULL)
-		{
-			if (bypass_errors)
-				return 0;
-
-			bypass_errors = 1;
-			z = MessageBox("This ship name is already being used by a waypoint path\n"
-				"Press OK to restore old name", "Error", MB_ICONEXCLAMATION | MB_OKCANCEL);
-
-			if (z == IDCANCEL)
-				return -1;
-
-			m_ship_name = _T(Ships[single_ship].ship_name);
-			UpdateData(FALSE);
-		}
-
-		if(jumpnode_get_by_name(m_ship_name) != NULL)
-		{
-			if (bypass_errors)
-				return 1;
-
-			bypass_errors = 1;
-
-			z = MessageBox("This ship name is already being used by a jump node\n"
-			"Press OK to restore old name", "Error", MB_ICONEXCLAMATION | MB_OKCANCEL);
-
-			if (z == IDCANCEL)
-			return -1;
-
-			m_ship_name = _T(Ships[single_ship].ship_name);
-			UpdateData(FALSE);
-		}
-		
-		if (!stricmp(m_ship_name.Left(1), "<")) {
-			if (bypass_errors)
-				return 1;
-
-			bypass_errors = 1;
-			z = MessageBox("Ship names not allowed to begin with <\n"
-				"Press OK to restore old name", "Error", MB_ICONEXCLAMATION | MB_OKCANCEL);
+			CString msg;
+			msg.Format("%s\nPress OK to restore old name", conflict.c_str());
+			z = MessageBox(msg, "Error", MB_ICONEXCLAMATION | MB_OKCANCEL);
 
 			if (z == IDCANCEL)
 				return -1;
@@ -2431,40 +2324,22 @@ void CShipEditorDlg::OnSetAsPlayerShip()
 		return;
 	}
 
-	// since this is single player, clear all player ships and set only this one
-	object *objp = GET_FIRST(&obj_used_list);
-	while (objp != END_OF_LIST(&obj_used_list))
+	// find the selected ship; there should only be one
+	object *marked_objp = nullptr;
+	for (auto objp: list_range(&obj_used_list))
 	{
-		if ((objp->type == OBJ_SHIP) || (objp->type == OBJ_START))
+		if (((objp->type == OBJ_SHIP) || (objp->type == OBJ_START)) && objp->flags[Object::Object_Flags::Marked])
 		{
-			if (objp->flags[Object::Object_Flags::Marked])	// there should only be one selected ship
-			{
-				// set as player ship
-				if (objp->type != OBJ_START)
-				{
-					Player_starts++;
-					set_modified();
-				}
-				objp->type = OBJ_START;
-				objp->flags.set(Object::Object_Flags::Player_ship);
-			}
-			else
-			{
-				// set as regular ship
-				if (objp->type == OBJ_START)
-				{
-					Player_starts--;
-					set_modified();
-				}
-				objp->type = OBJ_SHIP;
-				objp->flags.remove(Object::Object_Flags::Player_ship);
-			}
+			marked_objp = objp;
+			break;
 		}
-		objp = GET_NEXT(objp);
 	}
+	if (marked_objp == nullptr)
+		return;
 
-	// fix up Player_start_shipnum if it became invalid
-	ensure_valid_player_start_shipnum();
+	// since this is single player, clear all player ships and set only this one
+	if (set_single_player_start(OBJ_INDEX(marked_objp)))
+		set_modified();
 
 	// finally set editor dialog
 	m_player_ship.SetCheck(1);

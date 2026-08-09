@@ -27,7 +27,37 @@ namespace fso::fred::dialogs {
 ShipEditorDialogModel::ShipEditorDialogModel(QObject* parent, EditorViewport* viewport)
 	: AbstractDialogModel(parent, viewport)
 {
+	connect(viewport->editor, &Editor::currentObjectChanged, this, &ShipEditorDialogModel::onSelectedObjectChanged);
+	connect(viewport->editor,
+		&Editor::objectMarkingChanged,
+		this,
+		&ShipEditorDialogModel::onSelectedObjectMarkingChanged);
+
 	initializeData();
+}
+
+void ShipEditorDialogModel::scheduleInitializeData()
+{
+	// Bulk selection changes fire one signal per object, so coalesce
+	// the burst into a single refresh once the event loop settles.
+	if (_initPending) {
+		return;
+	}
+	_initPending = true;
+	QTimer::singleShot(0, this, [this] {
+		_initPending = false;
+		initializeData();
+	});
+}
+
+void ShipEditorDialogModel::onSelectedObjectChanged(int)
+{
+	scheduleInitializeData();
+}
+
+void ShipEditorDialogModel::onSelectedObjectMarkingChanged(int, bool)
+{
+	scheduleInitializeData();
 }
 
 
@@ -546,7 +576,7 @@ void ShipEditorDialogModel::initializeData()
 		}
 	}
 
-	modelChanged();
+	Q_EMIT shipMarkingChanged();
 	_modified = false;
 }
 
@@ -708,83 +738,11 @@ void ShipEditorDialogModel::setShipName(const SCP_string& m_ship_name)
 	SCP_string new_name = m_ship_name;
 	drop_white_space(new_name);
 
-	if (new_name.empty()) {
+	SCP_string reason = check_name_conflict("ship", new_name.c_str(), _singleShip);
+	if (!reason.empty()) {
 		_viewport->dialogProvider->showButtonDialog(DialogType::Error,
 			"Ship Name Error",
-			"A ship name cannot be empty.",
-			{DialogButton::Ok});
-		_shipName = Ships[_singleShip].ship_name;
-		modelChanged();
-		return;
-	}
-
-	if (new_name[0] == '<') {
-		_viewport->dialogProvider->showButtonDialog(DialogType::Error,
-			"Ship Name Error",
-			"Ship names not allowed to begin with <.",
-			{DialogButton::Ok});
-		_shipName = Ships[_singleShip].ship_name;
-		modelChanged();
-		return;
-	}
-
-	// Check for duplicate ship names
-	for (auto* ptr = GET_FIRST(&obj_used_list); ptr != END_OF_LIST(&obj_used_list); ptr = GET_NEXT(ptr)) {
-		if (((ptr->type == OBJ_SHIP) || (ptr->type == OBJ_START)) && (ptr->instance != _singleShip)) {
-			if (!stricmp(new_name.c_str(), Ships[ptr->instance].ship_name)) {
-				_viewport->dialogProvider->showButtonDialog(DialogType::Error,
-					"Ship Name Error",
-					"This ship name is already being used by another ship.",
-					{DialogButton::Ok});
-				_shipName = Ships[_singleShip].ship_name;
-				modelChanged();
-				return;
-			}
-		}
-	}
-
-	// Check for conflict with wing names
-	for (auto& w : Wings) {
-		if (w.wave_count && !stricmp(w.name, new_name.c_str())) {
-			_viewport->dialogProvider->showButtonDialog(DialogType::Error,
-				"Ship Name Error",
-				"This ship name is already being used by a wing.",
-				{DialogButton::Ok});
-			_shipName = Ships[_singleShip].ship_name;
-			modelChanged();
-			return;
-		}
-	}
-
-	// Check for conflict with AI target priority group names
-	for (auto& tp : Ai_tp_list) {
-		if (!stricmp(new_name.c_str(), tp.name)) {
-			_viewport->dialogProvider->showButtonDialog(DialogType::Error,
-				"Ship Name Error",
-				"This ship name is already being used by a target priority group.",
-				{DialogButton::Ok});
-			_shipName = Ships[_singleShip].ship_name;
-			modelChanged();
-			return;
-		}
-	}
-
-	// Check for conflict with waypoint paths
-	if (find_matching_waypoint_list(new_name.c_str()) != nullptr) {
-		_viewport->dialogProvider->showButtonDialog(DialogType::Error,
-			"Ship Name Error",
-			"This ship name is already being used by a waypoint path.",
-			{DialogButton::Ok});
-		_shipName = Ships[_singleShip].ship_name;
-		modelChanged();
-		return;
-	}
-
-	// Check for conflict with jump nodes
-	if (jumpnode_get_by_name(new_name.c_str()) != nullptr) {
-		_viewport->dialogProvider->showButtonDialog(DialogType::Error,
-			"Ship Name Error",
-			"This ship name is already being used by a jump node.",
+			reason,
 			{DialogButton::Ok});
 		_shipName = Ships[_singleShip].ship_name;
 		modelChanged();
@@ -1160,6 +1118,24 @@ void ShipEditorDialogModel::setPlayer(const bool m_player)
 bool ShipEditorDialogModel::getPlayer() const
 {
 	return _isPlayerShip;
+}
+
+void ShipEditorDialogModel::makeSolePlayerStart()
+{
+	// the ship being edited, which is either a player start or a regular ship
+	int shipnum = (_playerShipIndex >= 0) ? _playerShipIndex : _singleShip;
+	if (shipnum < 0)
+		return;
+
+	// since this is single player, clear all player ships and set only this one
+	if (set_single_player_start(Ships[shipnum].objnum))
+	{
+		setModified();
+		_editor->missionChanged();
+	}
+
+	_isPlayerShip = true;
+	modelChanged();
 }
 
 void ShipEditorDialogModel::setRespawn(const int value)

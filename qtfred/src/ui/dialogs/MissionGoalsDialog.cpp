@@ -1,4 +1,5 @@
 #include <QtWidgets/QMessageBox>
+#include <QShortcut>
 #include "MissionGoalsDialog.h"
 
 #include "ui/util/SignalBlockers.h"
@@ -20,6 +21,12 @@ MissionGoalsDialog::MissionGoalsDialog(QWidget* parent, EditorViewport* viewport
 
 	ui->helpTextBox->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
 	ui->helpTextBox->setVisible(viewport->Show_sexp_help_mission_goals);
+
+	// Shift+F1 toggles the sexp help pane for this session without changing the saved preference.
+	auto* helpToggle = new QShortcut(QKeySequence(QStringLiteral("Shift+F1")), this);
+	connect(helpToggle, &QShortcut::activated, this, [this] {
+		ui->helpTextBox->setVisible(!ui->helpTextBox->isVisible());
+	});
 
 	connect(_model.get(), &MissionGoalsDialogModel::modelChanged, this, &MissionGoalsDialog::updateUi);
 	connect(ui->goalEventTree, &sexp_tree_view::modified, this, [this] { _model->setModified(); });
@@ -56,7 +63,15 @@ void MissionGoalsDialog::reject()
 void MissionGoalsDialog::closeEvent(QCloseEvent* e)
 {
 	reject();
-	e->ignore(); // Don't let the base class close the window
+	// reject() hides the dialog when it actually closes. Let that close
+	// proceed (so a dialog created with WA_DeleteOnClose is destroyed),
+	// and only veto it when reject() decided to keep the dialog open (e.g.
+	// the user cancelled the unsaved-changes prompt).
+	if (isVisible()) {
+		e->ignore();
+	} else {
+		e->accept();
+	}
 }
 
 void MissionGoalsDialog::updateUi()

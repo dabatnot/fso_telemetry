@@ -1,5 +1,4 @@
 #include "WingEditorDialog.h"
-#include <QCloseEvent>
 #include "General/CheckBoxListDialog.h"
 #include "General/ImagePickerDialog.h"
 #include "ShipEditor/ShipGoalsDialog.h"
@@ -8,8 +7,11 @@
 #include "ui_WingEditorDialog.h"
 
 #include <globalincs/globals.h>
+#include <ship/ship.h>
 #include <ui/util/SignalBlockers.h>
 #include <ui/util/ImageRenderer.h>
+#include <QShortcut>
+#include <ui/util/menu.h>
 #include <QMessageBox>
 
 namespace fso::fred::dialogs {
@@ -21,8 +23,25 @@ WingEditorDialog::WingEditorDialog(FredView* parent, EditorViewport* viewport)
 {
 	ui->setupUi(this);
 
-	ui->HelpTitle->setVisible(viewport->Show_sexp_help_wing_editor);
-	ui->helpText->setVisible(viewport->Show_sexp_help_wing_editor);
+	_show_sexp_help = viewport->Show_sexp_help_wing_editor;
+	ui->HelpTitle->setVisible(_show_sexp_help);
+	ui->helpText->setVisible(_show_sexp_help);
+
+	// Shift+F1 toggles the sexp help pane for this session without changing the saved preference.
+	auto* helpToggle = new QShortcut(QKeySequence(QStringLiteral("Shift+F1")), this);
+	connect(helpToggle, &QShortcut::activated, this, [this] {
+		_show_sexp_help = !_show_sexp_help;
+		ui->HelpTitle->setVisible(!_cues_hidden && _show_sexp_help);
+		ui->helpText->setVisible(!_cues_hidden && _show_sexp_help);
+		QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
+		resize(sizeHint());
+	});
+
+	// F6 / Shift+F6 cycle to the next / previous wing, mirroring the Next/Prev buttons.
+	auto* nextShortcut = new QShortcut(QKeySequence(Qt::Key_F6), this);
+	connect(nextShortcut, &QShortcut::activated, this, [this] { ui->nextWingButton->click(); });
+	auto* prevShortcut = new QShortcut(QKeySequence(QStringLiteral("Shift+F6")), this);
+	connect(prevShortcut, &QShortcut::activated, this, [this] { ui->prevWingButton->click(); });
 
 	ui->wingNameEdit->setMaxLength(NAME_LENGTH - 1);
 	ui->wingDisplayNameEdit->setMaxLength(NAME_LENGTH - 1);
@@ -32,7 +51,7 @@ WingEditorDialog::WingEditorDialog(FredView* parent, EditorViewport* viewport)
 	// Whenever the model reports changes, refresh the UI
 	connect(_model.get(), &AbstractDialogModel::modelChanged, this, &WingEditorDialog::updateUi);
 	connect(_model.get(), &WingEditorDialogModel::wingChanged, this, [this] {
-		refreshAllDynamicCombos();
+		initializeUi();
 		updateUi();
 	});
 
@@ -43,7 +62,25 @@ WingEditorDialog::WingEditorDialog(FredView* parent, EditorViewport* viewport)
 	connect(ui->departureTree, &sexp_tree_view::helpChanged, this, [this](const QString& help) { ui->helpText->setPlainText(help); });
 	connect(ui->departureTree, &sexp_tree_view::miniHelpChanged, this, [this](const QString& help) { ui->HelpTitle->setText(help); });
 
-	refreshAllDynamicCombos();
+	// "Select Wing" menu: jump the editor to any wing in the mission.
+	Editor* editor = viewport->editor;
+	util::installSelectMenu(
+		this,
+		viewport,
+		[]() {
+			std::vector<util::SelectMenuEntry> entries;
+			for (int i = 0; i < MAX_WINGS; i++) {
+				if (Wings[i].wave_count) {
+					entries.push_back({QString::fromUtf8(Wings[i].name), i});
+				}
+			}
+			return entries;
+		},
+		[editor]() { return editor->cur_wing; },
+		[editor](int wing) { editor->mark_wing(wing); },
+		tr("&Select Wing"));
+
+	initializeUi();
 	updateUi();
 
 	// Resize the dialog to the minimum size
@@ -51,11 +88,6 @@ WingEditorDialog::WingEditorDialog(FredView* parent, EditorViewport* viewport)
 }
 
 WingEditorDialog::~WingEditorDialog() = default;
-
-void WingEditorDialog::closeEvent(QCloseEvent* e)
-{
-	QDialog::closeEvent(e);
-}
 
 void WingEditorDialog::updateUi()
 {
@@ -339,7 +371,7 @@ void WingEditorDialog::refreshDepartureTargetCombo()
 	}
 }
 
-void WingEditorDialog::refreshAllDynamicCombos()
+void WingEditorDialog::initializeUi()
 {
 	refreshLeaderCombo();
 	refreshHotkeyCombo();
@@ -352,8 +384,8 @@ void WingEditorDialog::refreshAllDynamicCombos()
 
 void WingEditorDialog::on_hideCuesButton_clicked()
 {
-	const auto showHelp = _viewport->Show_sexp_help_wing_editor;
-	
+	const auto showHelp = _show_sexp_help;
+
 	_cues_hidden = !_cues_hidden;
 	
 	ui->arrivalGroupBox->setVisible(!_cues_hidden);

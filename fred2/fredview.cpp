@@ -62,6 +62,7 @@
 #include "sound/audiostr.h"
 #include "mission/missiongrid.h"
 #include "calcrelativecoordsdlg.h"
+#include "reorderdlg.h"
 #include "musicplayerdlg.h"
 #include "volumetricsdlg.h"
 #include "customdatadlg.h"
@@ -342,6 +343,7 @@ BEGIN_MESSAGE_MAP(CFREDView, CView)
 	ON_UPDATE_COMMAND_UI(ID_LOOKAT_OBJ, OnUpdateLookatObj)
 	ON_COMMAND(ID_EDITORS_ADJUST_GRID, OnEditorsAdjustGrid)
 	ON_COMMAND(ID_CALC_RELATIVE_COORDS, OnCalcRelativeCoords)
+	ON_COMMAND(ID_REORDER, OnReorder)
 	ON_COMMAND(ID_MUSIC_PLAYER, OnMusicPlayer)
 	ON_COMMAND(ID_EDITORS_SHIELD_SYS, OnEditorsShieldSys)
 	ON_COMMAND(ID_LEVEL_OBJ, OnLevelObj)
@@ -1464,7 +1466,7 @@ void select_objects()
 	ptr = GET_FIRST(&obj_used_list);
 	while (ptr != END_OF_LIST(&obj_used_list)) {
 		valid = 1;
-		if (ptr->flags[Object::Object_Flags::Hidden, Object::Object_Flags::Locked_from_editing])
+		if (ptr->flags.any_of(Object::Object_Flags::Hidden, Object::Object_Flags::Locked_from_editing))
 			valid = 0;
 
 		Assert(ptr->type != OBJ_NONE);
@@ -3596,6 +3598,7 @@ int CFREDView::fred_check_sexp(int sexp, int type, const char *location, ...)
 			return 1;
 	}
 
+	z = 0;
 	if (Error_checker_checks_potential_issues || Error_checker_checks_potential_issues_once)
 		z = check_sexp_potential_issues(sexp, &faulty_node, issue_msg);
 	if (z)
@@ -4476,6 +4479,13 @@ void CFREDView::OnEditorsAdjustGrid()
 void CFREDView::OnCalcRelativeCoords()
 {
 	calc_relative_coords_dlg dlg;
+
+	dlg.DoModal();
+}
+
+void CFREDView::OnReorder()
+{
+	reorder_dlg dlg;
 
 	dlg.DoModal();
 }

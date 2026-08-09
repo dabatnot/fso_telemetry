@@ -159,6 +159,8 @@ class CampaignEditorDialogModel : public AbstractDialogModel {
 	void removeBranch(int mission_index, int branch_index);
 	void moveBranchUp();
 	void moveBranchDown();
+	void moveBranchToTop();
+	void moveBranchToBottom();
 	bool getCurrentBranchIsSpecial() const;
 
 	void setModified() { set_modified(); }
@@ -185,8 +187,8 @@ class CampaignEditorDialogModel : public AbstractDialogModel {
 	int m_campaign_type = CAMPAIGN_TYPE_SINGLE;
 	int m_num_players = -1;
 	int m_flags = 0;
-	SCP_vector<bool> m_ships_allowed;
-	SCP_vector<bool> m_weapons_allowed;
+	SCP_set<int> m_ships_allowed;
+	SCP_set<int> m_weapons_allowed;
 	SCP_map<SCP_string, SCP_string> m_custom_data;
 	SCP_vector<CampaignMissionData> m_missions;
 
