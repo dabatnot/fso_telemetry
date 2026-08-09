@@ -35,7 +35,7 @@ constexpr bool is_state_record(RecordType type) noexcept
 	return type == RecordType::SessionState || type == RecordType::MissionState ||
 		   (value >= static_cast<std::uint16_t>(RecordType::EntityLifecycle) &&
 			   value <= static_cast<std::uint16_t>(RecordType::EffectState)) ||
-		   type == RecordType::CommViewState;
+		   type == RecordType::CommViewState || type == RecordType::HudAlertState;
 }
 
 constexpr bool is_explicit_lifecycle_record(RecordType type) noexcept
@@ -76,6 +76,7 @@ constexpr std::size_t key_size_for(RecordType type) noexcept
 	case RecordType::SupportState:
 	case RecordType::NavigationState:
 	case RecordType::EffectState:
+	case RecordType::HudAlertState:
 		return 8;
 	default:
 		return 0;
@@ -121,15 +122,19 @@ ValidationError validate_container_and_flags(RecordType type,
 	return ValidationError::UnknownRequiredRecord;
 }
 
-ValidationError
-validate_payload(RecordType type, ByteView payload, BusinessRecordContainer container) noexcept
+ValidationError validate_payload(RecordType type,
+	std::uint8_t record_version,
+	ByteView payload,
+	BusinessRecordContainer container,
+	std::uint8_t protocol_minor) noexcept
 {
 	const auto value = static_cast<std::uint16_t>(type);
 	if (value >= 1 && value <= 10) {
-		return detail::validate_business_record_1_10(type, payload);
+		return detail::validate_business_record_1_10(type, payload, protocol_minor);
 	}
 	if (value >= 11 && value <= 18) {
-		return detail::validate_business_record_11_18(type, payload);
+		return detail::validate_business_record_11_18(
+			type, record_version, payload);
 	}
 	if (value >= 19 && value <= 24) {
 		return detail::validate_business_record_19_24(type, payload);
@@ -145,6 +150,9 @@ validate_payload(RecordType type, ByteView payload, BusinessRecordContainer cont
 	}
 	if (type == RecordType::Events) {
 		return detail::validate_business_record_28(payload, container == BusinessRecordContainer::EventBatchReliable);
+	}
+	if (type == RecordType::HudAlertState) {
+		return detail::validate_business_record_29(payload);
 	}
 	return ValidationError::UnknownRequiredRecord;
 }
@@ -166,6 +174,8 @@ bool business_record_metadata(std::uint16_t raw_record_type, BusinessRecordMetad
 	const auto value = static_cast<std::uint16_t>(type);
 	metadata.cascades_with_entity = value >= static_cast<std::uint16_t>(RecordType::ShipIdentity) &&
 									 value <= static_cast<std::uint16_t>(RecordType::EffectState);
+	metadata.cascades_with_entity = metadata.cascades_with_entity ||
+		type == RecordType::HudAlertState;
 	return true;
 }
 
@@ -173,7 +183,18 @@ ValidationError validate_business_record(const RecordEnvelopeView& record,
 	BusinessRecordContainer container,
 	BusinessRecordMetadata& metadata) noexcept
 {
+	return validate_business_record(record, container, VersionMinor, metadata);
+}
+
+ValidationError validate_business_record(const RecordEnvelopeView& record,
+	BusinessRecordContainer container,
+	std::uint8_t protocol_minor,
+	BusinessRecordMetadata& metadata) noexcept
+{
 	metadata = BusinessRecordMetadata{};
+	if (!is_supported_version_minor(protocol_minor)) {
+		return ValidationError::UnsupportedMinor;
+	}
 	if (record.payload.size > std::numeric_limits<std::uint16_t>::max() ||
 		(record.payload.size != 0 && record.payload.data == nullptr)) {
 		return ValidationError::BadRecordLength;
@@ -182,7 +203,19 @@ ValidationError validate_business_record(const RecordEnvelopeView& record,
 	if (!business_record_metadata(record.raw_record_type, candidate)) {
 		return record.raw_record_type == 0 ? ValidationError::OutOfRange : ValidationError::None;
 	}
-	if (record.record_version != 1) {
+	if (candidate.type == RecordType::HudAlertState &&
+		protocol_minor < VersionMinorV1_1) {
+		return ValidationError::UnsupportedRecordVersion;
+	}
+	const auto phase3_extended_version =
+		(((candidate.type == RecordType::RadarContacts) &&
+		  (record.record_version == 2U || record.record_version == 3U ||
+		   record.record_version == 4U)) ||
+		 ((candidate.type == RecordType::TargetState) &&
+		  (record.record_version == 2U || record.record_version == 3U ||
+		   record.record_version == 4U || record.record_version == 5U))) &&
+		protocol_minor >= VersionMinorV1_1;
+	if (record.record_version != 1U && !phase3_extended_version) {
 		return ValidationError::UnsupportedRecordVersion;
 	}
 	if (const auto error = validate_record_flags_v1(record.record_flags, RecordFlagPolicy::AllowV1Mutations);
@@ -197,7 +230,9 @@ ValidationError validate_business_record(const RecordEnvelopeView& record,
 		if (record.payload.size != candidate.key_size || (record.payload.size != 0 && record.payload.data == nullptr)) {
 			return ValidationError::BadRecordLength;
 		}
-	} else if (const auto error = validate_payload(candidate.type, record.payload, container);
+	} else if (const auto error = validate_payload(candidate.type,
+				   record.record_version, record.payload, container,
+				   protocol_minor);
 			   error != ValidationError::None) {
 		return error;
 	}
@@ -210,9 +245,19 @@ ValidationError encode_business_record(const RecordEnvelopeView& record,
 	MutableByteView output,
 	std::size_t& written) noexcept
 {
+	return encode_business_record(record, container, VersionMinor, output, written);
+}
+
+ValidationError encode_business_record(const RecordEnvelopeView& record,
+	BusinessRecordContainer container,
+	std::uint8_t protocol_minor,
+	MutableByteView output,
+	std::size_t& written) noexcept
+{
 	written = 0;
 	BusinessRecordMetadata metadata;
-	if (const auto error = validate_business_record(record, container, metadata); error != ValidationError::None) {
+	if (const auto error = validate_business_record(record, container, protocol_minor, metadata);
+		error != ValidationError::None) {
 		return error;
 	}
 	if (metadata.type == RecordType::Invalid) {
@@ -246,8 +291,17 @@ ValidationError decode_business_state_atom(const RecordEnvelopeView& record,
 	BusinessRecordContainer container,
 	StateAtom& output) noexcept
 {
+	return decode_business_state_atom(record, container, VersionMinor, output);
+}
+
+ValidationError decode_business_state_atom(const RecordEnvelopeView& record,
+	BusinessRecordContainer container,
+	std::uint8_t protocol_minor,
+	StateAtom& output) noexcept
+{
 	BusinessRecordMetadata metadata;
-	if (const auto error = validate_business_record(record, container, metadata); error != ValidationError::None) {
+	if (const auto error = validate_business_record(record, container, protocol_minor, metadata);
+		error != ValidationError::None) {
 		return error;
 	}
 	if (!metadata.state_atom || (container != BusinessRecordContainer::FullSnapshot &&
@@ -286,6 +340,10 @@ ValidationError decode_business_snapshot_region_impl(ByteView records,
 	const StateImageValidator* validator,
 	StateImage& output) noexcept
 {
+	const auto protocol_minor = validator == nullptr ? VersionMinor : validator->protocol_minor();
+	if (!is_supported_version_minor(protocol_minor)) {
+		return ValidationError::UnsupportedMinor;
+	}
 	if (const auto error = validate_record_region(records, record_count, RecordFlagPolicy::RequireNone);
 		error != ValidationError::None) {
 		return error;
@@ -311,15 +369,16 @@ ValidationError decode_business_snapshot_region_impl(ByteView records,
 				return ValidationError::InvalidStateTransition;
 			}
 			StateAtom atom;
-			if (const auto error =
-					decode_business_state_atom(envelope, BusinessRecordContainer::FullSnapshot, atom);
+			if (const auto error = decode_business_state_atom(
+					envelope, BusinessRecordContainer::FullSnapshot, protocol_minor, atom);
 				error != ValidationError::None) {
 				return error;
 			}
 			atoms.push_back(std::move(atom));
 		}
 		StateImage candidate;
-		switch (StateImage::create(std::move(atoms), candidate)) {
+		StateImageInvalidRecordReason invalid_record_reason = StateImageInvalidRecordReason::None;
+		switch (StateImage::create(std::move(atoms), candidate, invalid_record_reason)) {
 		case StateImageResult::Created:
 			if (validator != nullptr) {
 				if (const auto error = validator->validate(candidate); error != ValidationError::None) {
@@ -335,6 +394,11 @@ ValidationError decode_business_snapshot_region_impl(ByteView records,
 		case StateImageResult::AllocationFailed:
 			return ValidationError::ResourceLimit;
 		case StateImageResult::InvalidRecord:
+			if (validator != nullptr && protocol_minor == VersionMinorV1_1 &&
+				invalid_record_reason == StateImageInvalidRecordReason::MissingCascadeOwner) {
+				return ValidationError::InvalidAbsence;
+			}
+			return ValidationError::BadRecordLength;
 		default:
 			return ValidationError::BadRecordLength;
 		}
@@ -362,6 +426,16 @@ ValidationError decode_business_snapshot_region_validated(ByteView records,
 
 ValidationError decode_business_delta(const DeltaPayload& payload, CumulativeStateDelta& output) noexcept
 {
+	return decode_business_delta(payload, VersionMinor, output);
+}
+
+ValidationError decode_business_delta(const DeltaPayload& payload,
+	std::uint8_t protocol_minor,
+	CumulativeStateDelta& output) noexcept
+{
+	if (!is_supported_version_minor(protocol_minor)) {
+		return ValidationError::UnsupportedMinor;
+	}
 	if (const auto error = validate_delta_payload(payload); error != ValidationError::None) {
 		return error;
 	}
@@ -393,7 +467,8 @@ ValidationError decode_business_delta(const DeltaPayload& payload, CumulativeSta
 							? StateMutationKind::Create
 							: ((envelope.record_flags & RecordFlagDelete) != 0 ? StateMutationKind::Delete
 																	  : StateMutationKind::Upsert);
-			if (const auto error = decode_business_state_atom(envelope, BusinessRecordContainer::Delta, mutation.atom);
+			if (const auto error = decode_business_state_atom(
+					envelope, BusinessRecordContainer::Delta, protocol_minor, mutation.atom);
 				error != ValidationError::None) {
 				return error;
 			}

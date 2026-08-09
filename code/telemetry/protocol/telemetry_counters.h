@@ -129,8 +129,13 @@ class ProbeTracker final {
 	// token is unchanged on failure.
 	ProbeStartResult begin_probe(std::uint64_t origin_t0_us, ProbeToken& token) noexcept;
 
+	// Non-mutating correlation seam. Call this before validating response
+	// semantics so malformed timestamps cannot consume a live probe.
+	ProbeResponseResult
+	preview_response(std::uint64_t session_id, std::uint32_t probe_id, std::uint64_t origin_t0_us) const noexcept;
+
 	// A response consumes a slot only when session, probe id and the echoed t0
-	// all match. Thus a stale or forged response cannot free a live probe.
+	// all match. Call only after preview_response and semantic validation.
 	ProbeResponseResult
 	correlate_response(std::uint64_t session_id, std::uint32_t probe_id, std::uint64_t origin_t0_us) noexcept;
 

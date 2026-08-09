@@ -16,6 +16,9 @@
 #include "hud/hudgauges.h"
 #include "hud/hudparse.h"
 
+#include <array>
+#include <cstdint>
+
 class object;
 struct cockpit_display;
 
@@ -140,8 +143,44 @@ void hud_save_restore_camera_data(int save);
 // Basically like gr_set_clip only it accounts for hud jittering
 void HUD_set_clip(int x, int y, int w, int h);
 
+enum class HudMissileLockState : std::uint8_t {
+	None = 0,
+	Attempt = 1,
+	Acquired = 2,
+};
+
+enum class HudTextWarningKind : std::uint8_t {
+	Launch = 1,
+	Evaded = 2,
+	Collision = 3,
+	Blast = 4,
+	EngineWash = 5,
+	Emp = 6,
+	Other = 7,
+};
+
+constexpr int HudThreatDumbfireFlag = 1 << 0;
+constexpr int HudThreatAttemptLockFlag = 1 << 1;
+constexpr int HudThreatLockFlag = 1 << 2;
+
+struct HudAlertSnapshot {
+	bool primary_fire_threat_active = false;
+	HudMissileLockState missile_lock_state = HudMissileLockState::None;
+	bool warning_active = false;
+	HudTextWarningKind warning_kind = HudTextWarningKind::Other;
+	std::uint64_t warning_instance_id = 0;
+	std::uint64_t warning_remaining_us = 0;
+	std::array<char, 512> warning_text{};
+};
+
+// Observe the accepted HUD alert state without exposing gauge animation data.
+bool hud_get_alert_snapshot(HudAlertSnapshot& output) noexcept;
+
 // do flashing text gauge
-void hud_start_text_flash(const char *txt, int t, int interval = 200);
+void hud_start_text_flash(const char *txt,
+	int t,
+	int interval = 200,
+	HudTextWarningKind kind = HudTextWarningKind::Other);
 
 // convert a string to use mono spaced numbers
 void hud_num_make_mono(char *num_str, int font_num = font::FONT1);

@@ -1,0 +1,861 @@
+#include "ai/ai.h"
+#include "ai/ai_profiles.h"
+#include "camera/photomode.h"
+#include "gamesnd/gamesnd.h"
+#include "hud/hudtargetbox.h"
+#include "mission/missionparse.h"
+#include "mod_table/mod_table.h"
+#include "network/multi.h"
+#include "object/object.h"
+#include "playerman/player.h"
+#include "ship/ship.h"
+#include "ship/support_work.h"
+#include "telemetry/producer/phase2_gameplay_ab_test_support.h"
+#include "util/FSTestFixture.h"
+#include "freespace.h"
+
+#include <gtest/gtest.h>
+
+#include <array>
+#include <cmath>
+#include <cstring>
+#include <limits>
+#include <tuple>
+
+extern void read_player_controls(object* objp, float frametime);
+extern ship_obj* get_ship_obj_ptr_from_index(int index);
+extern bool Photo_mode_active;
+extern SCP_vector<game_snd> Snds;
+
+namespace {
+
+using namespace telemetry::detail;
+
+// This linkage stays in the unittest object and materializes only test-owned
+// Ships/Objects slots in the real engine Ship_obj_list. Production keeps list
+// mutation private to ship_create/ship_delete.
+constexpr int test_ship_obj_used = 1 << 0;
+constexpr int test_max_ship_objs = MAX_SHIPS;
+
+bool register_fixture_ship_in_ship_obj_list(int shipnum, int objnum) noexcept
+{
+	if (shipnum < 0 || shipnum >= MAX_SHIPS ||
+		objnum < 0 || objnum >= MAX_OBJECTS ||
+		Objects[objnum].type != OBJ_SHIP ||
+		Objects[objnum].instance != shipnum ||
+		Ships[shipnum].objnum != objnum ||
+		Ships[shipnum].ship_list_index != -1 ||
+		Ship_obj_list.next == nullptr || Ship_obj_list.prev == nullptr) {
+		return false;
+	}
+
+	int free_index = -1;
+	for (int index = 0; index < test_max_ship_objs; ++index) {
+		auto* slot = get_ship_obj_ptr_from_index(index);
+		if ((slot->flags & test_ship_obj_used) != 0) {
+			if (slot->objnum == objnum) {
+				return false;
+			}
+		} else if (free_index == -1) {
+			free_index = index;
+		}
+	}
+	if (free_index == -1) {
+		return false;
+	}
+
+	auto* slot = get_ship_obj_ptr_from_index(free_index);
+	slot->flags = 0;
+	slot->objnum = objnum;
+	list_append(&Ship_obj_list, slot);
+	slot->flags |= test_ship_obj_used;
+	Ships[shipnum].ship_list_index = free_index;
+	return true;
+}
+
+bool unregister_fixture_ship_from_ship_obj_list(
+	int shipnum, int objnum) noexcept
+{
+	if (shipnum < 0 || shipnum >= MAX_SHIPS ||
+		objnum < 0 || objnum >= MAX_OBJECTS ||
+		Ships[shipnum].objnum != objnum) {
+		return false;
+	}
+	const auto list_index = Ships[shipnum].ship_list_index;
+	if (list_index == -1) {
+		return true;
+	}
+	if (list_index < 0 || list_index >= test_max_ship_objs) {
+		return false;
+	}
+	auto* slot = get_ship_obj_ptr_from_index(list_index);
+	if ((slot->flags & test_ship_obj_used) == 0 || slot->objnum != objnum) {
+		return false;
+	}
+
+	list_remove(Ship_obj_list, slot);
+	slot->flags = 0;
+	slot->next = nullptr;
+	slot->prev = reinterpret_cast<ship_obj*>(-1);
+	Ships[shipnum].ship_list_index = -1;
+	return true;
+}
+
+class TelemetryPhase2GameplayAbContract : public test::FSTestFixture {
+  public:
+	TelemetryPhase2GameplayAbContract()
+		: FSTestFixture(test::INIT_CFILE | test::INIT_GRAPHICS | test::INIT_SHIPS)
+	{
+	}
+};
+
+TEST_F(TelemetryPhase2GameplayAbContract,
+	RealPlayerControlsAndTelemetryObservationPreserveGameplayAcrossRepeatedRuns)
+{
+	struct Context {
+		int support_return = 0;
+		bool list_registered = false;
+		bool list_unregistered = false;
+		int cleanup_ship_index = MAX_SHIPS - 1;
+		int cleanup_object_index = MAX_OBJECTS - 1;
+		int target_ship_index = MAX_SHIPS - 2;
+		int target_object_index = MAX_OBJECTS - 2;
+		int ship_info_index = -1;
+		int registry_index = -1;
+		std::size_t exited_ship_count = 0U;
+		player test_player;
+		std::uint64_t support_flags = 0U;
+		std::uint64_t cargo_advance_count = 0U;
+		int cargo_progress_ms = 0;
+		int cargo_final_ms = -1;
+		bool cargo_revealed = false;
+		bool target_display_cargo = false;
+		std::size_t invocation = 0U;
+		std::array<Phase2SeamHandoffSnapshot, 3U> authority{};
+	};
+	Context context;
+	const auto invoke = [](void* opaque) noexcept {
+		auto& state = *static_cast<Context*>(opaque);
+		read_player_controls(nullptr, 0.0F);
+		auto& gameplay_ship = Ships[state.cleanup_ship_index];
+		auto& gameplay_object = Objects[state.cleanup_object_index];
+		auto& target_ship = Ships[state.target_ship_index];
+		auto& target_object = Objects[state.target_object_index];
+		gameplay_ship.clear();
+		list_init(&gameplay_ship.subsys_list);
+		gameplay_ship.weapons.clear();
+		gameplay_ship.objnum = state.cleanup_object_index;
+		gameplay_ship.ai_index = state.cleanup_ship_index;
+		gameplay_ship.ship_info_index = state.ship_info_index;
+		gameplay_ship.wingnum = -1;
+		strcpy_s(gameplay_ship.ship_name, "Telemetry AB isolated ship");
+		gameplay_object.clear();
+		gameplay_object.type = OBJ_SHIP;
+		gameplay_object.instance = state.cleanup_ship_index;
+		gameplay_object.signature = 42001;
+		gameplay_object.orient = vmd_identity_matrix;
+		gameplay_object.flags.set(Object::Object_Flags::No_shields);
+		Ai_info[state.cleanup_ship_index] = ai_info{};
+		Ai_info[state.cleanup_ship_index].shipnum = state.cleanup_ship_index;
+		target_ship.clear();
+		list_init(&target_ship.subsys_list);
+		target_ship.weapons.clear();
+		target_ship.objnum = state.target_object_index;
+		target_ship.ai_index = state.target_ship_index;
+		target_ship.ship_info_index = state.ship_info_index;
+		target_ship.wingnum = -1;
+		target_ship.flags.set(Ship::Ship_Flags::Scannable);
+		strcpy_s(target_ship.ship_name, "Telemetry AB cargo target");
+		target_object.clear();
+		target_object.type = OBJ_SHIP;
+		target_object.instance = state.target_ship_index;
+		target_object.signature = 42002;
+		target_object.radius = 10.0F;
+		target_object.pos.xyz.z = 50.0F;
+		target_object.orient = vmd_identity_matrix;
+		Ai_info[state.target_ship_index] = ai_info{};
+		Ai_info[state.target_ship_index].shipnum = state.target_ship_index;
+		auto& registry = Ship_registry[state.registry_index];
+		registry.status = ShipStatus::PRESENT;
+		registry.objnum = state.cleanup_object_index;
+		registry.shipnum = state.cleanup_ship_index;
+		state.list_registered =
+			register_fixture_ship_in_ship_obj_list(
+				state.cleanup_ship_index, state.cleanup_object_index) &&
+			register_fixture_ship_in_ship_obj_list(
+				state.target_ship_index, state.target_object_index);
+		if (!state.list_registered) {
+			return;
+		}
+		auto& repaired_ai = Ai_info[state.cleanup_ship_index];
+		repaired_ai.ai_flags.set(AI::AI_Flags::Being_repaired);
+		ai_do_objects_repairing_stuff(
+			&gameplay_object, nullptr, REPAIR_INFO_BROKEN);
+		state.support_return = ship_do_rearm_frame(&gameplay_object, 0.0F);
+		state.support_flags =
+			(repaired_ai.ai_flags[AI::AI_Flags::Being_repaired] ? 1U : 0U) |
+			(repaired_ai.ai_flags[AI::AI_Flags::Awaiting_repair] ? 2U : 0U);
+
+		state.test_player.cargo_inspect_time = 0;
+		Player = &state.test_player;
+		Player_obj = &gameplay_object;
+		Player_ship = &gameplay_ship;
+		Player_ai = &repaired_ai;
+		Player_ai->target_objnum = state.target_object_index;
+		Player_ai->current_target_distance = 50.0F;
+		Target_display_cargo = false;
+		state.cargo_advance_count = 0U;
+		hud_cargo_scan_update(&target_object, 0.25F);
+		state.cargo_progress_ms = Player->cargo_inspect_time;
+		if (state.cargo_progress_ms == 250) {
+			++state.cargo_advance_count;
+		}
+		hud_cargo_scan_update(&target_object, 0.30F);
+		if (target_ship.flags[Ship::Ship_Flags::Cargo_revealed] &&
+			Player->cargo_inspect_time == 0) {
+			++state.cargo_advance_count;
+		}
+		state.cargo_final_ms = Player->cargo_inspect_time;
+		state.cargo_revealed =
+			target_ship.flags[Ship::Ship_Flags::Cargo_revealed];
+		state.target_display_cargo = Target_display_cargo;
+
+		Player = nullptr;
+		Player_obj = nullptr;
+		Player_ship = nullptr;
+		Player_ai = nullptr;
+		gameplay_object.flags.set(Object::Object_Flags::Should_be_dead);
+		::ship_cleanup(state.cleanup_ship_index, SHIP_DESTROYED_REDALERT);
+		state.list_unregistered =
+			unregister_fixture_ship_from_ship_obj_list(
+				state.cleanup_ship_index, state.cleanup_object_index) &&
+			unregister_fixture_ship_from_ship_obj_list(
+				state.target_ship_index, state.target_object_index);
+		if (state.invocation < state.authority.size()) {
+			state.authority[state.invocation++] =
+				phase2_seam_handoff_snapshot();
+		}
+	};
+	const auto capture = [](void* opaque) noexcept {
+		const auto& state = *static_cast<Context*>(opaque);
+		GameplayAbSnapshot snapshot;
+		snapshot.controls = game_is_photo_mode_active();
+		snapshot.gameplay_return = state.support_return;
+		snapshot.gameplay_mutations = state.support_flags;
+		snapshot.cargo_advance_count = state.cargo_advance_count;
+		snapshot.cargo_reset_count =
+			static_cast<std::uint64_t>(state.cargo_final_ms);
+		snapshot.cargo_reveal_count = state.cargo_revealed;
+		snapshot.hud_side_effect_count = state.target_display_cargo;
+		return snapshot;
+	};
+
+	const auto prior_photo_mode = Photo_mode_active;
+	const auto prior_player = Player;
+	const auto prior_player_obj = Player_obj;
+	const auto prior_player_ship = Player_ship;
+	const auto prior_player_ai = Player_ai;
+	const auto prior_target = Ai_info[0].target_objnum;
+	const auto prior_game_skill_level = Game_skill_level;
+	const auto prior_new_scanning_behavior = Use_new_scanning_behavior;
+	const auto prior_target_display_cargo = Target_display_cargo;
+	const auto prior_game_sound_count = Snds.size();
+	const auto prior_num_cargo = Num_cargo;
+	const auto prior_cargo_name_zero = Cargo_names[0];
+	char prior_cargo_name_buffer_zero[NAME_LENGTH]{};
+	std::memcpy(prior_cargo_name_buffer_zero,
+		Cargo_names_buf[0],
+		sizeof(prior_cargo_name_buffer_zero));
+	const auto created_ship_info = Ship_info.empty();
+	if (created_ship_info) {
+		Ship_info.emplace_back();
+	}
+	context.ship_info_index = 0;
+	auto& gameplay_class = Ship_info[context.ship_info_index];
+	const auto prior_cmeasure_type = gameplay_class.cmeasure_type;
+	const auto prior_sup_hull_repair_rate = gameplay_class.sup_hull_repair_rate;
+	const auto prior_sup_shield_repair_rate = gameplay_class.sup_shield_repair_rate;
+	const auto prior_sup_subsys_repair_rate = gameplay_class.sup_subsys_repair_rate;
+	const auto prior_scan_time = gameplay_class.scan_time;
+	const auto prior_scan_range_normal = gameplay_class.scan_range_normal;
+	const auto prior_scanning_time_multiplier =
+		gameplay_class.scanning_time_multiplier;
+	const auto prior_scanning_range_multiplier =
+		gameplay_class.scanning_range_multiplier;
+	gameplay_class.cmeasure_type = -1;
+	gameplay_class.sup_hull_repair_rate = 0.0F;
+	gameplay_class.sup_shield_repair_rate = 0.0F;
+	gameplay_class.sup_subsys_repair_rate = 0.0F;
+	gameplay_class.scan_time = 500;
+	gameplay_class.scan_range_normal = 100.0F;
+	gameplay_class.scanning_time_multiplier = 1.0F;
+	gameplay_class.scanning_range_multiplier = 1.0F;
+	ship_level_init();
+	const auto prior_ai_profile = The_mission.ai_profile;
+	const auto prior_countermeasure_capacity = Countermeasures_use_capacity;
+	const auto prior_max_hull = The_mission.support_ships.max_hull_repair_val;
+	const auto prior_max_subsys = The_mission.support_ships.max_subsys_repair_val;
+	const auto prior_disallow = The_mission.support_ships.disallow_rearm;
+	const auto prior_support_hull =
+		The_mission.flags[Mission::Mission_Flags::Support_repairs_hull];
+	if (The_mission.ai_profile == nullptr) {
+		The_mission.ai_profile = &Ai_profiles[0];
+	}
+	Countermeasures_use_capacity = false;
+	The_mission.support_ships.max_hull_repair_val = 0.0F;
+	The_mission.support_ships.max_subsys_repair_val = 0.0F;
+	The_mission.support_ships.disallow_rearm = false;
+	The_mission.flags.remove(Mission::Mission_Flags::Support_repairs_hull);
+	Ship_registry.emplace_back("Telemetry AB isolated ship");
+	context.registry_index = static_cast<int>(Ship_registry.size() - 1U);
+	Ship_registry_map["Telemetry AB isolated ship"] = context.registry_index;
+	context.exited_ship_count = Ships_exited.size();
+	Photo_mode_active = true;
+	Game_skill_level = 0;
+	Use_new_scanning_behavior = false;
+	Cargo_names[0] = Cargo_names_buf[0];
+	strcpy_s(Cargo_names[0], NAME_LENGTH, "Nothing");
+	Num_cargo = 1;
+	if (Snds.size() <= static_cast<std::size_t>(GameSounds::CARGO_REVEAL)) {
+		Snds.resize(static_cast<std::size_t>(GameSounds::CARGO_REVEAL) + 1U);
+	}
+	reset_phase2_mission_observation_state();
+	const auto run =
+		run_phase2_gameplay_repeated(invoke, capture, &context);
+	Photo_mode_active = prior_photo_mode;
+	Player = prior_player;
+	Player_obj = prior_player_obj;
+	Player_ship = prior_player_ship;
+	Player_ai = prior_player_ai;
+	Ai_info[0].target_objnum = prior_target;
+	Game_skill_level = prior_game_skill_level;
+	Use_new_scanning_behavior = prior_new_scanning_behavior;
+	Target_display_cargo = prior_target_display_cargo;
+	Num_cargo = prior_num_cargo;
+	std::memcpy(Cargo_names_buf[0],
+		prior_cargo_name_buffer_zero,
+		sizeof(prior_cargo_name_buffer_zero));
+	Cargo_names[0] = prior_cargo_name_zero;
+	Snds.resize(prior_game_sound_count);
+	The_mission.ai_profile = prior_ai_profile;
+	Countermeasures_use_capacity = prior_countermeasure_capacity;
+	The_mission.support_ships.max_hull_repair_val = prior_max_hull;
+	The_mission.support_ships.max_subsys_repair_val = prior_max_subsys;
+	The_mission.support_ships.disallow_rearm = prior_disallow;
+	The_mission.flags.set(
+		Mission::Mission_Flags::Support_repairs_hull, prior_support_hull);
+	Ship_registry_map.erase("Telemetry AB isolated ship");
+	Ship_registry.pop_back();
+	Ships_exited.resize(context.exited_ship_count);
+	Objects[context.cleanup_object_index].clear();
+	Ships[context.cleanup_ship_index].clear();
+	Ai_info[context.cleanup_ship_index] = ai_info{};
+	Objects[context.target_object_index].clear();
+	Ships[context.target_ship_index].clear();
+	Ai_info[context.target_ship_index] = ai_info{};
+	gameplay_class.cmeasure_type = prior_cmeasure_type;
+	gameplay_class.sup_hull_repair_rate = prior_sup_hull_repair_rate;
+	gameplay_class.sup_shield_repair_rate = prior_sup_shield_repair_rate;
+	gameplay_class.sup_subsys_repair_rate = prior_sup_subsys_repair_rate;
+	gameplay_class.scan_time = prior_scan_time;
+	gameplay_class.scan_range_normal = prior_scan_range_normal;
+	gameplay_class.scanning_time_multiplier = prior_scanning_time_multiplier;
+	gameplay_class.scanning_range_multiplier = prior_scanning_range_multiplier;
+	if (created_ship_info) {
+		Ship_info.pop_back();
+	}
+
+	EXPECT_EQ(run.snapshots[0].controls, run.snapshots[1].controls);
+	EXPECT_EQ(run.snapshots[0].controls, run.snapshots[2].controls);
+	EXPECT_EQ(run.snapshots[0].gameplay_return, run.snapshots[1].gameplay_return);
+	EXPECT_EQ(run.snapshots[0].gameplay_return, run.snapshots[2].gameplay_return);
+	EXPECT_EQ(run.snapshots[0].gameplay_mutations, run.snapshots[1].gameplay_mutations);
+	EXPECT_EQ(run.snapshots[0].gameplay_mutations, run.snapshots[2].gameplay_mutations);
+	EXPECT_EQ(run.snapshots[0].cargo_advance_count, run.snapshots[1].cargo_advance_count);
+	EXPECT_EQ(run.snapshots[0].cargo_advance_count, run.snapshots[2].cargo_advance_count);
+	EXPECT_EQ(run.snapshots[0].cargo_reveal_count, run.snapshots[1].cargo_reveal_count);
+	EXPECT_EQ(run.snapshots[0].cargo_reveal_count, run.snapshots[2].cargo_reveal_count);
+	EXPECT_EQ(run.snapshots[0].cargo_reset_count, run.snapshots[1].cargo_reset_count);
+	EXPECT_EQ(run.snapshots[0].cargo_reset_count, run.snapshots[2].cargo_reset_count);
+	EXPECT_EQ(run.snapshots[0].hud_side_effect_count,
+		run.snapshots[1].hud_side_effect_count);
+	EXPECT_EQ(run.snapshots[0].hud_side_effect_count,
+		run.snapshots[2].hud_side_effect_count);
+	EXPECT_EQ(2U, run.snapshots[0].gameplay_mutations);
+	EXPECT_EQ(2U, run.snapshots[0].cargo_advance_count);
+	EXPECT_EQ(0U, run.snapshots[0].cargo_reset_count);
+	EXPECT_EQ(1U, run.snapshots[0].cargo_reveal_count);
+	EXPECT_EQ(1U, run.snapshots[0].hud_side_effect_count);
+	for (const auto& authority : context.authority) {
+		EXPECT_TRUE(authority.has_ship_cleanup);
+		EXPECT_TRUE(authority.has_support_transition);
+		EXPECT_TRUE(authority.has_control_target);
+		EXPECT_TRUE(authority.has_cargo_authority);
+		EXPECT_EQ(ShipCleanupMode::Vanished,
+			authority.ship_cleanup.mode);
+		EXPECT_EQ(SupportTransitionReason::End,
+			authority.support_transition.reason);
+		EXPECT_EQ(ControlTargetAuthority::Camera,
+			authority.control_target);
+		EXPECT_EQ(CargoScanPhaseObservation::Completed,
+			authority.cargo_authority.phase);
+	}
+	reset_phase2_mission_observation_state();
+	EXPECT_TRUE(context.list_registered);
+	EXPECT_TRUE(context.list_unregistered);
+}
+
+TEST_F(TelemetryPhase2GameplayAbContract,
+	CargoAuthorityThresholdsResetsAndPublishedFactsAreExact)
+{
+	struct Outcome {
+		int strict_range_reset = -1;
+		int boundary_progress = -1;
+		int sensors_preserved = -1;
+		int angle_reset = -1;
+		int changed_target_progress = -1;
+		int completion_final = -1;
+		bool completed = false;
+		std::array<CargoAuthorityFact, 6U> facts{};
+	};
+	struct Context {
+		int player_ship_index = MAX_SHIPS - 3;
+		int player_object_index = MAX_OBJECTS - 3;
+		int target_ship_index = MAX_SHIPS - 4;
+		int target_object_index = MAX_OBJECTS - 4;
+		int ship_info_index = 0;
+		std::size_t invocation = 0U;
+		player test_player;
+		std::array<Outcome, 3U> outcomes{};
+	};
+	Context context;
+	const auto invoke = [](void* opaque) noexcept {
+		auto& state = *static_cast<Context*>(opaque);
+		ASSERT_LT(state.invocation, state.outcomes.size());
+		auto& outcome = state.outcomes[state.invocation++];
+		reset_phase2_seam_handoff();
+
+		auto& player_ship = Ships[state.player_ship_index];
+		auto& player_object = Objects[state.player_object_index];
+		auto& player_ai = Ai_info[state.player_ship_index];
+		auto& target_ship = Ships[state.target_ship_index];
+		auto& target_object = Objects[state.target_object_index];
+		player_ship.clear();
+		list_init(&player_ship.subsys_list);
+		player_ship.weapons.clear();
+		player_ship.objnum = state.player_object_index;
+		player_ship.ai_index = state.player_ship_index;
+		player_ship.ship_info_index = state.ship_info_index;
+		player_object.clear();
+		player_object.type = OBJ_SHIP;
+		player_object.instance = state.player_ship_index;
+		player_object.signature = 43001;
+		player_object.orient = vmd_identity_matrix;
+		player_ai = ai_info{};
+		player_ai.shipnum = state.player_ship_index;
+		player_ai.target_objnum = state.target_object_index;
+
+		target_ship.clear();
+		list_init(&target_ship.subsys_list);
+		target_ship.weapons.clear();
+		target_ship.objnum = state.target_object_index;
+		target_ship.ai_index = state.target_ship_index;
+		target_ship.ship_info_index = state.ship_info_index;
+		target_ship.flags.set(Ship::Ship_Flags::Scannable);
+		target_object.clear();
+		target_object.type = OBJ_SHIP;
+		target_object.instance = state.target_ship_index;
+		target_object.signature = 43002;
+		target_object.radius = 10.0F;
+		target_object.orient = vmd_identity_matrix;
+		Ai_info[state.target_ship_index] = ai_info{};
+		Ai_info[state.target_ship_index].shipnum = state.target_ship_index;
+
+		state.test_player.cargo_inspect_time = 77;
+		Player = &state.test_player;
+		Player_obj = &player_object;
+		Player_ship = &player_ship;
+		Player_ai = &player_ai;
+
+		// The gameplay predicate is strict: distance == scan range is outside.
+		player_ai.current_target_distance = 100.0F;
+		target_object.pos.xyz.z = 50.0F;
+		hud_cargo_scan_update(&target_object, 0.10F);
+		outcome.strict_range_reset = Player->cargo_inspect_time;
+		outcome.facts[0] = phase2_seam_handoff_snapshot().cargo_authority;
+
+		// The angular predicate accepts the stable float point just above its
+		// inclusive CARGO_MIN_DOT_TO_REVEAL boundary.
+		Player->cargo_inspect_time = 0;
+		player_ai.current_target_distance = 99.0F;
+		constexpr auto boundary_dot = 0.951F;
+		target_object.pos.xyz.x =
+			50.0F * std::sqrt(1.0F -
+				boundary_dot * boundary_dot);
+		target_object.pos.xyz.z = 50.0F * boundary_dot;
+		hud_cargo_scan_update(&target_object, 0.10F);
+		outcome.boundary_progress = Player->cargo_inspect_time;
+		outcome.facts[1] = phase2_seam_handoff_snapshot().cargo_authority;
+
+		// Failed sensors preserve existing progress but never advance it.
+		player_ship.subsys_info[SUBSYSTEM_SENSORS].aggregate_max_hits = 1.0F;
+		player_ship.subsys_info[SUBSYSTEM_SENSORS].aggregate_current_hits = 0.0F;
+		hud_cargo_scan_update(&target_object, 0.10F);
+		outcome.sensors_preserved = Player->cargo_inspect_time;
+		outcome.facts[2] = phase2_seam_handoff_snapshot().cargo_authority;
+		player_ship.subsys_info[SUBSYSTEM_SENSORS] = {};
+
+		// Loss of the angle/LOS predicate resets accumulated progress.
+		Player->cargo_inspect_time = 100;
+		target_object.pos.xyz.x = 50.0F;
+		target_object.pos.xyz.z = 0.0F;
+		hud_cargo_scan_update(&target_object, 0.10F);
+		outcome.angle_reset = Player->cargo_inspect_time;
+		outcome.facts[3] = phase2_seam_handoff_snapshot().cargo_authority;
+
+		// Target selection owns the reset; the authority reports the new target.
+		Player->cargo_inspect_time = 0;
+		target_object.signature = 43003;
+		target_object.pos.xyz.x = 0.0F;
+		target_object.pos.xyz.z = 50.0F;
+		hud_cargo_scan_update(&target_object, 0.10F);
+		outcome.changed_target_progress = Player->cargo_inspect_time;
+		outcome.facts[4] = phase2_seam_handoff_snapshot().cargo_authority;
+
+		// Completion is strictly greater than required, then gameplay resets.
+		Player->cargo_inspect_time = 500;
+		hud_cargo_scan_update(&target_object, 0.001F);
+		outcome.completion_final = Player->cargo_inspect_time;
+		outcome.completed =
+			target_ship.flags[Ship::Ship_Flags::Cargo_revealed];
+		outcome.facts[5] = phase2_seam_handoff_snapshot().cargo_authority;
+
+		Player = nullptr;
+		Player_obj = nullptr;
+		Player_ship = nullptr;
+		Player_ai = nullptr;
+	};
+	const auto capture = [](void* opaque) noexcept {
+		const auto& state = *static_cast<Context*>(opaque);
+		const auto& outcome = state.outcomes[state.invocation - 1U];
+		GameplayAbSnapshot snapshot;
+		snapshot.gameplay_return = outcome.changed_target_progress;
+		snapshot.gameplay_mutations =
+			static_cast<std::uint64_t>(outcome.angle_reset);
+		snapshot.cargo_advance_count =
+			static_cast<std::uint64_t>(outcome.boundary_progress);
+		snapshot.cargo_reset_count =
+			static_cast<std::uint64_t>(outcome.strict_range_reset);
+		snapshot.cargo_reveal_count = outcome.completed;
+		snapshot.hud_side_effect_count =
+			static_cast<std::uint64_t>(outcome.sensors_preserved);
+		snapshot.socket_count = outcome.facts.size();
+		return snapshot;
+	};
+
+	const auto prior_player = Player;
+	const auto prior_player_obj = Player_obj;
+	const auto prior_player_ship = Player_ship;
+	const auto prior_player_ai = Player_ai;
+	const auto prior_skill = Game_skill_level;
+	const auto prior_scanning = Use_new_scanning_behavior;
+	const auto prior_sound_count = Snds.size();
+	const auto prior_num_cargo = Num_cargo;
+	const auto prior_cargo_name_zero = Cargo_names[0];
+	char prior_cargo_name_buffer_zero[NAME_LENGTH]{};
+	std::memcpy(prior_cargo_name_buffer_zero,
+		Cargo_names_buf[0], sizeof(prior_cargo_name_buffer_zero));
+	const auto created_ship_info = Ship_info.empty();
+	if (created_ship_info) Ship_info.emplace_back();
+	auto& ship_class = Ship_info[0];
+	const auto prior_scan_time = ship_class.scan_time;
+	const auto prior_range = ship_class.scan_range_normal;
+	const auto prior_time_multiplier = ship_class.scanning_time_multiplier;
+	const auto prior_range_multiplier = ship_class.scanning_range_multiplier;
+	ship_class.scan_time = 500;
+	ship_class.scan_range_normal = 100.0F;
+	ship_class.scanning_time_multiplier = 1.0F;
+	ship_class.scanning_range_multiplier = 1.0F;
+	Game_skill_level = 1;
+	Use_new_scanning_behavior = false;
+	Cargo_names[0] = Cargo_names_buf[0];
+	strcpy_s(Cargo_names[0], NAME_LENGTH, "Nothing");
+	Num_cargo = 1;
+	if (Snds.size() <= static_cast<std::size_t>(GameSounds::CARGO_REVEAL))
+		Snds.resize(static_cast<std::size_t>(GameSounds::CARGO_REVEAL) + 1U);
+
+	const auto run =
+		run_phase2_gameplay_repeated(invoke, capture, &context);
+
+	Player = prior_player;
+	Player_obj = prior_player_obj;
+	Player_ship = prior_player_ship;
+	Player_ai = prior_player_ai;
+	Game_skill_level = prior_skill;
+	Use_new_scanning_behavior = prior_scanning;
+	Snds.resize(prior_sound_count);
+	Num_cargo = prior_num_cargo;
+	std::memcpy(Cargo_names_buf[0],
+		prior_cargo_name_buffer_zero,
+		sizeof(prior_cargo_name_buffer_zero));
+	Cargo_names[0] = prior_cargo_name_zero;
+	ship_class.scan_time = prior_scan_time;
+	ship_class.scan_range_normal = prior_range;
+	ship_class.scanning_time_multiplier = prior_time_multiplier;
+	ship_class.scanning_range_multiplier = prior_range_multiplier;
+	Objects[context.player_object_index].clear();
+	Ships[context.player_ship_index].clear();
+	Ai_info[context.player_ship_index] = ai_info{};
+	Objects[context.target_object_index].clear();
+	Ships[context.target_ship_index].clear();
+	Ai_info[context.target_ship_index] = ai_info{};
+	if (created_ship_info) Ship_info.pop_back();
+	reset_phase2_seam_handoff();
+
+	EXPECT_EQ(run.snapshots[0].gameplay_return,
+		run.snapshots[1].gameplay_return);
+	EXPECT_EQ(run.snapshots[0].gameplay_return,
+		run.snapshots[2].gameplay_return);
+	EXPECT_EQ(run.snapshots[0].gameplay_mutations,
+		run.snapshots[1].gameplay_mutations);
+	EXPECT_EQ(run.snapshots[0].cargo_advance_count,
+		run.snapshots[1].cargo_advance_count);
+	EXPECT_EQ(run.snapshots[0].cargo_reset_count,
+		run.snapshots[1].cargo_reset_count);
+	EXPECT_EQ(run.snapshots[0].cargo_reveal_count,
+		run.snapshots[1].cargo_reveal_count);
+	EXPECT_EQ(run.snapshots[0].hud_side_effect_count,
+		run.snapshots[1].hud_side_effect_count);
+	EXPECT_EQ(run.snapshots[0].gameplay_mutations,
+		run.snapshots[2].gameplay_mutations);
+	EXPECT_EQ(run.snapshots[0].cargo_advance_count,
+		run.snapshots[2].cargo_advance_count);
+	EXPECT_EQ(run.snapshots[0].cargo_reset_count,
+		run.snapshots[2].cargo_reset_count);
+	EXPECT_EQ(run.snapshots[0].cargo_reveal_count,
+		run.snapshots[2].cargo_reveal_count);
+	EXPECT_EQ(run.snapshots[0].hud_side_effect_count,
+		run.snapshots[2].hud_side_effect_count);
+	const auto& outcome = context.outcomes[1];
+	EXPECT_EQ(77, outcome.strict_range_reset);
+	EXPECT_EQ(100, outcome.boundary_progress);
+	EXPECT_EQ(100, outcome.sensors_preserved);
+	EXPECT_EQ(0, outcome.angle_reset);
+	EXPECT_EQ(100, outcome.changed_target_progress);
+	EXPECT_TRUE(outcome.completed);
+	EXPECT_EQ(0, outcome.completion_final);
+	EXPECT_EQ(telemetry::protocol::ScanValidityFlagNone,
+		outcome.facts[0].validity_flags);
+	EXPECT_EQ(77'000U, outcome.facts[0].elapsed_us);
+	EXPECT_EQ(telemetry::protocol::KnownScanValidityFlags,
+		outcome.facts[1].validity_flags);
+	EXPECT_EQ(CargoScanPhaseObservation::Scanning, outcome.facts[1].phase);
+	EXPECT_EQ(100'000U, outcome.facts[1].elapsed_us);
+	EXPECT_EQ(telemetry::protocol::KnownScanValidityFlags,
+		outcome.facts[2].validity_flags);
+	EXPECT_EQ(CargoScanPhaseObservation::Idle, outcome.facts[2].phase);
+	EXPECT_EQ(100'000U, outcome.facts[2].elapsed_us);
+	EXPECT_EQ(telemetry::protocol::ScanValidityFlagInRange,
+		outcome.facts[3].validity_flags);
+	EXPECT_EQ(0U, outcome.facts[3].elapsed_us);
+	EXPECT_EQ(43003U, outcome.facts[4].target_signature);
+	EXPECT_EQ(CargoScanPhaseObservation::Completed, outcome.facts[5].phase);
+	EXPECT_EQ(0U, outcome.facts[5].elapsed_us);
+}
+
+enum class SupportCase {
+	MissionDisallowRearm,
+	WeaponInfoDisallowRearm,
+	AmmunitionMissionRearmPoolClassTeam,
+	CountermeasureMissionRearmPoolClassTeam,
+	CountermeasureCurrentBelowMaximum,
+	MaxHullRepairValMinusOne,
+	MaxHullRepairVal101,
+	MaxSubsysRepairValMinusOne,
+	MaxSubsysRepairVal101,
+	RateAndApplicability,
+	RateAboveOne,
+	RateNaN,
+	SharedOracleEqualsAdapterCapture,
+};
+
+auto evaluation_fields(const SupportWorkEvaluation& value)
+{
+	return std::make_tuple(value.support_repairs_hull_authorized,
+		value.mission_rearm_disallowed,
+		value.weapon_rearm_disallowed,
+		value.hull_repair_applicable,
+		value.shield_repair_applicable,
+		value.subsystem_repair_applicable,
+		value.weapon_energy_rearm_applicable,
+		value.ammunition_rearm_applicable,
+		value.countermeasure_rearm_applicable,
+		value.max_hull_repair_fraction,
+		value.max_subsystem_repair_fraction,
+		value.hull_repair_work,
+		value.shield_repair_work,
+		value.subsystem_repair_work,
+		value.weapon_energy_rearm_work,
+		value.ammunition_rearm_work,
+		value.countermeasure_rearm_work,
+		value.countermeasure_capacity,
+		value.countermeasure_rearm_pool);
+}
+
+struct SupportCaseParam {
+	const char* name;
+	SupportCase value;
+};
+
+SupportWorkInput baseline()
+{
+	SupportWorkInput input;
+	input.support_repairs_hull = true;
+	input.max_hull_repair_val = 50.0F;
+	input.max_subsys_repair_val = 60.0F;
+	input.sup_hull_repair_rate = 0.1F;
+	input.sup_shield_repair_rate = 0.2F;
+	input.sup_subsys_repair_rate = 0.3F;
+	input.hull_current = 20.0F;
+	input.hull_maximum = 100.0F;
+	input.shield_current = 10.0F;
+	input.shield_maximum = 40.0F;
+	input.subsystem_repair_work = 12.0F;
+	input.weapon_energy_current = 10.0F;
+	input.weapon_energy_maximum = 50.0F;
+	input.rearm_component_count = 1U;
+	input.rearm_components[0] = {2, 10, -1, false, false};
+	input.countermeasure_current = 1;
+	input.countermeasure_maximum = 4;
+	input.countermeasure_rearm_pool = -1;
+	return input;
+}
+
+class SupportWorkContract : public ::testing::TestWithParam<SupportCaseParam> {};
+
+TEST_P(SupportWorkContract, ExactBranchesAndSharedOracle)
+{
+	auto input = baseline();
+	auto expected_status = SupportWorkStatus::Valid;
+	switch (GetParam().value) {
+	case SupportCase::MissionDisallowRearm: // mission_disallow_rearm
+		input.mission_disallow_rearm = true;
+		break;
+	case SupportCase::WeaponInfoDisallowRearm: // weapon_info_disallow_rearm
+		input.rearm_components[0].weapon_info_disallow_rearm = true;
+		break;
+	case SupportCase::AmmunitionMissionRearmPoolClassTeam: // mission_rearm_pool_class_team
+		input.rearm_components[0].rearm_pool = 0;
+		break;
+	case SupportCase::CountermeasureMissionRearmPoolClassTeam:
+		input.countermeasure_rearm_pool = 0;
+		break;
+	case SupportCase::CountermeasureCurrentBelowMaximum: // countermeasure_current_below_maximum
+		input.countermeasure_current = 3;
+		input.countermeasure_maximum = 5;
+		break;
+	case SupportCase::MaxHullRepairValMinusOne: // max_hull_repair_val_minus_one
+		input.max_hull_repair_val = -1.0F;
+		expected_status = SupportWorkStatus::UnsupportedEngineState;
+		break;
+	case SupportCase::MaxHullRepairVal101: // max_hull_repair_val_101
+		input.max_hull_repair_val = 101.0F;
+		expected_status = SupportWorkStatus::UnsupportedEngineState;
+		break;
+	case SupportCase::MaxSubsysRepairValMinusOne: // max_subsys_repair_val_minus_one
+		input.max_subsys_repair_val = -1.0F;
+		expected_status = SupportWorkStatus::UnsupportedEngineState;
+		break;
+	case SupportCase::MaxSubsysRepairVal101: // max_subsys_repair_val_101
+		input.max_subsys_repair_val = 101.0F;
+		expected_status = SupportWorkStatus::UnsupportedEngineState;
+		break;
+	case SupportCase::RateAndApplicability: // rate_and_applicability
+		input.sup_hull_repair_rate = 0.0F;
+		input.sup_shield_repair_rate = 0.0F;
+		input.sup_subsys_repair_rate = 0.0F;
+		break;
+	case SupportCase::RateAboveOne:
+		input.sup_hull_repair_rate = 1.01F;
+		expected_status = SupportWorkStatus::UnsupportedEngineState;
+		break;
+	case SupportCase::RateNaN:
+		input.sup_hull_repair_rate = std::numeric_limits<float>::quiet_NaN();
+		expected_status = SupportWorkStatus::UnsupportedEngineState;
+		break;
+	case SupportCase::SharedOracleEqualsAdapterCapture: // shared_oracle_equals_adapter_capture
+		break;
+	}
+
+	SupportWorkEvaluation first;
+	EXPECT_EQ(expected_status, evaluate_support_work(input, first));
+	if (expected_status != SupportWorkStatus::Valid) {
+		const SupportWorkEvaluation zero{};
+		EXPECT_EQ(evaluation_fields(zero), evaluation_fields(first));
+		return;
+	}
+
+	EXPECT_FLOAT_EQ(0.5F, first.max_hull_repair_fraction);
+	EXPECT_FLOAT_EQ(0.6F, first.max_subsystem_repair_fraction);
+	EXPECT_FLOAT_EQ(30.0F, first.hull_repair_work);
+	EXPECT_FLOAT_EQ(30.0F, first.shield_repair_work);
+	EXPECT_FLOAT_EQ(12.0F, first.subsystem_repair_work);
+	EXPECT_FLOAT_EQ(40.0F, first.weapon_energy_rearm_work);
+	EXPECT_EQ(GetParam().value == SupportCase::WeaponInfoDisallowRearm ? 0U : 8U,
+		first.ammunition_rearm_work);
+
+	if (GetParam().value == SupportCase::MissionDisallowRearm) {
+		EXPECT_TRUE(first.mission_rearm_disallowed);
+		EXPECT_FALSE(first.weapon_energy_rearm_applicable);
+		EXPECT_FALSE(first.ammunition_rearm_applicable);
+		EXPECT_TRUE(first.countermeasure_rearm_applicable);
+	} else if (GetParam().value == SupportCase::WeaponInfoDisallowRearm) {
+		EXPECT_TRUE(first.weapon_rearm_disallowed);
+		EXPECT_FALSE(first.ammunition_rearm_applicable);
+		EXPECT_TRUE(first.countermeasure_rearm_applicable);
+	} else if (GetParam().value == SupportCase::AmmunitionMissionRearmPoolClassTeam) {
+		EXPECT_FALSE(first.ammunition_rearm_applicable);
+		EXPECT_TRUE(first.countermeasure_rearm_applicable);
+	} else if (GetParam().value == SupportCase::CountermeasureMissionRearmPoolClassTeam) {
+		EXPECT_TRUE(first.ammunition_rearm_applicable);
+		EXPECT_TRUE(first.countermeasure_rearm_applicable);
+	} else if (GetParam().value == SupportCase::CountermeasureCurrentBelowMaximum) {
+		EXPECT_EQ(5U, first.countermeasure_capacity);
+		EXPECT_EQ(2U, first.countermeasure_rearm_work);
+		EXPECT_TRUE(first.countermeasure_rearm_applicable);
+	} else if (GetParam().value == SupportCase::RateAndApplicability) {
+		EXPECT_FALSE(first.hull_repair_applicable);
+		EXPECT_FALSE(first.shield_repair_applicable);
+		EXPECT_FALSE(first.subsystem_repair_applicable);
+	} else {
+		EXPECT_TRUE(first.hull_repair_applicable);
+		EXPECT_TRUE(first.shield_repair_applicable);
+		EXPECT_TRUE(first.subsystem_repair_applicable);
+		EXPECT_TRUE(first.weapon_energy_rearm_applicable);
+		EXPECT_TRUE(first.ammunition_rearm_applicable);
+		EXPECT_TRUE(first.countermeasure_rearm_applicable);
+	}
+
+	SupportWorkEvaluation second;
+	ASSERT_EQ(SupportWorkStatus::Valid, evaluate_support_work(input, second));
+	EXPECT_EQ(evaluation_fields(first), evaluation_fields(second));
+}
+
+INSTANTIATE_TEST_SUITE_P(FinalB,
+	SupportWorkContract,
+	::testing::Values(
+		SupportCaseParam{"MissionDisallowRearm", SupportCase::MissionDisallowRearm},
+		SupportCaseParam{"WeaponInfoDisallowRearm", SupportCase::WeaponInfoDisallowRearm},
+		SupportCaseParam{"AmmunitionMissionRearmPoolClassTeam", SupportCase::AmmunitionMissionRearmPoolClassTeam},
+		SupportCaseParam{"CountermeasureMissionRearmPoolClassTeam", SupportCase::CountermeasureMissionRearmPoolClassTeam},
+		SupportCaseParam{"CountermeasureCurrentBelowMaximum", SupportCase::CountermeasureCurrentBelowMaximum},
+		SupportCaseParam{"MaxHullRepairValMinusOne", SupportCase::MaxHullRepairValMinusOne},
+		SupportCaseParam{"MaxHullRepairVal101", SupportCase::MaxHullRepairVal101},
+		SupportCaseParam{"MaxSubsysRepairValMinusOne", SupportCase::MaxSubsysRepairValMinusOne},
+		SupportCaseParam{"MaxSubsysRepairVal101", SupportCase::MaxSubsysRepairVal101},
+		SupportCaseParam{"RateAndApplicability", SupportCase::RateAndApplicability},
+		SupportCaseParam{"RateAboveOne", SupportCase::RateAboveOne},
+		SupportCaseParam{"RateNaN", SupportCase::RateNaN},
+		SupportCaseParam{"SharedOracleEqualsAdapterCapture", SupportCase::SharedOracleEqualsAdapterCapture}));
+
+} // namespace

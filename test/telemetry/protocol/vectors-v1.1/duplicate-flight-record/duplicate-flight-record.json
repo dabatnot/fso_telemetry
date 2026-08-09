@@ -1,0 +1,15 @@
+{
+  "expectedValidationError": 29,
+  "expectedValidationErrorName": "DuplicateRecord",
+  "headerVersion": "1.1",
+  "inputFiles": [
+    "duplicate-flight-record.bin"
+  ],
+  "kind": "message-payload",
+  "messageType": 6,
+  "name": "duplicate-flight-record",
+  "notes": "FSTL 1.1 duplicate-flight-record",
+  "schema": "FSTL-1.1",
+  "valid": false,
+  "versionMinor": 1
+}

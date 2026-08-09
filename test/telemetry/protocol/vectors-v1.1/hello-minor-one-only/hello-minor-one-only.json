@@ -1,0 +1,17 @@
+{
+  "expectedCanonicalJson": "expected-v1.1/hello-minor-one-only.json",
+  "expectedValidationError": 0,
+  "expectedValidationErrorName": "None",
+  "headerVersion": "1.0",
+  "inputFiles": [
+    "hello-minor-one-only.bin"
+  ],
+  "kind": "datagram",
+  "messageType": 2,
+  "name": "hello-minor-one-only",
+  "notes": "valid FSTL 1.1 transport/message",
+  "payloadFile": "hello-minor-one-only.payload.bin",
+  "schema": "FSTL-1.1",
+  "valid": true,
+  "versionMinor": 1
+}

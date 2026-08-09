@@ -1,15 +1,14 @@
 #!/usr/bin/env python3
-"""Generate and verify the FSTL 1.0 machine-readable registry.
+"""Verify frozen FSTL 1.0 and generate the additive FSTL 1.1 registry.
 
 The checked-in ``fstl-v1.yaml`` deliberately uses JSON syntax. JSON is a
 subset of YAML 1.2, so the artifact remains consumable without adding a YAML
 dependency to the repository. This tool itself uses only the Python standard
 library.
 
-The normative Markdown remains authoritative. ``--write`` derives the schema
-from its tables; ``--check`` regenerates it in memory and fails on any drift,
-duplicate/colliding registry entry, missing ID, or inconsistent duplicate
-definition in the protocol documents.
+The FSTL 1.0 schema is a byte-frozen input and ordinary ``--write`` mode can
+never refresh it. FSTL 1.1 is deterministically derived from that frozen base
+and carries non-normative product-document provenance.
 """
 
 from __future__ import annotations
@@ -42,16 +41,34 @@ class MarkdownTable:
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 PHASE_DIR = REPO_ROOT / "documentation" / "analysis" / "specs" / "0-Contrat-de-protocole"
-SCHEMA_PATH = REPO_ROOT / "test" / "telemetry" / "protocol" / "schema" / "fstl-v1.yaml"
+PHASE1_DIR = REPO_ROOT / "documentation" / "analysis" / "specs" / "1-Squelette-et-premier-flux"
+SCHEMA_V1_0_PATH = REPO_ROOT / "test" / "telemetry" / "protocol" / "schema" / "fstl-v1.yaml"
+SCHEMA_V1_1_PATH = REPO_ROOT / "test" / "telemetry" / "protocol" / "schema" / "fstl-v1.1.yaml"
+SCHEMA_PATH = SCHEMA_V1_0_PATH
+FROZEN_LEDGER_PATH = REPO_ROOT / "test" / "telemetry" / "protocol" / "fstl-1.0-artifacts.manifest.json"
 CPP_CONSTANTS_PATH = REPO_ROOT / "code" / "telemetry" / "protocol" / "telemetry_protocol_constants.h"
 SCHEMA_VECTOR_CHECKER_PATH = Path(__file__).resolve().with_name("verify_schema_vectors.py")
 
+FROZEN_SCHEMA_V1_0_BYTES = 499_786
+FROZEN_SCHEMA_V1_0_SHA256 = "1d89c4a95a121c178bf85570cd616568fd939942b8d053835069b2d7d6a1f0d4"
+FROZEN_ARTIFACT_COUNT_V1_0 = 438
+FROZEN_ARTIFACT_TREE_SHA256_V1_0 = "9baac6a20db33bcf350066ed533c5581b7117410899d7bc4a6dc24406e47856d"
 SOURCE_NAMES = (
     "01-cadre-normatif-et-perimetre.md",
     "02-format-filaire-et-registres.md",
     "03-session-horloges-fiabilite.md",
     "04-modele-de-donnees-v1.md",
     "05-capabilities-et-vues-specialisees.md",
+    "06-validation-securite-et-conformite.md",
+    "07-livraison-et-tracabilite.md",
+)
+
+PHASE1_SOURCE_NAMES = (
+    "01-cadre-normatif-et-perimetre.md",
+    "02-architecture-contrats-et-interfaces.md",
+    "03-flux-cycle-de-vie-et-concurrence.md",
+    "04-modele-de-donnees-et-regles-metier.md",
+    "05-integration-configuration-et-observabilite.md",
     "06-validation-securite-et-conformite.md",
     "07-livraison-et-tracabilite.md",
 )
@@ -2651,6 +2668,8 @@ def cpp_registry_bindings() -> dict[str, dict[str, object]]:
         "CommPlaybackMode",
         "CommColorMode",
         "CommStopReason",
+        "HudAlertMissileLockState",
+        "HudAlertWarningKind",
     )
     for name in direct_common_enums:
         bindings[name] = {"enum": name}
@@ -2692,6 +2711,8 @@ def cpp_registry_bindings() -> dict[str, dict[str, object]]:
             "known": f"Known{constant_stem}",
             "reserved": f"Reserved{constant_stem}",
         }
+    bindings["StateDomainCoverage"]["known"] = "KnownStateDomainCoverageBitsV1_1"
+    bindings["StateDomainCoverage"]["reserved"] = "ReservedStateDomainCoverageBitsV1_1"
     presence_registries = (
         "CargoScanStatePresence",
         "ClassBankPresence",
@@ -2725,6 +2746,7 @@ def cpp_registry_bindings() -> dict[str, dict[str, object]]:
         "SupportStatePresence",
         "TargetStatePresence",
         "ThreatStatePresence",
+        "HudAlertStatePresence",
         "TurretBankPresence",
         "TurretStatePresence",
         "WeaponManifestPresence",
@@ -2757,8 +2779,10 @@ def verify_cpp_correspondence(
         missing = sorted(set(bindings) - set(registries))
         raise SchemaError(f"C++ registry binding coverage mismatch; missing={missing}")
     bound_enums = {str(binding["enum"]) for binding in bindings.values()}
-    if set(cpp_enums) != bound_enums:
-        missing = sorted(set(cpp_enums) - bound_enums)
+    implementation_only_enums = {"ProtocolMinorNegotiationResult"}
+    comparable_cpp_enums = set(cpp_enums) - implementation_only_enums
+    if comparable_cpp_enums != bound_enums:
+        missing = sorted(comparable_cpp_enums - bound_enums)
         stale = sorted(bound_enums - set(cpp_enums))
         raise SchemaError(f"C++ enum coverage mismatch; unbound={missing}, missing_in_header={stale}")
 
@@ -2829,7 +2853,7 @@ def verify_cpp_correspondence(
 
     first_reserved_checks = {
         "FirstReservedMessageType": 21,
-        "FirstReservedRecordType": 29,
+        "FirstReservedRecordType": 30,
         "FirstReservedCapabilityBit": 5,
         "FirstReservedCapabilityExtensionType": 3,
     }
@@ -2893,6 +2917,19 @@ def verify_cpp_correspondence(
     for name, expected in constant_bindings.items():
         if cpp_constants.get(name) != expected:
             raise SchemaError(f"C++ constant {name} drifts: {cpp_constants.get(name)!r} vs {expected}")
+        verified_constant_names.add(name)
+
+    amendment_constants = {
+        "VersionMinorV1_0": 0,
+        "VersionMinorV1_1": 1,
+        "LatestSupportedVersionMinor": 1,
+        "KnownStateDomainCoverageBitsV1_0": 0x3FF,
+        "KnownStateDomainCoverageBits": 0x3FF,
+        "ReservedStateDomainCoverageBits": 0xFFFFFFFFFFFFFC00,
+    }
+    for name, expected in amendment_constants.items():
+        if cpp_constants.get(name) != expected:
+            raise SchemaError(f"C++ amendment constant {name} drifts: {cpp_constants.get(name)!r} vs {expected}")
         verified_constant_names.add(name)
 
     unverified_constants = sorted(set(cpp_constants) - verified_constant_names)
@@ -3075,6 +3112,36 @@ def build_schema() -> dict[str, object]:
         "schema_format": "FSTL-machine-readable-registry-v1",
         "protocol": "FSTL",
         "wire_version": f"{core_constants['version_major']}.{core_constants['version_minor']}",
+        "wire_version_scope": "frozen FSTL 1.0 compatibility view",
+        "supported_wire_versions": {
+            "1.0": {"minor": 0, "state_domain_known_mask": 0x3FF,
+                    "player_kinematics": "reserved_and_rejected"},
+            "1.1": {"minor": 1, "state_domain_known_mask": 0x7FF,
+                    "player_kinematics": 0x400},
+        },
+        "producer_profiles": {
+            "phase1_minimal": {"minimum_minor": 1, "maximum_minor": 1,
+                               "required_state_domain_coverage": 0x400}
+        },
+        "phase1_player_kinematics_record_set": {
+            "required_always": ["SESSION_STATE", "MISSION_STATE"],
+            "required_when_observed_player_present": ["ENTITY_LIFECYCLE", "FLIGHT_STATE"],
+            "exact_record_set": True,
+            "same_observed_player_entity_id": True,
+            "authority_mode": "SOLO",
+            "visibility_mode": "COCKPIT",
+            "entity_lifecycle_object_type": "SHIP",
+            "entity_lifecycle_presence": 0,
+            "flight_state_presence": 0,
+            "required_manifest_id": 0,
+            "negotiated_capabilities": 0,
+            "event_coverage_state_derived": 0,
+            "event_coverage_exact": 0,
+            "forbidden_records": ["SHIP_IDENTITY"],
+            "promotion": {"requires_core_ship_coverage": True,
+                          "requires_nonzero_manifest_id": True,
+                          "requires_complete_core_ship_record_set": True},
+        },
         "generated_by": "test/telemetry/protocol/tools/fstl_schema.py",
         "normative_sources": source_metadata(sources),
         "scalar_types": parse_scalar_types(doc02),
@@ -3102,6 +3169,18 @@ def build_schema() -> dict[str, object]:
 
 
 def validate_schema_shape(schema: dict[str, object]) -> None:
+    expected_versions = {
+        "1.0": {"minor": 0, "state_domain_known_mask": 0x3FF,
+                "player_kinematics": "reserved_and_rejected"},
+        "1.1": {"minor": 1, "state_domain_known_mask": 0x7FF,
+                "player_kinematics": 0x400},
+    }
+    expected_profiles = {"phase1_minimal": {"minimum_minor": 1, "maximum_minor": 1,
+                                             "required_state_domain_coverage": 0x400}}
+    if schema.get("supported_wire_versions") != expected_versions:
+        raise SchemaError("supported FSTL 1.0/1.1 wire-version contract drift")
+    if schema.get("producer_profiles") != expected_profiles:
+        raise SchemaError("Phase 1 producer profile drift")
     messages = schema.get("message_types")
     records = schema.get("record_types")
     structured_types = schema.get("record_structured_types")
@@ -3110,6 +3189,24 @@ def validate_schema_shape(schema: dict[str, object]) -> None:
     errors = schema.get("validation_errors")
     numeric_registries = schema.get("numeric_registries")
     wire_conventions = schema.get("wire_conventions")
+    phase1 = schema.get("phase1_player_kinematics_record_set")
+    expected_phase1 = {
+        "required_always": ["SESSION_STATE", "MISSION_STATE"],
+        "required_when_observed_player_present": ["ENTITY_LIFECYCLE", "FLIGHT_STATE"],
+        "exact_record_set": True, "same_observed_player_entity_id": True,
+        "authority_mode": "SOLO", "visibility_mode": "COCKPIT",
+        "entity_lifecycle_object_type": "SHIP", "entity_lifecycle_presence": 0,
+        "flight_state_presence": 0, "required_manifest_id": 0,
+        "negotiated_capabilities": 0, "event_coverage_state_derived": 0,
+        "event_coverage_exact": 0, "forbidden_records": ["SHIP_IDENTITY"],
+        "promotion": {"requires_core_ship_coverage": True,
+                      "requires_nonzero_manifest_id": True,
+                      "requires_complete_core_ship_record_set": True},
+    }
+    if not isinstance(phase1, dict):
+        raise SchemaError("missing Phase 1 PLAYER_KINEMATICS record-set contract")
+    if phase1 != expected_phase1:
+        raise SchemaError("Phase 1 PLAYER_KINEMATICS record-set invariant drift")
     if not isinstance(messages, list) or not isinstance(records, list):
         raise SchemaError("schema registries must be arrays")
     if not isinstance(structured_types, list) or not structured_types:
@@ -3123,7 +3220,8 @@ def validate_schema_shape(schema: dict[str, object]) -> None:
     if not isinstance(wire_conventions, dict):
         raise SchemaError("schema wire_conventions must be an object")
     require_contiguous(messages, "id", 1, 20, "schema MessageType")
-    require_contiguous(records, "id", 1, 28, "schema RecordType")
+    record_type_maximum = 29 if schema.get("wire_version") == "1.1" else 28
+    require_contiguous(records, "id", 1, record_type_maximum, "schema RecordType")
     require_contiguous(capabilities, "bit", 0, 4, "schema Capability")
     require_contiguous(errors, "id", 0, 47, "schema ValidationError")
     for registry_name, entries in (
@@ -3333,6 +3431,23 @@ def run_negative_self_tests(schema: dict[str, object]) -> tuple[str, ...]:
         path = Path(directory) / "fstl-v1.yaml"
         write_schema(render_schema(drifted_schema), path)
         expect_failure("checked-artifact-drift", lambda: check_schema(expected, path))
+    phase1_contract = schema["phase1_player_kinematics_record_set"]
+    assert isinstance(phase1_contract, dict)
+    for field in phase1_contract:
+        if field == "promotion":
+            for promotion_field in phase1_contract[field]:
+                mutated = clone(schema)
+                mutated["phase1_player_kinematics_record_set"][field][promotion_field] = False
+                expect_failure(f"phase1-{promotion_field}-drift", lambda value=mutated: validate_schema_shape(value))
+        else:
+            mutated = clone(schema)
+            mutated["phase1_player_kinematics_record_set"][field] = None
+            expect_failure(f"phase1-{field}-drift", lambda value=mutated: validate_schema_shape(value))
+    for label, section in (("supported-wire-versions", "supported_wire_versions"),
+                           ("producer-profiles", "producer_profiles")):
+        mutated = clone(schema)
+        mutated[section] = {}
+        expect_failure(f"{label}-drift", lambda value=mutated: validate_schema_shape(value))
     return tuple(passed)
 
 
@@ -3351,36 +3466,567 @@ def run_schema_vector_self_test(schema_path: Path) -> str:
     return process.stdout.strip()
 
 
+def phase1_provenance_path(index: int) -> str:
+    return (PHASE1_DIR / PHASE1_SOURCE_NAMES[index]).relative_to(REPO_ROOT).as_posix()
+
+
+def load_frozen_v1_0_schema() -> dict[str, object]:
+    try:
+        data = SCHEMA_V1_0_PATH.read_bytes()
+    except OSError as exc:
+        raise SchemaError(f"cannot read frozen FSTL 1.0 schema {SCHEMA_V1_0_PATH}: {exc}") from exc
+    digest = hashlib.sha256(data).hexdigest()
+    if len(data) != FROZEN_SCHEMA_V1_0_BYTES or digest != FROZEN_SCHEMA_V1_0_SHA256:
+        raise SchemaError(
+            f"frozen FSTL 1.0 schema drift: bytes={len(data)}, sha256={digest}"
+        )
+    try:
+        schema = json.loads(data)
+    except json.JSONDecodeError as exc:
+        raise SchemaError(f"frozen FSTL 1.0 schema is invalid JSON: {exc}") from exc
+    if schema.get("wire_version") != "1.0":
+        raise SchemaError("frozen FSTL 1.0 schema identity drift")
+    return schema
+
+
+def load_frozen_v1_0_ledger() -> tuple[dict[str, object], str, int]:
+    try:
+        data = FROZEN_LEDGER_PATH.read_bytes()
+        ledger = json.loads(data)
+    except (OSError, json.JSONDecodeError) as exc:
+        raise SchemaError(f"cannot read FSTL 1.0 frozen-artifact ledger: {exc}") from exc
+    if (ledger.get("schema") != "FSTL-1.0-FROZEN-ARTIFACTS" or
+            ledger.get("wireVersion") != "1.0" or
+            ledger.get("fileCount") != FROZEN_ARTIFACT_COUNT_V1_0 or
+            ledger.get("treeSha256") != FROZEN_ARTIFACT_TREE_SHA256_V1_0):
+        raise SchemaError("FSTL 1.0 frozen-artifact ledger identity drift")
+    return ledger, hashlib.sha256(data).hexdigest(), len(data)
+
+
+def field_by_name(fields: object, name: str) -> dict[str, object]:
+    if not isinstance(fields, list):
+        raise SchemaError(f"schema field collection is not a list while looking for {name}")
+    matches = [field for field in fields if isinstance(field, dict) and field.get("name") == name]
+    if len(matches) != 1:
+        raise SchemaError(f"schema field {name} has {len(matches)} matches")
+    return matches[0]
+
+
+def registry_value_by_name(registry: dict[str, object], name: str) -> dict[str, object]:
+    values = registry.get("values")
+    if not isinstance(values, list):
+        raise SchemaError(f"registry values are missing while looking for {name}")
+    matches = [value for value in values if isinstance(value, dict) and value.get("name") == name]
+    if len(matches) != 1:
+        raise SchemaError(f"registry value {name} has {len(matches)} matches")
+    return matches[0]
+
+
+def build_fstl_v1_1_schema() -> dict[str, object]:
+    """Derive the additive 1.1 view from the immutable 1.0 schema."""
+
+    schema = json.loads(json.dumps(load_frozen_v1_0_schema()))
+    assert isinstance(schema, dict)
+    _, ledger_sha256, ledger_bytes = load_frozen_v1_0_ledger()
+
+    schema["wire_version"] = "1.1"
+    schema["wire_version_scope"] = "additive FSTL 1.1 amendment view"
+    schema.pop("normative_sources", None)
+    schema["base_schema"] = {
+        "path": SCHEMA_V1_0_PATH.relative_to(REPO_ROOT).as_posix(),
+        "wire_version": "1.0",
+        "bytes": FROZEN_SCHEMA_V1_0_BYTES,
+        "sha256": FROZEN_SCHEMA_V1_0_SHA256,
+    }
+    schema["base_artifact_manifest"] = {
+        "path": FROZEN_LEDGER_PATH.relative_to(REPO_ROOT).as_posix(),
+        "schema": "FSTL-1.0-FROZEN-ARTIFACTS",
+        "wire_version": "1.0",
+        "bytes": ledger_bytes,
+        "sha256": ledger_sha256,
+        "file_count": FROZEN_ARTIFACT_COUNT_V1_0,
+        "tree_sha256": FROZEN_ARTIFACT_TREE_SHA256_V1_0,
+    }
+    p1_doc01_path = phase1_provenance_path(0)
+    p1_doc04_path = phase1_provenance_path(3)
+    p1_doc07_path = phase1_provenance_path(6)
+    p3_doc04_path = (
+        "documentation/analysis/specs/3-Ciblage-et-capteurs/"
+        "04-modele-de-donnees-et-regles-metier.md"
+    )
+    schema["amendment_provenance"] = {
+        "normative": False,
+        "player_kinematics": [
+            {"document": p1_doc01_path, "requirements": ["P1-REQ-020"]},
+            {"document": p1_doc04_path, "requirements": ["P1-REQ-020"]},
+            {"document": p1_doc07_path, "requirements": ["P1-REQ-020"]},
+        ],
+        "phase1_minimal_profile": [
+            {"document": p1_doc01_path,
+             "requirements": ["P1-REQ-021", "P1-REQ-022", "P1-REQ-023"]},
+            {"document": p1_doc04_path,
+             "requirements": ["P1-REQ-021", "P1-REQ-022", "P1-REQ-023"]},
+            {"document": p1_doc07_path,
+             "requirements": ["P1-REQ-021", "P1-REQ-022", "P1-REQ-023"]},
+        ],
+        "phase3_radar_projection": [
+            {"document": p3_doc04_path,
+             "requirements": ["P3-REQ-024", "P3-REQ-025", "P3-REQ-033"]},
+        ],
+        "phase3_hud_alerts": [
+            {"document": p3_doc04_path,
+             "requirements": ["P3-REQ-012", "P3-REQ-027", "P3-REQ-033", "P3-REQ-047"]},
+        ],
+    }
+
+    schema["supported_wire_versions"] = {
+        "1.0": {"minor": 0, "state_domain_known_mask": 0x3FF,
+                "player_kinematics": "reserved_and_rejected"},
+        "1.1": {"minor": 1, "state_domain_known_mask": 0x7FF,
+                "player_kinematics": 0x400},
+    }
+    schema["producer_profiles"] = {
+        "phase1_minimal": {"minimum_minor": 1, "maximum_minor": 1,
+                           "required_state_domain_coverage": 0x400}
+    }
+    schema["phase1_player_kinematics_record_set"] = {
+        "required_always": ["SESSION_STATE", "MISSION_STATE"],
+        "required_when_observed_player_present": ["ENTITY_LIFECYCLE", "FLIGHT_STATE"],
+        "exact_record_set": True,
+        "same_observed_player_entity_id": True,
+        "authority_mode": "SOLO",
+        "visibility_mode": "COCKPIT",
+        "entity_lifecycle_object_type": "SHIP",
+        "entity_lifecycle_presence": 0,
+        "flight_state_presence": 0,
+        "required_manifest_id": 0,
+        "negotiated_capabilities": 0,
+        "event_coverage_state_derived": 0,
+        "event_coverage_exact": 0,
+        "forbidden_records": ["SHIP_IDENTITY"],
+        "promotion": {"requires_core_ship_coverage": True,
+                      "requires_nonzero_manifest_id": True,
+                      "requires_complete_core_ship_record_set": True},
+    }
+
+    header = schema.get("datagram_header")
+    if not isinstance(header, dict):
+        raise SchemaError("base schema datagram header is missing")
+    field_by_name(header.get("fields"), "version_minor")["rule"] = (
+        "0 en FSTL 1.0 ; 1 en FSTL 1.1 accepté"
+    )
+    messages = schema.get("message_types")
+    if not isinstance(messages, list):
+        raise SchemaError("base schema message registry is missing")
+    messages_by_id = {int(message["id"]): message for message in messages}
+    field_by_name(messages_by_id[1]["fields"], "min_minor")["rule"] = "mineure minimale supportée, 0 ou 1"
+    field_by_name(messages_by_id[1]["fields"], "max_minor")["rule"] = "mineure maximale supportée, min_minor..1"
+    field_by_name(messages_by_id[2]["fields"], "min_minor")["rule"] = "mineure minimale supportée, 0 ou 1"
+    field_by_name(messages_by_id[2]["fields"], "max_minor")["rule"] = "mineure maximale supportée, min_minor..1"
+    field_by_name(messages_by_id[3]["fields"], "selected_minor")["rule"] = (
+        "0 ou 1 si accepté, plus haute mineure commune"
+    )
+
+    registries = schema.get("numeric_registries")
+    if not isinstance(registries, dict):
+        raise SchemaError("base schema numeric registries are missing")
+    record_type_registry = registries["RecordType"]
+    record_type_registry["reserved"] = {"policy": "reject", "ranges": [[30, 65535]]}
+    record_type_registry["values"].append({
+        "name": "HUD_ALERT_STATE",
+        "value": 29,
+        "source": {"document": p3_doc04_path, "section": "10"},
+    })
+
+    registries["HudAlertStatePresence"] = {
+        "kind": "bitmask",
+        "width_bits": 64,
+        "unknown_policy": "reject",
+        "cpp": {
+            "enum": "HudAlertStatePresenceFlag",
+            "member_prefix": "HudAlertStatePresenceFlag",
+            "known_mask_constant": "KnownHudAlertStatePresenceFlags",
+            "reserved_mask_constant": "ReservedHudAlertStatePresenceFlags",
+        },
+        "source": {"document": p3_doc04_path, "section": "10"},
+        "reserved": {"known_mask": 0x1, "reserved_mask": 0xFFFFFFFFFFFFFFFE},
+        "values": [{"bit": 0, "name": "ACTIVE_WARNING", "value": 0x1}],
+    }
+    registries["HudAlertMissileLockState"] = {
+        "kind": "enum",
+        "width_bits": 8,
+        "unknown_policy": "reject",
+        "cpp": {"enum": "HudAlertMissileLockState"},
+        "source": {"document": p3_doc04_path, "section": "10"},
+        "reserved": {"policy": "reject", "ranges": [[3, 255]]},
+        "values": [
+            {"name": "NONE", "value": 0},
+            {"name": "ATTEMPT", "value": 1},
+            {"name": "ACQUIRED", "value": 2},
+        ],
+    }
+    registries["HudAlertWarningKind"] = {
+        "kind": "enum",
+        "width_bits": 8,
+        "unknown_policy": "reject",
+        "cpp": {"enum": "HudAlertWarningKind"},
+        "source": {"document": p3_doc04_path, "section": "10"},
+        "reserved": {"policy": "reject", "ranges": [[0, 0], [8, 255]]},
+        "values": [
+            {"name": "LAUNCH", "value": 1},
+            {"name": "EVADED", "value": 2},
+            {"name": "COLLISION", "value": 3},
+            {"name": "BLAST", "value": 4},
+            {"name": "ENGINE_WASH", "value": 5},
+            {"name": "EMP", "value": 6},
+            {"name": "OTHER", "value": 7},
+        ],
+    }
+    state_coverage = registries["StateDomainCoverage"]
+    state_coverage["cpp"] = {
+        "enum": "StateDomainCoverageBit",
+        "member_prefix": "StateDomainCoverageBit",
+        "known_mask_constant": "KnownStateDomainCoverageBitsV1_1",
+        "reserved_mask_constant": "ReservedStateDomainCoverageBitsV1_1",
+    }
+    state_coverage["reserved"]["known_mask"] = 0x7FF
+    state_coverage["reserved"]["reserved_mask"] = 0xFFFFFFFFFFFFF800
+    values = state_coverage["values"]
+    values.append({
+        "bit": 10,
+        "name": "PLAYER_KINEMATICS",
+        "value": 0x400,
+        "source": {"document": p1_doc04_path, "section": "2.1"},
+    })
+    values.sort(key=lambda item: int(item["value"]))
+
+    radar_contact_presence = registries["RadarContactsPresence"]
+    radar_contact_presence["reserved"]["known_mask"] = 0xFF
+    radar_contact_presence["reserved"]["reserved_mask"] = 0xFFFFFFFFFFFFFF00
+    radar_contact_presence["values"].append({
+        "bit": 6,
+        "name": "HUD_TYPE_LABEL",
+        "value": 0x40,
+        "source": {"document": p3_doc04_path, "section": "8.2"},
+    })
+    radar_contact_presence["values"].append({
+        "bit": 7,
+        "name": "RADAR_VISUAL",
+        "value": 0x80,
+        "source": {"document": p3_doc04_path, "section": "8.2"},
+    })
+    radar_contact_presence["values"].sort(key=lambda item: int(item["value"]))
+
+    registries["RadarBlipType"] = {
+        "kind": "enum",
+        "width_bits": 8,
+        "unknown_policy": "reject",
+        "cpp": {"enum": "RadarBlipType"},
+        "source": {"document": p3_doc04_path, "section": "8.2"},
+        "reserved": {"policy": "reject", "ranges": [[6, 255]]},
+        "values": [
+            {"name": "JUMP_NODE", "value": 0},
+            {"name": "NAVBUOY_CARGO", "value": 1},
+            {"name": "BOMB", "value": 2},
+            {"name": "WARPING_SHIP", "value": 3},
+            {"name": "TAGGED_SHIP", "value": 4},
+            {"name": "NORMAL_SHIP", "value": 5},
+        ],
+    }
+
+    records = schema.get("record_types")
+    if not isinstance(records, list):
+        raise SchemaError("base schema record registry is missing")
+    session_state = next(record for record in records if int(record["id"]) == 1)
+    field_by_name(session_state["fields"], "state_domain_coverage")["semantics"] = (
+        "domaines garantis complets par rapport au mode ; CORE_SHIP obligatoire en FSTL 1.0 ; "
+        "PLAYER_KINEMATICS obligatoire en FSTL 1.1 et peut être le seul domaine du profil Phase 1"
+    )
+    radar_contacts = next(record for record in records if int(record["id"]) == 18)
+    radar_v1_fields = json.loads(json.dumps(radar_contacts["fields"]))
+    radar_v2_fields = json.loads(json.dumps(radar_v1_fields))
+    velocity_index = next(
+        index for index, field in enumerate(radar_v2_fields)
+        if field["name"] == "velocity_world"
+    )
+    radar_v2_fields[velocity_index + 1:velocity_index + 1] = [
+        {
+            "constraint": "position locale bornée",
+            "name": "radar_local_position",
+            "nature": "A",
+            "position": "10",
+            "semantics": (
+                "contact dans le repère du radar standard capturé au même "
+                "tick que radar_project_contact"
+            ),
+            "wire": "vec3f",
+        },
+        {
+            "constraint": "[0;1,0e12] wu",
+            "name": "radar_projection_distance",
+            "nature": "A",
+            "position": "11",
+            "semantics": "RadarContactProjection.distance du même tick",
+            "wire": "float32",
+        },
+    ]
+    for index, field in enumerate(radar_v2_fields, start=1):
+        field["position"] = str(index)
+    radar_v3_fields = json.loads(json.dumps(radar_v2_fields))
+    radar_v3_fields.append({
+        "constraint": "UTF-8 1..255 octets; vaisseau VISIBLE uniquement",
+        "name": "hud_type_label",
+        "nature": "A",
+        "position": str(len(radar_v3_fields) + 1),
+        "presence_condition": {"bits": [6], "selector": "presence"},
+        "semantics": (
+            "bit 6; exact second line rendered by the FSO Target Box; "
+            "independent from CLASS_MANIFEST"
+        ),
+        "wire": "str<255>",
+    })
+    radar_v4_fields = json.loads(json.dumps(radar_v3_fields))
+    radar_v4_fields.extend([
+        {
+            "constraint": "RGBA final rÃ©solu par FSO",
+            "name": "radar_blip_color",
+            "nature": "A",
+            "position": str(len(radar_v4_fields) + 1),
+            "presence_condition": {"bits": [7], "selector": "presence"},
+            "semantics": "bit 7; couleur autoritaire du blip, alpha inclus",
+            "wire": "rgba8",
+        },
+        {
+            "constraint": "enum FSO fermÃ© 0..5",
+            "name": "radar_blip_type",
+            "nature": "A",
+            "position": str(len(radar_v4_fields) + 2),
+            "presence_condition": {"bits": [7], "selector": "presence"},
+            "semantics": "bit 7; BLIP_TYPE_* autoritaire correspondant Ã  la couleur",
+            "wire": "RadarBlipType",
+        },
+    ])
+    radar_contacts["versions"] = [
+        {"version": 1, "compatibility": "frozen FSTL 1.0 layout",
+         "fields": radar_v1_fields},
+        {"version": 2, "minimum_minor": 1,
+         "required_profile": "CockpitSensors",
+         "compatibility": "explicit; no v1/v2 payload autodetection",
+         "fields": radar_v2_fields},
+        {"version": 3, "minimum_minor": 1,
+         "required_profile": "CockpitSensors",
+         "compatibility": "explicit; v1/v2 byte-identical; no payload autodetection",
+         "fields": radar_v3_fields},
+        {"version": 4, "minimum_minor": 1,
+         "required_profile": "CockpitSensors",
+         "compatibility": "explicit; v4 appends the authoritative radar visual group",
+         "fields": radar_v4_fields},
+    ]
+    radar_contacts["phase3_live_record_version"] = 4
+
+    target_presence = registries["TargetStatePresence"]
+    target_presence["reserved"]["known_mask"] = 0x7FFFF
+    target_presence["reserved"]["reserved_mask"] = 0xFFFFFFFFFFF80000
+    target_presence["values"].append({
+        "bit": 14,
+        "name": "EXACT_HUD_SPEED",
+        "value": 0x4000,
+        "source": {"document": p3_doc04_path, "section": "5.2"},
+    })
+    target_presence["values"].append({
+        "bit": 16,
+        "name": "HUD_TARGET_COLOR",
+        "value": 0x10000,
+        "source": {"document": p3_doc04_path, "section": "5.2"},
+    })
+    target_presence["values"].append({
+        "bit": 17,
+        "name": "HUD_TARGET_SUBSYSTEM_LABEL",
+        "value": 0x20000,
+        "source": {"document": p3_doc04_path, "section": "5.2"},
+    })
+    target_presence["values"].append({
+        "bit": 18,
+        "name": "HUD_LOCK_SUBSYSTEM_LABEL",
+        "value": 0x40000,
+        "source": {"document": p3_doc04_path, "section": "5.2"},
+    })
+    target_presence["values"].append({
+        "bit": 15,
+        "name": "HUD_TYPE_LABEL",
+        "value": 0x8000,
+        "source": {"document": p3_doc04_path, "section": "5.2"},
+    })
+    target_presence["values"].sort(key=lambda item: int(item["value"]))
+
+    target_state = next(record for record in records if int(record["id"]) == 16)
+    target_v1_fields = json.loads(json.dumps(target_state["fields"]))
+    target_v2_fields = json.loads(json.dumps(target_v1_fields))
+    target_v2_fields.append({
+        "constraint": "[0;1,0e12] HUD speed units",
+        "name": "exact_hud_speed",
+        "nature": "A",
+        "position": "25",
+        "presence_condition": {"bits": [14], "selector": "presence"},
+        "semantics": "bit 14; exact target-box display speed after HUD multiplier",
+        "wire": "float32",
+    })
+    target_v3_fields = json.loads(json.dumps(target_v2_fields))
+    target_v3_fields.append({
+        "constraint": "UTF-8 1..255 octets",
+        "name": "hud_type_label",
+        "nature": "A",
+        "position": "26",
+        "presence_condition": {"bits": [15], "selector": "presence"},
+        "semantics": "bit 15; exact second line rendered by the FSO Target Box",
+        "wire": "utf8-string",
+    })
+    target_v4_fields = json.loads(json.dumps(target_v3_fields))
+    target_v4_fields.append({
+        "constraint": "RGBA bright final rÃ©solu par FSO",
+        "name": "hud_target_color",
+        "nature": "A",
+        "position": str(len(target_v4_fields) + 1),
+        "presence_condition": {"bits": [16], "selector": "presence"},
+        "semantics": "bit 16; couleur HUD brillante autoritaire de la cible",
+        "wire": "rgba8",
+    })
+    target_v5_fields = json.loads(json.dumps(target_v4_fields))
+    target_v5_fields.extend([
+        {
+            "constraint": "UTF-8 1..255 octets",
+            "name": "hud_target_subsystem_label",
+            "nature": "A",
+            "position": str(len(target_v5_fields) + 1),
+            "presence_condition": {"bits": [17], "selector": "presence"},
+            "semantics": "bit 17; exact instance-aware subsystem label rendered by the FSO Target Box",
+            "wire": "utf8-string",
+        },
+        {
+            "constraint": "UTF-8 1..255 octets",
+            "name": "hud_lock_subsystem_label",
+            "nature": "A",
+            "position": str(len(target_v5_fields) + 2),
+            "presence_condition": {"bits": [18], "selector": "presence"},
+            "semantics": "bit 18; exact instance-aware subsystem label used by the FSO missile lock",
+            "wire": "utf8-string",
+        },
+    ])
+    for index, field in enumerate(target_v2_fields, start=1):
+        field["position"] = str(index)
+    target_state["versions"] = [
+        {"version": 1, "compatibility": "legacy FSTL 1.1 capture layout",
+         "fields": target_v1_fields},
+        {"version": 2, "minimum_minor": 1,
+         "required_profile": "CockpitSensors",
+         "compatibility": "explicit; no v1/v2 payload autodetection",
+         "fields": target_v2_fields},
+        {"version": 3, "minimum_minor": 1,
+         "required_profile": "CockpitSensors",
+         "compatibility": "explicit; v3 adds the conditional HUD target type label",
+         "fields": target_v3_fields},
+        {"version": 4, "minimum_minor": 1,
+         "required_profile": "CockpitSensors",
+         "compatibility": "explicit; v4 appends the authoritative HUD target color",
+         "fields": target_v4_fields},
+        {"version": 5, "minimum_minor": 1,
+         "required_profile": "CockpitSensors",
+         "compatibility": "explicit; v5 appends authoritative target and lock subsystem HUD labels",
+         "fields": target_v5_fields},
+    ]
+    target_state["phase3_live_record_version"] = 5
+
+    records.append({
+        "id": 29,
+        "name": "HUD_ALERT_STATE",
+        "version": 1,
+        "scope": "player",
+        "delta_atom": "entity_id",
+        "create_delete": "no",
+        "containers": ["FULL_SNAPSHOT", "DELTA"],
+        "minimum_minor": 1,
+        "required_profile": "CockpitSensors",
+        "source": {"document": p3_doc04_path, "section": "10"},
+        "fields": [
+            {"position": "1", "name": "entity_id", "wire": "u64", "constraint": "nonzero", "nature": "A", "semantics": "observed player"},
+            {"position": "2", "name": "presence", "wire": "u64", "constraint": "HudAlertStatePresence", "nature": "A", "semantics": "conditional active warning group"},
+            {"position": "3", "name": "producer_sample_time_us", "wire": "u64", "constraint": "monotonic sample time", "nature": "A", "semantics": "flightHz HUD sample"},
+            {"position": "4", "name": "primary_fire_threat_active", "wire": "bool8", "constraint": "0 or 1", "nature": "A", "semantics": "independent primary-fire threat lamp"},
+            {"position": "5", "name": "missile_lock_state", "wire": "HudAlertMissileLockState", "constraint": "closed enum", "nature": "A", "semantics": "independent missile lock lamp state"},
+            {"position": "6", "name": "warning_kind", "wire": "HudAlertWarningKind", "constraint": "closed enum", "nature": "A", "presence_condition": {"bits": [0], "selector": "presence"}, "semantics": "accepted active HUD warning"},
+            {"position": "7", "name": "warning_instance_id", "wire": "u64", "constraint": "nonzero", "nature": "A", "presence_condition": {"bits": [0], "selector": "presence"}, "semantics": "changes only on accepted warning"},
+            {"position": "8", "name": "warning_remaining_us", "wire": "u64", "constraint": "positive duration", "nature": "A", "presence_condition": {"bits": [0], "selector": "presence"}, "semantics": "remaining game time at sample"},
+            {"position": "9", "name": "warning_text", "wire": "str<511>", "constraint": "UTF-8 1..511 bytes", "nature": "A", "presence_condition": {"bits": [0], "selector": "presence"}, "semantics": "exact localized accepted HUD text"},
+        ],
+    })
+    records.sort(key=lambda record: int(record["id"]))
+
+    correspondence = schema.get("cpp_correspondence")
+    if not isinstance(correspondence, dict):
+        raise SchemaError("base schema C++ correspondence is missing")
+    correspondence["verified_constant_count"] = 182
+    correspondence["verified_enum_count"] = 146
+    correspondence["document_registry_count"] = 138
+    correspondence["bound_registry_count"] = 138
+
+    validate_schema_shape(schema)
+    return schema
+
+
 def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     action = parser.add_mutually_exclusive_group()
-    action.add_argument("--write", action="store_true", help="regenerate the checked-in schema")
-    action.add_argument("--check", action="store_true", help="verify the checked-in schema (default)")
-    action.add_argument("--self-test", action="store_true", help="run negative drift/collision checks after verification")
-    parser.add_argument("--schema", type=Path, default=SCHEMA_PATH, help="override schema path")
+    action.add_argument("--write", action="store_true", help="regenerate only the additive FSTL 1.1 schema")
+    action.add_argument("--check", action="store_true", help="verify checked-in schemas (default)")
+    parser.add_argument("--self-test", action="store_true", help="run negative drift/collision checks after verification")
+    parser.add_argument("--wire-version", choices=("all", "1.0", "1.1"), default="all")
+    parser.add_argument("--schema", type=Path, help="override one selected schema path")
     return parser.parse_args(argv)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(sys.argv[1:] if argv is None else argv)
     try:
-        schema = build_schema()
-        rendered = render_schema(schema)
-        schema_path = args.schema.resolve()
-        if args.write:
-            write_schema(rendered, schema_path)
-        check_schema(rendered, schema_path)
+        if args.schema is not None and args.wire_version == "all":
+            raise SchemaError("--schema requires --wire-version 1.0 or 1.1")
+        if args.write and args.wire_version != "1.1":
+            raise SchemaError(
+                "ordinary write mode is forbidden for frozen FSTL 1.0; "
+                "select --wire-version 1.1"
+            )
+
+        frozen_schema = load_frozen_v1_0_schema()
+        schema = build_fstl_v1_1_schema()
+        rendered_v1_1 = render_schema(schema)
+        v1_0_path = (args.schema.resolve() if args.schema is not None and args.wire_version == "1.0"
+                     else SCHEMA_V1_0_PATH)
+        v1_1_path = (args.schema.resolve() if args.schema is not None and args.wire_version == "1.1"
+                     else SCHEMA_V1_1_PATH)
+
+        if args.wire_version in ("all", "1.0"):
+            data = v1_0_path.read_bytes()
+            if (len(data) != FROZEN_SCHEMA_V1_0_BYTES or
+                    hashlib.sha256(data).hexdigest() != FROZEN_SCHEMA_V1_0_SHA256):
+                raise SchemaError(f"frozen FSTL 1.0 schema drift: {v1_0_path}")
+        if args.wire_version in ("all", "1.1"):
+            if args.write:
+                write_schema(rendered_v1_1, v1_1_path)
+            check_schema(rendered_v1_1, v1_1_path)
+
         negative_tests: tuple[str, ...] = ()
-        vector_self_test = ""
+        vector_self_tests: list[str] = []
         if args.self_test:
             negative_tests = run_negative_self_tests(schema)
-            vector_self_test = run_schema_vector_self_test(schema_path)
-    except SchemaError as exc:
+            if args.wire_version in ("all", "1.0"):
+                vector_self_tests.append(run_schema_vector_self_test(v1_0_path))
+            if args.wire_version in ("all", "1.1"):
+                vector_self_tests.append(run_schema_vector_self_test(v1_1_path))
+    except (OSError, SchemaError, json.JSONDecodeError) as exc:
         print(f"FSTL schema verification failed: {exc}", file=sys.stderr)
         return 1
 
     print(
-        "FSTL schema verified: "
+        "FSTL schemas verified: frozen 1.0 plus additive 1.1; "
         f"{len(schema['message_types'])} messages, "
         f"{len(schema['record_types'])} records, "
         f"{len(schema['capabilities'])} capabilities, "
@@ -3390,7 +4036,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     if negative_tests:
         print(f"FSTL negative self-tests passed: {', '.join(negative_tests)}.")
-    if vector_self_test:
+    for vector_self_test in vector_self_tests:
         print(vector_self_test)
     return 0
 

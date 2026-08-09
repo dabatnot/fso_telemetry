@@ -1,0 +1,1707 @@
+{
+  "schema": "fs2open.telemetry.product-implementation.v1",
+  "phase": 2,
+  "phaseDirectory": "documentation/analysis/specs/2-Vaisseau-complet",
+  "contractFingerprint": "sha256:7c2ab4b95ddb12ae8f0235c987bb6d36e7bae5d0a03845bd6f3fea84a0cbf646",
+  "updatedAtUtc": "2026-08-03T20:07:50Z",
+  "requirements": [
+    {
+      "id": "P2-REQ-001",
+      "observable": "Les garanties produit Phase 1 restent actives.",
+      "expectedAutomatedProof": "suite `telemetry-short`",
+      "implementationStatus": "implemented",
+      "implementationSummary": "Comportement Phase 2 présent et audité : Les garanties produit Phase 1 restent actives.",
+      "implementationPaths": [
+        "code/telemetry"
+      ],
+      "proofs": [
+        {
+          "id": "P2-REQ-001-AUTO-01",
+          "kind": "automated",
+          "command": "ctest --test-dir build -C Release --output-on-failure -L telemetry-short -j 1",
+          "status": "passed",
+          "inputs": [
+            "code/telemetry",
+            "test/src/telemetry",
+            "test/src/CMakeLists.txt",
+            "test/telemetry/tools/check_no_legacy_certification.py"
+          ],
+          "inputFingerprint": "sha256:3158893bb8ed2716d75a3e49db84f5d028cc7b0e6590c0e7e59d1c7f72dfea71",
+          "observedAtUtc": "2026-08-02T21:31:32Z",
+          "result": "16/16 tests telemetry-short passed; the current LastTest.log ended normally after the fresh sequential Release build.",
+          "resultRef": "build/Testing/Temporary/LastTest.log"
+        }
+      ],
+      "requiredObservations": [],
+      "blocker": null
+    },
+    {
+      "id": "P2-REQ-002",
+      "observable": "FSTL 1.0 et les layouts 1.1 existants restent byte-identiques.",
+      "expectedAutomatedProof": "`test_fstl_1_0_freeze.py` + vérificateur 1.1",
+      "implementationStatus": "implemented",
+      "implementationSummary": "Comportement Phase 2 présent et audité : FSTL 1.0 et les layouts 1.1 existants restent byte-identiques.",
+      "implementationPaths": [
+        "code/telemetry/protocol"
+      ],
+      "proofs": [
+        {
+          "id": "P2-REQ-002-AUTO-01",
+          "kind": "automated",
+          "command": "python -B test/telemetry/protocol/tools/test_fstl_1_0_freeze.py ; python -B test/telemetry/protocol/tools/fstl_schema.py --check --wire-version all --self-test",
+          "status": "passed",
+          "inputs": [
+            "code/telemetry/protocol",
+            "test/telemetry/protocol"
+          ],
+          "inputFingerprint": "sha256:ffd30f2e27fce8c0ebc595add99be3252422ebfe5f85d3fe81479fa378099184",
+          "observedAtUtc": "2026-08-03T20:07:50Z",
+          "result": "15/15 freeze tests passed; FSTL 1.0 is frozen and the additive 1.1 schemas, vectors and negative self-tests are verified.",
+          "resultRef": "build/telemetry-observations/fstl-freeze-schema-phase3-preflight.txt"
+        }
+      ],
+      "requiredObservations": [],
+      "blocker": null
+    },
+    {
+      "id": "P2-REQ-003",
+      "observable": "Une session Phase 2 négocie exactement FSTL 1.1.",
+      "expectedAutomatedProof": "`telemetry_phase2_session_transition_tests`",
+      "implementationStatus": "implemented",
+      "implementationSummary": "Comportement Phase 2 présent et audité : Une session Phase 2 négocie exactement FSTL 1.1.",
+      "implementationPaths": [
+        "code/telemetry"
+      ],
+      "proofs": [
+        {
+          "id": "P2-REQ-003-AUTO-01",
+          "kind": "automated",
+          "command": "ctest --test-dir build -C Release --output-on-failure -L telemetry-short -j 1",
+          "status": "passed",
+          "inputs": [
+            "code/telemetry",
+            "test/src/telemetry",
+            "test/src/CMakeLists.txt",
+            "test/telemetry/tools/check_no_legacy_certification.py"
+          ],
+          "inputFingerprint": "sha256:3158893bb8ed2716d75a3e49db84f5d028cc7b0e6590c0e7e59d1c7f72dfea71",
+          "observedAtUtc": "2026-08-02T21:31:32Z",
+          "result": "16/16 tests telemetry-short passed; the current LastTest.log ended normally after the fresh sequential Release build.",
+          "resultRef": "build/Testing/Temporary/LastTest.log"
+        }
+      ],
+      "requiredObservations": [],
+      "blocker": null
+    },
+    {
+      "id": "P2-REQ-004",
+      "observable": "Les masques exacts sont `CoreGate=0x0401` et `CompleteShip=0x0583`.",
+      "expectedAutomatedProof": "`TelemetryPhase2ProfileGate.*FrozenCoverage`",
+      "implementationStatus": "implemented",
+      "implementationSummary": "Comportement Phase 2 présent et audité : Les masques exacts sont `CoreGate=0x0401` et `CompleteShip=0x0583`.",
+      "implementationPaths": [
+        "code/telemetry"
+      ],
+      "proofs": [
+        {
+          "id": "P2-REQ-004-AUTO-01",
+          "kind": "automated",
+          "command": "ctest --test-dir build -C Release --output-on-failure -L telemetry-short -j 1",
+          "status": "passed",
+          "inputs": [
+            "code/telemetry",
+            "test/src/telemetry",
+            "test/src/CMakeLists.txt",
+            "test/telemetry/tools/check_no_legacy_certification.py"
+          ],
+          "inputFingerprint": "sha256:3158893bb8ed2716d75a3e49db84f5d028cc7b0e6590c0e7e59d1c7f72dfea71",
+          "observedAtUtc": "2026-08-02T21:31:32Z",
+          "result": "16/16 tests telemetry-short passed; the current LastTest.log ended normally after the fresh sequential Release build.",
+          "resultRef": "build/Testing/Temporary/LastTest.log"
+        }
+      ],
+      "requiredObservations": [
+        "P2-OBS-01",
+        "P2-OBS-02"
+      ],
+      "blocker": null
+    },
+    {
+      "id": "P2-REQ-005",
+      "observable": "Le profil est choisi une fois à l'initialisation et reste immuable jusqu'au redémarrage.",
+      "expectedAutomatedProof": "`TelemetryConfigContract.VersionTwoRequiresOneClosedPhase2Profile`",
+      "implementationStatus": "implemented",
+      "implementationSummary": "Comportement Phase 2 présent et audité : Le profil est choisi une fois à l'initialisation et reste immuable jusqu'au redémarrage.",
+      "implementationPaths": [
+        "code/telemetry/config.cpp",
+        "code/telemetry/config.h"
+      ],
+      "proofs": [
+        {
+          "id": "P2-REQ-005-AUTO-01",
+          "kind": "automated",
+          "command": "build/bin/Release/unittests.exe --gtest_filter='TelemetryConfigContract.*'",
+          "status": "passed",
+          "inputs": [
+            "code/telemetry/config.cpp",
+            "code/telemetry/config.h",
+            "test/src/telemetry/producer/test_telemetry_config_contract.cpp"
+          ],
+          "inputFingerprint": "sha256:c4e45b1ad86eab4b111d0a81fc97c0bc9d2c3cad611ff3c2289372745fe26ea3",
+          "observedAtUtc": "2026-08-01T15:46:37Z",
+          "result": "18/18 TelemetryConfigContract tests passed.",
+          "resultRef": null
+        }
+      ],
+      "requiredObservations": [
+        "P2-OBS-01"
+      ],
+      "blocker": null
+    },
+    {
+      "id": "P2-REQ-006",
+      "observable": "Le mode livré reste `SOLO + COCKPIT`, non trusted et non headless.",
+      "expectedAutomatedProof": "`TelemetryPhase2ProfileGate.*Eligibility*`",
+      "implementationStatus": "implemented",
+      "implementationSummary": "Comportement Phase 2 présent et audité : Le mode livré reste `SOLO + COCKPIT`, non trusted et non headless.",
+      "implementationPaths": [
+        "code/telemetry"
+      ],
+      "proofs": [
+        {
+          "id": "P2-REQ-006-AUTO-01",
+          "kind": "automated",
+          "command": "ctest --test-dir build -C Release --output-on-failure -L telemetry-short -j 1",
+          "status": "passed",
+          "inputs": [
+            "code/telemetry",
+            "test/src/telemetry",
+            "test/src/CMakeLists.txt",
+            "test/telemetry/tools/check_no_legacy_certification.py"
+          ],
+          "inputFingerprint": "sha256:3158893bb8ed2716d75a3e49db84f5d028cc7b0e6590c0e7e59d1c7f72dfea71",
+          "observedAtUtc": "2026-08-02T21:31:32Z",
+          "result": "16/16 tests telemetry-short passed; the current LastTest.log ended normally after the fresh sequential Release build.",
+          "resultRef": "build/Testing/Temporary/LastTest.log"
+        }
+      ],
+      "requiredObservations": [],
+      "blocker": null
+    },
+    {
+      "id": "P2-REQ-007",
+      "observable": "Le producteur est strictement read-only.",
+      "expectedAutomatedProof": "`telemetry_phase2_runtime_tests`",
+      "implementationStatus": "implemented",
+      "implementationSummary": "Comportement Phase 2 présent et audité : Le producteur est strictement read-only.",
+      "implementationPaths": [
+        "code/telemetry"
+      ],
+      "proofs": [
+        {
+          "id": "P2-REQ-007-AUTO-01",
+          "kind": "automated",
+          "command": "ctest --test-dir build -C Release --output-on-failure -L telemetry-short -j 1",
+          "status": "passed",
+          "inputs": [
+            "code/telemetry",
+            "test/src/telemetry",
+            "test/src/CMakeLists.txt",
+            "test/telemetry/tools/check_no_legacy_certification.py"
+          ],
+          "inputFingerprint": "sha256:3158893bb8ed2716d75a3e49db84f5d028cc7b0e6590c0e7e59d1c7f72dfea71",
+          "observedAtUtc": "2026-08-02T21:31:32Z",
+          "result": "16/16 tests telemetry-short passed; the current LastTest.log ended normally after the fresh sequential Release build.",
+          "resultRef": "build/Testing/Temporary/LastTest.log"
+        }
+      ],
+      "requiredObservations": [],
+      "blocker": null
+    },
+    {
+      "id": "P2-REQ-008",
+      "observable": "Cible, radar, navigation, communication et vidéo restent hors Phase 2.",
+      "expectedAutomatedProof": "`telemetry_phase2_business_state_tests`",
+      "implementationStatus": "implemented",
+      "implementationSummary": "Comportement Phase 2 présent et audité : Cible, radar, navigation, communication et vidéo restent hors Phase 2.",
+      "implementationPaths": [
+        "code/telemetry"
+      ],
+      "proofs": [
+        {
+          "id": "P2-REQ-008-AUTO-01",
+          "kind": "automated",
+          "command": "ctest --test-dir build -C Release --output-on-failure -L telemetry-short -j 1",
+          "status": "passed",
+          "inputs": [
+            "code/telemetry",
+            "test/src/telemetry",
+            "test/src/CMakeLists.txt",
+            "test/telemetry/tools/check_no_legacy_certification.py"
+          ],
+          "inputFingerprint": "sha256:3158893bb8ed2716d75a3e49db84f5d028cc7b0e6590c0e7e59d1c7f72dfea71",
+          "observedAtUtc": "2026-08-02T21:31:32Z",
+          "result": "16/16 tests telemetry-short passed; the current LastTest.log ended normally after the fresh sequential Release build.",
+          "resultRef": "build/Testing/Temporary/LastTest.log"
+        }
+      ],
+      "requiredObservations": [
+        "P2-OBS-04"
+      ],
+      "blocker": null
+    },
+    {
+      "id": "P2-REQ-009",
+      "observable": "L'état publié est capturé sur le thread principal dans des DTO possédés ; le produit n'expose aucun seam d'injection de manifeste.",
+      "expectedAutomatedProof": "`telemetry_phase2_observation_contract_tests` + contrôle statique",
+      "implementationStatus": "implemented",
+      "implementationSummary": "Comportement Phase 2 présent et audité : L'état publié est capturé sur le thread principal dans des DTO possédés ; le produit n'expose aucun seam d'injection de manifeste.",
+      "implementationPaths": [
+        "code/telemetry",
+        "code/ai/aicode.cpp",
+        "code/ship/ship.cpp",
+        "code/playerman/playercontrol.cpp",
+        "code/hud/hudtargetbox.cpp"
+      ],
+      "proofs": [
+        {
+          "id": "P2-REQ-009-AUTO-01",
+          "kind": "automated",
+          "command": "ctest --test-dir build -C Release --output-on-failure -L telemetry-short -j 1",
+          "status": "passed",
+          "inputs": [
+            "code/telemetry",
+            "code/ai/aicode.cpp",
+            "code/ship/ship.cpp",
+            "code/playerman/playercontrol.cpp",
+            "code/hud/hudtargetbox.cpp",
+            "test/src/telemetry",
+            "test/src/CMakeLists.txt",
+            "test/telemetry/tools/check_no_legacy_certification.py"
+          ],
+          "inputFingerprint": "sha256:64844f3aa5b9b0d07ab776a563b28cd3959ae8d604ae703fba399c641d8bd547",
+          "observedAtUtc": "2026-08-02T21:31:32Z",
+          "result": "16/16 tests telemetry-short passed; the current LastTest.log ended normally after the fresh sequential Release build.",
+          "resultRef": "build/Testing/Temporary/LastTest.log"
+        }
+      ],
+      "requiredObservations": [],
+      "blocker": null
+    },
+    {
+      "id": "P2-REQ-010",
+      "observable": "Chaque pointeur, index, signature et type moteur est validé avant lecture.",
+      "expectedAutomatedProof": "`telemetry_phase2_observation_contract_tests`",
+      "implementationStatus": "implemented",
+      "implementationSummary": "Comportement Phase 2 présent et audité : Chaque pointeur, index, signature et type moteur est validé avant lecture.",
+      "implementationPaths": [
+        "code/telemetry",
+        "code/ai/aicode.cpp",
+        "code/ship/ship.cpp",
+        "code/playerman/playercontrol.cpp",
+        "code/hud/hudtargetbox.cpp"
+      ],
+      "proofs": [
+        {
+          "id": "P2-REQ-010-AUTO-01",
+          "kind": "automated",
+          "command": "ctest --test-dir build -C Release --output-on-failure -L telemetry-short -j 1",
+          "status": "passed",
+          "inputs": [
+            "code/telemetry",
+            "code/ai/aicode.cpp",
+            "code/ship/ship.cpp",
+            "code/playerman/playercontrol.cpp",
+            "code/hud/hudtargetbox.cpp",
+            "test/src/telemetry",
+            "test/src/CMakeLists.txt",
+            "test/telemetry/tools/check_no_legacy_certification.py"
+          ],
+          "inputFingerprint": "sha256:64844f3aa5b9b0d07ab776a563b28cd3959ae8d604ae703fba399c641d8bd547",
+          "observedAtUtc": "2026-08-02T21:31:32Z",
+          "result": "16/16 tests telemetry-short passed; the current LastTest.log ended normally after the fresh sequential Release build.",
+          "resultRef": "build/Testing/Temporary/LastTest.log"
+        }
+      ],
+      "requiredObservations": [],
+      "blocker": null
+    },
+    {
+      "id": "P2-REQ-011",
+      "observable": "Le DTO ne conserve ni pointeur, ni vue, ni index moteur différé.",
+      "expectedAutomatedProof": "`DtoOwnsCopiedStringsAndRejectsDeferredSourceAliasing`",
+      "implementationStatus": "implemented",
+      "implementationSummary": "Comportement Phase 2 présent et audité : Le DTO ne conserve ni pointeur, ni vue, ni index moteur différé.",
+      "implementationPaths": [
+        "code/telemetry",
+        "code/ai/aicode.cpp",
+        "code/ship/ship.cpp",
+        "code/playerman/playercontrol.cpp",
+        "code/hud/hudtargetbox.cpp"
+      ],
+      "proofs": [
+        {
+          "id": "P2-REQ-011-AUTO-01",
+          "kind": "automated",
+          "command": "ctest --test-dir build -C Release --output-on-failure -L telemetry-short -j 1",
+          "status": "passed",
+          "inputs": [
+            "code/telemetry",
+            "code/ai/aicode.cpp",
+            "code/ship/ship.cpp",
+            "code/playerman/playercontrol.cpp",
+            "code/hud/hudtargetbox.cpp",
+            "test/src/telemetry",
+            "test/src/CMakeLists.txt",
+            "test/telemetry/tools/check_no_legacy_certification.py"
+          ],
+          "inputFingerprint": "sha256:64844f3aa5b9b0d07ab776a563b28cd3959ae8d604ae703fba399c641d8bd547",
+          "observedAtUtc": "2026-08-02T21:31:32Z",
+          "result": "16/16 tests telemetry-short passed; the current LastTest.log ended normally after the fresh sequential Release build.",
+          "resultRef": "build/Testing/Temporary/LastTest.log"
+        }
+      ],
+      "requiredObservations": [],
+      "blocker": null
+    },
+    {
+      "id": "P2-REQ-012",
+      "observable": "Aucun worker/SPSC ni lecture concurrente des tables moteur n'est introduit.",
+      "expectedAutomatedProof": "contrôle des groupes de sources",
+      "implementationStatus": "implemented",
+      "implementationSummary": "Comportement Phase 2 présent et audité : Aucun worker/SPSC ni lecture concurrente des tables moteur n'est introduit.",
+      "implementationPaths": [
+        "code/telemetry",
+        "code/ai/aicode.cpp",
+        "code/ship/ship.cpp",
+        "code/playerman/playercontrol.cpp",
+        "code/hud/hudtargetbox.cpp"
+      ],
+      "proofs": [
+        {
+          "id": "P2-REQ-012-AUTO-01",
+          "kind": "automated",
+          "command": "ctest --test-dir build -C Release --output-on-failure -L telemetry-short -j 1",
+          "status": "passed",
+          "inputs": [
+            "code/telemetry",
+            "code/ai/aicode.cpp",
+            "code/ship/ship.cpp",
+            "code/playerman/playercontrol.cpp",
+            "code/hud/hudtargetbox.cpp",
+            "test/src/telemetry",
+            "test/src/CMakeLists.txt",
+            "test/telemetry/tools/check_no_legacy_certification.py"
+          ],
+          "inputFingerprint": "sha256:64844f3aa5b9b0d07ab776a563b28cd3959ae8d604ae703fba399c641d8bd547",
+          "observedAtUtc": "2026-08-02T21:31:32Z",
+          "result": "16/16 tests telemetry-short passed; the current LastTest.log ended normally after the fresh sequential Release build.",
+          "resultRef": "build/Testing/Temporary/LastTest.log"
+        }
+      ],
+      "requiredObservations": [],
+      "blocker": null
+    },
+    {
+      "id": "P2-REQ-013",
+      "observable": "Le chemin actif est borné, préalloué et non bloquant.",
+      "expectedAutomatedProof": "`telemetry_phase2_security_bounds_tests`",
+      "implementationStatus": "implemented",
+      "implementationSummary": "Comportement Phase 2 présent et audité : Le chemin actif est borné, préalloué et non bloquant.",
+      "implementationPaths": [
+        "code/telemetry",
+        "code/ai/aicode.cpp",
+        "code/ship/ship.cpp",
+        "code/playerman/playercontrol.cpp",
+        "code/hud/hudtargetbox.cpp"
+      ],
+      "proofs": [
+        {
+          "id": "P2-REQ-013-AUTO-01",
+          "kind": "automated",
+          "command": "ctest --test-dir build -C Release --output-on-failure -L telemetry-short -j 1",
+          "status": "passed",
+          "inputs": [
+            "code/telemetry",
+            "code/ai/aicode.cpp",
+            "code/ship/ship.cpp",
+            "code/playerman/playercontrol.cpp",
+            "code/hud/hudtargetbox.cpp",
+            "test/src/telemetry",
+            "test/src/CMakeLists.txt",
+            "test/telemetry/tools/check_no_legacy_certification.py"
+          ],
+          "inputFingerprint": "sha256:64844f3aa5b9b0d07ab776a563b28cd3959ae8d604ae703fba399c641d8bd547",
+          "observedAtUtc": "2026-08-02T21:31:32Z",
+          "result": "16/16 tests telemetry-short passed; the current LastTest.log ended normally after the fresh sequential Release build.",
+          "resultRef": "build/Testing/Temporary/LastTest.log"
+        }
+      ],
+      "requiredObservations": [
+        "P2-OBS-05"
+      ],
+      "blocker": null
+    },
+    {
+      "id": "P2-REQ-014",
+      "observable": "Keyframe : capture complète cohérente ; tick ordinaire : seuls les blocs dus sont reconstruits.",
+      "expectedAutomatedProof": "`telemetry_phase2_observation_contract_tests`",
+      "implementationStatus": "implemented",
+      "implementationSummary": "Comportement Phase 2 présent et audité : Keyframe : capture complète cohérente ; tick ordinaire : seuls les blocs dus sont reconstruits.",
+      "implementationPaths": [
+        "code/telemetry",
+        "code/ai/aicode.cpp",
+        "code/ship/ship.cpp",
+        "code/playerman/playercontrol.cpp",
+        "code/hud/hudtargetbox.cpp"
+      ],
+      "proofs": [
+        {
+          "id": "P2-REQ-014-AUTO-01",
+          "kind": "automated",
+          "command": "ctest --test-dir build -C Release --output-on-failure -L telemetry-short -j 1",
+          "status": "passed",
+          "inputs": [
+            "code/telemetry",
+            "code/ai/aicode.cpp",
+            "code/ship/ship.cpp",
+            "code/playerman/playercontrol.cpp",
+            "code/hud/hudtargetbox.cpp",
+            "test/src/telemetry",
+            "test/src/CMakeLists.txt",
+            "test/telemetry/tools/check_no_legacy_certification.py"
+          ],
+          "inputFingerprint": "sha256:64844f3aa5b9b0d07ab776a563b28cd3959ae8d604ae703fba399c641d8bd547",
+          "observedAtUtc": "2026-08-02T21:31:32Z",
+          "result": "16/16 tests telemetry-short passed; the current LastTest.log ended normally after the fresh sequential Release build.",
+          "resultRef": "build/Testing/Temporary/LastTest.log"
+        }
+      ],
+      "requiredObservations": [],
+      "blocker": null
+    },
+    {
+      "id": "P2-REQ-015",
+      "observable": "Chaque manifeste contient exactement les classes et armes de sa projection.",
+      "expectedAutomatedProof": "`telemetry_phase2_manifest_tests`",
+      "implementationStatus": "implemented",
+      "implementationSummary": "Comportement Phase 2 présent et audité : Chaque manifeste contient exactement les classes et armes de sa projection.",
+      "implementationPaths": [
+        "code/telemetry"
+      ],
+      "proofs": [
+        {
+          "id": "P2-REQ-015-AUTO-01",
+          "kind": "automated",
+          "command": "ctest --test-dir build -C Release --output-on-failure -L telemetry-short -j 1",
+          "status": "passed",
+          "inputs": [
+            "code/telemetry",
+            "test/src/telemetry",
+            "test/src/CMakeLists.txt",
+            "test/telemetry/tools/check_no_legacy_certification.py"
+          ],
+          "inputFingerprint": "sha256:3158893bb8ed2716d75a3e49db84f5d028cc7b0e6590c0e7e59d1c7f72dfea71",
+          "observedAtUtc": "2026-08-02T21:31:32Z",
+          "result": "16/16 tests telemetry-short passed; the current LastTest.log ended normally after the fresh sequential Release build.",
+          "resultRef": "build/Testing/Temporary/LastTest.log"
+        }
+      ],
+      "requiredObservations": [
+        "P2-OBS-01",
+        "P2-OBS-02"
+      ],
+      "blocker": null
+    },
+    {
+      "id": "P2-REQ-016",
+      "observable": "Aucun snapshot ne référence un manifeste non appliqué au client.",
+      "expectedAutomatedProof": "`telemetry_phase2_runtime_tests`",
+      "implementationStatus": "implemented",
+      "implementationSummary": "Comportement Phase 2 présent et audité : Aucun snapshot ne référence un manifeste non appliqué au client.",
+      "implementationPaths": [
+        "code/telemetry"
+      ],
+      "proofs": [
+        {
+          "id": "P2-REQ-016-AUTO-01",
+          "kind": "automated",
+          "command": "ctest --test-dir build -C Release --output-on-failure -L telemetry-short -j 1",
+          "status": "passed",
+          "inputs": [
+            "code/telemetry",
+            "test/src/telemetry",
+            "test/src/CMakeLists.txt",
+            "test/telemetry/tools/check_no_legacy_certification.py"
+          ],
+          "inputFingerprint": "sha256:3158893bb8ed2716d75a3e49db84f5d028cc7b0e6590c0e7e59d1c7f72dfea71",
+          "observedAtUtc": "2026-08-02T21:31:32Z",
+          "result": "16/16 tests telemetry-short passed; the current LastTest.log ended normally after the fresh sequential Release build.",
+          "resultRef": "build/Testing/Temporary/LastTest.log"
+        }
+      ],
+      "requiredObservations": [],
+      "blocker": null
+    },
+    {
+      "id": "P2-REQ-017",
+      "observable": "Les IDs statiques sont non nuls, stables par génération et indépendants du moteur.",
+      "expectedAutomatedProof": "`telemetry_phase2_manifest_tests`",
+      "implementationStatus": "implemented",
+      "implementationSummary": "Comportement Phase 2 présent et audité : Les IDs statiques sont non nuls, stables par génération et indépendants du moteur.",
+      "implementationPaths": [
+        "code/telemetry"
+      ],
+      "proofs": [
+        {
+          "id": "P2-REQ-017-AUTO-01",
+          "kind": "automated",
+          "command": "ctest --test-dir build -C Release --output-on-failure -L telemetry-short -j 1",
+          "status": "passed",
+          "inputs": [
+            "code/telemetry",
+            "test/src/telemetry",
+            "test/src/CMakeLists.txt",
+            "test/telemetry/tools/check_no_legacy_certification.py"
+          ],
+          "inputFingerprint": "sha256:3158893bb8ed2716d75a3e49db84f5d028cc7b0e6590c0e7e59d1c7f72dfea71",
+          "observedAtUtc": "2026-08-02T21:31:32Z",
+          "result": "16/16 tests telemetry-short passed; the current LastTest.log ended normally after the fresh sequential Release build.",
+          "resultRef": "build/Testing/Temporary/LastTest.log"
+        }
+      ],
+      "requiredObservations": [],
+      "blocker": null
+    },
+    {
+      "id": "P2-REQ-018",
+      "observable": "Fingerprint catalogue : nouveau manifeste puis keyframe ; topologie seule : keyframe.",
+      "expectedAutomatedProof": "`telemetry_phase2_manifest_tests`",
+      "implementationStatus": "implemented",
+      "implementationSummary": "Comportement Phase 2 présent et audité : Fingerprint catalogue : nouveau manifeste puis keyframe ; topologie seule : keyframe.",
+      "implementationPaths": [
+        "code/telemetry"
+      ],
+      "proofs": [
+        {
+          "id": "P2-REQ-018-AUTO-01",
+          "kind": "automated",
+          "command": "ctest --test-dir build -C Release --output-on-failure -L telemetry-short -j 1",
+          "status": "passed",
+          "inputs": [
+            "code/telemetry",
+            "test/src/telemetry",
+            "test/src/CMakeLists.txt",
+            "test/telemetry/tools/check_no_legacy_certification.py"
+          ],
+          "inputFingerprint": "sha256:3158893bb8ed2716d75a3e49db84f5d028cc7b0e6590c0e7e59d1c7f72dfea71",
+          "observedAtUtc": "2026-08-02T21:31:32Z",
+          "result": "16/16 tests telemetry-short passed; the current LastTest.log ended normally after the fresh sequential Release build.",
+          "resultRef": "build/Testing/Temporary/LastTest.log"
+        }
+      ],
+      "requiredObservations": [],
+      "blocker": null
+    },
+    {
+      "id": "P2-REQ-019",
+      "observable": "`CoreGate={joueur}` ; `CompleteShip` ajoute seulement support et docking transitif.",
+      "expectedAutomatedProof": "`telemetry_phase2_closure_tests`",
+      "implementationStatus": "implemented",
+      "implementationSummary": "Comportement Phase 2 présent et audité : `CoreGate={joueur}` ; `CompleteShip` ajoute seulement support et docking transitif.",
+      "implementationPaths": [
+        "code/telemetry"
+      ],
+      "proofs": [
+        {
+          "id": "P2-REQ-019-AUTO-01",
+          "kind": "automated",
+          "command": "ctest --test-dir build -C Release --output-on-failure -L telemetry-short -j 1",
+          "status": "passed",
+          "inputs": [
+            "code/telemetry",
+            "test/src/telemetry",
+            "test/src/CMakeLists.txt",
+            "test/telemetry/tools/check_no_legacy_certification.py"
+          ],
+          "inputFingerprint": "sha256:3158893bb8ed2716d75a3e49db84f5d028cc7b0e6590c0e7e59d1c7f72dfea71",
+          "observedAtUtc": "2026-08-02T21:31:32Z",
+          "result": "16/16 tests telemetry-short passed; the current LastTest.log ended normally after the fresh sequential Release build.",
+          "resultRef": "build/Testing/Temporary/LastTest.log"
+        }
+      ],
+      "requiredObservations": [
+        "P2-OBS-01",
+        "P2-OBS-02"
+      ],
+    "blocker": null
+    },
+    {
+      "id": "P2-REQ-020",
+      "observable": "Toute référence d'entité autorisée résout un lifecycle ; une cible cargo externe est omise, pas sérialisée comme ID opaque.",
+      "expectedAutomatedProof": "`telemetry_phase2_closure_tests`",
+      "implementationStatus": "implemented",
+      "implementationSummary": "Comportement Phase 2 présent et audité : Toute référence d'entité autorisée résout un lifecycle ; une cible cargo externe est omise, pas sérialisée comme ID opaque.",
+      "implementationPaths": [
+        "code/telemetry"
+      ],
+      "proofs": [
+        {
+          "id": "P2-REQ-020-AUTO-01",
+          "kind": "automated",
+          "command": "ctest --test-dir build -C Release --output-on-failure -L telemetry-short -j 1",
+          "status": "passed",
+          "inputs": [
+            "code/telemetry",
+            "test/src/telemetry",
+            "test/src/CMakeLists.txt",
+            "test/telemetry/tools/check_no_legacy_certification.py"
+          ],
+          "inputFingerprint": "sha256:3158893bb8ed2716d75a3e49db84f5d028cc7b0e6590c0e7e59d1c7f72dfea71",
+          "observedAtUtc": "2026-08-02T21:31:32Z",
+          "result": "16/16 tests telemetry-short passed; the current LastTest.log ended normally after the fresh sequential Release build.",
+          "resultRef": "build/Testing/Temporary/LastTest.log"
+        }
+      ],
+      "requiredObservations": [
+        "P2-OBS-04"
+      ],
+    "blocker": null
+    },
+    {
+      "id": "P2-REQ-021",
+      "observable": "Le snapshot contient exactement un `SHIP_IDENTITY` par vaisseau exporté et la classe installée.",
+      "expectedAutomatedProof": "`telemetry_phase2_core_state_tests`",
+      "implementationStatus": "implemented",
+      "implementationSummary": "Comportement Phase 2 présent et audité : Le snapshot contient exactement un `SHIP_IDENTITY` par vaisseau exporté et la classe installée.",
+      "implementationPaths": [
+        "code/telemetry"
+      ],
+      "proofs": [
+        {
+          "id": "P2-REQ-021-AUTO-01",
+          "kind": "automated",
+          "command": "ctest --test-dir build -C Release --output-on-failure -L telemetry-short -j 1",
+          "status": "passed",
+          "inputs": [
+            "code/telemetry",
+            "test/src/telemetry",
+            "test/src/CMakeLists.txt",
+            "test/telemetry/tools/check_no_legacy_certification.py"
+          ],
+          "inputFingerprint": "sha256:3158893bb8ed2716d75a3e49db84f5d028cc7b0e6590c0e7e59d1c7f72dfea71",
+          "observedAtUtc": "2026-08-02T21:31:32Z",
+          "result": "16/16 tests telemetry-short passed; the current LastTest.log ended normally after the fresh sequential Release build.",
+          "resultRef": "build/Testing/Temporary/LastTest.log"
+        }
+      ],
+      "requiredObservations": [
+        "P2-OBS-02"
+      ],
+      "blocker": null
+    },
+    {
+      "id": "P2-REQ-022",
+      "observable": "Coque et protections sont bornées ; seule une quantité courante finie peut être clampée.",
+      "expectedAutomatedProof": "`FiniteCurrentQuantitiesClampAndAreCountedSeparately`",
+      "implementationStatus": "implemented",
+      "implementationSummary": "Comportement Phase 2 présent et audité : Coque et protections sont bornées ; seule une quantité courante finie peut être clampée.",
+      "implementationPaths": [
+        "code/telemetry"
+      ],
+      "proofs": [
+        {
+          "id": "P2-REQ-022-AUTO-01",
+          "kind": "automated",
+          "command": "ctest --test-dir build -C Release --output-on-failure -L telemetry-short -j 1",
+          "status": "passed",
+          "inputs": [
+            "code/telemetry",
+            "test/src/telemetry",
+            "test/src/CMakeLists.txt",
+            "test/telemetry/tools/check_no_legacy_certification.py"
+          ],
+          "inputFingerprint": "sha256:3158893bb8ed2716d75a3e49db84f5d028cc7b0e6590c0e7e59d1c7f72dfea71",
+          "observedAtUtc": "2026-08-02T21:31:32Z",
+          "result": "16/16 tests telemetry-short passed; the current LastTest.log ended normally after the fresh sequential Release build.",
+          "resultRef": "build/Testing/Temporary/LastTest.log"
+        }
+      ],
+      "requiredObservations": [],
+      "blocker": null
+    },
+    {
+      "id": "P2-REQ-023",
+      "observable": "Les 0 à 64 segments de bouclier sont complets, sans hypothèse de quatre quadrants.",
+      "expectedAutomatedProof": "`ShieldCardinalityAndPhysicalMaximumBoundariesAreClosed`",
+      "implementationStatus": "implemented",
+      "implementationSummary": "Comportement Phase 2 présent et audité : Les 0 à 64 segments de bouclier sont complets, sans hypothèse de quatre quadrants.",
+      "implementationPaths": [
+        "code/telemetry"
+      ],
+      "proofs": [
+        {
+          "id": "P2-REQ-023-AUTO-01",
+          "kind": "automated",
+          "command": "ctest --test-dir build -C Release --output-on-failure -L telemetry-short -j 1",
+          "status": "passed",
+          "inputs": [
+            "code/telemetry",
+            "test/src/telemetry",
+            "test/src/CMakeLists.txt",
+            "test/telemetry/tools/check_no_legacy_certification.py"
+          ],
+          "inputFingerprint": "sha256:3158893bb8ed2716d75a3e49db84f5d028cc7b0e6590c0e7e59d1c7f72dfea71",
+          "observedAtUtc": "2026-08-02T21:31:32Z",
+          "result": "16/16 tests telemetry-short passed; the current LastTest.log ended normally after the fresh sequential Release build.",
+          "resultRef": "build/Testing/Temporary/LastTest.log"
+        }
+      ],
+      "requiredObservations": [],
+      "blocker": null
+    },
+    {
+      "id": "P2-REQ-024",
+      "observable": "Chaque sous-système déclaré possède exactement un état ; l'ensemble change par manifeste/keyframe.",
+      "expectedAutomatedProof": "`telemetry_phase2_core_state_tests`",
+      "implementationStatus": "implemented",
+      "implementationSummary": "Comportement Phase 2 présent et audité : Chaque sous-système déclaré possède exactement un état ; l'ensemble change par manifeste/keyframe.",
+      "implementationPaths": [
+        "code/telemetry"
+      ],
+      "proofs": [
+        {
+          "id": "P2-REQ-024-AUTO-01",
+          "kind": "automated",
+          "command": "ctest --test-dir build -C Release --output-on-failure -L telemetry-short -j 1",
+          "status": "passed",
+          "inputs": [
+            "code/telemetry",
+            "test/src/telemetry",
+            "test/src/CMakeLists.txt",
+            "test/telemetry/tools/check_no_legacy_certification.py"
+          ],
+          "inputFingerprint": "sha256:3158893bb8ed2716d75a3e49db84f5d028cc7b0e6590c0e7e59d1c7f72dfea71",
+          "observedAtUtc": "2026-08-02T21:31:32Z",
+          "result": "16/16 tests telemetry-short passed; the current LastTest.log ended normally after the fresh sequential Release build.",
+          "resultRef": "build/Testing/Temporary/LastTest.log"
+        }
+      ],
+      "requiredObservations": [],
+      "blocker": null
+    },
+    {
+      "id": "P2-REQ-025",
+      "observable": "Les tourelles restent limitées aux champs Phase 2 et ne divulguent aucune cible/lock.",
+      "expectedAutomatedProof": "`telemetry_phase2_control_turret_tests`",
+      "implementationStatus": "implemented",
+      "implementationSummary": "Comportement Phase 2 présent et audité : Les tourelles restent limitées aux champs Phase 2 et ne divulguent aucune cible/lock.",
+      "implementationPaths": [
+        "code/telemetry"
+      ],
+      "proofs": [
+        {
+          "id": "P2-REQ-025-AUTO-01",
+          "kind": "automated",
+          "command": "ctest --test-dir build -C Release --output-on-failure -L telemetry-short -j 1",
+          "status": "passed",
+          "inputs": [
+            "code/telemetry",
+            "test/src/telemetry",
+            "test/src/CMakeLists.txt",
+            "test/telemetry/tools/check_no_legacy_certification.py"
+          ],
+          "inputFingerprint": "sha256:3158893bb8ed2716d75a3e49db84f5d028cc7b0e6590c0e7e59d1c7f72dfea71",
+          "observedAtUtc": "2026-08-02T21:31:32Z",
+          "result": "16/16 tests telemetry-short passed; the current LastTest.log ended normally after the fresh sequential Release build.",
+          "resultRef": "build/Testing/Temporary/LastTest.log"
+        }
+      ],
+      "requiredObservations": [],
+      "blocker": null
+    },
+    {
+      "id": "P2-REQ-026",
+      "observable": "ETS reste dans `0..12` et les groupes incompatibles sont omis.",
+      "expectedAutomatedProof": "`EnergyEtsAndFiniteBoundariesAreClosed`",
+      "implementationStatus": "implemented",
+      "implementationSummary": "Comportement Phase 2 présent et audité : ETS reste dans `0..12` et les groupes incompatibles sont omis.",
+      "implementationPaths": [
+        "code/telemetry"
+      ],
+      "proofs": [
+        {
+          "id": "P2-REQ-026-AUTO-01",
+          "kind": "automated",
+          "command": "ctest --test-dir build -C Release --output-on-failure -L telemetry-short -j 1",
+          "status": "passed",
+          "inputs": [
+            "code/telemetry",
+            "test/src/telemetry",
+            "test/src/CMakeLists.txt",
+            "test/telemetry/tools/check_no_legacy_certification.py"
+          ],
+          "inputFingerprint": "sha256:3158893bb8ed2716d75a3e49db84f5d028cc7b0e6590c0e7e59d1c7f72dfea71",
+          "observedAtUtc": "2026-08-02T21:31:32Z",
+          "result": "16/16 tests telemetry-short passed; the current LastTest.log ended normally after the fresh sequential Release build.",
+          "resultRef": "build/Testing/Temporary/LastTest.log"
+        }
+      ],
+      "requiredObservations": [],
+      "blocker": null
+    },
+    {
+      "id": "P2-REQ-027",
+      "observable": "Propulsion et flight sont cohérents à sample time égal ; les cadences indépendantes conservent leur âge.",
+      "expectedAutomatedProof": "`telemetry_phase2_core_state_tests`",
+      "implementationStatus": "implemented",
+      "implementationSummary": "Comportement Phase 2 présent et audité : Propulsion et flight sont cohérents à sample time égal ; les cadences indépendantes conservent leur âge.",
+      "implementationPaths": [
+        "code/telemetry"
+      ],
+      "proofs": [
+        {
+          "id": "P2-REQ-027-AUTO-01",
+          "kind": "automated",
+          "command": "ctest --test-dir build -C Release --output-on-failure -L telemetry-short -j 1",
+          "status": "passed",
+          "inputs": [
+            "code/telemetry",
+            "test/src/telemetry",
+            "test/src/CMakeLists.txt",
+            "test/telemetry/tools/check_no_legacy_certification.py"
+          ],
+          "inputFingerprint": "sha256:3158893bb8ed2716d75a3e49db84f5d028cc7b0e6590c0e7e59d1c7f72dfea71",
+          "observedAtUtc": "2026-08-02T21:31:32Z",
+          "result": "16/16 tests telemetry-short passed; the current LastTest.log ended normally after the fresh sequential Release build.",
+          "resultRef": "build/Testing/Temporary/LastTest.log"
+        }
+      ],
+      "requiredObservations": [],
+      "blocker": null
+    },
+    {
+      "id": "P2-REQ-028",
+      "observable": "`CONTROL_STATE` reproduit les six axes, flags et groupes conditionnels exacts.",
+      "expectedAutomatedProof": "`telemetry_phase2_control_turret_tests`",
+      "implementationStatus": "implemented",
+      "implementationSummary": "Comportement Phase 2 présent et audité : `CONTROL_STATE` reproduit les six axes, flags et groupes conditionnels exacts.",
+      "implementationPaths": [
+        "code/telemetry"
+      ],
+      "proofs": [
+        {
+          "id": "P2-REQ-028-AUTO-01",
+          "kind": "automated",
+          "command": "ctest --test-dir build -C Release --output-on-failure -L telemetry-short -j 1",
+          "status": "passed",
+          "inputs": [
+            "code/telemetry",
+            "test/src/telemetry",
+            "test/src/CMakeLists.txt",
+            "test/telemetry/tools/check_no_legacy_certification.py"
+          ],
+          "inputFingerprint": "sha256:3158893bb8ed2716d75a3e49db84f5d028cc7b0e6590c0e7e59d1c7f72dfea71",
+          "observedAtUtc": "2026-08-02T21:31:32Z",
+          "result": "16/16 tests telemetry-short passed; the current LastTest.log ended normally after the fresh sequential Release build.",
+          "resultRef": "build/Testing/Temporary/LastTest.log"
+        }
+      ],
+      "requiredObservations": [],
+      "blocker": null
+    },
+    {
+      "id": "P2-REQ-029",
+      "observable": "Chaque vaisseau exporté possède un état d'armes complet et hétérogène.",
+      "expectedAutomatedProof": "`telemetry_phase2_weapon_state_tests`",
+      "implementationStatus": "implemented",
+      "implementationSummary": "Comportement Phase 2 présent et audité : chaque vaisseau exporté possède un état d'armes complet et hétérogène ; un timer de détonation distante inactif publie zéro sans convertir la sentinelle moteur, tandis qu'un état actif sans timestamp valide reste rejeté.",
+      "implementationPaths": [
+        "code/telemetry"
+      ],
+      "proofs": [
+        {
+          "id": "P2-REQ-029-AUTO-01",
+          "kind": "automated",
+          "command": "ctest --test-dir build -C Release --output-on-failure -L telemetry-short -j 1",
+          "status": "passed",
+          "inputs": [
+            "code/telemetry",
+            "test/src/telemetry",
+            "test/src/CMakeLists.txt",
+            "test/telemetry/tools/check_no_legacy_certification.py"
+          ],
+          "inputFingerprint": "sha256:3158893bb8ed2716d75a3e49db84f5d028cc7b0e6590c0e7e59d1c7f72dfea71",
+          "observedAtUtc": "2026-08-02T21:31:32Z",
+          "result": "16/16 tests telemetry-short passed; the current LastTest.log ended normally after the fresh sequential Release build.",
+          "resultRef": "build/Testing/Temporary/LastTest.log"
+        }
+      ],
+      "requiredObservations": [
+        "P2-OBS-02"
+      ],
+      "blocker": null
+    },
+    {
+      "id": "P2-REQ-030",
+      "observable": "Le support provient de l'état gameplay et ses transitions terminales restent bornées.",
+      "expectedAutomatedProof": "`telemetry_phase2_lifecycle_support_tests`",
+      "implementationStatus": "implemented",
+      "implementationSummary": "Comportement Phase 2 présent et audité : Le support provient de l'état gameplay et ses transitions terminales restent bornées.",
+      "implementationPaths": [
+        "code/telemetry",
+        "code/ai/aicode.cpp",
+        "code/ship/ship.cpp",
+        "code/playerman/playercontrol.cpp",
+        "code/hud/hudtargetbox.cpp"
+      ],
+      "proofs": [
+        {
+          "id": "P2-REQ-030-AUTO-01",
+          "kind": "automated",
+          "command": "ctest --test-dir build -C Release --output-on-failure -L telemetry-short -j 1",
+          "status": "passed",
+          "inputs": [
+            "code/telemetry",
+            "code/ai/aicode.cpp",
+            "code/ship/ship.cpp",
+            "code/playerman/playercontrol.cpp",
+            "code/hud/hudtargetbox.cpp",
+            "test/src/telemetry",
+            "test/src/CMakeLists.txt",
+            "test/telemetry/tools/check_no_legacy_certification.py"
+          ],
+          "inputFingerprint": "sha256:64844f3aa5b9b0d07ab776a563b28cd3959ae8d604ae703fba399c641d8bd547",
+          "observedAtUtc": "2026-08-02T21:31:32Z",
+          "result": "16/16 tests telemetry-short passed; the current LastTest.log ended normally after the fresh sequential Release build.",
+          "resultRef": "build/Testing/Temporary/LastTest.log"
+        }
+      ],
+      "requiredObservations": [
+        "P2-OBS-02"
+      ],
+      "blocker": null
+    },
+    {
+      "id": "P2-REQ-031",
+      "observable": "Le cargo est lu depuis le gameplay ; cible externe : `NOT_SCANNABLE/HIDDEN`, aucun groupe optionnel et aucune fin de session.",
+      "expectedAutomatedProof": "`CargoTargetOutsidePhase2ClosureIsHiddenWithoutCaptureFailure`",
+      "implementationStatus": "implemented",
+      "implementationSummary": "Comportement Phase 2 présent et audité : Le cargo est lu depuis le gameplay ; cible externe : `NOT_SCANNABLE/HIDDEN`, aucun groupe optionnel et aucune fin de session.",
+      "implementationPaths": [
+        "code/telemetry",
+        "code/ai/aicode.cpp",
+        "code/ship/ship.cpp",
+        "code/playerman/playercontrol.cpp",
+        "code/hud/hudtargetbox.cpp"
+      ],
+      "proofs": [
+        {
+          "id": "P2-REQ-031-AUTO-01",
+          "kind": "automated",
+          "command": "ctest --test-dir build -C Release --output-on-failure -L telemetry-short -j 1",
+          "status": "passed",
+          "inputs": [
+            "code/telemetry",
+            "code/ai/aicode.cpp",
+            "code/ship/ship.cpp",
+            "code/playerman/playercontrol.cpp",
+            "code/hud/hudtargetbox.cpp",
+            "test/src/telemetry",
+            "test/src/CMakeLists.txt",
+            "test/telemetry/tools/check_no_legacy_certification.py"
+          ],
+          "inputFingerprint": "sha256:64844f3aa5b9b0d07ab776a563b28cd3959ae8d604ae703fba399c641d8bd547",
+          "observedAtUtc": "2026-08-02T21:31:32Z",
+          "result": "16/16 tests telemetry-short passed; the current LastTest.log ended normally after the fresh sequential Release build.",
+          "resultRef": "build/Testing/Temporary/LastTest.log"
+        }
+      ],
+      "requiredObservations": [
+        "P2-OBS-04"
+      ],
+    "blocker": null
+    },
+    {
+      "id": "P2-REQ-032",
+      "observable": "Les valeurs dérivées d'affichage restent calculées côté client.",
+      "expectedAutomatedProof": "`telemetry_phase2_business_state_tests`",
+      "implementationStatus": "implemented",
+      "implementationSummary": "Comportement Phase 2 présent et audité : Les valeurs dérivées d'affichage restent calculées côté client.",
+      "implementationPaths": [
+        "code/telemetry"
+      ],
+      "proofs": [
+        {
+          "id": "P2-REQ-032-AUTO-01",
+          "kind": "automated",
+          "command": "ctest --test-dir build -C Release --output-on-failure -L telemetry-short -j 1",
+          "status": "passed",
+          "inputs": [
+            "code/telemetry",
+            "test/src/telemetry",
+            "test/src/CMakeLists.txt",
+            "test/telemetry/tools/check_no_legacy_certification.py"
+          ],
+          "inputFingerprint": "sha256:3158893bb8ed2716d75a3e49db84f5d028cc7b0e6590c0e7e59d1c7f72dfea71",
+          "observedAtUtc": "2026-08-02T21:31:32Z",
+          "result": "16/16 tests telemetry-short passed; the current LastTest.log ended normally after the fresh sequential Release build.",
+          "resultRef": "build/Testing/Temporary/LastTest.log"
+        }
+      ],
+      "requiredObservations": [],
+      "blocker": null
+    },
+    {
+      "id": "P2-REQ-033",
+      "observable": "Les maxima invalides/non finis et structures impossibles sont rejetés ; les normalisations permises sont comptées séparément.",
+      "expectedAutomatedProof": "`telemetry_phase2_observation_contract_tests`",
+      "implementationStatus": "implemented",
+      "implementationSummary": "Comportement Phase 2 présent et audité : Les maxima invalides/non finis et structures impossibles sont rejetés ; les normalisations permises sont comptées séparément.",
+      "implementationPaths": [
+        "code/telemetry"
+      ],
+      "proofs": [
+        {
+          "id": "P2-REQ-033-AUTO-01",
+          "kind": "automated",
+          "command": "ctest --test-dir build -C Release --output-on-failure -L telemetry-short -j 1",
+          "status": "passed",
+          "inputs": [
+            "code/telemetry",
+            "test/src/telemetry",
+            "test/src/CMakeLists.txt",
+            "test/telemetry/tools/check_no_legacy_certification.py"
+          ],
+          "inputFingerprint": "sha256:3158893bb8ed2716d75a3e49db84f5d028cc7b0e6590c0e7e59d1c7f72dfea71",
+          "observedAtUtc": "2026-08-02T21:31:32Z",
+          "result": "16/16 tests telemetry-short passed; the current LastTest.log ended normally after the fresh sequential Release build.",
+          "resultRef": "build/Testing/Temporary/LastTest.log"
+        }
+      ],
+      "requiredObservations": [
+        "P2-OBS-05"
+      ],
+      "blocker": null
+    },
+    {
+      "id": "P2-REQ-034",
+      "observable": "Apparition et respawn allouent des IDs monotones distincts.",
+      "expectedAutomatedProof": "`telemetry_phase2_lifecycle_support_tests`",
+      "implementationStatus": "implemented",
+      "implementationSummary": "Comportement Phase 2 présent et audité : Apparition et respawn allouent des IDs monotones distincts.",
+      "implementationPaths": [
+        "code/telemetry"
+      ],
+      "proofs": [
+        {
+          "id": "P2-REQ-034-AUTO-01",
+          "kind": "automated",
+          "command": "ctest --test-dir build -C Release --output-on-failure -L telemetry-short -j 1",
+          "status": "passed",
+          "inputs": [
+            "code/telemetry",
+            "test/src/telemetry",
+            "test/src/CMakeLists.txt",
+            "test/telemetry/tools/check_no_legacy_certification.py"
+          ],
+          "inputFingerprint": "sha256:3158893bb8ed2716d75a3e49db84f5d028cc7b0e6590c0e7e59d1c7f72dfea71",
+          "observedAtUtc": "2026-08-02T21:31:32Z",
+          "result": "16/16 tests telemetry-short passed; the current LastTest.log ended normally after the fresh sequential Release build.",
+          "resultRef": "build/Testing/Temporary/LastTest.log"
+        }
+      ],
+      "requiredObservations": [],
+      "blocker": null
+    },
+    {
+      "id": "P2-REQ-035",
+      "observable": "Lifecycle et événements respectent leurs fences jusqu'à la baseline connaissable.",
+      "expectedAutomatedProof": "`telemetry_phase2_lifecycle_support_tests`",
+      "implementationStatus": "implemented",
+      "implementationSummary": "Comportement Phase 2 présent et audité : Lifecycle et événements respectent leurs fences jusqu'à la baseline connaissable.",
+      "implementationPaths": [
+        "code/telemetry"
+      ],
+      "proofs": [
+        {
+          "id": "P2-REQ-035-AUTO-01",
+          "kind": "automated",
+          "command": "ctest --test-dir build -C Release --output-on-failure -L telemetry-short -j 1",
+          "status": "passed",
+          "inputs": [
+            "code/telemetry",
+            "test/src/telemetry",
+            "test/src/CMakeLists.txt",
+            "test/telemetry/tools/check_no_legacy_certification.py"
+          ],
+          "inputFingerprint": "sha256:3158893bb8ed2716d75a3e49db84f5d028cc7b0e6590c0e7e59d1c7f72dfea71",
+          "observedAtUtc": "2026-08-02T21:31:32Z",
+          "result": "16/16 tests telemetry-short passed; the current LastTest.log ended normally after the fresh sequential Release build.",
+          "resultRef": "build/Testing/Temporary/LastTest.log"
+        }
+      ],
+      "requiredObservations": [],
+      "blocker": null
+    },
+    {
+      "id": "P2-REQ-036",
+      "observable": "Snapshot initial et keyframes sont exhaustifs et atomiques après `ACK APPLIED`.",
+      "expectedAutomatedProof": "`telemetry_phase2_replication_tests`",
+      "implementationStatus": "implemented",
+      "implementationSummary": "Comportement Phase 2 présent et audité : Snapshot initial et keyframes sont exhaustifs et atomiques après `ACK APPLIED`.",
+      "implementationPaths": [
+        "code/telemetry"
+      ],
+      "proofs": [
+        {
+          "id": "P2-REQ-036-AUTO-01",
+          "kind": "automated",
+          "command": "ctest --test-dir build -C Release --output-on-failure -L telemetry-short -j 1",
+          "status": "passed",
+          "inputs": [
+            "code/telemetry",
+            "test/src/telemetry",
+            "test/src/CMakeLists.txt",
+            "test/telemetry/tools/check_no_legacy_certification.py"
+          ],
+          "inputFingerprint": "sha256:3158893bb8ed2716d75a3e49db84f5d028cc7b0e6590c0e7e59d1c7f72dfea71",
+          "observedAtUtc": "2026-08-02T21:31:32Z",
+          "result": "16/16 tests telemetry-short passed; the current LastTest.log ended normally after the fresh sequential Release build.",
+          "resultRef": "build/Testing/Temporary/LastTest.log"
+        }
+      ],
+      "requiredObservations": [],
+      "blocker": null
+    },
+    {
+      "id": "P2-REQ-037",
+      "observable": "Chaque delta est cumulatif contre la baseline et se remplace par une keyframe s'il dépasse 1 Mio.",
+      "expectedAutomatedProof": "`telemetry_phase2_replication_tests`",
+      "implementationStatus": "implemented",
+      "implementationSummary": "Comportement Phase 2 présent et audité : Chaque delta est cumulatif contre la baseline et se remplace par une keyframe s'il dépasse 1 Mio.",
+      "implementationPaths": [
+        "code/telemetry"
+      ],
+      "proofs": [
+        {
+          "id": "P2-REQ-037-AUTO-01",
+          "kind": "automated",
+          "command": "ctest --test-dir build -C Release --output-on-failure -L telemetry-short -j 1",
+          "status": "passed",
+          "inputs": [
+            "code/telemetry",
+            "test/src/telemetry",
+            "test/src/CMakeLists.txt",
+            "test/telemetry/tools/check_no_legacy_certification.py"
+          ],
+          "inputFingerprint": "sha256:3158893bb8ed2716d75a3e49db84f5d028cc7b0e6590c0e7e59d1c7f72dfea71",
+          "observedAtUtc": "2026-08-02T21:31:32Z",
+          "result": "16/16 tests telemetry-short passed; the current LastTest.log ended normally after the fresh sequential Release build.",
+          "resultRef": "build/Testing/Temporary/LastTest.log"
+        }
+      ],
+      "requiredObservations": [],
+      "blocker": null
+    },
+    {
+      "id": "P2-REQ-038",
+      "observable": "L'unité de remplacement est l'atome FSTL complet.",
+      "expectedAutomatedProof": "`telemetry_phase2_replication_tests`",
+      "implementationStatus": "implemented",
+      "implementationSummary": "Comportement Phase 2 présent et audité : L'unité de remplacement est l'atome FSTL complet.",
+      "implementationPaths": [
+        "code/telemetry"
+      ],
+      "proofs": [
+        {
+          "id": "P2-REQ-038-AUTO-01",
+          "kind": "automated",
+          "command": "ctest --test-dir build -C Release --output-on-failure -L telemetry-short -j 1",
+          "status": "passed",
+          "inputs": [
+            "code/telemetry",
+            "test/src/telemetry",
+            "test/src/CMakeLists.txt",
+            "test/telemetry/tools/check_no_legacy_certification.py"
+          ],
+          "inputFingerprint": "sha256:3158893bb8ed2716d75a3e49db84f5d028cc7b0e6590c0e7e59d1c7f72dfea71",
+          "observedAtUtc": "2026-08-02T21:31:32Z",
+          "result": "16/16 tests telemetry-short passed; the current LastTest.log ended normally after the fresh sequential Release build.",
+          "resultRef": "build/Testing/Temporary/LastTest.log"
+        }
+      ],
+      "requiredObservations": [],
+      "blocker": null
+    },
+    {
+      "id": "P2-REQ-039",
+      "observable": "`DELETE` n'est utilisé que par les records qui l'autorisent.",
+      "expectedAutomatedProof": "`telemetry_phase2_replication_tests`",
+      "implementationStatus": "implemented",
+      "implementationSummary": "Comportement Phase 2 présent et audité : `DELETE` n'est utilisé que par les records qui l'autorisent.",
+      "implementationPaths": [
+        "code/telemetry"
+      ],
+      "proofs": [
+        {
+          "id": "P2-REQ-039-AUTO-01",
+          "kind": "automated",
+          "command": "ctest --test-dir build -C Release --output-on-failure -L telemetry-short -j 1",
+          "status": "passed",
+          "inputs": [
+            "code/telemetry",
+            "test/src/telemetry",
+            "test/src/CMakeLists.txt",
+            "test/telemetry/tools/check_no_legacy_certification.py"
+          ],
+          "inputFingerprint": "sha256:3158893bb8ed2716d75a3e49db84f5d028cc7b0e6590c0e7e59d1c7f72dfea71",
+          "observedAtUtc": "2026-08-02T21:31:32Z",
+          "result": "16/16 tests telemetry-short passed; the current LastTest.log ended normally after the fresh sequential Release build.",
+          "resultRef": "build/Testing/Temporary/LastTest.log"
+        }
+      ],
+      "requiredObservations": [],
+      "blocker": null
+    },
+    {
+      "id": "P2-REQ-040",
+      "observable": "Une perte unique converge sur le delta cumulatif ou la keyframe suivante, sans campagne probabiliste.",
+      "expectedAutomatedProof": "`telemetry_phase2_replication_tests`",
+      "implementationStatus": "implemented",
+      "implementationSummary": "Comportement Phase 2 présent et audité : Une perte unique converge sur le delta cumulatif ou la keyframe suivante, sans campagne probabiliste.",
+      "implementationPaths": [
+        "code/telemetry"
+      ],
+      "proofs": [
+        {
+          "id": "P2-REQ-040-AUTO-01",
+          "kind": "automated",
+          "command": "ctest --test-dir build -C Release --output-on-failure -L telemetry-short -j 1",
+          "status": "passed",
+          "inputs": [
+            "code/telemetry",
+            "test/src/telemetry",
+            "test/src/CMakeLists.txt",
+            "test/telemetry/tools/check_no_legacy_certification.py"
+          ],
+          "inputFingerprint": "sha256:3158893bb8ed2716d75a3e49db84f5d028cc7b0e6590c0e7e59d1c7f72dfea71",
+          "observedAtUtc": "2026-08-02T21:31:32Z",
+          "result": "16/16 tests telemetry-short passed; the current LastTest.log ended normally after the fresh sequential Release build.",
+          "resultRef": "build/Testing/Temporary/LastTest.log"
+        }
+      ],
+      "requiredObservations": [
+        "P2-OBS-05"
+      ],
+      "blocker": null
+    },
+    {
+      "id": "P2-REQ-041",
+      "observable": "Configuration : `systemsHz=1..20`; v2 exige `phase2Profile`; v1 migre explicitement vers `CompleteShip`.",
+      "expectedAutomatedProof": "`TelemetryConfigContract.*`",
+      "implementationStatus": "implemented",
+      "implementationSummary": "Comportement Phase 2 présent et audité : Configuration : `systemsHz=1..20`; v2 exige `phase2Profile`; v1 migre explicitement vers `CompleteShip`.",
+      "implementationPaths": [
+        "code/telemetry/config.cpp",
+        "code/telemetry/config.h"
+      ],
+      "proofs": [
+        {
+          "id": "P2-REQ-041-AUTO-01",
+          "kind": "automated",
+          "command": "build/bin/Release/unittests.exe --gtest_filter='TelemetryConfigContract.*'",
+          "status": "passed",
+          "inputs": [
+            "code/telemetry/config.cpp",
+            "code/telemetry/config.h",
+            "test/src/telemetry/producer/test_telemetry_config_contract.cpp"
+          ],
+          "inputFingerprint": "sha256:c4e45b1ad86eab4b111d0a81fc97c0bc9d2c3cad611ff3c2289372745fe26ea3",
+          "observedAtUtc": "2026-08-01T15:46:37Z",
+          "result": "18/18 TelemetryConfigContract tests passed.",
+          "resultRef": null
+        }
+      ],
+      "requiredObservations": [
+        "P2-OBS-01",
+        "P2-OBS-02"
+      ],
+      "blocker": null
+    },
+    {
+      "id": "P2-REQ-042",
+      "observable": "Les limites sont appliquées avant cast/allocation ; maxima manifestes : 1033 et 4740, sans image artificielle de 65 535 entrées.",
+      "expectedAutomatedProof": "`telemetry_phase2_security_bounds_tests`",
+      "implementationStatus": "implemented",
+      "implementationSummary": "Comportement Phase 2 présent et audité : Les limites sont appliquées avant cast/allocation ; maxima manifestes : 1033 et 4740, sans image artificielle de 65 535 entrées.",
+      "implementationPaths": [
+        "code/telemetry"
+      ],
+      "proofs": [
+        {
+          "id": "P2-REQ-042-AUTO-01",
+          "kind": "automated",
+          "command": "ctest --test-dir build -C Release --output-on-failure -L telemetry-short -j 1",
+          "status": "passed",
+          "inputs": [
+            "code/telemetry",
+            "test/src/telemetry",
+            "test/src/CMakeLists.txt",
+            "test/telemetry/tools/check_no_legacy_certification.py"
+          ],
+          "inputFingerprint": "sha256:3158893bb8ed2716d75a3e49db84f5d028cc7b0e6590c0e7e59d1c7f72dfea71",
+          "observedAtUtc": "2026-08-02T21:31:32Z",
+          "result": "16/16 tests telemetry-short passed; the current LastTest.log ended normally after the fresh sequential Release build.",
+          "resultRef": "build/Testing/Temporary/LastTest.log"
+        }
+      ],
+      "requiredObservations": [
+        "P2-OBS-05"
+      ],
+      "blocker": null
+    },
+    {
+      "id": "P2-REQ-043",
+      "observable": "Les métriques distinguent collecte, manifeste, image, diff, baseline, rejets et normalisations.",
+      "expectedAutomatedProof": "`telemetry_phase2_runtime_tests`",
+      "implementationStatus": "implemented",
+      "implementationSummary": "Comportement Phase 2 présent et audité : Les métriques distinguent collecte, manifeste, image, diff, baseline, rejets et normalisations.",
+      "implementationPaths": [
+        "code/telemetry"
+      ],
+      "proofs": [
+        {
+          "id": "P2-REQ-043-AUTO-01",
+          "kind": "automated",
+          "command": "ctest --test-dir build -C Release --output-on-failure -L telemetry-short -j 1",
+          "status": "passed",
+          "inputs": [
+            "code/telemetry",
+            "test/src/telemetry",
+            "test/src/CMakeLists.txt",
+            "test/telemetry/tools/check_no_legacy_certification.py"
+          ],
+          "inputFingerprint": "sha256:3158893bb8ed2716d75a3e49db84f5d028cc7b0e6590c0e7e59d1c7f72dfea71",
+          "observedAtUtc": "2026-08-02T21:31:32Z",
+          "result": "16/16 tests telemetry-short passed; the current LastTest.log ended normally after the fresh sequential Release build.",
+          "resultRef": "build/Testing/Temporary/LastTest.log"
+        }
+      ],
+      "requiredObservations": [],
+      "blocker": null
+    },
+    {
+      "id": "P2-REQ-044",
+      "observable": "Les logs identifient profil, manifeste et cause sans donnée cachée.",
+      "expectedAutomatedProof": "`telemetry_phase2_runtime_tests`",
+      "implementationStatus": "implemented",
+      "implementationSummary": "La livraison numérique bornée des logs expose le profil, les compteurs de manifeste et le couple bloc/cause des rejets de capture sans donnée textuelle moteur.",
+      "implementationPaths": [
+        "code/telemetry/logging.h",
+        "code/telemetry/logging.cpp",
+        "code/telemetry/runtime_adapter.cpp"
+      ],
+      "proofs": [
+        {
+          "id": "P2-REQ-044-AUTO-01",
+          "kind": "automated",
+          "command": "ctest --test-dir build -C Release --output-on-failure -R \"^telemetry_phase2_runtime_tests$\" -j 1",
+          "status": "passed",
+          "inputs": [
+            "code/telemetry/logging.h",
+            "code/telemetry/logging.cpp",
+            "code/telemetry/runtime_adapter.cpp",
+            "test/src/CMakeLists.txt",
+            "test/src/telemetry/producer/phase2_runtime_tests.cpp"
+          ],
+          "inputFingerprint": "sha256:66797a47bdcb78568c55bfe7c483f7603749572f66aec4c5275fe2145eb0fa40",
+          "observedAtUtc": "2026-08-01T22:35:01Z",
+          "result": "1/1 telemetry_phase2_runtime_tests passed in 3.48 s; the focused logging case, including maximum numeric values without truncation, passed independently.",
+          "resultRef": "build/Testing/Temporary/LastTest.log"
+        }
+      ],
+      "requiredObservations": [],
+      "blocker": null
+    },
+    {
+      "id": "P2-REQ-045",
+      "observable": "Le produit désactivé est inerte ; activé, son travail reste déterministe et borné sans seuil temporel de certification.",
+      "expectedAutomatedProof": "`telemetry_native_runtime_integration_contract_tests`",
+      "implementationStatus": "implemented",
+      "implementationSummary": "Le runtime natif démarre CoreGate et CompleteShip avant la première capture sous les plafonds mémoire actifs ; les refus de budget restent fail-closed avant bind.",
+      "implementationPaths": [
+        "code/telemetry/native_session_runtime.cpp",
+        "code/telemetry/native_session_runtime.h",
+        "code/telemetry/startup_budget.cpp",
+        "code/telemetry/startup_budget.h"
+      ],
+      "proofs": [
+        {
+          "id": "P2-REQ-045-AUTO-01",
+          "kind": "automated",
+          "command": "build/bin/Release/unittests.exe --gtest_filter='TelemetryNativeRuntimeIntegrationContract.*'",
+          "status": "passed",
+          "inputs": [
+            "code/telemetry/native_session_runtime.cpp",
+            "code/telemetry/native_session_runtime.h",
+            "code/telemetry/startup_budget.cpp",
+            "code/telemetry/startup_budget.h",
+            "test/src/telemetry/producer/test_telemetry_native_runtime_integration_contract.cpp"
+          ],
+          "inputFingerprint": "sha256:adda8d17f732944d959923aa1390685a27a7d24085d34c4bd95b922a3cf8dd5e",
+          "observedAtUtc": "2026-08-02T22:17:32Z",
+          "result": "15/15 passed in 1.293 s; CoreGate starts and CompleteShip with four clients reports shared=119620240, client=67795348, process=390801632 bytes.",
+          "resultRef": "build/telemetry-observations/native-runtime-integration-final.txt"
+        }
+      ],
+      "requiredObservations": [
+        "P2-OBS-01",
+        "P2-OBS-02"
+      ],
+      "blocker": null
+    },
+    {
+      "id": "P2-REQ-046",
+      "observable": "Les plafonds restent 134 217 728 octets partagés, 83 886 080 octets/client et 402 653 184 octets process ; aucune réserve steady-state non bornée n'est ajoutée.",
+      "expectedAutomatedProof": "`telemetry_phase2_security_bounds_tests`",
+      "implementationStatus": "implemented",
+      "implementationSummary": "Les plafonds actifs sont 128 Mio partagés, 80 Mio par client et 384 Mio process ; la composition CompleteShip réelle à quatre clients reste sous les trois bornes.",
+      "implementationPaths": [
+        "code/telemetry"
+      ],
+      "proofs": [
+        {
+          "id": "P2-REQ-046-AUTO-01",
+          "kind": "automated",
+          "command": "ctest --test-dir build -C Release --output-on-failure -L telemetry-short -j 1",
+          "status": "passed",
+          "inputs": [
+            "code/telemetry",
+            "test/src/telemetry",
+            "test/src/CMakeLists.txt",
+            "test/telemetry/tools/check_no_legacy_certification.py"
+          ],
+          "inputFingerprint": "sha256:3158893bb8ed2716d75a3e49db84f5d028cc7b0e6590c0e7e59d1c7f72dfea71",
+          "observedAtUtc": "2026-08-02T21:31:32Z",
+          "result": "16/16 tests telemetry-short passed; the current LastTest.log ended normally after the fresh sequential Release build.",
+          "resultRef": "build/Testing/Temporary/LastTest.log"
+        }
+      ],
+      "requiredObservations": [
+        "P2-OBS-05"
+      ],
+      "blocker": null
+    },
+    {
+      "id": "P2-REQ-047",
+      "observable": "La chaîne moteur → projection → manifeste est relue par le décodeur indépendant.",
+      "expectedAutomatedProof": "`telemetry_phase2_manifest_codec_tests`",
+      "implementationStatus": "implemented",
+      "implementationSummary": "Comportement Phase 2 présent et audité : La chaîne moteur → projection → manifeste est relue par le décodeur indépendant.",
+      "implementationPaths": [
+        "code/telemetry"
+      ],
+      "proofs": [
+        {
+          "id": "P2-REQ-047-AUTO-01",
+          "kind": "automated",
+          "command": "ctest --test-dir build -C Release --output-on-failure -L telemetry-short -j 1",
+          "status": "passed",
+          "inputs": [
+            "code/telemetry",
+            "test/src/telemetry",
+            "test/src/CMakeLists.txt",
+            "test/telemetry/tools/check_no_legacy_certification.py"
+          ],
+          "inputFingerprint": "sha256:3158893bb8ed2716d75a3e49db84f5d028cc7b0e6590c0e7e59d1c7f72dfea71",
+          "observedAtUtc": "2026-08-02T21:31:32Z",
+          "result": "16/16 tests telemetry-short passed; the current LastTest.log ended normally after the fresh sequential Release build.",
+          "resultRef": "build/Testing/Temporary/LastTest.log"
+        }
+      ],
+      "requiredObservations": [
+        "P2-OBS-02"
+      ],
+      "blocker": null
+    },
+    {
+      "id": "P2-REQ-048",
+      "observable": "Octets, IDs, cardinalités et transitions exactes sont disponibles au relevé produit.",
+      "expectedAutomatedProof": "suite `telemetry-short`",
+      "implementationStatus": "implemented",
+      "implementationSummary": "Comportement Phase 2 présent et audité : Octets, IDs, cardinalités et transitions exactes sont disponibles au relevé produit.",
+      "implementationPaths": [
+        "code/telemetry"
+      ],
+      "proofs": [
+        {
+          "id": "P2-REQ-048-AUTO-01",
+          "kind": "automated",
+          "command": "ctest --test-dir build -C Release --output-on-failure -L telemetry-short -j 1",
+          "status": "passed",
+          "inputs": [
+            "code/telemetry",
+            "test/src/telemetry",
+            "test/src/CMakeLists.txt",
+            "test/telemetry/tools/check_no_legacy_certification.py"
+          ],
+          "inputFingerprint": "sha256:3158893bb8ed2716d75a3e49db84f5d028cc7b0e6590c0e7e59d1c7f72dfea71",
+          "observedAtUtc": "2026-08-02T21:31:32Z",
+          "result": "16/16 tests telemetry-short passed; the current LastTest.log ended normally after the fresh sequential Release build.",
+          "resultRef": "build/Testing/Temporary/LastTest.log"
+        }
+      ],
+      "requiredObservations": [
+        "P2-OBS-01",
+        "P2-OBS-02",
+        "P2-OBS-04",
+        "P2-OBS-05"
+      ],
+      "blocker": null
+    },
+    {
+      "id": "P2-REQ-049",
+      "observable": "Les sources produit sont déclarées explicitement, sans glob.",
+      "expectedAutomatedProof": "contrôle CMake statique",
+      "implementationStatus": "implemented",
+      "implementationSummary": "Comportement Phase 2 présent et audité : Les sources produit sont déclarées explicitement, sans glob.",
+      "implementationPaths": [
+        "code/source_groups.cmake"
+      ],
+      "proofs": [
+        {
+          "id": "P2-REQ-049-AUTO-01",
+          "kind": "static",
+          "command": "ctest --test-dir build -C Release --output-on-failure -L telemetry-short -j 1",
+          "status": "passed",
+          "inputs": [
+            "code/source_groups.cmake",
+            "test/src/CMakeLists.txt",
+            "test/src/telemetry/producer/phase2_closure_tests.cpp",
+            "test/src/telemetry/producer/phase2_security_bounds_tests.cpp"
+          ],
+          "inputFingerprint": "sha256:cb0e8d8aa19715489c820e97e021741cd1a510b654d2e6e984eb1dae20defc67",
+          "observedAtUtc": "2026-08-02T21:31:32Z",
+          "result": "Static CMake inventory checks passed inside telemetry-short; Phase 2 production files are explicitly listed and no glob is used.",
+          "resultRef": "build/Testing/Temporary/LastTest.log"
+        }
+      ],
+      "requiredObservations": [],
+      "blocker": null
+    },
+    {
+      "id": "P2-REQ-050",
+      "observable": "Tout échec est observable et fail-closed ; aucune troncature ou couverture dégradée silencieuse.",
+      "expectedAutomatedProof": "`telemetry_phase2_security_bounds_tests`",
+      "implementationStatus": "implemented",
+      "implementationSummary": "Comportement Phase 2 présent et audité : Tout échec est observable et fail-closed ; aucune troncature ou couverture dégradée silencieuse.",
+      "implementationPaths": [
+        "code/telemetry"
+      ],
+      "proofs": [
+        {
+          "id": "P2-REQ-050-AUTO-01",
+          "kind": "automated",
+          "command": "ctest --test-dir build -C Release --output-on-failure -L telemetry-short -j 1",
+          "status": "passed",
+          "inputs": [
+            "code/telemetry",
+            "test/src/telemetry",
+            "test/src/CMakeLists.txt",
+            "test/telemetry/tools/check_no_legacy_certification.py"
+          ],
+          "inputFingerprint": "sha256:3158893bb8ed2716d75a3e49db84f5d028cc7b0e6590c0e7e59d1c7f72dfea71",
+          "observedAtUtc": "2026-08-02T21:31:32Z",
+          "result": "16/16 tests telemetry-short passed; the current LastTest.log ended normally after the fresh sequential Release build.",
+          "resultRef": "build/Testing/Temporary/LastTest.log"
+        }
+      ],
+      "requiredObservations": [
+        "P2-OBS-05"
+      ],
+      "blocker": null
+    }
+  ],
+  "observations": [
+    {
+      "id": "P2-OBS-01",
+      "purpose": "Runtime Release `CoreGate`, environ 60 s.",
+      "expected": "Configuration v2 explicite, masque `0x0401`, manifeste avant snapshot, uniquement le domaine racine, snapshot puis delta, arrêt propre.",
+      "status": "passed",
+      "inputs": [
+        "test/telemetry/producer/observations/telemetry_p2_core.fs2",
+        "test/telemetry/producer/observations/core-gate.telemetry.json",
+        "test/telemetry/protocol/tools/fstl_console_client.py",
+        "test/telemetry/protocol/tools/fstl_client_core.py",
+        "test/telemetry/protocol/tools/fstl_reference_decoder.py"
+      ],
+      "inputFingerprint": "sha256:f9c0a35b8925dd9e99ed64d963678bc4e6f2abe75c9d1eca324e833e991e466d",
+      "observedAtUtc": "2026-08-03T18:06:33Z",
+      "reviewedBy": "david",
+      "observed": "Capture Release CoreGate relue avec le cœur client partagé : 1148 états JSON valides, dont 1144 Live, couverture 1025 (`0x0401`), manifeste 1 publié avant le premier état Live, génération de mission 1, baselines 1 à 27 et deltas 1 à 47. Seule l'entité joueur 1 est publiée. Le retour normal au menu sans anomalie visible a été confirmé par david.",
+      "deviation": "aucun",
+      "impact": "aucun"
+    },
+    {
+      "id": "P2-OBS-02",
+      "purpose": "Runtime Release `CompleteShip`, environ 90 à 120 s.",
+      "expected": "Masque `0x0583`, catalogue complet décodé indépendamment, support/docking et arrêt/redémarrage propres.",
+      "status": "passed",
+      "inputs": [
+        "test/telemetry/producer/observations/telemetry_p2_complete.fs2",
+        "test/telemetry/producer/observations/complete-ship.telemetry.json",
+        "test/telemetry/protocol/tools/fstl_console_client.py",
+        "test/telemetry/protocol/tools/fstl_client_core.py",
+        "test/telemetry/protocol/tools/fstl_reference_decoder.py"
+      ],
+      "inputFingerprint": "sha256:a6b18b7210a95a76ddf90725bfe9df129a06dedc8a00057e239d1055c85a0d44",
+      "observedAtUtc": "2026-08-03T18:06:33Z",
+      "reviewedBy": "david",
+      "observed": "Capture Release CompleteShip relue avec le cœur client partagé : 581 états JSON valides, dont 577 Live, couverture 1411 (`0x0583`), manifestes 2 puis 3, génération de mission 1, baselines 1 à 22 et deltas 1 à 32. L'entité support 2 est publiée avec les phases approche, docking, docked et départ ; DOCKING_STATE contient les relations réciproques joueur/support. David confirme le support demandé et docké, le retour normal au menu et l'absence d'anomalie visible. La capture de redémarrage établit une session distincte avec 236 états valides, dont 233 Live, manifeste 1 et génération de mission 3.",
+      "deviation": "aucun",
+      "impact": "aucun"
+    },
+    {
+      "id": "P2-OBS-04",
+      "purpose": "Fermeture player/support/docking avec cible cargo extérieure.",
+      "expected": "La cible extérieure est omise et publiée `NOT_SCANNABLE/HIDDEN`, sans extension de fermeture ni fin de session.",
+      "status": "passed",
+      "inputs": [
+        "test/telemetry/producer/observations/telemetry_p2_complete.fs2",
+        "test/telemetry/producer/observations/complete-ship.telemetry.json",
+        "test/telemetry/protocol/tools/fstl_console_client.py",
+        "test/telemetry/protocol/tools/fstl_client_core.py",
+        "test/telemetry/protocol/tools/fstl_reference_decoder.py"
+      ],
+      "inputFingerprint": "sha256:a6b18b7210a95a76ddf90725bfe9df129a06dedc8a00057e239d1055c85a0d44",
+      "observedAtUtc": "2026-08-03T18:06:33Z",
+      "reviewedBy": "david",
+      "observed": "David confirme qu'External Cargo 1 a été ciblé pendant l'observation. La capture Live ne publie dans la fermeture que le joueur 1 et le support 2 ; la cible cargo extérieure reste omise. CARGO_SCAN_STATE du joueur conserve scan_phase=3 (`NOT_SCANNABLE`), disclosure=0 (`HIDDEN`) et presence=0. La session reste Live sans extension de fermeture ; le retour au menu est normal et aucune anomalie n'est visible.",
+      "deviation": "aucun",
+      "impact": "aucun"
+    },
+    {
+      "id": "P2-OBS-05",
+      "purpose": "Bornes min/max/max+1, NaN, infini, cast impossible et perte unique d'un delta.",
+      "expected": "Rejet avant cast/allocation, session récupérable, convergence sur delta cumulatif ou keyframe.",
+      "status": "passed",
+      "inputs": [
+        "test/telemetry/producer/observations/telemetry_p2_complete.fs2",
+        "test/telemetry/producer/observations/complete-ship.telemetry.json",
+        "test/telemetry/protocol/tools/fstl_console_client.py",
+        "test/telemetry/protocol/tools/fstl_client_core.py",
+        "test/telemetry/protocol/tools/fstl_reference_decoder.py",
+        "test/src/telemetry/producer/test_phase2_observation_contract.cpp",
+        "test/src/telemetry/producer/phase2_security_bounds_tests.cpp",
+        "test/src/telemetry/producer/phase2_replication_tests.cpp"
+      ],
+      "inputFingerprint": "sha256:1108f6f3b0d80468695146f4c3b64cdb5a4730f512b71b3b06e866c95ef79612",
+      "observedAtUtc": "2026-08-03T18:06:33Z",
+      "reviewedBy": "david",
+      "observed": "Les preuves courtes actuelles passent : contrat Python du client partagé 34/34 et sélection Release `telemetry-short` 16/16, incluant min/max/max+1, NaN, infini, cast impossible et budget exact/+1. Le client injecte exactement une perte de delta (`message_id=9`). Des états Live synchronisés suivent cette injection, avec deltas jusqu'à la séquence 32 et keyframes jusqu'à la baseline 22 ; le seul état Stale final correspond au retour normal au menu confirmé par david. La nouvelle capture de redémarrage établit une session Live distincte et récupérable.",
+      "deviation": "aucun",
+      "impact": "aucun"
+    }
+  ]
+}

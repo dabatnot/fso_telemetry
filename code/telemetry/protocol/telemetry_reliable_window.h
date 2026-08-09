@@ -66,6 +66,10 @@ struct ReliableWindowLimits {
 	// consume capacity needed by a reliable message.
 	std::size_t max_entries = ReliableWindowDefaultEntries;
 	std::size_t max_retained_bytes = ReliableWindowDefaultRetainedBytes;
+	// Optional startup-only payload pool. Zero preserves the general-purpose
+	// window behaviour; a bounded runtime can reserve one fixed payload backing
+	// per entry and therefore retain without allocating after Ready.
+	std::size_t preallocated_payload_bytes_per_entry = 0U;
 	// A local, test-injectable secret. The peer controls neither this value nor
 	// the final jitter because session_id, message_id and retry number are mixed.
 	std::uint64_t jitter_seed = 0x4653544c5f52544fULL;
@@ -203,6 +207,60 @@ struct ReliableWindowCounters {
 	std::uint64_t nack_ignored_incoherent = 0;
 };
 
+// Allocation-free control-only composition for runtimes that must preallocate
+// every byte before becoming Ready. It accepts the bounded handshake/session
+// controls, including the terminal SessionEnd that replaces in-slot work;
+// transaction, event and video retention remain with ReliableSendWindow.
+class PreallocatedReliableControlWindow final {
+  public:
+	static constexpr std::size_t MaximumEntries = 2U;
+	static constexpr std::size_t PayloadBytesPerEntry = MaxDatagramSize;
+
+	void configure() noexcept;
+	ReliableRetainResult retain(const ReliableMessageToRetain& message,
+		std::uint64_t first_send_time_us) noexcept;
+	ReliableResponseResult acknowledge(std::uint64_t session_id,
+		const EndpointKey& endpoint,
+		const AckPayload& ack,
+		std::uint64_t now_us) noexcept;
+	ReliableResponseResult reject(std::uint64_t session_id,
+		const EndpointKey& endpoint,
+		const NackPayload& nack,
+		std::uint64_t now_us,
+		ReliableNackDecision& decision) noexcept;
+	ReliablePullResult pull_next_action(std::uint64_t now_us, ReliableWindowAction& action) noexcept;
+	bool discard(std::uint64_t session_id, const EndpointKey& endpoint, std::uint32_t message_id) noexcept;
+	void clear() noexcept;
+	std::size_t entry_count() const noexcept { return m_size; }
+	std::size_t retained_bytes() const noexcept { return m_retained_bytes; }
+
+  private:
+	struct Entry {
+		bool used = false;
+		ReliableMessageKey key;
+		std::uint8_t base_flags = MessageFlagNone;
+		std::uint32_t frame_id = 0U;
+		std::int64_t mission_time_us = 0;
+		RequiredAckLevel required_ack = RequiredAckLevel::None;
+		ReliableMessageClass message_class = ReliableMessageClass::ControlDrop;
+		std::array<std::uint8_t, PayloadBytesPerEntry> payload{};
+		std::size_t payload_size = 0U;
+		std::uint64_t absolute_deadline_us = 0U;
+		std::uint64_t next_retry_at_us = 0U;
+		std::uint32_t retry_number = 0U;
+		bool validated = false;
+		bool immediate_retry = false;
+		ReliableFragmentSelection fragments;
+	};
+
+	std::size_t find(std::uint64_t session_id, const EndpointKey& endpoint, std::uint32_t message_id) const noexcept;
+	std::size_t free_slot() const noexcept;
+	void erase(std::size_t index) noexcept;
+	std::array<Entry, MaximumEntries> m_entries{};
+	std::size_t m_size = 0U;
+	std::size_t m_retained_bytes = 0U;
+};
+
 // Computes clamp(2 * minimum_rtt, 100 ms, 1000 ms) without overflow. When no
 // valid RTT window exists, the v1.0 default of 250 ms is returned.
 std::uint64_t reliable_base_rto_us(bool has_valid_minimum_rtt, std::uint64_t minimum_rtt_us) noexcept;
@@ -295,6 +353,13 @@ class ReliableSendWindow final {
 	{
 		return m_counters;
 	}
+	std::uint64_t allocation_events() const noexcept { return m_allocation_events; }
+	// Bytes in the startup-owned vector capacities. This deliberately prices
+	// both metadata vectors and the payload backing retained by the free-entry
+	// pool; sizeof(ReliableSendWindow) alone excludes all of these allocations.
+	static std::size_t preallocated_heap_bytes(std::size_t entry_count,
+		std::size_t payload_bytes_per_entry) noexcept;
+	std::size_t owned_preallocated_heap_bytes() const noexcept;
 
   private:
 	struct Entry {
@@ -329,12 +394,14 @@ class ReliableSendWindow final {
 
 	ReliableWindowLimits m_limits{};
 	std::vector<Entry> m_entries;
+	std::vector<Entry> m_free_entries;
 	std::size_t m_retained_bytes = 0;
 	std::size_t m_video_entry_count = 0;
 	std::size_t m_video_retained_bytes = 0;
 	bool m_has_valid_minimum_rtt = false;
 	std::uint64_t m_minimum_rtt_us = 0;
 	ReliableWindowCounters m_counters{};
+	std::uint64_t m_allocation_events = 0U;
 };
 
 } // namespace telemetry::protocol

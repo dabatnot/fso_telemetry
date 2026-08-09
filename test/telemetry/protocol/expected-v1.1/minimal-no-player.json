@@ -1,0 +1,61 @@
+{
+  "fields": {
+    "part_count": 1,
+    "part_index": 0,
+    "producer_sample_time_us": "1000000",
+    "record_count": 2,
+    "records": [
+      {
+        "fields": {
+          "authority_mode": 0,
+          "event_coverage_exact": "0",
+          "event_coverage_state_derived": "0",
+          "negotiated_capabilities": "0",
+          "negotiated_capability_generation": 1,
+          "presence": "0",
+          "producer_id": "72623859790382856",
+          "producer_sample_time_us": "1000000",
+          "reserved": 0,
+          "session_phase": 2,
+          "state_domain_coverage": "1024",
+          "visibility_mode": 0
+        },
+        "kind": "record",
+        "recordFlags": 0,
+        "recordLength": 64,
+        "recordName": "SESSION_STATE",
+        "recordType": 1,
+        "recordVersion": 1,
+        "schema": "FSTL-1.1"
+      },
+      {
+        "fields": {
+          "mission_generation": 1,
+          "paused": 0,
+          "phase": 0,
+          "presence": "0",
+          "producer_sample_time_us": "1000000",
+          "reserved": 0,
+          "time_compression": 1.0
+        },
+        "kind": "record",
+        "recordFlags": 0,
+        "recordLength": 28,
+        "recordName": "MISSION_STATE",
+        "recordType": 2,
+        "recordVersion": 1,
+        "schema": "FSTL-1.1"
+      }
+    ],
+    "required_manifest_id": 0,
+    "snapshot_flags": 1,
+    "snapshot_id": 1,
+    "transaction_sha256": "5090fd3ed5d4324dd0d13e7884dedc7332faaa3685235f2417bb9314fb564031",
+    "transaction_size": 104
+  },
+  "kind": "message-payload",
+  "messageFlags": 0,
+  "messageName": "FULL_SNAPSHOT",
+  "messageType": 6,
+  "schema": "FSTL-1.1"
+}

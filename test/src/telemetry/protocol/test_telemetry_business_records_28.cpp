@@ -67,6 +67,47 @@ ValidationError validate(const std::vector<std::uint8_t>& payload, BusinessRecor
 	return validate_business_record(record, container, metadata);
 }
 
+std::vector<std::uint8_t> hud_alert(bool primary = true,
+	HudAlertMissileLockState lock = HudAlertMissileLockState::Acquired,
+	bool warning = true)
+{
+	std::vector<std::uint8_t> payload;
+	u64(payload, 42U);
+	u64(payload, warning ? HudAlertStatePresenceFlagActiveWarning : 0U);
+	u64(payload, 1'000'000U);
+	u8(payload, primary ? 1U : 0U);
+	u8(payload, static_cast<std::uint8_t>(lock));
+	if (warning) {
+		u8(payload, static_cast<std::uint8_t>(HudAlertWarningKind::Launch));
+		u64(payload, 9U);
+		u64(payload, 750'000U);
+		u16(payload, 6U);
+		payload.insert(payload.end(), {'L', 'a', 'u', 'n', 'c', 'h'});
+	}
+	return payload;
+}
+
+ValidationError validate_hud_alert(const std::vector<std::uint8_t>& payload)
+{
+	const RecordEnvelopeView record{
+		static_cast<std::uint16_t>(RecordType::HudAlertState), 1,
+		RecordFlagNone, ByteView{payload.data(), payload.size()}};
+	BusinessRecordMetadata metadata;
+	return validate_business_record(record,
+		BusinessRecordContainer::FullSnapshot, VersionMinorV1_1, metadata);
+}
+
+ValidationError validate_hud_alert_minor(
+	const std::vector<std::uint8_t>& payload, std::uint8_t minor)
+{
+	const RecordEnvelopeView record{
+		static_cast<std::uint16_t>(RecordType::HudAlertState), 1,
+		RecordFlagNone, ByteView{payload.data(), payload.size()}};
+	BusinessRecordMetadata metadata;
+	return validate_business_record(record,
+		BusinessRecordContainer::FullSnapshot, minor, metadata);
+}
+
 TEST(TelemetryProtocolBusinessRecords28, ReplaceableAndReliableDeliveryClassesHaveDistinctFlags)
 {
 	std::vector<std::uint8_t> replaceable;
@@ -142,6 +183,63 @@ TEST(TelemetryProtocolBusinessRecords28, MissionEventsRequireZeroSubjectAndTrans
 			EventItemPresenceFlagWeaponClass | EventItemPresenceFlagBank | EventItemPresenceFlagFirePoint));
 	EXPECT_EQ(ValidationError::InvalidStateTransition,
 		validate(fired, BusinessRecordContainer::EventBatchReplaceable));
+}
+
+TEST(TelemetryProtocolBusinessRecords29, RoundTripsTheAuthoritativeHudAlertState)
+{
+	auto payload = hud_alert();
+	EXPECT_EQ(ValidationError::None, validate_hud_alert(payload));
+
+	const RecordEnvelopeView record{
+		static_cast<std::uint16_t>(RecordType::HudAlertState), 1,
+		RecordFlagNone, ByteView{payload.data(), payload.size()}};
+	BusinessRecordMetadata metadata;
+	ASSERT_EQ(ValidationError::None, validate_business_record(record,
+		BusinessRecordContainer::FullSnapshot, VersionMinorV1_1, metadata));
+	EXPECT_TRUE(metadata.state_atom);
+	EXPECT_EQ(8U, metadata.key_size);
+	EXPECT_TRUE(metadata.cascades_with_entity);
+	EXPECT_EQ(ValidationError::UnsupportedRecordVersion,
+		validate_hud_alert_minor(payload, VersionMinorV1_0));
+	EXPECT_EQ(ValidationError::None,
+		validate_hud_alert_minor(payload, VersionMinorV1_1));
+}
+
+TEST(TelemetryProtocolBusinessRecords29, RejectsNonCanonicalEnumsAndIncompleteWarnings)
+{
+	auto noncanonical_bool = hud_alert();
+	noncanonical_bool[24U] = 2U;
+	EXPECT_EQ(ValidationError::OutOfRange,
+		validate_hud_alert(noncanonical_bool));
+
+	auto unknown_lock = hud_alert();
+	unknown_lock[25U] = 3U;
+	EXPECT_EQ(ValidationError::UnknownEnum,
+		validate_hud_alert(unknown_lock));
+
+	auto unknown_warning = hud_alert();
+	unknown_warning[26U] = 8U;
+	EXPECT_EQ(ValidationError::UnknownEnum,
+		validate_hud_alert(unknown_warning));
+
+	auto zero_instance = hud_alert();
+	for (std::size_t index = 27U; index < 35U; ++index)
+		zero_instance[index] = 0U;
+	EXPECT_EQ(ValidationError::OutOfRange,
+		validate_hud_alert(zero_instance));
+
+	auto empty_text = hud_alert();
+	empty_text.resize(45U);
+	empty_text[43U] = 0U;
+	empty_text[44U] = 0U;
+	EXPECT_EQ(ValidationError::OutOfRange,
+		validate_hud_alert(empty_text));
+
+	auto unexpected_group = hud_alert(false,
+		HudAlertMissileLockState::None, false);
+	unexpected_group.push_back(0U);
+	EXPECT_EQ(ValidationError::TrailingBytes,
+		validate_hud_alert(unexpected_group));
 }
 
 } // namespace

@@ -16,22 +16,6 @@ constexpr bool has_flag(std::uint8_t flags, MessageFlag flag) noexcept {
 	return (flags & static_cast<std::uint8_t>(flag)) != 0;
 }
 
-ValidationError validate_header_identity(const TelemetryDatagramHeader& header) noexcept {
-	if (header.magic != Magic) {
-		return ValidationError::BadMagic;
-	}
-	if (header.version_major != VersionMajor) {
-		return ValidationError::UnsupportedMajor;
-	}
-	if (header.version_minor != VersionMinor) {
-		return ValidationError::UnsupportedMinor;
-	}
-	if (header.header_size != HeaderSizeV1) {
-		return ValidationError::BadHeaderSize;
-	}
-	return ValidationError::None;
-}
-
 ValidationError validate_type_and_flags(const TelemetryDatagramHeader& header) noexcept {
 	if ((header.flags & ReservedMessageFlags) != 0) {
 		return ValidationError::ReservedHeaderFlag;
@@ -121,6 +105,27 @@ ValidationError validate_type_and_flags(const TelemetryDatagramHeader& header) n
 }
 
 } // namespace
+
+ValidationError validate_datagram_header_version(const TelemetryDatagramHeader& header,
+	ProtocolMinorRange accepted_minors) noexcept
+{
+	if (header.magic != Magic) {
+		return ValidationError::BadMagic;
+	}
+	if (header.version_major != VersionMajor) {
+		return ValidationError::UnsupportedMajor;
+	}
+	if (!is_supported_version_minor(accepted_minors.minimum) ||
+		!is_supported_version_minor(accepted_minors.maximum) ||
+		accepted_minors.minimum > accepted_minors.maximum ||
+		header.version_minor < accepted_minors.minimum || header.version_minor > accepted_minors.maximum) {
+		return ValidationError::UnsupportedMinor;
+	}
+	if (header.header_size != HeaderSizeV1) {
+		return ValidationError::BadHeaderSize;
+	}
+	return ValidationError::None;
+}
 
 MessageSizeClass message_size_class(MessageType type) noexcept {
 	if (!is_known_message_type(type)) {
@@ -300,7 +305,16 @@ ValidationError calculate_datagram_crc(const TelemetryDatagramHeader& header,
 ValidationError encode_datagram(TelemetryDatagramHeader header,
 	                             ByteView payload,
 	                             MutableByteView output,
-	                             std::size_t& written) noexcept {
+	                             std::size_t& written) noexcept
+{
+	return encode_datagram(header, FrozenV1_0MinorRange, payload, output, written);
+}
+
+ValidationError encode_datagram(TelemetryDatagramHeader header,
+	ProtocolMinorRange accepted_minors,
+	ByteView payload,
+	MutableByteView output,
+	std::size_t& written) noexcept {
 	written = 0;
 	if ((payload.size != 0 && payload.data == nullptr) || payload.size > MaxFragmentPayload) {
 		return payload.size > MaxFragmentPayload ? ValidationError::DatagramTooLarge
@@ -313,7 +327,8 @@ ValidationError encode_datagram(TelemetryDatagramHeader header,
 
 	header.payload_size = static_cast<std::uint16_t>(payload.size);
 	header.crc32 = 0;
-	if (const auto error = validate_header_identity(header); error != ValidationError::None) {
+	if (const auto error = validate_datagram_header_version(header, accepted_minors);
+		error != ValidationError::None) {
 		return error;
 	}
 	if (const auto error = validate_fragment_layout(header); error != ValidationError::None) {
@@ -336,6 +351,12 @@ ValidationError encode_datagram(TelemetryDatagramHeader header,
 }
 
 ValidationError decode_and_validate_datagram_envelope(ByteView datagram, DatagramView& decoded) noexcept {
+	return decode_and_validate_datagram_envelope(datagram, FrozenV1_0MinorRange, decoded);
+}
+
+ValidationError decode_and_validate_datagram_envelope(ByteView datagram,
+	ProtocolMinorRange accepted_minors,
+	DatagramView& decoded) noexcept {
 	decoded = DatagramView{};
 	if (datagram.data == nullptr || datagram.size < HeaderSizeV1) {
 		return ValidationError::DatagramTooShort;
@@ -348,7 +369,8 @@ ValidationError decode_and_validate_datagram_envelope(ByteView datagram, Datagra
 	if (const auto error = decode_datagram_header(datagram, header); error != ValidationError::None) {
 		return error;
 	}
-	if (const auto error = validate_header_identity(header); error != ValidationError::None) {
+	if (const auto error = validate_datagram_header_version(header, accepted_minors);
+		error != ValidationError::None) {
 		return error;
 	}
 	// Reserved header bits are a fixed-envelope property and normatively
@@ -386,8 +408,14 @@ ValidationError decode_and_validate_datagram_envelope(ByteView datagram, Datagra
 }
 
 ValidationError decode_and_validate_datagram(ByteView datagram, DatagramView& decoded) noexcept {
+	return decode_and_validate_datagram(datagram, FrozenV1_0MinorRange, decoded);
+}
+
+ValidationError decode_and_validate_datagram(ByteView datagram,
+	ProtocolMinorRange accepted_minors,
+	DatagramView& decoded) noexcept {
 	DatagramView envelope;
-	if (const auto error = decode_and_validate_datagram_envelope(datagram, envelope);
+	if (const auto error = decode_and_validate_datagram_envelope(datagram, accepted_minors, envelope);
 	    error != ValidationError::None) {
 		decoded = DatagramView{};
 		return error;

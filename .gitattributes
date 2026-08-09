@@ -5,3 +5,12 @@
 *.tbl text eol=lf
 *.tbm text eol=lf
 *.sdr text eol=lf
+
+# FSTL conformance hashes are byte-level and must survive Windows checkouts.
+documentation/analysis/specs/0-Contrat-de-protocole/*.md text eol=lf
+documentation/analysis/specs/1-Squelette-et-premier-flux/*.md text eol=lf
+test/telemetry/protocol/*.json text eol=lf
+test/telemetry/protocol/**/*.json text eol=lf
+test/telemetry/protocol/**/*.yaml text eol=lf
+test/telemetry/protocol/**/*.dict text eol=lf
+test/telemetry/protocol/**/*.bin -text

@@ -12,7 +12,7 @@
 
 ### 1.1 Portée de cette proposition
 
-Ce document fixe les invariants et les structures nécessaires pour évaluer le protocole. Il ne remplace pas le schéma v1 exhaustif, livrable de la phase 0 avant gel de l'implémentation. Ce schéma normatif doit attribuer les valeurs numériques de tous les messages, records, enums et flags, décrire chaque champ dans son ordre filaire avec ses bornes et valeurs par défaut, formaliser les règles d'évolution, et fournir des vecteurs binaires ainsi que des tests de compatibilité croisée.
+Ce document fixe les invariants et les structures nécessaires pour évaluer le protocole. Le contrat exhaustif et normatif est [`specs/0-Contrat-de-protocole`](specs/0-Contrat-de-protocole/README.md) : FSTL 1.0 y reste gelé et FSTL 1.1 y est défini comme amendement additif du premier flux Phase 1. Le schéma doit attribuer les valeurs numériques de tous les messages, records, enums et flags, décrire chaque champ dans son ordre filaire avec ses bornes et valeurs par défaut, formaliser les règles d'évolution, et fournir des vecteurs binaires ainsi que des tests de compatibilité croisée.
 
 ### 1.2 Conventions filaires communes
 
@@ -80,6 +80,8 @@ Le format v1 est little-endian, cohérent avec les packers actuels de FS2Open et
 
 La taille de cet en-tête v1 est exactement 68 octets, laissant au plus 1132 octets de payload dans un datagramme de 1200 octets. Pour un message non fragmenté, `fragment_index = 0`, `fragment_count = 1`, `fragment_offset = 0` et `payload_size = message_size`. `message_id` est unique par direction dans une session tant qu'un message portant cet ID peut encore être en vol ; le producteur ouvre une nouvelle session avant toute réutilisation ambiguë après wrap.
 
+FSTL 1.1 conserve exactement cet en-tête, les IDs, layouts, CRC, limites et règles de fragmentation FSTL 1.0. Sa seule nouveauté filaire est la valeur négociée `version_minor = 1`; sa seule nouveauté métier est le bit 10 `StateDomainCoverage.PLAYER_KINEMATICS = 0x0000000000000400`. `DISCOVERY`, `HELLO` et un `WELCOME` de rejet gardent l'en-tête 1.0 afin de transporter les intervalles de mineures et de permettre un rejet explicite ; un `WELCOME Accepted` porte déjà la mineure sélectionnée.
+
 Les deux contrôles utilisent CRC-32/ISO-HDLC : polynôme normal `0x04C11DB7` (réfléchi `0xEDB88320`), `init = 0xFFFFFFFF`, `refin = true`, `refout = true`, `xorout = 0xFFFFFFFF`, valeur de contrôle `0xCBF43926` pour les octets ASCII `123456789`. `message_crc32` est calculé sur les `message_size` octets du payload logique sérialisé. `crc32` est calculé sur les 68 octets de l'en-tête, champ `crc32` mis à zéro, suivis des `payload_size` octets du fragment. Les CRC protègent contre la corruption accidentelle, pas contre un client malveillant.
 
 ## 4. Records de payload
@@ -142,6 +144,8 @@ t3 : réception de la réponse par l'initiateur
 ```
 
 Le préfixe fixe de `HELLO` contient au minimum `client_nonce: u64` et `client_send_t0_us: u64`, puis les versions, capabilities et hashes négociés décrits par le schéma v1. Le `HELLO` initial utilise `session_id = 0`. `WELCOME` reprend `client_nonce`, `client_send_t0_us`, puis ajoute `producer_receive_t1_us: u64`, `producer_send_t2_us: u64`, les paramètres négociés et l'intervalle de heartbeat ; son en-tête porte le nouveau `session_id`. Le client relève `client_receive_t3_us` à la réception, avant tout traitement coûteux.
+
+Le producteur Phase 1 annonce `min_minor = max_minor = 1`. Il sélectionne 1.1 face à un client compatible et répond `UnsupportedVersion` à un client limité à 1.0, sans créer de session. Une implémentation ne peut annoncer `0..1` que si elle sait aussi produire le snapshot `CORE_SHIP` complet exigé par FSTL 1.0 ; aucune rétrogradation silencieuse n'est autorisée.
 
 Après connexion, un `HEARTBEAT` utilise le préfixe suivant :
 
@@ -377,6 +381,8 @@ Le client libère immédiatement tout réassemblage expiré, appartenant à une 
 
 Un `FULL_SNAPSHOT` reçoit un `snapshot_id` strictement croissant dans la session et décrit un état autonome. Une keyframe d'état est un nouveau `FULL_SNAPSHOT` fiable ; elle ne devient la baseline commune qu'après réassemblage, validation, application atomique et émission de son `ACK APPLIED`. Si cet ACK est perdu, une retransmission du même snapshot déjà appliqué est acquittée de nouveau sans republier ni faire régresser l'état ; un snapshot plus ancien que la baseline courante est ignoré. Le producteur n'active que sa candidate courante et ne revient jamais à un `snapshot_id` antérieur.
 
+Dans le profil FSTL 1.1 Phase 1, la complétude signifie `PLAYER_KINEMATICS` et non `CORE_SHIP`. `required_manifest_id`, capabilities et couvertures événementielles valent zéro. Le snapshot contient `SESSION_STATE`, `MISSION_STATE` et, lorsqu'un joueur est observé, son `ENTITY_LIFECYCLE` de type `SHIP` et son `FLIGHT_STATE` à masque de présence nul. Un changement de mission ou de joueur observé impose une nouvelle keyframe. La Phase 2 positionne `PLAYER_KINEMATICS | CORE_SHIP` seulement après installation des manifestes et présence de toute la matrice système.
+
 Un `DELTA` contient :
 
 - `baseline_snapshot_id` ;
@@ -443,7 +449,7 @@ stateDiagram-v2
     [*] --> Disconnected
     Disconnected --> Negotiating: HELLO
     Negotiating --> Synchronizing: WELCOME
-    Synchronizing --> Live: manifestes + snapshot complets
+    Synchronizing --> Live: manifestes requis + snapshot conforme à la couverture
     Live --> Live: deltas et événements
     Live --> Stale: timeout ou baseline manquante
     Stale --> Synchronizing: RESYNC_REQUEST
@@ -453,8 +459,8 @@ stateDiagram-v2
 Le client n'expose l'état comme « complet » qu'après réception :
 
 - des versions et capacités ;
-- des manifestes nécessaires ;
-- d'un snapshot intégral validé.
+- des manifestes nécessaires, s'il en existe pour la couverture annoncée ;
+- d'un snapshot intégral validé relativement à `state_domain_coverage`.
 
 La capability de vue de communication est indépendante de cet état global : un client peut être `Live` avec un bundle visuel absent ou incompatible. Il expose alors `communication_view_available = false` et un état de vue indisponible. Le placeholder d'asset est réservé à un fichier ponctuellement absent ou corrompu dans un bundle annoncé compatible.
 

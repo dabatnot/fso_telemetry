@@ -38,6 +38,7 @@ struct LifecycleFacts {
 
 struct TargetFacts {
 	std::uint64_t presence = 0;
+	std::uint64_t producer_sample_time_us = 0;
 	std::uint64_t current_target = 0;
 	std::uint64_t previous_target = 0;
 	ObjectType revealed_object_type = ObjectType::Unknown;
@@ -50,12 +51,15 @@ struct TargetFacts {
 };
 
 struct RadarContactFacts {
+	std::uint8_t record_version = 1U;
 	std::uint64_t observer_entity_id = 0;
 	std::uint64_t contact_entity_id = 0;
 	std::uint64_t presence = 0;
+	std::uint64_t producer_sample_time_us = 0;
 	ObjectType object_type = ObjectType::Unknown;
 	std::uint32_t flags = 0;
 	std::uint32_t revealed_class_id = 0;
+	RadarBlipType radar_blip_type = RadarBlipType::NormalShip;
 };
 
 struct DockingRelationFacts {
@@ -187,6 +191,49 @@ ValidationError parse_session(const StateAtom& atom, SessionFacts& facts) noexce
 	return ValidationError::None;
 }
 
+ValidationError parse_mission_generation(const StateAtom& atom, std::uint32_t& generation) noexcept
+{
+	if (atom.value.size() < 12U) {
+		return ValidationError::BadRecordLength;
+	}
+	generation = read_u32(atom.value.data() + 8U);
+	return generation != 0U ? ValidationError::None : ValidationError::OutOfRange;
+}
+
+bool is_phase1_player_kinematics_profile(std::uint8_t protocol_minor, std::uint64_t coverage) noexcept
+{
+	return protocol_minor == VersionMinorV1_1 && coverage == StateDomainCoverageBitPlayerKinematics;
+}
+
+bool is_phase2_complete_ship_profile(std::uint8_t protocol_minor, std::uint64_t coverage) noexcept
+{
+	constexpr auto complete_ship_coverage = StateDomainCoverageBitPlayerKinematics |
+		StateDomainCoverageBitCoreShip | StateDomainCoverageBitControlInputs | StateDomainCoverageBitWeapons |
+		StateDomainCoverageBitCargoDockSupport;
+	static_assert(complete_ship_coverage == 0x0583ULL, "The Phase 2 complete ship coverage is frozen");
+	return protocol_minor == VersionMinorV1_1 && coverage == complete_ship_coverage;
+}
+
+bool is_phase3_cockpit_sensors_profile(std::uint8_t protocol_minor,
+	std::uint64_t coverage) noexcept
+{
+	constexpr auto cockpit_sensors_coverage =
+		StateDomainCoverageBitPlayerKinematics |
+		StateDomainCoverageBitCoreShip |
+		StateDomainCoverageBitControlInputs |
+		StateDomainCoverageBitRadarSensors |
+		StateDomainCoverageBitTargeting |
+		StateDomainCoverageBitWeapons |
+		StateDomainCoverageBitCargoDockSupport |
+		StateDomainCoverageBitNavigation;
+	static_assert(cockpit_sensors_coverage == 0x07cbULL,
+		"The Phase 3 cockpit sensor coverage is frozen");
+	return protocol_minor == VersionMinorV1_1 &&
+		coverage == cockpit_sensors_coverage;
+}
+
+constexpr std::size_t MaximumPhase2CompleteShipCount = 64U;
+
 ValidationError parse_lifecycle(const StateAtom& atom, LifecycleFacts& facts) noexcept
 {
 	facts = LifecycleFacts{};
@@ -230,8 +277,8 @@ ValidationError parse_target(const StateAtom& atom, TargetFacts& facts) noexcept
 	facts = TargetFacts{};
 	PacketReader reader(ByteView{atom.value.empty() ? nullptr : atom.value.data(), atom.value.size()});
 	std::uint64_t owner = 0;
-	std::uint64_t sample_time = 0;
-	if (!reader.read_u64(owner) || !reader.read_u64(facts.presence) || !reader.read_u64(sample_time) ||
+	if (!reader.read_u64(owner) || !reader.read_u64(facts.presence) ||
+		!reader.read_u64(facts.producer_sample_time_us) ||
 		!reader.read_u64(facts.current_target)) {
 		return ValidationError::BadRecordLength;
 	}
@@ -291,19 +338,54 @@ ValidationError parse_target(const StateAtom& atom, TargetFacts& facts) noexcept
 	if ((facts.presence & TargetStatePresenceFlagExactHudDistance) != 0U && !reader.skip(4U)) {
 		return ValidationError::BadRecordLength;
 	}
+	if ((facts.presence & TargetStatePresenceFlagExactHudSpeed) != 0U && !reader.skip(4U)) {
+		return ValidationError::BadRecordLength;
+	}
+	if ((facts.presence & TargetStatePresenceFlagHudTypeLabel) != 0U) {
+		if (atom.record_version < 3U) {
+			return ValidationError::UnsupportedRecordVersion;
+		}
+		std::string_view ignored_label;
+		if (!reader.read_utf8(255U, ignored_label)) {
+			return ValidationError::BadRecordLength;
+		}
+	}
+	if ((facts.presence & TargetStatePresenceFlagHudTargetColor) != 0U) {
+		if (atom.record_version < 4U) {
+			return ValidationError::UnsupportedRecordVersion;
+		}
+		if (!reader.skip(4U)) return ValidationError::BadRecordLength;
+	}
+	if ((facts.presence & TargetStatePresenceFlagHudTargetSubsystemLabel) != 0U) {
+		if (atom.record_version < 5U) return ValidationError::UnsupportedRecordVersion;
+		std::string_view ignored_label;
+		if (!reader.read_utf8(255U, ignored_label) || ignored_label.empty()) {
+			return ValidationError::BadRecordLength;
+		}
+	}
+	if ((facts.presence & TargetStatePresenceFlagHudLockSubsystemLabel) != 0U) {
+		if (atom.record_version < 5U) return ValidationError::UnsupportedRecordVersion;
+		std::string_view ignored_label;
+		if (!reader.read_utf8(255U, ignored_label) || ignored_label.empty()) {
+			return ValidationError::BadRecordLength;
+		}
+	}
 	return reader.at_end() ? ValidationError::None : ValidationError::BadRecordLength;
 }
 
 ValidationError parse_radar_contact(const StateAtom& atom, RadarContactFacts& facts) noexcept
 {
 	facts = RadarContactFacts{};
+	facts.record_version = atom.record_version;
 	PacketReader reader(ByteView{atom.value.empty() ? nullptr : atom.value.data(), atom.value.size()});
-	std::uint64_t sample_time = 0;
 	std::uint8_t object_type = 0;
 	std::uint8_t ignored_u8 = 0;
 	if (!reader.read_u64(facts.observer_entity_id) || !reader.read_u64(facts.contact_entity_id) ||
-		!reader.read_u64(facts.presence) || !reader.read_u64(sample_time) || !reader.read_u8(object_type) ||
-		!reader.read_u8(ignored_u8) || !reader.read_u8(ignored_u8) || !reader.skip(28U) ||
+		!reader.read_u64(facts.presence) ||
+		!reader.read_u64(facts.producer_sample_time_us) ||
+		!reader.read_u8(object_type) ||
+		!reader.read_u8(ignored_u8) || !reader.read_u8(ignored_u8) ||
+		!reader.skip(atom.record_version >= 2U ? 44U : 28U) ||
 		!reader.read_u32(facts.flags)) {
 		return ValidationError::BadRecordLength;
 	}
@@ -329,6 +411,28 @@ ValidationError parse_radar_contact(const StateAtom& atom, RadarContactFacts& fa
 	}
 	if ((facts.presence & RadarContactsPresenceFlagConfidence) != 0U && !reader.skip(4U)) {
 		return ValidationError::BadRecordLength;
+	}
+	if ((facts.presence & RadarContactsPresenceFlagHudTypeLabel) != 0U) {
+		if (atom.record_version < 3U) {
+			return ValidationError::UnsupportedRecordVersion;
+		}
+		std::string_view ignored_label;
+		if (!reader.read_utf8(255U, ignored_label)) {
+			return ValidationError::BadRecordLength;
+		}
+	}
+	if ((facts.presence & RadarContactsPresenceFlagRadarVisual) != 0U) {
+		if (atom.record_version != 4U) {
+			return ValidationError::UnsupportedRecordVersion;
+		}
+		std::uint8_t blip_type = 0U;
+		if (!reader.skip(4U) || !reader.read_u8(blip_type)) {
+			return ValidationError::BadRecordLength;
+		}
+		if (blip_type > static_cast<std::uint8_t>(RadarBlipType::NormalShip)) {
+			return ValidationError::UnknownEnum;
+		}
+		facts.radar_blip_type = static_cast<RadarBlipType>(blip_type);
 	}
 	return reader.at_end() ? ValidationError::None : ValidationError::BadRecordLength;
 }
@@ -375,6 +479,9 @@ bool sorted_unique_nonzero(const std::uint32_t* values, std::size_t count) noexc
 
 ValidationError validate_context(const BusinessStateValidationContext& context) noexcept
 {
+	if (!is_supported_version_minor(context.protocol_minor)) {
+		return ValidationError::UnsupportedMinor;
+	}
 	if ((context.class_catalog_count != 0 && context.class_catalog == nullptr) ||
 		(context.weapon_class_count != 0 && context.weapon_class_ids == nullptr) ||
 		(context.cockpit_entity_count != 0 && context.cockpit_entity_ids == nullptr) ||
@@ -448,9 +555,14 @@ bool cockpit_entity_allowed(const BusinessStateValidationContext& context, std::
 ValidationError validate_entity_reference(const std::vector<StateAtom>& atoms,
 	const BusinessStateValidationContext& context,
 	VisibilityMode visibility_mode,
-	std::uint64_t entity_id) noexcept
+	std::uint64_t entity_id,
+	bool sensor_identity_allowed = false) noexcept
 {
-	if (entity_id == 0 || find_owner(atoms, RecordType::EntityLifecycle, entity_id) == nullptr) {
+	if (entity_id == 0) {
+		return ValidationError::UnknownEntity;
+	}
+	if (find_owner(atoms, RecordType::EntityLifecycle, entity_id) == nullptr &&
+		!sensor_identity_allowed) {
 		return ValidationError::UnknownEntity;
 	}
 	if (visibility_mode == VisibilityMode::Cockpit && context.enforce_cockpit_entity_allowlist &&
@@ -472,11 +584,22 @@ ValidationError validate_subsystem_reference(const std::vector<StateAtom>& atoms
 	const BusinessStateValidationContext& context,
 	VisibilityMode visibility_mode,
 	std::uint64_t entity_id,
-	std::uint32_t subsystem_id) noexcept
+	std::uint32_t subsystem_id,
+	bool sensor_identity_allowed = false) noexcept
 {
-	if (const auto error = validate_entity_reference(atoms, context, visibility_mode, entity_id);
+	if (const auto error = validate_entity_reference(
+			atoms, context, visibility_mode, entity_id,
+			sensor_identity_allowed);
 		error != ValidationError::None) {
 		return error;
+	}
+	if (find_owner(atoms, RecordType::EntityLifecycle, entity_id) == nullptr) {
+		// Sensor-only identities deliberately have no ENTITY_LIFECYCLE or
+		// SUBSYSTEM_STATE. The non-zero subsystem key remains an opaque public
+		// identity whose catalog resolution is enforced by the producer.
+		return sensor_identity_allowed && subsystem_id != 0U
+			? ValidationError::None
+			: ValidationError::UnknownEntity;
 	}
 	if (find_subsystem(atoms, entity_id, subsystem_id) == nullptr) {
 		return ValidationError::UnknownEntity;
@@ -529,10 +652,37 @@ ValidationError validate_revealed_identity(const BusinessStateValidationContext&
 	return ValidationError::InvalidStateTransition;
 }
 
+ValidationError validate_sensor_revealed_identity(
+	const BusinessStateValidationContext& context,
+	ObjectType object_type,
+	std::uint32_t class_id,
+	bool class_is_required) noexcept
+{
+	if (class_id == 0U) {
+		return class_is_required
+			? ValidationError::InvalidAbsence
+			: ValidationError::None;
+	}
+	if (object_type == ObjectType::Ship) {
+		return context.class_manifest_installed &&
+				find_class(context, class_id) != nullptr
+			? ValidationError::None
+			: ValidationError::MissingManifest;
+	}
+	if (object_type == ObjectType::Weapon) {
+		return context.weapon_manifest_installed &&
+				has_weapon_class(context, class_id)
+			? ValidationError::None
+			: ValidationError::MissingManifest;
+	}
+	return ValidationError::InvalidStateTransition;
+}
+
 ValidationError validate_lock_references(const StateAtom& atom,
 	const std::vector<StateAtom>& atoms,
 	const BusinessStateValidationContext& context,
-	VisibilityMode visibility_mode) noexcept
+	VisibilityMode visibility_mode,
+	bool sensor_identity_allowed) noexcept
 {
 	PacketReader reader(ByteView{atom.value.empty() ? nullptr : atom.value.data(), atom.value.size()});
 	std::uint64_t ignored_u64 = 0;
@@ -550,7 +700,9 @@ ValidationError validate_lock_references(const StateAtom& atom,
 			!item.read_bool8(ignored_bool) || !item.read_u64(target)) {
 			return ValidationError::BadRecordLength;
 		}
-		if (const auto error = validate_entity_reference(atoms, context, visibility_mode, target);
+		if (const auto error = validate_entity_reference(
+				atoms, context, visibility_mode, target,
+				sensor_identity_allowed);
 			error != ValidationError::None) {
 			return error;
 		}
@@ -560,7 +712,9 @@ ValidationError validate_lock_references(const StateAtom& atom,
 				return ValidationError::BadRecordLength;
 			}
 			if (const auto error =
-					validate_subsystem_reference(atoms, context, visibility_mode, target, subsystem_id);
+					validate_subsystem_reference(atoms, context,
+						visibility_mode, target, subsystem_id,
+						sensor_identity_allowed);
 				error != ValidationError::None) {
 				return error;
 			}
@@ -576,18 +730,30 @@ ValidationError validate_lock_references(const StateAtom& atom,
 ValidationError validate_target_references(const StateAtom& atom,
 	const std::vector<StateAtom>& atoms,
 	const BusinessStateValidationContext& context,
-	VisibilityMode visibility_mode) noexcept
+	VisibilityMode visibility_mode,
+	bool sensor_identity_allowed) noexcept
 {
 	TargetFacts facts;
 	if (const auto error = parse_target(atom, facts); error != ValidationError::None) {
 		return error;
 	}
+	constexpr std::uint64_t HudSubsystemLabelFlags =
+		TargetStatePresenceFlagHudTargetSubsystemLabel |
+		TargetStatePresenceFlagHudLockSubsystemLabel;
+	if ((facts.presence & HudSubsystemLabelFlags) != 0U &&
+		((facts.presence & TargetStatePresenceFlagRevealedIdentity) == 0U ||
+		 facts.revealed_object_type != ObjectType::Ship)) {
+		return ValidationError::InvalidAbsence;
+	}
 	const auto validate_if_present = [&](std::uint64_t flag, std::uint64_t entity_id) {
 		return (facts.presence & flag) == 0U ? ValidationError::None :
-			validate_entity_reference(atoms, context, visibility_mode, entity_id);
+			validate_entity_reference(atoms, context, visibility_mode,
+				entity_id, sensor_identity_allowed);
 	};
 	if (facts.current_target != 0U) {
-		if (const auto error = validate_entity_reference(atoms, context, visibility_mode, facts.current_target);
+		if (const auto error = validate_entity_reference(atoms, context,
+				visibility_mode, facts.current_target,
+				sensor_identity_allowed);
 			error != ValidationError::None) {
 			return error;
 		}
@@ -613,37 +779,57 @@ ValidationError validate_target_references(const StateAtom& atom,
 	}
 	if ((facts.presence & TargetStatePresenceFlagDangerousWeapon) != 0U) {
 		LifecycleFacts dangerous;
-		if (const auto error = lifecycle_for_entity(atoms, facts.dangerous_weapon_entity_id, dangerous);
-			error != ValidationError::None) {
-			return error;
-		}
-		if (dangerous.object_type != ObjectType::Weapon) {
-			return ValidationError::InvalidStateTransition;
+		if (const auto* lifecycle = find_owner(atoms,
+				RecordType::EntityLifecycle,
+				facts.dangerous_weapon_entity_id);
+			lifecycle != nullptr) {
+			if (const auto error = parse_lifecycle(*lifecycle, dangerous);
+				error != ValidationError::None) {
+				return error;
+			}
+			if (dangerous.object_type != ObjectType::Weapon) {
+				return ValidationError::InvalidStateTransition;
+			}
+		} else if (!sensor_identity_allowed) {
+			return ValidationError::UnknownEntity;
 		}
 	}
 	if ((facts.presence & TargetStatePresenceFlagTargetSubsystem) != 0U) {
 		if (const auto error = validate_subsystem_reference(
-				atoms, context, visibility_mode, facts.current_target, facts.target_subsystem_id);
+				atoms, context, visibility_mode, facts.current_target,
+				facts.target_subsystem_id, sensor_identity_allowed);
 			error != ValidationError::None) {
 			return error;
 		}
 	}
 	if ((facts.presence & TargetStatePresenceFlagLockSubsystem) != 0U) {
 		if (const auto error = validate_subsystem_reference(
-				atoms, context, visibility_mode, facts.current_target, facts.lock_subsystem_id);
+				atoms, context, visibility_mode, facts.current_target,
+				facts.lock_subsystem_id, sensor_identity_allowed);
 			error != ValidationError::None) {
 			return error;
 		}
 	}
 	if ((facts.presence & TargetStatePresenceFlagRevealedIdentity) != 0U) {
-		LifecycleFacts target;
-		if (const auto error = lifecycle_for_entity(atoms, facts.current_target, target);
-			error != ValidationError::None) {
-			return error;
+		const auto* lifecycle = find_owner(atoms, RecordType::EntityLifecycle,
+			facts.current_target);
+		ValidationError error = ValidationError::None;
+		if (lifecycle != nullptr) {
+			LifecycleFacts target;
+			error = parse_lifecycle(*lifecycle, target);
+			if (error == ValidationError::None) {
+				error = validate_revealed_identity(context, target,
+					facts.revealed_object_type,
+					facts.revealed_class_id, false);
+			}
+		} else {
+			error = sensor_identity_allowed
+				? validate_sensor_revealed_identity(context,
+					facts.revealed_object_type,
+					facts.revealed_class_id, false)
+				: ValidationError::UnknownEntity;
 		}
-		if (const auto error = validate_revealed_identity(
-				context, target, facts.revealed_object_type, facts.revealed_class_id, false);
-			error != ValidationError::None) {
+		if (error != ValidationError::None) {
 			return error;
 		}
 	}
@@ -653,39 +839,79 @@ ValidationError validate_target_references(const StateAtom& atom,
 ValidationError validate_radar_contact_references(const StateAtom& atom,
 	const std::vector<StateAtom>& atoms,
 	const BusinessStateValidationContext& context,
-	VisibilityMode visibility_mode) noexcept
+	VisibilityMode visibility_mode,
+	bool sensor_identity_allowed) noexcept
 {
 	RadarContactFacts facts;
 	if (const auto error = parse_radar_contact(atom, facts); error != ValidationError::None) {
 		return error;
 	}
 	if (const auto error =
-			validate_entity_reference(atoms, context, visibility_mode, facts.contact_entity_id);
+			validate_entity_reference(atoms, context, visibility_mode,
+				facts.contact_entity_id, sensor_identity_allowed);
 		error != ValidationError::None) {
 		return error;
 	}
+	const auto* lifecycle = find_owner(atoms, RecordType::EntityLifecycle,
+		facts.contact_entity_id);
 	LifecycleFacts contact;
-	if (const auto error = lifecycle_for_entity(atoms, facts.contact_entity_id, contact);
-		error != ValidationError::None) {
-		return error;
-	}
-	if (facts.object_type != contact.object_type) {
-		return ValidationError::InvalidStateTransition;
+	if (lifecycle != nullptr) {
+		if (const auto error = parse_lifecycle(*lifecycle, contact);
+			error != ValidationError::None) {
+			return error;
+		}
+		if (facts.object_type != contact.object_type) {
+			return ValidationError::InvalidStateTransition;
+		}
 	}
 	if ((facts.presence & RadarContactsPresenceFlagRevealedClass) != 0U) {
-		if (const auto error =
-				validate_revealed_identity(context, contact, facts.object_type, facts.revealed_class_id, true);
-			error != ValidationError::None) {
+		const auto error = lifecycle != nullptr
+			? validate_revealed_identity(context, contact,
+				facts.object_type, facts.revealed_class_id, true)
+			: validate_sensor_revealed_identity(context,
+				facts.object_type, facts.revealed_class_id, true);
+		if (error != ValidationError::None) {
 			return error;
 		}
 	}
 	const auto radar_bomb = (facts.flags & ContactFlagBomb) != 0U;
-	if (contact.object_type == ObjectType::Weapon) {
-		const auto* class_flags = find_weapon_class_flags(context, contact.class_id);
-		if (!context.weapon_manifest_installed || class_flags == nullptr) {
-			return ValidationError::MissingManifest;
+	const auto has_authoritative_visual =
+		facts.record_version == 4U &&
+		(facts.presence & RadarContactsPresenceFlagRadarVisual) != 0U;
+	if (has_authoritative_visual) {
+		const auto type_is = [&facts](RadarBlipType type) {
+			return facts.radar_blip_type == type;
+		};
+		if (radar_bomb != type_is(RadarBlipType::Bomb) ||
+			(((facts.flags & ContactFlagTagged) != 0U) != type_is(RadarBlipType::TaggedShip)) ||
+			(((facts.flags & ContactFlagWarp) != 0U) != type_is(RadarBlipType::WarpingShip)) ||
+			((facts.flags & ContactFlagCurrentTarget) != 0U &&
+			 (facts.flags & ContactFlagBright) == 0U)) {
+			return ValidationError::InvalidStateTransition;
 		}
-		if (radar_bomb != ((*class_flags & WeaponClassFlagBomb) != 0U)) {
+		if (radar_bomb && facts.object_type != ObjectType::Weapon) {
+			return ValidationError::InvalidStateTransition;
+		}
+		const auto compatible_object =
+			type_is(RadarBlipType::JumpNode) ? facts.object_type == ObjectType::JumpNode :
+			type_is(RadarBlipType::Bomb) ? facts.object_type == ObjectType::Weapon :
+			type_is(RadarBlipType::WarpingShip) ?
+				(facts.object_type == ObjectType::Ship || facts.object_type == ObjectType::Weapon) :
+			facts.object_type == ObjectType::Ship;
+		if (!compatible_object) return ValidationError::InvalidStateTransition;
+	} else if (facts.object_type == ObjectType::Weapon) {
+		const auto class_id = lifecycle != nullptr
+			? contact.class_id
+			: facts.revealed_class_id;
+		const auto* class_flags = class_id != 0U
+			? find_weapon_class_flags(context, class_id)
+			: nullptr;
+		if (lifecycle == nullptr && !radar_bomb && class_id == 0U) {
+			// A sensor-only weapon contact may intentionally omit its class.
+		} else if (!context.weapon_manifest_installed || class_flags == nullptr) {
+			return ValidationError::MissingManifest;
+		} else if (radar_bomb !=
+			((*class_flags & WeaponClassFlagBomb) != 0U)) {
 			return ValidationError::InvalidStateTransition;
 		}
 	} else if (radar_bomb) {
@@ -697,8 +923,17 @@ ValidationError validate_radar_contact_references(const StateAtom& atom,
 		if (const auto error = parse_target(*target_atom, target); error != ValidationError::None) {
 			return error;
 		}
-		const auto is_current_target = target.current_target == facts.contact_entity_id;
-		if (((facts.flags & ContactFlagCurrentTarget) != 0U) != is_current_target) {
+		// Targeting and radar intentionally use independent capture cadences. A
+		// retained contact flag describes the target decision at the contact's own
+		// sample time and cannot be compared with a newer (or older) TARGET_STATE.
+		// When both records were captured together, keep the exact invariant.
+		const auto same_sample = target.producer_sample_time_us ==
+			facts.producer_sample_time_us;
+		const auto is_current_target =
+			target.current_target == facts.contact_entity_id;
+		if (same_sample &&
+			(((facts.flags & ContactFlagCurrentTarget) != 0U) !=
+			 is_current_target)) {
 			return ValidationError::InvalidStateTransition;
 		}
 	}
@@ -708,7 +943,8 @@ ValidationError validate_radar_contact_references(const StateAtom& atom,
 ValidationError validate_threat_references(const StateAtom& atom,
 	const std::vector<StateAtom>& atoms,
 	const BusinessStateValidationContext& context,
-	VisibilityMode visibility_mode) noexcept
+	VisibilityMode visibility_mode,
+	bool sensor_identity_allowed) noexcept
 {
 	PacketReader reader(ByteView{atom.value.empty() ? nullptr : atom.value.data(), atom.value.size()});
 	std::uint64_t owner = 0;
@@ -733,7 +969,8 @@ ValidationError validate_threat_references(const StateAtom& atom,
 	}
 	const auto validate_if_present = [&](std::uint64_t flag, std::uint64_t entity_id) {
 		return (presence & flag) == 0U ? ValidationError::None :
-			validate_entity_reference(atoms, context, visibility_mode, entity_id);
+			validate_entity_reference(atoms, context, visibility_mode,
+				entity_id, sensor_identity_allowed);
 	};
 	if (const auto error = validate_if_present(ThreatStatePresenceFlagNearestAttacker, attacker);
 		error != ValidationError::None) {
@@ -770,18 +1007,24 @@ ValidationError validate_threat_references(const StateAtom& atom,
 			return ValidationError::InvalidStateTransition;
 		}
 		if (const auto error =
-				validate_entity_reference(atoms, context, visibility_mode, missile_ids[index]);
+				validate_entity_reference(atoms, context, visibility_mode,
+					missile_ids[index], sensor_identity_allowed);
 			error != ValidationError::None) {
 			return error;
 		}
+		const auto* lifecycle = find_owner(atoms,
+			RecordType::EntityLifecycle, missile_ids[index]);
 		LifecycleFacts missile;
-		if (const auto error = lifecycle_for_entity(atoms, missile_ids[index], missile);
-			error != ValidationError::None) {
-			return error;
-		}
-		if (missile.object_type != ObjectType::Weapon || !missile.has_class ||
-			missile.class_id != weapon_class_id) {
-			return ValidationError::InvalidStateTransition;
+		if (lifecycle != nullptr) {
+			if (const auto error = parse_lifecycle(*lifecycle, missile);
+				error != ValidationError::None) {
+				return error;
+			}
+			if (missile.object_type != ObjectType::Weapon ||
+				!missile.has_class ||
+				missile.class_id != weapon_class_id) {
+				return ValidationError::InvalidStateTransition;
+			}
 		}
 		if (!context.weapon_manifest_installed || !has_weapon_class(context, weapon_class_id) ||
 			find_weapon_class_flags(context, weapon_class_id) == nullptr) {
@@ -829,7 +1072,8 @@ ValidationError validate_threat_references(const StateAtom& atom,
 ValidationError validate_cargo_references(const StateAtom& atom,
 	const std::vector<StateAtom>& atoms,
 	const BusinessStateValidationContext& context,
-	VisibilityMode visibility_mode) noexcept
+	VisibilityMode visibility_mode,
+	bool sensor_identity_allowed) noexcept
 {
 	PacketReader reader(ByteView{atom.value.empty() ? nullptr : atom.value.data(), atom.value.size()});
 	std::uint64_t ignored_u64 = 0;
@@ -846,7 +1090,8 @@ ValidationError validate_cargo_references(const StateAtom& atom,
 	if (!reader.read_u64(target)) {
 		return ValidationError::BadRecordLength;
 	}
-	if (const auto error = validate_entity_reference(atoms, context, visibility_mode, target);
+	if (const auto error = validate_entity_reference(atoms, context,
+			visibility_mode, target, sensor_identity_allowed);
 		error != ValidationError::None) {
 		return error;
 	}
@@ -855,7 +1100,9 @@ ValidationError validate_cargo_references(const StateAtom& atom,
 		if (!reader.read_u32(subsystem_id)) {
 			return ValidationError::BadRecordLength;
 		}
-		return validate_subsystem_reference(atoms, context, visibility_mode, target, subsystem_id);
+		return validate_subsystem_reference(atoms, context,
+			visibility_mode, target, subsystem_id,
+			sensor_identity_allowed);
 	}
 	return ValidationError::None;
 }
@@ -1017,7 +1264,7 @@ bool requires_ship_scope(RecordType type) noexcept
 		   type == RecordType::PropulsionState || type == RecordType::WeaponState ||
 		   type == RecordType::LockState || type == RecordType::TargetState || type == RecordType::RadarState ||
 		   type == RecordType::ThreatState || type == RecordType::CargoScanState ||
-		   type == RecordType::NavigationState;
+		   type == RecordType::NavigationState || type == RecordType::HudAlertState;
 }
 
 bool observed_player_scope(RecordType type) noexcept
@@ -1025,7 +1272,7 @@ bool observed_player_scope(RecordType type) noexcept
 	return type == RecordType::ControlState || type == RecordType::LockState || type == RecordType::TargetState ||
 		   type == RecordType::RadarState || type == RecordType::RadarContacts ||
 		   type == RecordType::ThreatState || type == RecordType::CargoScanState ||
-		   type == RecordType::NavigationState;
+		   type == RecordType::NavigationState || type == RecordType::HudAlertState;
 }
 
 bool domain_allows_record(RecordType type, std::uint64_t coverage) noexcept
@@ -1036,7 +1283,8 @@ bool domain_allows_record(RecordType type, std::uint64_t coverage) noexcept
 	if (type == RecordType::LockState || type == RecordType::TargetState) {
 		return (coverage & StateDomainCoverageBitTargeting) != 0U;
 	}
-	if (type == RecordType::RadarState || type == RecordType::RadarContacts || type == RecordType::ThreatState) {
+	if (type == RecordType::RadarState || type == RecordType::RadarContacts ||
+		type == RecordType::ThreatState || type == RecordType::HudAlertState) {
 		return (coverage & StateDomainCoverageBitRadarSensors) != 0U;
 	}
 	if (type == RecordType::WeaponState) {
@@ -1075,8 +1323,8 @@ ValidationError BusinessStateImageValidator::validate(const StateImage& image) c
 		envelope.record_version = atom.record_version;
 		envelope.record_flags = RecordFlagNone;
 		envelope.payload = ByteView{atom.value.empty() ? nullptr : atom.value.data(), atom.value.size()};
-		if (const auto error =
-				validate_business_record(envelope, BusinessRecordContainer::FullSnapshot, metadata);
+		if (const auto error = validate_business_record(
+				envelope, BusinessRecordContainer::FullSnapshot, m_context.protocol_minor, metadata);
 			error != ValidationError::None) {
 			return error;
 		}
@@ -1096,16 +1344,63 @@ ValidationError BusinessStateImageValidator::validate(const StateImage& image) c
 	if (const auto error = parse_session(*session_atom, session); error != ValidationError::None) {
 		return error;
 	}
+	const bool phase1_player_kinematics =
+		is_phase1_player_kinematics_profile(m_context.protocol_minor, session.coverage);
+	const bool phase2_complete_ship =
+		is_phase2_complete_ship_profile(m_context.protocol_minor, session.coverage);
+	const bool phase3_cockpit_sensors =
+		is_phase3_cockpit_sensors_profile(m_context.protocol_minor, session.coverage);
+	if (phase1_player_kinematics) {
+		if (m_context.required_manifest_id != 0U) {
+			return ValidationError::InvalidStateTransition;
+		}
+		if (session.capabilities != 0U) {
+			return ValidationError::CapabilityNotNegotiated;
+		}
+		if (session.derived_events != 0U || session.exact_events != 0U) {
+			return ValidationError::InvalidStateTransition;
+		}
+		const auto expected_record_count = session.observed_entity_id == 0U ? 2U : 4U;
+		if (atoms.size() != expected_record_count) {
+			return ValidationError::InvalidAbsence;
+		}
+		if (session.observed_entity_id != 0U) {
+			const auto* flight = find_owner(atoms, RecordType::FlightState, session.observed_entity_id);
+			if (flight == nullptr || flight->value.size() < 16U || read_u64(flight->value.data() + 8U) != 0U) {
+				return ValidationError::InvalidAbsence;
+			}
+		}
+	} else if (m_context.protocol_minor == VersionMinorV1_1 &&
+		(session.coverage & StateDomainCoverageBitCoreShip) != 0U && m_context.required_manifest_id == 0U) {
+		return ValidationError::MissingManifest;
+	}
+	constexpr std::uint64_t SpecializedCommVideoCapabilities =
+		static_cast<std::uint64_t>(CapabilityCommViewLocalAssets) |
+		static_cast<std::uint64_t>(CapabilityCommViewAuthoritativeSource) |
+		static_cast<std::uint64_t>(CapabilityTargetVideoH264) |
+		static_cast<std::uint64_t>(CapabilityTargetVideoRemoteRender);
+	if (phase2_complete_ship &&
+		(session.capabilities & SpecializedCommVideoCapabilities) != 0U) {
+		// 0x0583 never negotiates COMM-view or target-video specialization.
+		// Reject isolated bits with the same oracle as a complete pair.
+		return ValidationError::CapabilityNotNegotiated;
+	}
 	if (validate_emittable_active_capabilities(session.capabilities) != ValidationError::None) {
 		return ValidationError::CapabilityNotNegotiated;
 	}
 	if (m_context.enforce_negotiated_capabilities && session.capabilities != m_context.negotiated_capabilities) {
 		return ValidationError::CapabilityNotNegotiated;
 	}
+	if (phase1_player_kinematics && session.visibility_mode != VisibilityMode::Cockpit) {
+		return ValidationError::VisibilityViolation;
+	}
 	if (session.visibility_mode == VisibilityMode::TrustedFullState &&
 		(!m_context.trusted_full_state_authorized || !m_context.source_endpoint_allowlisted ||
 			session.authority_mode == AuthorityMode::MultiplayerClient)) {
 		return ValidationError::VisibilityViolation;
+	}
+	if (phase1_player_kinematics && session.authority_mode != AuthorityMode::Solo) {
+		return ValidationError::InvalidStateTransition;
 	}
 	const auto exact_without_derived = session.exact_events & ~session.derived_events;
 	if ((exact_without_derived & ~m_context.exact_event_hook_families) != 0U ||
@@ -1145,13 +1440,18 @@ ValidationError BusinessStateImageValidator::validate(const StateImage& image) c
 	if (session.observed_entity_id != 0) {
 		const auto* observed = find_owner(atoms, RecordType::EntityLifecycle, session.observed_entity_id);
 		if (observed == nullptr) {
-			return ValidationError::UnknownEntity;
+			return phase2_complete_ship
+				? ValidationError::InvalidAbsence
+				: ValidationError::UnknownEntity;
 		}
 		if (const auto error = parse_lifecycle(*observed, observed_lifecycle); error != ValidationError::None) {
 			return error;
 		}
 		if (observed_lifecycle.object_type != ObjectType::Ship) {
 			return ValidationError::InvalidStateTransition;
+		}
+		if (phase1_player_kinematics && observed_lifecycle.presence != 0U) {
+			return ValidationError::InvalidAbsence;
 		}
 	}
 
@@ -1167,7 +1467,9 @@ ValidationError BusinessStateImageValidator::validate(const StateImage& image) c
 		const auto owner_id = read_u64(atom.key.identity.data());
 		const auto* lifecycle_atom = find_owner(atoms, RecordType::EntityLifecycle, owner_id);
 		if (lifecycle_atom == nullptr) {
-			return ValidationError::UnknownEntity;
+			return phase2_complete_ship
+				? ValidationError::InvalidAbsence
+				: ValidationError::UnknownEntity;
 		}
 		LifecycleFacts lifecycle;
 		if (const auto error = parse_lifecycle(*lifecycle_atom, lifecycle); error != ValidationError::None) {
@@ -1222,18 +1524,23 @@ ValidationError BusinessStateImageValidator::validate(const StateImage& image) c
 		static_cast<std::size_t>(std::distance(atoms.begin(), lifecycle_begin));
 	const auto lifecycle_count = static_cast<std::size_t>(std::distance(lifecycle_begin, lifecycle_end));
 	std::vector<ParentChainVisit> parent_chain_visits;
+	std::size_t phase2_ship_count = 0U;
 	for (auto iterator = lifecycle_begin; iterator != lifecycle_end; ++iterator) {
 		const auto& atom = *iterator;
 		LifecycleFacts lifecycle;
 		if (const auto error = parse_lifecycle(atom, lifecycle); error != ValidationError::None) {
 			return error;
 		}
+		if (phase2_complete_ship && lifecycle.object_type == ObjectType::Ship &&
+			++phase2_ship_count > MaximumPhase2CompleteShipCount) {
+			return ValidationError::ResourceLimit;
+		}
 		if (session.visibility_mode == VisibilityMode::Cockpit && m_context.enforce_cockpit_entity_allowlist &&
 			!cockpit_entity_allowed(m_context, lifecycle.entity_id)) {
 			return ValidationError::VisibilityViolation;
 		}
 		const BusinessClassCatalogEntry* class_entry = nullptr;
-		if (lifecycle.object_type == ObjectType::Ship) {
+		if (lifecycle.object_type == ObjectType::Ship && !phase1_player_kinematics) {
 			if (!m_context.class_manifest_installed || !lifecycle.has_class ||
 				(class_entry = find_class(m_context, lifecycle.class_id)) == nullptr) {
 				return ValidationError::MissingManifest;
@@ -1260,6 +1567,16 @@ ValidationError BusinessStateImageValidator::validate(const StateImage& image) c
 			}
 			if ((session.coverage & StateDomainCoverageBitWeapons) != 0U &&
 				find_owner(atoms, RecordType::WeaponState, lifecycle.entity_id) == nullptr) {
+				return ValidationError::InvalidAbsence;
+			}
+			if (phase2_complete_ship &&
+				(find_owner(atoms, RecordType::DockingState, lifecycle.entity_id) == nullptr ||
+					find_owner(atoms, RecordType::SupportState, lifecycle.entity_id) == nullptr)) {
+				return ValidationError::InvalidAbsence;
+			}
+		} else if (lifecycle.object_type == ObjectType::Ship) {
+			if (lifecycle.entity_id != session.observed_entity_id || lifecycle.presence != 0U ||
+				lifecycle.has_class || find_owner(atoms, RecordType::FlightState, lifecycle.entity_id) == nullptr) {
 				return ValidationError::InvalidAbsence;
 			}
 		} else if (lifecycle.object_type == ObjectType::Weapon) {
@@ -1308,19 +1625,24 @@ ValidationError BusinessStateImageValidator::validate(const StateImage& image) c
 		ValidationError error = ValidationError::None;
 		switch (static_cast<RecordType>(atom.key.record_type)) {
 		case RecordType::LockState:
-			error = validate_lock_references(atom, atoms, m_context, session.visibility_mode);
+			error = validate_lock_references(atom, atoms, m_context,
+				session.visibility_mode, phase3_cockpit_sensors);
 			break;
 		case RecordType::TargetState:
-			error = validate_target_references(atom, atoms, m_context, session.visibility_mode);
+			error = validate_target_references(atom, atoms, m_context,
+				session.visibility_mode, phase3_cockpit_sensors);
 			break;
 		case RecordType::RadarContacts:
-			error = validate_radar_contact_references(atom, atoms, m_context, session.visibility_mode);
+			error = validate_radar_contact_references(atom, atoms, m_context,
+				session.visibility_mode, phase3_cockpit_sensors);
 			break;
 		case RecordType::ThreatState:
-			error = validate_threat_references(atom, atoms, m_context, session.visibility_mode);
+			error = validate_threat_references(atom, atoms, m_context,
+				session.visibility_mode, phase3_cockpit_sensors);
 			break;
 		case RecordType::CargoScanState:
-			error = validate_cargo_references(atom, atoms, m_context, session.visibility_mode);
+			error = validate_cargo_references(atom, atoms, m_context,
+				session.visibility_mode, phase3_cockpit_sensors);
 			break;
 		case RecordType::DockingState:
 			error = validate_docking_references(atom, atoms, m_context, session.visibility_mode);
@@ -1343,6 +1665,9 @@ ValidationError BusinessStateImageValidator::validate(const StateImage& image) c
 	if (!require_observed(RecordType::ControlState, StateDomainCoverageBitControlInputs) ||
 		!require_observed(RecordType::RadarState, StateDomainCoverageBitRadarSensors) ||
 		!require_observed(RecordType::ThreatState, StateDomainCoverageBitRadarSensors) ||
+		(phase3_cockpit_sensors && m_context.require_hud_alert_state &&
+		 !require_observed(RecordType::HudAlertState,
+			 StateDomainCoverageBitRadarSensors)) ||
 		!require_observed(RecordType::LockState, StateDomainCoverageBitTargeting) ||
 		!require_observed(RecordType::TargetState, StateDomainCoverageBitTargeting) ||
 		!require_observed(RecordType::CargoScanState, StateDomainCoverageBitCargoDockSupport) ||
@@ -1353,6 +1678,69 @@ ValidationError BusinessStateImageValidator::validate(const StateImage& image) c
 	const auto comm_active = (session.capabilities & CommViewCapabilityPair) == CommViewCapabilityPair;
 	if (comm_active != has_record_type(atoms, RecordType::CommViewState)) {
 		return comm_active ? ValidationError::InvalidAbsence : ValidationError::CapabilityNotNegotiated;
+	}
+	return ValidationError::None;
+}
+
+ValidationError BusinessStateImageValidator::validate_delta_transition(const StateImage& baseline,
+	const StateImage& candidate) const noexcept
+{
+	if (const auto error = validate(candidate); error != ValidationError::None) {
+		return error;
+	}
+	const auto& baseline_atoms = baseline.records();
+	const auto& candidate_atoms = candidate.records();
+	const auto* baseline_session_atom = find_singleton(baseline_atoms, RecordType::SessionState);
+	const auto* candidate_session_atom = find_singleton(candidate_atoms, RecordType::SessionState);
+	const auto* baseline_mission_atom = find_singleton(baseline_atoms, RecordType::MissionState);
+	const auto* candidate_mission_atom = find_singleton(candidate_atoms, RecordType::MissionState);
+	if (baseline_session_atom == nullptr || candidate_session_atom == nullptr || baseline_mission_atom == nullptr ||
+		candidate_mission_atom == nullptr) {
+		return ValidationError::InvalidAbsence;
+	}
+
+	SessionFacts baseline_session;
+	SessionFacts candidate_session;
+	std::uint32_t baseline_mission_generation = 0;
+	std::uint32_t candidate_mission_generation = 0;
+	if (const auto error = parse_session(*baseline_session_atom, baseline_session); error != ValidationError::None) {
+		return error;
+	}
+	if (const auto error = parse_session(*candidate_session_atom, candidate_session); error != ValidationError::None) {
+		return error;
+	}
+	if (const auto error = parse_mission_generation(*baseline_mission_atom, baseline_mission_generation);
+		error != ValidationError::None) {
+		return error;
+	}
+	if (const auto error = parse_mission_generation(*candidate_mission_atom, candidate_mission_generation);
+		error != ValidationError::None) {
+		return error;
+	}
+	if (baseline_mission_generation != candidate_mission_generation) {
+		return ValidationError::InvalidStateTransition;
+	}
+	if (baseline_session.producer_id != candidate_session.producer_id ||
+		baseline_session.authority_mode != candidate_session.authority_mode ||
+		baseline_session.visibility_mode != candidate_session.visibility_mode ||
+		baseline_session.coverage != candidate_session.coverage ||
+		baseline_session.derived_events != candidate_session.derived_events ||
+		baseline_session.exact_events != candidate_session.exact_events ||
+		candidate_session.producer_sample_time_us < baseline_session.producer_sample_time_us) {
+		return ValidationError::InvalidStateTransition;
+	}
+	if (baseline_session.capabilities == candidate_session.capabilities) {
+		if (baseline_session.capability_generation != candidate_session.capability_generation) {
+			return ValidationError::StaleGeneration;
+		}
+	} else if ((candidate_session.capabilities & ~baseline_session.capabilities) != 0U ||
+		(baseline_session.capabilities & CapabilityUpdate) == 0U ||
+		candidate_session.capability_generation <= baseline_session.capability_generation) {
+		return ValidationError::StaleGeneration;
+	}
+	if ((baseline_session.coverage & StateDomainCoverageBitPlayerKinematics) != 0U &&
+		baseline_session.observed_entity_id != candidate_session.observed_entity_id) {
+		return ValidationError::InvalidStateTransition;
 	}
 	return ValidationError::None;
 }

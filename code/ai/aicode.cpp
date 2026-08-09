@@ -71,6 +71,7 @@
 #include "ship/shipfx.h"
 #include "ship/shiphit.h"
 #include "ship/subsysdamage.h"
+#include "telemetry/phase2_observation.h"
 #include "utils/Random.h"
 #include "weapon/beam.h"
 #include "weapon/flak.h"
@@ -11203,6 +11204,30 @@ void ai_guard()
 // function to clean up ai flags, variables, and other interesting information
 // for a ship that was getting repaired.  The how parameter is useful for multiplayer
 // only in that it tells us why the repaired ship is being cleaned up.
+static telemetry::SupportTransitionReason telemetry_support_transition_reason(int how) noexcept
+{
+	switch (how) {
+	case REPAIR_INFO_QUEUE:
+		return telemetry::SupportTransitionReason::Queue;
+	case REPAIR_INFO_ONWAY:
+		return telemetry::SupportTransitionReason::OnWay;
+	case REPAIR_INFO_BEGIN:
+		return telemetry::SupportTransitionReason::Begin;
+	case REPAIR_INFO_BROKEN:
+		return telemetry::SupportTransitionReason::Broken;
+	case REPAIR_INFO_END:
+		return telemetry::SupportTransitionReason::End;
+	case REPAIR_INFO_ABORT:
+		return telemetry::SupportTransitionReason::Abort;
+	case REPAIR_INFO_KILLED:
+		return telemetry::SupportTransitionReason::Killed;
+	case REPAIR_INFO_COMPLETE:
+		return telemetry::SupportTransitionReason::Complete;
+	default:
+		return telemetry::SupportTransitionReason::Count;
+	}
+}
+
 void ai_do_objects_repairing_stuff( object *repaired_objp, object *repair_objp, int how )
 {
 	ai_info *aip, *repair_aip;
@@ -11218,6 +11243,13 @@ void ai_do_objects_repairing_stuff( object *repaired_objp, object *repair_objp, 
 	Assert(repaired_objp != NULL);
 
 	Assert( repaired_objp->type == OBJ_SHIP);
+	telemetry::OnSupportTransition(static_cast<std::uint32_t>(repaired_objp->signature),
+		repair_objp != nullptr && repair_objp->signature > 0
+			? static_cast<std::uint32_t>(repair_objp->signature)
+			: 0U,
+		0U,
+		telemetry_support_transition_reason(how),
+		timer_get_microseconds());
 	aip = &Ai_info[Ships[repaired_objp->instance].ai_index];
 
 	if(Game_mode & GM_MULTIPLAYER){

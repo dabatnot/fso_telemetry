@@ -1,0 +1,20 @@
+{
+  "fields": {
+    "entity_id": "1",
+    "missile_lock_state": 2,
+    "presence": "1",
+    "primary_fire_threat_active": true,
+    "producer_sample_time_us": "1000000",
+    "warning_instance_id": "9",
+    "warning_kind": 1,
+    "warning_remaining_us": "750000",
+    "warning_text": "Launch"
+  },
+  "kind": "record",
+  "recordFlags": 0,
+  "recordLength": 51,
+  "recordName": "HUD_ALERT_STATE",
+  "recordType": 29,
+  "recordVersion": 1,
+  "schema": "FSTL-1.1"
+}

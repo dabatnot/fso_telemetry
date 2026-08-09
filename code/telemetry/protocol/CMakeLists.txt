@@ -7,6 +7,7 @@ set(FSTL_PROTOCOL_SOURCES
 	telemetry_business_records_11_18.cpp
 	telemetry_business_records_19_24.cpp
 	telemetry_business_records_28.cpp
+	telemetry_business_records_29.cpp
 	telemetry_business_state_validation.cpp
 	telemetry_rate_limiter.cpp
 	telemetry_capabilities.cpp

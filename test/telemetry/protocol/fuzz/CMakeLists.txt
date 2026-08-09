@@ -11,6 +11,8 @@ set(FSTL_FUZZ_TARGETS
 	fuzz_transactions
 	fuzz_comm_views
 	fuzz_video_payloads
+	telemetry_phase2_packet_reader_fuzz
+	telemetry_phase2_state_validator_fuzz
 )
 
 set(FSTL_FUZZ_SANITIZER_COMPILE_OPTIONS)
@@ -27,10 +29,25 @@ if(MSVC)
 	if(FSO_TELEMETRY_FUZZ_SANITIZERS)
 		set(FSTL_FUZZ_SANITIZER_COMPILE_OPTIONS /fsanitize=address /Zi /GL-)
 		set(FSTL_FUZZ_SANITIZER_LINK_OPTIONS /INCREMENTAL:NO)
+		get_filename_component(FSTL_MSVC_TOOL_DIRECTORY "${CMAKE_CXX_COMPILER}" DIRECTORY)
+		if(CMAKE_SIZEOF_VOID_P EQUAL 8)
+			set(FSTL_MSVC_ASAN_RUNTIME_NAME clang_rt.asan_dynamic-x86_64.dll)
+		else()
+			set(FSTL_MSVC_ASAN_RUNTIME_NAME clang_rt.asan_dynamic-i386.dll)
+		endif()
+		find_file(FSTL_MSVC_ASAN_RUNTIME
+			NAMES "${FSTL_MSVC_ASAN_RUNTIME_NAME}"
+			PATHS "${FSTL_MSVC_TOOL_DIRECTORY}"
+			NO_DEFAULT_PATH)
+		if(NOT FSTL_MSVC_ASAN_RUNTIME)
+			message(FATAL_ERROR
+				"MSVC telemetry fuzz sanitizers require ${FSTL_MSVC_ASAN_RUNTIME_NAME} "
+				"next to the selected compiler")
+		endif()
 	else()
 		message(WARNING
 			"Telemetry fuzz sanitizer instrumentation is disabled. Corpus replay remains useful "
-			"as a deterministic smoke test, but is not sanitizer evidence for the Phase 0 gate.")
+			"as a deterministic short test, but is not sanitizer coverage.")
 	endif()
 elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang|AppleClang")
 	if(FSO_TELEMETRY_FUZZ_SANITIZERS)
@@ -101,10 +118,24 @@ foreach(target IN LISTS FSTL_FUZZ_TARGETS)
 	set_target_properties(${target} PROPERTIES
 		FOLDER "tests/telemetry/fuzz"
 		INTERPROCEDURAL_OPTIMIZATION OFF)
+	if(MSVC AND FSO_TELEMETRY_FUZZ_SANITIZERS)
+		add_custom_command(TARGET ${target} POST_BUILD
+			COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+				"${FSTL_MSVC_ASAN_RUNTIME}"
+				"$<TARGET_FILE_DIR:${target}>"
+			COMMENT "Deploying the MSVC AddressSanitizer runtime for ${target}"
+			VERBATIM)
+	endif()
 endforeach()
 
 add_custom_target(telemetry_fuzzers DEPENDS ${FSTL_FUZZ_TARGETS})
 set_target_properties(telemetry_fuzzers PROPERTIES FOLDER "tests/telemetry/fuzz")
+
+add_custom_target(telemetry_phase2_fuzz_tests DEPENDS
+	telemetry_phase2_packet_reader_fuzz
+	telemetry_phase2_state_validator_fuzz)
+set_target_properties(telemetry_phase2_fuzz_tests
+	PROPERTIES FOLDER "tests/telemetry/fuzz")
 
 find_package(Python3 3.8 REQUIRED COMPONENTS Interpreter)
 set(FSTL_FUZZ_CORPUS_DIR "${CMAKE_BINARY_DIR}/telemetry-fuzz-corpus")
@@ -113,6 +144,7 @@ add_custom_target(telemetry_fuzz_corpus
 	COMMAND "${Python3_EXECUTABLE}"
 		"${CMAKE_CURRENT_SOURCE_DIR}/prepare_fuzz_corpus.py"
 		--vectors "${CMAKE_SOURCE_DIR}/test/telemetry/protocol/vectors"
+		--vectors "${CMAKE_SOURCE_DIR}/test/telemetry/protocol/vectors-v1.1"
 		--output "${FSTL_FUZZ_CORPUS_DIR}"
 	BYPRODUCTS "${FSTL_FUZZ_CORPUS_DIR}/manifest.json"
 	COMMENT "Seeding telemetry fuzz corpora from FSTL golden vectors"
@@ -138,3 +170,46 @@ add_custom_target(telemetry_fuzz_smoke
 	USES_TERMINAL
 	VERBATIM)
 set_target_properties(telemetry_fuzz_smoke PROPERTIES FOLDER "tests/telemetry/fuzz")
+
+set(FSTL_PHASE2_FUZZ_CORPUS_DIR
+	"${CMAKE_SOURCE_DIR}/test/telemetry/producer/phase2/fuzz/corpus")
+set(FSTL_PHASE2_FUZZ_RESULTS_DIR
+	"${CMAKE_BINARY_DIR}/telemetry-phase2-fuzz-results")
+
+set(FSTL_PHASE2_FUZZ_SANITIZER_ARGS)
+if(FSO_TELEMETRY_FUZZ_SANITIZERS)
+	if(MSVC)
+		list(APPEND FSTL_PHASE2_FUZZ_SANITIZER_ARGS --sanitizer address)
+	else()
+		if(NOT FSO_TELEMETRY_FUZZ_STANDALONE)
+			list(APPEND FSTL_PHASE2_FUZZ_SANITIZER_ARGS --sanitizer fuzzer)
+		endif()
+		list(APPEND FSTL_PHASE2_FUZZ_SANITIZER_ARGS
+			--sanitizer address
+			--sanitizer undefined)
+	endif()
+endif()
+
+add_custom_target(telemetry_phase2_fuzz_smoke
+	COMMAND "${Python3_EXECUTABLE}"
+		"${CMAKE_CURRENT_SOURCE_DIR}/run_fuzz_smoke.py"
+		--binary-dir "$<TARGET_FILE_DIR:telemetry_phase2_packet_reader_fuzz>"
+		--corpus "${FSTL_PHASE2_FUZZ_CORPUS_DIR}"
+		--artifacts "${CMAKE_BINARY_DIR}/telemetry-phase2-fuzz-artifacts"
+		--max-total-time 60
+		--seed 1345474380
+		--timeout 5
+		--rss-limit-mb 384
+		--evidence-dir "${FSTL_PHASE2_FUZZ_RESULTS_DIR}"
+		--dictionary "${CMAKE_CURRENT_SOURCE_DIR}/fstl.dict"
+		--target telemetry_phase2_packet_reader_fuzz
+		--target telemetry_phase2_state_validator_fuzz
+		${FSTL_PHASE2_FUZZ_SANITIZER_ARGS}
+		${FSTL_FUZZ_SMOKE_ARGS}
+	DEPENDS
+		telemetry_phase2_packet_reader_fuzz
+		telemetry_phase2_state_validator_fuzz
+	USES_TERMINAL
+	VERBATIM)
+set_target_properties(telemetry_phase2_fuzz_smoke
+	PROPERTIES FOLDER "tests/telemetry/fuzz")

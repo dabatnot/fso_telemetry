@@ -1,0 +1,400 @@
+HISTORIQUE, NON NORMATIF, NE PAS EXECUTER.
+"""Focused fail-closed contract tests for the Phase 2 performance validator."""
+
+from __future__ import annotations
+
+import argparse
+import copy
+import csv
+import importlib.util
+import json
+import statistics
+import tempfile
+import unittest
+from pathlib import Path
+
+
+MODULE_PATH = Path(__file__).with_name("run_phase2_performance_evidence.py")
+SPEC = importlib.util.spec_from_file_location("phase2_performance", MODULE_PATH)
+assert SPEC and SPEC.loader
+performance = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(performance)
+
+
+class PerformanceEvidenceContractTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temporary = tempfile.TemporaryDirectory()
+        self.root = Path(self.temporary.name)
+        self.args = argparse.Namespace(
+            build_dir=self.root,
+            config="Release",
+            warmup_seconds=0,
+            control_seconds=10,
+            measure_seconds=30,
+            minimum_frames=1600,
+            minimum_flight_ticks=800,
+            minimum_system_ticks=260,
+            minimum_keyframes=10,
+            seed=4242,
+            soak_seconds=10,
+            soak_profile="composite",
+            soak_seed=4242,
+            performance_report_dir=self.root,
+            soak_report_dir=self.root / "soak",
+            harness=None,
+        )
+        self.report = self.make_report()
+
+    def tearDown(self) -> None:
+        self.temporary.cleanup()
+
+    def write_raw(
+        self, name: str, tick_ns: int, *,
+        count: int = 600, coordinated: bool = True,
+    ) -> tuple[Path, dict[str, int]]:
+        path = self.root / f"{name}.csv"
+        counts = {"flightTicks": 0, "systemTicks": 0, "keyframes": 0}
+        with path.open("w", encoding="utf-8", newline="") as stream:
+            writer = csv.DictWriter(stream, fieldnames=performance.RAW_HEADER)
+            writer.writeheader()
+            for index in range(count):
+                flight = int(index % 2 == 0)
+                systems = int(index % 6 == 0)
+                keyframe = int(index % 120 == 0)
+                counts["flightTicks"] += flight
+                counts["systemTicks"] += systems
+                counts["keyframes"] += keyframe
+                row = {key: 0 for key in performance.RAW_HEADER}
+                row.update({
+                    "sample_index": index,
+                    "trace_index": index,
+                    "epoch_index": index // 60 if coordinated else 0,
+                    "tick_duration_ns": tick_ns,
+                    "capture_flight": flight,
+                    "capture_systems": systems,
+                    "is_keyframe": keyframe,
+                })
+                writer.writerow(row)
+        return path, counts
+
+    def make_report(self) -> dict:
+        raw = []
+        ticks: dict[str, list[float]] = {}
+        for name, tick_ns in zip(performance.RUNTIMES, (100_000, 101_000, 101_000, 101_000)):
+            path, counts = self.write_raw(name, tick_ns)
+            ticks[name] = [tick_ns / 1_000_000.0] * 600
+            raw.append({
+                "workload": name,
+                "path": str(path),
+                "sha256": performance.sha256(path),
+                "count": 600,
+                **counts,
+            })
+        qualifications = []
+        for name in ("config-absent", "enabled-false"):
+            count = 100_000 if name == "enabled-false" else 600
+            path, _ = self.write_raw(
+                name, 1, count=count, coordinated=False
+            )
+            qualifications.append({
+                "name": name,
+                "status": "passed",
+                "measured": False,
+                "path": str(path),
+                "sha256": performance.sha256(path),
+            })
+        qualifications[1].update({
+            "callbacks": 100_000,
+            "averageMs": 0.000001,
+            "p99Ms": 0.000001,
+            "medianMs": 0.000001,
+            "controlMedianRegressionPercent": -99.999,
+            "sharedFrameWorkload": True,
+        })
+        soak_path, soak_counts = self.write_raw(
+            "composite-soak", 101_000, coordinated=False
+        )
+        temperature = self.root / "temperature.log"
+        throttle = self.root / "throttle.log"
+        monitor_ready = self.root / "host-monitor-ready.log"
+        temperature.write_text("verdict=pass\n", encoding="utf-8")
+        throttle.write_text("verdict=pass\n", encoding="utf-8")
+        monitor_ready.write_text("verdict=pass\n", encoding="utf-8")
+        active = [value for name in performance.ACTIVE_RUNTIMES for value in ticks[name]]
+        control_median = statistics.median(ticks["control"])
+        active_median = statistics.median(active)
+        slices = []
+        for epoch in range(10):
+            for position in range(4):
+                slices.append({
+                    "epoch": epoch,
+                    "position": position,
+                    "runtime": performance.RUNTIMES[(epoch % 4 + position) % 4],
+                })
+        command = [
+            "performance-harness",
+            "--warmup-seconds", "0",
+            "--control-seconds", "10",
+            "--measure-seconds", "30",
+            "--minimum-frames", "1600",
+            "--minimum-flight-ticks", "800",
+            "--minimum-system-ticks", "260",
+            "--minimum-keyframes", "10",
+            "--seed", "4242",
+            "--soak-seconds", "10",
+            "--soak-profile", "composite",
+            "--soak-seed", "4242",
+            "--qualification-plan", "coordinated-performance",
+            "--soak-report-dir", str(self.root / "soak"),
+            "--report", str(self.root / "harness-report.json"),
+        ]
+        return {
+            "schema": performance.HARNESS_SCHEMA,
+            "status": "passed",
+            "certificationEligible": True,
+            "measurementProtocol": {
+                "configuration": "Release",
+                "clock": "steady_clock",
+                "clockResolutionNs": 100.0,
+                "traceSeed": 4242,
+                "traceSeconds": 10,
+                "epochSeconds": 1,
+                "epochCount": 10,
+                "callbackHz": 60,
+                "warmupSecondsPerRuntime": 0,
+                "controlSeconds": 10,
+                "activeSeconds": 30,
+                "physicalMeasuredSeconds": 40,
+                "performanceMeasuredWallSeconds": 40,
+                "performanceWallSeconds": 40,
+                "minimumFrames": 1600,
+                "minimumFlightTicks": 800,
+                "minimumSystemTicks": 260,
+                "minimumKeyframes": 10,
+                "observedFrames": 1800,
+                "observedFlightTicks": 900,
+                "observedSystemTicks": 300,
+                "observedKeyframes": 15,
+                "percentile": "nearest-rank",
+                "median": "conventional-middle-mean",
+                "outliersRemoved": 0,
+                "activeAggregation": "raw-multiset-union",
+            },
+            "host": {
+                "compiler": "MSVC-test",
+                "powerMode": "fixed",
+                "temperatureLog": {
+                    "path": str(temperature),
+                    "sha256": performance.sha256(temperature),
+                    "verdict": "pass",
+                },
+                "throttleLog": {
+                    "path": str(throttle),
+                    "sha256": performance.sha256(throttle),
+                    "verdict": "pass",
+                },
+                "monitorReady": {
+                    "path": str(monitor_ready),
+                    "sha256": performance.sha256(monitor_ready),
+                    "verdict": "pass",
+                },
+                "sourceFingerprint": "1" * 64,
+                "testFingerprint": "2" * 64,
+                "cmakeFingerprint": "3" * 64,
+                "commandFingerprint":
+                    performance.command_fingerprint(command),
+            },
+            "evidenceContext": {
+                "revision": "a" * 40,
+                "worktree": "dirty:" + "b" * 64,
+                "dateUtc": "2026-07-30T12:00:00+00:00",
+                "buildFlags": "/O2 /DNDEBUG",
+                "platform": "Windows-test",
+                "cpu": "test-cpu",
+                "buildDirectory": str(self.root),
+                "buildConfig": "Release",
+                "command": command,
+                "codeReturn": 0,
+                "durationSeconds": 50.0,
+                "mission": "wp11-canonical-trace",
+                "mod": "FS2Open-core",
+                "profile": "complete-ship",
+            },
+            "runtimeOrder": {
+                "base": list(performance.RUNTIMES),
+                "rotation": "left-e-mod-4",
+                "persistent": True,
+                "slices": slices,
+            },
+            "qualifications": qualifications,
+            "rawSamples": raw,
+            "timingsMs": {
+                "flightControl": {"p99": 0.101},
+                "systemsNominal": {"p99": 0.101},
+                "keyframe": {"p99": 0.101, "max": 0.101},
+                "fourClientsSystems": {"p99": 0.101},
+                "controlMedian": control_median,
+                "activeMedian": active_median,
+                "activeControlMedianRegressionPercent":
+                    100.0 * (active_median / control_median - 1.0),
+                "scenarioMedians": {
+                    name: statistics.median(ticks[name])
+                    for name in performance.ACTIVE_RUNTIMES
+                },
+            },
+            "allocations": {"afterReady": 0, "steadyStateGrowthBytes": 0},
+            "budgets": {
+                key: {
+                    "limit": value,
+                    "exactAccepted": True,
+                    "plusOneRejectedBeforeBind": True,
+                }
+                for key, value in performance.BUDGETS.items()
+            },
+            "bounds": {
+                "cardinalityProven": True,
+                "requiredShips": 64,
+                "requiredAggregateSubsystems": 4096,
+                "requiredShieldSegmentsPerShip": 64,
+                "requiredBanksPerStateFamily": 64,
+                "requiredClassBankDefinitions": 192,
+                "observedShips": 64,
+                "observedAggregateSubsystems": 4096,
+                "observedShieldSegmentsPerShip": 64,
+                "observedPrimaryBanks": 64,
+                "observedSecondaryBanks": 64,
+                "observedTertiaryBanks": 64,
+                "observedClassBankDefinitions": 192,
+            },
+            "soak": {
+                "profile": "composite",
+                "workload": "composite-soak",
+                "baseSeed": 4242,
+                "seedDerivation": "(4242,composite)",
+                "derivedStream": "test-stream",
+                "durationSeconds": 10,
+                "wallElapsedSeconds": 10,
+                "rawPath": str(soak_path),
+                "rawSha256": performance.sha256(soak_path),
+                "callbackHz": 60,
+                "flightHz": 30,
+                "callbacks": 600,
+                "flightTicks": soak_counts["flightTicks"],
+                "systemTicks": soak_counts["systemTicks"],
+                "keyframes": soak_counts["keyframes"],
+                "blockCoverage": {"count": 11, "complete": True},
+                "missionReentries": 3,
+                "respawns": 3,
+                "clientRestarts": 3,
+                "lossResync": 1,
+                "manifestChanged": True,
+                "slowClientRecovered": True,
+                "stateHash": {"oracle": "123", "final": "123", "equal": True},
+                "noLeak": True,
+                "noGrowth": True,
+                "noDeadlock": True,
+                "purgedToZero": True,
+                "idsNotReused": True,
+                "finalStateExact": True,
+                "shutdownBounded": True,
+                "activeSlotsBeforeShutdown": 4,
+                "purgedSlots": 4,
+                "slotIdsUnique": True,
+                "slotHashesPresent": True,
+                "slotStatesExact": True,
+            },
+        }
+
+    def test_accepts_complete_v2_fixture(self) -> None:
+        performance.validate_report(self.report, self.args)
+
+    def assert_rejected(self, mutate) -> None:
+        candidate = copy.deepcopy(self.report)
+        mutate(candidate)
+        with self.assertRaises(ValueError):
+            performance.validate_report(candidate, self.args)
+
+    def test_rejects_wrong_rotation(self) -> None:
+        self.assert_rejected(
+            lambda report: report["runtimeOrder"]["slices"][5].update(
+                runtime="control"
+            )
+        )
+
+    def test_rejects_unproven_persistence_or_bounds(self) -> None:
+        self.assert_rejected(
+            lambda report: report["runtimeOrder"].update(persistent=False)
+        )
+        self.assert_rejected(
+            lambda report: report["bounds"].update(cardinalityProven=False)
+        )
+
+    def test_rejects_raw_hash_or_aggregate_median_mismatch(self) -> None:
+        self.assert_rejected(
+            lambda report: report["rawSamples"][1].update(sha256="0" * 64)
+        )
+        self.assert_rejected(
+            lambda report: report["timingsMs"].update(activeMedian=999.0)
+        )
+
+    def test_rejects_incomplete_composite_soak(self) -> None:
+        self.assert_rejected(
+            lambda report: report["soak"].update(clientRestarts=2)
+        )
+        self.assert_rejected(
+            lambda report: report["soak"].update(flightTicks=299)
+        )
+        self.assert_rejected(
+            lambda report: report["soak"].update(slotStatesExact=False)
+        )
+
+    def test_rejects_environment_log_and_bound_observation_tampering(self) -> None:
+        self.assert_rejected(
+            lambda report: report["host"]["temperatureLog"].update(
+                sha256="0" * 64
+            )
+        )
+        self.assert_rejected(
+            lambda report: report["host"]["monitorReady"].update(
+                verdict="fail"
+            )
+        )
+        self.assert_rejected(
+            lambda report: report["bounds"].update(observedShips=63)
+        )
+
+    def test_rejects_disabled_fast_path_or_clock_tampering(self) -> None:
+        self.assert_rejected(
+            lambda report: report["qualifications"][1].update(callbacks=99_999)
+        )
+        self.assert_rejected(
+            lambda report: report["measurementProtocol"].update(
+                clockResolutionNs=0
+            )
+        )
+
+    def test_rejects_revision_command_or_build_context_tampering(self) -> None:
+        self.assert_rejected(
+            lambda report: report["evidenceContext"].update(revision="bad")
+        )
+        self.assert_rejected(
+            lambda report: report["evidenceContext"].update(codeReturn=1)
+        )
+        self.assert_rejected(
+            lambda report: report["evidenceContext"].update(buildConfig="Debug")
+        )
+
+    def test_normative_cli_contract_is_exact(self) -> None:
+        args = performance.parse_args([
+            "--build-dir", str(self.root),
+            "--performance-report-dir", str(self.root / "performance"),
+            "--soak-report-dir", str(self.root / "soak"),
+        ])
+        performance.validate_cli_contract(args)
+        args.control_seconds = 599
+        with self.assertRaises(ValueError):
+            performance.validate_cli_contract(args)
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -1146,7 +1146,7 @@ ValidationError validate_lock_state(ByteView payload) noexcept
 	return reader.finish();
 }
 
-ValidationError validate_target_state(ByteView payload) noexcept
+ValidationError validate_target_state(std::uint8_t record_version, ByteView payload) noexcept
 {
 	Validator reader(payload);
 	std::uint64_t entity = 0;
@@ -1246,6 +1246,33 @@ ValidationError validate_target_state(ByteView payload) noexcept
 		!reader.f32(distance, 0.0F, QuantityLimit)) {
 		return reader.error();
 	}
+	float speed = 0.0F;
+	if ((presence & TargetStatePresenceFlagExactHudSpeed) != 0) {
+		if (record_version < 2U) return ValidationError::UnsupportedRecordVersion;
+		if (!reader.f32(speed, 0.0F, QuantityLimit)) return reader.error();
+	}
+	if ((presence & TargetStatePresenceFlagHudTypeLabel) != 0) {
+		if (record_version < 3U) return ValidationError::UnsupportedRecordVersion;
+		std::string_view label;
+		if (!reader.string(1U, 255U, label)) return reader.error();
+	}
+	if ((presence & TargetStatePresenceFlagHudTargetColor) != 0) {
+		if (record_version < 4U) return ValidationError::UnsupportedRecordVersion;
+		std::uint8_t component = 0U;
+		for (std::size_t index = 0U; index < 4U; ++index) {
+			if (!reader.u8(component)) return reader.error();
+		}
+	}
+	if ((presence & TargetStatePresenceFlagHudTargetSubsystemLabel) != 0) {
+		if (record_version < 5U) return ValidationError::UnsupportedRecordVersion;
+		std::string_view label;
+		if (!reader.string(1U, 255U, label)) return reader.error();
+	}
+	if ((presence & TargetStatePresenceFlagHudLockSubsystemLabel) != 0) {
+		if (record_version < 5U) return ValidationError::UnsupportedRecordVersion;
+		std::string_view label;
+		if (!reader.string(1U, 255U, label)) return reader.error();
+	}
 	return reader.finish();
 }
 
@@ -1307,7 +1334,8 @@ ValidationError validate_radar_state(ByteView payload) noexcept
 	return reader.finish();
 }
 
-ValidationError validate_radar_contacts(ByteView payload) noexcept
+ValidationError validate_radar_contacts(
+	std::uint8_t record_version, ByteView payload) noexcept
 {
 	Validator reader(payload);
 	std::uint64_t entity = 0;
@@ -1322,8 +1350,18 @@ ValidationError validate_radar_contacts(ByteView payload) noexcept
 	if (!id64(reader, entity) || !id64(reader, contact) ||
 		!presence64(reader, KnownRadarContactsPresenceFlags, presence) || !reader.u64(sample) ||
 		!enum8(reader, 8, object_type) || !enum8(reader, 7, category) || !enum8(reader, 2, visibility) ||
-		!vec3(reader, -PositionLimit, PositionLimit) || !vec3(reader, -VelocityLimit, VelocityLimit) ||
-		!reader.f32(radius, 0.0F, VelocityLimit) || !flags32(reader, KnownContactFlags, flags)) {
+		!vec3(reader, -PositionLimit, PositionLimit) || !vec3(reader, -VelocityLimit, VelocityLimit)) {
+		return reader.error();
+	}
+	if (record_version >= 2U) {
+		float projection_distance = 0.0F;
+		if (!vec3(reader, -PositionLimit, PositionLimit) ||
+			!reader.f32(projection_distance, 0.0F, PositionLimit)) {
+			return reader.error();
+		}
+	}
+	if (!reader.f32(radius, 0.0F, VelocityLimit) ||
+		!flags32(reader, KnownContactFlags, flags)) {
 		return reader.error();
 	}
 	if ((flags & ContactFlagBomb) != 0 && object_type != static_cast<std::uint8_t>(ObjectType::Weapon)) {
@@ -1369,12 +1407,51 @@ ValidationError validate_radar_contacts(ByteView payload) noexcept
 	if ((presence & RadarContactsPresenceFlagConfidence) != 0 && !reader.f32(value, 0.0F, 1.0F)) {
 		return reader.error();
 	}
+	if ((presence & RadarContactsPresenceFlagHudTypeLabel) != 0) {
+		if (record_version < 3U ||
+			object_type != static_cast<std::uint8_t>(ObjectType::Ship) ||
+			visibility != static_cast<std::uint8_t>(RadarVisibility::Visible)) {
+			return ValidationError::InvalidStateTransition;
+		}
+		std::string_view label;
+		if (!reader.string(1U, 255U, label)) return reader.error();
+	}
+	if ((presence & RadarContactsPresenceFlagRadarVisual) != 0) {
+		if (record_version != 4U) return ValidationError::UnsupportedRecordVersion;
+		std::uint8_t component = 0U;
+		for (std::size_t index = 0U; index < 4U; ++index) {
+			if (!reader.u8(component)) return reader.error();
+		}
+		std::uint8_t blip_type = 0U;
+		if (!enum8(reader, static_cast<std::uint8_t>(RadarBlipType::NormalShip), blip_type)) {
+			return reader.error();
+		}
+		const auto type_is = [blip_type](RadarBlipType type) {
+			return blip_type == static_cast<std::uint8_t>(type);
+		};
+		if (((flags & ContactFlagBomb) != 0U) != type_is(RadarBlipType::Bomb) ||
+			(((flags & ContactFlagTagged) != 0U) != type_is(RadarBlipType::TaggedShip)) ||
+			(((flags & ContactFlagWarp) != 0U) != type_is(RadarBlipType::WarpingShip)) ||
+			((flags & ContactFlagCurrentTarget) != 0U &&
+			 (flags & ContactFlagBright) == 0U)) {
+			return ValidationError::InvalidStateTransition;
+		}
+		const auto revealed_type = static_cast<ObjectType>(object_type);
+		const auto compatible_object =
+			type_is(RadarBlipType::JumpNode) ? revealed_type == ObjectType::JumpNode :
+			type_is(RadarBlipType::Bomb) ? revealed_type == ObjectType::Weapon :
+			type_is(RadarBlipType::WarpingShip) ?
+				(revealed_type == ObjectType::Ship || revealed_type == ObjectType::Weapon) :
+			revealed_type == ObjectType::Ship;
+		if (!compatible_object) return ValidationError::InvalidStateTransition;
+	}
 	return reader.finish();
 }
 
 } // namespace
 
-ValidationError validate_business_record_11_18(RecordType type, ByteView payload) noexcept
+ValidationError validate_business_record_11_18(
+	RecordType type, std::uint8_t record_version, ByteView payload) noexcept
 {
 	switch (type) {
 	case RecordType::SubsystemState:
@@ -1388,11 +1465,11 @@ ValidationError validate_business_record_11_18(RecordType type, ByteView payload
 	case RecordType::LockState:
 		return validate_lock_state(payload);
 	case RecordType::TargetState:
-		return validate_target_state(payload);
+		return validate_target_state(record_version, payload);
 	case RecordType::RadarState:
 		return validate_radar_state(payload);
 	case RecordType::RadarContacts:
-		return validate_radar_contacts(payload);
+		return validate_radar_contacts(record_version, payload);
 	default:
 		return ValidationError::UnknownRequiredRecord;
 	}

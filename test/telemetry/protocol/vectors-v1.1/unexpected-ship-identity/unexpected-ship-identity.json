@@ -1,0 +1,15 @@
+{
+  "expectedValidationError": 37,
+  "expectedValidationErrorName": "InvalidAbsence",
+  "headerVersion": "1.1",
+  "inputFiles": [
+    "unexpected-ship-identity.bin"
+  ],
+  "kind": "message-payload",
+  "messageType": 6,
+  "name": "unexpected-ship-identity",
+  "notes": "FSTL 1.1 unexpected-ship-identity",
+  "schema": "FSTL-1.1",
+  "valid": false,
+  "versionMinor": 1
+}

@@ -107,9 +107,10 @@ static int Hud_can_target_timer;	// timestamp to allow target gauge to draw stat
 char Hud_text_flash[512] = "";
 int Hud_text_flash_timer = 0;
 int Hud_text_flash_interval = 0;
+static HudTextWarningKind Hud_text_warning_kind = HudTextWarningKind::Other;
+static std::uint64_t Hud_text_warning_instance_id = 0;
 
 void hud_init_text_flash_gauge();
-void hud_start_text_flash(char *txt, int t, int interval);
 
 // multiplayer messaging text
 int Multi_msg_coords[GR_NUM_RESOLUTIONS][2] = {
@@ -2772,9 +2773,11 @@ void hud_init_text_flash_gauge()
 	strcpy_s(Hud_text_flash, "");
 	Hud_text_flash_timer = timestamp(0);
 	Hud_text_flash_interval = 0;
+	Hud_text_warning_kind = HudTextWarningKind::Other;
+	Hud_text_warning_instance_id = 0;
 }
 
-void hud_start_text_flash(const char *txt, int t, int interval)
+void hud_start_text_flash(const char *txt, int t, int interval, HudTextWarningKind kind)
 {
 	// bogus
 	if(txt == NULL){
@@ -2789,8 +2792,47 @@ void hud_start_text_flash(const char *txt, int t, int interval)
 			return;
 
 	strncpy(Hud_text_flash, txt, 500);
+	Hud_text_flash[500] = '\0';
 	Hud_text_flash_timer = timestamp(t);
 	Hud_text_flash_interval = interval;
+	Hud_text_warning_kind = kind;
+	++Hud_text_warning_instance_id;
+	if (Hud_text_warning_instance_id == 0) {
+		++Hud_text_warning_instance_id;
+	}
+}
+
+bool hud_get_alert_snapshot(HudAlertSnapshot& output) noexcept
+{
+	output = HudAlertSnapshot{};
+	if (Player == nullptr) {
+		return false;
+	}
+
+	output.primary_fire_threat_active =
+		(Player->threat_flags & HudThreatDumbfireFlag) != 0;
+	if ((Player->threat_flags & HudThreatLockFlag) != 0) {
+		output.missile_lock_state = HudMissileLockState::Acquired;
+	} else if ((Player->threat_flags & HudThreatAttemptLockFlag) != 0) {
+		output.missile_lock_state = HudMissileLockState::Attempt;
+	}
+
+	if (Hud_text_flash[0] == '\0' || timestamp_elapsed(Hud_text_flash_timer)) {
+		return true;
+	}
+	const auto remaining_ms = timestamp_until(Hud_text_flash_timer);
+	if (remaining_ms <= 0 || Hud_text_warning_instance_id == 0) {
+		return true;
+	}
+
+	output.warning_active = true;
+	output.warning_kind = Hud_text_warning_kind;
+	output.warning_instance_id = Hud_text_warning_instance_id;
+	output.warning_remaining_us = static_cast<std::uint64_t>(remaining_ms) * 1000U;
+	std::strncpy(output.warning_text.data(), Hud_text_flash,
+		output.warning_text.size() - 1U);
+	output.warning_text.back() = '\0';
+	return true;
 }
 
 HudGaugeTextWarnings::HudGaugeTextWarnings():

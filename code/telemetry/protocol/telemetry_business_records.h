@@ -35,12 +35,21 @@ bool business_record_metadata(std::uint16_t raw_record_type, BusinessRecordMetad
 ValidationError validate_business_record(const RecordEnvelopeView& record,
 	BusinessRecordContainer container,
 	BusinessRecordMetadata& metadata) noexcept;
+ValidationError validate_business_record(const RecordEnvelopeView& record,
+	BusinessRecordContainer container,
+	std::uint8_t protocol_minor,
+	BusinessRecordMetadata& metadata) noexcept;
 
 // Emits one fully validated, known v1 business-record envelope. Unknown
 // extension records are intentionally decode-only and are never relayed by a
 // v1 encoder. The output and written count remain unchanged/zero on failure.
 ValidationError encode_business_record(const RecordEnvelopeView& record,
 	BusinessRecordContainer container,
+	MutableByteView output,
+	std::size_t& written) noexcept;
+ValidationError encode_business_record(const RecordEnvelopeView& record,
+	BusinessRecordContainer container,
+	std::uint8_t protocol_minor,
 	MutableByteView output,
 	std::size_t& written) noexcept;
 
@@ -50,6 +59,10 @@ ValidationError encode_business_record(const RecordEnvelopeView& record,
 // failure.
 ValidationError decode_business_state_atom(const RecordEnvelopeView& record,
 	BusinessRecordContainer container,
+	StateAtom& output) noexcept;
+ValidationError decode_business_state_atom(const RecordEnvelopeView& record,
+	BusinessRecordContainer container,
+	std::uint8_t protocol_minor,
 	StateAtom& output) noexcept;
 
 // Converts an exact FULL_SNAPSHOT record region into the canonical immutable
@@ -71,5 +84,8 @@ ValidationError decode_business_snapshot_region_validated(ByteView records,
 // model. The output remains unchanged on any structural, semantic, duplicate
 // key or allocation failure.
 ValidationError decode_business_delta(const DeltaPayload& payload, CumulativeStateDelta& output) noexcept;
+ValidationError decode_business_delta(const DeltaPayload& payload,
+	std::uint8_t protocol_minor,
+	CumulativeStateDelta& output) noexcept;
 
 } // namespace telemetry::protocol

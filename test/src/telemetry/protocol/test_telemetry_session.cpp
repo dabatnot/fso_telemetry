@@ -1014,6 +1014,41 @@ TEST(TelemetryProtocolSession, RejectedProducerCanNegotiateANewPeerWithoutLeakin
 	EXPECT_EQ(new_endpoint, producer.context().peer_endpoint);
 }
 
+TEST(TelemetryProtocolSession, Phase1ProducerRejectsMinorZeroAndAcceptsOnlyMinorOne)
+{
+	ResourcePurgerSpy rejected_purger;
+	ProducerSessionModel rejected(rejected_purger, Phase1ProducerMinorRange);
+	auto old_client = hello(); old_client.min_minor = VersionMinorV1_0; old_client.max_minor = VersionMinorV1_0;
+	CachedWelcomeResponseView output;
+	ASSERT_EQ(ProducerHandshakeBeginResult::Ready,
+		rejected.begin_handshake(endpoint(2U, 7801U), old_client, 100U, 100U, output));
+	const auto rejection = welcome_for(old_client, WelcomeStatus::UnsupportedVersion, 0U, 90U);
+	EXPECT_EQ(VersionMinorV1_0, rejection.header.version_minor); EXPECT_EQ(0U, rejection.header.session_id);
+	ASSERT_EQ(ProducerHandshakeCompleteResult::Rejected,
+		rejected.complete_handshake(rejection.header, byte_view(rejection.bytes), 101U, output));
+	EXPECT_EQ(ProducerSessionState::Rejected, rejected.state()); EXPECT_EQ(0U, rejected.session_id());
+	EXPECT_FALSE(rejected.can_send_heavy_data()); EXPECT_TRUE(rejected_purger.purged_session_ids.empty());
+
+	ResourcePurgerSpy accepted_purger;
+	ProducerSessionModel accepted(accepted_purger, Phase1ProducerMinorRange);
+	auto current = hello(); current.min_minor = VersionMinorV1_1; current.max_minor = VersionMinorV1_1;
+	ASSERT_EQ(ProducerHandshakeBeginResult::Ready,
+		accepted.begin_handshake(endpoint(3U, 7802U), current, 100U, 102U, output));
+	auto welcome = welcome_for(current, WelcomeStatus::Accepted, 0x1234U, 91U);
+	welcome.payload.selected_minor = VersionMinorV1_1;
+	welcome.payload.producer_capabilities = 0U;
+	welcome.payload.active_capabilities = 0U;
+	welcome.bytes.assign(WelcomePayloadPrefixSize, 0U); std::size_t written = 0U;
+	ASSERT_EQ(ValidationError::None, encode_welcome_payload(welcome.payload, mutable_byte_view(welcome.bytes), written));
+	welcome.header.version_minor = VersionMinorV1_1;
+	welcome.header.message_size = static_cast<std::uint32_t>(welcome.bytes.size());
+	welcome.header.payload_size = static_cast<std::uint16_t>(welcome.bytes.size());
+	welcome.header.message_crc32 = crc32_iso_hdlc(byte_view(welcome.bytes));
+	ASSERT_EQ(ProducerHandshakeCompleteResult::AwaitingProof,
+		accepted.complete_handshake(welcome.header, byte_view(welcome.bytes), 103U, output));
+	EXPECT_EQ(VersionMinorV1_1, accepted.selected_minor()); EXPECT_EQ(0x1234U, accepted.session_id());
+}
+
 TEST(TelemetryProtocolSession, ClosingPurgesEpochStateButKeepsExactWelcomeReplayUntilExpiry)
 {
 	SessionHarness harness;

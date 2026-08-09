@@ -74,9 +74,12 @@ ByteView view(const std::vector<std::uint8_t>& bytes)
 	return ByteView{bytes.empty() ? nullptr : bytes.data(), bytes.size()};
 }
 
-RecordEnvelopeView record(RecordType type, const std::vector<std::uint8_t>& payload)
+RecordEnvelopeView record(RecordType type,
+	const std::vector<std::uint8_t>& payload,
+	std::uint8_t version = 1U)
 {
-	return RecordEnvelopeView{static_cast<std::uint16_t>(type), 1, RecordFlagNone, view(payload)};
+	return RecordEnvelopeView{static_cast<std::uint16_t>(type),
+		version, RecordFlagNone, view(payload)};
 }
 
 ValidationError validate(RecordType type, const std::vector<std::uint8_t>& payload)
@@ -521,6 +524,17 @@ TEST(TelemetryProtocolBusinessRecords11To18, TargetPresenceIsBoundToCurrentTarge
 	f32(no_target, 0.0F);
 	EXPECT_EQ(ValidationError::InvalidAbsence, validate(RecordType::TargetState, no_target));
 
+	auto hud_readout = target(TargetStatePresenceFlagExactHudDistance |
+		TargetStatePresenceFlagExactHudSpeed, 2);
+	f32(hud_readout, 809.0F);
+	f32(hud_readout, 92.0F);
+	EXPECT_EQ(ValidationError::UnsupportedRecordVersion,
+		validate(RecordType::TargetState, hud_readout));
+	BusinessRecordMetadata metadata;
+	EXPECT_EQ(ValidationError::None,
+		validate_business_record(record(RecordType::TargetState, hud_readout, 2U),
+			BusinessRecordContainer::FullSnapshot, VersionMinorV1_1, metadata));
+
 	auto invalid_utf8 = target(TargetStatePresenceFlagRevealedIdentity, 2);
 	u8(invalid_utf8, static_cast<std::uint8_t>(ObjectType::Ship));
 	u16(invalid_utf8, 1);
@@ -533,6 +547,57 @@ TEST(TelemetryProtocolBusinessRecords11To18, TargetPresenceIsBoundToCurrentTarge
 	auto unknown_trend = target(TargetStatePresenceFlagDistanceTrend, 2);
 	u8(unknown_trend, 4);
 	EXPECT_EQ(ValidationError::UnknownEnum, validate(RecordType::TargetState, unknown_trend));
+}
+
+TEST(TelemetryProtocolBusinessRecords11To18,
+	TargetStateV4HudColorIsExplicitAndAppended)
+{
+	auto payload = target(TargetStatePresenceFlagHudTargetColor, 2U);
+	u8(payload, 0x10U);
+	u8(payload, 0x20U);
+	u8(payload, 0x30U);
+	u8(payload, 0x40U);
+	BusinessRecordMetadata metadata;
+	EXPECT_EQ(ValidationError::None,
+		validate_business_record(record(RecordType::TargetState, payload, 4U),
+			BusinessRecordContainer::FullSnapshot, VersionMinorV1_1, metadata));
+	EXPECT_EQ(ValidationError::UnsupportedRecordVersion,
+		validate_business_record(record(RecordType::TargetState, payload, 3U),
+			BusinessRecordContainer::FullSnapshot, VersionMinorV1_1, metadata));
+
+	auto no_target = target(TargetStatePresenceFlagHudTargetColor, 0U);
+	u32(no_target, 0x40302010U);
+	EXPECT_EQ(ValidationError::InvalidAbsence,
+		validate_business_record(record(RecordType::TargetState, no_target, 4U),
+			BusinessRecordContainer::FullSnapshot, VersionMinorV1_1, metadata));
+}
+
+TEST(TelemetryProtocolBusinessRecords11To18,
+	TargetStateV5SubsystemHudLabelsAreExplicitAndAppended)
+{
+	auto payload = target(TargetStatePresenceFlagRevealedIdentity |
+		TargetStatePresenceFlagHudTargetSubsystemLabel |
+		TargetStatePresenceFlagHudLockSubsystemLabel, 2U);
+	u8(payload, static_cast<std::uint8_t>(ObjectType::Ship));
+	string(payload, "Alpha 2");
+	u32(payload, 0U);
+	u32(payload, 0U);
+	u32(payload, 0U);
+	string(payload, "Laser turret");
+	string(payload, "Navigation");
+	BusinessRecordMetadata metadata;
+	EXPECT_EQ(ValidationError::None,
+		validate_business_record(record(RecordType::TargetState, payload, 5U),
+			BusinessRecordContainer::FullSnapshot, VersionMinorV1_1, metadata));
+	EXPECT_EQ(ValidationError::UnsupportedRecordVersion,
+		validate_business_record(record(RecordType::TargetState, payload, 4U),
+			BusinessRecordContainer::FullSnapshot, VersionMinorV1_1, metadata));
+
+	auto empty_label = target(TargetStatePresenceFlagHudTargetSubsystemLabel, 2U);
+	string(empty_label, "");
+	EXPECT_EQ(ValidationError::OutOfRange,
+		validate_business_record(record(RecordType::TargetState, empty_label, 5U),
+			BusinessRecordContainer::FullSnapshot, VersionMinorV1_1, metadata));
 }
 
 TEST(TelemetryProtocolBusinessRecords11To18, RadarRejectsNonFiniteRangesAndInvalidVisibilityIntervals)
@@ -565,6 +630,121 @@ TEST(TelemetryProtocolBusinessRecords11To18, RadarContactsValidateBombTypeAndDet
 
 	auto valid_bomb = radar_contact(0, 3, static_cast<std::uint8_t>(ObjectType::Weapon), ContactFlagBomb);
 	EXPECT_EQ(ValidationError::None, validate(RecordType::RadarContacts, valid_bomb));
+}
+
+TEST(TelemetryProtocolBusinessRecords11To18,
+	RadarContactsV2IsExplicitAndRequiresFstl11)
+{
+	auto payload = radar_contact();
+	// v2 inserts its atomic standard-radar inputs immediately after the two
+	// world vectors and before radius/contact_flags.
+	const auto insertion = payload.begin() + 59;
+	std::vector<std::uint8_t> projection;
+	vec3(projection, 10.0F, -20.0F, 30.0F);
+	f32(projection, 40.0F);
+	payload.insert(insertion, projection.begin(), projection.end());
+	BusinessRecordMetadata metadata;
+	EXPECT_EQ(ValidationError::None,
+		validate_business_record(record(RecordType::RadarContacts,
+			payload, 2U), BusinessRecordContainer::FullSnapshot,
+			VersionMinorV1_1, metadata));
+	EXPECT_EQ(ValidationError::UnsupportedRecordVersion,
+		validate_business_record(record(RecordType::RadarContacts,
+			payload, 2U), BusinessRecordContainer::FullSnapshot,
+			VersionMinor, metadata));
+	payload.erase(payload.begin() + 59, payload.begin() + 63);
+	EXPECT_EQ(ValidationError::TruncatedPayload,
+		validate_business_record(record(RecordType::RadarContacts,
+			payload, 2U), BusinessRecordContainer::FullSnapshot,
+			VersionMinorV1_1, metadata));
+}
+
+TEST(TelemetryProtocolBusinessRecords11To18,
+	RadarContactsV3HudTypeLabelIsExplicitAndVisibleShipOnly)
+{
+	auto payload = radar_contact(
+		RadarContactsPresenceFlagHudTypeLabel, 3U,
+		static_cast<std::uint8_t>(ObjectType::Ship));
+	payload[34U] = static_cast<std::uint8_t>(RadarVisibility::Visible);
+	const auto insertion = payload.begin() + 59;
+	std::vector<std::uint8_t> projection;
+	vec3(projection, 10.0F, -20.0F, 30.0F);
+	f32(projection, 40.0F);
+	payload.insert(insertion, projection.begin(), projection.end());
+	string(payload, "GTF Myrmidon");
+	BusinessRecordMetadata metadata;
+	EXPECT_EQ(ValidationError::None,
+		validate_business_record(record(RecordType::RadarContacts,
+			payload, 3U), BusinessRecordContainer::FullSnapshot,
+			VersionMinorV1_1, metadata));
+	EXPECT_EQ(ValidationError::InvalidStateTransition,
+		validate_business_record(record(RecordType::RadarContacts,
+			payload, 2U), BusinessRecordContainer::FullSnapshot,
+			VersionMinorV1_1, metadata));
+
+	auto distorted = payload;
+	distorted[34U] = static_cast<std::uint8_t>(RadarVisibility::Distorted);
+	EXPECT_EQ(ValidationError::InvalidStateTransition,
+		validate_business_record(record(RecordType::RadarContacts,
+			distorted, 3U), BusinessRecordContainer::FullSnapshot,
+			VersionMinorV1_1, metadata));
+	auto weapon = payload;
+	weapon[32U] = static_cast<std::uint8_t>(ObjectType::Weapon);
+	EXPECT_EQ(ValidationError::InvalidStateTransition,
+		validate_business_record(record(RecordType::RadarContacts,
+			weapon, 3U), BusinessRecordContainer::FullSnapshot,
+			VersionMinorV1_1, metadata));
+
+	auto empty = payload;
+	empty.resize(empty.size() - std::strlen("GTF Myrmidon") - 2U);
+	string(empty, "");
+	EXPECT_EQ(ValidationError::OutOfRange,
+		validate_business_record(record(RecordType::RadarContacts,
+			empty, 3U), BusinessRecordContainer::FullSnapshot,
+			VersionMinorV1_1, metadata));
+}
+
+TEST(TelemetryProtocolBusinessRecords11To18,
+	RadarContactsV4VisualIsExplicitAndUsesTheClosedFsoBlipEnum)
+{
+	auto payload = radar_contact(RadarContactsPresenceFlagRadarVisual, 3U,
+		static_cast<std::uint8_t>(ObjectType::Ship));
+	const auto insertion = payload.begin() + 59;
+	std::vector<std::uint8_t> projection;
+	vec3(projection, 10.0F, -20.0F, 30.0F);
+	f32(projection, 40.0F);
+	payload.insert(insertion, projection.begin(), projection.end());
+	u8(payload, 0x11U);
+	u8(payload, 0x22U);
+	u8(payload, 0x33U);
+	u8(payload, 0x44U);
+	u8(payload, static_cast<std::uint8_t>(RadarBlipType::NormalShip));
+
+	BusinessRecordMetadata metadata;
+	EXPECT_EQ(ValidationError::None,
+		validate_business_record(record(RecordType::RadarContacts, payload, 4U),
+			BusinessRecordContainer::FullSnapshot, VersionMinorV1_1, metadata));
+	EXPECT_EQ(ValidationError::UnsupportedRecordVersion,
+		validate_business_record(record(RecordType::RadarContacts, payload, 3U),
+			BusinessRecordContainer::FullSnapshot, VersionMinorV1_1, metadata));
+
+	payload.back() = static_cast<std::uint8_t>(RadarBlipType::TaggedShip);
+	EXPECT_EQ(ValidationError::InvalidStateTransition,
+		validate_business_record(record(RecordType::RadarContacts, payload, 4U),
+			BusinessRecordContainer::FullSnapshot, VersionMinorV1_1, metadata));
+	payload.back() = 6U;
+	EXPECT_EQ(ValidationError::UnknownEnum,
+		validate_business_record(record(RecordType::RadarContacts, payload, 4U),
+			BusinessRecordContainer::FullSnapshot, VersionMinorV1_1, metadata));
+
+	std::vector<std::uint8_t> delete_key;
+	u64(delete_key, 1U);
+	u64(delete_key, 2U);
+	RecordEnvelopeView delete_record{static_cast<std::uint16_t>(RecordType::RadarContacts),
+		4U, RecordFlagDelete, view(delete_key)};
+	EXPECT_EQ(ValidationError::None,
+		validate_business_record(delete_record, BusinessRecordContainer::Delta,
+			VersionMinorV1_1, metadata));
 }
 
 } // namespace

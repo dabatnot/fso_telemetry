@@ -1,0 +1,169 @@
+HISTORIQUE, NON NORMATIF, NE PAS EXECUTER.
+param(
+    [Parameter(Mandatory = $true)]
+    [string]$ProgressDirectory,
+    [Parameter(Mandatory = $true)]
+    [string]$TemperatureLog,
+    [Parameter(Mandatory = $true)]
+    [string]$ThrottleLog,
+    [Parameter(Mandatory = $true)]
+    [string]$ReadyFile,
+    [Parameter(Mandatory = $true)]
+    [int]$ExpectedCompositeTotal,
+    [int]$SampleIntervalSeconds = 2,
+    [int]$TimeoutSeconds = 7000
+)
+
+$ErrorActionPreference = 'Stop'
+
+function Write-AtomicText {
+    param([string]$Path, [string[]]$Lines)
+    $directory = Split-Path -Parent $Path
+    New-Item -ItemType Directory -Force -Path $directory | Out-Null
+    $temporary = "$Path.tmp-$PID"
+    [System.IO.File]::WriteAllLines($temporary, $Lines)
+    Move-Item -LiteralPath $temporary -Destination $Path -Force
+}
+
+function Get-ActivePowerScheme {
+    $output = (& powercfg /getactivescheme 2>&1 | Out-String).Trim()
+    if ($LASTEXITCODE -ne 0 -or !$output) {
+        throw 'Unable to read the active power scheme.'
+    }
+    return $output
+}
+
+$processorSet = Get-Counter -ListSet 'Informations sur le processeur'
+$limitFlagsPath = $processorSet.PathsWithInstances |
+    Where-Object { $_ -like '*(_Total)*Indicateurs de limite de performances' } |
+    Select-Object -First 1
+$limitPercentPath = $processorSet.PathsWithInstances |
+    Where-Object { $_ -like '*(_Total)*% de la limite de performances' } |
+    Select-Object -First 1
+if (!$limitFlagsPath -or !$limitPercentPath) {
+    throw 'Required processor throttling counters are unavailable.'
+}
+
+$initialPowerScheme = Get-ActivePowerScheme
+$temperatureSamples = [System.Collections.Generic.List[string]]::new()
+$throttleSamples = [System.Collections.Generic.List[string]]::new()
+$failed = $false
+$failureReasons = [System.Collections.Generic.List[string]]::new()
+$started = [System.Diagnostics.Stopwatch]::StartNew()
+
+while ($started.Elapsed.TotalSeconds -lt $TimeoutSeconds) {
+    $utc = [DateTime]::UtcNow.ToString('o')
+    $gpu = & nvidia-smi `
+        '--query-gpu=temperature.gpu,clocks_event_reasons.sw_thermal_slowdown,clocks_event_reasons.hw_thermal_slowdown,clocks_event_reasons.hw_power_brake_slowdown' `
+        '--format=csv,noheader,nounits' 2>&1
+    if ($LASTEXITCODE -ne 0 -or !$gpu) {
+        $failed = $true
+        $failureReasons.Add("$utc nvidia-smi unavailable")
+    } else {
+        $fields = @($gpu -split ',' | ForEach-Object { $_.Trim() })
+        $temperature = 0
+        if ($fields.Count -ne 4 -or
+            ![int]::TryParse($fields[0], [ref]$temperature) -or
+            $temperature -le 0 -or $temperature -ge 120) {
+            $failed = $true
+            $failureReasons.Add("$utc invalid GPU temperature: $gpu")
+        } else {
+            $temperatureSamples.Add("$utc gpu_temperature_c=$temperature")
+            if ($fields[1] -ne 'Not Active' -or
+                $fields[2] -ne 'Not Active' -or
+                $fields[3] -ne 'Not Active') {
+                $failed = $true
+                $failureReasons.Add(
+                    "$utc GPU thermal/power slowdown: $($fields[1..3] -join ',')")
+            }
+        }
+    }
+
+    $counterSamples = Get-Counter -Counter @(
+        $limitFlagsPath, $limitPercentPath) -MaxSamples 1 |
+        Select-Object -ExpandProperty CounterSamples
+    $limitFlags = @($counterSamples |
+        Where-Object { $_.Path -like '*indicateurs de limite de performances' } |
+        Select-Object -ExpandProperty CookedValue)
+    $limitPercent = @($counterSamples |
+        Where-Object { $_.Path -like '*% de la limite de performances' } |
+        Select-Object -ExpandProperty CookedValue)
+    if ($limitFlags.Count -ne 1 -or $limitPercent.Count -ne 1) {
+        $failed = $true
+        $failureReasons.Add("$utc processor limit counters incomplete")
+    } else {
+        $throttleSamples.Add(
+            "$utc cpu_limit_flags=$($limitFlags[0]) cpu_limit_percent=$($limitPercent[0])")
+        if ($limitFlags[0] -ne 0 -or $limitPercent[0] -lt 100) {
+            $failed = $true
+            $failureReasons.Add(
+                "$utc CPU performance limited: flags=$($limitFlags[0]) percent=$($limitPercent[0])")
+        }
+    }
+
+    $currentPowerScheme = Get-ActivePowerScheme
+    if ($currentPowerScheme -ne $initialPowerScheme) {
+        $failed = $true
+        $failureReasons.Add("$utc active power scheme changed")
+    }
+
+    $verdict = if ($failed) { 'fail' } else { 'pass' }
+    $temperatureLines = @(
+        'schema=fs2open.telemetry.phase2.host-temperature.v1',
+        'source=nvidia-smi temperature.gpu',
+        "powerScheme=$initialPowerScheme") +
+        $temperatureSamples.ToArray() +
+        $failureReasons.ToArray() +
+        @("verdict=$verdict")
+    Write-AtomicText -Path $TemperatureLog -Lines $temperatureLines
+    $throttleLines = @(
+        'schema=fs2open.telemetry.phase2.host-throttling.v1',
+        'source=Windows Processor Information + nvidia-smi clock event reasons',
+        "powerScheme=$initialPowerScheme") +
+        $throttleSamples.ToArray() +
+        $failureReasons.ToArray() +
+        @("verdict=$verdict")
+    Write-AtomicText -Path $ThrottleLog -Lines $throttleLines
+
+    if ($failed) {
+        Write-AtomicText -Path $ReadyFile -Lines @(
+            'schema=fs2open.telemetry.phase2.host-monitor-ready.v1',
+            'reason=host-monitor-failed',
+            'verdict=fail')
+        exit 4
+    }
+
+    $complete = Get-ChildItem -LiteralPath $ProgressDirectory -Filter '*.json' `
+        -File -ErrorAction SilentlyContinue |
+        ForEach-Object {
+            try {
+                Get-Content -Raw -LiteralPath $_.FullName | ConvertFrom-Json
+            } catch {
+                $null
+            }
+        } |
+        Where-Object {
+            $_ -and $_.stage -eq 'composite-soak' -and
+            [int]$_.completed -eq $ExpectedCompositeTotal -and
+            [int]$_.total -eq $ExpectedCompositeTotal
+        } |
+        Select-Object -First 1
+    if ($complete) {
+        Write-AtomicText -Path $ReadyFile -Lines @(
+            'schema=fs2open.telemetry.phase2.host-monitor-ready.v1',
+            "samples=$($temperatureSamples.Count)",
+            "elapsedSeconds=$([math]::Round($started.Elapsed.TotalSeconds, 3))",
+            'verdict=pass')
+        exit 0
+    }
+
+    Start-Sleep -Seconds $SampleIntervalSeconds
+}
+
+$failureReasons.Add(
+    "$([DateTime]::UtcNow.ToString('o')) host monitor timeout")
+Write-AtomicText -Path $ReadyFile -Lines @(
+    'schema=fs2open.telemetry.phase2.host-monitor-ready.v1',
+    'reason=timeout',
+    'verdict=fail')
+exit 4

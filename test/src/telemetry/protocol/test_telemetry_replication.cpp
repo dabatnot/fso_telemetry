@@ -196,6 +196,42 @@ TEST(TelemetryProtocolReplication, StateImageCanonicalizesKeysAndRejectsInvalidO
 	EXPECT_EQ(canonical, unchanged);
 }
 
+TEST(TelemetryProtocolReplication, RadarContactsVersionFourSupportsUpsertAndDeleteAtoms)
+{
+	std::vector<std::uint8_t> key(16U, 0U);
+	key[0] = 1U;
+	key[8] = 2U;
+	auto value = key;
+	value.push_back(0x42U);
+	auto radar = atom(static_cast<std::uint16_t>(RecordType::RadarContacts),
+		key, value, StateRecordLifecycle::ExplicitCreateDelete);
+	radar.record_version = 4U;
+	StateImage state;
+	EXPECT_EQ(StateImageResult::Created, StateImage::create({radar}, state));
+
+	StateMutation deletion;
+	deletion.kind = StateMutationKind::Delete;
+	deletion.atom.key = radar.key;
+	deletion.atom.record_version = 4U;
+	deletion.atom.lifecycle = StateRecordLifecycle::ExplicitCreateDelete;
+	EXPECT_EQ(StateDeltaValidationResult::Valid,
+		validate_cumulative_state_delta(delta(1U, 1U, {deletion})));
+}
+
+TEST(TelemetryProtocolReplication, TargetStateVersionFiveSupportsCanonicalUpsert)
+{
+	std::vector<std::uint8_t> key(8U, 0U);
+	key[0] = 1U;
+	auto value = key;
+	value.push_back(0x42U);
+	auto target = atom(static_cast<std::uint16_t>(RecordType::TargetState),
+		key, value);
+	target.record_version = 5U;
+	StateImage state;
+	EXPECT_EQ(StateImageResult::Created, StateImage::create({target}, state));
+	EXPECT_EQ(5U, state.records().front().record_version);
+}
+
 TEST(TelemetryProtocolReplication, DeltaValidationRequiresCanonicalUniqueCompleteMutationsAndExactLimit)
 {
 	const auto first = upsert(atom(1U, {}, {0x01U}));

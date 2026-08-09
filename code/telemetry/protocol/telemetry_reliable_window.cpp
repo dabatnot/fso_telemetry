@@ -13,6 +13,20 @@ namespace {
 
 constexpr std::size_t NoEntry = std::numeric_limits<std::size_t>::max();
 
+bool checked_add_size(std::size_t left, std::size_t right, std::size_t& result) noexcept
+{
+	if (right > std::numeric_limits<std::size_t>::max() - left) return false;
+	result = left + right;
+	return true;
+}
+
+bool checked_multiply_size(std::size_t left, std::size_t right, std::size_t& result) noexcept
+{
+	if (left != 0U && right > std::numeric_limits<std::size_t>::max() / left) return false;
+	result = left * right;
+	return true;
+}
+
 void increment_saturated(std::uint64_t& value) noexcept
 {
 	if (value != std::numeric_limits<std::uint64_t>::max()) {
@@ -288,6 +302,293 @@ std::uint64_t reliable_retry_delay_us(std::uint64_t base_rto_us,
 	return (delay_us * basis_points) / 10'000U;
 }
 
+void PreallocatedReliableControlWindow::configure() noexcept
+{
+	clear();
+}
+
+std::size_t PreallocatedReliableControlWindow::find(std::uint64_t session_id,
+	const EndpointKey& endpoint,
+	std::uint32_t message_id) const noexcept
+{
+	for (std::size_t i = 0U; i < m_entries.size(); ++i) {
+		if (m_entries[i].used && m_entries[i].key.session_id == session_id &&
+			m_entries[i].key.endpoint == endpoint && m_entries[i].key.message_id == message_id) {
+			return i;
+		}
+	}
+	return NoEntry;
+}
+
+std::size_t PreallocatedReliableControlWindow::free_slot() const noexcept
+{
+	for (std::size_t i = 0U; i < m_entries.size(); ++i) {
+		if (!m_entries[i].used) {
+			return i;
+		}
+	}
+	return NoEntry;
+}
+
+void PreallocatedReliableControlWindow::erase(std::size_t index) noexcept
+{
+	if (index >= m_entries.size() || !m_entries[index].used) {
+		return;
+	}
+	m_retained_bytes -= m_entries[index].payload_size;
+	m_entries[index] = Entry{};
+	--m_size;
+}
+
+ReliableRetainResult PreallocatedReliableControlWindow::retain(const ReliableMessageToRetain& message,
+	std::uint64_t first_send_time_us) noexcept
+{
+	const auto supported_control =
+		(message.message_type == MessageType::Welcome &&
+		 message.message_class == ReliableMessageClass::HandshakeCritical) ||
+		(message.message_type == MessageType::SessionBegin &&
+		 message.message_class == ReliableMessageClass::SessionCritical) ||
+		(message.message_type == MessageType::SessionEnd &&
+		 message.message_class == ReliableMessageClass::SessionClosing);
+	if (!supported_control || !validate_message_before_copy(message) ||
+		message.logical_payload.size > PayloadBytesPerEntry || message.fragment_count != 1U) {
+		return ReliableRetainResult::InvalidMessage;
+	}
+	const auto existing = find(message.session_id, message.endpoint, message.message_id);
+	if (existing != NoEntry) {
+		const auto& entry = m_entries[existing];
+		const auto identical = entry.key.message_type == message.message_type &&
+			entry.key.message_crc32 == message.message_crc32 && entry.payload_size == message.logical_payload.size &&
+			std::equal(message.logical_payload.begin(), message.logical_payload.end(), entry.payload.begin());
+		return identical ? ReliableRetainResult::Duplicate : ReliableRetainResult::IdentityConflict;
+	}
+	const auto slot = free_slot();
+	if (slot == NoEntry || message.logical_payload.size >
+			(PayloadBytesPerEntry * MaximumEntries) - m_retained_bytes) {
+		return ReliableRetainResult::QuotaExceeded;
+	}
+	std::uint64_t deadline = 0U;
+	if (!checked_add(first_send_time_us, ReliableOrdinaryRetentionUs, deadline)) {
+		return ReliableRetainResult::ClockOverflow;
+	}
+	auto& entry = m_entries[slot];
+	entry = Entry{};
+	entry.used = true;
+	entry.key = {message.session_id,
+		message.endpoint,
+		message.message_type,
+		message.message_id,
+		message.fragment_count,
+		message.message_crc32,
+		message.transaction_id,
+		message.transaction_sha256};
+	entry.base_flags = message.base_flags;
+	entry.frame_id = message.frame_id;
+	entry.mission_time_us = message.mission_time_us;
+	entry.required_ack = message.required_ack;
+	entry.message_class = message.message_class;
+	entry.payload_size = message.logical_payload.size;
+	std::copy(message.logical_payload.begin(), message.logical_payload.end(), entry.payload.begin());
+	entry.absolute_deadline_us = deadline;
+	entry.next_retry_at_us = bounded_retry_time(first_send_time_us,
+		reliable_retry_delay_us(ReliableDefaultRtoUs,
+			0x4653544c5f52544fULL,
+			message.session_id,
+			message.message_id,
+			0U),
+		deadline);
+	entry.fragments.all_fragments = true;
+	entry.fragments.fragment_count = message.fragment_count;
+	++m_size;
+	m_retained_bytes += entry.payload_size;
+	return ReliableRetainResult::Retained;
+}
+
+ReliableResponseResult PreallocatedReliableControlWindow::acknowledge(std::uint64_t session_id,
+	const EndpointKey& endpoint,
+	const AckPayload& ack,
+	std::uint64_t now_us) noexcept
+{
+	if (validate_ack_payload(ack) != ValidationError::None) {
+		return ReliableResponseResult::IgnoredIncoherent;
+	}
+	const auto index = find(session_id, endpoint, ack.target_message_id);
+	if (index == NoEntry || now_us >= m_entries[index].absolute_deadline_us) {
+		return ReliableResponseResult::IgnoredUnknownOrLate;
+	}
+	auto& entry = m_entries[index];
+	const ReliabilityTargetTuple target{entry.key.message_id,
+		entry.key.message_type,
+		entry.key.fragment_count,
+		entry.key.message_crc32,
+		false};
+	if (validate_ack_target(ack, target) != ValidationError::None ||
+		entry.required_ack == RequiredAckLevel::None) {
+		return ReliableResponseResult::IgnoredIncoherent;
+	}
+	const auto applied = (ack.ack_flags & static_cast<std::uint8_t>(AckFlag::Applied)) != 0U;
+	if (entry.required_ack == RequiredAckLevel::Validated || applied) {
+		erase(index);
+		return ReliableResponseResult::Released;
+	}
+	if (entry.validated) {
+		return ReliableResponseResult::Duplicate;
+	}
+	entry.validated = true;
+	entry.immediate_retry = false;
+	entry.fragments = ReliableFragmentSelection{};
+	entry.fragments.all_fragments = true;
+	entry.fragments.fragment_count = entry.key.fragment_count;
+	return ReliableResponseResult::ValidatedRetained;
+}
+
+ReliableResponseResult PreallocatedReliableControlWindow::reject(std::uint64_t session_id,
+	const EndpointKey& endpoint,
+	const NackPayload& nack,
+	std::uint64_t now_us,
+	ReliableNackDecision& decision) noexcept
+{
+	if (validate_nack_payload(nack) != ValidationError::None) {
+		return ReliableResponseResult::IgnoredIncoherent;
+	}
+	const auto index = find(session_id, endpoint, nack.target_message_id);
+	if (index == NoEntry || now_us >= m_entries[index].absolute_deadline_us) {
+		return ReliableResponseResult::IgnoredUnknownOrLate;
+	}
+	auto& entry = m_entries[index];
+	const ReliabilityTargetTuple target{entry.key.message_id,
+		entry.key.message_type,
+		entry.key.fragment_count,
+		entry.key.message_crc32,
+		false};
+	if (validate_nack_target(nack, target) != ValidationError::None ||
+		entry.required_ack == RequiredAckLevel::None) {
+		return ReliableResponseResult::IgnoredIncoherent;
+	}
+	ReliableNackDecision accepted;
+	accepted.target = entry.key;
+	if (entry.validated) {
+		const auto terminal_after_validation = nack.reason == NackReason::StaleBaseline ||
+			nack.reason == NackReason::SemanticValidationFailed || nack.reason == NackReason::DeadlineExpired;
+		if (!terminal_after_validation) {
+			return ReliableResponseResult::IgnoredIncoherent;
+		}
+		accepted.kind = ReliableNackDecisionKind::TerminalPolicy;
+		accepted.terminal_policy = terminal_policy(entry.message_class);
+		erase(index);
+		decision = accepted;
+		return ReliableResponseResult::Released;
+	}
+	if (nack.reason == NackReason::MissingFragments) {
+		entry.immediate_retry = true;
+		entry.fragments = ReliableFragmentSelection{};
+		entry.fragments.fragment_count = nack.target_fragment_count;
+		entry.fragments.bitmap_bytes = static_cast<std::uint16_t>(nack.missing_bitmap.size);
+		std::copy(nack.missing_bitmap.begin(), nack.missing_bitmap.end(), entry.fragments.bitmap.begin());
+		accepted.kind = ReliableNackDecisionKind::SelectiveRetransmissionScheduled;
+		decision = accepted;
+		return ReliableResponseResult::ValidatedRetained;
+	}
+	if (nack.reason == NackReason::BadMessageCrc || nack.reason == NackReason::BadFragmentLayout) {
+		entry.immediate_retry = true;
+		entry.fragments = ReliableFragmentSelection{};
+		entry.fragments.all_fragments = true;
+		entry.fragments.fragment_count = entry.key.fragment_count;
+		accepted.kind = ReliableNackDecisionKind::FullRetransmissionScheduled;
+		decision = accepted;
+		return ReliableResponseResult::ValidatedRetained;
+	}
+	if (nack.reason == NackReason::ResourceLimit) {
+		entry.immediate_retry = false;
+		entry.fragments = ReliableFragmentSelection{};
+		entry.fragments.all_fragments = true;
+		entry.fragments.fragment_count = entry.key.fragment_count;
+		accepted.kind = ReliableNackDecisionKind::WaitForScheduledRetry;
+		decision = accepted;
+		return ReliableResponseResult::ValidatedRetained;
+	}
+	accepted.kind = ReliableNackDecisionKind::TerminalPolicy;
+	accepted.terminal_policy = terminal_policy(entry.message_class);
+	erase(index);
+	decision = accepted;
+	return ReliableResponseResult::Released;
+}
+
+ReliablePullResult PreallocatedReliableControlWindow::pull_next_action(std::uint64_t now_us,
+	ReliableWindowAction& action) noexcept
+{
+	for (std::size_t index = 0U; index < m_entries.size(); ++index) {
+		auto& entry = m_entries[index];
+		if (!entry.used || now_us < entry.absolute_deadline_us) {
+			continue;
+		}
+		ReliableWindowAction ready;
+		ready.kind = ReliableWindowActionKind::TerminalPolicy;
+		ready.terminal_policy = terminal_policy(entry.message_class);
+		ready.target = entry.key;
+		erase(index);
+		action = ready;
+		return ReliablePullResult::Action;
+	}
+	for (auto& entry : m_entries) {
+		if (!entry.used || entry.validated ||
+			(!entry.immediate_retry && now_us < entry.next_retry_at_us)) {
+			continue;
+		}
+		const auto nack_triggered = entry.immediate_retry;
+		const auto rto_already_due = now_us >= entry.next_retry_at_us;
+		ReliableWindowAction ready;
+		ready.kind = ReliableWindowActionKind::Retransmit;
+		ready.target = entry.key;
+		ready.retransmission.key = entry.key;
+		ready.retransmission.base_flags = entry.base_flags;
+		ready.retransmission.frame_id = entry.frame_id;
+		ready.retransmission.mission_time_us = entry.mission_time_us;
+		ready.retransmission.logical_payload = {entry.payload.data(), entry.payload_size};
+		ready.retransmission.fragments = entry.fragments;
+		ready.retransmission.retry_number = entry.retry_number;
+		ready.retransmission.absolute_deadline_us = entry.absolute_deadline_us;
+		entry.immediate_retry = false;
+		entry.fragments = ReliableFragmentSelection{};
+		entry.fragments.all_fragments = true;
+		entry.fragments.fragment_count = entry.key.fragment_count;
+		if (!nack_triggered || rto_already_due) {
+			if (entry.retry_number != std::numeric_limits<std::uint32_t>::max()) {
+				++entry.retry_number;
+			}
+			entry.next_retry_at_us = bounded_retry_time(now_us,
+				reliable_retry_delay_us(ReliableDefaultRtoUs,
+					0x4653544c5f52544fULL,
+					entry.key.session_id,
+					entry.key.message_id,
+					entry.retry_number),
+				entry.absolute_deadline_us);
+		}
+		action = ready;
+		return ReliablePullResult::Action;
+	}
+	return ReliablePullResult::None;
+}
+
+bool PreallocatedReliableControlWindow::discard(std::uint64_t session_id,
+	const EndpointKey& endpoint,
+	std::uint32_t message_id) noexcept
+{
+	const auto index = find(session_id, endpoint, message_id);
+	if (index == NoEntry) {
+		return false;
+	}
+	erase(index);
+	return true;
+}
+
+void PreallocatedReliableControlWindow::clear() noexcept
+{
+	m_entries = {};
+	m_size = 0U;
+	m_retained_bytes = 0U;
+}
+
 ReliableSendWindow::ReliableSendWindow(ReliableSendWindow&& other) noexcept
 {
 	*this = std::move(other);
@@ -300,14 +601,17 @@ ReliableSendWindow& ReliableSendWindow::operator=(ReliableSendWindow&& other) no
 	}
 	m_limits = other.m_limits;
 	m_entries = std::move(other.m_entries);
+	m_free_entries = std::move(other.m_free_entries);
 	m_retained_bytes = other.m_retained_bytes;
 	m_video_entry_count = other.m_video_entry_count;
 	m_video_retained_bytes = other.m_video_retained_bytes;
 	m_has_valid_minimum_rtt = other.m_has_valid_minimum_rtt;
 	m_minimum_rtt_us = other.m_minimum_rtt_us;
 	m_counters = other.m_counters;
+	m_allocation_events = other.m_allocation_events;
 
 	std::vector<Entry>{}.swap(other.m_entries);
+	std::vector<Entry>{}.swap(other.m_free_entries);
 	other.m_limits = ReliableWindowLimits{};
 	other.m_retained_bytes = 0;
 	other.m_video_entry_count = 0;
@@ -315,17 +619,33 @@ ReliableSendWindow& ReliableSendWindow::operator=(ReliableSendWindow&& other) no
 	other.m_has_valid_minimum_rtt = false;
 	other.m_minimum_rtt_us = 0;
 	other.m_counters = ReliableWindowCounters{};
+	other.m_allocation_events = 0U;
 	return *this;
 }
 
 ValidationError ReliableSendWindow::configure(const ReliableWindowLimits& limits, ReliableSendWindow& window) noexcept
 {
 	if (limits.max_entries == 0 || limits.max_entries > ReliableWindowMaximumEntries ||
-		limits.max_retained_bytes == 0 || limits.max_retained_bytes > ReliableWindowMaximumRetainedBytes) {
+		limits.max_retained_bytes == 0 || limits.max_retained_bytes > ReliableWindowMaximumRetainedBytes ||
+		limits.preallocated_payload_bytes_per_entry > limits.max_retained_bytes) {
 		return ValidationError::OutOfRange;
 	}
 
 	std::vector<Entry>{}.swap(window.m_entries);
+	std::vector<Entry>{}.swap(window.m_free_entries);
+	try {
+		window.m_entries.reserve(limits.max_entries);
+		if (limits.preallocated_payload_bytes_per_entry != 0U) {
+			window.m_free_entries.reserve(limits.max_entries);
+			for (std::size_t index = 0U; index < limits.max_entries; ++index) {
+				Entry entry;
+				entry.payload.reserve(limits.preallocated_payload_bytes_per_entry);
+				window.m_free_entries.emplace_back(std::move(entry));
+			}
+		}
+	} catch (const std::bad_alloc&) {
+		return ValidationError::ResourceLimit;
+	}
 	window.m_retained_bytes = 0;
 	window.m_video_entry_count = 0;
 	window.m_video_retained_bytes = 0;
@@ -333,7 +653,42 @@ ValidationError ReliableSendWindow::configure(const ReliableWindowLimits& limits
 	window.m_has_valid_minimum_rtt = false;
 	window.m_minimum_rtt_us = 0;
 	window.m_counters = ReliableWindowCounters{};
+	window.m_allocation_events = 0U;
 	return ValidationError::None;
+}
+
+std::size_t ReliableSendWindow::preallocated_heap_bytes(std::size_t entry_count,
+	std::size_t payload_bytes_per_entry) noexcept
+{
+	std::size_t metadata_bytes = 0U;
+	std::size_t payload_bytes = 0U;
+	std::size_t total = 0U;
+	if (!checked_multiply_size(entry_count, sizeof(Entry), metadata_bytes) ||
+		!checked_multiply_size(metadata_bytes, 2U, metadata_bytes) ||
+		!checked_multiply_size(entry_count, payload_bytes_per_entry, payload_bytes) ||
+		!checked_add_size(metadata_bytes, payload_bytes, total)) {
+		return 0U;
+	}
+	return total;
+}
+
+std::size_t ReliableSendWindow::owned_preallocated_heap_bytes() const noexcept
+{
+	std::size_t metadata_bytes = 0U;
+	std::size_t payload_bytes = 0U;
+	std::size_t total = 0U;
+	if (!checked_multiply_size(m_entries.capacity(), sizeof(Entry), metadata_bytes) ||
+		!checked_multiply_size(m_free_entries.capacity(), sizeof(Entry), total) ||
+		!checked_add_size(metadata_bytes, total, metadata_bytes)) {
+		return 0U;
+	}
+	for (const auto& entry : m_entries) {
+		if (!checked_add_size(payload_bytes, entry.payload.capacity(), payload_bytes)) return 0U;
+	}
+	for (const auto& entry : m_free_entries) {
+		if (!checked_add_size(payload_bytes, entry.payload.capacity(), payload_bytes)) return 0U;
+	}
+	return checked_add_size(metadata_bytes, payload_bytes, total) ? total : 0U;
 }
 
 void ReliableSendWindow::set_minimum_rtt_us(bool valid, std::uint64_t minimum_rtt_us) noexcept
@@ -426,6 +781,11 @@ ReliableRetainResult ReliableSendWindow::retain(const ReliableMessageToRetain& m
 	}
 
 	Entry candidate;
+	if (!m_free_entries.empty()) {
+		auto payload = std::move(m_free_entries.back().payload);
+		m_free_entries.pop_back();
+		candidate.payload = std::move(payload);
+	}
 	candidate.key.session_id = message.session_id;
 	candidate.key.endpoint = message.endpoint;
 	candidate.key.message_type = message.message_type;
@@ -450,8 +810,13 @@ ReliableRetainResult ReliableSendWindow::retain(const ReliableMessageToRetain& m
 	}
 
 	try {
+		const auto payload_capacity_before = candidate.payload.capacity();
 		if (!message.logical_payload.empty()) {
 			candidate.payload.assign(message.logical_payload.begin(), message.logical_payload.end());
+		}
+		if (candidate.payload.capacity() > payload_capacity_before &&
+			m_allocation_events != std::numeric_limits<std::uint64_t>::max()) {
+			++m_allocation_events;
 		}
 		m_entries.emplace_back(std::move(candidate));
 	} catch (const std::bad_alloc&) {
@@ -812,6 +1177,17 @@ std::size_t ReliableSendWindow::discard_session(std::uint64_t session_id) noexce
 
 void ReliableSendWindow::clear() noexcept
 {
+	if (m_limits.preallocated_payload_bytes_per_entry != 0U) {
+		for (auto& entry : m_entries) {
+			entry.payload.clear();
+			m_free_entries.emplace_back(std::move(entry));
+		}
+		m_entries.clear();
+		m_retained_bytes = 0U;
+		m_video_entry_count = 0U;
+		m_video_retained_bytes = 0U;
+		return;
+	}
 	std::vector<Entry>{}.swap(m_entries);
 	m_retained_bytes = 0;
 	m_video_entry_count = 0;
@@ -837,6 +1213,13 @@ void ReliableSendWindow::erase(std::size_t index) noexcept
 		m_video_retained_bytes -= m_entries[index].payload.size();
 	}
 	m_retained_bytes -= m_entries[index].payload.size();
+	if (m_limits.preallocated_payload_bytes_per_entry != 0U) {
+		Entry recycled = std::move(m_entries[index]);
+		m_entries.erase(m_entries.begin() + static_cast<std::ptrdiff_t>(index));
+		recycled.payload.clear();
+		m_free_entries.emplace_back(std::move(recycled));
+		return;
+	}
 	m_entries.erase(m_entries.begin() + static_cast<std::ptrdiff_t>(index));
 }
 

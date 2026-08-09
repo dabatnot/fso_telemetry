@@ -1,0 +1,792 @@
+HISTORIQUE, NON NORMATIF, NE PAS EXECUTER.
+"""Run and fail-closed validate every independent Phase 2 P2-LOSS-GATE cell."""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import os
+import subprocess
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Sequence
+
+
+SCHEMA = "fs2open.telemetry.phase2.loss-campaign.v1"
+RUN_SCHEMA = "fs2open.telemetry.phase2.loss-run.v1"
+PROFILES = ("core-gate", "complete-ship")
+PROFILE_CODES = {"core-gate": 0x0401, "complete-ship": 0x0583}
+LOSS_RATES = (1, 5, 20)
+MODES = ("iid", "burst")
+SEED = 1345474380
+CORE_MUTATIONS = frozenset(
+    ("identity", "lifecycle", "hull", "shields", "energy", "propulsion")
+)
+COMPLETE_MUTATIONS = frozenset(
+    (
+        "identity",
+        "lifecycle",
+        "hull",
+        "shields",
+        "energy",
+        "propulsion",
+        "control",
+        "bank",
+        "support",
+        "topology",
+        "respawn",
+        "manifest",
+    )
+)
+CONVERGENCE_ORACLES = (
+    "sourceClosureStable",
+    "manifestAppliedBeforeClock",
+    "allAtomsEqualOracle",
+    "noForbiddenAtom",
+    "noPartialPublication",
+    "liveAfterReplacementSnapshot",
+    "boundedResources",
+)
+
+
+def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--profiles", nargs="+", choices=PROFILES, default=list(PROFILES))
+    parser.add_argument("--loss-rates", nargs="+", type=int, choices=LOSS_RATES, default=list(LOSS_RATES))
+    parser.add_argument("--modes", nargs="+", choices=MODES, default=list(MODES))
+    parser.add_argument(
+        "--cases",
+        nargs="+",
+        metavar="PROFILE:RATE:MODE",
+        help="run only the named cells, preserving the provided order",
+    )
+    parser.add_argument("--seed", type=int, default=SEED)
+    parser.add_argument("--warmup-seconds", type=int, default=60)
+    parser.add_argument("--duration-seconds", type=int, default=600)
+    parser.add_argument("--keyframe-seconds", type=float, default=2.0)
+    parser.add_argument("--build-dir", type=Path)
+    parser.add_argument("--config", default="Release")
+    parser.add_argument("--report-dir", type=Path)
+    parser.add_argument("--harness", type=Path)
+    parser.add_argument("--resume", action="store_true")
+    parser.add_argument(
+        "--retry-failed",
+        action="store_true",
+        help="with --resume, explicitly retry failed cells; failures are otherwise preserved",
+    )
+    parser.add_argument(
+        "--require-correlated-blackout-responses",
+        action="store_true",
+        help="require exactly one correlated response in each blackout",
+    )
+    parser.add_argument("--negative-oracle-source", type=Path)
+    parser.add_argument("--negative-oracle-output", type=Path)
+    return parser.parse_args(argv)
+
+
+def require(condition: bool, message: str) -> None:
+    if not condition:
+        raise ValueError(message)
+
+
+def write_json(path: Path, value: Any) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(f".{path.name}.tmp")
+    temporary.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    os.replace(temporary, path)
+
+
+def sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def find_harness(args: argparse.Namespace) -> Path:
+    if args.harness:
+        return args.harness
+    names = ("telemetry_phase2_loss_harness.exe", "telemetry_phase2_loss_harness")
+    roots = (args.build_dir / "bin" / args.config, args.build_dir / "bin", args.build_dir)
+    for root in roots:
+        for name in names:
+            candidate = root / name
+            if candidate.is_file():
+                return candidate
+    raise ValueError("telemetry_phase2_loss_harness executable not found")
+
+
+def harness_environment(build_dir: Path) -> tuple[dict[str, str], list[str]]:
+    environment = os.environ.copy()
+    runtime_paths: list[str] = []
+    if os.name == "nt":
+        for relative in (
+            Path("lib/prebuilt/openal/bin"),
+            Path("lib/prebuilt/ffmpeg/bin"),
+            Path("lib/prebuilt/freetype/lib"),
+            Path("lib/prebuilt/sdl2/lib"),
+        ):
+            candidate = (build_dir / relative).resolve()
+            if candidate.is_dir():
+                runtime_paths.append(str(candidate))
+        environment["PATH"] = os.pathsep.join(
+            [*runtime_paths, environment.get("PATH", "")]
+        )
+    return environment, runtime_paths
+
+
+def validate_run(report: Any, *, profile: str, rate: int, mode: str,
+                 seed: int, warmup: int, duration: int, bound_us: int,
+                 require_correlated_blackout_responses: bool = False) -> None:
+    require(isinstance(report, dict), "run report must be an object")
+    require(report.get("schema") == RUN_SCHEMA, "wrong loss-run schema")
+    require(report.get("status") == "passed", "loss harness did not pass")
+    require(report.get("certificationEligible") is True,
+            "accelerated smoke output cannot certify P2-LOSS-GATE")
+    requested = report.get("requested")
+    require(isinstance(requested, dict), "missing requested parameters")
+    expected = {
+        "profile": profile,
+        "profileCode": PROFILE_CODES[profile],
+        "lossRatePercent": rate,
+        "mode": mode,
+        "seed": seed,
+        "warmupSeconds": warmup,
+        "measuredSeconds": duration,
+    }
+    for key, value in expected.items():
+        require(requested.get(key) == value, f"wrong requested.{key}")
+
+    impairment = report.get("impairment")
+    require(isinstance(impairment, dict), "missing impairment proof")
+    require(impairment.get("independentDirectionalStreams") is True,
+            "directional PRNG streams are not independent")
+    require(impairment.get("streamKey") == "(profile,rate,mode,direction)",
+            "wrong PRNG stream key")
+    require(impairment.get("iidDistribution") == "bernoulli",
+            "iid loss is not Bernoulli")
+    require(impairment.get("burstBlockDatagrams") == 100,
+            "burst block is not 100 datagrams")
+    require(impairment.get("burstContiguousLength") == rate,
+            "wrong contiguous burst length")
+    require(impairment.get("duplicationPercent") == 2,
+            "wrong duplication percentage")
+    require(impairment.get("jitterUniformMs") == [0, 100],
+            "wrong jitter interval")
+    require(impairment.get("reorderWindowDatagrams") == 8,
+            "wrong reorder window")
+    blackout_seconds = (
+        [120, 360]
+        if (warmup, duration) == (60, 600)
+        else [duration * 0.40, duration * 0.75]
+    )
+    require(impairment.get("blackouts") == [
+        {"atMeasuredSecond": blackout_seconds[0], "durationMs": 500},
+        {"atMeasuredSecond": blackout_seconds[1], "durationMs": 500},
+    ], "wrong blackout schedule")
+    directional_coverage = impairment.get("blackoutDecisionCoverage")
+    require(isinstance(directional_coverage, list)
+            and len(directional_coverage) == 2,
+            "missing directional decisions for both blackouts")
+    for index, coverage in enumerate(directional_coverage):
+        require(isinstance(coverage, dict)
+                and coverage.get("atMeasuredSecond")
+                == blackout_seconds[index],
+                "directional coverage does not match the blackout")
+        require(isinstance(coverage.get("producerToClient"), int)
+                and coverage["producerToClient"] > 0,
+                "blackout lacks producer-to-client decisions")
+        require(isinstance(coverage.get("clientToProducer"), int)
+                and coverage["clientToProducer"] > 0,
+                "blackout lacks client-to-producer decisions")
+    probe_coverage = impairment.get("heartbeatProbeCoverage")
+    require(isinstance(probe_coverage, dict),
+            "missing correlated heartbeat-probe coverage")
+    require(probe_coverage.get("minimumSpacingUs") == 100_000,
+            "wrong heartbeat-probe spacing contract")
+    windows = probe_coverage.get("windows")
+    require(isinstance(windows, list) and len(windows) == 2,
+            "heartbeat-probe coverage must contain both blackouts")
+    for index, window in enumerate(windows):
+        require(isinstance(window, dict), "invalid heartbeat-probe window")
+        require(window.get("atMeasuredSecond") == blackout_seconds[index],
+                "heartbeat-probe window does not match the blackout")
+        require(isinstance(window.get("emissions"), int)
+                and window["emissions"] >= 2,
+                "heartbeat probes were not bounded across lead-in and blackout")
+        require(isinstance(window.get("observedMinimumSpacingUs"), int)
+                and window["observedMinimumSpacingUs"] >= 100_000,
+                "heartbeat probes were not sufficiently spaced")
+        request_count = window.get("clientToProducerRequests")
+        require(type(request_count) is int and request_count == 1,
+                "blackout lacks an observed client-to-producer probe")
+        response_count = window.get(
+            "correlatedProducerToClientResponses"
+        )
+        require(type(response_count) is int
+                and response_count in (0, 1),
+                "blackout correlated-response count is invalid")
+        if require_correlated_blackout_responses:
+            require(response_count == 1,
+                    "blackout lacks a required correlated "
+                    "producer-to-client response")
+        lead_in = window.get("leadInRequest")
+        response = window.get("correlatedResponse")
+        in_blackout = window.get("inBlackoutRequest")
+        require(isinstance(lead_in, dict)
+                and isinstance(in_blackout, dict),
+                "blackout probe tuples are incomplete")
+        identity_fields = ("sessionId", "probeId", "originT0Us")
+        require(all(
+            type(lead_in.get(field)) is int
+            and lead_in[field] > 0
+            for field in identity_fields
+        ), "lead-in request tuple is incomplete")
+        require(all(
+            type(in_blackout.get(field)) is int
+            and in_blackout[field] > 0
+            for field in identity_fields
+        ), "in-blackout request tuple is incomplete")
+        require(
+            (in_blackout["sessionId"], in_blackout["probeId"],
+             in_blackout["originT0Us"])
+            != (lead_in["sessionId"], lead_in["probeId"],
+                lead_in["originT0Us"]),
+            "lead-in and in-blackout requests must be distinct probes",
+        )
+        start_us = int(blackout_seconds[index] * 1_000_000)
+        end_us = start_us + 500_000
+        require(type(lead_in.get("decisionMeasuredUs")) is int
+                and 0 <= lead_in["decisionMeasuredUs"] < start_us,
+                "lead-in request decision is not before the blackout")
+        require(type(in_blackout.get("decisionMeasuredUs")) is int
+                and start_us <= in_blackout["decisionMeasuredUs"] < end_us,
+                "in-blackout request decision is not in the blackout")
+        response_fields = (
+            "sessionId", "probeId", "originT0Us",
+            "decisionMeasuredUs", "receiveT1Us",
+            "transmitT2Us", "headerSentTimeUs",
+        )
+        if response_count == 0:
+            require(
+                isinstance(response, dict)
+                and all(
+                    type(response.get(field)) is int
+                    and response[field] == 0
+                    for field in response_fields
+                ),
+                "absent correlated response tuple is not zero",
+            )
+        else:
+            require(isinstance(response, dict),
+                    "correlated response tuple is absent")
+            require(all(
+                type(response.get(field)) is int
+                and response[field] == lead_in[field]
+                for field in identity_fields
+            ), "correlated response does not match the lead-in request tuple")
+            require(type(response.get("decisionMeasuredUs")) is int
+                    and start_us <= response["decisionMeasuredUs"] < end_us,
+                    "correlated response decision is not in the blackout")
+            response_times = (
+                response.get("originT0Us"),
+                response.get("receiveT1Us"),
+                response.get("transmitT2Us"),
+                response.get("headerSentTimeUs"),
+            )
+            require(all(type(value) is int and value > 0
+                        for value in response_times)
+                    and list(response_times) == sorted(response_times),
+                    "correlated response timestamps are invalid")
+    decisions = impairment.get("decisionLog")
+    require(isinstance(decisions, dict), "missing replayable decision log")
+    require(isinstance(decisions.get("path"), str) and decisions["path"],
+            "missing decision-log path")
+    require(isinstance(decisions.get("sha256"), str) and len(decisions["sha256"]) == 64,
+            "missing decision-log hash")
+    require(decisions.get("schema") == "fs2open.telemetry.phase2.loss-decision.v1",
+            "wrong decision-record schema")
+    require(isinstance(decisions.get("records"), int) and decisions["records"] > 0,
+            "decision log is empty")
+
+    mutations = report.get("mutations")
+    require(isinstance(mutations, dict), "missing mutation coverage")
+    required = COMPLETE_MUTATIONS if profile == "complete-ship" else CORE_MUTATIONS
+    require(required <= set(mutations.get("changedBlocks", [])),
+            "not every required profile block was mutated")
+
+    convergence = report.get("convergence")
+    require(isinstance(convergence, dict), "missing convergence proof")
+    require(convergence.get("clockOrigin") == "last-required-manifest-applied",
+            "convergence clock has the wrong origin")
+    require(isinstance(convergence.get("maximumUs"), int)
+            and 0 < convergence["maximumUs"] <= bound_us,
+            "convergence exceeded 2*keyframeSeconds+1s")
+    required_times = ("impairmentEndUs", "sourceStableUs", "closureStableUs",
+                      "manifestAppliedUs", "t0Us", "convergedUs")
+    require(all(isinstance(convergence.get(key), int) for key in required_times),
+            "missing observed convergence timestamps")
+    require(isinstance(convergence.get("latestManifestId"), int)
+            and convergence["latestManifestId"] > 0,
+            "missing latest required manifest identity")
+    require(isinstance(convergence.get("sessionAtT0"), int)
+            and convergence["sessionAtT0"] > 0,
+            "missing session identity at t0")
+    require(isinstance(convergence.get("peerSessionId"), int)
+            and convergence["peerSessionId"] == convergence["sessionAtT0"],
+            "convergence did not use the same peer session as t0")
+    require(convergence["t0Us"] == max(
+        convergence["impairmentEndUs"], convergence["sourceStableUs"],
+        convergence["closureStableUs"], convergence["manifestAppliedUs"]),
+        "t0 is not max(impairment, source, closure, manifest)")
+    require(convergence["maximumUs"] ==
+            convergence["convergedUs"] - convergence["t0Us"],
+            "maximumUs is not derived from observed timestamps")
+    require(convergence.get("oracleStateHash") ==
+            convergence.get("clientStateHash"),
+            "final client state does not equal the oracle")
+    conditions = convergence.get("conditions")
+    require(isinstance(conditions, dict), "missing convergence conditions")
+    for oracle in CONVERGENCE_ORACLES:
+        require(conditions.get(oracle) is True, f"failed convergence oracle: {oracle}")
+
+
+def validate_decision_log(path: Path, *, profile: str, rate: int,
+                          mode: str, duration: int) -> None:
+    counts = {"producer-to-client": 0, "client-to-producer": 0}
+    streams: dict[str, str] = {}
+    with path.open("r", encoding="utf-8") as stream:
+        for line_number, line in enumerate(stream, 1):
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError as error:
+                raise ValueError(f"invalid decision JSONL line {line_number}: {error}") from error
+            require(record.get("schema") ==
+                    "fs2open.telemetry.phase2.loss-decision.v1",
+                    f"wrong decision schema at line {line_number}")
+            require(record.get("profile") == profile and
+                    record.get("rate") == rate and record.get("mode") == mode,
+                    f"decision tuple mismatch at line {line_number}")
+            direction = record.get("direction")
+            require(direction in counts, f"wrong direction at line {line_number}")
+            require(record.get("ordinal") == counts[direction],
+                    f"non-contiguous ordinal at line {line_number}")
+            counts[direction] += 1
+            key = record.get("streamKey")
+            require(isinstance(key, str) and key.endswith("|" + direction),
+                    f"wrong directional stream key at line {line_number}")
+            streams[direction] = key
+            for field in ("algorithmDrop", "blackout", "drop", "duplicate"):
+                require(isinstance(record.get(field), bool),
+                        f"missing {field} at line {line_number}")
+            require(record["drop"] ==
+                    (record["algorithmDrop"] or record["blackout"]),
+                    f"drop composition mismatch at line {line_number}")
+            require(0 <= record.get("jitterMs", -1) <= 100,
+                    f"jitter outside [0,100] at line {line_number}")
+            require(0 <= record.get("reorderSlot", -1) <= 8,
+                    f"reorder slot outside [0,8] at line {line_number}")
+            position = record.get("position")
+            start = record.get("burstStart")
+            require(isinstance(position, int) and 0 <= position < 100 and
+                    isinstance(start, int) and 0 <= start < 100,
+                    f"invalid burst coordinates at line {line_number}")
+            if mode == "burst":
+                require(record["algorithmDrop"] ==
+                        ((position + 100 - start) % 100 < rate),
+                        f"non-contiguous burst decision at line {line_number}")
+    require(all(value > 0 for value in counts.values()),
+            "decision log does not contain both directional streams")
+    require(len(set(streams.values())) == 2,
+            "directional streams are not independent")
+
+
+def run_negative_oracle(source: Path, output_dir: Path) -> int:
+    try:
+        report = json.loads(source.read_text(encoding="utf-8"))
+        requested = report["requested"]
+        mutation_path = (
+            "impairment.heartbeatProbeCoverage.windows[0]."
+            "correlatedResponse.probeId"
+        )
+        response = report["impairment"]["heartbeatProbeCoverage"][
+            "windows"
+        ][0]["correlatedResponse"]
+        response["probeId"] += 1
+        mutated_path = output_dir / "mutated-report.json"
+        write_json(mutated_path, report)
+        rejected_message: str | None = None
+        try:
+            validate_run(
+                report,
+                profile=requested["profile"],
+                rate=requested["lossRatePercent"],
+                mode=requested["mode"],
+                seed=requested["seed"],
+                warmup=requested["warmupSeconds"],
+                duration=requested["measuredSeconds"],
+                bound_us=5_000_000,
+            )
+        except ValueError as error:
+            rejected_message = str(error)
+        require(rejected_message is not None,
+                "mutated heartbeat tuple was incorrectly accepted")
+        result = {
+            "schema": "fs2open.telemetry.phase2.loss-negative-oracle.v1",
+            "status": "passed",
+            "source": str(source),
+            "sourceSha256": sha256(source),
+            "mutation": {
+                "path": mutation_path,
+                "operation": "increment-by-one",
+            },
+            "mutatedReport": str(mutated_path),
+            "mutatedReportSha256": sha256(mutated_path),
+            "validatorResult": "rejected",
+            "validatorMessage": rejected_message,
+        }
+        write_json(output_dir / "negative-oracle.json", result)
+        return 0
+    except (KeyError, OSError, TypeError, ValueError,
+            json.JSONDecodeError) as error:
+        print(error, file=sys.stderr)
+        return 1
+
+
+def parse_cases(args: argparse.Namespace) -> list[tuple[str, int, str]]:
+    require(len(set(args.profiles)) == len(args.profiles),
+            "duplicate profile")
+    require(len(set(args.loss_rates)) == len(args.loss_rates),
+            "duplicate loss rate")
+    require(len(set(args.modes)) == len(args.modes),
+            "duplicate mode")
+    if not args.cases:
+        return [
+            (profile, rate, mode)
+            for profile in args.profiles
+            for rate in args.loss_rates
+            for mode in args.modes
+        ]
+    cases: list[tuple[str, int, str]] = []
+    for value in args.cases:
+        parts = value.split(":")
+        require(len(parts) == 3,
+                f"invalid case {value!r}; expected profile:rate:mode")
+        profile, rate_text, mode = parts
+        require(profile in PROFILES, f"invalid case profile: {profile}")
+        try:
+            rate = int(rate_text)
+        except ValueError as error:
+            raise ValueError(
+                f"invalid case loss rate: {rate_text}") from error
+        require(rate in LOSS_RATES, f"invalid case loss rate: {rate}")
+        require(mode in MODES, f"invalid case mode: {mode}")
+        cases.append((profile, rate, mode))
+    require(len(set(cases)) == len(cases), "duplicate case")
+    return cases
+
+
+def campaign_parameters(
+    args: argparse.Namespace,
+    cases: list[tuple[str, int, str]],
+) -> dict[str, Any]:
+    return {
+        "cases": [
+            f"{profile}:{rate}:{mode}"
+            for profile, rate, mode in cases
+        ],
+        "seed": args.seed,
+        "warmupSeconds": args.warmup_seconds,
+        "durationSeconds": args.duration_seconds,
+        "keyframeSeconds": args.keyframe_seconds,
+        "config": args.config,
+        "requireCorrelatedBlackoutResponses":
+            args.require_correlated_blackout_responses,
+    }
+
+
+def run_paths_and_command(
+    args: argparse.Namespace,
+    harness: Path,
+    case: tuple[str, int, str],
+) -> tuple[str, Path, Path, list[str]]:
+    profile, rate, mode = case
+    name = f"{profile}-{rate}-{mode}"
+    run_dir = args.report_dir / name
+    report_path = run_dir / "harness-report.json"
+    decision_path = run_dir / "drop-decisions.jsonl"
+    command = [
+        str(harness), "--profile", profile, "--loss-rate", str(rate),
+        "--mode", mode, "--seed", str(args.seed),
+        "--warmup-seconds", str(args.warmup_seconds),
+        "--duration-seconds", str(args.duration_seconds),
+        "--decision-log", str(decision_path),
+        "--report", str(report_path),
+    ]
+    return name, report_path, decision_path, command
+
+
+def validate_persisted_pass(
+    record: Any,
+    *,
+    args: argparse.Namespace,
+    harness: Path,
+    case: tuple[str, int, str],
+    bound_us: int,
+) -> None:
+    profile, rate, mode = case
+    name, report_path, decision_path, command = run_paths_and_command(
+        args, harness, case
+    )
+    require(isinstance(record, dict)
+            and record.get("name") == name,
+            f"resume record mismatch for {name}")
+    require(record.get("status") == "passed"
+            and record.get("exitCode") == 0,
+            f"resume record is not a pass for {name}")
+    require(record.get("command") == command,
+            f"resume command mismatch for {name}")
+    require(report_path.is_file() and decision_path.is_file(),
+            f"resume evidence is missing for {name}")
+    require(record.get("reportSha256") == sha256(report_path),
+            f"resume report hash mismatch for {name}")
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    validate_run(
+        report, profile=profile, rate=rate, mode=mode,
+        seed=args.seed, warmup=args.warmup_seconds,
+        duration=args.duration_seconds, bound_us=bound_us,
+        require_correlated_blackout_responses=
+            args.require_correlated_blackout_responses,
+    )
+    require(
+        report["impairment"]["decisionLog"]["sha256"]
+        == sha256(decision_path),
+        f"resume decision-log hash mismatch for {name}",
+    )
+    validate_decision_log(
+        decision_path, profile=profile, rate=rate,
+        mode=mode, duration=args.duration_seconds,
+    )
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    args = parse_args(argv)
+    if args.retry_failed and not args.resume:
+        print("--retry-failed requires --resume", file=sys.stderr)
+        return 2
+    if args.negative_oracle_source or args.negative_oracle_output:
+        if not (args.negative_oracle_source
+                and args.negative_oracle_output):
+            print("negative oracle requires source and output",
+                  file=sys.stderr)
+            return 2
+        return run_negative_oracle(
+            args.negative_oracle_source,
+            args.negative_oracle_output,
+        )
+    try:
+        require(args.build_dir is not None,
+                "campaign mode requires --build-dir")
+        require(args.report_dir is not None,
+                "campaign mode requires --report-dir")
+        require(args.seed == SEED, f"P2-LOSS-GATE seed must be {SEED}")
+        require(
+            (args.warmup_seconds, args.duration_seconds)
+            in ((0, 30), (30, 300), (60, 600)),
+            "P2-LOSS-GATE timing must be 0/30 smoke, 30/300 representative, "
+            "or the legacy 60/600 campaign",
+        )
+        cases = parse_cases(args)
+        harness = find_harness(args)
+    except ValueError as error:
+        print(error, file=sys.stderr)
+        return 2
+
+    manifest_path = args.report_dir / "campaign-manifest.json"
+    if manifest_path.exists() and not args.resume:
+        print(f"campaign already exists: {manifest_path}", file=sys.stderr)
+        return 2
+    environment, runtime_paths = harness_environment(args.build_dir)
+    bound_us = int((2.0 * args.keyframe_seconds + 1.0) * 1_000_000)
+    parameters = campaign_parameters(args, cases)
+    harness_hash = sha256(harness)
+    harness_path = str(harness.resolve())
+    if args.resume:
+        try:
+            require(manifest_path.is_file(),
+                    f"resume manifest does not exist: {manifest_path}")
+            campaign = json.loads(
+                manifest_path.read_text(encoding="utf-8")
+            )
+            require(isinstance(campaign, dict)
+                    and campaign.get("schema") == SCHEMA,
+                    "resume manifest schema mismatch")
+            require(campaign.get("harness") == harness_path
+                    and campaign.get("harnessSha256") == harness_hash,
+                    "resume harness fingerprint mismatch")
+            require(campaign.get("parameters") == parameters,
+                    "resume campaign parameters mismatch")
+            runs = campaign.get("runs")
+            require(isinstance(runs, list),
+                    "resume manifest runs must be an array")
+            expected_names = [
+                f"{profile}-{rate}-{mode}"
+                for profile, rate, mode in cases
+            ]
+            actual_names = [
+                record.get("name")
+                for record in runs
+                if isinstance(record, dict)
+            ]
+            require(len(actual_names) == len(runs)
+                    and len(set(actual_names)) == len(actual_names),
+                    "resume manifest contains invalid or duplicate runs")
+            require(all(name in expected_names for name in actual_names),
+                    "resume manifest contains an unexpected run")
+            for case in cases:
+                name = f"{case[0]}-{case[1]}-{case[2]}"
+                record = next(
+                    (item for item in runs
+                     if item.get("name") == name),
+                    None,
+                )
+                if record is not None and record.get("status") == "passed":
+                    validate_persisted_pass(
+                        record, args=args, harness=harness,
+                        case=case, bound_us=bound_us,
+                    )
+                elif record is not None:
+                    require(record.get("status") == "failed",
+                            f"resume record has invalid state for {name}")
+            campaign["status"] = "running"
+            campaign.pop("completedAtUtc", None)
+            campaign.setdefault("resumeEvents", []).append({
+                "atUtc": datetime.now(timezone.utc).isoformat(),
+                "validatedHarnessSha256": harness_hash,
+                "validatedPassedRuns": sum(
+                    record.get("status") == "passed"
+                    for record in runs
+                ),
+            })
+            write_json(manifest_path, campaign)
+        except (OSError, ValueError, json.JSONDecodeError,
+                KeyError) as error:
+            print(error, file=sys.stderr)
+            return 2
+    else:
+        campaign = {
+            "schema": SCHEMA,
+            "status": "running",
+            "startedAtUtc": datetime.now(timezone.utc).isoformat(),
+            "harness": harness_path,
+            "harnessSha256": harness_hash,
+            "parameters": parameters,
+            "runtimeSearchPath": runtime_paths,
+            "runs": [],
+        }
+        write_json(manifest_path, campaign)
+
+    had_failure = any(
+        record.get("status") == "failed"
+        for record in campaign["runs"]
+        if isinstance(record, dict)
+    )
+    for case in cases:
+        profile, rate, mode = case
+        name, report_path, decision_path, command = (
+            run_paths_and_command(args, harness, case)
+        )
+        existing_index = next(
+            (index for index, item in enumerate(campaign["runs"])
+             if item.get("name") == name),
+            None,
+        )
+        if existing_index is not None:
+            existing = campaign["runs"][existing_index]
+            if existing.get("status") == "passed":
+                continue
+            if existing.get("status") == "failed" and not args.retry_failed:
+                continue
+            previous_attempts = list(
+                existing.get("previousAttempts", [])
+            )
+            previous_attempts.append({
+                key: existing.get(key)
+                for key in (
+                    "status", "exitCode", "error",
+                    "reportSha256",
+                )
+                if key in existing
+            })
+            record = {
+                "name": name,
+                "command": command,
+                "status": "running",
+                "previousAttempts": previous_attempts,
+            }
+            campaign["runs"][existing_index] = record
+        else:
+            record = {
+                "name": name,
+                "command": command,
+                "status": "running",
+            }
+            campaign["runs"].append(record)
+        write_json(manifest_path, campaign)
+        try:
+            report_path.parent.mkdir(parents=True, exist_ok=True)
+            completed = subprocess.run(
+                command,
+                text=True,
+                capture_output=True,
+                check=False,
+                env=environment,
+            )
+            record["exitCode"] = completed.returncode
+            (report_path.parent / "stdout.log").write_text(
+                completed.stdout, encoding="utf-8"
+            )
+            (report_path.parent / "stderr.log").write_text(
+                completed.stderr, encoding="utf-8"
+            )
+            require(completed.returncode == 0,
+                    f"harness exit code {completed.returncode}")
+            report = json.loads(report_path.read_text(encoding="utf-8"))
+            validate_run(
+                report, profile=profile, rate=rate, mode=mode,
+                seed=args.seed, warmup=args.warmup_seconds,
+                duration=args.duration_seconds, bound_us=bound_us,
+                require_correlated_blackout_responses=
+                    args.require_correlated_blackout_responses,
+            )
+            require(decision_path.is_file(),
+                    "decision log was not produced")
+            require(
+                report["impairment"]["decisionLog"]["sha256"]
+                == sha256(decision_path),
+                "decision-log hash mismatch",
+            )
+            validate_decision_log(
+                decision_path, profile=profile, rate=rate,
+                mode=mode, duration=args.duration_seconds,
+            )
+            record.update(
+                status="passed", reportSha256=sha256(report_path)
+            )
+        except (OSError, ValueError, json.JSONDecodeError) as error:
+            record.update(status="failed", error=str(error))
+            had_failure = True
+            write_json(manifest_path, campaign)
+            continue
+        write_json(manifest_path, campaign)
+    campaign["status"] = "failed" if had_failure else "passed"
+    campaign["completedAtUtc"] = datetime.now(timezone.utc).isoformat()
+    write_json(manifest_path, campaign)
+    return 1 if had_failure else 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

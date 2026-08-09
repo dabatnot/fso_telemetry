@@ -1,0 +1,449 @@
+HISTORIQUE, NON NORMATIF, NE PAS EXECUTER.
+# WP06 handshake/session test-first evidence
+
+## Scope
+
+Independent test-agent RED evidence for the handshake/session half of `P1-WP-06` at revision
+`e8f98c7f5c267b7bc6a2ea8a604943b0c384e6f7`. No production file was authored or modified by
+this agent.
+
+The new contract tests cover:
+
+- the concrete WP06 startup budget for preallocated client slots, four state reassemblies and
+  4 MiB per client, plus bounded reliable retention, while leaving WP08 baseline/delta/scratch
+  and WP09 metrics explicitly deferred;
+- source/allowlist before byte inspection, followed by envelope, endpoint/session, rate-limit,
+  anti-amplification, payload and mutation stages with one closed primary drop reason;
+- exact FSTL 1.1 `HELLO/WELCOME` acceptance and explicit FSTL 1.0 rejection without a durable slot;
+- the 10-second `(endpoint, client_nonce)` duplicate cache and byte-identical `WELCOME` replay;
+- non-zero, non-reused session IDs, bounded collision retry and fail-closed entropy exhaustion;
+- direct reuse of the WP03 `SessionIdAllocator(RandomSource, SessionIdRegistry)`, including zero,
+  entropy failure, unique draw 16, refusal before draw 17, no reuse after slot close and the
+  65,536-ID process capacity without eviction;
+- `HELLO` and session-creation token-bucket burst limits before ID draw or slot mutation;
+- the pre-proof `3x` anti-amplification budget and absence of heavy state before proof;
+- exact `ACK VALIDATED|APPLIED` (`0x03`) binding to `WELCOME` before heavy-state permission;
+- validly encoded but false ACKs for session, endpoint, type, ID, fragment count and CRC, invalid
+  flag combinations, and exact/late proof deadlines, all inert before `ReadyForState`;
+- cumulative endpoint anti-amplification accounting for accepted, rejected and cached responses,
+  with `3x-1`, `3x`, `3x+1`, overflow, independent endpoints and proof transition;
+- cache boundaries at 10 seconds, rejected replay, full `(endpoint,nonce)` keying and fixed-capacity
+  refusal without eviction;
+- all normative WELCOME fields, times, version, flags, capabilities and empty extensions;
+- invalid ingress cases at source, envelope and payload stages with zero owned-usage change;
+- source-IP (not port) rate scopes, exact continuous refill, independent IPs and distinct Hello vs
+  session-creation buckets;
+- owned backing/capacity checks for every budget category WP06 is allowed to close;
+- `SESSION_BEGIN` with `required_manifest_id=0`, `initial_snapshot_id=0`, and
+  `mission_instance_id=zero_extend(mission_generation)` when active, otherwise zero, retained
+  reliably in explicit `ReadyForState` while emitting no WP08 message.
+
+## RED command and raw result
+
+Command (PowerShell, Debug):
+
+```powershell
+cmake --build build --target unittests --config Debug --parallel 4
+```
+
+Result: exit code `1`, expected RED. CMake regenerated successfully, existing dependencies and
+the `code` target built, then compilation reached the new test source and failed on the absent
+WP06 production seam:
+
+```text
+test_telemetry_session_controller_contract.cpp(1,10): fatal error C1083:
+Impossible d'ouvrir le fichier include : 'telemetry/session_controller.h':
+No such file or directory
+```
+
+This is the intended test-first failure. The production implementer must provide the bounded
+`session_controller` seam and extend the startup-budget contract; the test agent must then rerun
+this target and record GREEN evidence without weakening these oracles.
+
+## Reviewer-strengthened RED
+
+After independent review required stronger boundary oracles, the test suite was expanded without
+production edits. The exact same command was rerun. It again exited `1` after dependencies and the
+existing `code` target built, at the same intentional missing seam (`telemetry/session_controller.h`,
+MSVC `C1083`). `git diff --check` remained clean apart from the repository's line-ending warning.
+
+## Reviewer iteration 2 RED
+
+The second independent review corrected additional exact boundaries. The current RED now proves:
+
+- success after exactly 15 collisions on draw 16, and a separate retry-limit case that consumes
+  16 collisions but never draw 17;
+- WELCOME proof accepted only before `ReliableOrdinaryRetentionUs`, with equality already late;
+- one retained reliable WELCOME before proof, atomically replaced by one retained SESSION_BEGIN;
+- an offered `[1.0,1.1]` range selects 1.1;
+- every canonical zero/non-zero field of rejected WELCOME;
+- cache and pre-proof-ledger recycling after exact expiry, slot close and accepted proof;
+- allowlist rejection against a sentinel `ByteView{nullptr, SIZE_MAX}`, so the observed
+  source-policy-first oracle would crash if implementation inspected bytes prematurely.
+
+The Debug `unittests` build was rerun after these corrections. It again exited `1` at the intended
+missing `telemetry/session_controller.h` seam after all existing dependencies and `code` built.
+`git diff --check` is clean except for the existing line-ending warning.
+
+## Final Phase 0 reviewer correction
+
+The accepted-handshake cache and anti-amplification ledger now have distinct, explicitly tested
+lifetimes. `ACK APPLIED` releases the pre-proof ledger immediately but retains one accepted cache
+entry. Replaying the identical HELLO before 10 seconds must return `CachedResponseQueued` with the
+same bytes and session ID, without another ID draw or slot allocation. Housekeeping at exactly
+10 seconds then removes the cache entry. Terminal `close_slot` remains allowed to purge both.
+The Debug `unittests` build was rerun and retained the intended `C1083` RED; `git diff --check`
+remained clean apart from the line-ending warning.
+
+## GREEN verification
+
+The production implementation was supplied independently. This test agent then rebuilt and ran
+the unchanged contract suite in both supported configurations.
+
+One initial Debug run exposed an error in the test chronology rather than in production: the
+source-IP rate-limit test advanced the controller's process-wide monotonic clock to `250000 us`
+and then attempted a different-IP request at `0 us`. Production correctly reported clock
+regression. The test was corrected to exercise the independent IP at `0 us` before advancing the
+global clock; no production file was changed for this correction.
+
+Commands and results:
+
+```powershell
+cmake --build build --target unittests --config Debug --parallel 4
+& build/bin/Debug/unittests.exe --gtest_filter='TelemetryWp06*' --gtest_color=no
+& build/bin/Debug/unittests.exe --gtest_filter='Telemetry*' --gtest_color=no
+& build/bin/Debug/unittests.exe --gtest_filter='TelemetryWp06*' --gtest_repeat=50 --gtest_brief=1
+
+cmake --build build --target unittests --config Release --parallel 4
+& build/bin/Release/unittests.exe --gtest_filter='TelemetryWp06*' --gtest_color=no
+& build/bin/Release/unittests.exe --gtest_filter='Telemetry*' --gtest_color=no
+```
+
+Results:
+
+- Debug WP06: 26/26 passed across four suites;
+- Debug telemetry regression: 560/560 passed across 55 suites, with two pre-existing disabled
+  tests;
+- Debug deterministic stress: 50 repetitions, 1,300/1,300 WP06 test executions passed;
+- Release WP06: 26/26 passed across four suites;
+- Release telemetry regression: 560/560 passed across 55 suites, with the same two disabled tests.
+
+The prior lifecycle/startup integration seams were rebuilt and checked independently. Both
+GoogleTest executables passed their single contract test. The allocation-failure executable
+passed its calibration probe and all five fail-after positions (`0..4`) with
+`contract_check=PASS`.
+
+Phase 0 compatibility was revalidated independently:
+
+```powershell
+python test/telemetry/protocol/tools/test_fstl_1_0_freeze.py
+python test/telemetry/protocol/tools/verify_fstl_1_0_freeze.py --check --repo .
+```
+
+All 15 freeze-gate tests passed. The verifier accepted 438 frozen files with tree SHA-256
+`9baac6a20db33bcf350066ed533c5581b7117410899d7bc4a6dc24406e47856d`.
+
+## Boundedness and phase-boundary evidence
+
+The controller owns fixed-capacity slot, handshake-cache, pre-proof-ledger and output structures.
+Its only dynamic allocations are the startup backing arrays for client-slot storage, state
+reassembly and reliable retention. The tests assert exact owned capacity after configuration and
+`dynamic_allocations_after_ready == 0` throughout handshake/proof operation.
+
+For the standard budget compositions, WP06 records `43,000,512` known bytes for one client and
+`168,849,120` known bytes for four clients. It clears only client-slot, state-reassembly and
+reliable-window deferrals. Baseline, delta, serialization-scratch and metrics storage remain
+explicitly deferred, so the report remains incomplete and does not claim WP08 or WP09 closure.
+
+Source scans found no worker/thread primitive, SPSC queue, event batch, snapshot, manifest,
+subscription, target-video or comm-view implementation in the new session-controller files.
+The only later-phase names found are the deliberately retained deferred budget categories.
+`git diff --check` reports no whitespace error; only Git's existing CRLF conversion warnings are
+present.
+
+## Reviewer hardening RED against the first production candidate
+
+The independent completion review found seven missing contracts. Tests were strengthened without
+editing production, and the existing budget oracle was corrected: WP06-owned reassembly and
+reliable storage replace the WP03 projections rather than being added to both projections.
+
+Command:
+
+```powershell
+cmake --build build --target unittests --config Debug --parallel 4
+& build/bin/Debug/unittests.exe --gtest_filter='TelemetryWp06*' --gtest_color=no --gtest_brief=1
+```
+
+The build completed. The focused run executed 34 tests: 25 passed and nine failed, establishing
+RED independently for every reviewer finding:
+
+1. `PricesConcreteSlotsReassemblyAndReliableRetentionWithoutClaimingWp08OrWp09` expected the exact
+   replacement totals `5,251,776` bytes for one client and `17,854,176` bytes for four clients;
+   production returned the double-counted `43,000,512` and `168,849,120` bytes.
+2. `ReplacementRejectsIncoherentPriorProjectionInsteadOfUnderflowingOrDoubleCounting` expected
+   `ArithmeticOverflow` and a zero result when the prior known subtotal is smaller than the two
+   projections being replaced; production returned `None` and `41,949,535` bytes.
+3. `OwnedCapacityInventoriesPhysicalObjectsInsteadOfSyntheticConstants` found that the public
+   capacity evidence has no byte inventory for the real slot objects, rate limiter, handshake
+   cache, pre-proof ledger or output queue.
+4. `OutOfOrderWelcomeAcksSelectTheExactEndpointAndSessionTuple` sent the second client's exact ACK
+   before the first client's ACK. Production selected the first awaiting slot and dropped it.
+5. `ReliableSessionBeginSurvivesOutputPopAndComposesWithPhase0NackValidation` popped and destroyed
+   the caller's `SESSION_BEGIN` output buffer, then sent an exact missing-fragment NACK. Production
+   dropped it instead of routing it through a retained Phase 0 `ReliableSendWindow` and emitting a
+   retransmission from its owned logical-payload copy.
+6. `BusyOutputRejectsBeforeIdSlotCacheLedgerAndReplayAccounting` proved that output-busy currently
+   consumes a session ID, creates a slot and cache entry, and doubles endpoint receive/send ledger
+   totals before queue failure. A cached replay also doubles its ledger before failing to queue.
+7. `SameEndpointNonceLifetimesDoNotEraseOtherOutstandingPreproofAccounting` showed that expiry of
+   one nonce reduces a still-live same-endpoint ledger from one account to zero.
+8. `ClosingOneSameEndpointSessionRetainsTheOtherNoncePreproofLedger` showed the equivalent premature
+   deletion when one of two same-endpoint sessions is closed.
+9. `PacketSequencesUseTheInjectedPhase0SourceForPresessionAndSessionChannels` found no controller
+   configuration seam for the Phase 0 random source. Its compile-safe oracle will, once that seam
+   exists, require injected `0x12345678` for a rejected pre-session WELCOME, injected `0xABCDEF00`
+   for an accepted session WELCOME, and `0xABCDEF01` for that session's next datagram.
+
+The new ownership and packet-sequence API checks use detection templates: they compile against the
+current candidate and fail as runtime RED assertions rather than preventing the remaining findings
+from executing. The reliable-retention oracle uses the frozen Phase 0 NACK encoder and demands the
+same logical payload after the popped caller buffer has been overwritten.
+
+## Reviewer correction GREEN iteration 2 — blocked by post-Ready allocation RED
+
+The nine reviewer RED cases above were rerun without weakening or changing their oracles. Both
+Debug and Release now pass all 34 WP06 tests. The broader `Telemetry*` regression passes 568/568
+tests in both configurations, with the same two pre-existing disabled tests. A deterministic
+50-repeat stress filter covering out-of-order multi-client ACK, real reliable retransmission,
+output-busy transactionality and both same-endpoint ledger lifetime cases passed 250/250
+executions.
+
+Prior startup/lifecycle seams remain green: the initialize and lifecycle executables pass their
+single tests, and the failure-injection executable passes its calibration probe and all five
+fail-after positions (`0..4`). The Phase 0 freeze gate remains 15/15, and the independent verifier
+still accepts 438 files at tree SHA-256
+`9baac6a20db33bcf350066ed533c5581b7117410899d7bc4a6dc24406e47856d`.
+
+The corrected WP06 replacement totals are now exact: `5,251,776` known bytes for one client and
+`17,854,176` for four clients. The reported sum equals registry + transport + physical client slot
++ state reassembly + reliable retention, and incoherent replacement subtraction fails closed.
+
+However, source inspection contradicted the claimed
+`owned_capacity().dynamic_allocations_after_ready == 0`. `ReliableSendWindow::configure` clears
+its `std::vector` but does not preallocate entries or payload backing. `retain` later calls both
+`candidate.payload.assign(...)` and `m_entries.emplace_back(...)` during HELLO and ACK ingestion.
+The 4096-byte slot's `reserved_backing` is padding and is not consumed by either vector.
+
+An isolated executable was therefore added so global allocation interception cannot perturb the
+main unit-test process:
+
+```powershell
+cmake --build build --target telemetry_session_controller_allocation_contract_tests --config Debug --parallel 4
+& build/bin/Debug/telemetry_session_controller_allocation_contract_tests.exe --gtest_color=no
+```
+
+The target builds, then its single test fails RED with seven allocation attempts during
+HELLO/WELCOME and three during ACK/SESSION_BEGIN after the controller reported Ready. The exact
+NACK/retransmission path recorded zero attempts, but the aggregate contract still fails. Until the
+reliable entry and logical-payload storage use the priced startup backing, iteration 2 is not a
+complete GREEN and the zero-allocation/budget gate remains blocked.
+
+## Final GREEN after preallocated reliable control window
+
+The allocation blocker was corrected in production without changing the allocation oracle. The
+session controller now owns one `PreallocatedReliableControlWindow` per configured client. Its two
+entries contain fixed `MaxDatagramSize` payload arrays and the controller no longer references the
+vector-backed general `ReliableSendWindow`. The general Phase 0 window remains available and its
+independent tests continue to pass.
+
+Final commands and results:
+
+```powershell
+cmake --build build --target telemetry_session_controller_allocation_contract_tests --config Debug --parallel 4
+& build/bin/Debug/telemetry_session_controller_allocation_contract_tests.exe --gtest_color=no
+cmake --build build --target telemetry_session_controller_allocation_contract_tests --config Release --parallel 4
+& build/bin/Release/telemetry_session_controller_allocation_contract_tests.exe --gtest_color=no
+
+cmake --build build --target unittests --config Debug --parallel 4
+& build/bin/Debug/unittests.exe --gtest_filter='TelemetryWp06*' --gtest_brief=1
+& build/bin/Debug/unittests.exe --gtest_filter='Telemetry*' --gtest_brief=1
+& build/bin/Debug/unittests.exe --gtest_filter='*ReliableWindow*' --gtest_brief=1
+
+cmake --build build --target unittests --config Release --parallel 4
+& build/bin/Release/unittests.exe --gtest_filter='TelemetryWp06*' --gtest_brief=1
+& build/bin/Release/unittests.exe --gtest_filter='Telemetry*' --gtest_brief=1
+& build/bin/Release/unittests.exe --gtest_filter='*ReliableWindow*' --gtest_brief=1
+```
+
+- isolated allocation contract: 1/1 passed in Debug and 1/1 passed in Release; the unchanged
+  assertions therefore observed exactly zero allocation attempts across HELLO/WELCOME,
+  ACK/SESSION_BEGIN and NACK/retransmission after Ready;
+- WP06 contract: 34/34 passed in Debug and Release;
+- telemetry regression: 568/568 passed in Debug and Release, with two pre-existing disabled tests;
+- Phase 0 reliable-window regression: 27/27 passed in Debug and Release;
+- targeted multi-client/busy/ledger/reliable stress: 250/250 passed;
+- isolated zero-allocation stress: 50/50 passed;
+- Phase 0 freeze gate: 15/15 passed and 438 frozen files verified at tree SHA-256
+  `9baac6a20db33bcf350066ed533c5581b7117410899d7bc4a6dc24406e47856d`.
+
+The final budget no longer relies on the former 4096-byte padding constant:
+`Wp06ClientSlotStorageBytes == sizeof(SessionControllerSlot)` and
+`Wp06ReliableRetentionBytesPerClient == sizeof(PreallocatedReliableControlWindow)`. For both one
+and four clients, the unchanged budget oracle verifies replacement of the WP03 projections, the
+exact sum of every published subtotal field, matching owned slot/reassembly/reliable capacities,
+and fail-closed subtraction/overflow behavior. The report remains intentionally incomplete for
+the WP08/WP09 deferred categories.
+
+Final scans find only startup-time `new (std::nothrow)` allocations for the rate limiter, exact
+client-slot array, exact preallocated reliable-window array and reassembly backing. No vector
+growth appears in the session controller, and no thread, SPSC, event-batch, snapshot, subscription
+or later-phase implementation was introduced. `git diff --check` reports no whitespace error;
+only the repository's existing CRLF conversion warnings remain. On this evidence, the independent
+handshake/session and startup-boundedness gate is GREEN.
+
+## Post-GREEN reviewer parity and accounting RED
+
+A subsequent independent review identified four contracts not exercised by the preceding GREEN.
+Tests and evidence were extended without production edits. The main test target builds, then this
+focused command executes 11 tests, of which four existing budget tests pass and seven new tests
+fail RED:
+
+```powershell
+& build/bin/Debug/unittests.exe `
+  "--gtest_filter=TelemetryProtocolPreallocatedReliableParity.*:TelemetryWp06BudgetContract.*:TelemetryWp06SecurityContract.PreproofNackAccountsValidatedRxAndQueuedRetransmissionTransactionally:TelemetryWp06HandshakeContract.ControllerRequiresAnExplicitPacketSequenceEntropySource" `
+  --gtest_color=no --gtest_brief=1
+```
+
+The seven measured failures are:
+
+1. `ValidatedAckIsRememberedAsDuplicateAndStopsRetriesUntilApplied`: for both WELCOME and
+   SESSION_BEGIN, a second VALIDATED ACK returns `ValidatedRetained` instead of `Duplicate`, and
+   an autonomous retransmission remains scheduled before APPLIED. The general Phase 0 window
+   records the validation and suppresses all retries as the parity oracle requires.
+2. `RecoverableNacksSelectMissingFullOrOriginalScheduledRetry`: MissingFragments is accepted, but
+   BadMessageCrc is rejected as incoherent instead of scheduling a full retry. The same test also
+   requires BadFragmentLayout full retry and ResourceLimit wait without resetting the original RTO.
+3. `TerminalNacksReleaseWithClassSpecificPolicy`: StaleBaseline, UnsupportedMessage,
+   SemanticValidationFailed and DeadlineExpired are rejected without releasing the entry. The
+   required policies are CloseSession for WELCOME and MarkSessionStale for SESSION_BEGIN.
+4. `BackoffPreservesDeadlineAndExactExpiryEmitsTerminalThenReleases`: ordinary backoff produces
+   the first retransmission, but exact retention expiry returns no action and leaves the entry
+   retained instead of emitting its class terminal policy and reclaiming the slot.
+5. `BudgetPricesEveryOwnedRuntimeObjectAndMatcherRejectsEachMismatch`: the startup subtotal has no
+   rate-limiter, handshake-cache, pre-proof-ledger or output-queue byte fields. Moreover, mutating
+   each corresponding owned-capacity value still makes `wp06_budget_matches_owned_storage` return
+   true. A near-`SIZE_MAX` composition remains covered by the overflow oracle.
+6. `PreproofNackAccountsValidatedRxAndQueuedRetransmissionTransactionally`: after a valid pre-proof
+   NACK and queued WELCOME retransmission, expected ledger totals are receive `106 + 93 = 199` and
+   send `136 + 136 = 272`; production remains at `106` and `136`. The test also freezes the ledger,
+   reliable usage and output state on a subsequent output-busy drop.
+7. `ControllerRequiresAnExplicitPacketSequenceEntropySource`: compile-safe overload detection finds
+   the public configure overload without a `RandomSource`. All test helpers now use the injected
+   overload, so the fallback may be removed or restricted without weakening the suite.
+
+The parity suite directly exercises both fixed control classes and uses the same ACK/NACK enums,
+RTO jitter function, exact deadline and terminal-policy expectations as the frozen general Phase 0
+`ReliableSendWindow`. The budget oracle is forward-compatible: once the four missing subtotal
+fields exist, its exact known-byte sum automatically includes them. This post-GREEN review is RED;
+the preceding GREEN must not be interpreted as closure of these newly exposed gates.
+
+## Final parity, accounting and entropy-source GREEN
+
+Production was corrected after the post-GREEN review. The seven RED tests above were not weakened,
+renamed or given alternate expectations. Their original focused filter now passes 11/11 in Debug
+and Release: the four pre-existing budget cases plus all seven new parity, budget-completeness,
+pre-proof NACK accounting and explicit-entropy-source gates.
+
+The final independent matrix is:
+
+- `TelemetryWp06*`: 37/37 passed in Debug and Release;
+- general Phase 0 reliable window plus fixed-window parity: 31/31 passed in Debug and Release
+  (27 general-window cases and four fixed-window parity cases);
+- `Telemetry*`: 575/575 passed in Debug and Release, with the same two disabled tests;
+- complete unit-test executable: 802/802 passed in Debug and Release, with the same two disabled
+  tests;
+- isolated post-Ready allocation target: 1/1 passed in Debug and Release;
+- focused parity/accounting/busy-output/ledger stress: 10 cases repeated 50 times passed in both
+  Debug and Release (500/500 executions per configuration);
+- isolated zero-allocation stress: 50/50 passed in both Debug and Release;
+- Phase 0 freeze tests: 15/15 passed; the independent verifier accepted 438 frozen files at tree
+  SHA-256 `9baac6a20db33bcf350066ed533c5581b7117410899d7bc4a6dc24406e47856d`.
+
+The corrected WP06 known-budget totals, measured from the compiled Debug implementation, are now
+`5,658,888` bytes for one client and `18,251,712` bytes for four clients. The one-client subtotal is
+registry `1,048,576` + transport `2,400` + physical slot `96` + reassembly `4,194,304` + fixed
+reliable retention `3,208` + rate limiter `398,504` + handshake cache `10,176` + pre-proof ledger
+`400` + output queue `1,224`. For four clients the client-dependent terms are slot `384`,
+reassembly `16,777,216` and reliable retention `12,832`; the fixed runtime terms remain identical.
+The matcher independently rejects a one-byte mismatch in each of the four newly priced runtime
+objects, and near-`SIZE_MAX` composition still fails closed.
+
+Final source scans confirm that `SessionController` owns
+`PreallocatedReliableControlWindow[]` and contains no vector-backed reliable window. Its only
+dynamic allocations are the startup-time nothrow allocations for the rate limiter, exact slot
+array, exact preallocated reliable-window array and reassembly backing. The vector occurrences in
+`telemetry_reliable_window.*` belong to the retained general Phase 0 `ReliableSendWindow`, whose
+27-case regression remains green. No thread or later-phase implementation appears in the WP06
+controller. `git diff --check` reports no whitespace errors; only line-ending conversion warnings
+are emitted. On this evidence, the independently reviewed handshake/session, reliable-parity,
+anti-amplification, startup-budget and zero-post-Ready-allocation gates are GREEN.
+
+## Dual-window NACK and duplicate-identity review RED
+
+A further independent review replaced the former fixed-only `UnsupportedMessage` terminal
+expectation with direct differential execution against the general Phase 0 window. The new NACK
+oracle creates fresh WELCOME/HandshakeCritical and SESSION_BEGIN/SessionCritical entries in both
+windows for every NACK reason, then compares response, decision, immediately available action and
+remaining entry count. For `UnsupportedMessage` targeting either known retained tuple, the general
+window returns `IgnoredIncoherent`, leaves the decision and entry untouched and exposes no action.
+The fixed window instead rewrites the reason to `SemanticValidationFailed`, returns `Released`,
+publishes the class terminal policy and erases the entry. The dual-window test is therefore RED for
+both fixed control classes. The older terminal test now covers only StaleBaseline,
+SemanticValidationFailed and DeadlineExpired and remains green; it no longer encodes the false
+UnsupportedMessage terminal expectation.
+
+A second differential test retains an exact tuple in each window, proves that the exact duplicate
+returns `Duplicate`, then changes each requested identity dimension independently: base flags,
+frame id, mission time, fragment count, transaction metadata, required ACK and message class. The
+general Phase 0 window is the oracle: each mutation must produce the same non-`Duplicate` result in
+the fixed window while preserving the single retained entry. For WELCOME and SESSION_BEGIN all 14
+single-field mutations are invalid fresh admissions under their class/type/flags/context
+constraints, so both windows correctly return `InvalidMessage`; the differential identity test is
+GREEN. It deliberately does not assert `IdentityConflict` where the authoritative general window
+returns `InvalidMessage`.
+
+The focused Debug command builds successfully and executes three cases: the corrected terminal
+test and `DuplicateRetainComparesTheCompleteIdentity` pass, while
+`EveryNackReasonMatchesGeneralWindowIncludingKnownTupleUnsupported` fails, yielding two passes and
+one RED test. This new failure supersedes the preceding final GREEN for reliable-window parity
+only; the earlier budget, handshake, allocation and freeze evidence is unchanged.
+
+## Final dual-window GREEN
+
+Production removed the fixed window's special rewrite of a known-tuple `UnsupportedMessage` NACK.
+The fixed and general windows now both validate the original NACK payload, so the differential
+oracle observes `IgnoredIncoherent`, an unchanged decision, no immediate action and one retained
+entry for WELCOME and SESSION_BEGIN. The test oracle and the identity-parity expectations were not
+changed after the RED capture.
+
+Both Debug and Release were rebuilt from the final sources. The independent final matrix passes:
+
+- the three latest dual-window cases: 3/3;
+- all fixed-window parity plus WP06 cases: 43/43 (six parity and 37 WP06);
+- the independent general Phase 0 reliable-window suite: 27/27;
+- the complete `Telemetry*` regression: 577/577, with the same two disabled tests;
+- the isolated post-Ready allocation contract: 1/1.
+
+`git diff --check` remains free of whitespace errors and emits only the repository's line-ending
+conversion warnings. The final diff contains the expected Phase 1 production, build integration,
+tests and evidence; this independent rerun made no production edit. The dual-window RED above is
+therefore closed, and the final reliable-parity, WP06 and zero-allocation gates are GREEN in both
+configurations.
+
+## Independent final review
+
+**APPROVE** — the independent final reviewer found no P0, P1 or P2 issue in the WP06-HS scope.
+Local reviewer evidence passes 43/43 fixed-window parity plus WP06 tests, 27/27 general Phase 0
+reliable-window tests, and 1/1 isolated post-Ready allocation test. This approval closes WP06-HS
+only; the broader REL, HB and global WP06 gates remain owned by their respective independent
+reviews and are not implicitly closed by this decision.

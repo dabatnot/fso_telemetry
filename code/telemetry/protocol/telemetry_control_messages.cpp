@@ -102,6 +102,33 @@ ValidationError finish_prefix(PacketWriter& writer) noexcept
 
 } // namespace
 
+ValidationError validate_protocol_minor_range(ProtocolMinorRange range) noexcept
+{
+	if (!is_supported_version_minor(range.minimum) || !is_supported_version_minor(range.maximum) ||
+		range.minimum > range.maximum) {
+		return ValidationError::UnsupportedMinor;
+	}
+	return ValidationError::None;
+}
+
+ProtocolMinorNegotiationResult select_highest_common_minor(ProtocolMinorRange local,
+	ProtocolMinorRange remote,
+	std::uint8_t& selected_minor) noexcept
+{
+	selected_minor = VersionMinor;
+	if (validate_protocol_minor_range(local) != ValidationError::None ||
+		validate_protocol_minor_range(remote) != ValidationError::None) {
+		return ProtocolMinorNegotiationResult::InvalidRange;
+	}
+	const auto minimum = local.minimum > remote.minimum ? local.minimum : remote.minimum;
+	const auto maximum = local.maximum < remote.maximum ? local.maximum : remote.maximum;
+	if (minimum > maximum) {
+		return ProtocolMinorNegotiationResult::NoIntersection;
+	}
+	selected_minor = maximum;
+	return ProtocolMinorNegotiationResult::Selected;
+}
+
 ValidationError validate_discovery_payload(const DiscoveryPayload& payload) noexcept
 {
 	if (payload.producer_id == 0 || payload.listen_port == 0) {
@@ -110,8 +137,9 @@ ValidationError validate_discovery_payload(const DiscoveryPayload& payload) noex
 	if (payload.min_major != VersionMajor || payload.max_major != VersionMajor) {
 		return ValidationError::UnsupportedMajor;
 	}
-	if (payload.min_minor != VersionMinor || payload.max_minor != VersionMinor) {
-		return ValidationError::UnsupportedMinor;
+	if (const auto error = validate_protocol_minor_range({payload.min_minor, payload.max_minor});
+		error != ValidationError::None) {
+		return error;
 	}
 	if (payload.producer_name.size > MaximumDiscoveryProducerNameSize) {
 		return ValidationError::StringTooLong;
@@ -310,8 +338,9 @@ ValidationError validate_hello_payload(const HelloPayload& payload) noexcept
 	if (payload.min_major != VersionMajor || payload.max_major != VersionMajor) {
 		return ValidationError::UnsupportedMajor;
 	}
-	if (payload.min_minor != VersionMinor || payload.max_minor != VersionMinor) {
-		return ValidationError::UnsupportedMinor;
+	if (const auto error = validate_protocol_minor_range({payload.min_minor, payload.max_minor});
+		error != ValidationError::None) {
+		return error;
 	}
 	if (!is_known_visibility_mode(payload.requested_visibility_mode)) {
 		return ValidationError::UnknownEnum;
@@ -337,7 +366,7 @@ ValidationError validate_welcome_payload(const WelcomePayload& payload) noexcept
 		if (payload.selected_major != VersionMajor) {
 			return ValidationError::UnsupportedMajor;
 		}
-		if (payload.selected_minor != VersionMinor) {
+		if (!is_supported_version_minor(payload.selected_minor)) {
 			return ValidationError::UnsupportedMinor;
 		}
 		if (!is_known_visibility_mode(payload.selected_visibility_mode)) {

@@ -93,7 +93,7 @@ void cmeasure_maybe_alert_success(object *objp)
 	Assert(Weapon_info[Weapons[objp->instance].weapon_info_index].wi_flags[Weapon::Info_Flags::Cmeasure]);
 
 	if ( objp->parent == OBJ_INDEX(Player_obj) ) {
-		hud_start_text_flash(XSTR("Evaded", 1430), 800);
+		hud_start_text_flash(XSTR("Evaded", 1430), 800, 200, HudTextWarningKind::Evaded);
 		snd_play(gamesnd_get_game_sound(ship_get_sound(Player_obj, GameSounds::MISSILE_EVADED_POPUP)));
 	} else if ( Objects[objp->parent].flags[Object::Object_Flags::Player_ship] ) {
 		send_countermeasure_success_packet( objp->parent );

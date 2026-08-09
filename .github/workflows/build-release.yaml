@@ -203,7 +203,7 @@ jobs:
           COMPILER: ${{ matrix.compiler }}
         shell: bash
         run: |
-          cmake --build . --config "$CONFIGURATION" -- /verbosity:minimal
+          cmake --build . --config "$CONFIGURATION" -- /m:1 /p:CL_MPCount=1 /verbosity:minimal
           cmake --install . --config "$CONFIGURATION"
           ls -alR "$(pwd)/install"
       # Tree B: dynamic CRT (/MD) for QtFRED only (matches Qt's prebuilt /MD runtime)
@@ -232,7 +232,7 @@ jobs:
           COMPILER: ${{ matrix.compiler }}
         shell: bash
         run: |
-          cmake --build . --config "$CONFIGURATION" --target qtfred -- /verbosity:minimal
+          cmake --build . --config "$CONFIGURATION" --target qtfred -- /m:1 /p:CL_MPCount=1 /verbosity:minimal
           cmake --install . --config "$CONFIGURATION" --component qtFRED
           ls -alR "$(pwd)/install"
       # Merge both trees into the single install dir the zip job consumes
@@ -251,7 +251,13 @@ jobs:
         env:
           CONFIGURATION: ${{ matrix.configuration }}
         shell: bash
-        run: ./bin/$CONFIGURATION/unittests --gtest_shuffle
+        run: |
+          ./bin/$CONFIGURATION/unittests --gtest_shuffle
+          if [ "$CONFIGURATION" = "Release" ]; then
+            started=$SECONDS
+            ctest -C "$CONFIGURATION" -L telemetry-short --output-on-failure --timeout 60
+            test $((SECONDS - started)) -lt 300
+          fi
       - name: Set artifact id
         shell: bash
         run: |

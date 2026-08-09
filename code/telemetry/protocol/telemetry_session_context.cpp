@@ -1,5 +1,7 @@
 #include "telemetry/protocol/telemetry_session_context.h"
 
+#include "telemetry/protocol/telemetry_control_messages.h"
+
 #include <algorithm>
 
 namespace telemetry::protocol {
@@ -190,6 +192,17 @@ ValidationError validate_received_datagram_context(const TelemetryDatagramHeader
 	const EndpointKey& source_endpoint,
 	const TelemetrySessionContext& context) noexcept
 {
+	if (const auto error = validate_datagram_header_version(header, context.accepted_minors);
+		error != ValidationError::None) {
+		return error;
+	}
+	if ((header.message_type == MessageType::Discovery || header.message_type == MessageType::Hello) &&
+		header.version_minor != VersionMinorV1_0) {
+		return ValidationError::UnsupportedMinor;
+	}
+	if (context.active_session_id != 0 && context.accepted_minors.minimum != context.accepted_minors.maximum) {
+		return ValidationError::InvalidStateTransition;
+	}
 	const auto direction = message_direction(header.message_type);
 	if (direction == MessageDirection::Invalid) {
 		// The type is reported only after the session and endpoint are known,
@@ -224,6 +237,10 @@ ValidationError validate_welcome_logical_context(const TelemetryDatagramHeader& 
 	const auto retransmission = static_cast<std::uint8_t>(MessageFlagRetransmission);
 	const auto ack_required = static_cast<std::uint8_t>(MessageFlagAckRequired);
 	if (status == WelcomeStatus::Accepted) {
+		if (const auto error = validate_datagram_header_version(header, context.accepted_minors);
+			error != ValidationError::None) {
+			return error;
+		}
 		if (header.session_id == 0 ||
 			(context.active_session_id != 0 && header.session_id != context.active_session_id)) {
 			return ValidationError::SessionMismatch;
@@ -241,10 +258,32 @@ ValidationError validate_welcome_logical_context(const TelemetryDatagramHeader& 
 	default:
 		return ValidationError::UnknownEnum;
 	}
+	if (const auto error = validate_datagram_header_version(header, FrozenV1_0MinorRange);
+		error != ValidationError::None) {
+		return error;
+	}
 	if (header.session_id != 0) {
 		return ValidationError::SessionMismatch;
 	}
 	return validate_payload_dependent_flags(header, 0, retransmission);
+}
+
+ValidationError validate_welcome_logical_context(const TelemetryDatagramHeader& header,
+	const WelcomePayload& payload,
+	const TelemetrySessionContext& context) noexcept
+{
+	if (const auto error = validate_welcome_logical_context(header, payload.status, context);
+		error != ValidationError::None) {
+		return error;
+	}
+	if (payload.status != WelcomeStatus::Accepted) {
+		return ValidationError::None;
+	}
+	if (header.version_major != payload.selected_major) {
+		return ValidationError::UnsupportedMajor;
+	}
+	return header.version_minor == payload.selected_minor ? ValidationError::None
+											  : ValidationError::UnsupportedMinor;
 }
 
 ValidationError validate_event_batch_logical_context(const TelemetryDatagramHeader& header,

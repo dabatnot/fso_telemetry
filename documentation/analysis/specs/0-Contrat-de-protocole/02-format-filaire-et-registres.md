@@ -793,6 +793,6 @@ Les fichiers golden v1.0 **DOIVENT** inclure au minimum :
 - un delta cumulatif ;
 - un ACK `VALIDATED` et un ACK `VALIDATED | APPLIED` ;
 - un NACK avec bitmap dont le dernier octet contient des bits inutilisés à zéro ;
-- les records et messages spécialisés exigés par la [feuille de route](../../04-implementation-roadmap.md#101-sérialisation).
+- les records et messages spécialisés exigés par les [spécifications actives](../README.md).
 
 Chaque fixture binaire est accompagnée d'une description textuelle des champs et de sa longueur totale. Les mêmes fichiers sont consommés par le producteur et au moins un décodeur indépendant du moteur.

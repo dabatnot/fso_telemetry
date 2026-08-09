@@ -365,7 +365,7 @@ ValidationError decode_and_validate_ingress_datagram(const TelemetryOperationalC
 		return finish(ValidationError::SourceNotAllowed);
 	}
 	DatagramView envelope;
-	if (const auto error = decode_and_validate_datagram_envelope(datagram, envelope);
+	if (const auto error = decode_and_validate_datagram_envelope(datagram, context.accepted_minors, envelope);
 		error != ValidationError::None) {
 		return finish(error);
 	}

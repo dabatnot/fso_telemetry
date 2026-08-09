@@ -1,0 +1,897 @@
+HISTORIQUE, NON NORMATIF, NE PAS EXECUTER.
+"""Run and fail-closed validate coordinated Phase 2 performance/soak evidence."""
+
+from __future__ import annotations
+
+import argparse
+import csv
+import hashlib
+import json
+import math
+import os
+import platform
+import statistics
+import subprocess
+import sys
+import time
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Sequence
+
+
+SCHEMA = "fs2open.telemetry.phase2.performance-campaign.v2"
+HARNESS_SCHEMA = "fs2open.telemetry.phase2.performance-harness.v2"
+RUNTIMES = (
+    "control",
+    "nominal",
+    "four-clients-one-slow",
+    "bounds-loss-resync-manifest",
+)
+ACTIVE_RUNTIMES = RUNTIMES[1:]
+BUDGETS = {
+    "sharedBytes": 67_108_864,
+    "perClientBytes": 83_886_080,
+    "processFourClientsBytes": 402_653_184,
+}
+RAW_HEADER = (
+    "sample_index",
+    "frame_duration_ns",
+    "telemetry_duration_ns",
+    "collect_ns",
+    "diff_ns",
+    "state_image_build_ns",
+    "state_image_fill_ns",
+    "state_image_publish_validate_ns",
+    "state_image_adopt_ns",
+    "state_image_semantic_validate_ns",
+    "delta_build_ns",
+    "serialization_ns",
+    "network_ns",
+    "allocation_events",
+    "syscall_count",
+    "queue_depth",
+    "baselines_active",
+    "is_keyframe",
+    "is_periodic_keyframe",
+    "is_forced_keyframe",
+    "trace_index",
+    "epoch_index",
+    "capture_flight",
+    "capture_systems",
+)
+
+
+def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--build-dir", type=Path, required=True)
+    parser.add_argument("--config", default="Release")
+    parser.add_argument("--warmup-seconds", type=int, default=60)
+    parser.add_argument("--control-seconds", type=int, default=600)
+    parser.add_argument("--measure-seconds", type=int, default=1800)
+    parser.add_argument("--minimum-frames", type=int, default=100000)
+    parser.add_argument("--minimum-flight-ticks", type=int, default=54000)
+    parser.add_argument("--minimum-system-ticks", type=int, default=18000)
+    parser.add_argument("--minimum-keyframes", type=int, default=900)
+    parser.add_argument("--seed", type=int, default=4242)
+    parser.add_argument("--soak-seconds", type=int, default=3600)
+    parser.add_argument("--soak-profile", choices=("composite",), default="composite")
+    parser.add_argument("--soak-seed", type=int, default=4242)
+    parser.add_argument("--performance-report-dir", type=Path, required=True)
+    parser.add_argument("--soak-report-dir", type=Path, required=True)
+    parser.add_argument("--harness", type=Path)
+    return parser.parse_args(argv)
+
+
+def require(condition: bool, message: str) -> None:
+    if not condition:
+        raise ValueError(message)
+
+
+def write_json(path: Path, value: Any) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(f".{path.name}.tmp")
+    temporary.write_text(
+        json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    os.replace(temporary, path)
+
+
+def sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+def fingerprint(paths: Sequence[Path]) -> str:
+    digest = hashlib.sha256()
+    files: list[Path] = []
+    for path in paths:
+        if path.is_dir():
+            files.extend(
+                candidate for candidate in path.rglob("*")
+                if candidate.is_file()
+            )
+        elif path.is_file():
+            files.append(path)
+    for path in sorted(files, key=lambda item: item.as_posix()):
+        digest.update(path.as_posix().encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(path.read_bytes())
+        digest.update(b"\0")
+    return digest.hexdigest()
+
+
+def command_fingerprint(command: Sequence[str]) -> str:
+    return hashlib.sha256(
+        json.dumps(list(command), ensure_ascii=False,
+                   separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+
+def git_evidence(repo: Path) -> tuple[str, str]:
+    revision = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=repo, text=True,
+        capture_output=True, check=False,
+    )
+    status = subprocess.run(
+        ["git", "status", "--porcelain=v1"], cwd=repo, text=True,
+        capture_output=True, check=False,
+    )
+    require(revision.returncode == 0 and status.returncode == 0,
+            "unable to capture git evidence")
+    state = "clean" if not status.stdout else (
+        "dirty:" + hashlib.sha256(status.stdout.encode("utf-8")).hexdigest()
+    )
+    return revision.stdout.strip(), state
+
+
+def build_flags(build_dir: Path) -> str:
+    cache = build_dir / "CMakeCache.txt"
+    require(cache.is_file(), f"missing build metadata: {cache}")
+    flags = [
+        line.strip()
+        for line in cache.read_text(encoding="utf-8", errors="replace").splitlines()
+        if line.startswith(("CMAKE_C_FLAGS", "CMAKE_CXX_FLAGS"))
+        and ":STRING=" in line
+    ]
+    require(bool(flags), "build flags are missing from CMakeCache.txt")
+    return " | ".join(flags)
+
+
+def find_harness(args: argparse.Namespace) -> Path:
+    if args.harness:
+        require(args.harness.is_file(), f"harness not found: {args.harness}")
+        return args.harness
+    names = ("telemetry_phase2_performance_harness.exe",
+             "telemetry_phase2_performance_harness")
+    for root in (
+        args.build_dir / "bin" / args.config,
+        args.build_dir / "bin",
+        args.build_dir,
+    ):
+        for name in names:
+            candidate = root / name
+            if candidate.is_file():
+                return candidate
+    raise ValueError("telemetry_phase2_performance_harness executable not found")
+
+
+def harness_environment(
+    args: argparse.Namespace,
+    command: Sequence[str],
+) -> tuple[dict[str, str], dict[str, str]]:
+    environment = os.environ.copy()
+    if os.name == "nt":
+        runtime_dirs = [
+            args.build_dir / "lib" / "prebuilt" / "openal" / "bin",
+            args.build_dir / "lib" / "prebuilt" / "ffmpeg" / "bin",
+            args.build_dir / "lib" / "prebuilt" / "freetype" / "lib",
+            args.build_dir / "lib" / "prebuilt" / "sdl2" / "lib",
+        ]
+        existing = [str(path.resolve()) for path in runtime_dirs if path.is_dir()]
+        environment["PATH"] = os.pathsep.join(
+            existing + [environment.get("PATH", "")]
+        )
+    repo = Path(__file__).resolve().parents[4]
+    revision, worktree = git_evidence(repo)
+    captured_at = datetime.now(timezone.utc).isoformat()
+    proofs = {
+        "sourceFingerprint": fingerprint([repo / "code" / "telemetry"]),
+        "testFingerprint": fingerprint([
+            repo / "test" / "src" / "telemetry" / "producer"
+            / "telemetry_native_performance_runner.cpp",
+            repo / "test" / "src" / "telemetry" / "producer"
+            / "telemetry_phase2_performance_harness.cpp",
+            repo / "test" / "telemetry" / "producer" / "phase2"
+            / "monitor_phase2_host.ps1",
+            Path(__file__).resolve(),
+        ]),
+        "cmakeFingerprint": fingerprint([
+            repo / "CMakeLists.txt",
+            repo / "test" / "CMakeLists.txt",
+        ]),
+        "commandFingerprint": command_fingerprint(command),
+    }
+    for key in ("FSO_PHASE2_POWER_MODE", "FSO_PHASE2_TEMPERATURE_LOG",
+                "FSO_PHASE2_THROTTLE_LOG",
+                "FSO_PHASE2_HOST_MONITOR_READY_FILE"):
+        require(environment.get(key, "").strip(),
+                f"missing required performance environment: {key}")
+    environment.update({
+        "FSO_PHASE2_SOURCE_FINGERPRINT": proofs["sourceFingerprint"],
+        "FSO_PHASE2_TEST_FINGERPRINT": proofs["testFingerprint"],
+        "FSO_PHASE2_CMAKE_FINGERPRINT": proofs["cmakeFingerprint"],
+        "FSO_PHASE2_COMMAND_FINGERPRINT": proofs["commandFingerprint"],
+        "FSO_PHASE2_REVISION": revision,
+        "FSO_PHASE2_WORKTREE": worktree,
+        "FSO_PHASE2_DATE_UTC": captured_at,
+        "FSO_PHASE2_BUILD_FLAGS": build_flags(args.build_dir.resolve()),
+        "FSO_PHASE2_PLATFORM": platform.platform(),
+        "FSO_PHASE2_CPU": platform.processor() or platform.machine(),
+        "FSO_PHASE2_BUILD_DIR": str(args.build_dir.resolve()),
+        "FSO_PHASE2_COMMAND_JSON": json.dumps(
+            list(command), ensure_ascii=False, separators=(",", ":")
+        ),
+    })
+    proofs.update({
+        "revision": revision,
+        "worktree": worktree,
+        "dateUtc": captured_at,
+        "buildFlags": environment["FSO_PHASE2_BUILD_FLAGS"],
+        "platform": environment["FSO_PHASE2_PLATFORM"],
+        "cpu": environment["FSO_PHASE2_CPU"],
+        "buildDirectory": environment["FSO_PHASE2_BUILD_DIR"],
+        "buildConfig": args.config,
+        "mission": "wp11-canonical-trace",
+        "mod": "FS2Open-core",
+        "profile": "complete-ship",
+    })
+    return environment, proofs
+
+
+def nearest_rank(values: Sequence[float], percentile: float) -> float:
+    require(bool(values), "percentile input is empty")
+    ordered = sorted(values)
+    rank = max(1, math.ceil(percentile * len(ordered)))
+    return ordered[min(rank, len(ordered)) - 1]
+
+
+def close(actual: Any, expected: float, name: str) -> None:
+    require(
+        isinstance(actual, (int, float))
+        and not isinstance(actual, bool)
+        and math.isclose(float(actual), expected, rel_tol=1e-9, abs_tol=1e-9),
+        f"wrong recomputed statistic: {name}",
+    )
+
+
+def load_raw(
+    path: Path,
+    args: argparse.Namespace,
+    *,
+    coordinated: bool = True,
+) -> dict[str, Any]:
+    ticks: list[float] = []
+    flight_only: list[float] = []
+    systems: list[float] = []
+    keyframes: list[float] = []
+    forced_keyframes: list[float] = []
+    flight_count = 0
+    systems_count = 0
+    keyframe_count = 0
+    forced_keyframe_count = 0
+    maximum_allocations = 0
+    samples_per_epoch = (args.control_seconds // 10) * 60
+    with path.open("r", encoding="utf-8", newline="") as stream:
+        reader = csv.DictReader(stream)
+        require(tuple(reader.fieldnames or ()) == RAW_HEADER,
+                f"wrong raw CSV header: {path}")
+        for expected_index, row in enumerate(reader):
+            try:
+                index = int(row["sample_index"])
+                trace = int(row["trace_index"])
+                epoch = int(row["epoch_index"])
+                tick = int(row["frame_duration_ns"]) / 1_000_000.0
+                telemetry = (
+                    int(row["telemetry_duration_ns"]) /
+                    1_000_000.0
+                )
+                allocation = int(row["allocation_events"])
+                keyframe = int(row["is_keyframe"])
+                periodic_keyframe = int(
+                    row["is_periodic_keyframe"]
+                )
+                forced_keyframe = int(
+                    row["is_forced_keyframe"]
+                )
+                flight = int(row["capture_flight"])
+                system = int(row["capture_systems"])
+            except (TypeError, ValueError) as error:
+                raise ValueError(f"invalid raw sample: {path}") from error
+            require(index == expected_index and trace == expected_index,
+                    f"non-canonical trace index: {path}")
+            require(
+                epoch == (expected_index // samples_per_epoch if coordinated else 0),
+                f"wrong epoch assignment: {path}",
+            )
+            require(
+                keyframe in (0, 1)
+                and periodic_keyframe in (0, 1)
+                and forced_keyframe in (0, 1)
+                and keyframe == int(
+                    bool(periodic_keyframe or forced_keyframe)
+                )
+                and flight in (0, 1)
+                and system in (0, 1),
+                    f"non-boolean raw marker: {path}")
+            ticks.append(tick)
+            if flight and not system:
+                flight_only.append(telemetry)
+            if system:
+                systems.append(telemetry)
+            keyframe_build = sum(
+                int(row[name])
+                for name in (
+                    "state_image_build_ns",
+                    "state_image_fill_ns",
+                    "state_image_publish_validate_ns",
+                    "state_image_adopt_ns",
+                    "state_image_semantic_validate_ns",
+                )
+            ) / 1_000_000.0
+            if periodic_keyframe:
+                keyframes.append(keyframe_build)
+            if forced_keyframe:
+                forced_keyframes.append(keyframe_build)
+            flight_count += flight
+            systems_count += system
+            keyframe_count += periodic_keyframe
+            forced_keyframe_count += forced_keyframe
+            maximum_allocations = max(maximum_allocations, allocation)
+    require(ticks, f"empty raw series: {path}")
+    return {
+        "ticks": ticks,
+        "flightOnly": flight_only,
+        "systems": systems,
+        "keyframesMs": keyframes,
+        "forcedKeyframesMs": forced_keyframes,
+        "flightTicks": flight_count,
+        "systemTicks": systems_count,
+        "keyframes": keyframe_count,
+        "forcedKeyframes": forced_keyframe_count,
+        "allocations": maximum_allocations,
+    }
+
+def performance_command_contract(
+    command: Sequence[Any], args: argparse.Namespace
+) -> bool:
+    expected = {
+        "--warmup-seconds": str(args.warmup_seconds),
+        "--control-seconds": str(args.control_seconds),
+        "--measure-seconds": str(args.measure_seconds),
+        "--minimum-frames": str(args.minimum_frames),
+        "--minimum-flight-ticks": str(args.minimum_flight_ticks),
+        "--minimum-system-ticks": str(args.minimum_system_ticks),
+        "--minimum-keyframes": str(args.minimum_keyframes),
+        "--seed": str(args.seed),
+        "--soak-seconds": str(args.soak_seconds),
+        "--soak-profile": args.soak_profile,
+        "--soak-seed": str(args.soak_seed),
+        "--qualification-plan": "coordinated-performance",
+    }
+    if not all(isinstance(item, str) for item in command):
+        return False
+    for option, value in expected.items():
+        if command.count(option) != 1:
+            return False
+        index = command.index(option)
+        if index + 1 >= len(command) or command[index + 1] != value:
+            return False
+    return all(
+        command.count(option) == 1
+        and command.index(option) + 1 < len(command)
+        and bool(command[command.index(option) + 1])
+        for option in ("--soak-report-dir", "--report")
+    )
+
+
+def validate_report(report: Any, args: argparse.Namespace) -> None:
+    require(isinstance(report, dict), "harness report must be an object")
+    require(report.get("schema") == HARNESS_SCHEMA, "wrong performance schema")
+    require(report.get("status") == "passed", "performance harness did not pass")
+    require(report.get("certificationEligible") is True,
+            "smoke output cannot certify performance or soak")
+
+    protocol = report.get("measurementProtocol")
+    require(isinstance(protocol, dict), "missing measurement protocol")
+    expected_protocol = {
+        "configuration": "Release",
+        "clock": "steady_clock",
+        "traceSeed": args.seed,
+        "traceSeconds": args.control_seconds,
+        "epochSeconds": args.control_seconds // 10,
+        "epochCount": 10,
+        "callbackHz": 60,
+        "warmupSecondsPerRuntime": args.warmup_seconds,
+        "controlSeconds": args.control_seconds,
+        "activeSeconds": args.measure_seconds,
+        "physicalMeasuredSeconds": args.control_seconds + args.measure_seconds,
+        "minimumFrames": args.minimum_frames,
+        "minimumFlightTicks": args.minimum_flight_ticks,
+        "minimumSystemTicks": args.minimum_system_ticks,
+        "minimumKeyframes": args.minimum_keyframes,
+        "percentile": "nearest-rank",
+        "median": "conventional-middle-mean",
+        "outliersRemoved": 0,
+        "activeAggregation": "raw-multiset-union",
+    }
+    for key, value in expected_protocol.items():
+        require(protocol.get(key) == value, f"wrong measurementProtocol.{key}")
+    measured = args.control_seconds + args.measure_seconds
+    total = measured + 4 * args.warmup_seconds
+    require(isinstance(protocol.get("performanceMeasuredWallSeconds"), (int, float))
+            and protocol["performanceMeasuredWallSeconds"] >= measured,
+            "measured campaign wall duration is too short")
+    require(isinstance(protocol.get("performanceWallSeconds"), (int, float))
+            and total <= protocol["performanceWallSeconds"] <= total + 60,
+            "performance campaign wall duration is outside its bound")
+
+    host = report.get("host")
+    require(isinstance(host, dict), "missing host/environment metadata")
+    for key in ("compiler", "powerMode", "sourceFingerprint",
+                "testFingerprint", "cmakeFingerprint", "commandFingerprint"):
+        require(isinstance(host.get(key), str) and host[key]
+                and host[key] != "unavailable", f"missing host.{key}")
+    for key in ("sourceFingerprint", "testFingerprint",
+                "cmakeFingerprint", "commandFingerprint"):
+        require(len(host[key]) == 64
+                and all(character in "0123456789abcdef" for character in host[key]),
+                f"invalid host.{key}")
+    for key in ("temperatureLog", "throttleLog", "monitorReady"):
+        log = host.get(key)
+        require(isinstance(log, dict) and log.get("verdict") == "pass",
+                f"failed host.{key} verdict")
+        path = Path(log.get("path", ""))
+        require(path.is_file() and log.get("sha256") == sha256(path),
+                f"invalid host.{key} artifact")
+    require(
+        isinstance(protocol.get("clockResolutionNs"), (int, float))
+        and 0 < protocol["clockResolutionNs"] <= 1_000_000,
+        "invalid steady-clock resolution",
+    )
+    context = report.get("evidenceContext")
+    require(isinstance(context, dict), "missing evidence context")
+    revision = context.get("revision")
+    require(isinstance(revision, str) and len(revision) in (40, 64)
+            and all(character in "0123456789abcdef" for character in revision),
+            "invalid evidence revision")
+    worktree = context.get("worktree")
+    require(worktree == "clean" or (
+        isinstance(worktree, str) and worktree.startswith("dirty:")
+        and len(worktree) == 70
+    ), "invalid worktree evidence")
+    for key in ("dateUtc", "buildFlags", "platform", "cpu",
+                "buildDirectory", "buildConfig", "mission", "mod", "profile"):
+        require(isinstance(context.get(key), str) and context[key],
+                f"missing evidenceContext.{key}")
+    require(context["dateUtc"].endswith(("+00:00", "Z")),
+            "evidence date is not UTC")
+    require(context.get("buildConfig") == "Release"
+            and context.get("mission") == "wp11-canonical-trace"
+            and context.get("mod") == "FS2Open-core"
+            and context.get("profile") == "complete-ship",
+            "wrong build/mission/mod/profile evidence")
+    command = context.get("command")
+    require(isinstance(command, list) and command
+            and performance_command_contract(command, args),
+            "wrong harness command evidence")
+    require(command_fingerprint(command) == host["commandFingerprint"],
+            "harness command fingerprint mismatch")
+    require(context.get("codeReturn") == 0
+            and isinstance(context.get("durationSeconds"), (int, float))
+            and context["durationSeconds"] > 0,
+            "invalid return-code/duration evidence")
+
+    order = report.get("runtimeOrder")
+    require(isinstance(order, dict), "missing runtime order")
+    require(order.get("base") == list(RUNTIMES), "wrong runtime base order")
+    require(order.get("rotation") == "left-e-mod-4", "wrong rotation rule")
+    require(order.get("persistent") is True, "runtime persistence not proven")
+    slices = order.get("slices")
+    require(isinstance(slices, list) and len(slices) == 40,
+            "exactly forty measured slices are required")
+    for index, item in enumerate(slices):
+        require(isinstance(item, dict), "invalid slice entry")
+        epoch, position = divmod(index, 4)
+        expected = RUNTIMES[(epoch % 4 + position) % 4]
+        require(item == {"epoch": epoch, "position": position, "runtime": expected},
+                f"wrong deterministic slice order at {index}")
+
+    qualifications = report.get("qualifications")
+    require(isinstance(qualifications, list) and len(qualifications) == 2,
+            "two short inactive qualifications are required")
+    qualification_by_name = {
+        item.get("name"): item for item in qualifications if isinstance(item, dict)
+    }
+    require(set(qualification_by_name) == {"config-absent", "enabled-false"},
+            "wrong inactive qualification inventory")
+    for name, item in qualification_by_name.items():
+        require(item.get("status") == "passed" and item.get("measured") is False,
+                f"invalid inactive qualification: {name}")
+        path = Path(item.get("path", ""))
+        require(path.is_file() and item.get("sha256") == sha256(path),
+                f"invalid inactive qualification artifact: {name}")
+    disabled = qualification_by_name["enabled-false"]
+    require(
+        disabled.get("callbacks") == 100_000
+        and disabled.get("sharedFrameWorkload") is True,
+        "disabled fast-path did not use 100000 shared-workload callbacks",
+    )
+    disabled_values = load_raw(Path(disabled["path"]), args, coordinated=False)
+    disabled_average = statistics.fmean(disabled_values["ticks"])
+    disabled_p99 = nearest_rank(disabled_values["ticks"], 0.99)
+    disabled_median = statistics.median(disabled_values["ticks"])
+    close(disabled.get("averageMs"), disabled_average, "disabled.averageMs")
+    close(disabled.get("p99Ms"), disabled_p99, "disabled.p99Ms")
+    close(disabled.get("medianMs"), disabled_median, "disabled.medianMs")
+    require(disabled_average <= 0.01 and disabled_p99 <= 0.05,
+            "disabled fast-path threshold exceeded")
+
+    raw_items = report.get("rawSamples")
+    require(isinstance(raw_items, list) and len(raw_items) == 4,
+            "four raw coordinated series are required")
+    raw_by_name = {
+        item.get("workload"): item for item in raw_items if isinstance(item, dict)
+    }
+    require(tuple(raw_by_name) == RUNTIMES, "wrong raw series order/inventory")
+    recomputed: dict[str, dict[str, Any]] = {}
+    expected_count = args.control_seconds * 60
+    for name in RUNTIMES:
+        item = raw_by_name[name]
+        path = Path(item.get("path", ""))
+        require(path.is_file(), f"raw sample file missing: {name}")
+        require(item.get("sha256") == sha256(path), f"raw sample hash mismatch: {name}")
+        values = load_raw(path, args)
+        require(len(values["ticks"]) == expected_count
+                and item.get("count") == expected_count,
+                f"wrong raw sample count: {name}")
+        for key in (
+            "flightTicks",
+            "systemTicks",
+            "keyframes",
+            "forcedKeyframes",
+        ):
+            require(item.get(key) == values[key], f"wrong raw counter {name}.{key}")
+        recomputed[name] = values
+
+    active_ticks = [
+        value
+        for name in ACTIVE_RUNTIMES
+        for value in recomputed[name]["ticks"]
+    ]
+    active_frames = len(active_ticks)
+    active_flight = sum(recomputed[name]["flightTicks"] for name in ACTIVE_RUNTIMES)
+    active_systems = sum(recomputed[name]["systemTicks"] for name in ACTIVE_RUNTIMES)
+    active_keyframes = sum(recomputed[name]["keyframes"] for name in ACTIVE_RUNTIMES)
+    active_forced_keyframes = sum(
+        recomputed[name]["forcedKeyframes"]
+        for name in ACTIVE_RUNTIMES
+    )
+    for key, actual, minimum in (
+        ("observedFrames", active_frames, args.minimum_frames),
+        ("observedFlightTicks", active_flight, args.minimum_flight_ticks),
+        ("observedSystemTicks", active_systems, args.minimum_system_ticks),
+        ("observedKeyframes", active_keyframes, args.minimum_keyframes),
+    ):
+        require(protocol.get(key) == actual and actual >= minimum,
+                f"measurement minimum/counter not met: {key}")
+    require(
+        protocol.get("observedForcedKeyframes") ==
+        active_forced_keyframes,
+        "wrong forced-keyframe counter",
+    )
+
+    timings = report.get("timingsMs")
+    require(isinstance(timings, dict), "missing timings")
+    p99_flight = nearest_rank(recomputed["nominal"]["flightOnly"], 0.99)
+    p99_systems = nearest_rank(recomputed["nominal"]["systems"], 0.99)
+    p99_four = nearest_rank(
+        recomputed["four-clients-one-slow"]["systems"], 0.99
+    )
+    active_keyframe_builds = [
+        value
+        for name in ACTIVE_RUNTIMES
+        for value in recomputed[name]["keyframesMs"]
+    ]
+    p99_keyframe = nearest_rank(active_keyframe_builds, 0.99)
+    max_keyframe = max(active_keyframe_builds)
+    control_median = statistics.median(recomputed["control"]["ticks"])
+    active_median = statistics.median(active_ticks)
+    regression = 100.0 * (active_median / control_median - 1.0)
+    close(timings.get("flightControl", {}).get("p99"), p99_flight,
+          "flightControl.p99")
+    close(timings.get("systemsNominal", {}).get("p99"), p99_systems,
+          "systemsNominal.p99")
+    close(timings.get("fourClientsSystems", {}).get("p99"), p99_four,
+          "fourClientsSystems.p99")
+    close(timings.get("keyframe", {}).get("p99"), p99_keyframe, "keyframe.p99")
+    close(timings.get("keyframe", {}).get("max"), max_keyframe, "keyframe.max")
+    close(timings.get("controlMedian"), control_median, "controlMedian")
+    close(timings.get("activeMedian"), active_median, "activeMedian")
+    close(timings.get("activeControlMedianRegressionPercent"), regression,
+          "activeControlMedianRegressionPercent")
+    medians = timings.get("scenarioMedians")
+    require(isinstance(medians, dict) and set(medians) == set(ACTIVE_RUNTIMES),
+            "wrong per-scenario median inventory")
+    for name in ACTIVE_RUNTIMES:
+        close(medians[name], statistics.median(recomputed[name]["ticks"]),
+              f"scenarioMedians.{name}")
+    disabled_regression = 100.0 * (disabled_median / control_median - 1.0)
+    close(
+        disabled.get("controlMedianRegressionPercent"),
+        disabled_regression,
+        "disabled.controlMedianRegressionPercent",
+    )
+    require(disabled_regression < 1.0,
+            "disabled frame-median regression is not below 1%")
+    require(p99_flight <= 0.25, "flight/control p99 exceeds 0.25 ms")
+    require(p99_systems <= 0.75, "systems nominal p99 exceeds 0.75 ms")
+    require(p99_keyframe <= 2.0 and max_keyframe <= 5.0,
+            "keyframe timing exceeds its bound")
+    require(p99_four <= 1.50, "four-client systems p99 exceeds 1.50 ms")
+    require(regression < 2.0, "active/control median regression is not below 2%")
+
+    allocations = report.get("allocations")
+    require(isinstance(allocations, dict), "missing allocation proof")
+    raw_allocations = max(item["allocations"] for item in recomputed.values())
+    require(allocations.get("afterReady") == raw_allocations == 0,
+            "allocation occurred after Ready")
+    require(allocations.get("steadyStateGrowthBytes") == 0,
+            "steady-state memory grew")
+    budgets = report.get("budgets")
+    require(isinstance(budgets, dict), "missing budget proof")
+    for key, limit in BUDGETS.items():
+        proof = budgets.get(key)
+        require(isinstance(proof, dict) and proof.get("limit") == limit,
+                f"wrong budget limit: {key}")
+        require(proof.get("exactAccepted") is True
+                and proof.get("plusOneRejectedBeforeBind") is True,
+                f"budget boundary proof failed: {key}")
+
+    bounds = report.get("bounds")
+    require(isinstance(bounds, dict), "missing maximum-bound proof")
+    require(bounds.get("cardinalityProven") is True,
+            "maximum-bound cardinality oracle is not proven")
+    require(bounds.get("requiredShips") == 64
+            and bounds.get("requiredAggregateSubsystems") == 4096
+            and bounds.get("requiredShieldSegmentsPerShip") == 64
+            and bounds.get("requiredBanksPerStateFamily") == 64
+            and bounds.get("requiredClassBankDefinitions") == 192,
+            "wrong maximum-bound contract")
+    require(
+        bounds.get("observedShips") == 64
+        and bounds.get("observedAggregateSubsystems") == 4096
+        and bounds.get("observedShieldSegmentsPerShip") == 64
+        and bounds.get("observedPrimaryBanks") == 64
+        and bounds.get("observedSecondaryBanks") == 64
+        and bounds.get("observedTertiaryBanks") == 64
+        and bounds.get("observedClassBankDefinitions") == 192,
+        "maximum-bound observations do not equal the contract",
+    )
+
+    soak = report.get("soak")
+    require(isinstance(soak, dict), "missing composite soak")
+    require(soak.get("profile") == args.soak_profile
+            and soak.get("workload") == "composite-soak",
+            "wrong composite soak profile")
+    require(soak.get("baseSeed") == args.soak_seed
+            and soak.get("seedDerivation") == "(4242,composite)"
+            and isinstance(soak.get("derivedStream"), str)
+            and soak["derivedStream"], "wrong composite soak seed")
+    require(soak.get("durationSeconds") == args.soak_seconds,
+            "wrong composite soak duration")
+    require(isinstance(soak.get("wallElapsedSeconds"), (int, float))
+            and soak["wallElapsedSeconds"] >= args.warmup_seconds + args.soak_seconds,
+            "composite soak wall duration is too short")
+    soak_path = Path(soak.get("rawPath", ""))
+    require(soak_path.is_file() and soak.get("rawSha256") == sha256(soak_path),
+            "invalid composite soak raw artifact")
+    soak_values = load_raw(soak_path, args, coordinated=False)
+    require(
+        len(soak_values["ticks"]) == args.soak_seconds * 60
+        and soak.get("callbackHz") == 60
+        and soak.get("flightHz") == 30
+        and soak.get("callbacks") == len(soak_values["ticks"])
+        and soak.get("flightTicks") == soak_values["flightTicks"]
+        == args.soak_seconds * 30
+        and soak.get("systemTicks") == soak_values["systemTicks"]
+        == args.soak_seconds * 10
+        and soak.get("keyframes") == soak_values["keyframes"]
+        and soak.get("forcedKeyframes") ==
+        soak_values["forcedKeyframes"],
+        "composite soak 60 Hz/30 Hz schedule was not recomputed",
+    )
+    require(soak.get("blockCoverage") == {"count": 11, "complete": True},
+            "composite soak does not cover all blocks")
+    require(soak.get("missionReentries") == 3 and soak.get("respawns") == 3
+            and soak.get("clientRestarts") == 3,
+            "composite soak lifecycle counts are wrong")
+    require(isinstance(soak.get("lossResync"), int) and soak["lossResync"] > 0,
+            "composite soak did not exercise loss/resync")
+    require(soak.get("manifestChanged") is True
+            and soak.get("slowClientRecovered") is True,
+            "composite soak missed manifest/slow-client coverage")
+    state_hash = soak.get("stateHash")
+    require(isinstance(state_hash, dict)
+            and state_hash.get("equal") is True
+            and state_hash.get("oracle") not in ("", "0")
+            and state_hash.get("oracle") == state_hash.get("final"),
+            "composite soak final state differs from oracle")
+    for key in ("noLeak", "noGrowth", "noDeadlock", "purgedToZero",
+                "idsNotReused", "finalStateExact", "shutdownBounded"):
+        require(soak.get(key) is True, f"failed composite soak oracle: {key}")
+    require(
+        soak.get("activeSlotsBeforeShutdown") == 4
+        and soak.get("purgedSlots") == 4
+        and soak.get("slotIdsUnique") is True
+        and soak.get("slotHashesPresent") is True
+        and soak.get("slotStatesExact") is True,
+        "composite soak did not prove hashes/IDs/purge for four slots",
+    )
+
+
+def validate_cli_contract(args: argparse.Namespace) -> None:
+    require(args.config.lower() == "release", "performance evidence requires Release")
+    require(args.warmup_seconds == 60, "warm-up must be exactly 60 seconds")
+    require(args.control_seconds == 600, "control must be exactly 600 seconds")
+    require(args.measure_seconds == 1800, "active measurement must be 1800 seconds")
+    require(args.measure_seconds == 3 * args.control_seconds,
+            "active/control duration ratio must be 3:1")
+    require(args.minimum_frames >= 100000, "minimum frames must be at least 100000")
+    require(args.minimum_flight_ticks >= 54000,
+            "minimum flight ticks must be at least 54000")
+    require(args.minimum_system_ticks >= 18000,
+            "minimum systems ticks must be at least 18000")
+    require(args.minimum_keyframes >= 900,
+            "minimum keyframes must be at least 900")
+    require(args.seed == 4242 and args.soak_seed == 4242,
+            "normative seeds must be 4242")
+    require(args.soak_seconds == 3600, "composite soak must be 3600 seconds")
+    require(args.soak_profile == "composite", "soak profile must be composite")
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    args = parse_args(argv)
+    try:
+        validate_cli_contract(args)
+        harness = find_harness(args)
+    except ValueError as error:
+        print(error, file=sys.stderr)
+        return 2
+
+    report_path = args.performance_report_dir / "harness-report.json"
+    command = [
+        str(harness),
+        "--warmup-seconds", str(args.warmup_seconds),
+        "--control-seconds", str(args.control_seconds),
+        "--measure-seconds", str(args.measure_seconds),
+        "--minimum-frames", str(args.minimum_frames),
+        "--minimum-flight-ticks", str(args.minimum_flight_ticks),
+        "--minimum-system-ticks", str(args.minimum_system_ticks),
+        "--minimum-keyframes", str(args.minimum_keyframes),
+        "--seed", str(args.seed),
+        "--soak-seconds", str(args.soak_seconds),
+        "--soak-profile", args.soak_profile,
+        "--soak-seed", str(args.soak_seed),
+        "--qualification-plan", "coordinated-performance",
+        "--soak-report-dir", str(args.soak_report_dir),
+        "--report", str(report_path),
+    ]
+    args.performance_report_dir.mkdir(parents=True, exist_ok=True)
+    args.soak_report_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        environment, fingerprints = harness_environment(args, command)
+    except ValueError as error:
+        print(error, file=sys.stderr)
+        return 2
+    started_at = datetime.now(timezone.utc).isoformat()
+    started = time.monotonic()
+    completed = subprocess.run(
+        command,
+        text=True,
+        capture_output=True,
+        check=False,
+        env=environment,
+    )
+    elapsed_seconds = time.monotonic() - started
+    finished_at = datetime.now(timezone.utc).isoformat()
+    (args.performance_report_dir / "stdout.log").write_text(
+        completed.stdout, encoding="utf-8"
+    )
+    (args.performance_report_dir / "stderr.log").write_text(
+        completed.stderr, encoding="utf-8"
+    )
+    try:
+        require(completed.returncode == 0, f"harness exit code {completed.returncode}")
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+        validate_report(report, args)
+        for key, value in fingerprints.items():
+            if key.endswith("Fingerprint"):
+                require(report["host"].get(key) == value,
+                        f"harness fingerprint mismatch: {key}")
+        context = report.get("evidenceContext")
+        require(isinstance(context, dict), "harness evidence context is missing")
+        for key in ("revision", "worktree", "dateUtc", "buildFlags",
+                    "platform", "cpu", "buildDirectory", "buildConfig",
+                    "mission", "mod", "profile"):
+            require(context.get(key) == fingerprints[key],
+                    f"harness evidence context mismatch: {key}")
+        require(context.get("command") == command
+                and context.get("codeReturn") == completed.returncode,
+                "harness command/return evidence mismatch")
+        campaign = {
+            "schema": SCHEMA,
+            "status": "passed",
+            "command": command,
+            "harness": str(harness.resolve()),
+            "harnessSha256": sha256(harness),
+            "fingerprints": fingerprints,
+            "revision": fingerprints["revision"],
+            "worktree": fingerprints["worktree"],
+            "startedAtUtc": started_at,
+            "finishedAtUtc": finished_at,
+            "platform": fingerprints["platform"],
+            "cpu": fingerprints["cpu"],
+            "build": {
+                "directory": fingerprints["buildDirectory"],
+                "config": fingerprints["buildConfig"],
+                "flags": fingerprints["buildFlags"],
+            },
+            "exitCode": completed.returncode,
+            "elapsedSeconds": elapsed_seconds,
+            "mission": fingerprints["mission"],
+            "mod": fingerprints["mod"],
+            "profile": fingerprints["profile"],
+            "temperatureLog": {
+                "path": str(Path(environment["FSO_PHASE2_TEMPERATURE_LOG"]).resolve()),
+                "sha256": sha256(Path(environment["FSO_PHASE2_TEMPERATURE_LOG"])),
+            },
+            "throttleLog": {
+                "path": str(Path(environment["FSO_PHASE2_THROTTLE_LOG"]).resolve()),
+                "sha256": sha256(Path(environment["FSO_PHASE2_THROTTLE_LOG"])),
+            },
+            "report": str(report_path.resolve()),
+            "reportSha256": sha256(report_path),
+            "requirements": ["P2-REQ-045", "P2-REQ-046"],
+            "acceptanceCriteria": ["P2-AC-013", "P2-AC-015"],
+        }
+        write_json(args.performance_report_dir / "campaign-manifest.json", campaign)
+        return 0
+    except (OSError, ValueError, json.JSONDecodeError) as error:
+        write_json(args.performance_report_dir / "campaign-manifest.json", {
+            "schema": SCHEMA,
+            "status": "failed",
+            "command": command,
+            "harness": str(harness.resolve()),
+            "harnessSha256": sha256(harness),
+            "fingerprints": fingerprints,
+            "revision": fingerprints["revision"],
+            "worktree": fingerprints["worktree"],
+            "startedAtUtc": started_at,
+            "finishedAtUtc": finished_at,
+            "platform": fingerprints["platform"],
+            "cpu": fingerprints["cpu"],
+            "build": {
+                "directory": fingerprints["buildDirectory"],
+                "config": fingerprints["buildConfig"],
+                "flags": fingerprints["buildFlags"],
+            },
+            "exitCode": completed.returncode,
+            "elapsedSeconds": elapsed_seconds,
+            "mission": fingerprints["mission"],
+            "mod": fingerprints["mod"],
+            "profile": fingerprints["profile"],
+            "error": str(error),
+        })
+        print(error, file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

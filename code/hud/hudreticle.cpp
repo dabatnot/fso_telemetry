@@ -214,9 +214,9 @@ int Reticle_launch_coords[GR_NUM_RESOLUTIONS][2] = {
 	}
 };
 
-#define THREAT_DUMBFIRE				(1<<0)
-#define THREAT_ATTEMPT_LOCK			(1<<1)
-#define THREAT_LOCK					(1<<2)
+#define THREAT_DUMBFIRE				HudThreatDumbfireFlag
+#define THREAT_ATTEMPT_LOCK			HudThreatAttemptLockFlag
+#define THREAT_LOCK					HudThreatLockFlag
 
 #define THREAT_UPDATE_DUMBFIRE_TIME		1000		// time between checking for dumbfire threats
 #define THREAT_UPDATE_LOCK_TIME			500		// time between checking for lock threats
@@ -1329,7 +1329,8 @@ void hud_update_reticle( player *pp )
 
 	if(Player->threat_flags & THREAT_LOCK ) {
 		// a less hacked up version of the missile launch warning
-		hud_start_text_flash(XSTR("Launch", 1507), THREAT_LOCK_FLASH, fl2i(THREAT_LOCK_FLASH/2.0f));
+		hud_start_text_flash(XSTR("Launch", 1507), THREAT_LOCK_FLASH,
+			fl2i(THREAT_LOCK_FLASH/2.0f), HudTextWarningKind::Launch);
 	}
 
 	if ( Player->threat_flags & (THREAT_ATTEMPT_LOCK) ) {

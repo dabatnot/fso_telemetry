@@ -683,6 +683,17 @@ TEST(TelemetryProtocolBusinessRecords1To10, SessionEnforcesCapabilityPairsCovera
 	EXPECT_EQ(ValidationError::CapabilityNotNegotiated, validate(RecordType::SessionState, payload));
 }
 
+TEST(TelemetryProtocolBusinessRecords1To10, PlayerKinematicsBitIsVersionGated)
+{
+	const auto payload = session_state(0U, static_cast<std::uint8_t>(AuthorityMode::Solo),
+		static_cast<std::uint8_t>(VisibilityMode::Cockpit), 0U, StateDomainCoverageBitPlayerKinematics);
+	BusinessRecordMetadata metadata;
+	EXPECT_EQ(ValidationError::ReservedFlag, validate_business_record(record(RecordType::SessionState, payload),
+		BusinessRecordContainer::FullSnapshot, VersionMinorV1_0, metadata));
+	EXPECT_EQ(ValidationError::None, validate_business_record(record(RecordType::SessionState, payload),
+		BusinessRecordContainer::FullSnapshot, VersionMinorV1_1, metadata));
+}
+
 TEST(TelemetryProtocolBusinessRecords1To10, MissionEnforcesEnumsBoolReservedBytesNameAndFloat)
 {
 	auto payload = mission_state();

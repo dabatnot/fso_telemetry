@@ -1677,6 +1677,7 @@ add_file_folder("Ship"
 	ship/shield.cpp
 	ship/ship.cpp
 	ship/ship.h
+	ship/support_work.h
 	ship/shipcontrails.cpp
 	ship/shipcontrails.h
 	ship/shipfx.cpp
@@ -1776,6 +1777,68 @@ add_file_folder("Stats"
 add_file_folder("TgaUtils"
 	tgautils/tgautils.cpp
 	tgautils/tgautils.h
+)
+
+# Telemetry files
+add_file_folder("Telemetry"
+	telemetry/capture_scheduler.cpp
+	telemetry/capture_scheduler.h
+	telemetry/config.cpp
+	telemetry/config.h
+	telemetry/datagram_scheduler.cpp
+	telemetry/datagram_scheduler.h
+	telemetry/engine_adapter.cpp
+	telemetry/engine_adapter.h
+	telemetry/entity_id_registry.cpp
+	telemetry/entity_id_registry.h
+	telemetry/identity.cpp
+	telemetry/identity.h
+	telemetry/json_preflight.h
+	telemetry/logging.cpp
+	telemetry/logging.h
+	telemetry/metrics.cpp
+	telemetry/metrics.h
+	telemetry/native_session_runtime.cpp
+	telemetry/native_session_runtime.h
+	telemetry/phase1_snapshot_slot.cpp
+	telemetry/phase1_snapshot_slot.h
+	telemetry/phase1_snapshot_egress.cpp
+	telemetry/phase1_snapshot_egress.h
+	telemetry/phase1_state_image.cpp
+	telemetry/phase1_state_image.h
+	telemetry/phase2_closure.cpp
+	telemetry/phase2_closure.h
+	telemetry/phase2_catalog_projection.h
+	telemetry/phase2_manifest_builder.cpp
+	telemetry/phase2_manifest_builder.h
+	telemetry/phase2_observation.cpp
+	telemetry/phase2_observation.h
+	telemetry/phase2_profile_gate.cpp
+	telemetry/phase2_profile_gate.h
+	telemetry/phase2_runtime.cpp
+	telemetry/phase2_runtime.h
+	telemetry/phase2_state_image.cpp
+	telemetry/phase2_state_image.h
+	telemetry/phase2_session_transition.cpp
+	telemetry/phase2_session_transition.h
+	telemetry/phase3_engine_collector.cpp
+	telemetry/phase3_engine_collector.h
+	telemetry/phase3_identity_registry.cpp
+	telemetry/phase3_identity_registry.h
+	telemetry/phase3_state_image.cpp
+	telemetry/phase3_state_image.h
+	telemetry/runtime.cpp
+	telemetry/runtime.h
+	telemetry/runtime_adapter.cpp
+	telemetry/runtime_adapter.h
+	telemetry/session_controller.cpp
+	telemetry/session_controller.h
+	telemetry/startup_budget.cpp
+	telemetry/startup_budget.h
+	telemetry/telemetry.cpp
+	telemetry/telemetry.h
+	telemetry/transport.cpp
+	telemetry/transport.h
 )
 
 # Tracing files

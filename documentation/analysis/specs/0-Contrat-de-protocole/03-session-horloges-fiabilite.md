@@ -420,7 +420,7 @@ Avant de modifier une fenêtre d'envoi, l'émetteur vérifie :
 - flags ACK valides ou raison/bitmap NACK valides ;
 - deadline NACK acceptable pour la classe.
 
-Un ACK/NACK inconnu, tardif ou incohérent est ignoré et comptabilisé. Il ne prolonge aucune deadline.
+Un ACK/NACK inconnu, tardif ou incohérent est ignoré et comptabilisé. Il ne prolonge aucune deadline, ne modifie aucune candidate et ne ferme jamais la session.
 
 ### 7.4 Déduplication
 
@@ -606,13 +606,15 @@ Quand toutes les parts sont présentes, le client :
 1. concatène logiquement les régions de records par `part_index` ;
 2. vérifie que leur somme est exactement `transaction_size` ;
 3. calcule le SHA-256 et le compare à `transaction_sha256` ;
-4. valide les contraintes inter-records, unicités et références ;
+4. valide les contraintes inter-records, unicités et références, ainsi que l'égalité exacte entre les cardinalités annoncées, le manifeste appliqué et chaque snapshot ;
 5. pour un snapshot, vérifie que `required_manifest_id` est déjà installé ;
 6. construit un état candidat hors de l'état publié ;
 7. committe l'ensemble atomiquement ;
 8. envoie `Ack VALIDATED | APPLIED` pour **chaque part**.
 
 Si une étape échoue, aucune part n'est publiée. Le client envoie un NACK adapté pour les parts encore connues puis libère la candidate.
+
+La fermeture d'une session est réservée à une corruption locale d'invariant qui empêche de conserver un état cohérent ; sa raison est explicite. Une source temporairement indisponible conserve le dernier état cohérent et le marque `Stale`. Une structure source non représentable qui impose une reconstruction termine proprement par `SESSION_END(Restart, RECONNECT_ALLOWED)` avant toute publication partielle.
 
 Le producteur considère le manifeste installé ou le snapshot devenu baseline commune uniquement après réception de `APPLIED` pour tous les `message_id` de la transaction.
 
@@ -804,35 +806,19 @@ Le producteur **DOIT** néanmoins :
 - journaliser les connexions acceptées/refusées et erreurs agrégées ;
 - ne pas imprimer les payloads complets à chaque frame.
 
-Avant preuve de retour par `Ack APPLIED` de `Welcome`, le producteur n'envoie ni manifeste, ni snapshot, ni flux vidéo, ne réserve aucune ressource lourde associée et limite la taille cumulée de ses réponses à trois fois la taille cumulée reçue de cet endpoint.
+Avant réception de `Ack APPLIED` pour `Welcome`, le producteur n'envoie ni manifeste, ni snapshot, ni flux vidéo, ne réserve aucune ressource lourde associée et limite la taille cumulée de ses réponses à trois fois la taille cumulée reçue de cet endpoint.
 
 Une exposition Internet exige une couche d'authentification, d'intégrité cryptographique et idéalement de confidentialité qui est hors du périmètre v1.0.
 
-## 18. Critères d'acceptation du contrat
+## 18. Critères produit de session
 
-Une implémentation de Phase 0 est conforme à ce document si les tests sans moteur démontrent au minimum :
-
-1. handshake accepté, rejeté, dupliqué et expiré ;
-2. sélection stricte v1.0 et contrôle du mode de visibilité ;
-3. rejet d'un endpoint ou `session_id` incorrect ;
-4. calcul d'offset/RTT, overflow, filtrage et invalidation après heartbeats manqués ;
-5. wrap sériel de `packet_sequence` et absence de wrap des IDs stricts ;
-6. ACK `VALIDATED`, `APPLIED`, doublons et ACK perdus ;
-7. NACK sélectif, bitmap exact, NACK tardif/incohérent ignoré ;
-8. backoff borné et libération à expiration ;
-9. perte, duplication, désordre, jitter et coupure temporaire ;
-10. transaction manifeste/snapshot à 1, 2 et 64 parts reçues dans le désordre ;
-11. taille/hash transactionnels incorrects et absence de publication partielle ;
-12. ACK `VALIDATED` par part puis `APPLIED` par part après un unique commit ;
-13. snapshot bloqué tant que `required_manifest_id` n'est pas installé ;
-14. ACK `APPLIED` perdu puis réacquittement sans rollback ;
-15. modification, création et suppression pendant l'aller-retour de la keyframe, toutes présentes dans le premier delta de la nouvelle baseline ;
-16. perte d'un delta intermédiaire puis application du delta cumulatif suivant ;
-17. delta ancien, baseline inconnue et delta de nouvelle baseline reçu avant le snapshot ;
-18. resynchronisations répétées sans croissance non bornée ;
-19. baisse dynamique d'une capability sans perte de la télémétrie numérique ;
-20. client lent ou silencieux et respect de toutes les limites mémoire ;
-21. priorité de la télémétrie sur les fragments vidéo ;
-22. aucune retransmission d'interframe et rétention IDR au plus 500 ms.
-
-Les tests de perte doivent utiliser des graines reproductibles. Le `PacketReader` est fuzzé avec buffers tronqués, valeurs inconnues, non-finis, tailles en overflow, incohérences inter-fragments et datagrammes supérieurs à 1200 octets.
+- le handshake possède un résultat déterministe pour une demande acceptée, refusée, dupliquée ou expirée ;
+- endpoint, version, visibilité et `session_id` incorrects sont rejetés sans état durable ;
+- horloge, séquences, ACK, NACK et retransmissions respectent leurs fenêtres et expirations ;
+- un manifeste ou snapshot est installé une seule fois et sans publication partielle ;
+- un ACK perdu peut être répété sans rollback ;
+- le delta cumulatif le plus récent répare la perte d'un delta intermédiaire ;
+- une baseline inconnue conserve l'état courant et déclenche une resynchronisation bornée ;
+- perte, duplication, désordre, jitter, coupure temporaire ou client lent ne créent aucune croissance non bornée ;
+- la télémétrie d'état garde la priorité sur les fragments vidéo ;
+- les fragments interframe ne sont pas retransmis et une IDR est retenue au plus 500 ms.

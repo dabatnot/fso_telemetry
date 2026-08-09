@@ -58,7 +58,7 @@ ProbeStartResult ProbeTracker::begin_probe(std::uint64_t origin_t0_us, ProbeToke
 }
 
 ProbeResponseResult
-ProbeTracker::correlate_response(std::uint64_t session_id, std::uint32_t probe_id, std::uint64_t origin_t0_us) noexcept
+ProbeTracker::preview_response(std::uint64_t session_id, std::uint32_t probe_id, std::uint64_t origin_t0_us) const noexcept
 {
 	if (m_session_id == 0) {
 		return ProbeResponseResult::NoSession;
@@ -75,7 +75,17 @@ ProbeTracker::correlate_response(std::uint64_t session_id, std::uint32_t probe_i
 		return ProbeResponseResult::OriginTimestampMismatch;
 	}
 
-	release(slot_index);
+	return ProbeResponseResult::Matched;
+}
+
+ProbeResponseResult
+ProbeTracker::correlate_response(std::uint64_t session_id, std::uint32_t probe_id, std::uint64_t origin_t0_us) noexcept
+{
+	const auto result = preview_response(session_id, probe_id, origin_t0_us);
+	if (result != ProbeResponseResult::Matched) {
+		return result;
+	}
+	release(find_probe(probe_id));
 	return ProbeResponseResult::Matched;
 }
 

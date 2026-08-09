@@ -7,7 +7,29 @@ namespace telemetry::protocol {
 
 constexpr std::uint32_t Magic = 0x4c545346U;
 constexpr std::uint8_t VersionMajor = 1;
-constexpr std::uint8_t VersionMinor = 0;
+constexpr std::uint8_t VersionMinorV1_0 = 0;
+constexpr std::uint8_t VersionMinorV1_1 = 1;
+// FSTL 1.2 appends the authoritative standard-radar projection inputs to
+// RADAR_CONTACTS.  Earlier minors retain their frozen record layout.
+constexpr std::uint8_t VersionMinorV1_2 = 2;
+// Keep the historical default pinned to the frozen FSTL 1.0 contract. Code
+// which emits or validates a negotiated 1.1 session must opt in explicitly.
+constexpr std::uint8_t VersionMinor = VersionMinorV1_0;
+constexpr std::uint8_t LatestSupportedVersionMinor = VersionMinorV1_2;
+
+struct ProtocolMinorRange {
+	std::uint8_t minimum = VersionMinor;
+	std::uint8_t maximum = VersionMinor;
+};
+
+constexpr ProtocolMinorRange FrozenV1_0MinorRange{VersionMinorV1_0, VersionMinorV1_0};
+constexpr ProtocolMinorRange Phase1ProducerMinorRange{VersionMinorV1_1, VersionMinorV1_1};
+
+enum class ProtocolMinorNegotiationResult : std::uint8_t {
+	Selected = 0,
+	NoIntersection = 1,
+	InvalidRange = 2,
+};
 constexpr std::size_t HeaderSizeV1 = 68;
 constexpr std::size_t MaxDatagramSize = 1200;
 constexpr std::size_t MaxFragmentPayload = MaxDatagramSize - HeaderSizeV1;
@@ -92,8 +114,9 @@ enum class RecordType : std::uint16_t {
 	CommViewState = 26,
 	CommViewEvent = 27,
 	Events = 28,
+	HudAlertState = 29,
 };
-constexpr std::uint16_t FirstReservedRecordType = 29;
+constexpr std::uint16_t FirstReservedRecordType = 30;
 
 enum RecordFlag : std::uint8_t {
 	RecordFlagNone = 0,
@@ -304,6 +327,7 @@ enum class WeaponFamily : std::uint8_t {
 	Secondary = 1,
 	Tertiary = 2,
 	Turret = 3,
+	None = 0xff,
 };
 
 enum class ValueTrend : std::uint8_t {
@@ -341,6 +365,17 @@ enum class RadarCategory : std::uint8_t {
 	Asteroid = 5,
 	Debris = 6,
 	Other = 7,
+};
+
+// Numeric values intentionally match BLIP_TYPE_* in radar/radarsetup.h.  They
+// are serialized in RADAR_CONTACTS v4 and must not be reordered.
+enum class RadarBlipType : std::uint8_t {
+	JumpNode = 0,
+	NavbuoyCargo = 1,
+	Bomb = 2,
+	WarpingShip = 3,
+	TaggedShip = 4,
+	NormalShip = 5,
 };
 
 enum class ThreatLevel : std::uint8_t {
@@ -656,9 +691,27 @@ enum StateDomainCoverageBit : std::uint64_t {
 	StateDomainCoverageBitWeapons = 0x0080ULL,
 	StateDomainCoverageBitCargoDockSupport = 0x0100ULL,
 	StateDomainCoverageBitNavigation = 0x0200ULL,
+	StateDomainCoverageBitPlayerKinematics = 0x0400ULL,
 };
-constexpr std::uint64_t KnownStateDomainCoverageBits = 0x03ffULL;
+constexpr std::uint64_t KnownStateDomainCoverageBitsV1_0 = 0x03ffULL;
+constexpr std::uint64_t KnownStateDomainCoverageBitsV1_1 = 0x07ffULL;
+// The unqualified aliases remain the frozen 1.0 view. This prevents code that
+// has no negotiated-version context from treating the 1.1 bit as valid.
+constexpr std::uint64_t KnownStateDomainCoverageBits = KnownStateDomainCoverageBitsV1_0;
 constexpr std::uint64_t ReservedStateDomainCoverageBits = 0xfffffffffffffc00ULL;
+constexpr std::uint64_t ReservedStateDomainCoverageBitsV1_1 = 0xfffffffffffff800ULL;
+
+constexpr bool is_supported_version_minor(std::uint8_t minor) noexcept
+{
+	return minor == VersionMinorV1_0 || minor == VersionMinorV1_1 ||
+		minor == VersionMinorV1_2;
+}
+
+constexpr std::uint64_t known_state_domain_coverage_bits(std::uint8_t minor) noexcept
+{
+	return minor == VersionMinorV1_0 ? KnownStateDomainCoverageBitsV1_0 :
+		minor == VersionMinorV1_1 ? KnownStateDomainCoverageBitsV1_1 : 0U;
+}
 
 enum PropulsionFlag : std::uint16_t {
 	PropulsionFlagNone = 0,
@@ -918,9 +971,14 @@ enum TargetStatePresenceFlag : std::uint64_t {
 	TargetStatePresenceFlagDangerousWeapon = 0x0000000000000800ULL,
 	TargetStatePresenceFlagNearestLocked = 0x0000000000001000ULL,
 	TargetStatePresenceFlagExactHudDistance = 0x0000000000002000ULL,
+	TargetStatePresenceFlagExactHudSpeed = 0x0000000000004000ULL,
+	TargetStatePresenceFlagHudTypeLabel = 0x0000000000008000ULL,
+	TargetStatePresenceFlagHudTargetColor = 0x0000000000010000ULL,
+	TargetStatePresenceFlagHudTargetSubsystemLabel = 0x0000000000020000ULL,
+	TargetStatePresenceFlagHudLockSubsystemLabel = 0x0000000000040000ULL,
 };
-constexpr std::uint64_t KnownTargetStatePresenceFlags = 0x0000000000003fffULL;
-constexpr std::uint64_t ReservedTargetStatePresenceFlags = 0xffffffffffffc000ULL;
+constexpr std::uint64_t KnownTargetStatePresenceFlags = 0x000000000007ffffULL;
+constexpr std::uint64_t ReservedTargetStatePresenceFlags = 0xfffffffffff80000ULL;
 
 enum RadarStatePresenceFlag : std::uint64_t {
 	RadarStatePresenceFlagNone = 0,
@@ -942,9 +1000,11 @@ enum RadarContactsPresenceFlag : std::uint64_t {
 	RadarContactsPresenceFlagRevealedTeamIff = 0x0000000000000008ULL,
 	RadarContactsPresenceFlagDetectionTimes = 0x0000000000000010ULL,
 	RadarContactsPresenceFlagConfidence = 0x0000000000000020ULL,
+	RadarContactsPresenceFlagHudTypeLabel = 0x0000000000000040ULL,
+	RadarContactsPresenceFlagRadarVisual = 0x0000000000000080ULL,
 };
-constexpr std::uint64_t KnownRadarContactsPresenceFlags = 0x000000000000003fULL;
-constexpr std::uint64_t ReservedRadarContactsPresenceFlags = 0xffffffffffffffc0ULL;
+constexpr std::uint64_t KnownRadarContactsPresenceFlags = 0x00000000000000ffULL;
+constexpr std::uint64_t ReservedRadarContactsPresenceFlags = 0xffffffffffffff00ULL;
 
 enum ThreatStatePresenceFlag : std::uint64_t {
 	ThreatStatePresenceFlagNone = 0,
@@ -954,6 +1014,29 @@ enum ThreatStatePresenceFlag : std::uint64_t {
 };
 constexpr std::uint64_t KnownThreatStatePresenceFlags = 0x0000000000000007ULL;
 constexpr std::uint64_t ReservedThreatStatePresenceFlags = 0xfffffffffffffff8ULL;
+
+enum HudAlertStatePresenceFlag : std::uint64_t {
+	HudAlertStatePresenceFlagNone = 0,
+	HudAlertStatePresenceFlagActiveWarning = 0x0000000000000001ULL,
+};
+constexpr std::uint64_t KnownHudAlertStatePresenceFlags = 0x0000000000000001ULL;
+constexpr std::uint64_t ReservedHudAlertStatePresenceFlags = 0xfffffffffffffffeULL;
+
+enum class HudAlertMissileLockState : std::uint8_t {
+	None = 0,
+	Attempt = 1,
+	Acquired = 2,
+};
+
+enum class HudAlertWarningKind : std::uint8_t {
+	Launch = 1,
+	Evaded = 2,
+	Collision = 3,
+	Blast = 4,
+	EngineWash = 5,
+	Emp = 6,
+	Other = 7,
+};
 
 enum CargoScanStatePresenceFlag : std::uint64_t {
 	CargoScanStatePresenceFlagNone = 0,

@@ -37,7 +37,7 @@ Les IDs opaques `species_id`, `ship_type_id`, `team_id`, `iff_id`, `armor_id`, `
 
 Les listes dont la taille moteur n'a pas de maximum public sûr utilisent les plafonds protocolaires de ce document. Lorsque l'ensemble dépasse un plafond d'item par record, le producteur DOIT le répartir en records atomiques distincts lorsque la clé le permet. Pour une liste intrinsèquement atomique non paginable, il DOIT retirer le bit `StateDomainCoverage` concerné ou la capability visuelle spécialisée avant la session et enregistrer la métrique locale non filaire `SOURCE_LIMIT_EXCEEDED`; il NE DOIT PAS publier un faux état « complet ». La transaction paginée de snapshot ou manifeste peut contenir un nombre borné de records sur plusieurs messages de 1 Mio sans changer leur granularité.
 
-`record_length:u16` impose en outre que le payload complet de tout record mesure au plus 65 535 octets. Chaque `count` est borné à la fois par son plafond métier et par la taille encodée exacte restant dans le record. Un atome ne peut pas être coupé en deux records portant la même clé. S'il dépasse 65 535 octets et qu'aucun chunking explicite n'est défini (seul `COMM_ASSET_MANIFEST` en définit un ici), le producteur refuse le domaine ou la session, enregistre le diagnostic local non filaire `SOURCE_RECORD_TOO_LARGE` et, si la session était déjà active, utilise `SESSION_END/ProtocolError`; aucune chaîne, liste ou valeur n'est tronquée. Un récepteur classe une longueur incohérente selon `BAD_RECORD_LENGTH`/`OUT_OF_RANGE` de la spec 06. La conformité DOIT tester un record valide de 65 535 octets et le rejet du même record à 65 536 octets.
+`record_length:u16` impose en outre que le payload complet de tout record mesure au plus 65 535 octets. Chaque `count` est borné à la fois par son plafond métier et par la taille encodée exacte restant dans le record. Un atome ne peut pas être coupé en deux records portant la même clé. S'il dépasse 65 535 octets et qu'aucun chunking explicite n'est défini (seul `COMM_ASSET_MANIFEST` en définit un ici), le producteur refuse le domaine, enregistre le diagnostic local non filaire `SOURCE_RECORD_TOO_LARGE` et, si une reconstruction de session est nécessaire, émet `SESSION_END(Restart, RECONNECT_ALLOWED)` avant toute publication partielle ; aucune chaîne, liste ou valeur n'est tronquée. Un récepteur classe une longueur incohérente selon `BAD_RECORD_LENGTH`/`OUT_OF_RANGE` de la spec 06. Les tests couvrent la borne du record et le rejet avant conversion de toute longueur source supérieure.
 
 ### 2.2 Masques de présence
 
@@ -1178,18 +1178,6 @@ Après que l'enveloppe de la spec 02 a identifié un des 28 types avec `record_v
 
 Le producteur applique les mêmes validations avant écriture. Il borne/clamp uniquement les entrées analogiques dont la table l'autorise explicitement (`CONTROL_STATE`); pour un état moteur hors borne, il signale un diagnostic et retire le domaine ou refuse la session plutôt que de falsifier la valeur.
 
-Les fixtures obligatoires de cette annexe comprennent, pour chacun des 28 types : valeur minimale, valeur maximale, toutes les combinaisons de présence valides, chaque bit réservé, enum inconnu, chaîne UTF-8 invalide, float non fini, ID nul interdit, compte trop grand, item tronqué, ordre de champs erroné, `PARTIAL` et `CREATE/DELETE` illégal. Une fixture de record variable valide atteint exactement 65 535 octets et son homologue synthétique à 65 536 est rejeté avant conversion en `record_length:u16`. Des scénarios croisés vérifient aussi :
+Pour chacun des 28 types, valeurs minimales et maximales, combinaisons de présence, bits réservés, enums inconnus, UTF-8 invalide, flottants non finis, IDs nuls interdits, comptes trop grands et items tronqués possèdent un résultat déterministe. Un record variable peut atteindre exactement 65 535 octets ; 65 536 octets sont refusés avant conversion en `record_length:u16`.
 
-- suppression cascade d'entité ;
-- update de manifeste puis snapshot paginé atomique ;
-- delta cumulatif où un champ revient à la baseline ;
-- filtrage `Cockpit` sans fuite d'ID ;
-- `COMPLETED+HIDDEN` sans texte cargo ;
-- bouclier à 0, 1, 4 et 64 segments ;
-- tertiaire sans champs inventés ;
-- lock sans tentative et avec durée zéro valide ;
-- communication inactive initiale, START, pause, inversion, remplacement et STOP ;
-- événements fiables dupliqués/désordonnés ;
-- perte vidéo sans effet sur l'état canonique.
-
-Le présent document, le schéma machine-readable et les golden vectors DOIVENT être identiques sur les ordres, offsets, valeurs numériques, bornes, masques et conditions. Toute divergence échoue la gate de Phase 0 ; aucun artefact ne corrige ou ne surclasse implicitement un autre. Après gel, le triplet versionné et hashé forme la référence FSTL 1.0 indivisible.
+Le présent document, le schéma machine-readable et les golden vectors ont les mêmes ordres, offsets, valeurs numériques, bornes, masques et conditions. Toute divergence est rapportée comme un écart du contrat. Après gel, le triplet versionné et hashé forme la référence FSTL 1.0 indivisible.

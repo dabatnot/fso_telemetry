@@ -1,0 +1,4 @@
+interface:
+  display_name: "Spécifier la prochaine phase télémétrie"
+  short_description: "Spécifier une phase après préflight produit"
+  default_prompt: "Utilise $specify-next-telemetry-phase pour vérifier la phase actuelle et spécifier uniquement la suivante si le produit est complet."

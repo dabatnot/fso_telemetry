@@ -18,3 +18,13 @@ if [ "$CONFIGURATION" = "Debug" ] && [[ "$RUNNER_OS" != "macOS" ]] ; then
 else
     ./bin/unittests --gtest_shuffle
 fi
+
+if [ "$CONFIGURATION" = "Release" ]; then
+    started=$SECONDS
+    ctest -C Release -L telemetry-short --output-on-failure --timeout 60
+    elapsed=$((SECONDS - started))
+    if [ "$elapsed" -ge 300 ]; then
+        echo "telemetry-short exceeded five minutes: ${elapsed}s" >&2
+        exit 1
+    fi
+fi

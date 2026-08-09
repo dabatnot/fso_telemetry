@@ -1,4 +1,5 @@
 #include "telemetry/protocol/telemetry_business_records.h"
+#include "telemetry/protocol/telemetry_business_state_validation.h"
 #include "telemetry/protocol/telemetry_control_messages.h"
 #include "telemetry/protocol/telemetry_crc32.h"
 #include "telemetry/protocol/telemetry_datagram.h"
@@ -7,21 +8,27 @@
 #include "telemetry/protocol/telemetry_reliability_messages.h"
 #include "telemetry/protocol/telemetry_reliable_window.h"
 #include "telemetry/protocol/telemetry_replication.h"
+#include "telemetry/protocol/telemetry_security.h"
+#include "telemetry/protocol/telemetry_sha256.h"
 #include "telemetry/protocol/telemetry_session_context.h"
 #include "telemetry/protocol/telemetry_specialized_lifecycle.h"
 #include "telemetry/protocol/telemetry_specialized_views.h"
 #include "telemetry/protocol/telemetry_state_messages.h"
 
 #include <gtest/gtest.h>
+#include <jansson.h>
 
 #include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <sstream>
 #include <string>
+#include <utility>
 #include <vector>
 
 #ifndef FSTL_PROTOCOL_TEST_ASSET_PATH
@@ -50,6 +57,270 @@ std::vector<std::uint8_t> read_binary(const std::filesystem::path& path) {
 		return {};
 	}
 	return std::vector<std::uint8_t>{std::istreambuf_iterator<char>{stream}, std::istreambuf_iterator<char>{}};
+}
+
+std::string read_text(const std::filesystem::path& path) {
+	std::ifstream stream(path);
+	return std::string{std::istreambuf_iterator<char>{stream}, std::istreambuf_iterator<char>{}};
+}
+
+// Deliberately independent, test-only projection of the small FSTL 1.1 corpus.
+// It reads the wire bytes directly instead of reusing the production business
+// record decoder, so the fixed JSON files remain a useful second oracle.
+class CanonicalReader {
+  public:
+	explicit CanonicalReader(ByteView input) : m_data(input.data), m_size(input.size) {}
+	std::uint8_t u8() { return take<std::uint8_t>(); }
+	std::uint16_t u16() { return take<std::uint16_t>(); }
+	std::uint32_t u32() { return take<std::uint32_t>(); }
+	std::uint64_t u64() { return take<std::uint64_t>(); }
+	float f32() { return take<float>(); }
+	std::string bytes(std::size_t count) {
+		EXPECT_LE(m_offset + count, m_size);
+		if (m_offset + count > m_size) return {};
+		std::string result(reinterpret_cast<const char*>(m_data + m_offset), count);
+		m_offset += count;
+		return result;
+	}
+	std::string utf8() { return bytes(u16()); }
+	ByteView view(std::size_t count) {
+		EXPECT_LE(m_offset + count, m_size);
+		if (m_offset + count > m_size) return {};
+		const ByteView result{m_data + m_offset, count};
+		m_offset += count;
+		return result;
+	}
+	std::size_t remaining() const { return m_size - m_offset; }
+  private:
+	template <typename T> T take() {
+		EXPECT_LE(m_offset + sizeof(T), m_size);
+		T value{};
+		if (m_offset + sizeof(T) <= m_size) std::memcpy(&value, m_data + m_offset, sizeof(T));
+		m_offset += std::min(sizeof(T), m_size - m_offset);
+		return value;
+	}
+	const std::uint8_t* m_data = nullptr;
+	std::size_t m_size = 0U;
+	std::size_t m_offset = 0U;
+};
+
+void put(json_t* object, const char* key, json_t* value) { ASSERT_EQ(0, json_object_set_new(object, key, value)); }
+json_t* ji(std::uint64_t value) { return json_integer(static_cast<json_int_t>(value)); }
+json_t* js(std::uint64_t value) { return json_string(std::to_string(value).c_str()); }
+json_t* jr(float value) { return json_real(value == 0.0F ? 0.0 : static_cast<double>(value)); }
+json_t* vector_json(CanonicalReader& reader, std::size_t count) {
+	auto* array = json_array();
+	for (std::size_t i = 0; i < count; ++i) EXPECT_EQ(0, json_array_append_new(array, jr(reader.f32())));
+	return array;
+}
+std::string hex_string(const std::string& bytes) {
+	static constexpr char digits[] = "0123456789abcdef";
+	std::string result;
+	result.reserve(bytes.size() * 2U);
+	for (const auto byte : bytes) {
+		const auto value = static_cast<unsigned char>(byte);
+		result.push_back(digits[value >> 4U]); result.push_back(digits[value & 15U]);
+	}
+	return result;
+}
+
+json_t* canonical_v11_record(CanonicalReader& region) {
+	const auto type = region.u16(); const auto version = region.u8(); const auto flags = region.u8();
+	const auto length = region.u16(); CanonicalReader reader(region.view(length));
+	auto* fields = json_object();
+	auto entity_prefix = [&]() { const auto entity = reader.u64(); const auto presence = reader.u64();
+		const auto sample = reader.u64(); put(fields, "entity_id", js(entity)); put(fields, "presence", js(presence));
+		put(fields, "producer_sample_time_us", js(sample)); return presence; };
+	const char* name = "";
+	if (type == 1U) {
+		name = "SESSION_STATE"; const auto presence = reader.u64(); const auto producer = reader.u64();
+		const auto sample = reader.u64(); const auto authority = reader.u8(); const auto visibility = reader.u8();
+		const auto phase = reader.u8(); const auto reserved = reader.u8(); const auto generation = reader.u32();
+		const auto caps = reader.u64(); const auto coverage = reader.u64(); const auto derived = reader.u64(); const auto exact = reader.u64();
+		put(fields,"authority_mode",ji(authority)); put(fields,"event_coverage_exact",js(exact));
+		put(fields,"event_coverage_state_derived",js(derived)); put(fields,"negotiated_capabilities",js(caps));
+		put(fields,"negotiated_capability_generation",ji(generation));
+		if (presence & 1U) { const auto observed = reader.u64(); put(fields,"observed_player_entity_id",js(observed)); }
+		put(fields,"presence",js(presence)); put(fields,"producer_id",js(producer)); put(fields,"producer_sample_time_us",js(sample));
+		put(fields,"reserved",ji(reserved)); put(fields,"session_phase",ji(phase)); put(fields,"state_domain_coverage",js(coverage));
+		put(fields,"visibility_mode",ji(visibility));
+	} else if (type == 2U) {
+		name="MISSION_STATE"; const auto presence=reader.u64(); const auto generation=reader.u32(); const auto phase=reader.u8();
+		const auto paused=reader.u8(); const auto reserved=reader.u16(); const auto compression=reader.f32(); const auto sample=reader.u64();
+		put(fields,"mission_generation",ji(generation)); put(fields,"paused",ji(paused)); put(fields,"phase",ji(phase));
+		put(fields,"presence",js(presence)); put(fields,"producer_sample_time_us",js(sample)); put(fields,"reserved",ji(reserved));
+		put(fields,"time_compression",jr(compression));
+	} else if (type == 5U) {
+		name="ENTITY_LIFECYCLE"; const auto presence=entity_prefix(); const auto object_type=reader.u8(); const auto phase=reader.u8(); const auto lifecycle=reader.u32();
+		put(fields,"lifecycle_flags",ji(lifecycle)); put(fields,"lifecycle_phase",ji(phase)); put(fields,"object_type",ji(object_type));
+		if (presence&1U) {
+			put(fields,"signature",ji(reader.u32()));
+		}
+		if (presence&2U) {
+			put(fields,"net_signature",ji(reader.u32()));
+		}
+		if (presence&4U) put(fields,"class_id",ji(reader.u32()));
+	} else if (type == 6U) {
+		name="SHIP_IDENTITY"; entity_prefix(); const auto class_id=reader.u32(); const auto internal=reader.utf8();
+		const auto species=reader.u32(); const auto team=reader.u32(); const auto iff=reader.u32(); const auto role=reader.u16(); const auto radius=reader.f32();
+		put(fields,"iff_id",ji(iff)); put(fields,"internal_name",json_string(internal.c_str())); put(fields,"radius",jr(radius));
+		put(fields,"role_flags",ji(role)); put(fields,"ship_class_id",ji(class_id)); put(fields,"species_id",ji(species)); put(fields,"team_id",ji(team));
+	} else if (type == 7U) {
+		name="FLIGHT_STATE"; const auto presence=entity_prefix(); auto* position=vector_json(reader,3); auto* orientation=vector_json(reader,4);
+		auto* velocity=vector_json(reader,3); auto* rotational=vector_json(reader,3); const auto radius=reader.f32(); const auto physics=reader.u32();
+		put(fields,"orientation_local_to_world",orientation); put(fields,"physics_mode_flags",ji(physics)); put(fields,"position_world",position);
+		put(fields,"radius",jr(radius)); put(fields,"rotational_velocity_local",rotational); put(fields,"velocity_world",velocity);
+		if (presence&1U) put(fields,"desired_velocity_world",vector_json(reader,3));
+	} else if (type == 8U) {
+		name="CONTROL_STATE"; entity_prefix(); const auto pitch=reader.f32(); const auto heading=reader.f32();
+		const auto bank=reader.f32(); const auto forward=reader.f32(); const auto sideways=reader.f32();
+		const auto vertical=reader.f32(); const auto mode=reader.u8(); const auto control_flags=reader.u32();
+		put(fields,"bank",jr(bank)); put(fields,"control_flags",ji(control_flags)); put(fields,"control_mode",ji(mode));
+		put(fields,"forward",jr(forward)); put(fields,"heading",jr(heading)); put(fields,"pitch",jr(pitch));
+		put(fields,"sideways",jr(sideways)); put(fields,"vertical",jr(vertical));
+	} else if (type == 9U) {
+		name="DAMAGE_STATE"; entity_prefix(); const auto hull=reader.f32(); const auto maximum=reader.f32(); const auto protection=reader.u16();
+		put(fields,"dynamic_max_hull",jr(maximum)); put(fields,"hull_strength",jr(hull)); put(fields,"protection_flags",ji(protection));
+	} else if (type == 10U) {
+		name="SHIELD_STATE"; entity_prefix(); const auto has=reader.u8(); const auto count=reader.u16(); const auto reserved=reader.u16();
+		put(fields,"has_shields",ji(has)); put(fields,"reserved",ji(reserved)); put(fields,"segment_count",ji(count));
+		put(fields,"segment_current_hits",vector_json(reader,count)); put(fields,"segment_max_hits",vector_json(reader,count));
+	} else if (type == 11U) {
+		name="SUBSYSTEM_STATE"; const auto entity=reader.u64(); const auto subsystem=reader.u32(); const auto presence=reader.u64(); const auto sample=reader.u64();
+		const auto index=reader.u16(); const auto subtype=reader.u8(); const auto current=reader.f32(); const auto maximum=reader.f32(); const auto subsystem_flags=reader.u32();
+		put(fields,"canonical_index",ji(index)); put(fields,"current_hits",jr(current)); put(fields,"entity_id",js(entity)); put(fields,"max_hits",jr(maximum));
+		put(fields,"presence",js(presence)); put(fields,"producer_sample_time_us",js(sample)); put(fields,"subsystem_flags",ji(subsystem_flags));
+		put(fields,"subsystem_id",ji(subsystem)); put(fields,"type",ji(subtype));
+	} else if (type == 12U) {
+		name="ENERGY_STATE"; entity_prefix(); const auto mode=reader.u8(); const auto shields=reader.u8(); const auto weapons=reader.u8(); const auto engines=reader.u8(); const auto reserved=reader.u8();
+		put(fields,"ets_engines_index",ji(engines)); put(fields,"ets_mode",ji(mode)); put(fields,"ets_shields_index",ji(shields));
+		put(fields,"ets_weapons_index",ji(weapons)); put(fields,"reserved",ji(reserved));
+	} else if (type == 13U) {
+		name="PROPULSION_STATE"; entity_prefix(); const auto propulsion=reader.u16(); const auto reserved=reader.u16();
+		put(fields,"propulsion_flags",ji(propulsion)); put(fields,"reserved",ji(reserved));
+	} else if (type == 14U) {
+		name="WEAPON_STATE"; entity_prefix(); const auto primary_count=reader.u16(); const auto secondary_count=reader.u16();
+		const auto tertiary_count=reader.u16(); const auto reserved=reader.u16(); const auto current_primary=reader.u32();
+		const auto current_secondary=reader.u32(); const auto current_tertiary=reader.u32(); const auto weapon_flags=reader.u32();
+		const auto encoded_primary_count=reader.u16(); auto* primary_banks=json_array();
+		for (std::uint16_t index=0;index<encoded_primary_count;++index) ADD_FAILURE() << "non-minimal primary bank";
+		const auto encoded_secondary_count=reader.u16(); auto* secondary_banks=json_array();
+		for (std::uint16_t index=0;index<encoded_secondary_count;++index) ADD_FAILURE() << "non-minimal secondary bank";
+		put(fields,"current_primary_bank_id",ji(current_primary)); put(fields,"current_secondary_bank_id",ji(current_secondary));
+		put(fields,"current_tertiary_bank_id",ji(current_tertiary)); put(fields,"primary_bank_count",ji(primary_count));
+		put(fields,"primary_banks",primary_banks); put(fields,"reserved",ji(reserved));
+		put(fields,"secondary_bank_count",ji(secondary_count)); put(fields,"secondary_banks",secondary_banks);
+		put(fields,"tertiary_bank_count",ji(tertiary_count)); put(fields,"weapon_flags",ji(weapon_flags));
+	} else if (type == 20U) {
+		name="CARGO_SCAN_STATE"; entity_prefix(); const auto phase=reader.u8(); const auto disclosure=reader.u8();
+		put(fields,"disclosure",ji(disclosure)); put(fields,"scan_phase",ji(phase));
+	} else if (type == 21U) {
+		name="DOCKING_STATE"; entity_prefix(); const auto phase=reader.u8(); const auto leader=reader.u64();
+		const auto count=reader.u16(); auto* relations=json_array();
+		for (std::uint16_t index=0;index<count;++index) ADD_FAILURE() << "non-minimal docking relation";
+		put(fields,"group_leader_entity_id",js(leader)); put(fields,"phase",ji(phase)); put(fields,"relations",relations);
+	} else if (type == 22U) {
+		name="SUPPORT_STATE"; entity_prefix(); const auto phase=reader.u8(); const auto support_flags=reader.u8();
+		const auto reserved=hex_string(reader.bytes(3));
+		put(fields,"phase",ji(phase)); put(fields,"reserved",json_string(reserved.c_str()));
+		put(fields,"support_flags",ji(support_flags));
+	} else if (type == 29U) {
+		name="HUD_ALERT_STATE"; const auto presence=entity_prefix(); const auto primary=reader.u8();
+		const auto lock=reader.u8(); put(fields,"primary_fire_threat_active",json_boolean(primary));
+		put(fields,"missile_lock_state",ji(lock));
+		if (presence&1U) {
+			const auto warning_kind=reader.u8(); const auto warning_instance=reader.u64();
+			const auto warning_remaining=reader.u64(); const auto warning_text=reader.utf8();
+			put(fields,"warning_instance_id",js(warning_instance)); put(fields,"warning_kind",ji(warning_kind));
+			put(fields,"warning_remaining_us",js(warning_remaining));
+			put(fields,"warning_text",json_string(warning_text.c_str()));
+		}
+	} else { ADD_FAILURE() << "unhandled FSTL 1.1 record type " << type; }
+	EXPECT_EQ(0U, reader.remaining());
+	auto* record=json_object(); put(record,"fields",fields); put(record,"kind",json_string("record")); put(record,"recordFlags",ji(flags));
+	put(record,"recordLength",ji(length)); put(record,"recordName",json_string(name)); put(record,"recordType",ji(type));
+	put(record,"recordVersion",ji(version)); put(record,"schema",json_string("FSTL-1.1")); return record;
+}
+
+json_t* canonical_v11_message(MessageType type, std::uint8_t flags, ByteView payload) {
+	CanonicalReader reader(payload); auto* fields=json_object(); const char* name="";
+	if (type == MessageType::Hello) {
+		name="HELLO"; const auto nonce=reader.u64(); const auto t0=reader.u64(); const auto min_major=reader.u8(); const auto max_major=reader.u8();
+		const auto min_minor=reader.u8(); const auto max_minor=reader.u8(); const auto visibility=reader.u8(); const auto reserved=hex_string(reader.bytes(3));
+		const auto caps=reader.u64(); const auto heartbeat=reader.u16(); const auto ext_length=reader.u16(); const auto ext_count=reader.u16();
+		put(fields,"advertised_capabilities",js(caps)); put(fields,"client_nonce",js(nonce)); put(fields,"client_send_t0_us",js(t0));
+		put(fields,"extension_count",ji(ext_count)); put(fields,"extensions",json_array()); put(fields,"extensions_length",ji(ext_length));
+		put(fields,"max_major",ji(max_major)); put(fields,"max_minor",ji(max_minor)); put(fields,"min_major",ji(min_major)); put(fields,"min_minor",ji(min_minor));
+		put(fields,"requested_heartbeat_ms",ji(heartbeat)); put(fields,"requested_visibility_mode",ji(visibility)); put(fields,"reserved",json_string(reserved.c_str()));
+	} else if (type == MessageType::Welcome) {
+		name="WELCOME"; const auto nonce=reader.u64(); const auto t0=reader.u64(); const auto t1=reader.u64(); const auto t2=reader.u64();
+		const auto status=reader.u8(); const auto major=reader.u8(); const auto minor=reader.u8(); const auto visibility=reader.u8();
+		const auto producer_caps=reader.u64(); const auto active=reader.u64(); const auto heartbeat=reader.u16(); const auto timeout=reader.u16();
+		const auto ext_length=reader.u16(); const auto ext_count=reader.u16(); const auto producer=reader.u64();
+		put(fields,"active_capabilities",js(active)); put(fields,"client_nonce",js(nonce)); put(fields,"client_send_t0_us",js(t0));
+		put(fields,"extension_count",ji(ext_count)); put(fields,"extensions",json_array()); put(fields,"extensions_length",ji(ext_length));
+		put(fields,"heartbeat_interval_ms",ji(heartbeat)); put(fields,"producer_capabilities",js(producer_caps)); put(fields,"producer_id",js(producer));
+		put(fields,"producer_receive_t1_us",js(t1)); put(fields,"producer_send_t2_us",js(t2)); put(fields,"reliable_reassembly_timeout_ms",ji(timeout));
+		put(fields,"selected_major",ji(major)); put(fields,"selected_minor",ji(minor)); put(fields,"selected_visibility_mode",ji(visibility)); put(fields,"status",ji(status));
+	} else if (type == MessageType::FullSnapshot) {
+		name="FULL_SNAPSHOT"; const auto snapshot=reader.u32(); const auto part_index=reader.u16(); const auto part_count=reader.u16();
+		const auto transaction_size=reader.u32(); const auto sha=hex_string(reader.bytes(32)); const auto sample=reader.u64();
+		const auto manifest=reader.u32(); const auto snapshot_flags=reader.u16(); const auto count=reader.u16(); auto* records=json_array();
+		for (std::uint16_t i=0;i<count;++i) EXPECT_EQ(0,json_array_append_new(records,canonical_v11_record(reader)));
+		put(fields,"part_count",ji(part_count)); put(fields,"part_index",ji(part_index)); put(fields,"producer_sample_time_us",js(sample));
+		put(fields,"record_count",ji(count)); put(fields,"records",records); put(fields,"required_manifest_id",ji(manifest));
+		put(fields,"snapshot_flags",ji(snapshot_flags)); put(fields,"snapshot_id",ji(snapshot)); put(fields,"transaction_sha256",json_string(sha.c_str()));
+		put(fields,"transaction_size",ji(transaction_size));
+	} else if (type == MessageType::Delta) {
+		name="DELTA"; const auto baseline=reader.u32(); const auto sequence=reader.u32(); const auto sample=reader.u64();
+		const auto count=reader.u16(); const auto reserved=reader.u16(); auto* records=json_array();
+		for (std::uint16_t i=0;i<count;++i) EXPECT_EQ(0,json_array_append_new(records,canonical_v11_record(reader)));
+		put(fields,"baseline_snapshot_id",ji(baseline)); put(fields,"delta_sequence",ji(sequence)); put(fields,"producer_sample_time_us",js(sample));
+		put(fields,"record_count",ji(count)); put(fields,"records",records); put(fields,"reserved",ji(reserved));
+	} else { ADD_FAILURE() << "unhandled FSTL 1.1 message"; }
+	EXPECT_EQ(0U,reader.remaining()); auto* message=json_object(); put(message,"fields",fields); put(message,"kind",json_string("message-payload"));
+	put(message,"messageFlags",ji(flags)); put(message,"messageName",json_string(name)); put(message,"messageType",ji(static_cast<std::uint8_t>(type)));
+	put(message,"schema",json_string("FSTL-1.1")); return message;
+}
+
+const char* stable_error_name(ValidationError error) {
+	switch (error) {
+	case ValidationError::DuplicateRecord: return "DuplicateRecord";
+	case ValidationError::InvalidAbsence: return "InvalidAbsence";
+	case ValidationError::InvalidStateTransition: return "InvalidStateTransition";
+	case ValidationError::ReservedFlag: return "ReservedFlag";
+	case ValidationError::MissingManifest: return "MissingManifest";
+	case ValidationError::VisibilityViolation: return "VisibilityViolation";
+	default: return "UNMAPPED";
+	}
+}
+
+ValidationError validate_v11_snapshot_asset(const std::string& name, std::uint8_t minor = VersionMinorV1_1) {
+	const auto input = read_binary(asset_root() / "vectors-v1.1" / name / (name + ".bin"));
+	FullSnapshotPartPayload payload;
+	if (const auto error = decode_full_snapshot_part_payload(byte_view(input), payload);
+		error != ValidationError::None) return error;
+	std::vector<std::uint8_t> reencoded(input.size());
+	std::size_t written = 0U;
+	if (const auto error = encode_full_snapshot_part_payload(
+		payload, MutableByteView{reencoded.data(), reencoded.size()}, written);
+		error != ValidationError::None || written != input.size() || reencoded != input) {
+		return error != ValidationError::None ? error : ValidationError::InternalSerializationError;
+	}
+	BusinessStateValidationContext context;
+	context.protocol_minor = minor;
+	context.required_manifest_id = payload.required_manifest_id;
+	context.class_manifest_installed = payload.required_manifest_id != 0U;
+	context.weapon_manifest_installed = context.class_manifest_installed && name == "phase2-complete-ship";
+	const std::uint32_t subsystem_id = 2U;
+	const BusinessClassCatalogEntry class_catalog{1U, &subsystem_id, 1U};
+	if (context.class_manifest_installed) {
+		context.class_catalog = &class_catalog;
+		context.class_catalog_count = 1U;
+	}
+	BusinessStateImageValidator validator(context);
+	StateImage image;
+	return decode_business_snapshot_region_validated(payload.records, payload.record_count, validator, image);
 }
 
 std::vector<std::uint8_t> expected_payload(std::size_t size) {
@@ -793,6 +1064,229 @@ TEST(TelemetryProtocolVectors, ExternalMetadataAndDuplicateContradictionsPurgeRe
 		EXPECT_EQ(0U, reassembler.active_reassemblies(MessageSizeClass::State));
 		EXPECT_EQ(0U, reassembler.reserved_bytes(MessageSizeClass::State));
 	}
+}
+
+TEST(TelemetryProtocolVectors, Fstl11SnapshotsCrossTheProductionDecoder) {
+	EXPECT_EQ(ValidationError::None, validate_v11_snapshot_asset("minimal-no-player"));
+	EXPECT_EQ(ValidationError::None, validate_v11_snapshot_asset("minimal-with-player"));
+	EXPECT_EQ(ValidationError::InvalidAbsence, validate_v11_snapshot_asset("missing-mission"));
+	EXPECT_EQ(ValidationError::MissingManifest, validate_v11_snapshot_asset("phase2-promotion-incomplete"));
+	EXPECT_EQ(ValidationError::None, validate_v11_snapshot_asset("phase2-promotion"));
+	EXPECT_EQ(ValidationError::None, validate_v11_snapshot_asset("phase2-complete-ship"));
+	const std::array<std::pair<const char*, ValidationError>, 12> invalid{{
+		{"missing-mission", ValidationError::InvalidAbsence},
+		{"missing-lifecycle", ValidationError::InvalidAbsence},
+		{"missing-flight", ValidationError::InvalidAbsence},
+		{"minor-zero-reserved-bit", ValidationError::ReservedFlag},
+		{"phase2-promotion-incomplete", ValidationError::MissingManifest},
+		{"duplicate-flight-record", ValidationError::DuplicateRecord},
+		{"observed-player-id-mismatch", ValidationError::InvalidAbsence},
+		{"player-lifecycle-non-ship", ValidationError::InvalidStateTransition},
+		{"unexpected-ship-identity", ValidationError::InvalidAbsence},
+		{"flight-presence-not-covered", ValidationError::InvalidAbsence},
+		{"non-solo-authority", ValidationError::InvalidStateTransition},
+		{"non-cockpit-visibility", ValidationError::VisibilityViolation},
+	}};
+	for (const auto& test_case : invalid) {
+		SCOPED_TRACE(test_case.first);
+		const auto actual = validate_v11_snapshot_asset(test_case.first,
+			std::string{test_case.first} == "minor-zero-reserved-bit" ? VersionMinorV1_0 : VersionMinorV1_1);
+		EXPECT_EQ(test_case.second, actual);
+		const auto metadata = read_text(asset_root() / "vectors-v1.1" / test_case.first /
+			(std::string{test_case.first} + ".json"));
+		const auto expected_name = std::string{"\""} + stable_error_name(actual) + "\"";
+		EXPECT_NE(std::string::npos, metadata.find("\"expectedValidationErrorName\": " + expected_name));
+		EXPECT_NE(std::string::npos, metadata.find("\"expectedValidationError\": " +
+			std::to_string(static_cast<unsigned>(actual))));
+		EXPECT_NE(std::string::npos, metadata.find("\"valid\": false"));
+	}
+}
+
+TEST(TelemetryProtocolVectors, MissingCascadeOwnerKeepsBadRecordLengthInFrozenFstl10) {
+	auto input = read_binary(asset_root() / "vectors-v1.1" / "missing-lifecycle" / "missing-lifecycle.bin");
+	ASSERT_GT(input.size(), 113U);
+	// SESSION_STATE is the first envelope: record region 60 + envelope 6 + coverage offset 40.
+	std::fill(input.begin() + 106, input.begin() + 114, 0U);
+	input[106] = static_cast<std::uint8_t>(StateDomainCoverageBitCoreShip);
+	Sha256Digest digest{};
+	ASSERT_TRUE(sha256(ByteView{input.data() + FullSnapshotPartPayloadPrefixSize,
+		input.size() - FullSnapshotPartPayloadPrefixSize}, digest));
+	std::copy(digest.begin(), digest.end(), input.begin() + 12);
+	FullSnapshotPartPayload payload;
+	ASSERT_EQ(ValidationError::None, decode_full_snapshot_part_payload(byte_view(input), payload));
+	BusinessStateValidationContext context;
+	context.protocol_minor = VersionMinorV1_0;
+	context.class_manifest_installed = true;
+	BusinessStateImageValidator validator(context);
+	StateImage image;
+	EXPECT_EQ(ValidationError::BadRecordLength,
+		decode_business_snapshot_region_validated(payload.records, payload.record_count, validator, image));
+}
+
+TEST(TelemetryProtocolVectors, Fstl11NegotiationAndDeltaCorpusCrossesTheProductionDecoder) {
+	const auto root = asset_root() / "vectors-v1.1";
+	std::vector<std::vector<std::uint8_t>> decoded_storage;
+	auto decode = [&](const char* name, ProtocolMinorRange range, MessageType type) {
+		decoded_storage.emplace_back(read_binary(root / name / (std::string{name} + ".bin")));
+		const auto& encoded = decoded_storage.back();
+		DatagramView view;
+		EXPECT_EQ(ValidationError::None, decode_and_validate_datagram(byte_view(encoded), range, view));
+		EXPECT_EQ(type, view.header.message_type);
+		return view;
+	};
+	const auto peer = EndpointKey::from_ipv4({{127U, 0U, 0U, 1U}}, DefaultTelemetryPort);
+	TelemetryOperationalConfig config;
+	config.enabled = true;
+	auto ingress = [&](const char* name, LocalEndpointRole role, ProtocolMinorRange range) {
+		const auto encoded = read_binary(root / name / (std::string{name} + ".bin"));
+		TelemetrySessionContext context;
+		context.local_role = role;
+		context.peer_endpoint = peer;
+		context.accepted_minors = range;
+		TelemetryIngressCounters counters;
+		DatagramView view;
+		EXPECT_EQ(ValidationError::None, decode_and_validate_ingress_datagram(
+			config, peer, byte_view(encoded), context, view, counters));
+		EXPECT_EQ(0U, view.header.frame_id);
+		EXPECT_EQ(0, view.header.mission_time_us);
+		auto invalid = view.header;
+		invalid.frame_id = 1U;
+		EXPECT_EQ(ValidationError::OutOfRange, validate_received_datagram_context(invalid, peer, context));
+		invalid = view.header;
+		invalid.mission_time_us = 1;
+		EXPECT_EQ(ValidationError::OutOfRange, validate_received_datagram_context(invalid, peer, context));
+		return std::make_pair(view.header, context);
+	};
+
+	const auto hello11 = decode("hello-minor-one-only", FrozenV1_0MinorRange, MessageType::Hello);
+	HelloPayload hello;
+	ASSERT_EQ(ValidationError::None, decode_hello_payload(hello11.payload, hello));
+	EXPECT_EQ(VersionMinorV1_1, hello.min_minor);
+	EXPECT_EQ(VersionMinorV1_1, hello.max_minor);
+	EXPECT_EQ(VersionMinorV1_0, hello11.header.version_minor);
+	ingress("hello-minor-one-only", LocalEndpointRole::Producer, FrozenV1_0MinorRange);
+
+	const auto welcome11 = decode("welcome-accepted-minor-one", Phase1ProducerMinorRange, MessageType::Welcome);
+	WelcomePayload accepted;
+	ASSERT_EQ(ValidationError::None, decode_welcome_payload(welcome11.payload, accepted));
+	EXPECT_EQ(WelcomeStatus::Accepted, accepted.status);
+	EXPECT_EQ(VersionMinorV1_1, accepted.selected_minor);
+	EXPECT_NE(0U, welcome11.header.session_id);
+	const auto accepted_ingress = ingress("welcome-accepted-minor-one", LocalEndpointRole::Client,
+		ProtocolMinorRange{VersionMinorV1_0, VersionMinorV1_1});
+	EXPECT_EQ(ValidationError::None,
+		validate_welcome_logical_context(accepted_ingress.first, accepted, accepted_ingress.second));
+
+	const auto hello10 = decode("hello-minor-zero-only", FrozenV1_0MinorRange, MessageType::Hello);
+	ASSERT_EQ(ValidationError::None, decode_hello_payload(hello10.payload, hello));
+	EXPECT_EQ(VersionMinorV1_0, hello.min_minor);
+	EXPECT_EQ(VersionMinorV1_0, hello.max_minor);
+	ingress("hello-minor-zero-only", LocalEndpointRole::Producer, FrozenV1_0MinorRange);
+
+	const auto rejected = decode("welcome-unsupported-version", FrozenV1_0MinorRange, MessageType::Welcome);
+	WelcomePayload unsupported;
+	ASSERT_EQ(ValidationError::None, decode_welcome_payload(rejected.payload, unsupported));
+	EXPECT_EQ(WelcomeStatus::UnsupportedVersion, unsupported.status);
+	EXPECT_EQ(0U, rejected.header.session_id);
+	EXPECT_EQ(VersionMinorV1_0, rejected.header.version_minor);
+	const auto rejected_ingress = ingress(
+		"welcome-unsupported-version", LocalEndpointRole::Client, FrozenV1_0MinorRange);
+	EXPECT_EQ(ValidationError::None,
+		validate_welcome_logical_context(rejected_ingress.first, unsupported, rejected_ingress.second));
+
+	auto verify_delta = [&](const char* name, std::uint32_t sequence) {
+		const auto delta_view = decode(name, Phase1ProducerMinorRange, MessageType::Delta);
+		DeltaPayload delta;
+		ASSERT_EQ(ValidationError::None, decode_delta_payload(delta_view.payload, delta));
+		EXPECT_EQ(1U, delta.baseline_snapshot_id);
+		EXPECT_EQ(sequence, delta.delta_sequence);
+		EXPECT_EQ(4U, delta.record_count);
+		CumulativeStateDelta business_delta;
+		EXPECT_EQ(ValidationError::None, decode_business_delta(delta, VersionMinorV1_1, business_delta));
+		std::vector<std::uint8_t> reencoded(delta_view.payload.size);
+		std::size_t written = 0U;
+		ASSERT_EQ(ValidationError::None,
+			encode_delta_payload(delta, MutableByteView{reencoded.data(), reencoded.size()}, written));
+		EXPECT_EQ(delta_view.payload.size, written);
+		EXPECT_TRUE(std::equal(reencoded.begin(), reencoded.end(), delta_view.payload.begin()));
+	};
+	verify_delta("delta-player-kinematics-cumulative", 2U);
+	verify_delta("delta-player-return-baseline", 3U);
+}
+
+TEST(TelemetryProtocolVectors, EveryValidFstl11VectorMatchesTheFixedCanonicalJsonInCpp) {
+	struct Case { const char* name; MessageType type; bool datagram; };
+	const std::array<Case, 10> cases{{
+		{"minimal-no-player", MessageType::FullSnapshot, false},
+		{"minimal-with-player", MessageType::FullSnapshot, false},
+		{"phase2-promotion", MessageType::FullSnapshot, false},
+		{"phase2-complete-ship", MessageType::FullSnapshot, false},
+		{"hello-minor-one-only", MessageType::Hello, true},
+		{"hello-minor-zero-only", MessageType::Hello, true},
+		{"welcome-accepted-minor-one", MessageType::Welcome, true},
+		{"welcome-unsupported-version", MessageType::Welcome, true},
+		{"delta-player-kinematics-cumulative", MessageType::Delta, true},
+		{"delta-player-return-baseline", MessageType::Delta, true},
+	}};
+	for (const auto& test_case : cases) {
+		SCOPED_TRACE(test_case.name);
+		const auto encoded = read_binary(asset_root() / "vectors-v1.1" / test_case.name /
+			(std::string{test_case.name} + ".bin"));
+		ASSERT_FALSE(encoded.empty());
+		ByteView payload = byte_view(encoded); std::uint8_t flags = 0U;
+		DatagramView datagram;
+		if (test_case.datagram) {
+			const auto range = std::string{test_case.name} == "welcome-accepted-minor-one" ||
+				(std::string{test_case.name} == "delta-player-kinematics-cumulative" ||
+				 std::string{test_case.name} == "delta-player-return-baseline")
+				? Phase1ProducerMinorRange : FrozenV1_0MinorRange;
+			ASSERT_EQ(ValidationError::None, decode_and_validate_datagram(byte_view(encoded), range, datagram));
+			ASSERT_EQ(test_case.type, datagram.header.message_type);
+			payload = datagram.payload; flags = datagram.header.flags;
+		}
+		json_t* actual = canonical_v11_message(test_case.type, flags, payload);
+		json_error_t json_error{};
+		json_t* expected = json_load_file((asset_root() / "expected-v1.1" /
+			(std::string{test_case.name} + ".json")).string().c_str(), JSON_REJECT_DUPLICATES, &json_error);
+		ASSERT_NE(nullptr, expected) << json_error.text;
+		if (!json_equal(actual, expected)) {
+			char* actual_text = json_dumps(actual, JSON_INDENT(2) | JSON_SORT_KEYS);
+			char* expected_text = json_dumps(expected, JSON_INDENT(2) | JSON_SORT_KEYS);
+			ADD_FAILURE() << "canonical JSON mismatch\nactual:\n" << actual_text << "\nexpected:\n" << expected_text;
+			free(actual_text); free(expected_text);
+		}
+		json_decref(actual); json_decref(expected);
+	}
+}
+
+TEST(TelemetryProtocolVectors, HudAlertStateMatchesTheFstl11GoldenVector)
+{
+	const auto encoded = read_binary(asset_root() / "vectors-v1.1" /
+		"hud-alert-state" / "hud-alert-state.bin");
+	ASSERT_FALSE(encoded.empty());
+	RecordEnvelopeIterator iterator(byte_view(encoded), 1U,
+		RecordFlagPolicy::RequireNone);
+	RecordEnvelopeView record;
+	bool has_value = false;
+	ASSERT_EQ(ValidationError::None, iterator.next(record, has_value));
+	ASSERT_TRUE(has_value);
+	BusinessRecordMetadata metadata;
+	EXPECT_EQ(ValidationError::None, validate_business_record(record,
+		BusinessRecordContainer::FullSnapshot, VersionMinorV1_1, metadata));
+	EXPECT_EQ(static_cast<std::uint16_t>(RecordType::HudAlertState),
+		record.raw_record_type);
+	EXPECT_EQ(8U, metadata.key_size);
+
+	CanonicalReader reader(byte_view(encoded));
+	json_t* actual = canonical_v11_record(reader);
+	json_error_t json_error{};
+	json_t* expected = json_load_file((asset_root() / "expected-v1.1" /
+		"hud-alert-state.json").string().c_str(), JSON_REJECT_DUPLICATES,
+		&json_error);
+	ASSERT_NE(nullptr, expected) << json_error.text;
+	EXPECT_TRUE(json_equal(actual, expected));
+	json_decref(actual);
+	json_decref(expected);
 }
 
 } // namespace

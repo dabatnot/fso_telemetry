@@ -48,7 +48,16 @@ std::uint64_t saturating_add(std::uint64_t left, std::uint64_t right) noexcept
 
 bool structurally_valid_atom(const StateAtom& atom, std::size_t& encoded_size) noexcept
 {
-	if (atom.key.record_type == 0 || atom.record_version != 1 || !is_known_lifecycle(atom.lifecycle) ||
+	const auto target_state =
+		atom.key.record_type == static_cast<std::uint16_t>(RecordType::TargetState);
+	const auto radar_contacts =
+		atom.key.record_type == static_cast<std::uint16_t>(RecordType::RadarContacts);
+	const auto supported_record_version = atom.record_version == 1U ||
+		((atom.record_version == 2U || atom.record_version == 3U || atom.record_version == 4U) &&
+		 (radar_contacts || target_state)) ||
+		(atom.record_version == 5U && target_state);
+	if (atom.key.record_type == 0 || !supported_record_version ||
+		!is_known_lifecycle(atom.lifecycle) ||
 		atom.key.identity.size() > std::numeric_limits<std::uint16_t>::max() ||
 		atom.value.size() > std::numeric_limits<std::uint16_t>::max() || atom.key.identity.size() > atom.value.size() ||
 		!std::equal(atom.key.identity.begin(), atom.key.identity.end(), atom.value.begin()) ||
@@ -65,7 +74,15 @@ bool structurally_valid_atom(const StateAtom& atom, std::size_t& encoded_size) n
 
 bool structurally_valid_delete_atom(const StateAtom& atom) noexcept
 {
-	return atom.key.record_type != 0 && atom.record_version == 1 &&
+	const auto target_state =
+		atom.key.record_type == static_cast<std::uint16_t>(RecordType::TargetState);
+	const auto radar_contacts =
+		atom.key.record_type == static_cast<std::uint16_t>(RecordType::RadarContacts);
+	const auto supported_record_version = atom.record_version == 1U ||
+		((atom.record_version == 2U || atom.record_version == 3U || atom.record_version == 4U) &&
+		 (radar_contacts || target_state)) ||
+		(atom.record_version == 5U && target_state);
+	return atom.key.record_type != 0 && supported_record_version &&
 		   atom.lifecycle == StateRecordLifecycle::ExplicitCreateDelete &&
 		   atom.key.identity.size() <= std::numeric_limits<std::uint16_t>::max() && atom.value.empty() &&
 		   !atom.has_cascade_owner && atom.cascade_owner.record_type == 0 && atom.cascade_owner.identity.empty();
@@ -91,8 +108,9 @@ CumulativeStateDelta normalized_delta_copy(const CumulativeStateDelta& delta)
 	normalized.baseline_snapshot_id = delta.baseline_snapshot_id;
 	normalized.delta_sequence = delta.delta_sequence;
 	normalized.producer_sample_time_us = delta.producer_sample_time_us;
-	normalized.mutations.reserve(delta.mutations.size());
-	for (const auto& mutation : delta.mutations) {
+	normalized.mutations.reserve(delta.mutation_count());
+	for (std::size_t index = 0U; index < delta.mutation_count(); ++index) {
+		const auto& mutation = delta.mutations[index];
 		normalized.mutations.push_back({mutation.kind, normalized_atom_copy(mutation.atom)});
 	}
 	return normalized;
@@ -125,11 +143,12 @@ bool is_implicitly_deleted_by_cascade(const StateAtom& atom, const StateImage& c
 
 const StateMutation* find_mutation(const CumulativeStateDelta& delta, const StateAtomKey& key) noexcept
 {
+	const auto logical_end = delta.mutations.begin() + static_cast<std::ptrdiff_t>(delta.mutation_count());
 	const auto iterator = std::lower_bound(delta.mutations.begin(),
-		delta.mutations.end(),
+		logical_end,
 		key,
 		[](const StateMutation& mutation, const StateAtomKey& searched) { return mutation.atom.key < searched; });
-	return iterator != delta.mutations.end() && iterator->atom.key == key ? &*iterator : nullptr;
+	return iterator != logical_end && iterator->atom.key == key ? &*iterator : nullptr;
 }
 
 bool cascade_owner_is_deleted(const StateAtom& atom, const CumulativeStateDelta& delta) noexcept
@@ -178,11 +197,11 @@ StateDeltaApplyResult merge_cumulative_state_delta(const StateImage& baseline,
 	const auto& baseline_records = baseline.records();
 	std::size_t baseline_index = 0;
 	std::size_t mutation_index = 0;
-	while (baseline_index < baseline_records.size() || mutation_index < delta.mutations.size()) {
+	while (baseline_index < baseline_records.size() || mutation_index < delta.mutation_count()) {
 		const StateAtom* old_atom =
 			baseline_index < baseline_records.size() ? &baseline_records[baseline_index] : nullptr;
 		const StateMutation* mutation =
-			mutation_index < delta.mutations.size() ? &delta.mutations[mutation_index] : nullptr;
+			mutation_index < delta.mutation_count() ? &delta.mutations[mutation_index] : nullptr;
 
 		if (mutation == nullptr || (old_atom != nullptr && old_atom->key < mutation->atom.key)) {
 			if (!cascade_owner_is_deleted(*old_atom, delta)) {
@@ -334,6 +353,46 @@ ProducerBaselineResult analyze_delta(const StateImage& baseline, const StateImag
 	return plan.mutation_count == 0 ? ProducerBaselineResult::NoChange : ProducerBaselineResult::Applied;
 }
 
+ProducerBaselineResult analyze_delta_indices(const StateImage& baseline,
+	const StateImage& current,
+	const std::uint16_t* dirty_indices,
+	std::size_t dirty_index_count,
+	DeltaPlan& plan) noexcept
+{
+	const auto& before = baseline.records();
+	const auto& after = current.records();
+	if (before.size() != after.size() ||
+		(dirty_index_count != 0U && dirty_indices == nullptr)) {
+		return ProducerBaselineResult::KeyframeRequired;
+	}
+	std::uint16_t previous = 0U;
+	for (std::size_t dirty = 0U; dirty < dirty_index_count; ++dirty) {
+		const auto index = static_cast<std::size_t>(dirty_indices[dirty]);
+		if (index >= before.size() ||
+			(dirty != 0U && dirty_indices[dirty] <= previous)) {
+			return ProducerBaselineResult::InvalidArgument;
+		}
+		previous = dirty_indices[dirty];
+		const auto& old_atom = before[index];
+		const auto& new_atom = after[index];
+		if (old_atom.key != new_atom.key ||
+			old_atom.record_version != new_atom.record_version ||
+			old_atom.lifecycle != new_atom.lifecycle ||
+			old_atom.has_cascade_owner != new_atom.has_cascade_owner ||
+			old_atom.cascade_owner != new_atom.cascade_owner) {
+			return ProducerBaselineResult::KeyframeRequired;
+		}
+		if (old_atom.value != new_atom.value) {
+			if (const auto result = plan_mutation(new_atom, false, plan);
+				result != ProducerBaselineResult::Applied) {
+				return result;
+			}
+		}
+	}
+	return plan.mutation_count == 0 ? ProducerBaselineResult::NoChange
+									: ProducerBaselineResult::Applied;
+}
+
 std::size_t dirty_record_count(const StateImage& baseline, const StateImage& current) noexcept
 {
 	const auto& before = baseline.records();
@@ -369,42 +428,199 @@ std::size_t dirty_record_count(const StateImage& baseline, const StateImage& cur
 	return count;
 }
 
+std::size_t dirty_record_count_indices(const StateImage& baseline,
+	const StateImage& current,
+	const std::uint16_t* dirty_indices,
+	std::size_t dirty_index_count) noexcept
+{
+	DeltaPlan plan;
+	return analyze_delta_indices(
+			   baseline, current, dirty_indices, dirty_index_count, plan) ==
+			ProducerBaselineResult::Applied
+		? plan.mutation_count
+		: 0U;
+}
+
 ProducerBaselineResult build_delta(const StateImage& baseline,
 	const StateImage& current,
 	std::uint32_t baseline_snapshot_id,
 	std::uint32_t delta_sequence,
 	std::uint64_t producer_sample_time_us,
-	CumulativeStateDelta& delta) noexcept
+	CumulativeStateDelta& delta,
+	const std::uint16_t* dirty_indices = nullptr,
+	std::size_t dirty_index_count = 0U,
+	bool use_dirty_indices = false,
+	DeltaBuildChanges* changes = nullptr) noexcept
 {
-	CumulativeStateDelta candidate;
-	candidate.baseline_snapshot_id = baseline_snapshot_id;
-	candidate.delta_sequence = delta_sequence;
-	candidate.producer_sample_time_us = producer_sample_time_us;
-
 	DeltaPlan plan;
-	if (const auto result = analyze_delta(baseline, current, plan); result != ProducerBaselineResult::Applied) {
-		return result;
+	const auto analyzed = use_dirty_indices
+		? analyze_delta_indices(
+			  baseline, current, dirty_indices, dirty_index_count, plan)
+		: analyze_delta(baseline, current, plan);
+	if (analyzed != ProducerBaselineResult::Applied) {
+		return analyzed;
+	}
+	const auto previous_mutation_count =
+		delta.active_mutation_count;
+	if (changes != nullptr) {
+		*changes = {};
+		changes->layout_changed =
+			!use_dirty_indices ||
+			previous_mutation_count != plan.mutation_count;
 	}
 	try {
 		// analyze_delta proves this reservation and all copied record payloads
 		// fit the one-MiB Delta gate before any proportional output allocation.
-		candidate.mutations.reserve(plan.mutation_count);
+		if (delta.mutations.capacity() < plan.mutation_count) {
+			delta.mutations.reserve(plan.mutation_count);
+		}
+		if (delta.mutations.size() < plan.mutation_count) {
+			delta.mutations.resize(plan.mutation_count);
+		}
 	} catch (const std::bad_alloc&) {
 		return ProducerBaselineResult::AllocationFailed;
 	}
+	delta.baseline_snapshot_id = baseline_snapshot_id;
+	delta.delta_sequence = delta_sequence;
+	delta.producer_sample_time_us = producer_sample_time_us;
+	delta.active_mutation_count = plan.mutation_count;
+	std::size_t mutation_index = 0U;
+	auto retain_preallocated_backing =
+		[&delta](std::size_t target_index,
+			const StateAtom& atom,
+			bool copy_value) noexcept {
+			auto& target = delta.mutations[target_index].atom;
+			const auto fits = [&atom, copy_value](
+				const StateAtom& candidate) noexcept {
+				return candidate.key.record_type ==
+						atom.key.record_type &&
+					candidate.key.identity.capacity() >=
+						atom.key.identity.size() &&
+					(!copy_value ||
+					 candidate.value.capacity() >=
+						atom.value.size()) &&
+					candidate.cascade_owner.identity.capacity() >=
+						atom.cascade_owner.identity.size();
+			};
+			if (fits(target)) return;
+			for (std::size_t candidate_index = target_index + 1U;
+				 candidate_index < delta.mutations.size();
+				 ++candidate_index) {
+				auto& candidate =
+					delta.mutations[candidate_index].atom;
+				if (!fits(candidate)) continue;
+				std::swap(target, candidate);
+				return;
+			}
+		};
+	auto append_mutation = [&delta, &mutation_index,
+							   &retain_preallocated_backing,
+							   previous_mutation_count,
+							   changes](
+		StateMutationKind kind, const StateAtom& atom) noexcept {
+		if (mutation_index >= delta.mutation_count()) {
+			return false;
+		}
+		const auto target_index = mutation_index++;
+		const auto& existing =
+			delta.mutations[target_index];
+		const auto existing_active =
+			target_index < previous_mutation_count;
+		if (existing_active &&
+			existing.kind == kind &&
+			existing.atom == atom)
+			return true;
+		if (changes != nullptr) {
+			const auto stable_layout =
+				existing_active &&
+				existing.kind == kind &&
+				existing.atom.key == atom.key &&
+				existing.atom.record_version ==
+					atom.record_version &&
+				existing.atom.lifecycle == atom.lifecycle &&
+				existing.atom.has_cascade_owner ==
+					atom.has_cascade_owner &&
+				existing.atom.cascade_owner ==
+					atom.cascade_owner &&
+				existing.atom.value.size() ==
+					atom.value.size();
+			if (!stable_layout)
+				changes->layout_changed = true;
+			if (!changes->layout_changed) {
+				if (changes->count ==
+					changes->mutation_indices.size())
+					changes->layout_changed = true;
+				else
+					changes->mutation_indices[
+						changes->count++] =
+						static_cast<std::uint16_t>(
+							target_index);
+			}
+		}
+		retain_preallocated_backing(target_index, atom, true);
+		auto& target = delta.mutations[target_index];
+		target.kind = kind;
+		target.atom = atom;
+		return true;
+	};
+	auto append_delete = [&delta, &mutation_index,
+							 &retain_preallocated_backing](
+		const StateAtom& atom) noexcept {
+		if (mutation_index >= delta.mutation_count()) {
+			return false;
+		}
+		const auto target_index = mutation_index++;
+		retain_preallocated_backing(target_index, atom, false);
+		auto& target = delta.mutations[target_index];
+		target.kind = StateMutationKind::Delete;
+		target.atom.key = atom.key;
+		target.atom.record_version = atom.record_version;
+		target.atom.lifecycle = StateRecordLifecycle::ExplicitCreateDelete;
+		target.atom.value.clear();
+		target.atom.has_cascade_owner = false;
+		target.atom.cascade_owner = {};
+		return true;
+	};
 
 	const auto& before = baseline.records();
 	const auto& after = current.records();
+	if (use_dirty_indices) {
+		try {
+			for (std::size_t dirty = 0U; dirty < dirty_index_count;
+				 ++dirty) {
+				const auto index =
+					static_cast<std::size_t>(dirty_indices[dirty]);
+				if (before[index].value == after[index].value)
+					continue;
+				if (!append_mutation(
+						StateMutationKind::Upsert, after[index]))
+					return ProducerBaselineResult::AllocationFailed;
+			}
+		} catch (const std::bad_alloc&) {
+			return ProducerBaselineResult::AllocationFailed;
+		}
+		if (mutation_index != delta.mutation_count())
+			return ProducerBaselineResult::AllocationFailed;
+		// analyze_delta_indices already proves canonical index order, stable
+		// keys/versions/lifecycle/cascade ownership, exact payload and retained
+		// bounds, and that every emitted mutation is an Upsert copied from a
+		// validated StateImage. The incremental image builders also validate
+		// each rebuilt business record before publishing it. Re-running the
+		// generic wire-delta validator here would therefore rescan and decode
+		// every dirty atom without adding an invariant. Generic/non-indexed
+		// callers retain the full validation below.
+		if (changes != nullptr && changes->layout_changed)
+			changes->count = 0U;
+		return ProducerBaselineResult::Applied;
+	}
 	std::size_t before_index = 0;
 	std::size_t after_index = 0;
 	try {
 		while (before_index < before.size() || after_index < after.size()) {
 			if (before_index == before.size()) {
 				const auto& atom = after[after_index++];
-				candidate.mutations.push_back(
-					{atom.lifecycle == StateRecordLifecycle::ExplicitCreateDelete ? StateMutationKind::Create
-																				  : StateMutationKind::Upsert,
-						atom});
+				if (!append_mutation(atom.lifecycle == StateRecordLifecycle::ExplicitCreateDelete ? StateMutationKind::Create
+																												: StateMutationKind::Upsert, atom)) return ProducerBaselineResult::AllocationFailed;
 				continue;
 			}
 			if (after_index == after.size()) {
@@ -415,7 +631,7 @@ ProducerBaselineResult build_delta(const StateImage& baseline,
 				if (atom.lifecycle != StateRecordLifecycle::ExplicitCreateDelete) {
 					return ProducerBaselineResult::KeyframeRequired;
 				}
-				candidate.mutations.push_back(make_delete_mutation(atom));
+				if (!append_delete(atom)) return ProducerBaselineResult::AllocationFailed;
 				continue;
 			}
 
@@ -429,13 +645,11 @@ ProducerBaselineResult build_delta(const StateImage& baseline,
 				if (old_atom.lifecycle != StateRecordLifecycle::ExplicitCreateDelete) {
 					return ProducerBaselineResult::KeyframeRequired;
 				}
-				candidate.mutations.push_back(make_delete_mutation(old_atom));
+				if (!append_delete(old_atom)) return ProducerBaselineResult::AllocationFailed;
 				++before_index;
 			} else if (new_atom.key < old_atom.key) {
-				candidate.mutations.push_back(
-					{new_atom.lifecycle == StateRecordLifecycle::ExplicitCreateDelete ? StateMutationKind::Create
-																					  : StateMutationKind::Upsert,
-						new_atom});
+				if (!append_mutation(new_atom.lifecycle == StateRecordLifecycle::ExplicitCreateDelete ? StateMutationKind::Create
+																														 : StateMutationKind::Upsert, new_atom)) return ProducerBaselineResult::AllocationFailed;
 				++after_index;
 			} else {
 				if (old_atom.record_version != new_atom.record_version || old_atom.lifecycle != new_atom.lifecycle ||
@@ -444,7 +658,7 @@ ProducerBaselineResult build_delta(const StateImage& baseline,
 					return ProducerBaselineResult::KeyframeRequired;
 				}
 				if (old_atom.value != new_atom.value) {
-					candidate.mutations.push_back({StateMutationKind::Upsert, new_atom});
+					if (!append_mutation(StateMutationKind::Upsert, new_atom)) return ProducerBaselineResult::AllocationFailed;
 				}
 				++before_index;
 				++after_index;
@@ -454,11 +668,14 @@ ProducerBaselineResult build_delta(const StateImage& baseline,
 		return ProducerBaselineResult::AllocationFailed;
 	}
 
-	if (validate_cumulative_state_delta(candidate) != StateDeltaValidationResult::Valid) {
-		return candidate.encoded_size() > MaxStateMessageSize ? ProducerBaselineResult::KeyframeRequired
-															  : ProducerBaselineResult::InvalidArgument;
+	if (validate_cumulative_state_delta(delta) != StateDeltaValidationResult::Valid) {
+		return delta.encoded_size() > MaxStateMessageSize ? ProducerBaselineResult::KeyframeRequired
+																													 : ProducerBaselineResult::InvalidArgument;
 	}
-	delta = std::move(candidate);
+	if (changes != nullptr) {
+		changes->layout_changed = true;
+		changes->count = 0U;
+	}
 	return ProducerBaselineResult::Applied;
 }
 
@@ -475,6 +692,40 @@ ClientDeltaResult map_delta_resync_result(ClientResyncResult result) noexcept
 		return ClientDeltaResult::ResyncUnavailable;
 	}
 	return ClientDeltaResult::ResyncUnavailable;
+}
+
+bool merge_dirty_indices(
+	const std::uint16_t* existing,
+	std::size_t existing_count,
+	const std::uint16_t* incoming,
+	std::size_t incoming_count,
+	std::uint16_t* output,
+	std::size_t capacity,
+	std::size_t& output_count) noexcept
+{
+	if (existing == nullptr || output == nullptr ||
+		existing_count > capacity ||
+		incoming_count > capacity ||
+		(incoming_count != 0U && incoming == nullptr))
+		return false;
+	std::size_t left = 0U;
+	std::size_t right = 0U;
+	output_count = 0U;
+	while (left < existing_count || right < incoming_count) {
+		const auto value =
+			right == incoming_count ||
+					(left < existing_count &&
+					 existing[left] < incoming[right])
+				? existing[left++]
+				: incoming[right++];
+		if (output_count != 0U &&
+			output[output_count - 1U] == value)
+			continue;
+		if (output_count == capacity)
+			return false;
+		output[output_count++] = value;
+	}
+	return true;
 }
 
 } // namespace
@@ -499,6 +750,15 @@ bool operator==(const StateAtom& left, const StateAtom& right) noexcept
 
 StateImageResult StateImage::create(std::vector<StateAtom> records, StateImage& image) noexcept
 {
+	StateImageInvalidRecordReason invalid_record_reason = StateImageInvalidRecordReason::None;
+	return create(std::move(records), image, invalid_record_reason);
+}
+
+StateImageResult StateImage::create(std::vector<StateAtom> records,
+	StateImage& image,
+	StateImageInvalidRecordReason& invalid_record_reason) noexcept
+{
+	invalid_record_reason = StateImageInvalidRecordReason::None;
 	std::size_t total_size = 0;
 	std::size_t retained_size = 0;
 	if (!checked_multiply(records.size(), sizeof(StateAtom), retained_size) ||
@@ -508,6 +768,7 @@ StateImageResult StateImage::create(std::vector<StateAtom> records, StateImage& 
 	for (const auto& record : records) {
 		std::size_t record_size = 0;
 		if (!structurally_valid_atom(record, record_size)) {
+			invalid_record_reason = StateImageInvalidRecordReason::MalformedAtom;
 			return StateImageResult::InvalidRecord;
 		}
 		if (!checked_add(total_size, record_size, total_size) || total_size > MaxTransactionSize) {
@@ -538,8 +799,12 @@ StateImageResult StateImage::create(std::vector<StateAtom> records, StateImage& 
 			records.end(),
 			record.cascade_owner,
 			[](const StateAtom& atom, const StateAtomKey& key) { return atom.key < key; });
-		if (owner == records.end() || owner->key != record.cascade_owner ||
-			owner->lifecycle != StateRecordLifecycle::ExplicitCreateDelete || owner->has_cascade_owner) {
+		if (owner == records.end() || owner->key != record.cascade_owner) {
+			invalid_record_reason = StateImageInvalidRecordReason::MissingCascadeOwner;
+			return StateImageResult::InvalidRecord;
+		}
+		if (owner->lifecycle != StateRecordLifecycle::ExplicitCreateDelete || owner->has_cascade_owner) {
+			invalid_record_reason = StateImageInvalidRecordReason::InvalidCascadeOwner;
 			return StateImageResult::InvalidRecord;
 		}
 	}
@@ -569,10 +834,167 @@ StateImageResult StateImage::create(std::vector<StateAtom> records, StateImage& 
 	return StateImageResult::Created;
 }
 
+StateImageResult StateImage::adopt_preallocated(const std::shared_ptr<const std::vector<StateAtom>>& records,
+	StateImage& image,
+	StateImageInvalidRecordReason& invalid_record_reason) noexcept
+{
+	invalid_record_reason = StateImageInvalidRecordReason::None;
+	if (!records) {
+		return StateImageResult::InvalidRecord;
+	}
+	std::size_t total_size = 0U;
+	std::size_t retained_size = 0U;
+	if (!checked_multiply(records->size(), sizeof(StateAtom), retained_size) ||
+		retained_size > MaxReplicationStateImageRetainedBytes) {
+		return StateImageResult::SizeLimitExceeded;
+	}
+	for (std::size_t index = 0U; index < records->size(); ++index) {
+		const auto& record = (*records)[index];
+		std::size_t record_size = 0U;
+		if (!structurally_valid_atom(record, record_size)) {
+			invalid_record_reason = StateImageInvalidRecordReason::MalformedAtom;
+			return StateImageResult::InvalidRecord;
+		}
+		if ((index != 0U && !((*records)[index - 1U].key < record.key)) ||
+			!checked_add(total_size, record_size, total_size) || total_size > MaxTransactionSize) {
+			return index != 0U && (*records)[index - 1U].key == record.key ? StateImageResult::DuplicateKey
+																									 : StateImageResult::InvalidRecord;
+		}
+		std::size_t record_retained_size = 0U;
+		if (!checked_add(record.value.size(), record.key.identity.size(), record_retained_size) ||
+			!checked_add(record_retained_size, record.cascade_owner.identity.size(), record_retained_size) ||
+			!checked_add(retained_size, record_retained_size, retained_size) ||
+			retained_size > MaxReplicationStateImageRetainedBytes) {
+			return StateImageResult::SizeLimitExceeded;
+		}
+	}
+	for (const auto& record : *records) {
+		if (!record.has_cascade_owner) continue;
+		const auto owner = std::lower_bound(records->begin(), records->end(), record.cascade_owner,
+			[](const StateAtom& atom, const StateAtomKey& key) { return atom.key < key; });
+		if (owner == records->end() || owner->key != record.cascade_owner) {
+			invalid_record_reason = StateImageInvalidRecordReason::MissingCascadeOwner;
+			return StateImageResult::InvalidRecord;
+		}
+		if (owner->lifecycle != StateRecordLifecycle::ExplicitCreateDelete || owner->has_cascade_owner) {
+			invalid_record_reason = StateImageInvalidRecordReason::InvalidCascadeOwner;
+			return StateImageResult::InvalidRecord;
+		}
+	}
+	StateImage candidate;
+	candidate.m_records = records;
+	candidate.m_encoded_snapshot_records_size = total_size;
+	candidate.m_retained_payload_bytes = retained_size;
+	candidate.m_preallocated_mutable_backing = true;
+	image = std::move(candidate);
+	return StateImageResult::Created;
+}
+
 const std::vector<StateAtom>& StateImage::records() const noexcept
 {
 	static const std::vector<StateAtom> EmptyRecords;
 	return m_records == nullptr ? EmptyRecords : *m_records;
+}
+
+std::vector<StateAtom>*
+StateImage::mutable_preallocated_records_if_unique() noexcept
+{
+	if (!m_preallocated_mutable_backing || !m_records ||
+		m_records.use_count() != 2L)
+		return nullptr;
+	return const_cast<std::vector<StateAtom>*>(m_records.get());
+}
+
+StateImageResult StateImage::refresh_preallocated_metadata(
+	StateImageInvalidRecordReason& invalid_record_reason) noexcept
+{
+	if (!m_preallocated_mutable_backing || !m_records)
+		return StateImageResult::InvalidRecord;
+	StateImage refreshed;
+	const auto result =
+		adopt_preallocated(m_records, refreshed, invalid_record_reason);
+	if (result == StateImageResult::Created)
+		*this = std::move(refreshed);
+	return result;
+}
+
+StateImageResult StateImage::refresh_preallocated_metadata_incremental(
+	const std::vector<StateAtom>& previous_records,
+	const std::uint16_t* canonical_indices,
+	const std::uint16_t* previous_record_indices,
+	std::size_t canonical_index_count,
+	StateImageInvalidRecordReason& invalid_record_reason) noexcept
+{
+	invalid_record_reason = StateImageInvalidRecordReason::None;
+	if (!m_preallocated_mutable_backing || !m_records ||
+		previous_records.size() != m_records->size() ||
+		(canonical_index_count != 0U &&
+			(canonical_indices == nullptr ||
+			 previous_record_indices == nullptr)))
+		return StateImageResult::InvalidRecord;
+	auto encoded_size = m_encoded_snapshot_records_size;
+	auto retained_size = m_retained_payload_bytes;
+	std::size_t previous_index = 0U;
+	for (std::size_t dirty = 0U; dirty < canonical_index_count; ++dirty) {
+		const auto index =
+			static_cast<std::size_t>(canonical_indices[dirty]);
+		if (index >= m_records->size() ||
+			(dirty != 0U && index <= previous_index))
+			return StateImageResult::InvalidRecord;
+		previous_index = index;
+		const auto previous_record_index =
+			static_cast<std::size_t>(
+				previous_record_indices[dirty]);
+		if (previous_record_index >= previous_records.size())
+			return StateImageResult::InvalidRecord;
+		const auto& old_record =
+			previous_records[previous_record_index];
+		const auto& new_record = (*m_records)[index];
+		if (old_record.key != new_record.key ||
+			old_record.record_version != new_record.record_version ||
+			old_record.lifecycle != new_record.lifecycle ||
+			old_record.has_cascade_owner !=
+				new_record.has_cascade_owner ||
+			old_record.cascade_owner != new_record.cascade_owner) {
+			invalid_record_reason =
+				StateImageInvalidRecordReason::MalformedAtom;
+			return StateImageResult::InvalidRecord;
+		}
+		std::size_t old_encoded = 0U;
+		std::size_t new_encoded = 0U;
+		if (!structurally_valid_atom(old_record, old_encoded) ||
+			!structurally_valid_atom(new_record, new_encoded)) {
+			invalid_record_reason =
+				StateImageInvalidRecordReason::MalformedAtom;
+			return StateImageResult::InvalidRecord;
+		}
+		std::size_t old_retained = 0U;
+		std::size_t new_retained = 0U;
+		if (!checked_add(old_record.value.size(),
+				old_record.key.identity.size(), old_retained) ||
+			!checked_add(old_retained,
+				old_record.cascade_owner.identity.size(),
+				old_retained) ||
+			!checked_add(new_record.value.size(),
+				new_record.key.identity.size(), new_retained) ||
+			!checked_add(new_retained,
+				new_record.cascade_owner.identity.size(),
+				new_retained) ||
+			encoded_size < old_encoded ||
+			retained_size < old_retained) {
+			return StateImageResult::SizeLimitExceeded;
+		}
+		encoded_size -= old_encoded;
+		retained_size -= old_retained;
+		if (!checked_add(encoded_size, new_encoded, encoded_size) ||
+			encoded_size > MaxTransactionSize ||
+			!checked_add(retained_size, new_retained, retained_size) ||
+			retained_size > MaxReplicationStateImageRetainedBytes)
+			return StateImageResult::SizeLimitExceeded;
+	}
+	m_encoded_snapshot_records_size = encoded_size;
+	m_retained_payload_bytes = retained_size;
+	return StateImageResult::Created;
 }
 
 bool operator==(const StateImage& left, const StateImage& right) noexcept
@@ -588,7 +1010,8 @@ bool operator==(const StateMutation& left, const StateMutation& right) noexcept
 std::size_t CumulativeStateDelta::encoded_size() const noexcept
 {
 	std::size_t total = DeltaPayloadPrefixSize;
-	for (const auto& mutation : mutations) {
+	for (std::size_t index = 0U; index < mutation_count(); ++index) {
+		const auto& mutation = mutations[index];
 		const auto payload_size =
 			mutation.kind == StateMutationKind::Delete ? mutation.atom.key.identity.size() : mutation.atom.value.size();
 		std::size_t record_size = 0;
@@ -602,8 +1025,14 @@ std::size_t CumulativeStateDelta::encoded_size() const noexcept
 
 bool operator==(const CumulativeStateDelta& left, const CumulativeStateDelta& right) noexcept
 {
-	return left.baseline_snapshot_id == right.baseline_snapshot_id && left.delta_sequence == right.delta_sequence &&
-		   left.producer_sample_time_us == right.producer_sample_time_us && left.mutations == right.mutations;
+	if (left.baseline_snapshot_id != right.baseline_snapshot_id || left.delta_sequence != right.delta_sequence ||
+		left.producer_sample_time_us != right.producer_sample_time_us || left.mutation_count() != right.mutation_count()) {
+		return false;
+	}
+	for (std::size_t index = 0U; index < left.mutation_count(); ++index) {
+		if (!(left.mutations[index] == right.mutations[index])) return false;
+	}
+	return true;
 }
 
 namespace {
@@ -660,6 +1089,19 @@ ProducerResyncResult ProducerResyncTracker::accept(const ResyncRequestPayload& r
 	return ProducerResyncResult::AcceptedNewCandidate;
 }
 
+bool ProducerResyncTracker::is_known_duplicate(const ResyncRequestPayload& request) const noexcept
+{
+	if (validate_resync_request_payload(request) != ValidationError::None) {
+		return false;
+	}
+	for (const auto& entry : m_deduplication_entries) {
+		if (entry.occupied && entry.request.request_id == request.request_id) {
+			return same_resync_request(request, entry.request);
+		}
+	}
+	return false;
+}
+
 ProducerResyncResult ProducerResyncTracker::expire(std::uint64_t now_us) noexcept
 {
 	expire_deduplication_entries(now_us);
@@ -703,18 +1145,19 @@ void ProducerResyncTracker::expire_deduplication_entries(std::uint64_t now_us) n
 
 StateDeltaValidationResult validate_cumulative_state_delta(const CumulativeStateDelta& delta) noexcept
 {
-	if (delta.baseline_snapshot_id == 0 || delta.delta_sequence == 0 || delta.mutations.empty() ||
-		delta.mutations.size() > std::numeric_limits<std::uint16_t>::max()) {
+	if (delta.baseline_snapshot_id == 0 || delta.delta_sequence == 0 || delta.mutation_count() == 0U ||
+		delta.mutation_count() > std::numeric_limits<std::uint16_t>::max()) {
 		return StateDeltaValidationResult::InvalidIdentity;
 	}
 	std::size_t retained_size = 0;
-	if (!checked_multiply(delta.mutations.size(), sizeof(StateMutation), retained_size) ||
+	if (!checked_multiply(delta.mutation_count(), sizeof(StateMutation), retained_size) ||
 		retained_size > MaxReplicationDeltaRetainedBytes) {
 		return StateDeltaValidationResult::SizeLimitExceeded;
 	}
 
 	const StateAtomKey* previous_key = nullptr;
-	for (const auto& mutation : delta.mutations) {
+	for (std::size_t index = 0U; index < delta.mutation_count(); ++index) {
+		const auto& mutation = delta.mutations[index];
 		std::size_t ignored = 0;
 		if (!is_known_mutation(mutation.kind) ||
 			(mutation.kind == StateMutationKind::Delete ? !structurally_valid_delete_atom(mutation.atom)
@@ -787,15 +1230,27 @@ StateDeltaApplyResult apply_cumulative_state_delta(const StateImage& baseline,
 	if (create_result != StateImageResult::Created) {
 		return StateDeltaApplyResult::InvalidTransition;
 	}
-	if (validator != nullptr && validator->validate(candidate) != ValidationError::None) {
+	if (validator != nullptr &&
+		validator->validate_delta_transition(baseline, candidate) != ValidationError::None) {
 		return StateDeltaApplyResult::ValidationFailed;
 	}
 	applied = std::move(candidate);
 	return StateDeltaApplyResult::Applied;
 }
 
+bool ProducerBaselineTracker::provision_dirty_index_backing() noexcept
+{
+	if (m_dirty_indices) return true;
+	m_dirty_indices.reset(new (std::nothrow) std::uint16_t[
+		3U * MaxIncrementalDirtyStateAtomCount]{});
+	return m_dirty_indices != nullptr;
+}
+
 ProducerBaselineResult ProducerBaselineTracker::initialize(const StateImage& current) noexcept
 {
+	if (!dirty_index_backing_ready() &&
+		!provision_dirty_index_backing())
+		return ProducerBaselineResult::AllocationFailed;
 	clear();
 	try {
 		m_current = current;
@@ -814,6 +1269,157 @@ ProducerBaselineResult ProducerBaselineTracker::replace_current(const StateImage
 	} catch (const std::bad_alloc&) {
 		return ProducerBaselineResult::AllocationFailed;
 	}
+	m_active_incremental_record_set_compatible = false;
+	m_candidate_incremental_record_set_compatible = false;
+	m_active_dirty_index_count = 0U;
+	m_candidate_dirty_index_count = 0U;
+	return ProducerBaselineResult::Applied;
+}
+
+ProducerBaselineResult ProducerBaselineTracker::replace_current_incremental(
+	const StateImage& current,
+	const std::uint16_t* rebuilt_indices,
+	std::size_t rebuilt_index_count) noexcept
+{
+	const auto& previous_records = m_current.records();
+	const auto& current_records = current.records();
+	if (!dirty_index_backing_ready() ||
+		current_records.size() > MaxIncrementalDirtyStateAtomCount ||
+		current_records.size() != previous_records.size() ||
+		(rebuilt_index_count != 0U && rebuilt_indices == nullptr)) {
+		return ProducerBaselineResult::InvalidArgument;
+	}
+	std::uint16_t previous_index = 0U;
+	for (std::size_t dirty = 0U; dirty < rebuilt_index_count; ++dirty) {
+		const auto index = static_cast<std::size_t>(rebuilt_indices[dirty]);
+		if (index >= current_records.size() ||
+			(dirty != 0U && rebuilt_indices[dirty] <= previous_index) ||
+			previous_records[index].key != current_records[index].key ||
+			previous_records[index].record_version !=
+				current_records[index].record_version ||
+			previous_records[index].lifecycle !=
+				current_records[index].lifecycle ||
+			previous_records[index].has_cascade_owner !=
+				current_records[index].has_cascade_owner ||
+			previous_records[index].cascade_owner !=
+				current_records[index].cascade_owner) {
+			return ProducerBaselineResult::InvalidArgument;
+		}
+		previous_index = rebuilt_indices[dirty];
+	}
+	if (has_active_baseline()) {
+		auto* const active = m_dirty_indices.get();
+		auto* const scratch =
+			active + 2U * MaxIncrementalDirtyStateAtomCount;
+		std::size_t merged_count = 0U;
+		if (!merge_dirty_indices(active,
+				m_active_dirty_index_count, rebuilt_indices,
+				rebuilt_index_count, scratch,
+				MaxIncrementalDirtyStateAtomCount,
+				merged_count))
+			return ProducerBaselineResult::InvalidArgument;
+		std::copy_n(scratch, merged_count, active);
+		m_active_dirty_index_count = merged_count;
+		m_active_incremental_record_set_compatible = true;
+	}
+	if (has_candidate()) {
+		auto* const candidate =
+			m_dirty_indices.get() + MaxIncrementalDirtyStateAtomCount;
+		auto* const scratch =
+			m_dirty_indices.get() +
+			2U * MaxIncrementalDirtyStateAtomCount;
+		std::size_t merged_count = 0U;
+		if (!merge_dirty_indices(candidate,
+				m_candidate_dirty_index_count, rebuilt_indices,
+				rebuilt_index_count, scratch,
+				MaxIncrementalDirtyStateAtomCount,
+				merged_count))
+			return ProducerBaselineResult::InvalidArgument;
+		std::copy_n(scratch, merged_count, candidate);
+		m_candidate_dirty_index_count = merged_count;
+		m_candidate_incremental_record_set_compatible = true;
+	}
+	m_current = current;
+	return ProducerBaselineResult::Applied;
+}
+
+ProducerBaselineResult
+ProducerBaselineTracker::take_current_for_incremental_patch(
+	StateImage& current) noexcept
+{
+	if (!current.empty() || m_current.empty() ||
+		(!m_active_incremental_record_set_compatible &&
+		 !m_candidate_incremental_record_set_compatible) ||
+		m_current.mutable_preallocated_records_if_unique() == nullptr) {
+		return ProducerBaselineResult::InvalidArgument;
+	}
+	current = std::move(m_current);
+	return ProducerBaselineResult::Applied;
+}
+
+ProducerBaselineResult
+ProducerBaselineTracker::restore_current_after_incremental_patch(
+	StateImage&& current) noexcept
+{
+	if (!m_current.empty() || current.empty())
+		return ProducerBaselineResult::InvalidArgument;
+	m_current = std::move(current);
+	return ProducerBaselineResult::Applied;
+}
+
+ProducerBaselineResult
+ProducerBaselineTracker::commit_current_incremental_patch(
+	StateImage&& current,
+	const std::uint16_t* rebuilt_indices,
+	std::size_t rebuilt_index_count) noexcept
+{
+	const auto& current_records = current.records();
+	if (!dirty_index_backing_ready() ||
+		!m_current.empty() || current_records.empty() ||
+		current_records.size() > MaxIncrementalDirtyStateAtomCount ||
+		(rebuilt_index_count != 0U && rebuilt_indices == nullptr)) {
+		return ProducerBaselineResult::InvalidArgument;
+	}
+	std::uint16_t previous_index = 0U;
+	for (std::size_t dirty = 0U; dirty < rebuilt_index_count; ++dirty) {
+		if (static_cast<std::size_t>(rebuilt_indices[dirty]) >=
+				current_records.size() ||
+			(dirty != 0U &&
+			 rebuilt_indices[dirty] <= previous_index))
+			return ProducerBaselineResult::InvalidArgument;
+		previous_index = rebuilt_indices[dirty];
+	}
+	if (has_active_baseline()) {
+		auto* const active = m_dirty_indices.get();
+		auto* const scratch =
+			active + 2U * MaxIncrementalDirtyStateAtomCount;
+		std::size_t merged_count = 0U;
+		if (!merge_dirty_indices(active,
+				m_active_dirty_index_count, rebuilt_indices,
+				rebuilt_index_count, scratch,
+				MaxIncrementalDirtyStateAtomCount,
+				merged_count))
+			return ProducerBaselineResult::InvalidArgument;
+		std::copy_n(scratch, merged_count, active);
+		m_active_dirty_index_count = merged_count;
+	}
+	if (has_candidate()) {
+		auto* const candidate =
+			m_dirty_indices.get() + MaxIncrementalDirtyStateAtomCount;
+		auto* const scratch =
+			m_dirty_indices.get() +
+			2U * MaxIncrementalDirtyStateAtomCount;
+		std::size_t merged_count = 0U;
+		if (!merge_dirty_indices(candidate,
+				m_candidate_dirty_index_count, rebuilt_indices,
+				rebuilt_index_count, scratch,
+				MaxIncrementalDirtyStateAtomCount,
+				merged_count))
+			return ProducerBaselineResult::InvalidArgument;
+		std::copy_n(scratch, merged_count, candidate);
+		m_candidate_dirty_index_count = merged_count;
+	}
+	m_current = std::move(current);
 	return ProducerBaselineResult::Applied;
 }
 
@@ -823,6 +1429,8 @@ ProducerBaselineResult ProducerBaselineTracker::capture_snapshot(std::uint32_t s
 	const std::vector<SnapshotCandidatePart>& parts,
 	std::uint64_t now_us) noexcept
 {
+	if (!dirty_index_backing_ready())
+		return ProducerBaselineResult::AllocationFailed;
 	if (snapshot_id == 0 || snapshot_id <= m_highest_snapshot_id || parts.empty() ||
 		parts.size() > MaxTransactionParts) {
 		return ProducerBaselineResult::InvalidArgument;
@@ -861,6 +1469,9 @@ ProducerBaselineResult ProducerBaselineTracker::capture_snapshot(std::uint32_t s
 	m_candidate_required_manifest_id = required_manifest_id;
 	m_candidate_deadline_us = saturating_add(now_us, TransactionAssemblyTimeoutUs);
 	m_highest_snapshot_id = snapshot_id;
+	m_candidate_dirty_index_count = 0U;
+	m_candidate_incremental_record_set_compatible =
+		captured.records().size() <= MaxIncrementalDirtyStateAtomCount;
 	return ProducerBaselineResult::Applied;
 }
 
@@ -908,6 +1519,16 @@ ProducerBaselineResult ProducerBaselineTracker::acknowledge_snapshot_part(const 
 	m_active_required_manifest_id = m_candidate_required_manifest_id;
 	m_next_delta_sequence = 1;
 	m_emitted_delta_for_active_baseline = false;
+	m_active_dirty_index_count = m_candidate_dirty_index_count;
+	if (!dirty_index_backing_ready())
+		return ProducerBaselineResult::AllocationFailed;
+	std::copy_n(
+		m_dirty_indices.get() + MaxIncrementalDirtyStateAtomCount,
+		m_candidate_dirty_index_count, m_dirty_indices.get());
+	m_active_incremental_record_set_compatible =
+		m_candidate_incremental_record_set_compatible;
+	m_candidate_dirty_index_count = 0U;
+	m_candidate_incremental_record_set_compatible = false;
 	m_candidate_parts.clear();
 	m_candidate_parts_applied.clear();
 	m_candidate_snapshot_id = 0;
@@ -927,11 +1548,15 @@ ProducerBaselineResult ProducerBaselineTracker::expire_candidate(std::uint64_t n
 	m_candidate_snapshot_id = 0;
 	m_candidate_required_manifest_id = 0;
 	m_candidate_deadline_us = 0;
+	m_candidate_dirty_index_count = 0U;
+	m_candidate_incremental_record_set_compatible = false;
 	return ProducerBaselineResult::Expired;
 }
 
-ProducerBaselineResult ProducerBaselineTracker::emit_cumulative_delta(std::uint64_t producer_sample_time_us,
-	CumulativeStateDelta& delta) noexcept
+ProducerBaselineResult ProducerBaselineTracker::emit_cumulative_delta(
+	std::uint64_t producer_sample_time_us,
+	CumulativeStateDelta& delta,
+	DeltaBuildChanges* changes) noexcept
 {
 	if (!has_active_baseline()) {
 		return ProducerBaselineResult::NoActiveBaseline;
@@ -939,25 +1564,32 @@ ProducerBaselineResult ProducerBaselineTracker::emit_cumulative_delta(std::uint6
 	if (m_next_delta_sequence == 0) {
 		return ProducerBaselineResult::SequenceExhausted;
 	}
-	if (dirty_record_count(m_active_baseline, m_current) == 0) {
-		// v1 forbids an empty Delta. Once a non-empty cumulative delta may
-		// have reached the peer, returning completely to the baseline needs a
-		// keyframe; otherwise the peer could retain the previous difference
-		// forever.
-		return m_emitted_delta_for_active_baseline ? ProducerBaselineResult::KeyframeRequired
-												   : ProducerBaselineResult::NoChange;
-	}
-	CumulativeStateDelta candidate;
+	// The caller supplies a per-session scratch delta with its mutation and
+	// payload capacities provisioned at startup. Building through a fresh local
+	// candidate defeats that ownership and reallocates/copies every tick before
+	// moving into the same scratch. analyze_delta runs before build_delta writes
+	// anything, and callers discard the scratch on non-Applied, so direct reuse
+	// preserves the transaction result while keeping steady-state work bounded.
 	const auto result = build_delta(m_active_baseline,
 		m_current,
 		m_active_snapshot_id,
 		m_next_delta_sequence,
 		producer_sample_time_us,
-		candidate);
+		delta,
+		m_dirty_indices.get(),
+		m_active_dirty_index_count,
+		m_active_incremental_record_set_compatible,
+		changes);
+	if (result == ProducerBaselineResult::NoChange) {
+		// v1 forbids an empty Delta. analyze_delta already performed the exact
+		// ordered comparison, so do not repeat it with dirty_record_count just
+		// to distinguish this case.
+		return m_emitted_delta_for_active_baseline ? ProducerBaselineResult::KeyframeRequired
+												   : ProducerBaselineResult::NoChange;
+	}
 	if (result != ProducerBaselineResult::Applied) {
 		return result;
 	}
-	delta = std::move(candidate);
 	m_emitted_delta_for_active_baseline = true;
 	m_next_delta_sequence =
 		m_next_delta_sequence == std::numeric_limits<std::uint32_t>::max() ? 0 : m_next_delta_sequence + 1;
@@ -979,16 +1611,31 @@ void ProducerBaselineTracker::clear() noexcept
 	m_next_delta_sequence = 1;
 	m_candidate_deadline_us = 0;
 	m_emitted_delta_for_active_baseline = false;
+	m_active_dirty_index_count = 0U;
+	m_candidate_dirty_index_count = 0U;
+	m_active_incremental_record_set_compatible = false;
+	m_candidate_incremental_record_set_compatible = false;
 }
 
 std::size_t ProducerBaselineTracker::active_dirty_record_count() const noexcept
 {
-	return has_active_baseline() ? dirty_record_count(m_active_baseline, m_current) : 0;
+	if (!has_active_baseline()) return 0U;
+	return m_active_incremental_record_set_compatible
+		? dirty_record_count_indices(m_active_baseline, m_current,
+			  m_dirty_indices.get(),
+			  m_active_dirty_index_count)
+		: dirty_record_count(m_active_baseline, m_current);
 }
 
 std::size_t ProducerBaselineTracker::candidate_dirty_record_count() const noexcept
 {
-	return has_candidate() ? dirty_record_count(m_candidate_baseline, m_current) : 0;
+	if (!has_candidate()) return 0U;
+	return m_candidate_incremental_record_set_compatible
+		? dirty_record_count_indices(m_candidate_baseline, m_current,
+			  m_dirty_indices.get() +
+				  MaxIncrementalDirtyStateAtomCount,
+			  m_candidate_dirty_index_count)
+		: dirty_record_count(m_candidate_baseline, m_current);
 }
 
 ManifestInstallResult ClientReplicationModel::install_manifest(std::uint32_t manifest_id) noexcept

@@ -54,6 +54,7 @@ typedef struct blip	{
 #define RCOL_TAGGED				4
 
 extern rcol Radar_color_rgb[MAX_RADAR_COLORS][MAX_RADAR_LEVELS];
+extern color Radar_colors[MAX_RADAR_COLORS][MAX_RADAR_LEVELS];
 
 #define BLIP_TYPE_JUMP_NODE			0
 #define BLIP_TYPE_NAVBUOY_CARGO		1
@@ -89,6 +90,26 @@ enum RadarVisibility
 	DISTORTED //!< Visible but not fully
 };
 
+struct RadarContactProjection {
+	RadarVisibility visibility = NOT_VISIBLE;
+	vec3d world_position = vmd_zero_vector;
+	// The radar projection is the cockpit authority boundary.  Consumers must
+	// use this velocity rather than reaching back into the source object after
+	// the visibility decision has been made.
+	vec3d world_velocity = vmd_zero_vector;
+	float distance = 0.0f;
+};
+
+// The visual decision made by the standard radar after a contact has passed
+// radar_project_contact().  This deliberately references the engine-owned
+// color table; telemetry consumers must copy the RGBA value during the same
+// main-thread tick and must not retain the pointer.
+struct RadarContactVisual {
+	color* blip_color = nullptr;
+	int blip_type = BLIP_TYPE_NORMAL_SHIP;
+	bool bright = false;
+};
+
 enum class RadarIconMode {
 	Off = 0,
 	On = 1,
@@ -99,6 +120,12 @@ extern RadarIconMode Radar_2d_icon_mode;
 void radar_frame_init();
 void radar_mission_init();
 void radar_plot_object( object *objp );
+bool radar_project_contact(object* objp, RadarContactProjection& projection);
+void radar_refresh_bright_range() noexcept;
+bool radar_resolve_contact_visual(object* objp,
+	const RadarContactProjection& projection,
+	bool current_target,
+	RadarContactVisual& visual) noexcept;
 RadarVisibility radar_is_visible( object *objp );
 void radar_check_2d_icon_options();
 

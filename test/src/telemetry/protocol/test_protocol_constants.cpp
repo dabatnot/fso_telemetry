@@ -103,7 +103,7 @@ TEST(TelemetryProtocolConstants, FreezesMessageFlagsAndPerClassLimits) {
 }
 
 TEST(TelemetryProtocolConstants, FreezesRecordTypeRegistry) {
-	const std::array<RecordType, 29> values{
+	const std::array<RecordType, 30> values{
 		RecordType::Invalid,
 		RecordType::SessionState,
 		RecordType::MissionState,
@@ -133,6 +133,7 @@ TEST(TelemetryProtocolConstants, FreezesRecordTypeRegistry) {
 		RecordType::CommViewState,
 		RecordType::CommViewEvent,
 		RecordType::Events,
+		RecordType::HudAlertState,
 	};
 	expect_sequential_registry(values);
 
@@ -141,6 +142,36 @@ TEST(TelemetryProtocolConstants, FreezesRecordTypeRegistry) {
 	EXPECT_EQ(0x02U, RecordFlagDelete);
 	EXPECT_EQ(0x04U, RecordFlagPartial);
 	EXPECT_EQ(0x07U, KnownRecordFlags);
+}
+
+TEST(TelemetryProtocolConstants, FreezesPhase3HudAlertContract)
+{
+	EXPECT_EQ(29U, static_cast<std::uint16_t>(RecordType::HudAlertState));
+	EXPECT_EQ(30U, FirstReservedRecordType);
+	EXPECT_EQ(0x1ULL, HudAlertStatePresenceFlagActiveWarning);
+	EXPECT_EQ(0U,
+		static_cast<std::uint8_t>(HudAlertMissileLockState::None));
+	EXPECT_EQ(1U,
+		static_cast<std::uint8_t>(HudAlertMissileLockState::Attempt));
+	EXPECT_EQ(2U,
+		static_cast<std::uint8_t>(HudAlertMissileLockState::Acquired));
+	EXPECT_EQ(1U, static_cast<std::uint8_t>(HudAlertWarningKind::Launch));
+	EXPECT_EQ(7U, static_cast<std::uint8_t>(HudAlertWarningKind::Other));
+}
+
+TEST(TelemetryProtocolConstants, FreezesPhase3VersionFourRadarVisualContract) {
+	EXPECT_EQ(0U, static_cast<std::uint8_t>(RadarBlipType::JumpNode));
+	EXPECT_EQ(1U, static_cast<std::uint8_t>(RadarBlipType::NavbuoyCargo));
+	EXPECT_EQ(2U, static_cast<std::uint8_t>(RadarBlipType::Bomb));
+	EXPECT_EQ(3U, static_cast<std::uint8_t>(RadarBlipType::WarpingShip));
+	EXPECT_EQ(4U, static_cast<std::uint8_t>(RadarBlipType::TaggedShip));
+	EXPECT_EQ(5U, static_cast<std::uint8_t>(RadarBlipType::NormalShip));
+	EXPECT_EQ(0x0000000000010000ULL, TargetStatePresenceFlagHudTargetColor);
+	EXPECT_EQ(0x0000000000020000ULL, TargetStatePresenceFlagHudTargetSubsystemLabel);
+	EXPECT_EQ(0x0000000000040000ULL, TargetStatePresenceFlagHudLockSubsystemLabel);
+	EXPECT_EQ(0x000000000007ffffULL, KnownTargetStatePresenceFlags);
+	EXPECT_EQ(0x0000000000000080ULL, RadarContactsPresenceFlagRadarVisual);
+	EXPECT_EQ(0x00000000000000ffULL, KnownRadarContactsPresenceFlags);
 }
 
 TEST(TelemetryProtocolConstants, FreezesCapabilitiesAndControlRegistries) {

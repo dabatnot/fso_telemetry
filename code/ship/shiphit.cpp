@@ -3164,7 +3164,7 @@ void ship_apply_global_damage(object *ship_objp, object *other_obj, const vec3d 
 		// only show blast icon if playing on medium skill or lower -> unknownplayer: why? I think this should be changed.
 		// Goober5000 - agreed; commented out
 		//if ( Game_skill_level <= 2 ) {
-			hud_start_text_flash(XSTR("Blast", 1428), 2000);
+			hud_start_text_flash(XSTR("Blast", 1428), 2000, 200, HudTextWarningKind::Blast);
 		//}
 	}
 
@@ -3193,7 +3193,8 @@ void ship_apply_wash_damage(object *ship_objp, object *other_obj, float damage)
 		// only show blast icon if playing on medium skill or lower
 		// Goober5000 - commented out
 		//if ( Game_skill_level <= 2 ) {
-			hud_start_text_flash(XSTR("Engine Wash", 1429), 2000);
+			hud_start_text_flash(XSTR("Engine Wash", 1429), 2000, 200,
+				HudTextWarningKind::EngineWash);
 		//}
 	}
 

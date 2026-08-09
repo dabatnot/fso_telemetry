@@ -425,7 +425,7 @@ void emp_start_local(float intensity, float time, const SCP_string &text)
 
 	// start the emp icon flashing if display text is not "none"
 	if (stricmp(display.c_str(), "none") != 0)
-		hud_start_text_flash(display.c_str(), 5000);
+		hud_start_text_flash(display.c_str(), 5000, 200, HudTextWarningKind::Emp);
 
 	// determine how much we have to decrement the effect per second
 	Emp_decr = Emp_intensity / time;

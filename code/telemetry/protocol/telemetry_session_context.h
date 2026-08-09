@@ -7,6 +7,8 @@
 
 namespace telemetry::protocol {
 
+struct WelcomePayload;
+
 enum class IpAddressFamily : std::uint8_t {
 	Invalid = 0,
 	Ipv4 = 4,
@@ -73,6 +75,10 @@ struct TelemetrySessionContext {
 	LocalEndpointRole local_role = LocalEndpointRole::Invalid;
 	EndpointKey peer_endpoint;
 	std::uint64_t active_session_id = 0;
+	// A live session uses an exact one-element range. While a client is waiting
+	// for WELCOME, the range may additionally include minor 0 so a rejection
+	// header remains decodable before its payload status is known.
+	ProtocolMinorRange accepted_minors = FrozenV1_0MinorRange;
 };
 
 // Contextual validation is the stage between
@@ -86,6 +92,9 @@ ValidationError validate_received_datagram_context(const TelemetryDatagramHeader
 // intentionally remain separate from the static contextual pass above.
 ValidationError validate_welcome_logical_context(const TelemetryDatagramHeader& header,
 	WelcomeStatus status,
+	const TelemetrySessionContext& context) noexcept;
+ValidationError validate_welcome_logical_context(const TelemetryDatagramHeader& header,
+	const WelcomePayload& payload,
 	const TelemetrySessionContext& context) noexcept;
 ValidationError validate_event_batch_logical_context(const TelemetryDatagramHeader& header,
 	EventDeliveryClass delivery_class) noexcept;

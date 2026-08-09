@@ -1,0 +1,326 @@
+HISTORIQUE, NON NORMATIF, NE PAS EXECUTER.
+"""Fail-closed aggregation of the conclusive Phase 2 G2-F evidence."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import sys
+from pathlib import Path
+from typing import Any, Sequence
+
+import run_phase2_performance_evidence as performance
+import run_phase2_reliability_evidence as reliability
+import run_phase2_oracle_evidence as oracle
+
+
+SCHEMA = "fs2open.telemetry.phase2.g2-f-proof-manifest.v1"
+LOSS_SCHEMA = reliability.SCHEMA
+SMOKE_CASES = {
+    f"{profile}-{rate}-{mode}"
+    for profile in ("core-gate", "complete-ship")
+    for rate in (1, 5, 20)
+    for mode in ("iid", "burst")
+}
+REPRESENTATIVE_CASES = {
+    "core-gate-1-iid",
+    "core-gate-20-burst",
+    "complete-ship-5-iid",
+    "complete-ship-20-burst",
+}
+
+
+def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--loss-smoke-manifest", type=Path, required=True)
+    parser.add_argument("--loss-representative-manifest", type=Path, required=True)
+    parser.add_argument("--performance-manifest", type=Path, required=True)
+    parser.add_argument("--oracle-report", type=Path, required=True)
+    parser.add_argument(
+        "--output",
+        type=Path,
+        default=Path(
+            "test/telemetry/producer/phase2/reports/"
+            "wp11-loss-gate/g2-f-proof-manifest.json"
+        ),
+    )
+    return parser.parse_args(argv)
+
+
+def require(condition: bool, message: str) -> None:
+    if not condition:
+        raise ValueError(message)
+
+
+def read_json(path: Path) -> Any:
+    require(path.is_file(), f"missing evidence file: {path}")
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise ValueError(f"invalid JSON evidence: {path}") from error
+
+
+def write_json(path: Path, value: Any) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(f".{path.name}.tmp")
+    temporary.write_text(
+        json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    os.replace(temporary, path)
+
+
+def command_value(command: Any, option: str) -> str:
+    require(isinstance(command, list), f"loss command is not an argv list: {option}")
+    require(command.count(option) == 1, f"loss command option must occur once: {option}")
+    index = command.index(option)
+    require(index + 1 < len(command), f"loss command option has no value: {option}")
+    value = command[index + 1]
+    require(isinstance(value, str), f"loss command value is not text: {option}")
+    return value
+
+def loss_case_tuple(name: str) -> tuple[str, int, str]:
+    parts = name.split("-")
+    require(len(parts) == 4, f"invalid loss case name: {name}")
+    return "-".join(parts[:2]), int(parts[2]), parts[3]
+
+
+def validate_loss_campaign(
+    path: Path,
+    expected_cases: set[str],
+    warmup_seconds: int,
+    duration_seconds: int,
+) -> dict[str, Any]:
+    manifest = read_json(path)
+    require(isinstance(manifest, dict), "loss manifest must be an object")
+    require(manifest.get("schema") == LOSS_SCHEMA, "wrong loss campaign schema")
+    require(manifest.get("status") == "passed", "loss campaign is not passed")
+    harness = Path(manifest.get("harness", ""))
+    require(harness.is_file(), "loss harness is missing")
+    require(manifest.get("harnessSha256") == reliability.sha256(harness),
+            "loss harness fingerprint mismatch")
+    parameters = manifest.get("parameters")
+    require(isinstance(parameters, dict), "loss campaign parameters are missing")
+    require(parameters.get("seed") == reliability.SEED
+            and parameters.get("warmupSeconds") == warmup_seconds
+            and parameters.get("durationSeconds") == duration_seconds
+            and parameters.get("keyframeSeconds") == 2.0
+            and parameters.get("config") == "Release"
+            and parameters.get("requireCorrelatedBlackoutResponses") is False,
+            "loss campaign parameters are not exact")
+    require(
+        set(parameters.get("cases", ())) == {
+            f"{loss_case_tuple(name)[0]}:{loss_case_tuple(name)[1]}:"
+            f"{loss_case_tuple(name)[2]}"
+            for name in expected_cases
+        },
+        "loss campaign case inventory is not exact",
+    )
+    runs = manifest.get("runs")
+    require(isinstance(runs, list) and len(runs) == len(expected_cases),
+            "wrong loss run count")
+    by_name = {
+        item.get("name"): item for item in runs if isinstance(item, dict)
+    }
+    require(set(by_name) == expected_cases and len(by_name) == len(runs),
+            "missing or duplicate loss case")
+    artifacts = []
+    for name in sorted(expected_cases):
+        run = by_name[name]
+        require(run.get("status") == "passed" and run.get("exitCode") == 0,
+                f"loss case is not passed: {name}")
+        command = run.get("command")
+        profile, rate_value, mode = loss_case_tuple(name)
+        rate = str(rate_value)
+        require(command_value(command, "--profile") == profile,
+                f"wrong loss profile: {name}")
+        require(command_value(command, "--loss-rate") == rate,
+                f"wrong loss rate: {name}")
+        require(command_value(command, "--mode") == mode,
+                f"wrong loss mode: {name}")
+        require(command_value(command, "--seed") == "1345474380",
+                f"wrong loss seed: {name}")
+        require(command_value(command, "--warmup-seconds") == str(warmup_seconds),
+                f"wrong loss warm-up: {name}")
+        require(command_value(command, "--duration-seconds") == str(duration_seconds),
+                f"wrong loss duration: {name}")
+        report_path = Path(command_value(command, "--report"))
+        require(report_path.is_file(), f"missing loss report: {name}")
+        require(run.get("reportSha256") == performance.sha256(report_path),
+                f"loss report hash mismatch: {name}")
+        report = read_json(report_path)
+        validation_args = argparse.Namespace(
+            report_dir=path.parent,
+            seed=reliability.SEED,
+            warmup_seconds=warmup_seconds,
+            duration_seconds=duration_seconds,
+            keyframe_seconds=2.0,
+            require_correlated_blackout_responses=False,
+        )
+        reliability.validate_persisted_pass(
+            run,
+            args=validation_args,
+            harness=harness,
+            case=(profile, int(rate), mode),
+            bound_us=5_000_000,
+        )
+        artifacts.append({
+            "case": name,
+            "path": str(report_path.resolve()),
+            "sha256": run["reportSha256"],
+        })
+    return {
+        "manifest": str(path.resolve()),
+        "manifestSha256": performance.sha256(path),
+        "harness": str(harness.resolve()),
+        "harnessSha256": manifest["harnessSha256"],
+        "cases": artifacts,
+    }
+
+
+def validate_performance(path: Path) -> dict[str, Any]:
+    manifest = read_json(path)
+    require(isinstance(manifest, dict), "performance manifest must be an object")
+    require(manifest.get("schema") == performance.SCHEMA,
+            "wrong performance campaign schema")
+    require(manifest.get("status") == "passed", "performance campaign is not passed")
+    harness_path = Path(manifest.get("harness", ""))
+    require(harness_path.is_file(), "performance harness is missing")
+    require(manifest.get("harnessSha256") == performance.sha256(harness_path),
+            "performance harness fingerprint mismatch")
+    command = manifest.get("command")
+    require(isinstance(command, list) and command
+            and Path(command[0]).resolve() == harness_path.resolve(),
+            "performance command is not bound to its harness")
+    require(manifest.get("fingerprints", {}).get("commandFingerprint")
+            == performance.command_fingerprint(command),
+            "performance command fingerprint mismatch")
+    report_path = Path(manifest.get("report", ""))
+    require(report_path.is_file(), "missing performance harness report")
+    require(manifest.get("reportSha256") == performance.sha256(report_path),
+            "performance report hash mismatch")
+    report = read_json(report_path)
+    args = argparse.Namespace(
+        warmup_seconds=60,
+        control_seconds=600,
+        measure_seconds=1800,
+        minimum_frames=100000,
+        minimum_flight_ticks=54000,
+        minimum_system_ticks=18000,
+        minimum_keyframes=900,
+        seed=4242,
+        soak_seconds=3600,
+        soak_profile="composite",
+        soak_seed=4242,
+    )
+    performance.validate_report(report, args)
+    context = report["evidenceContext"]
+    require(manifest.get("revision") == context["revision"]
+            and manifest.get("worktree") == context["worktree"],
+            "performance revision/worktree mismatch")
+    for key in ("startedAtUtc", "finishedAtUtc", "platform", "cpu"):
+        require(isinstance(manifest.get(key), str) and manifest[key],
+                f"performance campaign metadata is missing: {key}")
+    require(manifest["startedAtUtc"].endswith(("+00:00", "Z"))
+            and manifest["finishedAtUtc"].endswith(("+00:00", "Z")),
+            "performance campaign dates are not UTC")
+    require(manifest.get("platform") == context["platform"]
+            and manifest.get("cpu") == context["cpu"],
+            "performance platform/CPU mismatch")
+    require(manifest.get("build") == {
+        "directory": context["buildDirectory"],
+        "config": context["buildConfig"],
+        "flags": context["buildFlags"],
+    }, "performance build metadata mismatch")
+    require(manifest.get("command") == context["command"]
+            and manifest.get("exitCode") == context["codeReturn"] == 0,
+            "performance command/return mismatch")
+    require(isinstance(manifest.get("elapsedSeconds"), (int, float))
+            and manifest["elapsedSeconds"] >= context["durationSeconds"] > 0,
+            "performance campaign duration is missing")
+    require(manifest.get("mission") == context["mission"]
+            and manifest.get("mod") == context["mod"]
+            and manifest.get("profile") == context["profile"],
+            "performance mission/mod/profile mismatch")
+    fingerprints = manifest.get("fingerprints")
+    require(isinstance(fingerprints, dict), "performance fingerprints are missing")
+    for key in ("sourceFingerprint", "testFingerprint",
+                "cmakeFingerprint", "commandFingerprint"):
+        require(fingerprints.get(key) == report.get("host", {}).get(key),
+                f"performance fingerprint mismatch: {key}")
+    for key in ("temperatureLog", "throttleLog"):
+        require(manifest.get(key, {}).get("sha256")
+                == report.get("host", {}).get(key, {}).get("sha256"),
+                f"performance environment-log mismatch: {key}")
+    return {
+        "manifest": str(path.resolve()),
+        "manifestSha256": performance.sha256(path),
+        "report": str(report_path.resolve()),
+        "reportSha256": manifest["reportSha256"],
+        "harness": str(harness_path.resolve()),
+        "harnessSha256": manifest["harnessSha256"],
+        "commandSha256": performance.command_fingerprint(command),
+    }
+
+
+def validate_oracle(path: Path) -> dict[str, Any]:
+    report = read_json(path)
+    oracle.validate_persisted_report(report)
+    harness = report["harness"]
+    return {
+        "report": str(path.resolve()),
+        "reportSha256": performance.sha256(path),
+        "harness": str(Path(harness["executable"]).resolve()),
+        "harnessSha256": harness["sha256"],
+        "commandSha256": performance.command_fingerprint(harness["command"]),
+    }
+
+
+def aggregate(args: argparse.Namespace) -> dict[str, Any]:
+    smoke = validate_loss_campaign(
+        args.loss_smoke_manifest, SMOKE_CASES, 0, 30
+    )
+    representative = validate_loss_campaign(
+        args.loss_representative_manifest, REPRESENTATIVE_CASES, 30, 300
+    )
+    performance_evidence = validate_performance(args.performance_manifest)
+    oracle = validate_oracle(args.oracle_report)
+    return {
+        "schema": SCHEMA,
+        "status": "passed",
+        "gate": "G2-F",
+        "workPackage": "P2-WP-11",
+        "requirements": [
+            "P2-REQ-037", "P2-REQ-040", "P2-REQ-045",
+            "P2-REQ-046", "P2-REQ-048",
+        ],
+        "acceptanceCriteria": [
+            "P2-AC-006", "P2-AC-007", "P2-AC-008", "P2-AC-009",
+            "P2-AC-013", "P2-AC-014", "P2-AC-015",
+        ],
+        "lossSmoke": smoke,
+        "lossRepresentative": representative,
+        "performanceAndSoak": performance_evidence,
+        "independentOracle": oracle,
+    }
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    args = parse_args(argv)
+    try:
+        result = aggregate(args)
+        write_json(args.output, result)
+        return 0
+    except (OSError, ValueError) as error:
+        write_json(args.output, {
+            "schema": SCHEMA,
+            "status": "failed",
+            "gate": "G2-F",
+            "error": str(error),
+        })
+        print(error, file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

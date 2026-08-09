@@ -1,0 +1,314 @@
+HISTORIQUE, NON NORMATIF, NE PAS EXECUTER.
+"""Focused fail-closed contract tests for the G2-F evidence aggregator."""
+
+from __future__ import annotations
+
+import argparse
+import copy
+import importlib.util
+import json
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+from unittest import mock
+
+
+MODULE_PATH = Path(__file__).with_name("aggregate_phase2_g2f_evidence.py")
+sys.path.insert(0, str(MODULE_PATH.parent))
+SPEC = importlib.util.spec_from_file_location("phase2_g2f", MODULE_PATH)
+assert SPEC and SPEC.loader
+g2f = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(g2f)
+
+
+class G2fAggregatorContractTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temporary = tempfile.TemporaryDirectory()
+        self.root = Path(self.temporary.name)
+        self.smoke = self.make_loss_manifest(
+            "smoke", g2f.SMOKE_CASES, 0, 30
+        )
+        self.representative = self.make_loss_manifest(
+            "representative", g2f.REPRESENTATIVE_CASES, 30, 300
+        )
+        self.performance = self.make_performance_manifest()
+        self.oracle = self.make_oracle_report()
+        self.args = argparse.Namespace(
+            loss_smoke_manifest=self.smoke,
+            loss_representative_manifest=self.representative,
+            performance_manifest=self.performance,
+            oracle_report=self.oracle,
+            output=self.root / "g2-f.json",
+        )
+
+    def tearDown(self) -> None:
+        self.temporary.cleanup()
+
+    def test_default_output_is_the_normative_g2f_path(self) -> None:
+        parsed = g2f.parse_args([
+            "--loss-smoke-manifest", str(self.smoke),
+            "--loss-representative-manifest", str(self.representative),
+            "--performance-manifest", str(self.performance),
+            "--oracle-report", str(self.oracle),
+        ])
+        self.assertEqual(
+            Path("test/telemetry/producer/phase2/reports/"
+                 "wp11-loss-gate/g2-f-proof-manifest.json"),
+            parsed.output,
+        )
+
+    def write_json(self, name: str, value: dict) -> Path:
+        path = self.root / name
+        path.write_text(json.dumps(value), encoding="utf-8")
+        return path
+
+    def make_loss_manifest(
+        self,
+        prefix: str,
+        cases: set[str],
+        warmup: int,
+        duration: int,
+    ) -> Path:
+        runs = []
+        harness = self.root / f"{prefix}-loss-harness"
+        harness.write_bytes(b"loss-harness")
+        for name in sorted(cases):
+            parts = name.split("-")
+            profile = "-".join(parts[:2])
+            rate, mode = parts[2], parts[3]
+            report = self.write_json(
+                f"{prefix}-{name}.json",
+                {"status": "passed", "certificationEligible": True},
+            )
+            command = [
+                str(harness),
+                "--profile", profile,
+                "--loss-rate", rate,
+                "--mode", mode,
+                "--seed", "1345474380",
+                "--warmup-seconds", str(warmup),
+                "--duration-seconds", str(duration),
+                "--report", str(report),
+            ]
+            runs.append({
+                "name": name,
+                "status": "passed",
+                "exitCode": 0,
+                "command": command,
+                "reportSha256": g2f.performance.sha256(report),
+            })
+        return self.write_json(f"{prefix}-manifest.json", {
+            "schema": g2f.LOSS_SCHEMA,
+            "status": "passed",
+            "harness": str(harness),
+            "harnessSha256": g2f.reliability.sha256(harness),
+            "parameters": {
+                "cases": [
+                    f"{g2f.loss_case_tuple(name)[0]}:"
+                    f"{g2f.loss_case_tuple(name)[1]}:"
+                    f"{g2f.loss_case_tuple(name)[2]}"
+                    for name in sorted(cases)
+                ],
+                "seed": g2f.reliability.SEED,
+                "warmupSeconds": warmup,
+                "durationSeconds": duration,
+                "keyframeSeconds": 2.0,
+                "config": "Release",
+                "requireCorrelatedBlackoutResponses": False,
+            },
+            "runs": runs,
+        })
+
+    def make_performance_manifest(self) -> Path:
+        harness = self.root / "performance-harness"
+        harness.write_bytes(b"performance-harness")
+        command = [str(harness), "--qualification-plan",
+                   "coordinated-performance"]
+        context = {
+            "revision": "a" * 40,
+            "worktree": "dirty:" + "b" * 64,
+            "dateUtc": "2026-07-30T12:00:00+00:00",
+            "platform": "Windows-test",
+            "cpu": "test-cpu",
+            "buildDirectory": str(self.root),
+            "buildConfig": "Release",
+            "buildFlags": "/O2",
+            "command": command,
+            "codeReturn": 0,
+            "durationSeconds": 1.0,
+            "mission": "wp11-canonical-trace",
+            "mod": "FS2Open-core",
+            "profile": "complete-ship",
+        }
+        report = self.write_json("performance-report.json", {
+            "schema": g2f.performance.HARNESS_SCHEMA,
+            "status": "passed",
+            "host": {
+                "sourceFingerprint": "1" * 64,
+                "testFingerprint": "2" * 64,
+                "cmakeFingerprint": "3" * 64,
+                "commandFingerprint":
+                    g2f.performance.command_fingerprint(command),
+                "temperatureLog": {"sha256": "4" * 64},
+                "throttleLog": {"sha256": "5" * 64},
+            },
+            "evidenceContext": context,
+        })
+        return self.write_json("performance-manifest.json", {
+            "schema": g2f.performance.SCHEMA,
+            "status": "passed",
+            "revision": context["revision"],
+            "worktree": context["worktree"],
+            "startedAtUtc": context["dateUtc"],
+            "finishedAtUtc": context["dateUtc"],
+            "platform": context["platform"],
+            "cpu": context["cpu"],
+            "build": {
+                "directory": context["buildDirectory"],
+                "config": context["buildConfig"],
+                "flags": context["buildFlags"],
+            },
+            "exitCode": 0,
+            "elapsedSeconds": 1.0,
+            "mission": context["mission"],
+            "mod": context["mod"],
+            "profile": context["profile"],
+            "command": command,
+            "harness": str(harness),
+            "harnessSha256": g2f.performance.sha256(harness),
+            "fingerprints": {
+                "sourceFingerprint": "1" * 64,
+                "testFingerprint": "2" * 64,
+                "cmakeFingerprint": "3" * 64,
+                "commandFingerprint":
+                    g2f.performance.command_fingerprint(command),
+            },
+            "temperatureLog": {"sha256": "4" * 64},
+            "throttleLog": {"sha256": "5" * 64},
+            "report": str(report),
+            "reportSha256": g2f.performance.sha256(report),
+        })
+
+    def make_oracle_report(self) -> Path:
+        harness = self.root / "oracle-harness"
+        harness.write_bytes(b"oracle-harness")
+        return self.write_json("oracle.json", {
+            "schema": "FSTL-phase2-oracle-evidence-v1",
+            "status": "passed",
+            "profiles": ["core-gate", "complete-ship"],
+            "harness": {
+                "executable": str(harness),
+                "sha256": g2f.performance.sha256(harness),
+                "command": [str(harness)],
+            },
+            "scenarios": [{
+                "name": "core-gate-minimal",
+                "profile": "core-gate",
+                "passed": True,
+                "oracleSummary": {
+                    "mismatches": 0,
+                    "missingProvenance": 0,
+                    "uncoveredFormula": 0,
+                    "rawCoveragePercent": 100.0,
+                },
+            }, {
+                "name": "complete-ship-multipart",
+                "profile": "complete-ship",
+                "passed": True,
+                "oracleSummary": {
+                    "mismatches": 0,
+                    "missingProvenance": 0,
+                    "uncoveredFormula": 0,
+                    "rawCoveragePercent": 100.0,
+                },
+            }],
+        })
+
+    @mock.patch.object(g2f.oracle, "validate_persisted_report")
+    @mock.patch.object(g2f.reliability, "validate_persisted_pass")
+    @mock.patch.object(g2f.performance, "validate_report")
+    def test_accepts_exact_complete_inventory(
+        self, validate_report, validate_loss, validate_oracle
+    ) -> None:
+        result = g2f.aggregate(self.args)
+        self.assertEqual("passed", result["status"])
+        self.assertEqual("G2-F", result["gate"])
+        self.assertEqual(12, len(result["lossSmoke"]["cases"]))
+        self.assertEqual(4, len(result["lossRepresentative"]["cases"]))
+        validate_report.assert_called_once()
+        self.assertEqual(16, validate_loss.call_count)
+        validate_oracle.assert_called_once()
+
+    @mock.patch.object(g2f.oracle, "validate_persisted_report")
+    @mock.patch.object(g2f.reliability, "validate_persisted_pass")
+    @mock.patch.object(g2f.performance, "validate_report")
+    def test_rejects_missing_or_duplicate_loss_case(
+        self, _performance, _loss, _oracle
+    ) -> None:
+        manifest = json.loads(self.smoke.read_text(encoding="utf-8"))
+        manifest["runs"].pop()
+        self.smoke.write_text(json.dumps(manifest), encoding="utf-8")
+        with self.assertRaises(ValueError):
+            g2f.aggregate(self.args)
+
+    @mock.patch.object(g2f.oracle, "validate_persisted_report")
+    @mock.patch.object(g2f.reliability, "validate_persisted_pass")
+    @mock.patch.object(g2f.performance, "validate_report")
+    def test_rejects_red_or_hash_mismatched_evidence(
+        self, _performance, _loss, _oracle
+    ) -> None:
+        manifest = json.loads(self.representative.read_text(encoding="utf-8"))
+        manifest["runs"][0]["status"] = "failed"
+        self.representative.write_text(json.dumps(manifest), encoding="utf-8")
+        with self.assertRaises(ValueError):
+            g2f.aggregate(self.args)
+
+    @mock.patch.object(g2f.oracle, "validate_persisted_report")
+    @mock.patch.object(g2f.reliability, "validate_persisted_pass")
+    @mock.patch.object(g2f.performance, "validate_report")
+    def test_rejects_incomplete_oracle(
+        self, _performance, _loss, validate_oracle
+    ) -> None:
+        oracle = json.loads(self.oracle.read_text(encoding="utf-8"))
+        oracle["scenarios"][0]["oracleSummary"]["mismatches"] = 1
+        self.oracle.write_text(json.dumps(oracle), encoding="utf-8")
+        validate_oracle.side_effect = ValueError("invalid oracle")
+        with self.assertRaises(ValueError):
+            g2f.aggregate(self.args)
+
+    @mock.patch.object(g2f.oracle, "validate_persisted_report")
+    @mock.patch.object(g2f.reliability, "validate_persisted_pass")
+    @mock.patch.object(g2f.performance, "validate_report")
+    def test_performance_validator_failure_is_blocking(
+        self, validate_report, _loss, _oracle
+    ) -> None:
+        validate_report.side_effect = ValueError("invalid performance")
+        with self.assertRaises(ValueError):
+            g2f.aggregate(self.args)
+
+    @mock.patch.object(g2f.oracle, "validate_persisted_report")
+    @mock.patch.object(g2f.reliability, "validate_persisted_pass")
+    @mock.patch.object(g2f.performance, "validate_report")
+    def test_rejects_campaign_revision_mismatch(
+        self, _performance, _loss, _oracle
+    ) -> None:
+        manifest = json.loads(self.performance.read_text(encoding="utf-8"))
+        manifest["revision"] = "c" * 40
+        self.performance.write_text(json.dumps(manifest), encoding="utf-8")
+        with self.assertRaises(ValueError):
+            g2f.aggregate(self.args)
+
+    @mock.patch.object(g2f.oracle, "validate_persisted_report")
+    @mock.patch.object(g2f.reliability, "validate_persisted_pass")
+    @mock.patch.object(g2f.performance, "validate_report")
+    def test_loss_exact_validator_failure_is_blocking(
+        self, _performance, validate_loss, _oracle
+    ) -> None:
+        validate_loss.side_effect = ValueError("invalid loss")
+        with self.assertRaises(ValueError):
+            g2f.aggregate(self.args)
+
+
+if __name__ == "__main__":
+    unittest.main()

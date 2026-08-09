@@ -115,6 +115,25 @@ TEST(TelemetryProtocolCounters, ProbeCorrelationOnlyConsumesAnExactSessionIdAndT
 	EXPECT_EQ(0U, tracker.in_flight_count());
 }
 
+TEST(TelemetryProtocolCounters, ProbePreviewMatchesWithoutConsumingUntilCommit)
+{
+	ProbeTracker tracker;
+	ASSERT_TRUE(tracker.reset_session(77U));
+	ProbeToken token;
+	ASSERT_EQ(ProbeStartResult::Started, tracker.begin_probe(4321U, token));
+
+	EXPECT_EQ(ProbeResponseResult::Matched,
+		tracker.preview_response(token.session_id, token.probe_id, token.origin_t0_us));
+	EXPECT_EQ(1U, tracker.in_flight_count());
+	EXPECT_EQ(ProbeResponseResult::OriginTimestampMismatch,
+		tracker.preview_response(token.session_id, token.probe_id, token.origin_t0_us + 1U));
+	EXPECT_EQ(1U, tracker.in_flight_count());
+
+	EXPECT_EQ(ProbeResponseResult::Matched,
+		tracker.correlate_response(token.session_id, token.probe_id, token.origin_t0_us));
+	EXPECT_EQ(0U, tracker.in_flight_count());
+}
+
 TEST(TelemetryProtocolCounters, ProbeIdsSkipZeroAtWrapAndSessionResetPurgesOldSlots)
 {
 	ProbeTracker tracker;
