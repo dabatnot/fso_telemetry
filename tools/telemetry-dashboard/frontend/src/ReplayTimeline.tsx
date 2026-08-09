@@ -149,6 +149,16 @@ export function ReplayTimeline({
                   const name = window.prompt(t("Nom du marqueur"), range.name)?.trim();
                   if (name) onUpdateRange({ ...range, name });
                 }}>✎</button>
+                <button
+                  aria-label={`${t("POINT D’ENTRÉE")} · ${range.name}`}
+                  disabled={draftUs >= range.endUs}
+                  onClick={() => onUpdateRange({ ...range, startUs: draftUs })}
+                >IN←</button>
+                <button
+                  aria-label={`${t("POINT DE SORTIE")} · ${range.name}`}
+                  disabled={draftUs <= range.startUs}
+                  onClick={() => onUpdateRange({ ...range, endUs: draftUs })}
+                >OUT←</button>
                 <button aria-label={t("Supprimer")} onClick={() => {
                   if (window.confirm(t("Supprimer ce marqueur ?"))) onDeleteRange(range.id);
                 }}>×</button>

@@ -713,13 +713,22 @@ class CaptureLibrary:
             return self._import_native(source)
 
         with open_capture(source) as reader:
-            writer = CaptureWriter(self.root)
+            writer = CaptureWriter(
+                self.root,
+                stop_bytes=0,
+                free_reserve_bytes=self.free_reserve_bytes,
+            )
             path = writer.start({"name": source.stem, "importedFromSchema": reader.header.get("schema"), "contractFeatures": reader.header.get("contractFeatures", [])})
             session_index = -1
             last_session = 0
             try:
                 for packet in reader.packets():
                     writer.packet(packet["datagram"], int(packet["receivedMonotonicUs"]), packet["observedAtUtc"])
+                    if not writer.active:
+                        raise OSError(
+                            errno.ENOSPC,
+                            "legacy capture import would exceed the free-space reserve",
+                        )
                     datagram = packet["datagram"]
                     if (
                         len(datagram) >= 68
@@ -739,6 +748,8 @@ class CaptureLibrary:
                 writer.stop(reason="imported")
             except Exception:
                 writer.stop(reason="import-failed")
+                for suffix in ("", "-wal", "-shm"):
+                    Path(str(path) + suffix).unlink(missing_ok=True)
                 raise
         return self._describe(path)
 
@@ -780,7 +791,9 @@ class CaptureLibrary:
         return self._describe(destination)
 
     def ranges(self, capture_id: str, query: str = "") -> list[dict[str, Any]]:
-        path = self.resolve(capture_id)
+        return self.ranges_from_path(self.resolve(capture_id), query)
+
+    def ranges_from_path(self, path: Path, query: str = "") -> list[dict[str, Any]]:
         if path.suffix != ".fstlcap":
             return []
         with closing(_connect(path, writable=False)) as connection:
@@ -792,7 +805,9 @@ class CaptureLibrary:
             return [{"id": row["range_id"], "name": row["name"], "sessionIndex": row["session_index"], "startUs": row["start_us"], "endUs": row["end_us"]} for row in rows]
 
     def sessions(self, capture_id: str) -> list[dict[str, Any]]:
-        path = self.resolve(capture_id)
+        return self.sessions_from_path(self.resolve(capture_id))
+
+    def sessions_from_path(self, path: Path) -> list[dict[str, Any]]:
         if path.suffix != ".fstlcap":
             return []
         with closing(_connect(path, writable=False)) as connection:

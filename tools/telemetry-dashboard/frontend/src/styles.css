@@ -770,7 +770,7 @@ main { grid-row: 2; grid-column: 2; min-width: 0; overflow: auto; padding: 22px 
 .marker-create { display: grid; grid-template-columns: 1fr auto; gap: 6px; }
 .marker-drawer input { min-width: 0; padding: 7px; color: #d9f3f4; border: 1px solid var(--line); background: #061018; font: 9px "IBM Plex Mono"; }
 .marker-list { display: grid; gap: 4px; }
-.marker-list > div { display: grid; grid-template-columns: 1fr 32px 32px; gap: 4px; border-left: 2px solid transparent; }
+.marker-list > div { display: grid; grid-template-columns: 1fr repeat(4, 44px); gap: 4px; border-left: 2px solid transparent; }
 .marker-list > div.active { border-left-color: var(--amber); }
 .marker-list > div > button:first-child { display: flex; justify-content: space-between; gap: 8px; text-align: left; }
 .marker-list span { color: var(--muted); }

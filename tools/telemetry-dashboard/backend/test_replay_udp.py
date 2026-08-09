@@ -6,11 +6,13 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from dashboard_runtime import TelemetryRuntime
 from replay_udp import (
     CAPTURED_FRAGMENT_LIMIT,
     PEER_IDLE_TIMEOUT_US,
+    ReplayPeer,
     ReplayUdpProducer,
 )
 import fstl_client_core as fstl
@@ -183,6 +185,50 @@ class ReplayUdpProducerTest(unittest.TestCase):
         self.assertEqual(0, fields["heartbeat_interval_ms"])
         self.assertEqual(0, producer.snapshot()["clientCount"])
         producer.stop()
+
+    def test_corrupt_client_datagrams_never_allocate_a_peer(self) -> None:
+        source = populated_client()
+        producer = ReplayUdpProducer(lambda: source.state, lambda: 0, lambda _: None)
+        nonce, sent_us = 101, 202
+        hello = bytearray(fstl.pack_header(
+            message_type=2,
+            flags=0,
+            session_id=0,
+            sequence=1,
+            sent_us=sent_us,
+            message_id=1,
+            payload=fstl.hello_payload(nonce, sent_us),
+        ))
+
+        bad_magic = bytearray(hello)
+        bad_magic[0] ^= 0xFF
+        bad_crc = bytearray(hello)
+        bad_crc[-1] ^= 0xFF
+        for datagram in (bad_magic, bad_crc):
+            producer._receive(bytes(datagram), ("127.0.0.1", 50000))
+
+        self.assertEqual(0, producer.snapshot()["clientCount"])
+
+    def test_virtual_wire_clock_advances_while_playing_and_freezes_on_pause(self) -> None:
+        source = populated_client()
+        position_us = [1_000_000]
+        playing = [True]
+        with mock.patch("replay_udp.fstl.now_us", return_value=5_000_000):
+            producer = ReplayUdpProducer(
+                lambda: source.state,
+                lambda: position_us[0],
+                lambda _: None,
+                lambda: playing[0],
+            )
+        peer = ReplayPeer(("127.0.0.1", 50000), 1, clock_offset_us=4_000_000)
+
+        with mock.patch("replay_udp.fstl.now_us", return_value=5_400_000):
+            self.assertEqual(5_400_000, producer._wire_time(peer))
+            position_us[0] = 1_400_000
+            playing[0] = False
+            producer.synchronize_clock()
+        with mock.patch("replay_udp.fstl.now_us", return_value=6_000_000):
+            self.assertEqual(5_400_000, producer._wire_time(peer))
 
     def test_inactive_client_slot_expires_and_accepts_a_replacement(self) -> None:
         source = populated_client()

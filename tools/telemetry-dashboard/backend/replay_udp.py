@@ -119,6 +119,11 @@ class ReplayUdpProducer:
         self._error: str | None = None
         self._refused_clients = 0
         self._rejected_commands = 0
+        clock_now = fstl.now_us()
+        self._clock_source_position_us = max(0, int(self._position_provider()))
+        self._clock_position_us = self._clock_source_position_us
+        self._clock_observed_us = clock_now
+        self._clock_playing = bool(self._playing_provider())
 
     def snapshot(self) -> dict[str, Any]:
         with self._lock:
@@ -193,7 +198,7 @@ class ReplayUdpProducer:
         with self._lock:
             peers = list(self._peers.values())
             now = fstl.now_us()
-            sample = self._position_provider()
+            sample = self._virtual_position(now)
             for peer in peers:
                 if peer.session_started:
                     payload = struct.pack("<BBHIQ", 4, 1, 0, peer.baseline, sample)
@@ -214,6 +219,16 @@ class ReplayUdpProducer:
                     or state.manifest_id != peer.manifest_id
                 ):
                     self._send_snapshot(peer, fstl.now_us(), snapshot_flag=2)
+
+    def synchronize_clock(self) -> None:
+        """Anchor the virtual producer clock to an authoritative playhead."""
+        with self._lock:
+            now = fstl.now_us()
+            position = max(0, int(self._position_provider()))
+            self._clock_source_position_us = position
+            self._clock_position_us = position
+            self._clock_observed_us = now
+            self._clock_playing = bool(self._playing_provider())
 
     def observe_capture_datagram(self, datagram: bytes) -> None:
         """Re-emit validated delta/event messages after transport reassembly."""
@@ -309,10 +324,17 @@ class ReplayUdpProducer:
     def _receive(self, datagram: bytes, endpoint: tuple[str, int]) -> None:
         try:
             header = decoder.read_header(datagram)
-            if int(header["fragment_count"]) != 1:
-                return
-            payload = datagram[fstl.HEADER_SIZE :]
             message_type = int(header["message_type"])
+            decoder.decode_transport_sequence(
+                [datagram],
+                "replay-client-ingress",
+                {
+                    "acceptedMinorRange": [0, 1]
+                    if message_type == 2
+                    else [1, 1]
+                },
+            )
+            payload = datagram[fstl.HEADER_SIZE :]
             decoded = decoder.decode_message(
                 message_type,
                 int(header["flags"]),
@@ -342,7 +364,7 @@ class ReplayUdpProducer:
                 peer = ReplayPeer(
                     endpoint,
                     secrets.randbits(63) or 1,
-                    clock_offset_us=now - self._position_provider(),
+                    clock_offset_us=now - self._virtual_position(now),
                     last_received_us=now,
                 )
                 self._peers[endpoint] = peer
@@ -651,4 +673,20 @@ class ReplayUdpProducer:
             )
 
     def _wire_time(self, peer: ReplayPeer) -> int:
-        return max(0, peer.clock_offset_us + self._position_provider())
+        return max(0, peer.clock_offset_us + self._virtual_position(fstl.now_us()))
+
+    def _virtual_position(self, now_us: int) -> int:
+        reported = max(0, int(self._position_provider()))
+        playing = bool(self._playing_provider())
+        if reported != self._clock_source_position_us:
+            self._clock_source_position_us = reported
+            self._clock_position_us = reported
+            self._clock_observed_us = now_us
+        elif playing != self._clock_playing:
+            if self._clock_playing:
+                self._clock_position_us += max(0, now_us - self._clock_observed_us)
+            self._clock_observed_us = now_us
+        self._clock_playing = playing
+        if playing:
+            return self._clock_position_us + max(0, now_us - self._clock_observed_us)
+        return self._clock_position_us

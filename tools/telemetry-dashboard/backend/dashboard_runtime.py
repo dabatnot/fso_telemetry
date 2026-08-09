@@ -893,16 +893,21 @@ class TelemetryRuntime:
         try:
             header = capture.header
             self.replay_state["captureSchema"] = header.get("schema")
-            self.replay_state["captureId"] = header.get("captureId")
+            self.replay_state["captureId"] = (
+                header.get("captureId") or self.replay_state.get("captureId")
+            )
             features = header.get("contractFeatures", [])
             self.replay_state["contractFeatures"] = (
                 list(features) if isinstance(features, list) else []
             )
             self.replay_state["packetCount"] = capture.packet_count
             self.replay_state["durationUs"] = capture.duration_us
-            capture_id = self.replay_state.get("captureId")
-            self.replay_state["ranges"] = self.capture_library.ranges(str(capture_id)) if capture_id else []
-            self.replay_state["sessionBoundaries"] = self.capture_library.sessions(str(capture_id)) if capture_id else []
+            self.replay_state["ranges"] = self.capture_library.ranges_from_path(
+                capture.path
+            )
+            self.replay_state["sessionBoundaries"] = (
+                self.capture_library.sessions_from_path(capture.path)
+            )
             self._publish_replay_metadata()
             self.client = self._new_replay_client()
             self._replay_udp_client = self.client
@@ -978,6 +983,7 @@ class TelemetryRuntime:
                     )
                     seek_playhead_us = None
                     self.replay_state["positionUs"] = committed_playhead_us
+                    self.replay_udp.synchronize_clock()
                     self.replay_state["seeking"] = False
                     self.replay_state["previewing"] = False
                     self.replay_state["previewPositionUs"] = None
@@ -995,6 +1001,7 @@ class TelemetryRuntime:
                 if self.replay_state["position"] >= capture.packet_count:
                     if self.replay_state["playing"]:
                         self.replay_state["playing"] = False
+                        self.replay_udp.synchronize_clock()
                         self._publish_replay_metadata()
                     self._replay_wakeup.wait(0.1)
                     self._replay_wakeup.clear()
@@ -1008,40 +1015,54 @@ class TelemetryRuntime:
                 received_us = int(item["receivedMonotonicUs"])
                 item_timeline_us = int(item.get("timelineUs", 0))
                 active_range = next((item_range for item_range in self.replay_state["ranges"] if item_range["id"] == self.replay_state.get("activeRangeId")), None)
-                if active_range is not None and item_timeline_us > int(active_range["endUs"]):
+                range_end_us = int(active_range["endUs"]) if active_range is not None else None
+                reaches_range_end = range_end_us is not None and item_timeline_us > range_end_us
+                wait_target_us = range_end_us if reaches_range_end else item_timeline_us
+                if previous_us is not None:
+                    delay = max(0.0, (wait_target_us - previous_us) / 1_000_000.0)
+                    wait_started = time.monotonic()
+                    deadline = time.monotonic() + delay
+                    interrupted = False
+                    while not self._stop.is_set() and not self._mode_change.is_set() and time.monotonic() < deadline:
+                        if self._replay_wakeup.wait(min(0.1, deadline - time.monotonic())):
+                            self._replay_wakeup.clear()
+                            if (
+                                not self.replay_state["playing"]
+                                or self._replay_seek_target is not None
+                                or self._replay_seek_time_us is not None
+                                or self._replay_preview_time_us is not None
+                            ):
+                                interrupted = True
+                                break
+                    if self._stop.is_set():
+                        return
+                    if interrupted:
+                        elapsed_us = max(
+                            0,
+                            int((time.monotonic() - wait_started) * 1_000_000),
+                        )
+                        previous_us = min(wait_target_us, previous_us + elapsed_us)
+                        self.replay_state["positionUs"] = previous_us
+                        self.replay_udp.synchronize_clock()
+                        self._publish_replay_metadata()
+                        continue
+                if reaches_range_end and active_range is not None:
+                    self.replay_state["positionUs"] = int(active_range["endUs"])
+                    previous_us = int(active_range["endUs"])
                     if self.replay_state.get("loop"):
                         self._replay_seek_time_us = int(active_range["startUs"])
                     else:
                         self.replay_state["playing"] = False
                         self._replay_seek_time_us = int(active_range["endUs"])
+                    self.replay_udp.synchronize_clock()
                     self._replay_wakeup.set()
                     continue
-                if previous_us is not None:
-                    delay = max(0.0, (item_timeline_us - previous_us) / 1_000_000.0)
-                    deadline = time.monotonic() + delay
-                    while not self._stop.is_set() and not self._mode_change.is_set() and time.monotonic() < deadline:
-                        if self._replay_wakeup.wait(min(0.1, deadline - time.monotonic())):
-                            self._replay_wakeup.clear()
-                            break
-                    if self._stop.is_set():
-                        return
-                    if (
-                        not self.replay_state["playing"]
-                        or self._replay_seek_target is not None
-                        or self._replay_seek_time_us is not None
-                        or self._replay_preview_time_us is not None
-                    ):
-                        if (
-                            self._replay_seek_target is not None
-                            or self._replay_seek_time_us is not None
-                        ):
-                            previous_us = None
-                        continue
                 previous_us = item_timeline_us
                 datagram = item["datagram"]
                 observed_utc = item["observedAtUtc"]
                 self.replay_state["position"] = index + 1
                 self.replay_state["positionUs"] = item_timeline_us
+                self.replay_udp.synchronize_clock()
                 previous_client = self.client
                 self.client = self._prepare_replay_packet_client(
                     self.client,

@@ -48,4 +48,24 @@ describe("ReplayTimeline", () => {
     fireEvent.change(screen.getByPlaceholderText("Rechercher un marqueur"), { target: { value: "unknown" } });
     expect(screen.queryByText("Missile launch")).toBeNull();
   });
+
+  it("moves either marker boundary to the current playhead", () => {
+    const onUpdateRange = vi.fn();
+    render(<LanguageProvider><ReplayTimeline snapshot={replaySnapshot()} onControl={vi.fn()} onPreview={vi.fn()} onCreateRange={vi.fn()} onUpdateRange={onUpdateRange} onDeleteRange={vi.fn()} /></LanguageProvider>);
+    fireEvent.click(screen.getByRole("button", { name: "MARQUEURS 1" }));
+
+    fireEvent.click(screen.getByRole("button", { name: /POINT D’ENTRÉE.*Missile launch/ }));
+    expect(onUpdateRange).toHaveBeenCalledWith(expect.objectContaining({
+      id: "range-1",
+      startUs: 2_000_000,
+      endUs: 3_000_000
+    }));
+
+    fireEvent.click(screen.getByRole("button", { name: /POINT DE SORTIE.*Missile launch/ }));
+    expect(onUpdateRange).toHaveBeenCalledWith(expect.objectContaining({
+      id: "range-1",
+      startUs: 1_000_000,
+      endUs: 2_000_000
+    }));
+  });
 });

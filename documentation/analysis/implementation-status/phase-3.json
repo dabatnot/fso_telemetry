@@ -3,7 +3,7 @@
   "phase": 3,
   "phaseDirectory": "documentation/analysis/specs/3-Ciblage-et-capteurs",
   "contractFingerprint": "sha256:942e8ada4756238765113418c07663ba4fb339a74e30c2c454f24f09fb61af7f",
-  "updatedAtUtc": "2026-08-09T16:31:23Z",
+  "updatedAtUtc": "2026-08-09T17:01:53Z",
   "requirements": [
     {
       "id": "P3-REQ-001",
@@ -84,13 +84,27 @@
       "observable": "Une session Phase 3 négocie exactement FSTL 1.1.",
       "expectedAutomatedProof": "`telemetry_phase3_session_tests`",
       "implementationStatus": "implemented",
-      "implementationSummary": "Le handshake CockpitSensors et le producteur UDP de replay n'acceptent qu'une plage incluant FSTL 1.1, sélectionnent exactement la minor 1 et refusent FSTL 1.0 seul sans créer de session durable.",
+      "implementationSummary": "Le handshake CockpitSensors et le producteur UDP de replay n'acceptent qu'une plage incluant FSTL 1.1, sélectionnent exactement la minor 1 et refusent FSTL 1.0 seul sans créer de session durable. L'ingress client du producteur de replay valide aussi l'en-tête canonique, les longueurs et les CRC transport/message avant toute allocation de peer.",
       "implementationPaths": [
         "code/telemetry/session_controller.cpp",
         "code/telemetry/session_controller.h",
         "tools/telemetry-dashboard/backend/replay_udp.py"
       ],
       "proofs": [
+        {
+          "id": "P3-REQ-003-AUTO-03",
+          "kind": "automated",
+          "command": "build/telemetry-dashboard/.venv/Scripts/python.exe -m unittest discover -p test_*.py (cwd tools/telemetry-dashboard/backend)",
+          "status": "passed",
+          "inputs": [
+            "tools/telemetry-dashboard/backend/replay_udp.py",
+            "tools/telemetry-dashboard/backend/test_replay_udp.py"
+          ],
+          "inputFingerprint": "sha256:33e1c3dd48db4e568dfddc7a6c118ee1b85908bb653d21368562bbd416577c55",
+          "observedAtUtc": "2026-08-09T17:01:53Z",
+          "result": "49 tests backend passent ; un HELLO corrompu par magic ou CRC est rejeté avant toute allocation de client par le producteur UDP de replay.",
+          "resultRef": null
+        },
         {
           "id": "P3-REQ-003-AUTO-02",
           "kind": "automated",
@@ -1913,7 +1927,7 @@
       "observable": "Le client indépendant conserve les sample times bruts ; le dashboard suit la cible `TARGET_STATE` et les alertes `HUD_ALERT_STATE` sans décision inventée.",
       "expectedAutomatedProof": "`telemetry_phase3_loopback_tests`",
       "implementationStatus": "implemented",
-      "implementationSummary": "Le décodeur conserve les sample times, valeurs brutes et enveloppes de records validées nécessaires au replay. Le dashboard suit TARGET_STATE pour la sélection et conserve les décisions HUD autoritaires. Simpit Lab ajoute une bibliothèque .fstlcap compressée et indexée, une timeline microseconde avec plages nommées, une prévisualisation locale sans restart réseau et un producteur UDP FSTL 1.1 à quatre clients indépendants. Le replay élimine les groupes fragmentaires incomplets dus aux pertes brutes enregistrées sans interrompre les états applicatifs, et toute autre erreur de lecture met la lecture en pause sans tuer le worker. Les imports et suppressions respectent la réserve disque, le seek conserve le playhead demandé et les clients UDP inactifs libèrent leur emplacement. Chaque commande Pause/Lecture est publiée immédiatement afin que les contrôles UI restent synchronisés même lorsqu'aucun paquet d'état ne suit. Toute l'interface active reste disponible en français et en anglais.",
+      "implementationSummary": "Le décodeur conserve les sample times, valeurs brutes et enveloppes de records validées nécessaires au replay. Le dashboard suit TARGET_STATE pour la sélection et conserve les décisions HUD autoritaires. Simpit Lab ajoute une bibliothèque .fstlcap compressée et indexée, une timeline microseconde avec plages nommées, une prévisualisation locale sans restart réseau et un producteur UDP FSTL 1.1 à quatre clients indépendants. Le replay élimine les groupes fragmentaires incomplets dus aux pertes brutes enregistrées sans interrompre les états applicatifs, et toute autre erreur de lecture met la lecture en pause sans tuer le worker. Les imports et suppressions respectent la réserve disque, le seek conserve le playhead demandé et les clients UDP inactifs libèrent leur emplacement. Les captures natives peuvent être lues directement hors bibliothèque, les imports legacy échouent sans copie partielle lorsque la réserve disque est atteinte, les plages attendent leur borne de fin exacte et leurs points IN/OUT sont ajustables depuis le curseur. Chaque commande Pause/Lecture est publiée immédiatement afin que les contrôles UI restent synchronisés même lorsqu'aucun paquet d'état ne suit. Toute l'interface active reste disponible en français et en anglais.",
       "implementationPaths": [
         "test/telemetry/protocol/tools/fstl_client_core.py",
         "test/telemetry/protocol/tools/fstl_reference_decoder.py",
@@ -1945,6 +1959,27 @@
         "tools/telemetry-dashboard/frontend/src/types.ts"
       ],
       "proofs": [
+        {
+          "id": "P3-REQ-045-AUTO-07",
+          "kind": "automated",
+          "command": "build/telemetry-dashboard/.venv/Scripts/python.exe -m unittest discover -p test_*.py (cwd tools/telemetry-dashboard/backend) ; npm test -- ReplayTimeline.test.tsx ; npm run build (cwd tools/telemetry-dashboard/frontend)",
+          "status": "passed",
+          "inputs": [
+            "tools/telemetry-dashboard/backend/capture_store.py",
+            "tools/telemetry-dashboard/backend/dashboard_runtime.py",
+            "tools/telemetry-dashboard/backend/replay_udp.py",
+            "tools/telemetry-dashboard/backend/test_capture_store.py",
+            "tools/telemetry-dashboard/backend/test_dashboard_runtime.py",
+            "tools/telemetry-dashboard/backend/test_replay_udp.py",
+            "tools/telemetry-dashboard/frontend/src/ReplayTimeline.tsx",
+            "tools/telemetry-dashboard/frontend/src/ReplayTimeline.test.tsx",
+            "tools/telemetry-dashboard/frontend/src/styles.css"
+          ],
+          "inputFingerprint": "sha256:0a0b70963a26a3d19718671fb5dd935cf4b7c0f47cec248606e919715b20d5f3",
+          "observedAtUtc": "2026-08-09T17:01:53Z",
+          "result": "49 tests backend, 74 tests frontend et le build Vite passent. La lecture directe hors bibliothèque, l'import legacy fail-closed, la borne temporelle exacte des plages, l'horloge UDP continue et l'ajustement IN/OUT sont couverts.",
+          "resultRef": null
+        },
         {
           "id": "P3-REQ-045-AUTO-01",
           "kind": "automated",
@@ -2134,7 +2169,7 @@
       "observable": "Après perte d’un delta Phase 3, le client converge sans fuite ni référence pendante.",
       "expectedAutomatedProof": "`telemetry_phase3_replication_tests` + loopback `--drop-once delta`",
       "implementationStatus": "implemented",
-      "implementationSummary": "Le client indépendant ignore une perte unique de delta puis reconstruit le delta cumulatif suivant depuis la baseline ACKée. Le bridge conserve sa reconnexion durable. Le lecteur de capture écarte le plus ancien groupe fragmentaire incomplet lorsqu'une perte réseau brute enregistrée épuiserait le quota de réassemblage, sans interrompre les états applicatifs. Pause, Lecture et seek réveillent le worker, conservent le playhead temporel demandé et publient immédiatement leur état courant. Le producteur de replay régénère pour chaque client baseline, séquences, ACK, retransmissions, heartbeat et resync ; les peers disparus expirent et un seek, une boucle ou une frontière source ferme la session précédente avant la nouvelle négociation.",
+      "implementationSummary": "Le client indépendant ignore une perte unique de delta puis reconstruit le delta cumulatif suivant depuis la baseline ACKée. Le bridge conserve sa reconnexion durable. Le lecteur de capture écarte le plus ancien groupe fragmentaire incomplet lorsqu'une perte réseau brute enregistrée épuiserait le quota de réassemblage, sans interrompre les états applicatifs. Pause, Lecture et seek réveillent le worker, conservent le playhead temporel demandé et publient immédiatement leur état courant. Le producteur de replay régénère pour chaque client baseline, séquences, ACK, retransmissions, heartbeat et resync ; son horloge virtuelle progresse continûment entre deux paquets, se fige en pause, et les datagrammes clients invalides sont rejetés avant session. Les peers disparus expirent et un seek, une boucle ou une frontière source ferme la session précédente avant la nouvelle négociation.",
       "implementationPaths": [
         "code/telemetry/protocol/telemetry_replication.cpp",
         "code/telemetry/protocol/telemetry_replication.h",
@@ -2149,6 +2184,24 @@
         "tools/telemetry-dashboard/backend/requirements.lock.txt"
       ],
       "proofs": [
+        {
+          "id": "P3-REQ-046-AUTO-08",
+          "kind": "automated",
+          "command": "build/telemetry-dashboard/.venv/Scripts/python.exe -m unittest discover -p test_*.py (cwd tools/telemetry-dashboard/backend)",
+          "status": "passed",
+          "inputs": [
+            "tools/telemetry-dashboard/backend/capture_store.py",
+            "tools/telemetry-dashboard/backend/dashboard_runtime.py",
+            "tools/telemetry-dashboard/backend/replay_udp.py",
+            "tools/telemetry-dashboard/backend/test_capture_store.py",
+            "tools/telemetry-dashboard/backend/test_dashboard_runtime.py",
+            "tools/telemetry-dashboard/backend/test_replay_udp.py"
+          ],
+          "inputFingerprint": "sha256:5a179a496786fa9aa35c0720c4fd1ff3a36dbd7643b07705e14ecdc9237042b3",
+          "observedAtUtc": "2026-08-09T17:01:53Z",
+          "result": "49 tests backend passent ; l'horloge de replay progresse en temps réel entre paquets, reste fixe en pause et les transitions seek/plage conservent un worker et des sessions cohérents.",
+          "resultRef": null
+        },
         {
           "id": "P3-REQ-046-AUTO-01",
           "kind": "automated",

@@ -163,6 +163,203 @@ class DashboardRuntimeTest(unittest.TestCase):
             finally:
                 runtime.stop()
 
+    def test_native_replay_path_loads_outside_the_configured_library(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            external = root / "external"
+            library = root / "library"
+            external.mkdir()
+            nonce, t0 = 78, 89
+            hello = fstl.pack_header(
+                message_type=2,
+                flags=0,
+                session_id=0,
+                sequence=1,
+                sent_us=t0,
+                message_id=1,
+                payload=fstl.hello_payload(nonce, t0),
+            )
+            session = 0xBBCCDDEE
+            writer = CaptureWriter(external)
+            path = writer.start({"name": "external replay"})
+            writer.packet(
+                contract.packet(
+                    3,
+                    contract.welcome_for(hello),
+                    session_id=session,
+                    sequence=1,
+                    sent_us=100,
+                    flags=2,
+                ),
+                100,
+                "1970-01-01T00:00:00.000100Z",
+            )
+            writer.packet(
+                contract.packet(
+                    4,
+                    contract.session_begin_payload(),
+                    session_id=session,
+                    sequence=2,
+                    sent_us=101,
+                    flags=2,
+                ),
+                101,
+                "1970-01-01T00:00:00.000101Z",
+            )
+            writer.packet(
+                contract.packet(
+                    6,
+                    contract.v11_payload("minimal-with-player", ".bin"),
+                    session_id=session,
+                    sequence=3,
+                    sent_us=102,
+                    flags=6,
+                ),
+                102,
+                "1970-01-01T00:00:00.000102Z",
+            )
+            writer.stop()
+
+            runtime = TelemetryRuntime(
+                host="127.0.0.1",
+                port=42042,
+                flight_hz=30,
+                systems_hz=10,
+                mission_heartbeat_ms=500,
+                replay_path=path,
+                capture_dir=library,
+            )
+            runtime.start()
+            try:
+                loaded = self.wait_for(
+                    lambda: (
+                        snapshot
+                        if (snapshot := runtime.latest())["replay"]["packetCount"] == 3
+                        else None
+                    )
+                )
+                self.assertIsNotNone(loaded)
+                self.assertEqual([], loaded["replay"]["ranges"])
+                self.assertEqual([], loaded["replay"]["sessionBoundaries"])
+                runtime.replay_control(playing=True)
+                self.assertTrue(
+                    self.wait_for(
+                        lambda: runtime.latest()["connection"]["status"] == "Live"
+                    )
+                )
+                self.assertTrue(runtime._thread.is_alive())
+                self.assertNotIn("error", runtime.latest()["connection"])
+            finally:
+                runtime.stop()
+
+    def test_active_range_waits_until_its_exact_end_before_pausing(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            nonce, t0 = 79, 90
+            hello = fstl.pack_header(
+                message_type=2,
+                flags=0,
+                session_id=0,
+                sequence=1,
+                sent_us=t0,
+                message_id=1,
+                payload=fstl.hello_payload(nonce, t0),
+            )
+            session = 0xCCDDEEFF
+            writer = CaptureWriter(root)
+            writer.start({"name": "range boundary timing"})
+            packets = (
+                contract.packet(
+                    3,
+                    contract.welcome_for(hello),
+                    session_id=session,
+                    sequence=1,
+                    sent_us=100,
+                    flags=2,
+                ),
+                contract.packet(
+                    4,
+                    contract.session_begin_payload(),
+                    session_id=session,
+                    sequence=2,
+                    sent_us=101,
+                    flags=2,
+                ),
+                contract.packet(
+                    6,
+                    contract.v11_payload("minimal-with-player", ".bin"),
+                    session_id=session,
+                    sequence=3,
+                    sent_us=102,
+                    flags=6,
+                ),
+                b"future-packet-not-reached",
+            )
+            for datagram, received_us in zip(
+                packets,
+                (100, 101, 102, 1_000_102),
+            ):
+                writer.packet(
+                    datagram,
+                    received_us,
+                    f"1970-01-01T00:00:00.{received_us:06d}Z",
+                )
+            writer.stop()
+
+            runtime = TelemetryRuntime(
+                host="127.0.0.1",
+                port=42042,
+                flight_hz=30,
+                systems_hz=10,
+                mission_heartbeat_ms=500,
+                capture_dir=root,
+            )
+            capture_id = runtime.captures()[0]["id"]
+            marker = runtime.capture_library.create_range(
+                capture_id,
+                "exact boundary",
+                2,
+                200_002,
+            )
+            runtime.start()
+            try:
+                runtime.load_replay(capture_id)
+                self.assertTrue(
+                    self.wait_for(
+                        lambda: runtime.replay_state["packetCount"] == 4
+                        and any(
+                            item["id"] == marker["id"]
+                            for item in runtime.replay_state["ranges"]
+                        )
+                    )
+                )
+                runtime.replay_control(
+                    active_range_id=marker["id"],
+                    playing=False,
+                )
+                self.assertTrue(
+                    self.wait_for(
+                        lambda: runtime.replay_state["positionUs"] == 2
+                        and not runtime.replay_state["seeking"]
+                    )
+                )
+
+                started = time.monotonic()
+                runtime.replay_control(playing=True)
+                self.assertTrue(runtime.replay_state["playing"])
+                self.assertTrue(
+                    self.wait_for(
+                        lambda: not runtime.replay_state["playing"]
+                        and runtime.replay_state["positionUs"] == 200_002,
+                        timeout=1.0,
+                    )
+                )
+                self.assertGreaterEqual(time.monotonic() - started, 0.15)
+                self.assertEqual(3, runtime.replay_state["position"])
+                self.assertTrue(runtime._thread.is_alive())
+            finally:
+                runtime.stop()
+
     def test_microsecond_seek_preserves_playhead_and_waits_for_next_packet(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

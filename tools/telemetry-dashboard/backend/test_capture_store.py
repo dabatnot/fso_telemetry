@@ -97,6 +97,32 @@ class CaptureStoreTest(unittest.TestCase):
             self.assertEqual(CAPTURE_SCHEMA, imported["schema"])
             self.assertEqual(b"fstl", load_capture(Path(imported["path"]))[1][0]["datagram"])
 
+    def test_legacy_import_fails_and_removes_partial_copy_at_free_space_limit(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            legacy = root / "legacy-source.jsonl"
+            lines = [json.dumps({"schema": LEGACY_CAPTURE_SCHEMAS[1], "kind": "header"})]
+            for monotonic_us in (1, 1_000_002):
+                lines.append(json.dumps({
+                    "kind": "datagram",
+                    "receivedMonotonicUs": str(monotonic_us),
+                    "observedAtUtc": "1970-01-01T00:00:00.000001Z",
+                    "datagramBase64": base64.b64encode(b"fstl").decode("ascii"),
+                }))
+            legacy.write_text("\n".join(lines) + "\n", encoding="utf-8")
+            library_root = root / "library"
+            library = CaptureLibrary(library_root, free_reserve_bytes=1)
+
+            with mock.patch(
+                "capture_store.shutil.disk_usage",
+                return_value=SimpleNamespace(free=0),
+            ):
+                with self.assertRaises(OSError) as raised:
+                    library.import_path(legacy)
+
+            self.assertEqual(errno.ENOSPC, raised.exception.errno)
+            self.assertEqual([], list(library_root.glob("*.fstlcap*")))
+
     def test_native_import_preserves_ranges_checkpoints_sessions_and_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
