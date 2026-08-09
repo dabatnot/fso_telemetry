@@ -8,6 +8,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from dashboard_runtime import (
     CAPTURE_SCHEMA,
@@ -19,6 +20,7 @@ from dashboard_runtime import (
     configure_live_udp_socket,
     load_capture,
 )
+import fstl_client_core as fstl
 
 import test_fstl_console_client_contract as contract
 
@@ -109,6 +111,7 @@ class DashboardRuntimeTest(unittest.TestCase):
             snapshot = runtime.latest()
             self.assertEqual("DashboardSnapshotV1", snapshot["schema"])
             self.assertEqual("Disconnected", snapshot["connection"]["status"])
+            self.assertEqual("idle", snapshot["connection"]["recoveryState"])
             self.assertFalse(snapshot["transport"]["synchronized"])
             self.assertEqual([], snapshot["quality"]["channels"])
 
@@ -174,6 +177,7 @@ class DashboardRuntimeTest(unittest.TestCase):
                         lambda: runtime.latest()["connection"]["status"] == "Stale"
                     )
                 )
+                self.assertEqual("resyncing", runtime.latest()["connection"]["recoveryState"])
 
                 resync_request = None
                 resync_address = None
@@ -213,6 +217,7 @@ class DashboardRuntimeTest(unittest.TestCase):
                     )
                 )
                 self.assertIsNotNone(recovered)
+                self.assertEqual("idle", recovered["connection"]["recoveryState"])
             finally:
                 runtime.stop()
 
@@ -292,11 +297,9 @@ class DashboardRuntimeTest(unittest.TestCase):
                         second_hello, second_address = packet_bytes, address
                         break
                 self.assertIsNotNone(second_hello)
-                self.assertEqual(
-                    "Stale",
-                    runtime.latest()["connection"]["status"],
-                    "recovery negotiation must retain the last stale image",
-                )
+                self.assertEqual("reconnecting", runtime.latest()["connection"]["recoveryState"])
+                self.assertEqual("Disconnected", runtime.latest()["connection"]["status"])
+                self.assertEqual("0", runtime.latest()["connection"]["sessionId"])
 
                 second_session = 0x8877665544332211
                 server.sendto(
@@ -341,6 +344,105 @@ class DashboardRuntimeTest(unittest.TestCase):
                     )
                 )
                 self.assertIsNotNone(recovered)
+                self.assertEqual("idle", recovered["connection"]["recoveryState"])
+            finally:
+                runtime.stop()
+
+    def test_manual_live_commands_are_idempotent_and_preserve_the_last_image(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            runtime = TelemetryRuntime(
+                host="127.0.0.1",
+                port=42042,
+                flight_hz=30,
+                systems_hz=10,
+                mission_heartbeat_ms=500,
+                capture_dir=Path(directory),
+            )
+            with runtime._lock:
+                runtime._snapshot["connection"]["status"] = "Stale"
+                runtime._snapshot["connection"]["sessionId"] = "42"
+                runtime._snapshot["records"] = {"FLIGHT_STATE": [{"entity_id": "1"}]}
+            first = runtime.request_live_resync()
+            second = runtime.request_live_resync()
+            self.assertTrue(first["accepted"])
+            self.assertFalse(first["pending"])
+            self.assertTrue(second["pending"])
+            self.assertEqual("resyncing", runtime.latest()["connection"]["recoveryState"])
+
+            first = runtime.request_live_reconnect()
+            second = runtime.request_live_reconnect()
+            self.assertFalse(first["pending"])
+            self.assertTrue(second["pending"])
+            retained = runtime.latest()
+            self.assertEqual("Disconnected", retained["connection"]["status"])
+            self.assertEqual("0", retained["connection"]["sessionId"])
+            self.assertEqual("reconnecting", retained["connection"]["recoveryState"])
+            self.assertEqual({"FLIGHT_STATE": [{"entity_id": "1"}]}, retained["records"])
+
+    def test_live_commands_are_rejected_in_replay_or_without_a_session(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            live = TelemetryRuntime(
+                host="127.0.0.1", port=42042, flight_hz=30, systems_hz=10,
+                mission_heartbeat_ms=500, capture_dir=Path(directory),
+            )
+            with self.assertRaisesRegex(ValueError, "active session"):
+                live.request_live_resync()
+            replay = TelemetryRuntime(
+                host="127.0.0.1", port=42042, flight_hz=30, systems_hz=10,
+                mission_heartbeat_ms=500, capture_dir=Path(directory),
+                replay_path=Path(directory) / "capture.ndjson",
+            )
+            with self.assertRaisesRegex(ValueError, "live mode"):
+                replay.request_live_resync()
+            with self.assertRaisesRegex(ValueError, "live mode"):
+                replay.request_live_reconnect()
+
+    def test_reconnect_keeps_retrying_until_a_late_producer_appears(self) -> None:
+        with tempfile.TemporaryDirectory() as directory, socket.socket(
+            socket.AF_INET, socket.SOCK_DGRAM
+        ) as server, mock.patch.object(fstl, "RELIABLE_WINDOW_US", 120_000):
+            server.bind(("127.0.0.1", 0))
+            server.settimeout(2.0)
+            runtime = TelemetryRuntime(
+                host="127.0.0.1",
+                port=server.getsockname()[1],
+                flight_hz=30,
+                systems_hz=10,
+                mission_heartbeat_ms=500,
+                capture_dir=Path(directory),
+            )
+            runtime.start()
+            try:
+                _, first_address = server.recvfrom(1200)
+                late_hello = None
+                late_address = None
+                deadline = time.monotonic() + 2.0
+                while time.monotonic() < deadline:
+                    packet_bytes, address = server.recvfrom(1200)
+                    if (
+                        contract.reference.read_header(packet_bytes)["message_type"] == 2
+                        and address != first_address
+                    ):
+                        late_hello, late_address = packet_bytes, address
+                        break
+                self.assertIsNotNone(late_hello)
+                session = 0xAABBCCDDEEFF0011
+                server.sendto(
+                    contract.packet(3, contract.welcome_for(late_hello), session_id=session,
+                                    sequence=1, sent_us=1_000_000, flags=2),
+                    late_address,
+                )
+                server.sendto(
+                    contract.packet(4, contract.session_begin_payload(), session_id=session,
+                                    sequence=2, sent_us=1_000_001, flags=2),
+                    late_address,
+                )
+                server.sendto(
+                    contract.packet(6, contract.v11_payload("minimal-with-player", ".bin"),
+                                    session_id=session, sequence=3, sent_us=1_000_002, flags=2),
+                    late_address,
+                )
+                self.assertTrue(self.wait_for(lambda: runtime.latest()["connection"]["status"] == "Live"))
             finally:
                 runtime.stop()
 

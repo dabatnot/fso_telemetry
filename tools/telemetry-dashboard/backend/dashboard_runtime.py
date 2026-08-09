@@ -350,11 +350,13 @@ class TelemetryRuntime:
             "captureSchema": None,
             "contractFeatures": [],
         }
+        self._recovery_state = "idle"
         self._snapshot = self._empty_snapshot("Synchronizing" if replay_path else "Disconnected")
         self._version = 0
         self._lock = threading.RLock()
         self._stop = threading.Event()
         self._replay_wakeup = threading.Event()
+        self._soft_resync_live = threading.Event()
         self._restart_live = threading.Event()
         self._replay_seek_target: int | None = None
         self._thread: threading.Thread | None = None
@@ -375,6 +377,7 @@ class TelemetryRuntime:
             "mode": self.mode,
             "connection": {
                 "status": status,
+                "recoveryState": self._recovery_state,
                 "host": self.host,
                 "port": self.port,
                 "sessionId": "0",
@@ -427,6 +430,7 @@ class TelemetryRuntime:
             "mode": self.mode,
             "connection": {
                 "status": state.status,
+                "recoveryState": self._recovery_state,
                 "host": self.host,
                 "port": self.port,
                 "sessionId": str(state.session_id),
@@ -474,29 +478,117 @@ class TelemetryRuntime:
         if self._thread is not None:
             self._thread.join(timeout=3.0)
 
+    def _set_recovery_overlay(
+        self,
+        recovery_state: str,
+        *,
+        status: str | None = None,
+        clear_session: bool = False,
+        error: str | None = None,
+    ) -> None:
+        """Publish connection progress without erasing the last cockpit image."""
+        if recovery_state not in ("idle", "resyncing", "reconnecting"):
+            raise ValueError("invalid recovery state")
+        with self._lock:
+            self._recovery_state = recovery_state
+            connection = self._snapshot["connection"]
+            connection["recoveryState"] = recovery_state
+            if status is not None:
+                connection["status"] = status
+            if clear_session:
+                connection["sessionId"] = "0"
+            if error is None:
+                connection.pop("error", None)
+            else:
+                connection["error"] = error
+            self._snapshot["publishedAtUtc"] = utc_now()
+            self._version += 1
+
+    def request_live_resync(self) -> dict[str, Any]:
+        if self.mode != "live":
+            raise ValueError("resync is available only in live mode")
+        with self._lock:
+            connection = self._snapshot["connection"]
+            if connection.get("sessionId") in (None, "0") or self._recovery_state == "reconnecting":
+                raise ValueError("resync requires an active session")
+            already_pending = self._soft_resync_live.is_set() or self._recovery_state == "resyncing"
+        self._soft_resync_live.set()
+        self._set_recovery_overlay("resyncing")
+        return {"accepted": True, "action": "resync", "pending": already_pending}
+
+    def request_live_reconnect(self) -> dict[str, Any]:
+        if self.mode != "live":
+            raise ValueError("reconnect is available only in live mode")
+        already_pending = self._restart_live.is_set() or self._recovery_state == "reconnecting"
+        self._soft_resync_live.clear()
+        self._restart_live.set()
+        self._set_recovery_overlay("reconnecting", status="Disconnected", clear_session=True)
+        return {"accepted": True, "action": "reconnect", "pending": already_pending}
+
+    def _open_live_socket(
+        self,
+        family: socket.AddressFamily,
+        previous_endpoint: tuple[Any, ...] | None,
+    ) -> tuple[socket.socket, tuple[Any, ...]]:
+        """Open a fresh connected endpoint, never reusing the previous tuple."""
+        rejected: list[socket.socket] = []
+        try:
+            for _ in range(4):
+                sock = socket.socket(family, socket.SOCK_DGRAM)
+                configure_live_udp_socket(sock)
+                sock.settimeout(0.1)
+                bind_address: tuple[Any, ...]
+                bind_address = ("::", 0) if family == socket.AF_INET6 else ("0.0.0.0", 0)
+                sock.bind(bind_address)
+                sock.connect((self.host, self.port))
+                endpoint = sock.getsockname()
+                if previous_endpoint is None or endpoint != previous_endpoint:
+                    return sock, endpoint
+                # Keep the undesired port occupied while asking the OS for a
+                # second ephemeral endpoint. This makes hard reconnects
+                # observably distinct even on Windows, which readily reuses
+                # recently closed UDP ports.
+                rejected.append(sock)
+            raise OSError("unable to allocate a fresh UDP endpoint")
+        finally:
+            for rejected_socket in rejected:
+                rejected_socket.close()
+
     def _run_live(self) -> None:
         family = socket.AF_INET6 if ":" in self.host else socket.AF_INET
         recovering_from_silence = False
+        previous_endpoint: tuple[Any, ...] | None = None
         while not self._stop.is_set():
             try:
-                with socket.socket(family, socket.SOCK_DGRAM) as sock:
-                    configure_live_udp_socket(sock)
-                    sock.settimeout(0.1)
-                    sock.connect((self.host, self.port))
+                sock, previous_endpoint = self._open_live_socket(family, previous_endpoint)
+                with sock:
                     self.client = fstl.ConsoleClient(sock, self.stale_us)
                     self.quality = QualityTracker(self.flight_hz, self.systems_hz, self.mission_heartbeat_ms)
                     self.client.begin()
                     at_us, at_utc = fstl.local_observation()
+                    last_progress_us = at_us
                     if not recovering_from_silence:
                         self._publish(at_us, at_utc)
-                    synchronizing_since_us: int | None = None
                     next_recovery_request_us = 0
                     while not self._stop.is_set():
                         if self._restart_live.is_set():
                             self._restart_live.clear()
+                            recovering_from_silence = True
                             break
                         at_us = fstl.now_us()
+                        if self._soft_resync_live.is_set():
+                            self._soft_resync_live.clear()
+                            if self.client.state.session_begun and self.client.state.session_id:
+                                self.client._resync(at_us)
+                                next_recovery_request_us = at_us + fstl.RELIABLE_WINDOW_US
+                        pending_resync_before_poll = self.client.pending_resync is not None
                         self.client.poll_reliable(at_us)
+                        if (
+                            pending_resync_before_poll
+                            and self.client.pending_resync is None
+                            and self.client.state.status == "Live"
+                        ):
+                            self._set_recovery_overlay("idle")
                         if (
                             self.client.state.status == "Disconnected"
                             and not self.client.state.welcomed
@@ -513,10 +605,13 @@ class TelemetryRuntime:
                             self.quality.observe_packet(datagram)
                             changed = self.client.receive(datagram, received_us, received_utc)
                             if changed:
+                                last_progress_us = received_us
                                 self.quality.observe_state(self.client.state, received_us)
                                 if self.client.state.status == "Live":
                                     recovering_from_silence = False
-                                    synchronizing_since_us = None
+                                    self._recovery_state = (
+                                        "resyncing" if self.client.pending_resync is not None else "idle"
+                                    )
                                     next_recovery_request_us = 0
                                     self._publish(received_us, received_utc)
                                 elif not recovering_from_silence:
@@ -533,6 +628,8 @@ class TelemetryRuntime:
                                 and self.client.state.stale_reason == "silence"
                             ):
                                 recovering_from_silence = True
+                                self._recovery_state = "resyncing"
+                                self._set_recovery_overlay("resyncing", status="Stale")
                         needs_recovery = (
                             self.client.state.session_begun
                             and (
@@ -547,11 +644,9 @@ class TelemetryRuntime:
                             )
                         )
                         if needs_recovery:
-                            if synchronizing_since_us is None:
-                                synchronizing_since_us = now
                             recovery_due = (
                                 self.client.state.status == "Stale"
-                                or now - synchronizing_since_us >= self.stale_us
+                                or now - last_progress_us >= self.stale_us
                             )
                             if (
                                 recovery_due
@@ -565,26 +660,23 @@ class TelemetryRuntime:
                                 # returns the dashboard to Live.
                                 self.client._resync(now)
                                 next_recovery_request_us = now + fstl.RELIABLE_WINDOW_US
-                            if (
-                                now - synchronizing_since_us
-                                >= self.recovery_reconnect_us
-                            ):
-                                # Some producer-side slots acknowledge RESYNC
-                                # after a focus loss but never schedule another
-                                # keyframe.  Preserve the published stale image
-                                # and rotate to a fresh endpoint.  If FSO is
-                                # still paused, this bounded cycle repeats
-                                # until one negotiation can publish Live state.
+                            if now - last_progress_us >= self.recovery_reconnect_us:
                                 recovering_from_silence = True
+                                self._set_recovery_overlay(
+                                    "reconnecting", status="Disconnected", clear_session=True
+                                )
                                 break
                         else:
-                            synchronizing_since_us = None
                             next_recovery_request_us = 0
                         if self.client.terminal_published:
                             self._publish(now, now_utc)
                             break
             except (OSError, ValueError, decoder.DecodeFailure) as exc:
-                if not recovering_from_silence:
+                if recovering_from_silence:
+                    self._set_recovery_overlay(
+                        "reconnecting", status="Disconnected", clear_session=True, error=str(exc)
+                    )
+                else:
                     with self._lock:
                         self._snapshot = self._empty_snapshot("Disconnected")
                         self._snapshot["connection"]["error"] = str(exc)
@@ -727,9 +819,9 @@ class TelemetryRuntime:
         )
         # Force a fresh negotiation so every user-started capture contains the
         # WELCOME, SESSION_BEGIN, manifest and keyframe needed for standalone replay.
+        self._soft_resync_live.clear()
         self._restart_live.set()
-        at_us, at_utc = fstl.local_observation()
-        self._publish(at_us, at_utc)
+        self._set_recovery_overlay("reconnecting", status="Disconnected", clear_session=True)
         return path
 
     def stop_capture(self) -> Path | None:

@@ -788,7 +788,7 @@ test("the 1920x1080 tactical cockpit keeps its five combat zones readable", asyn
   await expect(page.getByText("ACQUISITION", { exact: true })).toBeVisible();
   await expect(page.getByText("LOCK EN COURS", { exact: true })).toBeVisible();
   await expect(page.getByText("Harpoon entrant", { exact: true })).toBeVisible();
-  await expect(page.getByLabel(/Scope radar affichant 24 contacts/)).toBeVisible();
+  await expect(page.locator('canvas[aria-label="SCOPE RADAR · 24 CONTACTS"]')).toBeVisible();
 });
 
 test("tactical contacts, locks and missiles remain keyboard inspectable", async ({ page }) => {
@@ -818,7 +818,7 @@ test("the canvas scope accepts the full 4096-contact contract without DOM growth
   await mockTacticalSnapshot(page, 4096);
   await page.goto("/");
   await page.getByRole("button", { name: /Tactique/ }).click();
-  await expect(page.getByLabel(/Scope radar affichant 4096 contacts/)).toBeVisible();
+  await expect(page.locator('canvas[aria-label="SCOPE RADAR · 4096 CONTACTS"]')).toBeVisible();
   await expect(page.locator(".scope-contact-list > button")).toHaveCount(9);
   const state = await page.evaluate(() => ({
     canvasCount: document.querySelectorAll(".tactical-scope canvas").length,
@@ -1032,7 +1032,7 @@ test("weapon banks and turrets are keyboard inspectable with authoritative detai
   await mockWeaponSnapshot(page);
   await page.goto("/");
   await page.getByRole("button", { name: /Armement/ }).click();
-  const selected = page.getByRole("button", { name: "Inspecter l’arme Mekhu HL-7D" });
+  const selected = page.locator(".weapon-selected-zone").getByRole("button", { name: "Inspecter Mekhu HL-7D" });
   await expect(selected).toHaveCount(1);
   await selected.focus();
   await page.keyboard.press("Enter");
@@ -1045,4 +1045,17 @@ test("weapon banks and turrets are keyboard inspectable with authoritative detai
   await turret.focus();
   await page.keyboard.press("Enter");
   await expect(page.getByText("INSPECTION SOUS-SYSTÈME", { exact: true })).toBeVisible();
+});
+
+test("the bottom dock exposes one compact upward menu at a time", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "SESSION" }).click();
+  await expect(page.getByText("ÉTAT DE SESSION", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "DONNÉES" }).click();
+  await expect(page.getByText("GESTION DES DONNÉES", { exact: true })).toBeVisible();
+  await expect(page.getByText("ÉTAT DE SESSION", { exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: "AFFICHAGE" }).click();
+  await expect(page.getByText("OPTIONS D’AFFICHAGE", { exact: true })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByText("OPTIONS D’AFFICHAGE", { exact: true })).toHaveCount(0);
 });

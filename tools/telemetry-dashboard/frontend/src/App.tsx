@@ -12,6 +12,7 @@ import { SupportCockpit } from "./SupportCockpit";
 import { SupportInspection } from "./SupportInspection";
 import { TacticalCockpit } from "./TacticalCockpit";
 import { TacticalInspection } from "./TacticalInspection";
+import { ControlDock } from "./ControlDock";
 import { LanguageSelector, useI18n } from "./i18n";
 import type { DashboardSnapshot, InspectionTarget, InstrumentDefinition } from "./types";
 import "./styles.css";
@@ -98,13 +99,19 @@ function useRenderFps() {
 
 export default function App() {
   const { t } = useI18n();
-  const { snapshot, socketOnline } = useDashboardSocket();
+  const { snapshot: latestSnapshot, socketOnline } = useDashboardSocket();
   const renderFps = useRenderFps();
   const [tab, setTab] = useState("flight");
   const [selected, setSelected] = useState<InspectionTarget | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [frozenSnapshot, setFrozenSnapshot] = useState<DashboardSnapshot | null>(null);
+  const snapshot = frozenSnapshot ?? latestSnapshot;
   const instruments = useMemo(() => catalog.filter((item) => item.tab === tab), [tab]);
-  const connection = snapshot?.connection.status ?? "Synchronizing";
+  const connection = latestSnapshot?.connection.status ?? "Synchronizing";
+
+  useEffect(() => {
+    if (latestSnapshot?.mode === "replay") setFrozenSnapshot(null);
+  }, [latestSnapshot?.mode]);
 
   const action = async (label: string, callback: () => Promise<unknown>) => {
     try {
@@ -125,7 +132,7 @@ export default function App() {
         </div>
         <div className="mission-strip">
           <div><span>{t("MISSION")}</span><strong>{formatValue(snapshot?.mission.phase ?? "—")}</strong></div>
-          <div><span>{t("SESSION")}</span><strong>{snapshot?.connection.sessionId ?? "0"}</strong></div>
+          <div><span>{t("SESSION")}</span><strong>{latestSnapshot?.connection.sessionId ?? "0"}</strong></div>
           <div><span>{t("JOUEUR")}</span><strong>{snapshot?.playerEntityId ?? "—"}</strong></div>
           <div><span>{t("MODE")}</span><strong>{snapshot?.mode?.toUpperCase() ?? "LIVE"}</strong></div>
         </div>
@@ -133,7 +140,7 @@ export default function App() {
           <LanguageSelector />
           <div className="connection-block">
             <div className={`connection-light status-${connection.toLowerCase()}`} />
-            <div><span>{t(socketOnline ? connection : "BRIDGE HORS LIGNE")}</span><small>{snapshot?.connection.host ?? "127.0.0.1"}:{snapshot?.connection.port ?? 42042}</small></div>
+            <div><span>{t(socketOnline ? connection : "BRIDGE HORS LIGNE")}</span><small>{latestSnapshot?.connection.host ?? "127.0.0.1"}:{latestSnapshot?.connection.port ?? 42042}</small></div>
           </div>
         </div>
       </header>
@@ -257,52 +264,21 @@ export default function App() {
         )}
       </aside>
 
-      <footer className="control-dock">
-        <div className="dock-status">
-          <span>BASELINE <strong>{snapshot?.transport.baseline ?? 0}</strong></span>
-          <span>DELTA <strong>{snapshot?.transport.deltaSequence ?? 0}</strong></span>
-          <span>{t("MANIFESTE")} <strong>{snapshot?.transport.manifestId ?? 0}</strong></span>
-          <span>{t("RENDU")} <strong>{renderFps.toFixed(0)} FPS</strong></span>
-        </div>
-        <div className="dock-actions">
-          {snapshot?.mode === "replay" ? (
-            <>
-              <button onClick={() => action("Replay", () => post("/api/replay/control", { playing: !snapshot.replay.playing }))}>
-                {snapshot.replay.playing ? "PAUSE" : t("LECTURE")}
-              </button>
-              {[0.5, 1, 2, 4].map((speed) => (
-                <button className={snapshot.replay.speed === speed ? "active" : ""} key={speed}
-                  onClick={() => action(t("Vitesse"), () => post("/api/replay/control", { speed }))}>{speed}×</button>
-              ))}
-              <input
-                className="replay-slider"
-                type="range"
-                min="0"
-                max={snapshot.replay.packetCount}
-                value={snapshot.replay.position}
-                aria-label={t("Position du replay")}
-                onChange={(event) =>
-                  action(t("Position"), () =>
-                    post("/api/replay/control", { position: Number(event.currentTarget.value) })
-                  )
-                }
-              />
-              <span>{snapshot.replay.position} / {snapshot.replay.packetCount}</span>
-            </>
-          ) : (
-            <button
-              className={snapshot?.capture.active ? "danger" : ""}
-              onClick={() => action(
-                t(snapshot?.capture.active ? "Capture arrêtée" : "Capture démarrée"),
-                () => post(snapshot?.capture.active ? "/api/capture/stop" : "/api/capture/start")
-              )}
-            >
-              {t(snapshot?.capture.active ? "■ ARRÊTER CAPTURE" : "● CAPTURER")}
-            </button>
-          )}
-          <button onClick={() => action(t("Exports créés"), () => post("/api/export"))}>{t("EXPORTER")}</button>
-        </div>
-      </footer>
+      <ControlDock
+        snapshot={latestSnapshot}
+        renderFps={renderFps}
+        displayFrozen={frozenSnapshot !== null}
+        onToggleFreeze={() => setFrozenSnapshot((current) => current === null ? latestSnapshot : null)}
+        onOpenDiagnostics={() => setTab("diagnostic")}
+        onResync={() => void action(t("Resynchronisation demandée"), () => post("/api/live/resync"))}
+        onReconnect={() => void action(t("Reconnexion demandée"), () => post("/api/live/reconnect"))}
+        onToggleCapture={() => void action(
+          t(latestSnapshot?.capture.active ? "Capture arrêtée" : "Capture démarrée"),
+          () => post(latestSnapshot?.capture.active ? "/api/capture/stop" : "/api/capture/start")
+        )}
+        onExport={() => void action(t("Exports créés"), () => post("/api/export"))}
+        onReplayControl={(control) => void action("Replay", () => post("/api/replay/control", control))}
+      />
       {toast && <div className="toast">{toast}</div>}
     </div>
   );

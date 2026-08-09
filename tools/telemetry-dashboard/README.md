@@ -22,16 +22,16 @@ web n’écoutent que sur `127.0.0.1`.
 
 ## Captures et replay
 
-Le bouton **Capturer** écrit des datagrammes bruts horodatés dans
+Le menu **Données → Capturer** écrit des datagrammes bruts horodatés dans
 `build/telemetry-dashboard/captures`. Une capture utilise le format JSONL
-`FSTL-dashboard-capture-v1` et repasse par le même décodeur que le mode live.
+`FSTL-dashboard-capture-v2` et repasse par le même décodeur que le mode live.
 
 ```powershell
 .\tools\telemetry-dashboard\start-dashboard.ps1 `
   -Replay "build\telemetry-dashboard\captures\telemetry-YYYYMMDD-HHMMSS.fstlcap.jsonl"
 ```
 
-Le bouton **Exporter** produit dans `build/telemetry-dashboard/exports` :
+Le menu **Données → Exporter** produit dans `build/telemetry-dashboard/exports` :
 
 - le snapshot et les mesures de la session en JSON ;
 - l’historique des échantillons par canal en CSV ;
@@ -51,6 +51,19 @@ Ces exports ne donnent aucun verdict d’aptitude au simpit.
 | `EN ATTENTE` | négociation ou keyframe initiale non terminée |
 
 Une vraie valeur zéro reste toujours affichée comme `0`.
+
+Après trois secondes sans état valide, le bridge conserve la dernière image et
+la marque `Stale` tout en demandant une resynchronisation. Après dix secondes
+sans progrès FSTL, il abandonne l’ancienne session, ouvre un nouvel endpoint UDP
+et renégocie automatiquement jusqu’au retour du jeu. Le menu **Session** permet
+également de demander une resynchronisation douce ou une reconnexion complète ;
+ces actions redémarrent uniquement l’observateur du dashboard, jamais FS2Open.
+
+La barre inférieure regroupe les actions dans **Session**, **Données** et
+**Affichage**. Figer l’affichage immobilise seulement les instruments : le
+statut de connexion et la réception des snapshots continuent en arrière-plan.
+En replay, le menu **Replay** remplace **Session** et contient lecture, pause,
+vitesse et position.
 
 ## Onglet Pilotage
 

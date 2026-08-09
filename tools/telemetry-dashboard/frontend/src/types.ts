@@ -75,6 +75,7 @@ export interface DashboardSnapshot {
   mode: "live" | "replay";
   connection: {
     status: string;
+    recoveryState?: "idle" | "resyncing" | "reconnecting";
     host: string;
     port: number;
     sessionId: string;

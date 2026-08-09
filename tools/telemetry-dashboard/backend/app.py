@@ -62,6 +62,20 @@ def create_app(runtime: TelemetryRuntime) -> FastAPI:
     async def capture_stop() -> dict[str, str | None]:
         return {"path": str(runtime.stop_capture()) if runtime.capture.active else None}
 
+    @app.post("/api/live/resync", status_code=202)
+    async def live_resync() -> dict[str, Any]:
+        try:
+            return runtime.request_live_resync()
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    @app.post("/api/live/reconnect", status_code=202)
+    async def live_reconnect() -> dict[str, Any]:
+        try:
+            return runtime.request_live_reconnect()
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
     @app.post("/api/replay/control")
     async def replay_control(control: ReplayControl) -> dict[str, Any]:
         try:
