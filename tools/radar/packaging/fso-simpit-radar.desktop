@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=FSO SimPit Radar
+Exec=FsoSimpitRadar
+Icon=fso-simpit-radar
+Categories=Game;Utility;
+Terminal=false
+

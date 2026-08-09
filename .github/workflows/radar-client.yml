@@ -1,0 +1,73 @@
+name: Radar client
+
+on:
+  push:
+    paths:
+      - "tools/radar/**"
+      - "code/telemetry/protocol/**"
+      - ".github/workflows/radar-client.yml"
+  pull_request:
+    paths:
+      - "tools/radar/**"
+      - "code/telemetry/protocol/**"
+      - ".github/workflows/radar-client.yml"
+  workflow_dispatch:
+
+jobs:
+  windows:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jurplel/install-qt-action@v4
+        with:
+          version: "6.5.*"
+          arch: win64_msvc2019_64
+          modules: qttools
+          cache: true
+      - uses: ilammy/msvc-dev-cmd@v1
+      - name: Configure
+        run: cmake -S tools/radar -B build/radar -G Ninja -DCMAKE_BUILD_TYPE=Release
+      - name: Build
+        run: cmake --build build/radar
+      - name: Test
+        run: ctest --test-dir build/radar --output-on-failure
+        env:
+          QT_QPA_PLATFORM: offscreen
+      - name: Bundle
+        shell: pwsh
+        run: tools/radar/packaging/deploy-windows.ps1 -BuildDirectory build/radar -OutputDirectory dist/FsoSimpitRadar -QtRoot $env:QT_ROOT_DIR
+      - uses: actions/upload-artifact@v4
+        with:
+          name: FsoSimpitRadar-Windows
+          path: dist/FsoSimpitRadar.zip
+
+  linux:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Dependencies
+        run: sudo apt-get update && sudo apt-get install -y ninja-build qt6-base-dev qt6-tools-dev qt6-tools-dev-tools qt6-wayland libgl1-mesa-dev libfuse2
+      - name: Configure
+        run: cmake -S tools/radar -B build/radar -G Ninja -DCMAKE_BUILD_TYPE=Release
+      - name: Build
+        run: cmake --build build/radar
+      - name: Test
+        run: ctest --test-dir build/radar --output-on-failure
+        env:
+          QT_QPA_PLATFORM: offscreen
+      - name: Fetch linuxdeploy
+        run: |
+          mkdir -p build/radar-packaging
+          curl -L -o build/radar-packaging/linuxdeploy.AppImage https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+          curl -L -o build/radar-packaging/linuxdeploy-plugin-qt.AppImage https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage
+          chmod +x build/radar-packaging/linuxdeploy*.AppImage tools/radar/packaging/deploy-linux.sh
+      - name: Bundle
+        run: tools/radar/packaging/deploy-linux.sh build/radar dist
+        env:
+          LINUXDEPLOY: ${{ github.workspace }}/build/radar-packaging/linuxdeploy.AppImage
+          LINUXDEPLOY_PLUGIN_QT: ${{ github.workspace }}/build/radar-packaging/linuxdeploy-plugin-qt.AppImage
+          QMAKE: /usr/bin/qmake6
+      - uses: actions/upload-artifact@v4
+        with:
+          name: FsoSimpitRadar-Linux
+          path: dist/FsoSimpitRadar-x86_64.AppImage

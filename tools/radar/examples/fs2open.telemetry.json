@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 3,
+  "profile": "CockpitSensors",
+  "enabled": true,
+  "bindAddresses": ["127.0.0.1", "::1"],
+  "bindPort": 42042,
+  "allowedClients": ["127.0.0.1/32", "::1/128"],
+  "discoveryEnabled": false,
+  "visibilityMode": "Cockpit",
+  "trustedFullState": false,
+  "maxClients": 2,
+  "flightHz": 30,
+  "systemsHz": 10,
+  "keyframeSeconds": 2,
+  "missionHeartbeatMs": 500,
+  "idleHeartbeatMs": 1000,
+  "maxDatagramsPerTick": 64
+}
+

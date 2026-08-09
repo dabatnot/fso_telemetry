@@ -70,9 +70,12 @@ set(FSTL_PROTOCOL_HEADERS
 
 add_library(fstl_protocol STATIC ${FSTL_PROTOCOL_SOURCES} ${FSTL_PROTOCOL_HEADERS})
 target_compile_features(fstl_protocol PUBLIC cxx_std_17)
-target_include_directories(fstl_protocol PUBLIC "${CMAKE_SOURCE_DIR}/code")
+get_filename_component(FSTL_CODE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../.." ABSOLUTE)
+target_include_directories(fstl_protocol PUBLIC "${FSTL_CODE_ROOT}")
 set_target_properties(fstl_protocol PROPERTIES FOLDER "code/telemetry")
 
 source_group("Protocol" FILES ${FSTL_PROTOCOL_SOURCES} ${FSTL_PROTOCOL_HEADERS})
 
-enable_clang_tidy(fstl_protocol)
+if(COMMAND enable_clang_tidy)
+	enable_clang_tidy(fstl_protocol)
+endif()
