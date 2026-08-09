@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import errno
 import tempfile
 import unittest
 from pathlib import Path
@@ -103,6 +104,14 @@ class DashboardLiveApiTest(unittest.TestCase):
         with self.assertRaises(HTTPException) as raised:
             asyncio.run(route.endpoint(ChunkedRequest([], 9), "capture.fstlcap"))
         self.assertEqual(413, raised.exception.status_code)
+
+        def out_of_space(_: Path) -> dict[str, Any]:
+            raise OSError(errno.ENOSPC, "free-space reserve")
+
+        self.runtime.capture_library.import_path = out_of_space
+        with self.assertRaises(HTTPException) as raised:
+            asyncio.run(route.endpoint(ChunkedRequest([b"data"]), "capture.fstlcap"))
+        self.assertEqual(507, raised.exception.status_code)
 
     def test_live_command_conflicts_are_reported_as_409(self) -> None:
         self.runtime.fail = True

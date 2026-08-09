@@ -163,6 +163,97 @@ class DashboardRuntimeTest(unittest.TestCase):
             finally:
                 runtime.stop()
 
+    def test_microsecond_seek_preserves_playhead_and_waits_for_next_packet(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            nonce, t0 = 87, 98
+            hello = fstl.pack_header(
+                message_type=2,
+                flags=0,
+                session_id=0,
+                sequence=1,
+                sent_us=t0,
+                message_id=1,
+                payload=fstl.hello_payload(nonce, t0),
+            )
+            session = 0xFFEEDDCC
+            writer = CaptureWriter(root)
+            writer.start({"name": "seek timing"})
+            writer.packet(
+                contract.packet(
+                    3,
+                    contract.welcome_for(hello),
+                    session_id=session,
+                    sequence=1,
+                    sent_us=100,
+                    flags=2,
+                ),
+                100,
+                "1970-01-01T00:00:00.000100Z",
+            )
+            writer.packet(
+                contract.packet(
+                    4,
+                    contract.session_begin_payload(),
+                    session_id=session,
+                    sequence=2,
+                    sent_us=101,
+                    flags=2,
+                ),
+                101,
+                "1970-01-01T00:00:00.000101Z",
+            )
+            writer.packet(
+                contract.packet(
+                    6,
+                    contract.v11_payload("minimal-with-player", ".bin"),
+                    session_id=session,
+                    sequence=3,
+                    sent_us=1_000_100,
+                    flags=6,
+                ),
+                1_000_100,
+                "1970-01-01T00:00:01.000100Z",
+            )
+            writer.stop()
+            runtime = TelemetryRuntime(
+                host="127.0.0.1",
+                port=42042,
+                flight_hz=30,
+                systems_hz=10,
+                mission_heartbeat_ms=500,
+                capture_dir=root,
+            )
+            runtime.start()
+            try:
+                capture_id = runtime.captures()[0]["id"]
+                runtime.load_replay(capture_id)
+                self.assertTrue(
+                    self.wait_for(lambda: runtime.replay_state["packetCount"] == 3)
+                )
+                runtime.replay_control(position_us=500_000, playing=False)
+                self.assertTrue(
+                    self.wait_for(
+                        lambda: runtime.replay_state["position"] == 2
+                        and runtime.replay_state["positionUs"] == 500_000
+                        and not runtime.replay_state["seeking"]
+                    )
+                )
+
+                runtime.replay_control(playing=True)
+                time.sleep(0.1)
+                self.assertEqual(2, runtime.replay_state["position"])
+                self.assertNotEqual("Live", runtime.latest()["connection"]["status"])
+                self.assertTrue(
+                    self.wait_for(
+                        lambda: runtime.replay_state["position"] == 3
+                        and runtime.latest()["connection"]["status"] == "Live",
+                        timeout=1.0,
+                    )
+                )
+            finally:
+                runtime.stop()
+
     def test_failed_preview_and_seek_keep_replay_reloadable(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

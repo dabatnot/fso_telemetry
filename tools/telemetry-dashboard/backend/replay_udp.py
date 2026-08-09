@@ -19,6 +19,7 @@ MAX_CLIENTS = 4
 RETRY_US = 250_000
 RELIABLE_LIFETIME_US = 5_000_000
 HEARTBEAT_US = 1_000_000
+PEER_IDLE_TIMEOUT_US = 10_000_000
 PAUSED_STATE_REFRESH_US = 2_000_000
 CAPTURED_FRAGMENT_LIMIT = 4
 
@@ -80,6 +81,7 @@ class ReplayPeer:
     source_baseline: int = 0
     delta_sequence: int = 0
     manifest_id: int = 0
+    last_received_us: int = 0
     last_heartbeat_us: int = 0
     last_state_refresh_us: int = 0
     pending: dict[int, PendingMessage] = field(default_factory=dict)
@@ -322,16 +324,26 @@ class ReplayUdpProducer:
         now = fstl.now_us()
         with self._lock:
             if message_type == 2:
+                supports_v11 = (
+                    int(decoded["min_major"]) <= 1 <= int(decoded["max_major"])
+                    and int(decoded["min_minor"]) <= 1 <= int(decoded["max_minor"])
+                )
+                if not supports_v11:
+                    self._refused_clients += 1
+                    self._send_rejected_welcome(endpoint, decoded, now, status=1)
+                    self._notify()
+                    return
                 peer = self._peers.get(endpoint)
                 if peer is None and len(self._peers) >= MAX_CLIENTS:
                     self._refused_clients += 1
-                    self._send_rejected_welcome(endpoint, decoded, now)
+                    self._send_rejected_welcome(endpoint, decoded, now, status=3)
                     self._notify()
                     return
                 peer = ReplayPeer(
                     endpoint,
                     secrets.randbits(63) or 1,
                     clock_offset_us=now - self._position_provider(),
+                    last_received_us=now,
                 )
                 self._peers[endpoint] = peer
                 self._send_welcome(peer, decoded, now)
@@ -347,6 +359,7 @@ class ReplayUdpProducer:
                 if int(decoded["ack_flags"]) & fstl.ACK_VALIDATED:
                     retired.pending.pop(target, None)
                 return
+            peer.last_received_us = now
             if message_type == 10:
                 target = int(decoded["target_message_id"])
                 if int(decoded["ack_flags"]) & fstl.ACK_VALIDATED:
@@ -373,9 +386,26 @@ class ReplayUdpProducer:
                 self._rejected_commands += 1
                 self._notify()
 
-    def _send_rejected_welcome(self, endpoint: tuple[str, int], hello: dict[str, Any], now: int) -> None:
-        payload = self._welcome_payload(hello, now, status=3)
-        self._send_datagrams(endpoint, 3, 0, 0, 0, 1, payload, now)
+    def _send_rejected_welcome(
+        self,
+        endpoint: tuple[str, int],
+        hello: dict[str, Any],
+        now: int,
+        *,
+        status: int,
+    ) -> None:
+        payload = self._welcome_payload(hello, now, status=status)
+        self._send_datagrams(
+            endpoint,
+            3,
+            0,
+            0,
+            0,
+            1,
+            payload,
+            now,
+            version_minor=0 if status == 1 else 1,
+        )
 
     def _send_welcome(self, peer: ReplayPeer, hello: dict[str, Any], now: int) -> None:
         payload = self._welcome_payload(hello, now, status=0)
@@ -395,8 +425,8 @@ class ReplayUdpProducer:
             int(hello.get("requested_visibility_mode", 0)) if status == 0 else 0,
             0,
             0,
-            1000,
-            5000,
+            1000 if status == 0 else 0,
+            5000 if status == 0 else 0,
             0,
             0,
             0x4653544C5245504C,
@@ -534,6 +564,7 @@ class ReplayUdpProducer:
         sent_us: int,
         peer: ReplayPeer | None = None,
         mission_time_us: int = 0,
+        version_minor: int = 1,
     ) -> None:
         sock = self._socket
         if sock is None:
@@ -552,7 +583,7 @@ class ReplayUdpProducer:
                 "<IBBBBHHQIIqQIHHIII",
                 fstl.MAGIC,
                 1,
-                1,
+                version_minor,
                 message_type,
                 base_flags,
                 fstl.HEADER_SIZE,
@@ -573,7 +604,12 @@ class ReplayUdpProducer:
             sock.sendto(prefix + struct.pack("<I", checksum) + fragment, endpoint)
 
     def _poll(self, now: int) -> None:
+        peers_changed = False
         with self._lock:
+            for endpoint, peer in list(self._peers.items()):
+                if now - peer.last_received_us >= PEER_IDLE_TIMEOUT_US:
+                    self._peers.pop(endpoint, None)
+                    peers_changed = True
             for peer in list(self._peers.values()):
                 if now - peer.last_heartbeat_us >= HEARTBEAT_US:
                     peer.last_heartbeat_us = now
@@ -590,6 +626,8 @@ class ReplayUdpProducer:
                 self._poll_pending(peer, now)
                 if not peer.pending:
                     self._retired.pop(key, None)
+        if peers_changed:
+            self._notify()
 
     def _poll_pending(self, peer: ReplayPeer, now: int) -> None:
         for pending in list(peer.pending.values()):

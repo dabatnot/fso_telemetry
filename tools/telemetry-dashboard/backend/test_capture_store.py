@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import base64
+import errno
 import json
 import sqlite3
 import tempfile
 import unittest
 from contextlib import closing
 from pathlib import Path
+from types import SimpleNamespace
+from unittest import mock
 
 from capture_store import (
     CAPTURE_SCHEMA,
@@ -110,7 +113,7 @@ class CaptureStoreTest(unittest.TestCase):
             source_id = source_library.list()[0]["id"]
             marker = source_library.create_range(source_id, "Missile launch", 1, 100)
 
-            imported = CaptureLibrary(library_root).import_path(source)
+            imported = CaptureLibrary(library_root, free_reserve_bytes=0).import_path(source)
 
             self.assertNotEqual(source_id, imported["id"])
             self.assertEqual("Marked patrol", imported["name"])
@@ -122,6 +125,52 @@ class CaptureStoreTest(unittest.TestCase):
             checkpoint = load_checkpoint(Path(imported["path"]), 2_000_000)
             self.assertIsNotNone(checkpoint)
             self.assertEqual("preserved", checkpoint["state"]["state"])
+
+    def test_native_import_preserves_configured_free_space_reserve(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source_root = root / "source"
+            library_root = root / "library"
+            writer = CaptureWriter(source_root)
+            source = writer.start({"name": "large import"})
+            writer.packet(b"payload", 1, "2026-08-09T10:00:00.000001Z")
+            writer.stop()
+            with closing(sqlite3.connect(source)) as connection:
+                logical_bytes = (
+                    int(connection.execute("PRAGMA page_count").fetchone()[0])
+                    * int(connection.execute("PRAGMA page_size").fetchone()[0])
+                )
+            reserve = 10_000
+            library = CaptureLibrary(library_root, free_reserve_bytes=reserve)
+
+            with mock.patch(
+                "capture_store.shutil.disk_usage",
+                return_value=SimpleNamespace(free=logical_bytes + reserve - 1),
+            ):
+                with self.assertRaises(OSError) as raised:
+                    library.import_path(source)
+
+            self.assertEqual(errno.ENOSPC, raised.exception.errno)
+            self.assertEqual([], list(library_root.glob("*.fstlcap")))
+
+    def test_delete_removes_wal_and_shared_memory_sidecars(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            writer = CaptureWriter(root)
+            path = writer.start({"name": "delete sidecars"})
+            writer.packet(b"payload", 1, "2026-08-09T10:00:00.000001Z")
+            writer.stop()
+            library = CaptureLibrary(root)
+            capture_id = library.list()[0]["id"]
+            sidecars = [Path(str(path) + suffix) for suffix in ("-wal", "-shm")]
+            for sidecar in sidecars:
+                sidecar.write_bytes(b"orphaned sqlite sidecar")
+
+            with mock.patch.object(library, "resolve", return_value=path):
+                library.delete(capture_id)
+
+            self.assertFalse(path.exists())
+            self.assertTrue(all(not sidecar.exists() for sidecar in sidecars))
 
     def test_indexed_reader_loads_only_the_addressed_chunk(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

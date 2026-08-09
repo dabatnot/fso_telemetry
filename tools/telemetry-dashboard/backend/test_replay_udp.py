@@ -1,14 +1,20 @@
 from __future__ import annotations
 
 import socket
+import struct
 import tempfile
 import time
 import unittest
 from pathlib import Path
 
 from dashboard_runtime import TelemetryRuntime
-from replay_udp import CAPTURED_FRAGMENT_LIMIT, ReplayUdpProducer
+from replay_udp import (
+    CAPTURED_FRAGMENT_LIMIT,
+    PEER_IDLE_TIMEOUT_US,
+    ReplayUdpProducer,
+)
 import fstl_client_core as fstl
+import fstl_reference_decoder as decoder
 import test_fstl_console_client_contract as contract
 
 
@@ -124,6 +130,80 @@ class ReplayUdpProducerTest(unittest.TestCase):
         finally:
             for sock in accepted:
                 sock.close()
+            producer.stop()
+
+    def test_hello_without_fstl_1_1_is_rejected_before_allocating_peer(self) -> None:
+        source = populated_client()
+        producer = ReplayUdpProducer(lambda: source.state, lambda: 0, lambda _: None)
+        producer.configure(bind_host="127.0.0.1", port=0, lan_enabled=False)
+        port = int(str(producer.start()["endpoint"]).rsplit(":", 1)[1])
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+            sock.connect(("127.0.0.1", port))
+            sock.settimeout(1.0)
+            nonce, sent_us = 91, 92
+            hello = struct.pack(
+                "<QQBBBBB3xQHHH",
+                nonce,
+                sent_us,
+                1,
+                1,
+                0,
+                0,
+                0,
+                0,
+                1000,
+                0,
+                0,
+            )
+            sock.send(
+                fstl.pack_header(
+                    message_type=2,
+                    flags=0,
+                    session_id=0,
+                    sequence=1,
+                    sent_us=sent_us,
+                    message_id=1,
+                    payload=hello,
+                    minor=0,
+                )
+            )
+            response = sock.recv(1200)
+
+        header = decoder.read_header(response)
+        fields = decoder.decode_message(
+            3,
+            int(header["flags"]),
+            response[fstl.HEADER_SIZE :],
+            {"senderRole": "producer", "allowedSenderRoles": ["producer"]},
+        )["fields"]
+        self.assertEqual(0, header["version_minor"])
+        self.assertEqual(1, fields["status"])
+        self.assertEqual(0, fields["selected_major"])
+        self.assertEqual(0, fields["selected_minor"])
+        self.assertEqual(0, fields["heartbeat_interval_ms"])
+        self.assertEqual(0, producer.snapshot()["clientCount"])
+        producer.stop()
+
+    def test_inactive_client_slot_expires_and_accepts_a_replacement(self) -> None:
+        source = populated_client()
+        producer = ReplayUdpProducer(lambda: source.state, lambda: 0, lambda _: None)
+        producer.configure(bind_host="127.0.0.1", port=0, lan_enabled=False)
+        port = int(str(producer.start()["endpoint"]).rsplit(":", 1)[1])
+        sock, client = self.negotiate(port)
+        self.assertEqual("Live", client.state.status)
+        sock.close()
+        with producer._lock:
+            last_received_us = next(iter(producer._peers.values())).last_received_us
+
+        producer._poll(last_received_us + PEER_IDLE_TIMEOUT_US)
+        self.assertEqual(0, producer.snapshot()["clientCount"])
+
+        replacement_sock, replacement = self.negotiate(port)
+        try:
+            self.assertEqual("Live", replacement.state.status)
+            self.assertEqual(1, producer.snapshot()["clientCount"])
+        finally:
+            replacement_sock.close()
             producer.stop()
 
     def test_client_resync_receives_a_new_synthetic_baseline(self) -> None:

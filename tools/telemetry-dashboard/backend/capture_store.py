@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import base64
 import bisect
+import errno
 import hashlib
 import json
 import os
@@ -647,8 +648,9 @@ def load_checkpoint(path: Path, timeline_us: int) -> dict[str, Any] | None:
 
 
 class CaptureLibrary:
-    def __init__(self, root: Path) -> None:
+    def __init__(self, root: Path, *, free_reserve_bytes: int = DEFAULT_FREE_RESERVE_BYTES) -> None:
         self.root = root
+        self.free_reserve_bytes = free_reserve_bytes
         self.root.mkdir(parents=True, exist_ok=True)
 
     def _describe(self, path: Path) -> dict[str, Any]:
@@ -701,6 +703,8 @@ class CaptureLibrary:
         if self.root.resolve() not in path.parents:
             raise ValueError("capture outside library")
         path.unlink()
+        for suffix in ("-wal", "-shm"):
+            Path(str(path) + suffix).unlink(missing_ok=True)
 
     def import_path(self, source: Path) -> dict[str, Any]:
         with source.open("rb") as stream:
@@ -742,6 +746,15 @@ class CaptureLibrary:
         with closing(_connect(source, writable=False)) as source_connection:
             _validate_database(source_connection)
             metadata = _metadata_all(source_connection)
+            page_count = int(source_connection.execute("PRAGMA page_count").fetchone()[0])
+            page_size = int(source_connection.execute("PRAGMA page_size").fetchone()[0])
+            required_copy_bytes = page_count * page_size
+            free_bytes = shutil.disk_usage(self.root).free
+            if free_bytes - required_copy_bytes < self.free_reserve_bytes:
+                raise OSError(
+                    errno.ENOSPC,
+                    "native capture import would exceed the free-space reserve",
+                )
             old_capture_id = str(metadata.get("captureId", ""))
             new_capture_id = str(uuid.uuid4())
             stamp = time.strftime("%Y%m%d-%H%M%S", time.localtime())

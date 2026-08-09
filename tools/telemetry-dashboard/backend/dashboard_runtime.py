@@ -273,7 +273,9 @@ class TelemetryRuntime:
             stop_bytes=capture_stop_bytes,
             free_reserve_bytes=capture_free_reserve_bytes,
         )
-        self.capture_library = CaptureLibrary(capture_dir)
+        self.capture_library = CaptureLibrary(
+            capture_dir, free_reserve_bytes=capture_free_reserve_bytes
+        )
         self.replay_path = replay_path
         self.stale_us = stale_us
         self.recovery_reconnect_us = recovery_reconnect_us
@@ -907,6 +909,7 @@ class TelemetryRuntime:
             self._replay_source_session = 0
             self.quality = QualityTracker(self.flight_hz, self.systems_hz, self.mission_heartbeat_ms)
             previous_us: int | None = None
+            seek_playhead_us: int | None = None
             while not self._stop.is_set() and not self._mode_change.is_set():
                 if self._replay_preview_time_us is not None:
                     preview_us = min(
@@ -944,6 +947,7 @@ class TelemetryRuntime:
                     self._replay_seek_time_us = None
                     self.replay_state["seeking"] = True
                     target = capture.index_at_time(requested_us)
+                    seek_playhead_us = requested_us
                     self._replay_seek_target = target
                 if self._replay_seek_target is not None:
                     target = min(capture.packet_count, max(0, self._replay_seek_target))
@@ -957,6 +961,7 @@ class TelemetryRuntime:
                     except Exception as exc:
                         self.client = previous_client
                         self._replay_source_session = previous_source_session
+                        seek_playhead_us = None
                         self._report_replay_failure(exc)
                         continue
                     self.replay_udp.restart_sessions()
@@ -966,11 +971,17 @@ class TelemetryRuntime:
                         self.flight_hz, self.systems_hz, self.mission_heartbeat_ms
                     )
                     self.replay_state["position"] = target
-                    self.replay_state["positionUs"] = capture.timeline_at(target - 1) if target else 0
+                    committed_playhead_us = (
+                        seek_playhead_us
+                        if seek_playhead_us is not None
+                        else (capture.timeline_at(target - 1) if target else 0)
+                    )
+                    seek_playhead_us = None
+                    self.replay_state["positionUs"] = committed_playhead_us
                     self.replay_state["seeking"] = False
                     self.replay_state["previewing"] = False
                     self.replay_state["previewPositionUs"] = None
-                    previous_us = None
+                    previous_us = committed_playhead_us
                     if target:
                         item = capture.packet(target - 1)
                         self._publish(int(item["receivedMonotonicUs"]), item["observedAtUtc"])
@@ -991,7 +1002,6 @@ class TelemetryRuntime:
                 if not self.replay_state["playing"]:
                     self._replay_wakeup.wait(0.1)
                     self._replay_wakeup.clear()
-                    previous_us = None
                     continue
                 index = int(self.replay_state["position"])
                 item = capture.packet(index)
@@ -1021,7 +1031,11 @@ class TelemetryRuntime:
                         or self._replay_seek_time_us is not None
                         or self._replay_preview_time_us is not None
                     ):
-                        previous_us = None
+                        if (
+                            self._replay_seek_target is not None
+                            or self._replay_seek_time_us is not None
+                        ):
+                            previous_us = None
                         continue
                 previous_us = item_timeline_us
                 datagram = item["datagram"]

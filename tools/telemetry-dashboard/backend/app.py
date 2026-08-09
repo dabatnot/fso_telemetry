@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import errno
 import json
 import shutil
 import tempfile
@@ -189,7 +190,10 @@ def create_app(runtime: TelemetryRuntime) -> FastAPI:
                 raise HTTPException(status_code=422, detail="empty capture upload")
             try:
                 return await asyncio.to_thread(runtime.capture_library.import_path, source)
-            except (OSError, ValueError, json.JSONDecodeError) as exc:
+            except OSError as exc:
+                status = 507 if exc.errno == errno.ENOSPC else 422
+                raise HTTPException(status_code=status, detail=str(exc)) from exc
+            except (ValueError, json.JSONDecodeError) as exc:
                 raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     @app.post("/api/captures/{capture_id}/load")
