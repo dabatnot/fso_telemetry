@@ -46,6 +46,28 @@ class DashboardRuntimeTest(unittest.TestCase):
         self.assertEqual(1, snapshot["gapCount"])
         self.assertAlmostEqual(19.9996, snapshot["observedHz"], places=3)
 
+    def test_rejected_live_datagram_is_not_persisted_in_capture(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            runtime = TelemetryRuntime(
+                host="127.0.0.1",
+                port=42042,
+                flight_hz=30,
+                systems_hz=10,
+                mission_heartbeat_ms=500,
+                capture_dir=Path(directory),
+            )
+            path = runtime.capture.start({"name": "validated-only"})
+            runtime.client = mock.Mock()
+            runtime.client.receive.side_effect = ValueError("datagram CRC")
+
+            with self.assertRaisesRegex(ValueError, "datagram CRC"):
+                runtime._receive_live_datagram(
+                    b"invalid", 10, "2026-08-09T10:00:00.000010Z"
+                )
+
+            runtime.capture.stop()
+            self.assertEqual([], load_capture(path)[1])
+
     def test_windows_udp_port_unreachable_is_configured_as_silence(self) -> None:
         if sys.platform != "win32":
             self.skipTest("Windows Winsock behavior")

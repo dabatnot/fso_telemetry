@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 from fastapi import HTTPException
@@ -12,15 +14,21 @@ from app import CaptureStart, ReplayControl, ReplayUdpSettings, create_app
 
 class FakeRuntime:
     def __init__(self) -> None:
+        self._capture_directory = tempfile.TemporaryDirectory()
         self.fail = False
         self.udp_running = False
         self.started_capture: tuple[str | None, int | None] | None = None
+        self.capture = SimpleNamespace(active=False, stop_bytes=8, free_reserve_bytes=0)
+        self.capture_library = SimpleNamespace(
+            root=Path(self._capture_directory.name),
+            import_path=lambda path: {"bytes": path.stat().st_size},
+        )
 
     def start(self) -> None:
         pass
 
     def stop(self) -> None:
-        pass
+        self._capture_directory.cleanup()
 
     def request_live_resync(self) -> dict[str, Any]:
         if self.fail:
@@ -56,6 +64,7 @@ class FakeRuntime:
 class DashboardLiveApiTest(unittest.TestCase):
     def setUp(self) -> None:
         self.runtime = FakeRuntime()
+        self.addCleanup(self.runtime.stop)
         self.app = create_app(self.runtime)  # type: ignore[arg-type]
 
     def route(self, path: str):
@@ -77,6 +86,23 @@ class DashboardLiveApiTest(unittest.TestCase):
         )
         self.assertEqual({"path": "test-capture.fstlcap"}, result)
         self.assertEqual(("Test Capture", 600_000_000), self.runtime.started_capture)
+
+    def test_capture_import_streams_chunks_and_rejects_declared_oversize(self) -> None:
+        class ChunkedRequest:
+            def __init__(self, chunks: list[bytes], content_length: int | None = None) -> None:
+                self.chunks = chunks
+                self.headers = {} if content_length is None else {"content-length": str(content_length)}
+
+            async def stream(self):
+                for chunk in self.chunks:
+                    yield chunk
+
+        route = self.route("/api/captures/import")
+        result = asyncio.run(route.endpoint(ChunkedRequest([b"ab", b"cd"]), "capture.fstlcap"))
+        self.assertEqual(4, result["bytes"])
+        with self.assertRaises(HTTPException) as raised:
+            asyncio.run(route.endpoint(ChunkedRequest([], 9), "capture.fstlcap"))
+        self.assertEqual(413, raised.exception.status_code)
 
     def test_live_command_conflicts_are_reported_as_409(self) -> None:
         self.runtime.fail = True

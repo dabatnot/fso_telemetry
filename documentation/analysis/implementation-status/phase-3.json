@@ -3,7 +3,7 @@
   "phase": 3,
   "phaseDirectory": "documentation/analysis/specs/3-Ciblage-et-capteurs",
   "contractFingerprint": "sha256:942e8ada4756238765113418c07663ba4fb339a74e30c2c454f24f09fb61af7f",
-  "updatedAtUtc": "2026-08-09T15:33:59Z",
+  "updatedAtUtc": "2026-08-09T16:04:36Z",
   "requirements": [
     {
       "id": "P3-REQ-001",
@@ -1906,6 +1906,7 @@
         "tools/telemetry-dashboard/backend/capture_store.py",
         "tools/telemetry-dashboard/backend/dashboard_runtime.py",
         "tools/telemetry-dashboard/backend/replay_udp.py",
+        "tools/telemetry-dashboard/backend/requirements.lock.txt",
         "tools/telemetry-dashboard/frontend/src/App.tsx",
         "tools/telemetry-dashboard/frontend/src/CaptureLibrary.tsx",
         "tools/telemetry-dashboard/frontend/src/ControlDock.tsx",
@@ -2067,6 +2068,27 @@
           "observedAtUtc": "2026-08-09T15:33:59Z",
           "result": "34 tests backend passent. Un replay contenant quatre groupes fragmentaires incomplets franchit le paquet suivant, atteint la fin et accepte un seek complet. Pause et Lecture sont publiées immédiatement dans le snapshot, puis la lecture reprend sans erreur ni arrêt du worker.",
           "resultRef": null
+        },
+        {
+          "id": "P3-REQ-045-AUTO-05",
+          "kind": "automated",
+          "command": "build/telemetry-dashboard/.venv/Scripts/python.exe -B -m unittest test_capture_store test_dashboard_runtime test_replay_udp test_app -v (cwd tools/telemetry-dashboard/backend)",
+          "status": "passed",
+          "inputs": [
+            "tools/telemetry-dashboard/backend/app.py",
+            "tools/telemetry-dashboard/backend/capture_store.py",
+            "tools/telemetry-dashboard/backend/dashboard_runtime.py",
+            "tools/telemetry-dashboard/backend/replay_udp.py",
+            "tools/telemetry-dashboard/backend/requirements.lock.txt",
+            "tools/telemetry-dashboard/backend/test_app.py",
+            "tools/telemetry-dashboard/backend/test_capture_store.py",
+            "tools/telemetry-dashboard/backend/test_dashboard_runtime.py",
+            "tools/telemetry-dashboard/backend/test_replay_udp.py"
+          ],
+          "inputFingerprint": "sha256:2edc8b715c2a16e2afafa027c093cded6a8ae5ca7bf6c56d6fb31c5c7c818b8d",
+          "observedAtUtc": "2026-08-09T16:04:36Z",
+          "result": "39 tests backend passent. Le replay lit les blocs a la demande, l'import natif conserve marqueurs, checkpoints, sessions et metadonnees, les uploads sont streames et bornes, seuls les datagrammes valides sont captures et la retention de fragments UDP reste bornee.",
+          "resultRef": null
         }
       ],
       "requiredObservations": [],
@@ -2088,7 +2110,8 @@
         "tools/telemetry-dashboard/backend/app.py",
         "tools/telemetry-dashboard/backend/capture_store.py",
         "tools/telemetry-dashboard/backend/dashboard_runtime.py",
-        "tools/telemetry-dashboard/backend/replay_udp.py"
+        "tools/telemetry-dashboard/backend/replay_udp.py",
+        "tools/telemetry-dashboard/backend/requirements.lock.txt"
       ],
       "proofs": [
         {
@@ -2174,6 +2197,27 @@
           "inputFingerprint": "sha256:797e300107885a11e327bd59908e643f662761d6f5eaab9d85095c9424107748",
           "observedAtUtc": "2026-08-09T15:33:59Z",
           "result": "34 tests backend passent, dont la convergence après quatre messages fragmentés incomplets, le seek ultérieur et la publication immédiate des transitions Pause/Lecture sans attendre un nouvel état FSTL.",
+          "resultRef": null
+        },
+        {
+          "id": "P3-REQ-046-AUTO-06",
+          "kind": "automated",
+          "command": "build/telemetry-dashboard/.venv/Scripts/python.exe -B -m unittest test_capture_store test_dashboard_runtime test_replay_udp test_app -v (cwd tools/telemetry-dashboard/backend)",
+          "status": "passed",
+          "inputs": [
+            "tools/telemetry-dashboard/backend/app.py",
+            "tools/telemetry-dashboard/backend/capture_store.py",
+            "tools/telemetry-dashboard/backend/dashboard_runtime.py",
+            "tools/telemetry-dashboard/backend/replay_udp.py",
+            "tools/telemetry-dashboard/backend/requirements.lock.txt",
+            "tools/telemetry-dashboard/backend/test_app.py",
+            "tools/telemetry-dashboard/backend/test_capture_store.py",
+            "tools/telemetry-dashboard/backend/test_dashboard_runtime.py",
+            "tools/telemetry-dashboard/backend/test_replay_udp.py"
+          ],
+          "inputFingerprint": "sha256:2edc8b715c2a16e2afafa027c093cded6a8ae5ca7bf6c56d6fb31c5c7c818b8d",
+          "observedAtUtc": "2026-08-09T16:04:36Z",
+          "result": "39 tests backend passent, dont la reprise apres pertes fragmentaires, le seek indexe, la preservation des checkpoints et la regeneration UDP multi-client sans croissance non bornee des fragments incomplets.",
           "resultRef": null
         }
       ],

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import copy
-import bisect
 import csv
 import json
 import math
@@ -28,11 +27,13 @@ import fstl_reference_decoder as decoder  # noqa: E402
 from capture_store import (  # noqa: E402
     CAPTURE_SCHEMA,
     LEGACY_CAPTURE_SCHEMAS,
+    CaptureReader,
     CaptureLibrary,
     CaptureWriter,
     default_capture_directory,
     load_capture,
     load_checkpoint,
+    open_capture,
 )
 from replay_udp import ReplayUdpProducer  # noqa: E402
 
@@ -577,6 +578,7 @@ class TelemetryRuntime:
                 "deltaSequence": state.delta_sequence,
                 "manifestId": state.manifest_id,
                 "requiredManifestId": state.required_manifest_id,
+                "packetIndex": int(metrics["packetCount"]),
                 "recordInstances": state.record_instances,
                 "baselineRecordInstances": state.baseline_record_instances,
                 "manifestRecords": state.manifest_records,
@@ -602,6 +604,20 @@ class TelemetryRuntime:
         timeline_us = int(self.capture.metrics()["durationUs"])
         self.capture.session_boundary(self._capture_session_index, self._capture_session_id, timeline_us, "welcome")
         self._capture_last_checkpoint_us = timeline_us - 5_000_000
+
+    def _receive_live_datagram(
+        self, datagram: bytes, received_us: int, received_utc: str
+    ) -> bool:
+        if self.client is None:
+            raise ValueError("live client is not initialized")
+        changed = self.client.receive(datagram, received_us, received_utc)
+        # Persist only datagrams accepted by the same decoder used by the live
+        # dashboard. Valid incomplete fragments return False without raising
+        # and remain eligible for capture.
+        self.capture.packet(datagram, received_us, received_utc)
+        self._capture_observe_lifecycle(datagram)
+        self.quality.observe_packet(datagram)
+        return changed
 
     def _run_live(self) -> None:
         family = socket.AF_INET6 if ":" in self.host else socket.AF_INET
@@ -650,10 +666,9 @@ class TelemetryRuntime:
                         try:
                             datagram = sock.recv(fstl.MAX_DATAGRAM)
                             received_us, received_utc = fstl.local_observation()
-                            self.capture.packet(datagram, received_us, received_utc)
-                            self._capture_observe_lifecycle(datagram)
-                            self.quality.observe_packet(datagram)
-                            changed = self.client.receive(datagram, received_us, received_utc)
+                            changed = self._receive_live_datagram(
+                                datagram, received_us, received_utc
+                            )
                             if changed:
                                 last_progress_us = received_us
                                 self.quality.observe_state(self.client.state, received_us)
@@ -822,8 +837,7 @@ class TelemetryRuntime:
 
     def _reconstruct_replay_client(
         self,
-        packets: list[dict[str, Any]],
-        timeline: list[int],
+        capture: CaptureReader,
         target: int,
         *,
         preview: bool,
@@ -831,16 +845,24 @@ class TelemetryRuntime:
         client = self._new_replay_client()
         checkpoint = load_checkpoint(
             self.replay_path,
-            timeline[target - 1] if target else 0,
+            capture.timeline_at(target - 1) if target else 0,
         ) if self.replay_path is not None else None
         start_index = 0
         if checkpoint is not None:
             self._restore_replay_checkpoint(
                 client, checkpoint, update_source_session=not preview
             )
-            start_index = bisect.bisect_right(timeline, int(checkpoint["timelineUs"]))
+            start_index = min(
+                target,
+                int(
+                    checkpoint["state"].get(
+                        "packetIndex",
+                        capture.index_at_time(int(checkpoint["timelineUs"])),
+                    )
+                ),
+            )
         for seek_index in range(start_index, target):
-            item = packets[seek_index]
+            item = capture.packet(seek_index)
             client = self._prepare_replay_packet_client(
                 client,
                 item["datagram"],
@@ -858,16 +880,24 @@ class TelemetryRuntime:
     def _run_replay(self) -> None:
         assert self.replay_path is not None
         try:
-            header, packets = load_capture(self.replay_path)
+            with open_capture(self.replay_path) as capture:
+                self._run_replay_capture(capture)
+        except Exception as exc:
+            self._report_replay_failure(exc)
+            while not self._stop.is_set() and not self._mode_change.wait(0.1):
+                pass
+
+    def _run_replay_capture(self, capture: CaptureReader) -> None:
+        try:
+            header = capture.header
             self.replay_state["captureSchema"] = header.get("schema")
             self.replay_state["captureId"] = header.get("captureId")
             features = header.get("contractFeatures", [])
             self.replay_state["contractFeatures"] = (
                 list(features) if isinstance(features, list) else []
             )
-            self.replay_state["packetCount"] = len(packets)
-            timeline = [int(item.get("timelineUs", 0)) for item in packets]
-            self.replay_state["durationUs"] = timeline[-1] if timeline else 0
+            self.replay_state["packetCount"] = capture.packet_count
+            self.replay_state["durationUs"] = capture.duration_us
             capture_id = self.replay_state.get("captureId")
             self.replay_state["ranges"] = self.capture_library.ranges(str(capture_id)) if capture_id else []
             self.replay_state["sessionBoundaries"] = self.capture_library.sessions(str(capture_id)) if capture_id else []
@@ -884,17 +914,17 @@ class TelemetryRuntime:
                         max(0, self._replay_preview_time_us),
                     )
                     self._replay_preview_time_us = None
-                    preview_target = bisect.bisect_right(timeline, preview_us)
+                    preview_target = capture.index_at_time(preview_us)
                     committed_client = self.client
                     try:
                         preview_client = self._reconstruct_replay_client(
-                            packets, timeline, preview_target, preview=True
+                            capture, preview_target, preview=True
                         )
                         self.client = preview_client
                         self.replay_state["previewing"] = True
                         self.replay_state["previewPositionUs"] = preview_us
                         if preview_target:
-                            preview_item = packets[preview_target - 1]
+                            preview_item = capture.packet(preview_target - 1)
                             self._publish(
                                 int(preview_item["receivedMonotonicUs"]),
                                 preview_item["observedAtUtc"],
@@ -913,16 +943,16 @@ class TelemetryRuntime:
                     requested_us = min(int(self.replay_state["durationUs"]), max(0, self._replay_seek_time_us))
                     self._replay_seek_time_us = None
                     self.replay_state["seeking"] = True
-                    target = bisect.bisect_right(timeline, requested_us)
+                    target = capture.index_at_time(requested_us)
                     self._replay_seek_target = target
                 if self._replay_seek_target is not None:
-                    target = min(len(packets), max(0, self._replay_seek_target))
+                    target = min(capture.packet_count, max(0, self._replay_seek_target))
                     self._replay_seek_target = None
                     previous_client = self.client
                     previous_source_session = self._replay_source_session
                     try:
                         candidate_client = self._reconstruct_replay_client(
-                            packets, timeline, target, preview=False
+                            capture, target, preview=False
                         )
                     except Exception as exc:
                         self.client = previous_client
@@ -936,13 +966,13 @@ class TelemetryRuntime:
                         self.flight_hz, self.systems_hz, self.mission_heartbeat_ms
                     )
                     self.replay_state["position"] = target
-                    self.replay_state["positionUs"] = timeline[target - 1] if target else 0
+                    self.replay_state["positionUs"] = capture.timeline_at(target - 1) if target else 0
                     self.replay_state["seeking"] = False
                     self.replay_state["previewing"] = False
                     self.replay_state["previewPositionUs"] = None
                     previous_us = None
                     if target:
-                        item = packets[target - 1]
+                        item = capture.packet(target - 1)
                         self._publish(int(item["receivedMonotonicUs"]), item["observedAtUtc"])
                         self.replay_udp.state_available()
                     else:
@@ -951,7 +981,7 @@ class TelemetryRuntime:
                             self._snapshot["replay"] = copy.deepcopy(self.replay_state)
                             self._version += 1
                     continue
-                if self.replay_state["position"] >= len(packets):
+                if self.replay_state["position"] >= capture.packet_count:
                     if self.replay_state["playing"]:
                         self.replay_state["playing"] = False
                         self._publish_replay_metadata()
@@ -964,7 +994,7 @@ class TelemetryRuntime:
                     previous_us = None
                     continue
                 index = int(self.replay_state["position"])
-                item = packets[index]
+                item = capture.packet(index)
                 received_us = int(item["receivedMonotonicUs"])
                 item_timeline_us = int(item.get("timelineUs", 0))
                 active_range = next((item_range for item_range in self.replay_state["ranges"] if item_range["id"] == self.replay_state.get("activeRangeId")), None)
@@ -1024,10 +1054,8 @@ class TelemetryRuntime:
                     self.replay_state["playing"] = False
                     previous_us = None
                     self._report_replay_failure(exc)
-        except Exception as exc:
-            self._report_replay_failure(exc)
-            while not self._stop.is_set() and not self._mode_change.wait(0.1):
-                pass
+        except Exception:
+            raise
 
     def replay_control(
         self,

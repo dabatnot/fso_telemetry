@@ -15,6 +15,7 @@ from capture_store import (
     CaptureWriter,
     load_capture,
     load_checkpoint,
+    open_capture,
 )
 
 
@@ -92,6 +93,50 @@ class CaptureStoreTest(unittest.TestCase):
             self.assertFalse(imported["legacy"])
             self.assertEqual(CAPTURE_SCHEMA, imported["schema"])
             self.assertEqual(b"fstl", load_capture(Path(imported["path"]))[1][0]["datagram"])
+
+    def test_native_import_preserves_ranges_checkpoints_sessions_and_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source_root = root / "source"
+            library_root = root / "library"
+            writer = CaptureWriter(source_root)
+            source = writer.start({"name": "Marked patrol", "mission": "sm2-01"})
+            writer.session_boundary(0, 42, 0, "welcome")
+            writer.packet(b"first", 10, "2026-08-09T10:00:00.000010Z")
+            writer.packet(b"second", 1_000_011, "2026-08-09T10:00:01.000011Z")
+            writer.checkpoint(0, 1_000_001, b'{"state":"preserved"}')
+            writer.stop()
+            source_library = CaptureLibrary(source_root)
+            source_id = source_library.list()[0]["id"]
+            marker = source_library.create_range(source_id, "Missile launch", 1, 100)
+
+            imported = CaptureLibrary(library_root).import_path(source)
+
+            self.assertNotEqual(source_id, imported["id"])
+            self.assertEqual("Marked patrol", imported["name"])
+            self.assertEqual("sm2-01", imported["mission"])
+            self.assertEqual(1, imported["sessionCount"])
+            self.assertEqual(1, imported["rangeCount"])
+            imported_library = CaptureLibrary(library_root)
+            self.assertEqual(marker["name"], imported_library.ranges(imported["id"])[0]["name"])
+            checkpoint = load_checkpoint(Path(imported["path"]), 2_000_000)
+            self.assertIsNotNone(checkpoint)
+            self.assertEqual("preserved", checkpoint["state"]["state"])
+
+    def test_indexed_reader_loads_only_the_addressed_chunk(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            writer = CaptureWriter(Path(directory))
+            path = writer.start({"name": "indexed"})
+            writer.packet(b"first", 0, "2026-08-09T10:00:00.000000Z")
+            writer.packet(b"second", 1_000_001, "2026-08-09T10:00:01.000001Z")
+            writer.packet(b"third", 2_000_002, "2026-08-09T10:00:02.000002Z")
+            writer.stop()
+
+            with open_capture(path) as reader:
+                self.assertEqual(3, reader.packet_count)
+                self.assertEqual(2, reader.index_at_time(1_500_000))
+                self.assertEqual(b"third", reader.packet(2)["datagram"])
+                self.assertEqual(1, len(reader._cached_chunk_packets))
 
     def test_size_limit_finalizes_automatically_after_a_validated_chunk(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

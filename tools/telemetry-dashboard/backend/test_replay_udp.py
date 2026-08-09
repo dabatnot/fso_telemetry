@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 
 from dashboard_runtime import TelemetryRuntime
-from replay_udp import ReplayUdpProducer
+from replay_udp import CAPTURED_FRAGMENT_LIMIT, ReplayUdpProducer
 import fstl_client_core as fstl
 import test_fstl_console_client_contract as contract
 
@@ -179,6 +179,25 @@ class ReplayUdpProducerTest(unittest.TestCase):
                 replacement.receive(datagram, at_us, at_utc)
             self.assertEqual("Live", replacement.state.status)
             self.assertNotEqual(old_session, replacement.state.session_id)
+        finally:
+            sock.close()
+            producer.stop()
+
+    def test_incomplete_source_fragments_are_ignored_without_peers_and_bounded_with_peer(self) -> None:
+        source = populated_client()
+        producer = ReplayUdpProducer(lambda: source.state, lambda: 0, lambda _: None)
+        producer.observe_capture_datagram(contract.incomplete_fragment(1))
+        self.assertEqual({}, producer._captured)
+
+        producer.configure(bind_host="127.0.0.1", port=0, lan_enabled=False)
+        port = int(str(producer.start()["endpoint"]).rsplit(":", 1)[1])
+        sock, client = self.negotiate(port)
+        try:
+            self.assertEqual("Live", client.state.status)
+            for message_id in range(1, CAPTURED_FRAGMENT_LIMIT + 8):
+                producer.observe_capture_datagram(contract.incomplete_fragment(message_id))
+            self.assertEqual(CAPTURED_FRAGMENT_LIMIT, len(producer._captured))
+            self.assertNotIn((1, 1), producer._captured)
         finally:
             sock.close()
             producer.stop()

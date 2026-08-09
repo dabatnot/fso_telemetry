@@ -20,6 +20,7 @@ RETRY_US = 250_000
 RELIABLE_LIFETIME_US = 5_000_000
 HEARTBEAT_US = 1_000_000
 PAUSED_STATE_REFRESH_US = 2_000_000
+CAPTURED_FRAGMENT_LIMIT = 4
 
 
 def _transaction_parts(
@@ -87,6 +88,7 @@ class ReplayPeer:
 @dataclass
 class CapturedFragments:
     header: dict[str, int]
+    first_seen_us: int
     pieces: dict[int, bytes] = field(default_factory=dict)
 
 
@@ -221,8 +223,31 @@ class ReplayUdpProducer:
         if message_type not in (7, 8):
             return
         key = (int(header["session_id"]), int(header["message_id"]))
+        now = fstl.now_us()
         with self._lock:
-            group = self._captured.setdefault(key, CapturedFragments(header))
+            # A joining peer receives a synthetic snapshot for the current
+            # cursor, so retaining source fragments while no peer is listening
+            # has no value and can only grow memory on an incomplete capture.
+            if self._socket is None or not self._peers:
+                self._captured.clear()
+                return
+            expired = [
+                captured_key
+                for captured_key, captured in self._captured.items()
+                if now - captured.first_seen_us >= RELIABLE_LIFETIME_US
+            ]
+            for captured_key in expired:
+                self._captured.pop(captured_key, None)
+            group = self._captured.get(key)
+            if group is None:
+                if len(self._captured) >= CAPTURED_FRAGMENT_LIMIT:
+                    oldest_key = min(
+                        self._captured,
+                        key=lambda captured_key: self._captured[captured_key].first_seen_us,
+                    )
+                    self._captured.pop(oldest_key, None)
+                group = CapturedFragments(header, now)
+                self._captured[key] = group
             group.pieces[int(header["fragment_index"])] = datagram[fstl.HEADER_SIZE :]
             if len(group.pieces) != int(header["fragment_count"]):
                 return
@@ -230,7 +255,6 @@ class ReplayUdpProducer:
             self._captured.pop(key, None)
             if decoder.crc32_iso_hdlc(payload) != int(header["message_crc32"]):
                 return
-            now = fstl.now_us()
             for peer in list(self._peers.values()):
                 if not peer.session_started:
                     self._begin_session(peer, now)

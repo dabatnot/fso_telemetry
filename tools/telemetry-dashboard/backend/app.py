@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import shutil
 import tempfile
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -160,15 +161,34 @@ def create_app(runtime: TelemetryRuntime) -> FastAPI:
 
     @app.post("/api/captures/import")
     async def capture_import(request: Request, filename: str = "capture.fstlcap") -> dict[str, Any]:
-        payload = await request.body()
-        if not payload:
-            raise HTTPException(status_code=422, detail="empty capture upload")
-        suffix = ".fstlcap.jsonl" if filename.endswith(".jsonl") else ".fstlcap"
-        with tempfile.TemporaryDirectory() as directory:
-            source = Path(directory) / f"upload{suffix}"
-            source.write_bytes(payload)
+        maximum_bytes = runtime.capture.stop_bytes
+        reserve_bytes = runtime.capture.free_reserve_bytes
+        content_length = request.headers.get("content-length")
+        if content_length is not None:
             try:
-                return runtime.capture_library.import_path(source)
+                declared_bytes = int(content_length)
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail="invalid Content-Length") from exc
+            if maximum_bytes > 0 and declared_bytes > maximum_bytes:
+                raise HTTPException(status_code=413, detail="capture upload exceeds the configured size limit")
+        suffix = ".fstlcap.jsonl" if filename.lower().endswith(".jsonl") else ".fstlcap"
+        with tempfile.TemporaryDirectory(dir=runtime.capture_library.root) as directory:
+            source = Path(directory) / f"upload{suffix}"
+            received_bytes = 0
+            with source.open("wb") as stream:
+                async for chunk in request.stream():
+                    if not chunk:
+                        continue
+                    received_bytes += len(chunk)
+                    if maximum_bytes > 0 and received_bytes > maximum_bytes:
+                        raise HTTPException(status_code=413, detail="capture upload exceeds the configured size limit")
+                    if shutil.disk_usage(runtime.capture_library.root).free - len(chunk) < reserve_bytes:
+                        raise HTTPException(status_code=507, detail="capture upload would exceed the free-space reserve")
+                    await asyncio.to_thread(stream.write, chunk)
+            if received_bytes == 0:
+                raise HTTPException(status_code=422, detail="empty capture upload")
+            try:
+                return await asyncio.to_thread(runtime.capture_library.import_path, source)
             except (OSError, ValueError, json.JSONDecodeError) as exc:
                 raise HTTPException(status_code=422, detail=str(exc)) from exc
 
