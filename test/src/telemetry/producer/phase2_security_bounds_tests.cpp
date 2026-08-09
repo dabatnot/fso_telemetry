@@ -723,11 +723,20 @@ TEST(Phase2SecurityBounds,
 
 	EXPECT_EQ(3U,
 		occurrence_count(runtime, "m_log->phase2_source_rejected("));
+	const auto unsupported_case = runtime.find(
+		"case Phase2CaptureStatus::UnsupportedEngineState:");
+	ASSERT_NE(std::string::npos, unsupported_case);
+	const auto unsupported_log_guard = runtime.find(
+		"m_log != nullptr", unsupported_case);
+	const auto unsupported_log = runtime.find(
+		"m_log->phase2_source_rejected(primary_block,",
+		unsupported_case);
+	ASSERT_NE(std::string::npos, unsupported_log_guard);
+	ASSERT_NE(std::string::npos, unsupported_log);
+	EXPECT_LT(unsupported_log_guard, unsupported_log);
 	EXPECT_NE(std::string::npos,
-		runtime.find(
-			"phase2_capture.status ==\n"
-			"\t\t\t\t\tPhase2CaptureStatus::UnsupportedEngineState &&\n"
-			"\t\t\t\tm_log != nullptr"));
+		runtime.find("TelemetryPhase2CaptureFailure::InvalidEnum",
+			unsupported_log));
 	EXPECT_NE(std::string::npos,
 		runtime.find("diagnostics.primary_failed_block"));
 	EXPECT_NE(std::string::npos,
@@ -856,10 +865,13 @@ TEST(Phase2SecurityBounds,
 	ASSERT_NE(std::string::npos, accept_sample);
 	EXPECT_LT(release_absent, accept_sample)
 		<< "Absent members are released before a full tracker accepts replacements.";
-	EXPECT_NE(std::string::npos,
-		tracker.find(
-			"if (free_index == m_phase2_support_tracker.size())\n"
-			"\t\t\t\tcontinue;"));
+	const auto full_tracker_guard = tracker.find(
+		"if (free_index == m_phase2_support_tracker.size())");
+	ASSERT_NE(std::string::npos, full_tracker_guard);
+	const auto skip_untracked = tracker.find("continue;", full_tracker_guard);
+	ASSERT_NE(std::string::npos, skip_untracked);
+	EXPECT_LT(skip_untracked - full_tracker_guard, 128U)
+		<< "A full tracker skips the untracked sample immediately.";
 	EXPECT_EQ(0U, occurrence_count(tracker,
 		"m_log->phase2_support_terminal("))
 		<< "Observed active phases are metrics-only.";

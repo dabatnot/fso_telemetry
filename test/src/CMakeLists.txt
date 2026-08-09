@@ -52,7 +52,7 @@ target_include_directories(telemetry_initialize_contract_tests PRIVATE
 	${GENERATED_SOURCE_DIR}
 	${GENERATED_SOURCE_DIR}/code
 )
-target_link_libraries(telemetry_initialize_contract_tests PRIVATE gtest_main sdl2)
+target_link_libraries(telemetry_initialize_contract_tests PRIVATE gtest_main sdl3)
 
 set_target_properties(telemetry_initialize_contract_tests PROPERTIES FOLDER "tests")
 
@@ -73,7 +73,7 @@ target_include_directories(telemetry_lifecycle_callback_contract_tests PRIVATE
 	${GENERATED_SOURCE_DIR}
 	${GENERATED_SOURCE_DIR}/code
 )
-target_link_libraries(telemetry_lifecycle_callback_contract_tests PRIVATE gtest_main sdl2)
+target_link_libraries(telemetry_lifecycle_callback_contract_tests PRIVATE gtest_main sdl3)
 
 set_target_properties(telemetry_lifecycle_callback_contract_tests PROPERTIES FOLDER "tests")
 
@@ -92,7 +92,7 @@ target_include_directories(telemetry_initialize_failure_contract_tests PRIVATE
 	${GENERATED_SOURCE_DIR}
 	${GENERATED_SOURCE_DIR}/code
 )
-target_link_libraries(telemetry_initialize_failure_contract_tests PRIVATE sdl2)
+target_link_libraries(telemetry_initialize_failure_contract_tests PRIVATE sdl3)
 
 set_target_properties(telemetry_initialize_failure_contract_tests PROPERTIES FOLDER "tests")
 
@@ -500,7 +500,7 @@ target_link_libraries(telemetry_phase2_security_bounds_tests PRIVATE
 	gtest_main
 	fstl_protocol
 	jansson
-	sdl2
+	sdl3
 )
 if(WIN32)
 	target_link_libraries(telemetry_phase2_security_bounds_tests PRIVATE ws2_32)

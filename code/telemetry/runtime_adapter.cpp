@@ -35,7 +35,7 @@ Phase2ProfileEligibility current_phase2_profile_eligibility(
 	eligibility.trusted_full_state = config.trusted_full_state;
 	eligibility.dedicated =
 		Is_standalone || (Game_mode & GM_STANDALONE_SERVER) != 0;
-	eligibility.headless = gr_screen.mode == GR_STUB;
+	eligibility.headless = gr_screen.mode == GraphicsAPI::Stub;
 	return eligibility;
 }
 
