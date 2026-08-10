@@ -510,12 +510,7 @@ def decode_record_payload(
         if presence & 0x1000:
             result["autoaim_fov_rad"] = reader.f32()
         if presence & 0x2000:
-            result["radar_icon"] = {
-                "base": reader.u32(),
-                "friendly": reader.u32(),
-                "hostile": reader.u32(),
-                "neutral": reader.u32(),
-            }
+            result["radar_icon_id"] = reader.u32()
         return result
 
     if record_type == 4:

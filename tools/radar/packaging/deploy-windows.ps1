@@ -16,6 +16,9 @@ Copy-Item -LiteralPath $executable -Destination $output -Force
 $deploy = if ($QtRoot) { Join-Path $QtRoot "bin\windeployqt.exe" } else { "windeployqt.exe" }
 & $deploy --release --no-translations --compiler-runtime --dir $output (Join-Path $output "FsoSimpitRadar.exe")
 if ($LASTEXITCODE -ne 0) { throw "windeployqt failed" }
+if (-not (Test-Path -LiteralPath (Join-Path $output "Qt6Svg.dll"))) {
+    throw "windeployqt did not deploy Qt6Svg.dll"
+}
 
 # windeployqt needs a Visual Studio developer environment to locate the CRT.
 # Keep the bundle self-contained even when this script is called from an

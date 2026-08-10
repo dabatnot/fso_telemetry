@@ -2211,20 +2211,55 @@ NativeSessionTickStatus NativeSessionRuntime::service_r2_tick(const NativeSessio
 	// pass, so state can never occupy the output slot ahead of a heartbeat or
 	// other control response received in this tick.
 	const auto serialization_started = measure_performance ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
-	for (std::size_t index = 0U;
-		 index < m_controller.owned_capacity().client_slots;
-		 ++index)
-		if (m_controller.service_phase2_manifest_egress(
-				index, context.now_us) != 0U)
+	auto attempts_remaining = static_cast<std::uint16_t>(
+		m_maximum_attempts - result.attempts);
+	const auto queue_next_state = [&]() noexcept {
+		const auto queue_budget = static_cast<std::size_t>(
+			attempts_remaining == 0U ? 1U : attempts_remaining);
+		bool queued = m_controller.service_next_phase2_manifest_egress(
+			context.now_us) != 0U;
+		if (!queued)
+			queued = m_controller.service_initial_snapshot_egress(
+				queue_budget, context.now_us) != 0U;
+		m_capture_for_phase3_keyframe =
+			m_controller.phase3_complete_capture_required();
+		// Deltas are the lowest-priority state traffic and are only exposed after
+		// control, reliable snapshot work and heartbeat processing above.
+		if (!queued && !m_capture_for_phase3_keyframe)
+			queued = m_controller.service_delta_egress(
+				queue_budget, context.now_us) != 0U;
+		return queued;
+	};
+	while (attempts_remaining != 0U) {
+		if (!queue_next_state())
 			break;
-	(void)m_controller.service_initial_snapshot_egress(m_maximum_attempts, context.now_us);
-	m_capture_for_phase3_keyframe =
-		m_controller.phase3_complete_capture_required();
-	// Deltas are the lowest-priority state traffic and are only exposed after
-	// control, reliable snapshot work and heartbeat processing above.
-	if (!m_capture_for_phase3_keyframe)
-		(void)m_controller.service_delta_egress(
-			m_maximum_attempts, context.now_us);
+
+		const auto follow_started = measure_performance
+			? std::chrono::steady_clock::now()
+			: std::chrono::steady_clock::time_point{};
+		const auto follow = m_scheduler.run_tick(
+			attempts_remaining, *this);
+		if (measure_performance)
+			m_last_performance_sample.network_duration_ns +=
+				elapsed_nanoseconds(follow_started,
+					std::chrono::steady_clock::now());
+		if (!follow.valid_budget ||
+			follow.terminal_status == IoStatus::Closed ||
+			follow.terminal_status == IoStatus::Error) {
+			if (m_log != nullptr)
+				m_log->flush_drop_summary(context.now_us);
+			fail_transport();
+			return NativeSessionTickStatus::PermanentTransportFailure;
+		}
+		attempts_remaining = static_cast<std::uint16_t>(
+			attempts_remaining - follow.attempts);
+		if (follow.attempts == 0U || m_controller.has_output())
+			break;
+	}
+	// A fully consumed budget still prepares one tail item for the next tick.
+	// This preserves progress for maxDatagramsPerTick=1 without overspending.
+	if (!m_controller.has_output())
+		(void)queue_next_state();
 	if (measure_performance) {
 		m_last_performance_sample.serialization_duration_ns = elapsed_nanoseconds(serialization_started, std::chrono::steady_clock::now());
 	}
@@ -3528,7 +3563,8 @@ NativeSessionTickStatus NativeSessionRuntime::apply_collected_player_capture(con
 			return NativeSessionTickStatus::PermanentCaptureFailure;
 		}
 		if (slot.snapshot.has_active_baseline()) {
-			(void)m_controller.queue_cumulative_delta(index, m_tick_context.now_us);
+			(void)m_controller.queue_cumulative_delta(
+				index, m_tick_context.now_us);
 		}
 		if (m_performance_observation_active) {
 			m_last_performance_sample.delta_build_duration_ns +=
@@ -3745,6 +3781,12 @@ const SessionControllerSlot* NativeSessionRuntimeTestAccess::slot(const NativeSe
 SessionController* NativeSessionRuntimeTestAccess::controller(NativeSessionRuntime& runtime) noexcept
 {
 	return runtime.m_controller_ready ? &runtime.m_controller : nullptr;
+}
+
+IoStatus NativeSessionRuntimeTestAccess::try_receive(
+	NativeSessionRuntime& runtime) noexcept
+{
+	return runtime.try_receive();
 }
 
 void NativeSessionRuntimeTestAccess::set_session_controller_provision_failure(NativeSessionRuntime& runtime,

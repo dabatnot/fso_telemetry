@@ -10,6 +10,7 @@
 #include "playerman/player.h"
 #include "ship/ship.h"
 #include "ship/support_work.h"
+#include "telemetry/engine_adapter.h"
 #include "telemetry/producer/phase2_gameplay_ab_test_support.h"
 #include "util/FSTestFixture.h"
 #include "freespace.h"
@@ -108,6 +109,73 @@ class TelemetryPhase2GameplayAbContract : public test::FSTestFixture {
 	{
 	}
 };
+
+TEST_F(TelemetryPhase2GameplayAbContract,
+	QueuedSupportIgnoresAStaleSignatureUntilTheSupportObjectExists)
+{
+	constexpr auto ship_index = MAX_SHIPS - 1;
+	constexpr auto object_index = MAX_OBJECTS - 1;
+	constexpr auto player_signature = 42'101;
+	constexpr auto stale_support_signature = 42'102;
+
+	const auto prior_game_mode = Game_mode;
+	const auto prior_player = Player;
+	const auto prior_player_obj = Player_obj;
+	const auto prior_player_ship = Player_ship;
+	const auto prior_player_ai = Player_ai;
+	const auto created_ship_info = Ship_info.empty();
+	if (created_ship_info) {
+		Ship_info.emplace_back();
+	}
+	player test_player{};
+
+	auto& test_ship = Ships[ship_index];
+	auto& test_object = Objects[object_index];
+	auto& test_ai = Ai_info[ship_index];
+	test_ship.clear();
+	list_init(&test_ship.subsys_list);
+	test_ship.weapons.clear();
+	test_ship.objnum = object_index;
+	test_ship.ai_index = ship_index;
+	test_ship.ship_info_index = 0;
+	test_object.clear();
+	test_object.type = OBJ_SHIP;
+	test_object.instance = ship_index;
+	test_object.signature = player_signature;
+	test_ai = ai_info{};
+	test_ai.shipnum = ship_index;
+	test_ai.support_ship_objnum = -1;
+	test_ai.support_ship_signature = stale_support_signature;
+	test_ai.ai_flags.set(AI::AI_Flags::Awaiting_repair);
+	test_player.objnum = object_index;
+	Game_mode |= GM_IN_MISSION;
+	Player = &test_player;
+	Player_obj = &test_object;
+	Player_ship = &test_ship;
+	Player_ai = &test_ai;
+
+	auto view = make_fso_engine_read_view();
+	Phase2DiscoveryNode discovery{};
+	const auto result = view.read_discovery_node(
+		{object_index, player_signature}, discovery);
+
+	Player = prior_player;
+	Player_obj = prior_player_obj;
+	Player_ship = prior_player_ship;
+	Player_ai = prior_player_ai;
+	Game_mode = prior_game_mode;
+	test_object.clear();
+	test_ship.clear();
+	test_ai = ai_info{};
+	if (created_ship_info) {
+		Ship_info.pop_back();
+	}
+
+	EXPECT_EQ(Phase2SourceReadStatus::Valid, result.status);
+	EXPECT_EQ(player_signature, discovery.capture_key.value);
+	EXPECT_EQ(0U, discovery.support_capture_key.value);
+	EXPECT_EQ(0x01U, discovery.raw_support_flags);
+}
 
 TEST_F(TelemetryPhase2GameplayAbContract,
 	RealPlayerControlsAndTelemetryObservationPreserveGameplayAcrossRepeatedRuns)

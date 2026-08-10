@@ -2306,6 +2306,270 @@ DecodedOutput establish_session_begin(detail::SessionController& controller,
 	return pop_output(controller);
 }
 
+TEST(TelemetryAckOutputArbitrationContract,
+	AppliedSnapshotAckBehindHeartbeatCommitsBaselineAndPreservesOutput)
+{
+	IdentityHarness ids{{{true, 0xA101U}}};
+	auto controller = make_controller(ids.allocator);
+	const auto peer = endpoint();
+	const auto begin = establish_session_begin(controller, peer, 0xA101U,
+		1'000U, 2'000U);
+
+	ASSERT_TRUE(controller.begin_initial_snapshot(
+		0U, phase1_integration_image(), 3'000U));
+	ASSERT_EQ(1U, controller.service_initial_snapshot_egress(
+		1U, 3'001U));
+	const auto snapshot = pop_output(controller);
+	auto validated_payload = welcome_ack_payload(snapshot);
+	validated_payload.target_message_type =
+		protocol::MessageType::FullSnapshot;
+	validated_payload.ack_flags = static_cast<std::uint8_t>(
+		protocol::AckFlag::Validated);
+	const auto validated = encode_welcome_ack(
+		snapshot, validated_payload);
+	ASSERT_EQ(detail::SessionIngressDisposition::ResponseQueued,
+		controller.ingest(peer, view(validated.bytes),
+			4'000U, 7U, true).disposition);
+	ASSERT_EQ(detail::Phase1SnapshotProgress::Synchronizing,
+		controller.snapshot_progress(0U));
+
+	const auto heartbeat_due =
+		controller.slot(0U).heartbeat.next_periodic_due_us;
+	controller.service_periodic(heartbeat_due);
+	detail::SessionControllerOutput heartbeat_before;
+	ASSERT_TRUE(controller.peek_output(heartbeat_before));
+	protocol::DatagramView heartbeat_view;
+	ASSERT_EQ(protocol::ValidationError::None,
+		protocol::decode_and_validate_datagram(
+			{heartbeat_before.bytes.data(), heartbeat_before.size},
+			{protocol::VersionMinorV1_1,
+				protocol::VersionMinorV1_1}, heartbeat_view));
+	ASSERT_EQ(protocol::MessageType::Heartbeat,
+		heartbeat_view.header.message_type);
+
+	auto forged_payload = validated_payload;
+	forged_payload.ack_flags = protocol::KnownAckFlags;
+	++forged_payload.target_message_id;
+	const auto forged = encode_welcome_ack(snapshot, forged_payload);
+	const auto activity_before = controller.slot(0U).heartbeat
+		.last_valid_network_activity_us;
+	const auto forged_result = controller.ingest(peer, view(forged.bytes),
+		heartbeat_due + 1U, 7U, true);
+	EXPECT_EQ(detail::SessionIngressDisposition::Dropped,
+		forged_result.disposition);
+	EXPECT_EQ(detail::SessionIngressDropReason::PayloadInvalid,
+		forged_result.drop_reason);
+	EXPECT_EQ(activity_before, controller.slot(0U).heartbeat
+		.last_valid_network_activity_us);
+	EXPECT_EQ(detail::Phase1SnapshotProgress::Synchronizing,
+		controller.snapshot_progress(0U));
+
+	auto applied_payload = validated_payload;
+	applied_payload.ack_flags = protocol::KnownAckFlags;
+	const auto applied = encode_welcome_ack(snapshot, applied_payload);
+	const auto applied_result = controller.ingest(peer, view(applied.bytes),
+		heartbeat_due + 2U, 7U, true);
+	EXPECT_EQ(detail::SessionIngressDisposition::ResponseQueued,
+		applied_result.disposition);
+	EXPECT_EQ(detail::SessionIngressDropReason::None,
+		applied_result.drop_reason);
+	EXPECT_EQ(detail::Phase1SnapshotProgress::Live,
+		controller.snapshot_progress(0U));
+
+	detail::SessionControllerOutput heartbeat_after;
+	ASSERT_TRUE(controller.peek_output(heartbeat_after));
+	EXPECT_EQ(heartbeat_before.endpoint, heartbeat_after.endpoint);
+	EXPECT_EQ(heartbeat_before.size, heartbeat_after.size);
+	EXPECT_TRUE(std::equal(heartbeat_before.bytes.begin(),
+		heartbeat_before.bytes.begin() +
+			static_cast<std::ptrdiff_t>(heartbeat_before.size),
+		heartbeat_after.bytes.begin()));
+	(void)pop_output(controller);
+
+	ASSERT_EQ(protocol::ProducerBaselineResult::Applied,
+		controller.replace_current_state(0U,
+			phase1_integration_image_at(9.0F, heartbeat_due + 3U)));
+	ASSERT_TRUE(controller.queue_cumulative_delta(
+		0U, heartbeat_due + 4U));
+	ASSERT_EQ(1U, controller.service_delta_egress(
+		1U, heartbeat_due + 5U));
+	detail::SessionControllerOutput delta_before;
+	ASSERT_TRUE(controller.peek_output(delta_before));
+	const auto begin_applied = encode_welcome_ack(
+		begin, ack_for_target(begin, protocol::KnownAckFlags));
+	EXPECT_EQ(detail::SessionIngressDisposition::ResponseQueued,
+		controller.ingest(peer, view(begin_applied.bytes),
+			heartbeat_due + 6U, 7U, true).disposition);
+	detail::SessionControllerOutput delta_after;
+	ASSERT_TRUE(controller.peek_output(delta_after));
+	EXPECT_EQ(delta_before.size, delta_after.size);
+	EXPECT_TRUE(std::equal(delta_before.bytes.begin(),
+		delta_before.bytes.begin() +
+			static_cast<std::ptrdiff_t>(delta_before.size),
+		delta_after.bytes.begin()));
+	EXPECT_EQ(protocol::MessageType::Delta,
+		pop_output(controller).datagram.header.message_type);
+}
+
+TEST(TelemetryAckOutputArbitrationContract,
+	AppliedSnapshotAckIsAdmittedBehindOtherClientReliableOutput)
+{
+	IdentityHarness ids{{{true, 0xA201U}, {true, 0xA202U}}};
+	auto controller = make_controller(ids.allocator, nullptr, 2U);
+	const auto first_peer = endpoint(2U);
+	const auto second_peer = endpoint(3U);
+	const auto first_begin = establish_session_begin(
+		controller, first_peer, 0xA201U,
+		1'000U, 2'000U);
+	const auto first_begin_applied = encode_welcome_ack(first_begin,
+		ack_for_target(first_begin, protocol::KnownAckFlags));
+	ASSERT_EQ(detail::SessionIngressDisposition::ResponseQueued,
+		controller.ingest(first_peer, view(first_begin_applied.bytes),
+			2'001U, 7U, true).disposition);
+	const auto second_begin = establish_session_begin(
+		controller, second_peer, 0xA202U,
+		3'000U, 4'000U);
+
+	ASSERT_TRUE(controller.begin_initial_snapshot(
+		0U, phase1_integration_image(), 5'000U));
+	ASSERT_EQ(1U, controller.service_initial_snapshot_egress(
+		1U, 5'001U));
+	const auto snapshot = pop_output(controller);
+	auto ack_payload = welcome_ack_payload(snapshot);
+	ack_payload.target_message_type = protocol::MessageType::FullSnapshot;
+	ack_payload.ack_flags = static_cast<std::uint8_t>(
+		protocol::AckFlag::Validated);
+	const auto validated = encode_welcome_ack(snapshot, ack_payload);
+	ASSERT_EQ(detail::SessionIngressDisposition::ResponseQueued,
+		controller.ingest(first_peer, view(validated.bytes),
+			6'000U, 7U, true).disposition);
+
+	const auto second_due = second_begin.datagram.header.sent_time_us +
+		protocol::reliable_retry_delay_us(
+			protocol::ReliableDefaultRtoUs,
+			0x4653544c5f52544fULL,
+			second_begin.datagram.header.session_id,
+			second_begin.datagram.header.message_id, 0U);
+	controller.service_reliability(second_due);
+	detail::SessionControllerOutput pending_before;
+	ASSERT_TRUE(controller.peek_output(pending_before));
+	ASSERT_EQ(second_peer, pending_before.endpoint);
+
+	ack_payload.ack_flags = protocol::KnownAckFlags;
+	const auto applied = encode_welcome_ack(snapshot, ack_payload);
+	const auto result = controller.ingest(first_peer, view(applied.bytes),
+		second_due + 1U, 7U, true);
+	EXPECT_EQ(detail::SessionIngressDisposition::ResponseQueued,
+		result.disposition);
+	EXPECT_EQ(detail::Phase1SnapshotProgress::Live,
+		controller.snapshot_progress(0U));
+	detail::SessionControllerOutput pending_after;
+	ASSERT_TRUE(controller.peek_output(pending_after));
+	EXPECT_EQ(pending_before.endpoint, pending_after.endpoint);
+	EXPECT_EQ(pending_before.size, pending_after.size);
+	EXPECT_TRUE(std::equal(pending_before.bytes.begin(),
+		pending_before.bytes.begin() +
+			static_cast<std::ptrdiff_t>(pending_before.size),
+		pending_after.bytes.begin()));
+}
+
+TEST(TelemetryAckOutputArbitrationContract,
+	AckBehindSameSlotReliableOutputRemainsBusyAndMutationFree)
+{
+	IdentityHarness ids{{{true, 0xA301U}}};
+	auto controller = make_controller(ids.allocator);
+	const auto peer = endpoint();
+	const auto begin = establish_session_begin(controller, peer, 0xA301U,
+		1'000U, 2'000U);
+	const auto due = begin.datagram.header.sent_time_us +
+		protocol::reliable_retry_delay_us(
+			protocol::ReliableDefaultRtoUs,
+			0x4653544c5f52544fULL,
+			begin.datagram.header.session_id,
+			begin.datagram.header.message_id, 0U);
+	controller.service_reliability(due);
+	detail::SessionControllerOutput pending_before;
+	ASSERT_TRUE(controller.peek_output(pending_before));
+
+	const auto activity_before = controller.slot(0U).heartbeat
+		.last_valid_network_activity_us;
+	const auto applied = encode_welcome_ack(
+		begin, ack_for_target(begin, protocol::KnownAckFlags));
+	const auto busy = controller.ingest(peer, view(applied.bytes),
+		due + 1U, 0U, false);
+	EXPECT_EQ(detail::SessionIngressDisposition::Dropped, busy.disposition);
+	EXPECT_EQ(detail::SessionIngressDropReason::OutputBusy,
+		busy.drop_reason);
+	EXPECT_EQ(1U, controller.slot(0U).reliable_items_in_use);
+	EXPECT_EQ(activity_before, controller.slot(0U).heartbeat
+		.last_valid_network_activity_us);
+	detail::SessionControllerOutput pending_after;
+	ASSERT_TRUE(controller.peek_output(pending_after));
+	EXPECT_EQ(pending_before.size, pending_after.size);
+	EXPECT_TRUE(std::equal(pending_before.bytes.begin(),
+		pending_before.bytes.begin() +
+			static_cast<std::ptrdiff_t>(pending_before.size),
+		pending_after.bytes.begin()));
+	(void)pop_output(controller);
+	EXPECT_EQ(detail::SessionIngressDisposition::ResponseQueued,
+		controller.ingest(peer, view(applied.bytes),
+			due + 2U, 0U, false).disposition);
+	EXPECT_EQ(0U, controller.slot(0U).reliable_items_in_use);
+}
+
+TEST(TelemetryAckOutputArbitrationContract,
+	WelcomeProofBehindDeltaIsRejectedBeforeMutationAndReplaySucceeds)
+{
+	IdentityHarness ids{{{true, 0xA401U}, {true, 0xA402U}}};
+	auto controller = make_controller(ids.allocator, nullptr, 2U);
+	const auto first_peer = endpoint(2U);
+	const auto second_peer = endpoint(3U);
+	activate_phase1_live_baseline(controller, 0xA401U);
+
+	const auto request = hello(0xA402U, protocol::VersionMinorV1_1,
+		protocol::VersionMinorV1_1, 11U);
+	ASSERT_EQ(detail::SessionIngressDisposition::ResponseQueued,
+		controller.ingest(second_peer, view(request.bytes),
+			5'000U, 7U, true).disposition);
+	const auto welcome = pop_output(controller);
+	ASSERT_EQ(detail::ProducerSessionProgress::AwaitWelcomeApplied,
+		controller.slot(1U).progress);
+
+	ASSERT_EQ(protocol::ProducerBaselineResult::Applied,
+		controller.replace_current_state(0U,
+			phase1_integration_image_at(10.0F, 5'100U)));
+	ASSERT_TRUE(controller.queue_cumulative_delta(0U, 5'101U));
+	ASSERT_EQ(1U, controller.service_delta_egress(1U, 5'102U));
+	detail::SessionControllerOutput delta_before;
+	ASSERT_TRUE(controller.peek_output(delta_before));
+	ASSERT_EQ(first_peer, delta_before.endpoint);
+	const auto proof = applied_welcome_ack(welcome);
+	const auto usage_before = controller.owned_usage();
+	const auto result = controller.ingest(second_peer, view(proof.bytes),
+		5'103U, 7U, true);
+	EXPECT_EQ(detail::SessionIngressDisposition::Dropped,
+		result.disposition);
+	EXPECT_EQ(detail::SessionIngressDropReason::OutputBusy,
+		result.drop_reason);
+	EXPECT_EQ(detail::ProducerSessionProgress::AwaitWelcomeApplied,
+		controller.slot(1U).progress);
+	EXPECT_EQ(usage_before, controller.owned_usage());
+	detail::SessionControllerOutput delta_after;
+	ASSERT_TRUE(controller.peek_output(delta_after));
+	EXPECT_EQ(delta_before.size, delta_after.size);
+	EXPECT_TRUE(std::equal(delta_before.bytes.begin(),
+		delta_before.bytes.begin() +
+			static_cast<std::ptrdiff_t>(delta_before.size),
+		delta_after.bytes.begin()));
+	(void)pop_output(controller);
+
+	EXPECT_EQ(detail::SessionIngressDisposition::WelcomeProofApplied,
+		controller.ingest(second_peer, view(proof.bytes),
+			5'104U, 7U, true).disposition);
+	EXPECT_EQ(protocol::MessageType::SessionBegin,
+		pop_output(controller).datagram.header.message_type);
+}
+
 template <typename Controller>
 void expect_session_begin_ack_lifecycle()
 {

@@ -745,6 +745,42 @@ TEST(Phase2LifecycleSupport, P2TST043SupportPhasesPredicatesRawWorkAndEpisodeIde
 	reset_phase2_mission_observation_state();
 }
 
+TEST(Phase2LifecycleSupport,
+	RequestedSupportEncodesWithoutAnEntityBeforeTheSupportShipExists)
+{
+	Fixture fixture;
+	auto& support = fixture.observation->ships[0].support;
+	support.phase = ShipSupportPhase::Queued;
+	support.episode_sequence = 23U;
+	support.raw_support_flags = 0x01U;
+
+	StateImage image;
+	ASSERT_EQ(Phase2StateImageBuildStatus::Created,
+		build_phase2_complete_domain(fixture.input, image));
+	const auto* record = atom(image, RecordType::SupportState, 9001U);
+	ASSERT_NE(nullptr, record);
+	EXPECT_EQ(ValidationError::None, validate_atom(*record));
+
+	PacketReader reader({record->value.data(), record->value.size()});
+	std::uint64_t entity = 0U;
+	std::uint64_t presence = 1U;
+	std::uint64_t sample_time = 0U;
+	std::uint8_t phase = 0xffU;
+	std::uint8_t flags = 0U;
+	ASSERT_TRUE(reader.read_u64(entity));
+	ASSERT_TRUE(reader.read_u64(presence));
+	ASSERT_TRUE(reader.read_u64(sample_time));
+	ASSERT_TRUE(reader.read_u8(phase));
+	ASSERT_TRUE(reader.read_u8(flags));
+	ASSERT_TRUE(reader.skip(3U));
+	EXPECT_TRUE(reader.at_end());
+	EXPECT_EQ(9001U, entity);
+	EXPECT_EQ(SupportStatePresenceFlagNone, presence);
+	EXPECT_EQ(fixture.observation->producer_sample_time_us, sample_time);
+	EXPECT_EQ(static_cast<std::uint8_t>(SupportPhase::Requested), phase);
+	EXPECT_EQ(0x01U, flags);
+}
+
 TEST(Phase2LifecycleSupport, P2TST043TerminalRingLatchesAckCoalescingAndSixtyFourSixtyFiveAreBounded)
 {
 	Phase2Wp07SupportTerminalRing drained_ring;

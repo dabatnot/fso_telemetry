@@ -155,18 +155,18 @@ bool decodeLocks(const StateAtom& atom, std::uint64_t expectedObserver,
 bool decodeContact(const StateAtom& atom,
                    std::uint64_t expectedObserver,
                    const FlightPose& playerPose,
+                   const RadarManifestCatalog* catalog,
                    RadarContact& contact)
 {
     if (atom.record_version != 4U) return false;
     PacketReader reader(ByteView{atom.value.data(), atom.value.size()});
-    std::uint64_t observer = 0, presence = 0, sample = 0;
-    std::uint8_t objectType = 0;
+    std::uint64_t observer = 0, sample = 0;
     std::array<double, 3> world{}, velocity{}, local{};
     float projectionDistance = 0.0F, radius = 0.0F;
     if (!reader.read_u64(observer) || observer != expectedObserver ||
         !reader.read_u64(contact.id) || contact.id == 0 ||
-        !reader.read_u64(presence) || !reader.read_u64(sample) ||
-        !reader.read_u8(objectType) || !reader.read_u8(contact.category) ||
+        !reader.read_u64(contact.presence) || !reader.read_u64(sample) ||
+        !reader.read_u8(contact.objectType) || !reader.read_u8(contact.category) ||
         !reader.read_u8(contact.visibility) || !readVec3(reader, world) ||
         !readVec3(reader, velocity) || !readVec3(reader, local) ||
         !reader.read_f32(projectionDistance) || !std::isfinite(projectionDistance) ||
@@ -174,31 +174,30 @@ bool decodeContact(const StateAtom& atom,
         !std::isfinite(radius) || !reader.read_u32(contact.flags)) {
         return false;
     }
-    if ((presence & telemetry::protocol::RadarContactsPresenceFlagIconSize) != 0U) {
-        float icon = 0.0F;
-        if (!reader.read_f32(icon)) return false;
+    if ((contact.presence & telemetry::protocol::RadarContactsPresenceFlagIconSize) != 0U) {
+        if (!reader.read_f32(contact.iconSize) || contact.iconSize < 0.0F) return false;
     }
-    if ((presence & telemetry::protocol::RadarContactsPresenceFlagRevealedName) != 0U &&
+    if ((contact.presence & telemetry::protocol::RadarContactsPresenceFlagRevealedName) != 0U &&
         !skipUtf8(reader, 255U)) return false;
-    if ((presence & telemetry::protocol::RadarContactsPresenceFlagRevealedClass) != 0U) {
-        std::uint32_t value = 0;
-        if (!reader.read_u32(value)) return false;
+    if ((contact.presence & telemetry::protocol::RadarContactsPresenceFlagRevealedClass) != 0U) {
+        if (!reader.read_u32(contact.revealedClassId) || contact.revealedClassId == 0) return false;
+        contact.hasRevealedClass = true;
     }
-    if ((presence & telemetry::protocol::RadarContactsPresenceFlagRevealedTeamIff) != 0U) {
+    if ((contact.presence & telemetry::protocol::RadarContactsPresenceFlagRevealedTeamIff) != 0U) {
         std::uint32_t team = 0, iff = 0;
         if (!reader.read_u32(team) || !reader.read_u32(iff)) return false;
     }
-    if ((presence & telemetry::protocol::RadarContactsPresenceFlagDetectionTimes) != 0U) {
+    if ((contact.presence & telemetry::protocol::RadarContactsPresenceFlagDetectionTimes) != 0U) {
         std::uint64_t first = 0, last = 0;
         if (!reader.read_u64(first) || !reader.read_u64(last)) return false;
     }
-    if ((presence & telemetry::protocol::RadarContactsPresenceFlagConfidence) != 0U) {
+    if ((contact.presence & telemetry::protocol::RadarContactsPresenceFlagConfidence) != 0U) {
         float confidence = 0.0F;
         if (!reader.read_f32(confidence)) return false;
     }
-    if ((presence & telemetry::protocol::RadarContactsPresenceFlagHudTypeLabel) != 0U &&
+    if ((contact.presence & telemetry::protocol::RadarContactsPresenceFlagHudTypeLabel) != 0U &&
         !skipUtf8(reader, 255U)) return false;
-    if ((presence & telemetry::protocol::RadarContactsPresenceFlagRadarVisual) == 0U) return false;
+    if ((contact.presence & telemetry::protocol::RadarContactsPresenceFlagRadarVisual) == 0U) return false;
     std::uint8_t red = 0, green = 0, blue = 0, alpha = 0;
     if (!reader.read_u8(red) || !reader.read_u8(green) || !reader.read_u8(blue) ||
         !reader.read_u8(alpha) || !reader.read_u8(contact.blipType) ||
@@ -208,6 +207,9 @@ bool decodeContact(const StateAtom& atom,
     contact.scopePosition = projectContact(local[0], local[1], local[2], projectionDistance);
     contact.color = QColor(red, green, blue, alpha);
     contact.glyph = contactGlyph(contact.category, contact.flags);
+    contact.visual = resolveRadarVisual(
+        {contact.objectType, contact.category, contact.visibility, contact.flags,
+         contact.hasRevealedClass, contact.revealedClassId}, catalog);
     if (playerPose.valid) {
         const std::array<double, 3> separation{world[0] - playerPose.position[0],
                                                world[1] - playerPose.position[1],
@@ -224,9 +226,9 @@ bool decodeContact(const StateAtom& atom,
 
 double RadarContact::alpha() const noexcept
 {
-    if (visibility == 0U) return 0.35;
-    if (visibility == 2U) return 0.6;
-    return 1.0;
+    const double visibilityAlpha = visibility == 0U ? 0.35 : visibility == 2U ? 0.6 : 1.0;
+    const double intensity = (flags & telemetry::protocol::ContactFlagBright) != 0U ? 1.0 : 0.72;
+    return visibilityAlpha * intensity;
 }
 
 double RadarContact::priority() const noexcept
@@ -264,6 +266,14 @@ ContactGlyph contactGlyph(std::uint8_t category, std::uint32_t flags) noexcept
 
 std::shared_ptr<const RadarImage> makeRadarImage(
     const telemetry::protocol::StateImage& state, QString* error)
+{
+    return makeRadarImage(state, nullptr, error);
+}
+
+std::shared_ptr<const RadarImage> makeRadarImage(
+    const telemetry::protocol::StateImage& state,
+    const RadarManifestCatalog* catalog,
+    QString* error)
 {
     QString localError;
     auto fail = [&](const QString& message) -> std::shared_ptr<const RadarImage> {
@@ -320,7 +330,7 @@ std::shared_ptr<const RadarImage> makeRadarImage(
     for (const StateAtom& atom : state.records()) {
         if (atom.key.record_type != static_cast<std::uint16_t>(RecordType::RadarContacts)) continue;
         RadarContact contact;
-        if (!decodeContact(atom, image->playerEntityId, playerPose, contact)) {
+        if (!decodeContact(atom, image->playerEntityId, playerPose, catalog, contact)) {
             return fail(QStringLiteral("RADAR_CONTACTS v4 invalide"));
         }
         contact.currentTarget = contact.id == image->currentTargetEntityId && contact.id != 0;

@@ -1,4 +1,5 @@
 #include "radar_client.h"
+#include "radar_manifest.h"
 
 #include "telemetry/protocol/telemetry_business_records.h"
 #include "telemetry/protocol/telemetry_control_messages.h"
@@ -208,11 +209,12 @@ private:
         m_sequence = 0;
         m_messageId = 0;
         m_manifestId = 0;
+        m_manifestCatalog.reset();
         m_baselineSnapshotId = 0;
         m_lastDeltaSequence = 0;
         m_hasBaseline = false;
         m_sessionBegun = false;
-        m_lastProgressUs = 0;
+        m_lastStateProgressUs = 0;
         m_lastHelloUs = 0;
         m_helloFirstUs = 0;
         m_helloT0Us = 0;
@@ -541,7 +543,7 @@ private:
             return;
         }
         m_sessionId = header.session_id;
-        m_lastProgressUs = nowUs();
+        m_lastStateProgressUs = nowUs();
         if ((header.flags & protocol::MessageFlagAckRequired) != 0U)
             sendAck(header, protocol::KnownAckFlags);
         emit statusChanged(ClientStatus::Synchronizing, tr("Synchronisation FSTL…"));
@@ -555,7 +557,7 @@ private:
             return;
         }
         m_sessionBegun = true;
-        m_lastProgressUs = nowUs();
+        m_lastStateProgressUs = nowUs();
         sendAck(header, protocol::KnownAckFlags);
     }
 
@@ -585,29 +587,16 @@ private:
         protocol::CompletedTransaction completed;
         const auto outcome = m_transactions.ingest(transactionPart(payload, header), nowUs() / 1000, completed);
         if (outcome.result == protocol::TransactionAssemblyResult::Completed) {
-            for (const auto& part : completed.parts) {
-                protocol::RecordEnvelopeIterator iterator(
-                    part.records_view(), part.record_count, protocol::RecordFlagPolicy::RequireNone);
-                protocol::RecordEnvelopeView record;
-                bool hasValue = false;
-                for (;;) {
-                    if (iterator.next(record, hasValue) != protocol::ValidationError::None) {
-                        fail(tr("Transaction MANIFEST invalide"));
-                        return;
-                    }
-                    if (!hasValue) break;
-                    protocol::BusinessRecordMetadata metadata;
-                    if (protocol::validate_business_record(record,
-                            protocol::BusinessRecordContainer::Manifest,
-                            protocol::VersionMinorV1_1, metadata) != protocol::ValidationError::None) {
-                        fail(tr("Transaction MANIFEST invalide"));
-                        return;
-                    }
-                }
+            std::shared_ptr<const RadarManifestCatalog> catalog;
+            QString error;
+            if (!buildRadarManifestCatalog(completed, catalog, &error)) {
+                fail(error.isEmpty() ? tr("Transaction MANIFEST invalide") : error);
+                return;
             }
+            m_manifestCatalog = std::move(catalog);
             m_manifestId = completed.transaction_id;
             applyTransactionAcks(completed);
-            m_lastProgressUs = nowUs();
+            m_lastStateProgressUs = nowUs();
         } else if (outcome.result != protocol::TransactionAssemblyResult::Accepted &&
                    outcome.result != protocol::TransactionAssemblyResult::Duplicate) {
             fail(tr("Transaction MANIFEST invalide"));
@@ -636,7 +625,9 @@ private:
     {
         protocol::FullSnapshotPartPayload payload;
         if (protocol::decode_full_snapshot_part_payload(data, payload) != protocol::ValidationError::None ||
-            (payload.required_manifest_id != 0 && payload.required_manifest_id != m_manifestId)) {
+            payload.required_manifest_id == 0 || payload.required_manifest_id != m_manifestId ||
+            m_manifestCatalog == nullptr ||
+            m_manifestCatalog->manifestId != payload.required_manifest_id) {
             fail(tr("FULL_SNAPSHOT invalide ou manifeste absent"));
             return;
         }
@@ -651,7 +642,7 @@ private:
                 fail(tr("Snapshot métier invalide"));
                 return;
             }
-            auto radar = makeRadarImage(candidate, &error);
+            auto radar = makeRadarImage(candidate, m_manifestCatalog.get(), &error);
             if (!radar) {
                 fail(error);
                 return;
@@ -689,7 +680,7 @@ private:
             return;
         }
         QString error;
-        auto radar = makeRadarImage(candidate, &error);
+        auto radar = makeRadarImage(candidate, m_manifestCatalog.get(), &error);
         if (!radar) {
             fail(error);
             return;
@@ -703,7 +694,9 @@ private:
     {
         protocol::HeartbeatPayload heartbeat;
         if (protocol::decode_heartbeat_payload(data, heartbeat) != protocol::ValidationError::None) return;
-        m_lastProgressUs = nowUs();
+        // A heartbeat proves only that the UDP session is alive.  It must not
+        // make a frozen radar image look current; only an atomically applied
+        // manifest/snapshot/delta advances the state-progress watchdog.
         if (heartbeat.kind == protocol::HeartbeatKind::Request) {
             heartbeat.kind = protocol::HeartbeatKind::Response;
             heartbeat.receive_t1_us = nowUs();
@@ -726,7 +719,7 @@ private:
 
     void publish(std::shared_ptr<const RadarImage> image)
     {
-        m_lastProgressUs = nowUs();
+        m_lastStateProgressUs = nowUs();
         m_staleSignalled = false;
         m_resyncPending = false;
         emit imageReady(std::move(image));
@@ -748,6 +741,24 @@ private:
             }
             return;
         }
+        // Test semantic state progress before expiring an incomplete
+        // transaction.  Apart from matching the user-visible freshness rule,
+        // this guarantees that a wedged candidate is discarded by the fresh
+        // endpoint instead of being touched at the reconnect boundary.
+        if (m_lastStateProgressUs != 0) {
+            const std::uint64_t silent = now - m_lastStateProgressUs;
+            if (silent >= 10'000'000ULL) {
+                ++m_reconnectGeneration;
+                openEndpoint(true);
+                return;
+            }
+            if (silent >= 3'000'000ULL && !m_staleSignalled) {
+                m_staleSignalled = true;
+                emit statusChanged(ClientStatus::Stale, tr("STALE"));
+                requestResync(protocol::ResyncReason::SessionStale);
+            }
+        }
+
         // TelemetryReassembler is used for byte assembly; transaction expiry
         // still drives a full resync if a producer stops midway.
         const auto expired = m_transactions.expire_with_details(now / 1000);
@@ -762,18 +773,6 @@ private:
             }
         }
 
-        if (m_lastProgressUs == 0) return;
-        const std::uint64_t silent = now - m_lastProgressUs;
-        if (silent >= 10'000'000ULL) {
-            ++m_reconnectGeneration;
-            openEndpoint(true);
-            return;
-        }
-        if (silent >= 3'000'000ULL && !m_staleSignalled) {
-            m_staleSignalled = true;
-            emit statusChanged(ClientStatus::Stale, tr("STALE"));
-            requestResync(protocol::ResyncReason::SessionStale);
-        }
     }
 
     void fail(const QString& detail)
@@ -794,11 +793,12 @@ private:
     protocol::TelemetryTransactionAssembler m_transactions;
     protocol::StateImage m_baseline;
     protocol::StateImage m_current;
+    std::shared_ptr<const RadarManifestCatalog> m_manifestCatalog;
     QHash<QString, std::uint8_t> m_ackLevels;
     QHash<std::uint32_t, protocol::TelemetryDatagramHeader> m_reliableHeaders;
     std::uint64_t m_sessionId = 0;
     std::uint64_t m_nonce = 0;
-    std::uint64_t m_lastProgressUs = 0;
+    std::uint64_t m_lastStateProgressUs = 0;
     std::uint64_t m_lastHelloUs = 0;
     std::uint64_t m_helloFirstUs = 0;
     std::uint64_t m_helloT0Us = 0;
@@ -829,16 +829,22 @@ RadarClient::RadarClient(QObject* parent) : QObject(parent), m_thread(new QThrea
     connect(m_thread, &QThread::finished, m_worker, &QObject::deleteLater);
     connect(m_worker, &RadarClientWorker::imageReady, this, &RadarClient::imageReady,
             Qt::QueuedConnection);
-    connect(m_worker, &RadarClientWorker::statusChanged, this, &RadarClient::statusChanged,
-            Qt::QueuedConnection);
+    connect(m_worker, &RadarClientWorker::statusChanged,
+            this, &RadarClient::statusChanged, Qt::QueuedConnection);
     m_thread->start();
 }
 
 RadarClient::~RadarClient()
 {
-    stop();
+    if (m_worker != nullptr && m_thread->isRunning()) {
+        // Finish socket and timer teardown on their owning thread before
+        // stopping its event loop.
+        (void)QMetaObject::invokeMethod(
+            m_worker, "stopSession", Qt::BlockingQueuedConnection);
+    }
     m_thread->quit();
     m_thread->wait();
+    m_worker = nullptr;
 }
 
 void RadarClient::start(const QString& host, quint16 port)

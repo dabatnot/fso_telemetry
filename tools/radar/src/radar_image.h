@@ -1,5 +1,7 @@
 #pragma once
 
+#include "radar_icons.h"
+
 #include <QColor>
 #include <QMetaType>
 #include <QPointF>
@@ -27,16 +29,22 @@ struct RadarContact final {
     QPointF scopePosition;
     QColor color;
     ContactGlyph glyph = ContactGlyph::Triangle;
+    RadarVisualDescriptor visual;
     std::uint8_t visibility = 0;
+    std::uint8_t objectType = 0;
     std::uint8_t category = 0;
     std::uint8_t blipType = 0;
+    std::uint64_t presence = 0;
     std::uint32_t flags = 0;
+    std::uint32_t revealedClassId = 0;
+    float iconSize = 0.0F;
     double distance = 0.0;
     double elevationRadians = 0.0;
     bool currentTarget = false;
     bool lockTarget = false;
     bool inRange = true;
     bool invalid = false;
+    bool hasRevealedClass = false;
 
     double alpha() const noexcept;
     double priority() const noexcept;
@@ -61,6 +69,10 @@ ContactGlyph contactGlyph(std::uint8_t category, std::uint32_t flags) noexcept;
 std::shared_ptr<const RadarImage> makeRadarImage(
     const telemetry::protocol::StateImage& state,
     QString* error = nullptr);
+std::shared_ptr<const RadarImage> makeRadarImage(
+    const telemetry::protocol::StateImage& state,
+    const RadarManifestCatalog* catalog,
+    QString* error);
 
 } // namespace simpit::radar
 

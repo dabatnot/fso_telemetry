@@ -9,7 +9,7 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTORCC ON)
 
-find_package(Qt6 6.2 REQUIRED COMPONENTS Core Gui Widgets Network Test)
+find_package(Qt6 6.2 REQUIRED COMPONENTS Core Gui Widgets Network Svg Test)
 find_package(Qt6 6.2 QUIET COMPONENTS LinguistTools)
 
 get_filename_component(REPOSITORY_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../.." ABSOLUTE)
@@ -19,14 +19,21 @@ add_subdirectory("${REPOSITORY_ROOT}/code/telemetry/protocol"
 add_library(radar_core STATIC
     src/radar_image.h
     src/radar_image.cpp
+    src/radar_icons.h
+    src/radar_icons.cpp
+    src/radar_manifest.h
+    src/radar_manifest.cpp
+    src/svg_icon_cache.h
+    src/svg_icon_cache.cpp
     src/radar_client.h
     src/radar_client.cpp
     src/radar_widget.h
     src/radar_widget.cpp
+    radar_icons.qrc
 )
 target_include_directories(radar_core PUBLIC src)
 target_link_libraries(radar_core
-    PUBLIC Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Network fstl_protocol)
+    PUBLIC Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Network Qt6::Svg fstl_protocol)
 target_compile_definitions(radar_core PUBLIC QT_NO_CAST_FROM_ASCII QT_NO_CAST_TO_ASCII)
 
 add_executable(fso-simpit-radar WIN32
@@ -61,8 +68,14 @@ if(BUILD_TESTING)
     add_executable(radar_client_tests tests/radar_client_tests.cpp)
     target_link_libraries(radar_client_tests PRIVATE radar_core Qt6::Test)
     add_test(NAME radar_client_tests COMMAND radar_client_tests)
+
+    add_executable(radar_manifest_tests
+        tests/radar_manifest_tests.cpp
+        ../../code/telemetry/phase2_manifest_builder.cpp)
+    target_link_libraries(radar_manifest_tests PRIVATE radar_core Qt6::Test)
+    add_test(NAME radar_manifest_tests COMMAND radar_manifest_tests)
+
 endif()
 
 install(TARGETS fso-simpit-radar RUNTIME DESTINATION . BUNDLE DESTINATION .)
 install(FILES README.md ../../Copying.md ../../Unlicense.md DESTINATION licenses)
-

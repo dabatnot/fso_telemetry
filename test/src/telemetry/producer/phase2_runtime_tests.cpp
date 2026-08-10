@@ -2041,6 +2041,60 @@ TEST(Phase2Runtime, TST018FaultsOnlyTargetAndPreservesOtherExposedOutput)
 		<< "The fault SESSION_END must make progress behind other due work.";
 }
 
+TEST(Phase2Runtime, StateDeltaEgressRotatesBetweenContinuouslyReadyClients)
+{
+	ControllerIdentity identity;
+	auto controller = make_controller(
+		identity, telemetry::Phase2Profile::None);
+	const auto first_endpoint = endpoint(2U, 42043U);
+	const auto second_endpoint = endpoint(3U, 42044U);
+	establish_ready(controller, first_endpoint,
+		0x701U, 1'000'000U, 0U);
+	establish_ready(controller, second_endpoint,
+		0x702U, 2'000'000U, 1U);
+
+	for (std::size_t slot = 0U; slot < 2U; ++slot) {
+		ASSERT_TRUE(controller.begin_initial_snapshot(
+			slot, delta_compatible_image(1.0F, 3'000'000U), 3'000'000U));
+	}
+	for (std::size_t slot = 0U; slot < 2U; ++slot) {
+		ASSERT_EQ(1U, controller.service_initial_snapshot_egress(
+			1U, 3'001'000U + slot));
+		detail::SessionControllerOutput output;
+		ASSERT_TRUE(controller.pop_output(output));
+		const auto decoded = decode_output(output);
+		ASSERT_EQ(slot == 0U ? first_endpoint : second_endpoint,
+			output.endpoint);
+		const auto ack = applied_ack(decoded,
+			static_cast<std::uint32_t>(0x710U + slot));
+		ASSERT_EQ(detail::SessionIngressDisposition::ResponseQueued,
+			controller.ingest(output.endpoint, view(ack),
+				3'100'000U + slot, 1U, true).disposition);
+	}
+
+	for (std::size_t slot = 0U; slot < 2U; ++slot) {
+		ASSERT_EQ(protocol::ProducerBaselineResult::Applied,
+			controller.replace_current_state(slot,
+				delta_compatible_image(2.0F, 4'000'000U)));
+		ASSERT_TRUE(controller.queue_cumulative_delta(slot, 4'000'000U));
+	}
+	ASSERT_EQ(1U, controller.service_delta_egress(1U, 4'001'000U));
+	detail::SessionControllerOutput first_delta;
+	ASSERT_TRUE(controller.pop_output(first_delta));
+	ASSERT_EQ(first_endpoint, first_delta.endpoint);
+
+	// Slot zero is ready again before slot one has emitted its older delta.
+	// A fixed-index scan would select slot zero forever under this workload.
+	ASSERT_EQ(protocol::ProducerBaselineResult::Applied,
+		controller.replace_current_state(0U,
+			delta_compatible_image(3.0F, 4'002'000U)));
+	ASSERT_TRUE(controller.queue_cumulative_delta(0U, 4'002'000U));
+	ASSERT_EQ(1U, controller.service_delta_egress(1U, 4'003'000U));
+	detail::SessionControllerOutput second_delta;
+	ASSERT_TRUE(controller.pop_output(second_delta));
+	EXPECT_EQ(second_endpoint, second_delta.endpoint);
+}
+
 TEST(Phase2Runtime, TST018SameSlotExposedOutputIsReplacedBySessionEnd)
 {
 	ControllerIdentity identity;

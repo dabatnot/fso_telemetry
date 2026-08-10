@@ -1267,8 +1267,7 @@ SourceReadResult FsoEngineReadView::read_discovery_node(
 		(ship_ai.ai_flags[AI::AI_Flags::Awaiting_repair] ? 0x01U : 0U) |
 		(ship_ai.ai_flags[AI::AI_Flags::Being_repaired] ? 0x02U : 0U) |
 		(ship_ai.ai_flags[AI::AI_Flags::Repairing] ? 0x04U : 0U);
-	if (ship_ai.support_ship_objnum < -1 || ship_ai.support_ship_signature < -1 ||
-		((ship_ai.support_ship_objnum == -1) != (ship_ai.support_ship_signature == -1))) {
+	if (ship_ai.support_ship_objnum < -1 || ship_ai.support_ship_signature < -1) {
 		return {Phase2SourceReadStatus::UnsupportedEngineState};
 	}
 	if (ship_ai.support_ship_objnum >= 0 &&
@@ -1281,7 +1280,7 @@ SourceReadResult FsoEngineReadView::read_discovery_node(
 				ship_ai.support_ship_objnum)) {
 		return {Phase2SourceReadStatus::UnsupportedEngineState};
 	}
-	if(ship_ai.support_ship_signature>0)
+	if (ship_ai.support_ship_objnum >= 0)
 		output.support_capture_key.value=
 			static_cast<std::uint32_t>(ship_ai.support_ship_signature);
 	ShipDockingObservation docking;
@@ -2018,11 +2017,11 @@ SourceReadResult FsoEngineReadView::read_ship_for_projection(
 			(ship_ai.ai_flags[AI::AI_Flags::Awaiting_repair] ? 0x01U : 0U) |
 			(ship_ai.ai_flags[AI::AI_Flags::Being_repaired] ? 0x02U : 0U) |
 			(ship_ai.ai_flags[AI::AI_Flags::Repairing] ? 0x04U : 0U);
-		const auto support_pair_is_well_formed =
+		const auto support_reference_is_well_formed =
 			ship_ai.support_ship_objnum >= -1 &&
 			ship_ai.support_ship_signature >= -1 &&
-			((ship_ai.support_ship_objnum == -1) ==
-				(ship_ai.support_ship_signature == -1));
+			(ship_ai.support_ship_objnum == -1 ||
+				ship_ai.support_ship_signature > 0);
 		const auto support_object_is_valid =
 			ship_ai.support_ship_objnum == -1 ||
 			(ship_ai.support_ship_objnum >= 0 &&
@@ -2034,7 +2033,7 @@ SourceReadResult FsoEngineReadView::read_ship_for_projection(
 			 Objects[ship_ai.support_ship_objnum].instance < MAX_SHIPS &&
 			 Ships[Objects[ship_ai.support_ship_objnum].instance].objnum ==
 				 ship_ai.support_ship_objnum);
-		if (!support_pair_is_well_formed || !support_object_is_valid) {
+		if (!support_reference_is_well_formed || !support_object_is_valid) {
 			output.support = {};
 		} else if (ship_ai.support_ship_objnum >= 0) {
 			output.support.presence =

@@ -483,6 +483,21 @@ bool SessionController::next_packet_sequence(std::uint32_t& sequence) noexcept
 	return true;
 }
 
+bool SessionController::ack_is_admissible_behind_output(
+	const protocol::EndpointKey& endpoint,
+	const protocol::TelemetryDatagramHeader& header) const noexcept
+{
+	const auto slot_index = find_slot(endpoint, header.session_id);
+	if (slot_index == InvalidIndex)
+		return false;
+	const auto progress = m_slots[slot_index].progress;
+	if (progress == ProducerSessionProgress::AwaitWelcomeApplied)
+		return false;
+	if (m_output_owner_slot != slot_index)
+		return true;
+	return m_output_delta_egress_pending || m_output_heartbeat_pending;
+}
+
 bool SessionController::queue_bytes(const protocol::EndpointKey& endpoint,
 	const std::uint8_t* bytes,
 	std::size_t size,
@@ -684,7 +699,13 @@ SessionIngressResult SessionController::ingest(const protocol::EndpointKey& endp
 		// queue_heartbeat cannot replace non-Delta output.
 		const auto heartbeat_is_admissible_behind_priority =
 			decoded.header.message_type == protocol::MessageType::Heartbeat;
-		if ((!m_output_delta_egress_pending && !heartbeat_is_admissible_behind_priority) || !is_control_response) {
+		const auto ack_is_admissible =
+			decoded.header.message_type == protocol::MessageType::Ack &&
+			ack_is_admissible_behind_output(endpoint, decoded.header);
+		if ((!m_output_delta_egress_pending &&
+				!heartbeat_is_admissible_behind_priority &&
+				!ack_is_admissible) ||
+			!is_control_response) {
 			return dropped(SessionIngressDropReason::OutputBusy);
 		}
 		predecoded_for_output_arbitration = true;
@@ -1019,6 +1040,12 @@ SessionIngressResult SessionController::ingest_ack(const protocol::EndpointKey& 
 		slot.reliable_items_in_use = m_reliable_windows[awaiting].entry_count();
 		note_network_activity(awaiting, now_us);
 		return {SessionIngressDisposition::ResponseQueued, SessionIngressDropReason::None};
+	}
+	// WELCOME proof is the only ACK path that must queue a new control
+	// datagram. Keep it transactional even if future arbitration admits more
+	// ACK classes behind an exposed output.
+	if (m_has_output) {
+		return dropped(SessionIngressDropReason::OutputBusy);
 	}
 	if (m_rate_limiter->consume_ack_nack(slot.session_id,
 			endpoint,
@@ -2483,6 +2510,24 @@ std::size_t SessionController::service_phase2_manifest_egress(
 	return 1U;
 }
 
+std::size_t SessionController::service_next_phase2_manifest_egress(
+	std::uint64_t now_us) noexcept
+{
+	if (!m_ready || m_faulted || m_has_output ||
+		m_config.max_clients == 0U)
+		return 0U;
+	for (std::size_t offset = 0U; offset < m_config.max_clients; ++offset) {
+		const auto index =
+			(m_manifest_egress_cursor + offset) % m_config.max_clients;
+		if (service_phase2_manifest_egress(index, now_us) == 0U)
+			continue;
+		m_manifest_egress_cursor =
+			(index + 1U) % m_config.max_clients;
+		return 1U;
+	}
+	return 0U;
+}
+
 Phase2ProfileMutationResult
 SessionController::reject_phase2_profile_mutation_for_slot(
 	std::size_t slot_index,
@@ -2805,7 +2850,9 @@ std::size_t SessionController::service_initial_snapshot_egress(std::size_t datag
 	if (!m_ready || m_faulted || m_has_output || datagram_budget == 0U) {
 		return 0U;
 	}
-	for (std::size_t index = 0U; index < m_config.max_clients; ++index) {
+	for (std::size_t offset = 0U; offset < m_config.max_clients; ++offset) {
+		const auto index =
+			(m_snapshot_egress_cursor + offset) % m_config.max_clients;
 		auto& slot = m_slots[index];
 		if (slot.progress != ProducerSessionProgress::ReadyForState ||
 			!slot.snapshot_egress.has_candidate() ||
@@ -2824,6 +2871,8 @@ std::size_t SessionController::service_initial_snapshot_egress(std::size_t datag
 		}
 		m_output_snapshot_egress_pending = true;
 		++slot.next_packet_sequence;
+		m_snapshot_egress_cursor =
+			(index + 1U) % m_config.max_clients;
 		return 1U;
 	}
 	return 0U;
@@ -2834,7 +2883,9 @@ std::size_t SessionController::service_delta_egress(std::size_t datagram_budget,
 	if (!m_ready || m_faulted || m_has_output || datagram_budget == 0U) {
 		return 0U;
 	}
-	for (std::size_t index = 0U; index < m_config.max_clients; ++index) {
+	for (std::size_t offset = 0U; offset < m_config.max_clients; ++offset) {
+		const auto index =
+			(m_delta_egress_cursor + offset) % m_config.max_clients;
 		auto& slot = m_slots[index];
 		if (slot.progress != ProducerSessionProgress::ReadyForState || !slot.snapshot.has_active_baseline() ||
 			!slot.delta_egress.has_delta() || !slot.delta_egress.service(slot.next_packet_sequence, now_us)) {
@@ -2847,6 +2898,8 @@ std::size_t SessionController::service_delta_egress(std::size_t datagram_budget,
 			return 0U;
 		}
 		m_output_delta_egress_pending = true;
+		m_delta_egress_cursor =
+			(index + 1U) % m_config.max_clients;
 		return 1U;
 	}
 	return 0U;
@@ -2979,6 +3032,9 @@ void SessionController::clear_all() noexcept
 	m_pending_reliability_time_us = 0U;
 	m_reliability_cursor = 0U;
 	m_heartbeat_cursor = 0U;
+	m_manifest_egress_cursor = 0U;
+	m_snapshot_egress_cursor = 0U;
+	m_delta_egress_cursor = 0U;
 	m_output_heartbeat_pending = false;
 	m_output_heartbeat_owns_probe = false;
 	m_output_heartbeat_probe = {};

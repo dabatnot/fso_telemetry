@@ -153,6 +153,19 @@ def receive_message_type(server: socket.socket, message_type: int) -> tuple[byte
 
 
 class FstlConsoleClientContractTest(unittest.TestCase):
+    def test_reference_decoder_reads_single_u32_radar_icon_id(self) -> None:
+        name = b"Ulysses"
+        payload = (
+            struct.pack("<IIQH", 7, 3, 0x2000, len(name))
+            + name
+            + struct.pack("<IIf3fI", 0, 1, 100.0, 0.0, 0.0, 0.0, 17)
+        )
+        encoded = struct.pack("<HBBH", 3, 1, 0, len(payload)) + payload
+
+        fields = reference.decode_record(encoded, container="manifest")["fields"]
+
+        self.assertEqual(17, fields["radar_icon_id"])
+
     def test_reference_decoder_accepts_optional_groups_for_phase2_ship_records(self) -> None:
         def text(value: str) -> bytes:
             encoded = value.encode("utf-8")

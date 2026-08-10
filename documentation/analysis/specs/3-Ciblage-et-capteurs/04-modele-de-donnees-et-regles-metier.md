@@ -65,13 +65,21 @@ records dynamiques.
 Le groupe `RADAR_ICON` est présent si et seulement si :
 
 - la classe elle-même est autorisée dans le manifeste courant ;
-- le moteur possède une définition d’icône radar applicable ;
+- le nom canonique du type dans `objecttypes.tbl`, après trim ASCII et
+  comparaison ASCII insensible à la casse, appartient au registre public ;
 - `radar_icon_id` est normalisé dans le registre public ;
-- les tailles et couleurs associées satisfont les bornes FSTL.
+- sa valeur participe au fingerprint du manifeste.
 
 Une définition présente mais invalide refuse la variante ; elle ne devient pas
 une absence opportuniste. Le groupe ne contient jamais de texture, bitmap,
 handle ou coordonnées écran.
+
+Le registre est `0=Generic`, `1=Navbuoy`, `2=SentryGun`, `3=EscapePod`,
+`4=Cargo`, `5=Support`, `6=Fighter`, `7=Bomber`, `8=Transport`,
+`9=Freighter`, `10=Awacs`, `11=GasMiner`, `12=Cruiser`, `13=Corvette`,
+`14=Capital`, `15=SuperCapital`, `16=Drydock`, `17=KnossosDevice`. Un type
+moddé inconnu omet le groupe ; un consommateur recevant un ID futur inconnu
+utilise son icône générique sans refuser le manifeste.
 
 ### 3.3 Révélation tardive
 

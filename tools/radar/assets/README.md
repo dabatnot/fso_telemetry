@@ -8,7 +8,7 @@ Ce dossier contient le vocabulaire visuel par défaut du radar externe : **44 SV
 - La couleur vient de `currentColor`. Le client applique donc la couleur IFF ou une couleur d'état sans modifier le SVG.
 - L'intensité `BRIGHT`/dim est une opacité de rendu, pas une icône distincte.
 - La visibilité `DISTORTED` doit idéalement être rendue par jitter, intermittence et opacité. `overlay-distorted.svg` fournit un repli statique.
-- Les icônes sont orientées vers le haut. Le client peut faire pivoter la base avec le cap du contact, sans faire pivoter les brackets ni les badges.
+- Les icônes sont orientées vers le haut. Le client actuel conserve cette orientation fixe faute de cap autoritaire par contact.
 - Ordre de composition conseillé : `overlay-warp` derrière la base, base, overlays d'état, brackets au-dessus.
 - Les SVG ne contiennent ni couleur IFF fixe, ni police, ni script, ni ressource externe.
 
@@ -63,7 +63,7 @@ Les mods peuvent remplacer ou étendre `objecttypes.tbl`. Un type absent de cett
 | `weapon-countermeasure.svg` | `WeaponSubtype::Countermeasure` visible au radar |
 | `weapon-special.svg` | `WeaponSubtype::Special` |
 | `weapon-bomb.svg` | `ContactFlagBomb` |
-| `weapon-mine.svg` | Classe d'arme identifiée comme mine |
+| `weapon-mine.svg` | Réservé à une future sémantique protocolaire |
 
 Le radar HUD historique range toute arme visible dans sa famille « bomb », à l'exception d'une arme LSSM en transit. Le radar externe peut conserver les distinctions ci-dessus dès que la classe ou le sous-type est effectivement révélé. Le protocole actuel ne possède pas de bit de contact `MINE`; la sélection fiable de `weapon-mine.svg` dépend donc d'un mapping de classe ou d'une future extension.
 

@@ -17,6 +17,7 @@ class NativeSessionRuntimeTestAccess final {
 	static constexpr bool private_contract_available() noexcept { return true; }
 	static const SessionControllerSlot* slot(const NativeSessionRuntime& runtime, std::size_t index) noexcept;
 	static SessionController* controller(NativeSessionRuntime& runtime) noexcept;
+	static IoStatus try_receive(NativeSessionRuntime& runtime) noexcept;
 	static void set_session_controller_provision_failure(NativeSessionRuntime& runtime, bool fail) noexcept;
 	static void set_startup_owned_budget_adjustment(
 		NativeSessionRuntime& runtime, std::size_t additional_bytes) noexcept;

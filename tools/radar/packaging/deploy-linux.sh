@@ -21,7 +21,7 @@ install -m644 "${repository_root}/tools/radar/THIRD_PARTY_NOTICES.md" \
   "${output_directory}/AppDir/usr/share/licenses/FsoSimpitRadar/"
 curl -L --fail --silent --show-error https://www.gnu.org/licenses/lgpl-3.0.txt \
   -o "${output_directory}/AppDir/usr/share/licenses/FsoSimpitRadar/Qt-LGPL-3.0.txt"
-for notice in /usr/share/doc/qt6-base-dev/copyright /usr/share/doc/qt6-wayland/copyright; do
+for notice in /usr/share/doc/qt6-base-dev/copyright /usr/share/doc/qt6-svg-dev/copyright /usr/share/doc/qt6-wayland/copyright; do
   if [[ -f "${notice}" ]]; then
     install -m644 "${notice}" \
       "${output_directory}/AppDir/usr/share/licenses/FsoSimpitRadar/$(basename "$(dirname "${notice}")")-copyright"
@@ -34,6 +34,10 @@ export QMAKE="${QMAKE:-qmake6}"
 "${LINUXDEPLOY}" --appdir "${output_directory}/AppDir" \
   --desktop-file "${output_directory}/AppDir/usr/share/applications/fso-simpit-radar.desktop" \
   --executable "${output_directory}/AppDir/usr/bin/FsoSimpitRadar" --plugin qt
+find "${output_directory}/AppDir" -type f -name 'libQt6Svg.so*' -print -quit | grep -q . || {
+  echo "linuxdeploy-plugin-qt did not deploy libQt6Svg" >&2
+  exit 1
+}
 
 # linuxdeploy-plugin-qt deploys XCB by default. Keep the same AppImage native
 # on Wayland by adding Qt's client-side platform/shell integrations and asking

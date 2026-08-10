@@ -321,6 +321,8 @@ class SessionController final {
 	std::size_t service_phase2_manifest_egress(
 		std::size_t slot_index,
 		std::uint64_t now_us) noexcept;
+	std::size_t service_next_phase2_manifest_egress(
+		std::uint64_t now_us) noexcept;
 	Phase2ProfileMutationResult
 	reject_phase2_profile_mutation_for_slot(
 		std::size_t slot_index,
@@ -400,6 +402,8 @@ class SessionController final {
 	std::size_t free_slot() const noexcept;
 	std::size_t find_awaiting_slot() const noexcept;
 	std::size_t find_slot(const protocol::EndpointKey& endpoint, std::uint64_t session_id) const noexcept;
+	bool ack_is_admissible_behind_output(const protocol::EndpointKey& endpoint,
+		const protocol::TelemetryDatagramHeader& header) const noexcept;
 	bool initialize_slot(std::size_t index) noexcept;
 	bool next_packet_sequence(std::uint32_t& sequence) noexcept;
 	void release_cache_preproof(CacheEntry& entry) noexcept;
@@ -471,6 +475,9 @@ class SessionController final {
 	std::uint64_t m_pending_reliability_time_us = 0U;
 	std::size_t m_reliability_cursor = 0U;
 	std::size_t m_heartbeat_cursor = 0U;
+	std::size_t m_manifest_egress_cursor = 0U;
+	std::size_t m_snapshot_egress_cursor = 0U;
+	std::size_t m_delta_egress_cursor = 0U;
 	bool m_has_output = false;
 	bool m_output_reliability_pending = false;
 	bool m_output_snapshot_egress_pending = false;

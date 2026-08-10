@@ -9,6 +9,8 @@
 #endif
 
 #include "telemetry/native_session_runtime.h"
+#include "telemetry/native_session_runtime_test_seam.h"
+#include "telemetry/phase1_state_image.h"
 #include "telemetry/protocol/telemetry_control_messages.h"
 #include "telemetry/protocol/telemetry_crc32.h"
 #include "telemetry/protocol/telemetry_datagram.h"
@@ -18,6 +20,7 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <array>
 #include <cerrno>
 #include <chrono>
@@ -252,14 +255,17 @@ bool decode_packet(const Packet& packet, protocol::DatagramView& decoded) noexce
 			decoded) == protocol::ValidationError::None;
 }
 
-bool make_ack(const Packet& target, std::uint32_t packet_sequence, Packet& packet) noexcept
+bool make_ack_with_flags(const Packet& target,
+	std::uint32_t packet_sequence,
+	std::uint8_t ack_flags,
+	Packet& packet) noexcept
 {
 	protocol::DatagramView decoded;
 	if (!decode_packet(target, decoded)) return false;
 	protocol::AckPayload ack;
 	ack.target_message_id = decoded.header.message_id;
 	ack.target_message_type = decoded.header.message_type;
-	ack.ack_flags = protocol::KnownAckFlags;
+	ack.ack_flags = ack_flags;
 	ack.target_fragment_count = decoded.header.fragment_count;
 	ack.target_message_crc32 = decoded.header.message_crc32;
 	std::array<std::uint8_t, protocol::AckPayloadSize> payload{};
@@ -276,6 +282,36 @@ bool make_ack(const Packet& target, std::uint32_t packet_sequence, Packet& packe
 	header.sent_time_us = 20'000U + packet_sequence;
 	header.message_id = packet_sequence;
 	return encode_packet(header, {payload.data(), written}, packet);
+}
+
+bool make_ack(const Packet& target, std::uint32_t packet_sequence, Packet& packet) noexcept
+{
+	return make_ack_with_flags(target, packet_sequence,
+		protocol::KnownAckFlags, packet);
+}
+
+protocol::StateImage loopback_state_image(float player_x,
+	std::uint64_t sample_time_us)
+{
+	detail::Phase1StateImageInput input{};
+	input.producer_id = 0x1020304050607080ULL;
+	input.negotiated_capability_generation = 1U;
+	input.mission.producer_sample_time_us = sample_time_us;
+	input.mission.mission_generation = 7U;
+	input.mission.phase = protocol::MissionPhase::Active;
+	input.mission.time_compression = 1.0F;
+	input.player_capture = {detail::CaptureStatus::Valid,
+		detail::CaptureReason::None};
+	input.player.entity_id = 42U;
+	input.player.value.producer_sample_time_us = sample_time_us;
+	input.player.value.position_world = {player_x, 2.0F, 3.0F};
+	input.player.value.orientation_local_to_world =
+		{1.0F, 0.0F, 0.0F, 0.0F};
+	input.player.value.radius = 1.0F;
+	protocol::StateImage image;
+	EXPECT_EQ(detail::Phase1StateImageBuildStatus::Created,
+		detail::build_phase1_state_image(input, image));
+	return image;
 }
 
 bool make_heartbeat_response(const protocol::DatagramView& request,
@@ -639,7 +675,6 @@ testing::AssertionResult exercise_native_runtime_loopback(protocol::IpAddressFam
 			session_begin)) {
 		return testing::AssertionFailure() << "bounded pump did not receive SESSION_BEGIN";
 	}
-	const auto welcome_proof_time = server->services.last_tick.now_us;
 	protocol::DatagramView begin_view;
 	if (!decode_packet(session_begin, begin_view) || begin_view.header.session_id != welcome_view.header.session_id) {
 		return testing::AssertionFailure() << "SESSION_BEGIN did not preserve the negotiated session";
@@ -655,6 +690,141 @@ testing::AssertionResult exercise_native_runtime_loopback(protocol::IpAddressFam
 	}
 	if (!static_cast<bool>(server->services.native) || server->services.native->active_sessions() != 1U) {
 		return testing::AssertionFailure() << "server did not retain exactly one active session";
+	}
+
+	// Reproduce the runtime ordering that caused the live radar stall: the
+	// snapshot is VALIDATED, a periodic heartbeat owns the single exposed
+	// output slot, then APPLIED arrives on the real UDP socket.  The ACK must
+	// commit the candidate without replacing the heartbeat, and normal delta
+	// egress must resume immediately afterwards.
+	auto* controller = detail::NativeSessionRuntimeTestAccess::controller(
+		*server->services.native);
+	if (controller == nullptr ||
+		!controller->begin_initial_snapshot(
+			0U, loopback_state_image(1.0F, 40'000U), 40'000U)) {
+		return testing::AssertionFailure()
+			<< "native controller could not stage the loopback snapshot";
+	}
+	Packet snapshot;
+	if (!pump_until_packet(*server,
+			client,
+			opened_client.handle,
+			protocol::MessageType::FullSnapshot,
+			pump,
+			snapshot)) {
+		return testing::AssertionFailure()
+			<< "bounded pump did not receive FULL_SNAPSHOT";
+	}
+	Packet validated_ack;
+	const auto receives_before_validated =
+		server->services.backend.complete_receives;
+	if (!make_ack_with_flags(snapshot,
+			4U,
+			static_cast<std::uint8_t>(protocol::AckFlag::Validated),
+			validated_ack) ||
+		client.try_send(opened_client.handle,
+			server_endpoint,
+			{validated_ack.bytes.data(), validated_ack.size}).status !=
+			detail::IoStatus::Complete ||
+		!pump_until_server_receive(*server,
+			receives_before_validated + 1U,
+			pump)) {
+		return testing::AssertionFailure()
+			<< "bounded pump did not apply FULL_SNAPSHOT VALIDATED";
+	}
+	if (controller->snapshot_progress(0U) !=
+		detail::Phase1SnapshotProgress::Synchronizing) {
+		return testing::AssertionFailure()
+			<< "snapshot did not remain synchronizing after VALIDATED";
+	}
+
+	controller->service_periodic(
+		controller->slot(0U).heartbeat.next_periodic_due_us);
+	detail::SessionControllerOutput heartbeat_before;
+	if (!controller->peek_output(heartbeat_before)) {
+		return testing::AssertionFailure()
+			<< "periodic service did not expose a heartbeat";
+	}
+	protocol::DatagramView exposed_view;
+	if (protocol::decode_and_validate_datagram(
+			{heartbeat_before.bytes.data(), heartbeat_before.size},
+			{protocol::VersionMinorV1_1,
+				protocol::VersionMinorV1_1},
+			exposed_view) != protocol::ValidationError::None ||
+		exposed_view.header.message_type != protocol::MessageType::Heartbeat) {
+		return testing::AssertionFailure()
+			<< "the occupied native output was not a heartbeat";
+	}
+
+	Packet applied_ack;
+	if (!make_ack(snapshot, 5U, applied_ack) ||
+		client.try_send(opened_client.handle,
+			server_endpoint,
+			{applied_ack.bytes.data(), applied_ack.size}).status !=
+			detail::IoStatus::Complete) {
+		return testing::AssertionFailure()
+			<< "native client could not send FULL_SNAPSHOT APPLIED";
+	}
+	const auto receives_before_applied =
+		server->services.backend.complete_receives;
+	for (std::size_t attempt = 0U;
+		attempt < MaximumPumpIterations &&
+		server->services.backend.complete_receives ==
+			receives_before_applied;
+		++attempt) {
+		const auto status =
+			detail::NativeSessionRuntimeTestAccess::try_receive(
+				*server->services.native);
+		if (status != detail::IoStatus::Complete &&
+			status != detail::IoStatus::WouldBlock) {
+			return testing::AssertionFailure()
+				<< "native receive failed while applying snapshot ACK";
+		}
+		std::this_thread::yield();
+	}
+	if (server->services.backend.complete_receives ==
+		receives_before_applied || controller->snapshot_progress(0U) !=
+		detail::Phase1SnapshotProgress::Live) {
+		return testing::AssertionFailure()
+			<< "APPLIED behind heartbeat did not commit the baseline";
+	}
+	detail::SessionControllerOutput heartbeat_after;
+	if (!controller->peek_output(heartbeat_after) ||
+		heartbeat_after.endpoint != heartbeat_before.endpoint ||
+		heartbeat_after.size != heartbeat_before.size ||
+		!std::equal(heartbeat_before.bytes.begin(),
+			heartbeat_before.bytes.begin() +
+				static_cast<std::ptrdiff_t>(heartbeat_before.size),
+			heartbeat_after.bytes.begin())) {
+		return testing::AssertionFailure()
+			<< "APPLIED changed the already exposed heartbeat";
+	}
+	Packet preserved_heartbeat;
+	if (!pump_until_packet(*server,
+			client,
+			opened_client.handle,
+			protocol::MessageType::Heartbeat,
+			pump,
+			preserved_heartbeat)) {
+		return testing::AssertionFailure()
+			<< "preserved heartbeat did not complete on loopback";
+	}
+	if (controller->replace_current_state(
+			0U, loopback_state_image(9.0F, 40'100U)) !=
+			protocol::ProducerBaselineResult::Applied ||
+		!controller->queue_cumulative_delta(0U, 40'101U)) {
+		return testing::AssertionFailure()
+			<< "native controller could not queue the post-ACK delta";
+	}
+	Packet delta;
+	if (!pump_until_packet(*server,
+			client,
+			opened_client.handle,
+			protocol::MessageType::Delta,
+			pump,
+			delta)) {
+		return testing::AssertionFailure()
+			<< "post-ACK delta did not resume immediately";
 	}
 	// The allowlist is address/CIDR based, but a live FSTL session is bound to
 	// the exact UDP endpoint.  A second native loopback socket therefore has
@@ -680,7 +850,8 @@ testing::AssertionResult exercise_native_runtime_loopback(protocol::IpAddressFam
 	}
 	const auto activity_before_heartbeat = server->services.last_tick.now_us;
 
-	server->services.now_us = welcome_proof_time + 1'000'000U;
+	server->services.now_us =
+		controller->slot(0U).heartbeat.next_periodic_due_us;
 	Packet heartbeat_request;
 	if (!pump_until_packet(*server,
 			client,

@@ -18,6 +18,7 @@ set(FSTL_PROTOCOL_SOURCES
 	telemetry_event_messages.cpp
 	telemetry_crc32.cpp
 	telemetry_fragmenter.cpp
+	telemetry_manifest_metadata.cpp
 	telemetry_reassembler.cpp
 	telemetry_records.cpp
 	telemetry_replication.cpp
@@ -50,6 +51,7 @@ set(FSTL_PROTOCOL_HEADERS
 	telemetry_event_messages.h
 	telemetry_crc32.h
 	telemetry_fragmenter.h
+	telemetry_manifest_metadata.h
 	telemetry_protocol_constants.h
 	telemetry_protocol_types.h
 	telemetry_reassembler.h

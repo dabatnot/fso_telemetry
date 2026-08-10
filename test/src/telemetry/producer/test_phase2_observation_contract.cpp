@@ -985,6 +985,52 @@ TEST(TelemetryPhase2ObservationContract,
 		source->static_authority_input.banks[0].bank_capture_key);
 }
 
+TEST(TelemetryPhase2ObservationContract,
+	QueuedSupportWithoutMaterializedEntityRemainsAValidCompleteShipCapture)
+{
+	FakePhase2EngineReadView source;
+	source.block_source->support.phase = ShipSupportPhase::Queued;
+	source.block_source->support.episode_sequence = 17U;
+	source.block_source->support.raw_support_flags = 0x01U;
+
+	auto observation = std::make_unique<Phase2ObservationDto>();
+	const auto result = collect_fake_phase2_observation(source, 908U,
+		*observation, Phase2ObservationProjection::CompleteShip);
+
+	ASSERT_EQ(Phase2CaptureStatus::Valid, result.status);
+	ASSERT_EQ(1U, observation->ships.size());
+	const auto& support = observation->ships[0].support;
+	EXPECT_EQ(ShipSupportPhase::Queued, support.phase);
+	EXPECT_EQ(17U, support.episode_sequence);
+	EXPECT_EQ(0x01U, support.raw_support_flags);
+	EXPECT_EQ(telemetry::protocol::SupportStatePresenceFlagNone,
+		support.presence);
+	EXPECT_EQ(0U, support.support_capture_key.value);
+}
+
+TEST(TelemetryPhase2ObservationContract,
+	SupportPhasesThatRequireAnAssignedEntityStillFailClosed)
+{
+	for (const auto phase : {ShipSupportPhase::OnWay,
+			 ShipSupportPhase::Docking,
+			 ShipSupportPhase::Repairing,
+			 ShipSupportPhase::Rearming}) {
+		SCOPED_TRACE(static_cast<unsigned>(phase));
+		FakePhase2EngineReadView source;
+		source.block_source->support.phase = phase;
+		auto observation = std::make_unique<Phase2ObservationDto>();
+
+		const auto result = collect_fake_phase2_observation(source, 909U,
+			*observation, Phase2ObservationProjection::CompleteShip);
+
+		EXPECT_EQ(Phase2CaptureStatus::UnsupportedEngineState,
+			result.status);
+		EXPECT_EQ(Phase2CaptureReason::UnsupportedShipBlock,
+			result.reason);
+		EXPECT_TRUE(observation->ships.empty());
+	}
+}
+
 static_assert(!std::is_pointer_v<decltype(Phase2ObservationDto{}.ships)>);
 static_assert(!std::is_pointer_v<decltype(Phase2ObservationDto{}.player_key)>);
 static_assert(!std::is_pointer_v<decltype(ShipObservationDto{}.identity.internal_name)>);

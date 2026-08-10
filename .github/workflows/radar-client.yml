@@ -5,11 +5,13 @@ on:
     paths:
       - "tools/radar/**"
       - "code/telemetry/protocol/**"
+      - "code/telemetry/phase2_manifest_builder.*"
       - ".github/workflows/radar-client.yml"
   pull_request:
     paths:
       - "tools/radar/**"
       - "code/telemetry/protocol/**"
+      - "code/telemetry/phase2_manifest_builder.*"
       - ".github/workflows/radar-client.yml"
   workflow_dispatch:
 
@@ -22,7 +24,7 @@ jobs:
         with:
           version: "6.5.*"
           arch: win64_msvc2019_64
-          modules: qttools
+          modules: qtsvg qttools
           cache: true
       - uses: ilammy/msvc-dev-cmd@v1
       - name: Configure
@@ -46,7 +48,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Dependencies
-        run: sudo apt-get update && sudo apt-get install -y ninja-build qt6-base-dev qt6-tools-dev qt6-tools-dev-tools qt6-wayland libgl1-mesa-dev libfuse2
+        run: sudo apt-get update && sudo apt-get install -y ninja-build qt6-base-dev qt6-svg-dev qt6-tools-dev qt6-tools-dev-tools qt6-wayland libgl1-mesa-dev libfuse2
       - name: Configure
         run: cmake -S tools/radar -B build/radar -G Ninja -DCMAKE_BUILD_TYPE=Release
       - name: Build

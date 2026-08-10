@@ -180,6 +180,18 @@ bool class_descriptor_digest(const Phase2ManifestSource& source,
 	Sha256 hash;
 	bool ok=hash_string(hash,ship_class.name)&&
 		hash_scalar(hash,ship_class.effective_mass);
+	std::uint32_t radar_icon_id=0U;
+	if(ship_class.ship_type_index!=-1) {
+		for(std::uint32_t index=0;index<source.auxiliary_entry_count;++index) {
+			const auto& entry=source.auxiliary_entries[index];
+			if(entry.registry==AuxiliaryRegistry::ShipType&&
+				entry.engine_index==ship_class.ship_type_index) {
+				radar_icon_id=radar_icon_id_for_ship_type(entry.name);
+				break;
+			}
+		}
+	}
+	ok=ok&&hash_scalar(hash,radar_icon_id);
 	const auto has_full_inertia=std::any_of(ship_class.effective_inertia_matrix.begin(),
 		ship_class.effective_inertia_matrix.end(),[](float value){return value!=0.0F;});
 	for(std::size_t row=0;row<3;++row)for(std::size_t column=0;column<3;++column) {
@@ -352,7 +364,7 @@ Phase2ManifestError canonical_catalog_fingerprint(
 
 std::size_t estimated_class_payload(const Phase2ClassSource& value) noexcept
 {
-	std::size_t result=42+value.name.size();
+	std::size_t result=46+value.name.size(); // Includes optional built-in radar_icon_id.
 	for(std::uint32_t i=0;i<value.subsystem_count && i<value.subsystems.size();++i)
 		result += 43 + value.subsystems[i].name.size()+value.subsystems[i].alt_name.size()+value.subsystems[i].hud_name.size();
 	for(std::uint32_t i=0;i<value.bank_count && i<value.banks.size();++i)
@@ -381,6 +393,7 @@ bool write_class_record(MutableByteView arena,std::size_t& offset,std::uint32_t 
 	if(source.has_scan)presence|=ClassManifestPresenceFlagScan;
 	if(source.has_glide)presence|=ClassManifestPresenceFlagGlide;
 	if(source.has_autoaim)presence|=ClassManifestPresenceFlagAutoaim;
+	if(projected.radar_icon_id != 0U)presence|=ClassManifestPresenceFlagRadarIcon;
 	if(!body.write_u32(generation)||!body.write_u32(id)||!body.write_u64(presence)||
 		!body.write_utf8(source.name,255)||!body.write_u32(projected.species_id)||!body.write_u32(projected.ship_type_id)||
 		!body.write_f32(source.effective_mass)||!body.write_f32(source.center_of_mass.x)||
@@ -471,6 +484,7 @@ bool write_class_record(MutableByteView arena,std::size_t& offset,std::uint32_t 
 		!body.write_f32(source.scan_max_angle_rad)))return false;
 	if(source.has_glide&&!body.write_f32(source.glide_cap))return false;
 	if(source.has_autoaim&&!body.write_f32(source.autoaim_fov_rad))return false;
+	if(projected.radar_icon_id != 0U&&!body.write_u32(projected.radar_icon_id))return false;
 	RecordEnvelopeView record{static_cast<std::uint16_t>(RecordType::ClassManifest),1,0,body.written()};
 	std::size_t written=0;
 	if(encode_business_record(record,BusinessRecordContainer::Manifest,
@@ -522,6 +536,44 @@ bool write_weapon_record(MutableByteView arena,std::size_t& offset,std::uint32_t
 bool same_digest(const Sha256Digest& a,const Sha256Digest& b) noexcept { return a==b; }
 
 } // namespace
+
+std::uint32_t radar_icon_id_for_ship_type(std::string_view name) noexcept
+{
+	const auto ascii_space = [](char value) noexcept {
+		return value == ' ' || value == '\t' || value == '\r' || value == '\n';
+	};
+	while (!name.empty() && ascii_space(name.front())) name.remove_prefix(1);
+	while (!name.empty() && ascii_space(name.back())) name.remove_suffix(1);
+	const auto equal_ascii = [](std::string_view left, std::string_view right) noexcept {
+		if (left.size() != right.size()) return false;
+		for (std::size_t index = 0; index < left.size(); ++index) {
+			auto a = static_cast<unsigned char>(left[index]);
+			auto b = static_cast<unsigned char>(right[index]);
+			if (a >= 'A' && a <= 'Z') a = static_cast<unsigned char>(a - 'A' + 'a');
+			if (b >= 'A' && b <= 'Z') b = static_cast<unsigned char>(b - 'A' + 'a');
+			if (a != b) return false;
+		}
+		return true;
+	};
+	using Id = protocol::BuiltinRadarIconId;
+	struct Mapping { std::string_view name; Id id; };
+	static constexpr std::array<Mapping, 17> mappings{{
+		{"Navbuoy", Id::Navbuoy}, {"Sentry Gun", Id::SentryGun},
+		{"Escape Pod", Id::EscapePod}, {"Cargo", Id::Cargo},
+		{"Support", Id::Support}, {"Fighter", Id::Fighter},
+		{"Bomber", Id::Bomber}, {"Transport", Id::Transport},
+		{"Freighter", Id::Freighter}, {"AWACS", Id::Awacs},
+		{"Gas Miner", Id::GasMiner}, {"Cruiser", Id::Cruiser},
+		{"Corvette", Id::Corvette}, {"Capital", Id::Capital},
+		{"Super Cap", Id::SuperCapital}, {"Drydock", Id::Drydock},
+		{"Knossos Device", Id::KnossosDevice},
+	}};
+	for (const auto& mapping : mappings) {
+		if (equal_ascii(name, mapping.name))
+			return static_cast<std::uint32_t>(mapping.id);
+	}
+	return static_cast<std::uint32_t>(Id::Generic);
+}
 
 Phase2ManifestCandidate::Phase2ManifestCandidate()
 {
@@ -661,6 +713,16 @@ Phase2ManifestError Phase2ManifestSlot::rebuild(const Phase2ManifestSource& sour
 		for(std::size_t a=0;a<3;++a) dst.half_angles_rad[a]=static_cast<float>(std::acos(src.half_angle_cosines[a]));
 		dst.species_id=auxiliary_id(source,AuxiliaryRegistry::Species,src.species_index,error);
 		dst.ship_type_id=auxiliary_id(source,AuxiliaryRegistry::ShipType,src.ship_type_index,error);
+		dst.radar_icon_id=0U;
+		if(src.ship_type_index != -1) {
+			for(std::uint32_t auxiliary=0;auxiliary<source.auxiliary_entry_count;++auxiliary) {
+				const auto& entry=source.auxiliary_entries[auxiliary];
+				if(entry.registry==AuxiliaryRegistry::ShipType&&entry.engine_index==src.ship_type_index) {
+					dst.radar_icon_id=radar_icon_id_for_ship_type(entry.name);
+					break;
+				}
+			}
+		}
 		dst.iff_id=auxiliary_id(source,AuxiliaryRegistry::Iff,src.iff_index,error);
 		dst.wing_id=auxiliary_id(source,AuxiliaryRegistry::Wing,src.wing_index,error);
 		dst.armor_id=auxiliary_id(source,AuxiliaryRegistry::Armor,src.armor_index,error);

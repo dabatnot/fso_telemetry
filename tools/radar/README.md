@@ -8,7 +8,7 @@ ni la cible ni l'état du jeu.
 ## Construction
 
 Prérequis : CMake 3.22+, un compilateur C++20 et Qt 6.2+ avec Core, Gui,
-Widgets, Network et Test. LinguistTools est utilisé lorsqu'il est disponible.
+Widgets, Network, Svg et Test. LinguistTools est utilisé lorsqu'il est disponible.
 
 ```sh
 cmake -S tools/radar -B build/radar -G Ninja -DCMAKE_BUILD_TYPE=Release
@@ -34,6 +34,13 @@ et marquée `STALE`, puis une resynchronisation est demandée. Après dix second
 le client crée un nouvel endpoint UDP et renégocie une session, sans effacer la
 dernière image affichée.
 
+Les 44 SVG de `assets` sont embarqués dans l'exécutable. Le client choisit les
+familles de vaisseaux et d'armes uniquement à partir des informations révélées
+par FSTL, applique la couleur IFF autoritaire et conserve les anciens glyphes
+géométriques comme secours si une ressource ne peut pas être rendue. Les icônes
+restent orientées vers le haut ; `weapon-mine.svg` est embarqué mais réservé à
+une future sémantique protocolaire.
+
 ## Livraison
 
 - `packaging/deploy-windows.ps1` produit un dossier redistribuable puis un ZIP
@@ -41,7 +48,5 @@ dernière image affichée.
 - `packaging/deploy-linux.sh` produit un AppDir puis une AppImage x86_64 à
   l'aide de `linuxdeploy` et de son plugin Qt.
 
-Les bundles dynamiques incluent les notices du dépôt et les licences Qt
-trouvées dans l'installation utilisée pour le déploiement. Les SVG du dossier
-`assets` ne sont ni liés ni chargés dans cette V1.
-
+Les bundles dynamiques incluent Qt SVG, les notices du dépôt et les licences Qt
+trouvées dans l'installation utilisée pour le déploiement.

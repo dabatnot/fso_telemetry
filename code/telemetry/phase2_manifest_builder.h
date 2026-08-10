@@ -16,6 +16,8 @@
 
 namespace telemetry {
 
+std::uint32_t radar_icon_id_for_ship_type(std::string_view name) noexcept;
+
 struct Phase2ManifestLimits {
 	static constexpr std::uint32_t MaxClasses = 64;
 	static constexpr std::uint32_t MaxWeapons = 4096;
@@ -156,7 +158,7 @@ template <typename T> struct Phase2RecordView {
 	const T* end() const noexcept { return data+capacity; }
 };
 struct Phase2ClassRecord {
-	std::uint32_t source_key=0, class_id=0, species_id=0, ship_type_id=0, iff_id=0, wing_id=0, armor_id=0, damage_type_id=0;
+	std::uint32_t source_key=0, class_id=0, species_id=0, ship_type_id=0, radar_icon_id=0, iff_id=0, wing_id=0, armor_id=0, damage_type_id=0;
 	Phase2OwnedName name;
 	float mass=0;
 	std::array<float,3> inertia{}, half_angles_rad{};

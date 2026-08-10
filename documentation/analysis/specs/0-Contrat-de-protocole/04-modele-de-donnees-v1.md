@@ -245,6 +245,14 @@ Presence bits : `INERTIA=0`, `DAMPING=1`, `MOTION=2`, `HULL=3`, `SHIELD=4`, `ENE
 | 23 | `autoaim_fov_rad` | `float32` | `[0 ; π]` rad | C | bit 12 |
 | 24 | `radar_icon_id` | `u32` | `0` icône générique | C | bit 13 |
 
+Le registre public `radar_icon_id` conserve les valeurs stables suivantes :
+`0=Generic`, `1=Navbuoy`, `2=SentryGun`, `3=EscapePod`, `4=Cargo`,
+`5=Support`, `6=Fighter`, `7=Bomber`, `8=Transport`, `9=Freighter`,
+`10=Awacs`, `11=GasMiner`, `12=Cruiser`, `13=Corvette`, `14=Capital`,
+`15=SuperCapital`, `16=Drydock`, `17=KnossosDevice`. Une valeur future
+inconnue reste valide sur le wire et doit produire un repli générique chez le
+consommateur.
+
 Structures imbriquées, dans l'ordre :
 
 - `ClassMotionV1` : `max_vel:vec3f`, `afterburner_max_vel:vec3f`, `booster_max_vel:vec3f`, `max_rotvel:vec3f`, `max_rear_vel:float32`, puis six `float32` en secondes : `forward_accel_time_const`, `afterburner_forward_accel_time_const`, `booster_forward_accel_time_const`, `forward_decel_time_const`, `slide_accel_time_const`, `slide_decel_time_const`. Toutes les vitesses sont des caps locaux ; toutes les constantes sont dans `[0;3600]`.

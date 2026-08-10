@@ -1312,9 +1312,14 @@ bool canonicalize_ship_blocks(ShipObservationDto& ship,
 	}
 	const auto has_support =
 		(ship.support.presence & protocol::SupportStatePresenceFlagSupportEntity) != 0U;
+	const auto phase_requires_support =
+		ship.support.phase == ShipSupportPhase::OnWay ||
+		ship.support.phase == ShipSupportPhase::Docking ||
+		ship.support.phase == ShipSupportPhase::Repairing ||
+		ship.support.phase == ShipSupportPhase::Rearming;
 	if (has_support != (ship.support.support_capture_key.value != 0U) ||
-		(!has_support && (ship.support.phase != ShipSupportPhase::None ||
-			ship.support.episode_sequence != 0U || ship.support.repair_progress != 0.0F ||
+		(!has_support && (phase_requires_support ||
+			ship.support.repair_progress != 0.0F ||
 			ship.support.rearm_progress != 0.0F)) ||
 		!canonicalize_bounded(ship.support.raw_hull_repair_work,
 			0.0F,

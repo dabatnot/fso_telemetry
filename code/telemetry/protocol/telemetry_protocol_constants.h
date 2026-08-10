@@ -291,6 +291,35 @@ enum class WeaponSubtype : std::uint8_t {
 	Special = 5,
 };
 
+// Stable public IDs for the built-in external-radar icon vocabulary. The
+// CLASS_MANIFEST wire field remains an extensible u32: consumers must fall
+// back to a generic ship for values they do not know.
+enum class BuiltinRadarIconId : std::uint32_t {
+	Generic = 0,
+	Navbuoy = 1,
+	SentryGun = 2,
+	EscapePod = 3,
+	Cargo = 4,
+	Support = 5,
+	Fighter = 6,
+	Bomber = 7,
+	Transport = 8,
+	Freighter = 9,
+	Awacs = 10,
+	GasMiner = 11,
+	Cruiser = 12,
+	Corvette = 13,
+	Capital = 14,
+	SuperCapital = 15,
+	Drydock = 16,
+	KnossosDevice = 17,
+};
+
+constexpr bool is_known_builtin_radar_icon_id(std::uint32_t value) noexcept
+{
+	return value <= static_cast<std::uint32_t>(BuiltinRadarIconId::KnossosDevice);
+}
+
 enum class SubsystemType : std::uint8_t {
 	Unknown = 0,
 	Engine = 1,
