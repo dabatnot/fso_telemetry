@@ -429,6 +429,10 @@ function TargetPanel({
   const distance = distanceItem?.available ? finite(distanceItem.value) : null;
   const hudSpeedItem = snapshot?.derived[`entities.${player}.target.hud_speed`];
   const hudSpeed = hudSpeedItem?.available ? finite(hudSpeedItem.value) : null;
+  const hullItem = snapshot?.derived[`entities.${player}.target.hull_ratio`];
+  const hullRatio = hullItem?.available ? finite(hullItem.value) : null;
+  const shieldItem = snapshot?.derived[`entities.${player}.target.shield_ratio`];
+  const shieldRatio = shieldItem?.available ? finite(shieldItem.value) : null;
   const targetVersion = targetRecordVersion(snapshot);
   const targetClass = targetClassDisplayName(snapshot);
   const targetHudLabel = targetHudTypeLabel(snapshot);
@@ -477,6 +481,8 @@ function TargetPanel({
             {targetVersion !== null && targetVersion < 2 && <i>COMPAT. CAPTURE V1</i>}
           </div>
           <div className="target-primary-metrics">
+            {hullRatio !== null && <div><span>{t("COQUE")}</span><strong>{Math.round(hullRatio * 100)}%</strong></div>}
+            {shieldRatio !== null && <div><span>{t("BOUCLIER")}</span><strong>{Math.round(shieldRatio * 100)}%</strong></div>}
             <div><span>{t("DISTANCE")}</span><strong>{formatNumber(distance)}</strong></div>
             <div><span>{t("RAPPROCHEMENT")}</span><strong>{formatNumber(contact?.closingSpeed ?? null, 1)}</strong></div>
             <div><span>{t("TEMPS CIBLE")}</span><strong>{formatDurationUs(target?.time_on_target_us)}</strong></div>

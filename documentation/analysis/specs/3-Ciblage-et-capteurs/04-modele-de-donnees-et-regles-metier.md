@@ -134,13 +134,14 @@ autorise une dernière observation ou une connaissance de menace distincte.
 ### 5.0 Version filaire
 
 Le layout v1 reste lisible pour les captures existantes. Le profil live
-`CockpitSensors` émet `record_version=5` sous FSTL 1.1. La variante v2 ajoute
+`CockpitSensors` émet `record_version=6` sous FSTL 1.1. La variante v2 ajoute
 après `EXACT_HUD_DISTANCE` le groupe `EXACT_HUD_SPEED`; v3 ajoute ensuite
 `HUD_TYPE_LABEL`; v4 ajoute `HUD_TARGET_COLOR`; v5 ajoute enfin les libellés
-HUD autoritaires `HUD_TARGET_SUBSYSTEM_LABEL` et `HUD_LOCK_SUBSYSTEM_LABEL`.
+HUD autoritaires `HUD_TARGET_SUBSYSTEM_LABEL` et `HUD_LOCK_SUBSYSTEM_LABEL` ;
+v6 ajoute enfin le groupe terminal `HUD_TARGET_STRENGTH`.
 La variante est choisie
 uniquement par `record_version`, jamais par la longueur du payload. Les
-captures v1/v2/v3/v4 restent décodables et byte-identiques.
+captures v1/v2/v3/v4/v5 restent décodables et byte-identiques.
 
 ### 5.1 Champs obligatoires
 
@@ -170,9 +171,20 @@ ancien.
 | `HUD_TARGET_COLOR` | depuis v4 ; couleur RGBA brillante retournée par `hud_get_iff_color(target,1)` pour les brackets et accents de cible, accessibilité et overrides inclus |
 | `HUD_TARGET_SUBSYSTEM_LABEL` | depuis v5 ; texte exact, localisé et instance-aware retourné par `ship_subsys_get_name_on_hud()` pour le sous-système ciblé ; indépendant de `CLASS_MANIFEST` |
 | `HUD_LOCK_SUBSYSTEM_LABEL` | depuis v5 ; même texte HUD autoritaire pour le sous-système de lock validé sur la cible courante ; indépendant de `CLASS_MANIFEST` |
+| `HUD_TARGET_STRENGTH` | depuis v6 ; `hull_ratio:f32`, `has_shields:bool8`, puis `shield_ratio:f32` si et seulement si `has_shields`; groupe terminal réservé à une cible vaisseau affichable par la Target Box |
 
 Si la cible vaut zéro, tous les groupes sont absents sauf `PREVIOUS_TARGET`,
-comme l’impose FSTL.
+comme l'impose FSTL.
+
+### 5.3 Force HUD de la cible
+
+Le bit 19 `HUD_TARGET_STRENGTH` ajoute en fin de v6 un groupe atomique. Les
+ratios de coque et de bouclier total sont ceux retournés par
+`hud_get_target_strength()` et sont finis dans `[0,1]`. `has_shields` copie la
+présence physique d'un bouclier utilisable ; lorsqu'il vaut faux, aucun
+`shield_ratio` n'est encodé. Le groupe est absent pour une cible non-vaisseau,
+une cible nulle ou une force non affichable. Il ne contient ni points de vie
+bruts, ni maximums, ni segments de bouclier.
 
 ### 5.3 Lead
 
@@ -443,4 +455,4 @@ transaction en cas d’écart.
 ## 15. Traçabilité
 
 Ce document couvre `P3-REQ-013` à `P3-REQ-018`, `P3-REQ-019` à
-`P3-REQ-034`, `P3-REQ-037`, `P3-REQ-040` et `P3-REQ-047`.
+`P3-REQ-034`, `P3-REQ-037`, `P3-REQ-040`, `P3-REQ-047` et `P3-REQ-048`.

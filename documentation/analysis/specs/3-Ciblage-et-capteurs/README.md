@@ -18,7 +18,8 @@ Pendant une mission solo en mode `Cockpit`, un client conforme :
 
 - installe les catalogues nécessaires avant l’état qui les référence ;
 - reçoit le profil exact `CockpitSensors` sous le masque `0x07CB` ;
-- reproduit la cible, le sous-système ciblé, le lead et les locks courants ;
+- reproduit la cible, sa force HUD de coque/bouclier total, le sous-système
+  ciblé, le lead et les locks courants ;
 - affiche exactement les pistes radar autorisées, y compris leur état visible
   ou distordu, sans révéler un objet caché ;
 - reproduit la position des blips du radar standard depuis la position locale

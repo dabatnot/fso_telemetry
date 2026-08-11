@@ -20,6 +20,8 @@ struct WeaponManifestRadarMetadata {
 	std::uint32_t weapon_class_id = 0;
 	WeaponSubtype subtype = WeaponSubtype::Unknown;
 	std::uint64_t weapon_flags = 0;
+	std::uint64_t nominal_lock_time_us = 0;
+	bool has_lock = false;
 };
 
 // These focused decoders validate the complete manifest record before

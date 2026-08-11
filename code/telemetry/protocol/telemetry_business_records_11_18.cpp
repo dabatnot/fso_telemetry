@@ -1153,6 +1153,7 @@ ValidationError validate_target_state(std::uint8_t record_version, ByteView payl
 	std::uint64_t presence = 0;
 	std::uint64_t sample = 0;
 	std::uint64_t current_target = 0;
+	ObjectType revealed_object_type = ObjectType::Unknown;
 	if (!id64(reader, entity) || !presence64(reader, KnownTargetStatePresenceFlags, presence) ||
 		!reader.u64(sample) || !id64(reader, current_target, true)) {
 		return reader.error();
@@ -1179,6 +1180,7 @@ ValidationError validate_target_state(std::uint8_t record_version, ByteView payl
 		if (team_id > 65'535U || iff_id > 65'535U) {
 			return ValidationError::OutOfRange;
 		}
+		revealed_object_type = static_cast<ObjectType>(object_type);
 	}
 	if ((presence & TargetStatePresenceFlagTimeOnTarget) != 0 && !duration(reader)) {
 		return reader.error();
@@ -1272,6 +1274,21 @@ ValidationError validate_target_state(std::uint8_t record_version, ByteView payl
 		if (record_version < 5U) return ValidationError::UnsupportedRecordVersion;
 		std::string_view label;
 		if (!reader.string(1U, 255U, label)) return reader.error();
+	}
+	if ((presence & TargetStatePresenceFlagHudTargetStrength) != 0) {
+		if (record_version < 6U) return ValidationError::UnsupportedRecordVersion;
+		if ((presence & TargetStatePresenceFlagRevealedIdentity) == 0U ||
+			revealed_object_type != ObjectType::Ship) {
+			return ValidationError::InvalidAbsence;
+		}
+		float hull_ratio = 0.0F;
+		float shield_ratio = 0.0F;
+		bool has_shields = false;
+		if (!reader.f32(hull_ratio, 0.0F, 1.0F) ||
+			!reader.boolean(has_shields) ||
+			(has_shields && !reader.f32(shield_ratio, 0.0F, 1.0F))) {
+			return reader.error();
+		}
 	}
 	return reader.finish();
 }

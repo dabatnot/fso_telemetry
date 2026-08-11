@@ -55,7 +55,7 @@ bool structurally_valid_atom(const StateAtom& atom, std::size_t& encoded_size) n
 	const auto supported_record_version = atom.record_version == 1U ||
 		((atom.record_version == 2U || atom.record_version == 3U || atom.record_version == 4U) &&
 		 (radar_contacts || target_state)) ||
-		(atom.record_version == 5U && target_state);
+		((atom.record_version == 5U || atom.record_version == 6U) && target_state);
 	if (atom.key.record_type == 0 || !supported_record_version ||
 		!is_known_lifecycle(atom.lifecycle) ||
 		atom.key.identity.size() > std::numeric_limits<std::uint16_t>::max() ||
@@ -81,7 +81,7 @@ bool structurally_valid_delete_atom(const StateAtom& atom) noexcept
 	const auto supported_record_version = atom.record_version == 1U ||
 		((atom.record_version == 2U || atom.record_version == 3U || atom.record_version == 4U) &&
 		 (radar_contacts || target_state)) ||
-		(atom.record_version == 5U && target_state);
+		((atom.record_version == 5U || atom.record_version == 6U) && target_state);
 	return atom.key.record_type != 0 && supported_record_version &&
 		   atom.lifecycle == StateRecordLifecycle::ExplicitCreateDelete &&
 		   atom.key.identity.size() <= std::numeric_limits<std::uint16_t>::max() && atom.value.empty() &&

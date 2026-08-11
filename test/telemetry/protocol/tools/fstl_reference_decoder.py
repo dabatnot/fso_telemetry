@@ -1335,7 +1335,7 @@ def decode_record_payload(
         presence = reader.u64()
         sample = reader.u64()
         current = reader.u64()
-        require(entity and presence & ~0x7FFFF == 0, 37, "TARGET_STATE presence")
+        require(entity and presence & ~0xFFFFF == 0, 37, "TARGET_STATE presence")
         require(current or presence & ~0x0001 == 0, 37, "TARGET_STATE absent target")
         result = {
             "current_target_entity_id": u64s(current),
@@ -1398,6 +1398,25 @@ def decode_record_payload(
         if presence & 0x40000:
             require(record_version >= 5, 37, "TARGET_STATE v5 lock subsystem label")
             result["hud_lock_subsystem_label"] = reader.utf8(255)
+        if presence & 0x80000:
+            require(record_version >= 6, 37, "TARGET_STATE v6 HUD target strength")
+            identity = result.get("revealed_identity")
+            require(isinstance(identity, dict) and identity.get("object_type") == 1,
+                    37, "TARGET_STATE HUD target strength ship disclosure")
+            hull_ratio = reader.f32()
+            has_shields = reader.u8()
+            require(0.0 <= hull_ratio <= 1.0 and has_shields <= 1,
+                    34, "TARGET_STATE HUD target strength")
+            strength = {
+                "hull_ratio": hull_ratio,
+                "has_shields": bool(has_shields),
+            }
+            if has_shields:
+                shield_ratio = reader.f32()
+                require(0.0 <= shield_ratio <= 1.0,
+                        34, "TARGET_STATE HUD shield ratio")
+                strength["shield_ratio"] = shield_ratio
+            result["hud_target_strength"] = strength
         return result
 
     if record_type == 17:
@@ -1947,7 +1966,9 @@ def decode_record(
     phase3_v3 = record_type in (16, 18) and version == 3
     phase3_v4 = record_type in (16, 18) and version == 4
     phase3_v5 = record_type == 16 and version == 5
-    require(version == 1 or phase3_v2 or phase3_v3 or phase3_v4 or phase3_v5, 27, "unsupported record version")
+    phase3_v6 = record_type == 16 and version == 6
+    require(version == 1 or phase3_v2 or phase3_v3 or phase3_v4 or
+            phase3_v5 or phase3_v6, 27, "unsupported record version")
     require(length == reader.remaining, 28, "record_length mismatch")
     if container == "event" or (container == "standalone" and record_type in (27, 28)):
         require(record_type in (27, 28), 36, "state record in event batch")

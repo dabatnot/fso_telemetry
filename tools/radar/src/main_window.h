@@ -1,6 +1,7 @@
 #pragma once
 
 #include "radar_client.h"
+#include "radar_display_settings.h"
 
 #include <QMainWindow>
 
@@ -29,7 +30,7 @@ private:
     RadarClient m_client;
     QString m_host;
     quint16 m_port = 42042;
+    RadarDisplaySettings m_display;
 };
 
 } // namespace simpit::radar
-

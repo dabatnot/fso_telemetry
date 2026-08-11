@@ -83,6 +83,9 @@ struct Phase3TargetState {
 	std::array<std::uint8_t, 4U> hud_target_color{};
 	Phase3OwnedString<255U> hud_target_subsystem_label;
 	Phase3OwnedString<255U> hud_lock_subsystem_label;
+	float hud_hull_ratio = 0.0F;
+	bool hud_has_shields = false;
+	float hud_shield_ratio = 0.0F;
 };
 
 struct Phase3RadarState {

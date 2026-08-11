@@ -600,6 +600,56 @@ TEST(TelemetryProtocolBusinessRecords11To18,
 			BusinessRecordContainer::FullSnapshot, VersionMinorV1_1, metadata));
 }
 
+TEST(TelemetryProtocolBusinessRecords11To18,
+	TargetStateV6HudStrengthIsBoundedConditionalAndShipOnly)
+{
+	const auto presence = TargetStatePresenceFlagRevealedIdentity |
+		TargetStatePresenceFlagHudTargetStrength;
+	auto make_strength = [&](float hull, std::uint8_t has_shields,
+		float shield, std::uint8_t object_type = static_cast<std::uint8_t>(ObjectType::Ship)) {
+		auto payload = target(presence, 2U);
+		u8(payload, object_type);
+		string(payload, "Alpha 2");
+		u32(payload, 7U);
+		u32(payload, 1U);
+		u32(payload, 1U);
+		f32(payload, hull);
+		u8(payload, has_shields);
+		if (has_shields == 1U) f32(payload, shield);
+		return payload;
+	};
+	BusinessRecordMetadata metadata;
+	EXPECT_EQ(ValidationError::None,
+		validate_business_record(record(RecordType::TargetState,
+			make_strength(0.0F, 1U, 1.0F), 6U),
+			BusinessRecordContainer::FullSnapshot, VersionMinorV1_1, metadata));
+	EXPECT_EQ(ValidationError::None,
+		validate_business_record(record(RecordType::TargetState,
+			make_strength(1.0F, 0U, 0.0F), 6U),
+			BusinessRecordContainer::FullSnapshot, VersionMinorV1_1, metadata));
+	EXPECT_EQ(ValidationError::UnsupportedRecordVersion,
+		validate_business_record(record(RecordType::TargetState,
+			make_strength(0.5F, 1U, 0.5F), 5U),
+			BusinessRecordContainer::FullSnapshot, VersionMinorV1_1, metadata));
+	EXPECT_EQ(ValidationError::OutOfRange,
+		validate_business_record(record(RecordType::TargetState,
+			make_strength(1.01F, 1U, 0.5F), 6U),
+			BusinessRecordContainer::FullSnapshot, VersionMinorV1_1, metadata));
+	EXPECT_EQ(ValidationError::NonFiniteFloat,
+		validate_business_record(record(RecordType::TargetState,
+			make_strength(std::numeric_limits<float>::infinity(), 1U, 0.5F), 6U),
+			BusinessRecordContainer::FullSnapshot, VersionMinorV1_1, metadata));
+	EXPECT_EQ(ValidationError::OutOfRange,
+		validate_business_record(record(RecordType::TargetState,
+			make_strength(0.5F, 2U, 0.5F), 6U),
+			BusinessRecordContainer::FullSnapshot, VersionMinorV1_1, metadata));
+	EXPECT_EQ(ValidationError::InvalidAbsence,
+		validate_business_record(record(RecordType::TargetState,
+			make_strength(0.5F, 0U, 0.0F,
+				static_cast<std::uint8_t>(ObjectType::Weapon)), 6U),
+			BusinessRecordContainer::FullSnapshot, VersionMinorV1_1, metadata));
+}
+
 TEST(TelemetryProtocolBusinessRecords11To18, RadarRejectsNonFiniteRangesAndInvalidVisibilityIntervals)
 {
 	auto infinite = radar(0, 3, static_cast<std::uint8_t>(RadarMode::Infinite), 1.0e12F);

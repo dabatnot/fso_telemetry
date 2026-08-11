@@ -487,6 +487,15 @@ class DashboardProjection:
         "missing-authoritative-target-hud-speed": (
             "p3.dashboard.target-hud-speed.v2-missing",
             ["wire:TARGET_STATE.exact_hud_speed"]),
+        "TARGET_STATE v6 Target Box hull display ratio": (
+            "p3.dashboard.target-hull-ratio.v6",
+            ["wire:TARGET_STATE.hud_target_strength.hull_ratio"]),
+        "TARGET_STATE v6 physical shield availability": (
+            "p3.dashboard.target-has-shields.v6",
+            ["wire:TARGET_STATE.hud_target_strength.has_shields"]),
+        "TARGET_STATE v6 Target Box total shield display ratio": (
+            "p3.dashboard.target-shield-ratio.v6",
+            ["wire:TARGET_STATE.hud_target_strength.shield_ratio"]),
         "TARGET_STATE v4 HUD target color is authoritative": (
             "p3.dashboard.target-hud-color.v4",
             ["wire:TARGET_STATE.hud_target_color"]),
@@ -1600,6 +1609,45 @@ class DashboardProjection:
                     "reason": None if target_record_version >= 2 and exact_speed is not None
                     else "legacy-target-state-has-no-authoritative-hud-speed",
                     "value": exact_speed if target_record_version >= 2 else None,
+                },
+            )
+            strength = target.get("hud_target_strength")
+            strength_available = target_record_version >= 6 and isinstance(strength, dict)
+            hull_ratio = _as_float(strength.get("hull_ratio")) if strength_available else None
+            has_shields = strength.get("has_shields") if strength_available else None
+            shield_ratio = (
+                _as_float(strength.get("shield_ratio"))
+                if strength_available and has_shields is True else None
+            )
+            self._add_derived(
+                f"entities.{entity}.target.hull_ratio",
+                "TARGET_STATE v6 Target Box hull display ratio",
+                {
+                    "available": strength_available and hull_ratio is not None,
+                    "reason": None if strength_available and hull_ratio is not None
+                    else "target-strength-unavailable-in-record-version",
+                    "value": hull_ratio,
+                },
+            )
+            self._add_derived(
+                f"entities.{entity}.target.has_shields",
+                "TARGET_STATE v6 physical shield availability",
+                {
+                    "available": strength_available and isinstance(has_shields, bool),
+                    "reason": None if strength_available and isinstance(has_shields, bool)
+                    else "target-strength-unavailable-in-record-version",
+                    "value": has_shields if isinstance(has_shields, bool) else None,
+                },
+            )
+            self._add_derived(
+                f"entities.{entity}.target.shield_ratio",
+                "TARGET_STATE v6 Target Box total shield display ratio",
+                {
+                    "available": strength_available and has_shields is True and shield_ratio is not None,
+                    "reason": (None if strength_available and has_shields is True and shield_ratio is not None
+                               else "target-has-no-shields" if strength_available and has_shields is False
+                               else "target-strength-unavailable-in-record-version"),
+                    "value": shield_ratio,
                 },
             )
             hud_target_color = target.get("hud_target_color")

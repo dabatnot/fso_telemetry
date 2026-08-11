@@ -17,3 +17,8 @@ files from the installed Visual Studio 2022 redistributable directory.
 
 FSO SimPit Radar itself follows the repository notices in `Copying.md` and
 `Unlicense.md`.
+
+The radar executable embeds the legacy FreeSpace VFNT bitmap fixtures
+`font01.vf` and `font02.vf` already present in this source repository. They are
+used only for the in-world sensor-link overlays. Original FreeSpace material is
+Copyright Volition, Inc.; see the bundled repository notices.

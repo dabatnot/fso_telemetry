@@ -169,7 +169,8 @@ TEST(TelemetryProtocolConstants, FreezesPhase3VersionFourRadarVisualContract) {
 	EXPECT_EQ(0x0000000000010000ULL, TargetStatePresenceFlagHudTargetColor);
 	EXPECT_EQ(0x0000000000020000ULL, TargetStatePresenceFlagHudTargetSubsystemLabel);
 	EXPECT_EQ(0x0000000000040000ULL, TargetStatePresenceFlagHudLockSubsystemLabel);
-	EXPECT_EQ(0x000000000007ffffULL, KnownTargetStatePresenceFlags);
+	EXPECT_EQ(0x0000000000080000ULL, TargetStatePresenceFlagHudTargetStrength);
+	EXPECT_EQ(0x00000000000fffffULL, KnownTargetStatePresenceFlags);
 	EXPECT_EQ(0x0000000000000080ULL, RadarContactsPresenceFlagRadarVisual);
 	EXPECT_EQ(0x00000000000000ffULL, KnownRadarContactsPresenceFlags);
 }

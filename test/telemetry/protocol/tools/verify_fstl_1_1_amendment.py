@@ -33,6 +33,7 @@ ENTITY_LIFECYCLE = 5
 SHIP_IDENTITY = 6
 FLIGHT_STATE = 7
 HUD_ALERT_STATE = 29
+TARGET_STATE = 16
 CORE_RECORDS = {1, 2, 5, 6, 7, 9, 10, 11, 12, 13}
 COMPLETE_SHIP_RECORDS = CORE_RECORDS | {8, 14, 20, 21, 22}
 ERROR_IDS = {"None": 0, "DuplicateRecord": 29, "ReservedFlag": 36,
@@ -68,8 +69,8 @@ def frozen_v10_contract() -> tuple[int, str]:
     return count, tree
 
 
-def record(record_type: int, payload: bytes) -> bytes:
-    return struct.pack("<HBBH", record_type, 1, 0, len(payload)) + payload
+def record(record_type: int, payload: bytes, version: int = 1) -> bytes:
+    return struct.pack("<HBBH", record_type, version, 0, len(payload)) + payload
 
 
 def session_state(player: int | None, coverage: int, authority: int = 0, visibility: int = 0) -> bytes:
@@ -109,6 +110,14 @@ def hud_alert_state(player: int) -> bytes:
     payload = struct.pack("<QQQBBBQQH", player, 1, 1_000_000, 1, 2, 1,
                           9, 750_000, len(text)) + text
     return record(HUD_ALERT_STATE, payload)
+
+
+def target_state_v6_strength(player: int) -> bytes:
+    name = "Alpha 2".encode("utf-8")
+    presence = 0x0002 | 0x80000
+    payload = struct.pack("<QQQQBH", player, presence, 1_000_000, 2, 1, len(name)) + name
+    payload += struct.pack("<IIIfBf", 7, 1, 1, 0.625, 1, 0.25)
+    return record(TARGET_STATE, payload, version=6)
 
 
 def snapshot(records: list[bytes], required_manifest_id: int = 0) -> bytes:
@@ -436,6 +445,54 @@ def generated() -> dict[str, bytes]:
         json.dumps(alert_metadata, indent=2, sort_keys=True) + "\n").encode()
     files["../expected-v1.1/hud-alert-state.json"] = (
         json.dumps(alert_canonical, indent=2, sort_keys=True) + "\n").encode()
+    strength = target_state_v6_strength(1)
+    strength_metadata = {
+        "context": {"recordContainer": "full-snapshot"},
+        "expectedCanonicalJson": "expected-v1.1/target-state-v6-strength.json",
+        "expectedValidationError": 0,
+        "expectedValidationErrorName": "NONE",
+        "inputFiles": ["target-state-v6-strength.bin"],
+        "kind": "record",
+        "name": "target-state-v6-strength",
+        "notes": "Deterministic FSTL 1.1 TARGET_STATE v6 Target Box strength fixture.",
+        "recordFlags": 0,
+        "recordType": TARGET_STATE,
+        "recordVersion": 6,
+        "schema": "FSTL-1.1",
+        "valid": True,
+    }
+    strength_canonical = {
+        "fields": {
+            "current_target_entity_id": "2",
+            "entity_id": "1",
+            "hud_target_strength": {
+                "has_shields": True,
+                "hull_ratio": 0.625,
+                "shield_ratio": 0.25,
+            },
+            "presence": str(0x0002 | 0x80000),
+            "producer_sample_time_us": "1000000",
+            "revealed_identity": {
+                "class_id": 7,
+                "iff_id": 1,
+                "name": "Alpha 2",
+                "object_type": 1,
+                "team_id": 1,
+            },
+        },
+        "kind": "record",
+        "recordFlags": 0,
+        "recordLength": len(strength) - 6,
+        "recordName": "TARGET_STATE",
+        "recordType": TARGET_STATE,
+        "recordVersion": 6,
+        "schema": "FSTL-1.1",
+    }
+    files["target-state-v6-strength/target-state-v6-strength.bin"] = strength
+    files["target-state-v6-strength/target-state-v6-strength.json"] = (
+        json.dumps(strength_metadata, indent=2, sort_keys=True) + "\n").encode()
+    files["../expected-v1.1/target-state-v6-strength.json"] = (
+        json.dumps(strength_canonical, indent=2, sort_keys=True) + "\n").encode()
     for name, data in sorted(files.items()):
         path = name[3:] if name.startswith("../") else f"vectors-v1.1/{name}"
         entries.append({"path": path, "sha256": sha(data)})

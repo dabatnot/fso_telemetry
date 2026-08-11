@@ -90,6 +90,8 @@ révélée n’est exposée en delta.
   `TARGET_STATE.current_target_entity_id` le plus récent ;
 - la couleur HUD brillante de la nouvelle cible est remplacée avec le même
   atome et ne dépend pas de l'existence d'un blip radar ;
+- le groupe de force HUD v6 est remplacé avec le même atome pour une cible
+  vaisseau et retiré intégralement pour toute autre cible ;
 - un événement `TARGET_CHANGED` reconstructible PEUT être émis avec la
   dépendance de baseline correspondante.
 
@@ -286,4 +288,4 @@ Le runtime conserve par client au plus :
 
 Ce document couvre `P3-REQ-005`, `P3-REQ-009` à `P3-REQ-018`,
 `P3-REQ-022`, `P3-REQ-026`, `P3-REQ-028` à `P3-REQ-032`,
-`P3-REQ-035` à `P3-REQ-040` et `P3-REQ-046`.
+`P3-REQ-035` à `P3-REQ-040`, `P3-REQ-046` et `P3-REQ-048`.

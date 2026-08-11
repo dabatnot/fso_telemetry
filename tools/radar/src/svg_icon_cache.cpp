@@ -99,7 +99,7 @@ void SvgIconCache::warnInvalid(RadarIconAsset asset)
     const auto key = static_cast<std::uint8_t>(asset);
     if (m_warned.contains(key)) return;
     m_warned.insert(key);
-    qWarning().noquote() << QStringLiteral("Icône radar SVG invalide : %1")
+    qWarning().noquote() << QStringLiteral("Invalid radar SVG icon: %1")
         .arg(QString::fromLatin1(radarIconResourcePath(asset)));
 }
 

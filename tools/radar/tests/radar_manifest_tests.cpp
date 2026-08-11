@@ -55,13 +55,15 @@ std::vector<std::uint8_t> classRecord(
 }
 
 std::vector<std::uint8_t> weaponRecord(
-    std::uint32_t generation, std::uint32_t classId, protocol::WeaponSubtype subtype)
+    std::uint32_t generation, std::uint32_t classId, protocol::WeaponSubtype subtype,
+    std::uint64_t lockTimeUs = 0U)
 {
     std::array<std::uint8_t, 256> payload{};
     protocol::PacketWriter writer({payload.data(), payload.size()});
     writer.write_u32(generation);
     writer.write_u32(classId);
-    writer.write_u64(protocol::WeaponManifestPresenceFlagNone);
+    writer.write_u64(lockTimeUs == 0U ? protocol::WeaponManifestPresenceFlagNone
+                                     : protocol::WeaponManifestPresenceFlagLock);
     writer.write_utf8("Test Weapon", 255);
     writer.write_u8(static_cast<std::uint8_t>(subtype));
     writer.write_u64(0);
@@ -69,6 +71,10 @@ std::vector<std::uint8_t> weaponRecord(
     writer.write_f32(1.0F);
     writer.write_f32(0.0F);
     writer.write_u64(1);
+    if (lockTimeUs != 0U) {
+        writer.write_u64(lockTimeUs);
+        writer.write_f32(0.5F);
+    }
     writer.write_f32(0.0F);
     if (!writer.ok()) return {};
 
@@ -126,7 +132,7 @@ private slots:
     void installsFragmentedCatalogAtomically()
     {
         const auto ship = classRecord(77, 10, 6);
-        const auto weapon = weaponRecord(77, 20, protocol::WeaponSubtype::Missile);
+        const auto weapon = weaponRecord(77, 20, protocol::WeaponSubtype::Missile, 2'500'000U);
         QVERIFY(!ship.empty());
         QVERIFY(!weapon.empty());
         auto input = transaction(77, {ship, weapon});
@@ -136,6 +142,8 @@ private slots:
         QCOMPARE(catalog->manifestId, 77U);
         QCOMPARE(catalog->shipRadarIconIds.at(10), 6U);
         QCOMPARE(catalog->weapons.at(20).subtype, protocol::WeaponSubtype::Missile);
+        QVERIFY(catalog->weapons.at(20).hasLock);
+        QCOMPARE(catalog->weapons.at(20).nominalLockTimeUs, std::uint64_t{2'500'000U});
 
         const auto active = catalog;
         auto invalid = transaction(78, {classRecord(78, 10, 6), classRecord(78, 10, 7)});

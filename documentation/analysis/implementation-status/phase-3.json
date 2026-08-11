@@ -2,8 +2,8 @@
   "schema": "fs2open.telemetry.product-implementation.v1",
   "phase": 3,
   "phaseDirectory": "documentation/analysis/specs/3-Ciblage-et-capteurs",
-  "contractFingerprint": "sha256:942e8ada4756238765113418c07663ba4fb339a74e30c2c454f24f09fb61af7f",
-  "updatedAtUtc": "2026-08-09T17:01:53Z",
+  "contractFingerprint": "sha256:c712fb007cbf14b95b72de9e048ee0895bb4f2cd85efd4d3bb112dbe67f0fbc3",
+  "updatedAtUtc": "2026-08-11T07:16:48Z",
   "requirements": [
     {
       "id": "P3-REQ-001",
@@ -722,10 +722,10 @@
     },
     {
       "id": "P3-REQ-019",
-      "observable": "`TARGET_STATE` v5 reproduit les cibles Target Box avec ou sans blip radar, y compris les libellés HUD des sous-systèmes ciblé et lock, et constitue l'autorité courante de sélection; v1/v2/v3/v4 restent décodables.",
+      "observable": "`TARGET_STATE` v6 reproduit les cibles Target Box avec ou sans blip radar, y compris les libellés HUD des sous-systèmes ciblé et lock et la force HUD de la cible, et constitue l'autorité courante de sélection; v1/v2/v3/v4/v5 restent décodables.",
       "expectedAutomatedProof": "`telemetry_phase3_targeting_tests`",
       "implementationStatus": "implemented",
-      "implementationSummary": "TARGET_STATE v5 reste autonome du radar et constitue l'autorité courante de sélection. Il ajoute les libellés HUD instance-aware des sous-systèmes ciblé et lock, capturés sur la cible validée sans dépendre de CLASS_MANIFEST; v1 à v4 restent inchangés.",
+      "implementationSummary": "TARGET_STATE reste autonome du radar et constitue l'autorité courante de sélection. Le producteur live émet v6 avec la force HUD conditionnelle des cibles vaisseau, tandis que les validateurs et consommateurs conservent la compatibilité v1 à v5.",
       "implementationPaths": [
         "code/telemetry/phase3_engine_collector.cpp",
         "code/telemetry/phase3_engine_collector.h",
@@ -734,34 +734,28 @@
       ],
       "proofs": [
         {
-          "id": "P3-REQ-019-AUTO-01",
+          "id": "P3-REQ-019-AUTO-03",
           "kind": "automated",
-          "command": "build\\bin\\Release\\telemetry_phase3_state_image_tests.exe --gtest_color=no",
-          "status": "passed",
-          "inputs": [
-            "code/telemetry/phase3_state_image.cpp",
-            "code/telemetry/phase3_state_image.h",
-            "test/src/telemetry/producer/phase3_state_image_tests.cpp"
-          ],
-          "inputFingerprint": "sha256:30e2f5af2ef2ee74ee1413e9ce6e25c9bf8c51430aed1829ea64b1512a3376f3",
-          "observedAtUtc": "2026-08-08T18:19:01Z",
-          "result": "2/2 tests ciblés passés: lecture D/S-couleur conservée en v5 et sérialisation exacte des deux libellés HUD de sous-système.",
-          "resultRef": null
-        },
-        {
-         "id": "P3-REQ-019-AUTO-02",
-          "kind": "automated",
-          "command": "build\\bin\\Release\\unittests.exe --gtest_filter=TelemetryPhase3Targeting.RetainedStealthObservationUsesTheRealVisibleCockpitTrack --gtest_color=no",
+          "command": "build\\bin\\Release\\unittests.exe --gtest_filter=*TargetState*:*ManifestRadarMetadata*:TelemetryProtocolConstants.FreezesPhase3VersionFourRadarVisualContract ; build\\bin\\Release\\telemetry_phase3_state_image_tests.exe ; ctest --test-dir build -C Release -L telemetry-short --output-on-failure -j 1",
           "status": "passed",
           "inputs": [
             "code/telemetry/phase3_engine_collector.cpp",
             "code/telemetry/phase3_engine_collector.h",
-            "test/src/telemetry/producer/test_telemetry_native_runtime_integration_contract.cpp"
+            "code/telemetry/phase3_state_image.cpp",
+            "code/telemetry/phase3_state_image.h",
+            "code/telemetry/protocol/telemetry_business_records.cpp",
+            "code/telemetry/protocol/telemetry_business_records_11_18.cpp",
+            "code/telemetry/protocol/telemetry_business_state_validation.cpp",
+            "code/telemetry/protocol/telemetry_protocol_constants.h",
+            "code/telemetry/protocol/telemetry_replication.cpp",
+            "test/src/telemetry/producer/phase3_state_image_tests.cpp",
+            "test/src/telemetry/protocol/test_protocol_constants.cpp",
+            "test/src/telemetry/protocol/test_telemetry_business_records_11_18.cpp"
           ],
-          "inputFingerprint": "sha256:786ddaa2e4755c03bc3e1e298215a062a05cdf3da84573198a08955cc65b2c99",
-          "observedAtUtc": "2026-08-08T18:19:01Z",
-          "result": "1/1 passed: cible validée, libellés HUD ciblé et lock disponibles sans ID de manifeste, radar et TARGET_STATE atomiques.",
-          "resultRef": null
+          "inputFingerprint": "sha256:372a79024483d2a6e9187058ee52e7381305dbd06ee976d7c9942385ed36755c",
+          "observedAtUtc": "2026-08-11T07:03:40Z",
+          "result": "5 tests C++ ciblés, 26 tests d'image Phase 3 et 18/18 tests telemetry-short passent en Release ; le binaire FSO Release est également recompilé.",
+          "resultRef": "build/Testing/Temporary/LastTest.log"
         }
       ],
       "requiredObservations": [],
@@ -2399,6 +2393,122 @@
           "observedAtUtc": "2026-08-08T17:00:28Z",
           "result": "Décodeur indépendant, 36 tests client Python, 10 tests backend, 60 tests frontend et build frontend de production passent.",
           "resultRef": null
+        }
+      ],
+      "requiredObservations": [],
+      "blocker": null
+    },
+    {
+      "id": "P3-REQ-048",
+      "observable": "`TARGET_STATE` v6 publie seulement pour une cible vaisseau les ratios HUD bornés de coque et de bouclier total, sans HP bruts ni segments, et conserve v1 à v5 byte-identiques.",
+      "expectedAutomatedProof": "`telemetry_phase3_targeting_tests` + décodeur indépendant + tests radar/dashboard",
+      "implementationStatus": "implemented",
+      "implementationSummary": "Le groupe terminal HUD_TARGET_STRENGTH est produit depuis la Target Box pour les seules cibles vaisseau révélées, validé atomiquement et décodé par le radar et le dashboard. Le radar ajoute callout, lead, progression de lock, aides de mouvement, menaces de bord et effets capteurs/EMP avec réglages persistants.",
+      "implementationPaths": [
+        "code/telemetry/phase3_engine_collector.cpp",
+        "code/telemetry/phase3_state_image.cpp",
+        "code/telemetry/phase3_state_image.h",
+        "code/telemetry/protocol/telemetry_business_records.cpp",
+        "code/telemetry/protocol/telemetry_business_records_11_18.cpp",
+        "code/telemetry/protocol/telemetry_business_state_validation.cpp",
+        "code/telemetry/protocol/telemetry_protocol_constants.h",
+        "code/telemetry/protocol/telemetry_replication.cpp",
+        "code/telemetry/protocol/telemetry_manifest_metadata.cpp",
+        "code/telemetry/protocol/telemetry_manifest_metadata.h",
+        "test/telemetry/protocol/tools/fstl_schema.py",
+        "test/telemetry/protocol/tools/fstl_reference_decoder.py",
+        "test/telemetry/protocol/tools/fstl_client_core.py",
+        "tools/telemetry-dashboard/frontend/src/TacticalCockpit.tsx",
+        "tools/telemetry-dashboard/frontend/src/tacticalSemantics.ts",
+        "tools/radar/src/radar_display_settings.h",
+        "tools/radar/src/radar_client.cpp",
+        "tools/radar/src/radar_image.cpp",
+        "tools/radar/src/radar_image.h",
+        "tools/radar/src/radar_manifest.cpp",
+        "tools/radar/src/radar_manifest.h",
+        "tools/radar/src/radar_widget.cpp",
+        "tools/radar/src/radar_widget.h",
+        "tools/radar/src/settings_dialog.cpp",
+        "tools/radar/src/settings_dialog.h",
+        "tools/radar/src/main_window.cpp",
+        "tools/radar/src/main_window.h"
+      ],
+      "proofs": [
+        {
+          "id": "P3-REQ-048-AUTO-01",
+          "kind": "automated",
+          "command": "build\\bin\\Release\\unittests.exe --gtest_filter=*TargetState*:*ManifestRadarMetadata*:TelemetryProtocolConstants.FreezesPhase3VersionFourRadarVisualContract ; build\\bin\\Release\\telemetry_phase3_state_image_tests.exe ; ctest --test-dir build -C Release -L telemetry-short --output-on-failure -j 1",
+          "status": "passed",
+          "inputs": [
+            "code/telemetry/phase3_engine_collector.cpp",
+            "code/telemetry/phase3_engine_collector.h",
+            "code/telemetry/phase3_state_image.cpp",
+            "code/telemetry/phase3_state_image.h",
+            "code/telemetry/protocol/telemetry_business_records.cpp",
+            "code/telemetry/protocol/telemetry_business_records_11_18.cpp",
+            "code/telemetry/protocol/telemetry_business_state_validation.cpp",
+            "code/telemetry/protocol/telemetry_protocol_constants.h",
+            "code/telemetry/protocol/telemetry_replication.cpp",
+            "test/src/telemetry/producer/phase3_state_image_tests.cpp",
+            "test/src/telemetry/protocol/test_protocol_constants.cpp",
+            "test/src/telemetry/protocol/test_telemetry_business_records_11_18.cpp"
+          ],
+          "inputFingerprint": "sha256:372a79024483d2a6e9187058ee52e7381305dbd06ee976d7c9942385ed36755c",
+          "observedAtUtc": "2026-08-11T07:03:40Z",
+          "result": "TARGET_STATE v6, bornes, non-finis, booléen, absence de bouclier et compatibilité v5 validés ; FSO Release et telemetry-short sont verts.",
+          "resultRef": "build/Testing/Temporary/LastTest.log"
+        },
+        {
+          "id": "P3-REQ-048-AUTO-02",
+          "kind": "automated",
+          "command": "python -B test/telemetry/protocol/tools/fstl_schema.py --check --wire-version all ; python -B test/telemetry/protocol/tools/verify_fstl_1_1_amendment.py --check --repo . ; python -B test/telemetry/protocol/tools/verify_fstl_1_0_freeze.py --check --repo . ; python -B test/telemetry/protocol/tools/fstl_reference_decoder.py --check --repo . ; python -B test/telemetry/protocol/tools/test_fstl_console_client_contract.py ; npm --prefix tools/telemetry-dashboard/frontend test -- --run ; npm --prefix tools/telemetry-dashboard/frontend run build",
+          "status": "passed",
+          "inputs": [
+            "test/telemetry/protocol/tools/fstl_schema.py",
+            "test/telemetry/protocol/tools/fstl_reference_decoder.py",
+            "test/telemetry/protocol/tools/fstl_client_core.py",
+            "test/telemetry/protocol/tools/test_fstl_console_client_contract.py",
+            "test/telemetry/protocol/tools/verify_fstl_1_1_amendment.py",
+            "test/telemetry/protocol/schema/fstl-v1.1.yaml",
+            "test/telemetry/protocol/vectors-v1.1/target-state-v6-strength",
+            "test/telemetry/protocol/expected-v1.1/target-state-v6-strength.json",
+            "tools/telemetry-dashboard/frontend/src/TacticalCockpit.tsx",
+            "tools/telemetry-dashboard/frontend/src/tacticalSemantics.ts"
+          ],
+          "inputFingerprint": "sha256:1707e5df727e581285f3193006d5e9706c99c37e129979d157a59e44b51714fd",
+          "observedAtUtc": "2026-08-11T07:03:40Z",
+          "result": "Schémas et golden 1.1 vérifiés, gel FSTL 1.0 préservé, 24 corpus croisés, 37 tests client et 74 tests frontend passent ; build dashboard de production vert.",
+          "resultRef": "test/telemetry/protocol/expected-v1.1/target-state-v6-strength.json"
+        },
+        {
+          "id": "P3-REQ-048-AUTO-03",
+          "kind": "automated",
+          "command": "ctest --test-dir build/radar --output-on-failure -j 1 ; QT_QPA_PLATFORM=offscreen ctest --test-dir build/radar-linux --output-on-failure -j 1",
+          "status": "passed",
+          "inputs": [
+            "code/telemetry/protocol/telemetry_manifest_metadata.cpp",
+            "code/telemetry/protocol/telemetry_manifest_metadata.h",
+            "tools/radar/src/radar_display_settings.h",
+            "tools/radar/src/radar_client.cpp",
+            "tools/radar/src/radar_image.cpp",
+            "tools/radar/src/radar_image.h",
+            "tools/radar/src/radar_manifest.cpp",
+            "tools/radar/src/radar_manifest.h",
+            "tools/radar/src/radar_widget.cpp",
+            "tools/radar/src/radar_widget.h",
+            "tools/radar/src/settings_dialog.cpp",
+            "tools/radar/src/settings_dialog.h",
+            "tools/radar/src/main_window.cpp",
+            "tools/radar/src/main_window.h",
+            "tools/radar/tests/radar_client_tests.cpp",
+            "tools/radar/tests/radar_manifest_tests.cpp",
+            "tools/radar/tests/radar_model_tests.cpp",
+            "tools/radar/tests/radar_widget_tests.cpp"
+          ],
+          "inputFingerprint": "sha256:3b9af186fe8bd1b4c9b9b1edd7a12a8f0a90645a569fc306a692f2edbeaa2aec",
+          "observedAtUtc": "2026-08-11T07:03:40Z",
+          "result": "Radar Release compilé sur Windows et Linux ; 4/4 suites, soit 44 tests Qt, passent sur chaque plate-forme, dont rendu hors écran enhanced.",
+          "resultRef": "build/radar-linux/Testing/Temporary/LastTest.log"
         }
       ],
       "requiredObservations": [],

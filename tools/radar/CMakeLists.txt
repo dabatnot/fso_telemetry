@@ -10,13 +10,13 @@ set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTORCC ON)
 
 find_package(Qt6 6.2 REQUIRED COMPONENTS Core Gui Widgets Network Svg Test)
-find_package(Qt6 6.2 QUIET COMPONENTS LinguistTools)
 
 get_filename_component(REPOSITORY_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../.." ABSOLUTE)
 add_subdirectory("${REPOSITORY_ROOT}/code/telemetry/protocol"
                  "${CMAKE_CURRENT_BINARY_DIR}/fstl_protocol")
 
 add_library(radar_core STATIC
+    src/radar_display_settings.h
     src/radar_image.h
     src/radar_image.cpp
     src/radar_icons.h
@@ -25,11 +25,14 @@ add_library(radar_core STATIC
     src/radar_manifest.cpp
     src/svg_icon_cache.h
     src/svg_icon_cache.cpp
+    src/vfnt_font.h
+    src/vfnt_font.cpp
     src/radar_client.h
     src/radar_client.cpp
     src/radar_widget.h
     src/radar_widget.cpp
     radar_icons.qrc
+    radar_fonts.qrc
 )
 target_include_directories(radar_core PUBLIC src)
 target_link_libraries(radar_core
@@ -48,19 +51,16 @@ set_target_properties(fso-simpit-radar PROPERTIES
     OUTPUT_NAME "FsoSimpitRadar"
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/bin")
 
-if(Qt6LinguistTools_FOUND)
-    qt_add_translations(fso-simpit-radar
-        TS_FILES translations/radar_fr.ts translations/radar_en.ts
-        RESOURCE_PREFIX "/i18n")
-endif()
-
 include(CTest)
 if(BUILD_TESTING)
     add_executable(radar_model_tests tests/radar_model_tests.cpp)
     target_link_libraries(radar_model_tests PRIVATE radar_core Qt6::Test)
     add_test(NAME radar_model_tests COMMAND radar_model_tests)
 
-    add_executable(radar_widget_tests tests/radar_widget_tests.cpp)
+    add_executable(radar_widget_tests
+        tests/radar_widget_tests.cpp
+        src/settings_dialog.h
+        src/settings_dialog.cpp)
     target_link_libraries(radar_widget_tests PRIVATE radar_core Qt6::Test)
     add_test(NAME radar_widget_tests COMMAND radar_widget_tests)
     set_tests_properties(radar_widget_tests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

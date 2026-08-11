@@ -1,0 +1,27 @@
+{
+  "fields": {
+    "current_target_entity_id": "2",
+    "entity_id": "1",
+    "hud_target_strength": {
+      "has_shields": true,
+      "hull_ratio": 0.625,
+      "shield_ratio": 0.25
+    },
+    "presence": "524290",
+    "producer_sample_time_us": "1000000",
+    "revealed_identity": {
+      "class_id": 7,
+      "iff_id": 1,
+      "name": "Alpha 2",
+      "object_type": 1,
+      "team_id": 1
+    }
+  },
+  "kind": "record",
+  "recordFlags": 0,
+  "recordLength": 63,
+  "recordName": "TARGET_STATE",
+  "recordType": 16,
+  "recordVersion": 6,
+  "schema": "FSTL-1.1"
+}

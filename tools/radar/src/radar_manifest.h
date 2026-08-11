@@ -17,6 +17,8 @@ namespace simpit::radar {
 struct RadarWeaponMetadata {
     telemetry::protocol::WeaponSubtype subtype = telemetry::protocol::WeaponSubtype::Unknown;
     std::uint64_t flags = 0;
+    std::uint64_t nominalLockTimeUs = 0;
+    bool hasLock = false;
 };
 
 struct RadarManifestCatalog final {

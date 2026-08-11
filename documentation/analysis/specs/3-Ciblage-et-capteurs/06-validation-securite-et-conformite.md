@@ -80,6 +80,9 @@ Les tests ciblés vérifient :
   tendances `+`/`-` et fallback de vaisseau docké ;
 - `TARGET_STATE` v5 : libellés HUD exacts des sous-systèmes ciblé et lock,
   y compris lorsque la classe apparue dynamiquement n'est pas installée dans le manifeste ;
+- `TARGET_STATE` v6 : force HUD d'une cible vaisseau intacte, endommagée,
+  sans bouclier ou au bouclier épuisé, absence pour une cible non-vaisseau et
+  rejet des ratios non finis ou hors borne ;
 - groupe de lead all-or-nothing et banque résolue ;
 - lock absent, tentative, acquis et sous-système ;
 - capteurs offline/degraded/online ;
@@ -220,4 +223,4 @@ contrôle le jeu et décide de l’acceptation.
 
 Ce document couvre l’ensemble des exigences, avec un accent sur
 `P3-REQ-002`, `P3-REQ-004`, `P3-REQ-014`, `P3-REQ-019` à
-`P3-REQ-046`.
+`P3-REQ-046` et `P3-REQ-048`.

@@ -3825,8 +3825,8 @@ def build_fstl_v1_1_schema() -> dict[str, object]:
     radar_contacts["phase3_live_record_version"] = 4
 
     target_presence = registries["TargetStatePresence"]
-    target_presence["reserved"]["known_mask"] = 0x7FFFF
-    target_presence["reserved"]["reserved_mask"] = 0xFFFFFFFFFFF80000
+    target_presence["reserved"]["known_mask"] = 0xFFFFF
+    target_presence["reserved"]["reserved_mask"] = 0xFFFFFFFFFFF00000
     target_presence["values"].append({
         "bit": 14,
         "name": "EXACT_HUD_SPEED",
@@ -3850,6 +3850,12 @@ def build_fstl_v1_1_schema() -> dict[str, object]:
         "name": "HUD_LOCK_SUBSYSTEM_LABEL",
         "value": 0x40000,
         "source": {"document": p3_doc04_path, "section": "5.2"},
+    })
+    target_presence["values"].append({
+        "bit": 19,
+        "name": "HUD_TARGET_STRENGTH",
+        "value": 0x80000,
+        "source": {"document": p3_doc04_path, "section": "5.3"},
     })
     target_presence["values"].append({
         "bit": 15,
@@ -3912,6 +3918,36 @@ def build_fstl_v1_1_schema() -> dict[str, object]:
             "wire": "utf8-string",
         },
     ])
+    target_v6_fields = json.loads(json.dumps(target_v5_fields))
+    target_v6_fields.extend([
+        {
+            "constraint": "finite [0,1]",
+            "name": "hud_hull_ratio",
+            "nature": "A",
+            "position": str(len(target_v6_fields) + 1),
+            "presence_condition": {"bits": [19], "selector": "presence"},
+            "semantics": "bit 19; exact hull ratio displayed by the FSO Target Box",
+            "wire": "float32",
+        },
+        {
+            "constraint": "canonical bool8",
+            "name": "hud_has_shields",
+            "nature": "A",
+            "position": str(len(target_v6_fields) + 2),
+            "presence_condition": {"bits": [19], "selector": "presence"},
+            "semantics": "bit 19; physical shield availability for the selected ship",
+            "wire": "bool8",
+        },
+        {
+            "constraint": "finite [0,1], encoded iff hud_has_shields=true",
+            "name": "hud_shield_ratio",
+            "nature": "A",
+            "position": str(len(target_v6_fields) + 3),
+            "presence_condition": {"bits": [19], "selector": "presence"},
+            "semantics": "bit 19; exact total shield ratio displayed by the FSO Target Box",
+            "wire": "float32",
+        },
+    ])
     for index, field in enumerate(target_v2_fields, start=1):
         field["position"] = str(index)
     target_state["versions"] = [
@@ -3933,8 +3969,12 @@ def build_fstl_v1_1_schema() -> dict[str, object]:
          "required_profile": "CockpitSensors",
          "compatibility": "explicit; v5 appends authoritative target and lock subsystem HUD labels",
          "fields": target_v5_fields},
+        {"version": 6, "minimum_minor": 1,
+         "required_profile": "CockpitSensors",
+         "compatibility": "explicit; v6 appends authoritative target hull and total shield ratios",
+         "fields": target_v6_fields},
     ]
-    target_state["phase3_live_record_version"] = 5
+    target_state["phase3_live_record_version"] = 6
 
     records.append({
         "id": 29,

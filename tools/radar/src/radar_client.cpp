@@ -233,7 +233,7 @@ private:
     void openEndpoint(bool reconnecting)
     {
         if (m_host.isEmpty() || m_port == 0) {
-            fail(tr("Destination invalide"));
+            fail(tr("Invalid destination"));
             return;
         }
         if (!m_clock.isValid()) m_clock.start();
@@ -252,12 +252,12 @@ private:
             if (error == QAbstractSocket::ConnectionRefusedError) return;
             if (error != QAbstractSocket::UnknownSocketError) {
                 const QString detail = m_socket != nullptr
-                    ? m_socket->errorString() : tr("Erreur réseau UDP");
+                    ? m_socket->errorString() : tr("UDP network error");
                 retryEndpoint(detail);
             }
         });
         emit statusChanged(reconnecting ? ClientStatus::Reconnecting : ClientStatus::Resolving,
-                           reconnecting ? tr("Reconnexion…") : tr("Résolution de %1…").arg(m_host));
+                           reconnecting ? tr("Reconnecting…") : tr("Resolving %1…").arg(m_host));
         const QPointer<RadarClientWorker> guard(this);
         const std::uint64_t generation = ++m_endpointGeneration;
         QHostInfo::lookupHost(m_host, this, [guard, reconnecting, generation](const QHostInfo& info) {
@@ -271,7 +271,7 @@ private:
     {
         if (generation != m_endpointGeneration) return;
         if (info.error() != QHostInfo::NoError || info.addresses().isEmpty()) {
-            fail(tr("Impossible de résoudre %1 : %2").arg(m_host, info.errorString()));
+            fail(tr("Could not resolve %1: %2").arg(m_host, info.errorString()));
             return;
         }
         QHostAddress selected;
@@ -283,7 +283,7 @@ private:
             if (selected.isNull() && candidate.protocol() == QAbstractSocket::IPv6Protocol) selected = candidate;
         }
         if (selected.isNull()) {
-            fail(tr("Aucune adresse IPv4 ou IPv6 utilisable"));
+            fail(tr("No usable IPv4 or IPv6 address"));
             return;
         }
         m_peerAddress = selected;
@@ -291,13 +291,13 @@ private:
         const QHostAddress bindAddress = selected.protocol() == QAbstractSocket::IPv6Protocol
             ? QHostAddress::AnyIPv6 : QHostAddress::AnyIPv4;
         if (!m_socket->bind(bindAddress, 0, QUdpSocket::DefaultForPlatform)) {
-            fail(tr("Ouverture UDP impossible : %1").arg(m_socket->errorString()));
+            fail(tr("Could not open UDP endpoint: %1").arg(m_socket->errorString()));
             return;
         }
         m_socket->connectToHost(m_peerAddress, m_port, QIODevice::ReadWrite);
         m_endpointReady = true;
         emit statusChanged(reconnecting ? ClientStatus::Reconnecting : ClientStatus::Connecting,
-                           tr("Connexion à %1:%2…").arg(m_peerAddress.toString()).arg(m_port));
+                           tr("Connecting to %1:%2…").arg(m_peerAddress.toString()).arg(m_port));
         beginHello();
     }
 
@@ -377,7 +377,7 @@ private:
         hello.requested_heartbeat_ms = 1000;
         if (!encodePayload(hello, protocol::HelloPayloadPrefixSize,
                            protocol::encode_hello_payload, m_helloPayload)) {
-            fail(tr("Encodage HELLO impossible"));
+            fail(tr("Could not encode HELLO"));
             return;
         }
         m_helloMessageId = ++m_messageId;
@@ -392,7 +392,7 @@ private:
         if (m_helloMessageId == 0 || m_helloPayload.isEmpty() ||
             !sendMessage(protocol::MessageType::Hello, m_helloPayload, flags, 0,
                          m_helloMessageId)) {
-            retryEndpoint(tr("Envoi HELLO impossible, nouvelle tentative…"));
+            retryEndpoint(tr("Could not send HELLO, retrying…"));
             return;
         }
         m_lastHelloUs = nowUs();
@@ -522,16 +522,16 @@ private:
         if (protocol::decode_welcome_payload(data, welcome) != protocol::ValidationError::None ||
             welcome.client_nonce != m_nonce || welcome.client_send_t0_us != m_helloT0Us ||
             m_sessionId != 0) {
-            fail(tr("WELCOME FSTL 1.1 invalide"));
+            fail(tr("Invalid FSTL 1.1 WELCOME"));
             return;
         }
         if (welcome.status != protocol::WelcomeStatus::Accepted) {
             if (welcome.status == protocol::WelcomeStatus::Busy) {
                 ++m_reconnectGeneration;
-                retryEndpoint(tr("Producteur occupé, nouvelle tentative…"));
+                retryEndpoint(tr("Producer busy, retrying…"));
                 return;
             }
-            fail(tr("Connexion refusée par le producteur (code %1)")
+            fail(tr("Connection refused by producer (code %1)")
                      .arg(static_cast<unsigned>(welcome.status)));
             return;
         }
@@ -539,21 +539,21 @@ private:
             welcome.selected_minor != protocol::VersionMinorV1_1 ||
             welcome.selected_visibility_mode != protocol::VisibilityMode::Cockpit ||
             header.session_id == 0) {
-            fail(tr("WELCOME FSTL 1.1 invalide"));
+            fail(tr("Invalid FSTL 1.1 WELCOME"));
             return;
         }
         m_sessionId = header.session_id;
         m_lastStateProgressUs = nowUs();
         if ((header.flags & protocol::MessageFlagAckRequired) != 0U)
             sendAck(header, protocol::KnownAckFlags);
-        emit statusChanged(ClientStatus::Synchronizing, tr("Synchronisation FSTL…"));
+        emit statusChanged(ClientStatus::Synchronizing, tr("Synchronizing FSTL…"));
     }
 
     void processSessionBegin(const protocol::TelemetryDatagramHeader& header, protocol::ByteView data)
     {
         protocol::SessionBeginPayload begin;
         if (protocol::decode_session_begin_payload(data, begin) != protocol::ValidationError::None) {
-            fail(tr("SESSION_BEGIN invalide"));
+            fail(tr("Invalid SESSION_BEGIN"));
             return;
         }
         m_sessionBegun = true;
@@ -579,7 +579,7 @@ private:
     {
         protocol::ManifestPartPayload payload;
         if (protocol::decode_manifest_part_payload(data, payload) != protocol::ValidationError::None) {
-            fail(tr("MANIFEST invalide"));
+            fail(tr("Invalid MANIFEST"));
             return;
         }
         rememberReliable(header);
@@ -590,7 +590,7 @@ private:
             std::shared_ptr<const RadarManifestCatalog> catalog;
             QString error;
             if (!buildRadarManifestCatalog(completed, catalog, &error)) {
-                fail(error.isEmpty() ? tr("Transaction MANIFEST invalide") : error);
+                fail(error.isEmpty() ? tr("Invalid MANIFEST transaction") : error);
                 return;
             }
             m_manifestCatalog = std::move(catalog);
@@ -599,7 +599,7 @@ private:
             m_lastStateProgressUs = nowUs();
         } else if (outcome.result != protocol::TransactionAssemblyResult::Accepted &&
                    outcome.result != protocol::TransactionAssemblyResult::Duplicate) {
-            fail(tr("Transaction MANIFEST invalide"));
+            fail(tr("Invalid MANIFEST transaction"));
         }
     }
 
@@ -628,7 +628,7 @@ private:
             payload.required_manifest_id == 0 || payload.required_manifest_id != m_manifestId ||
             m_manifestCatalog == nullptr ||
             m_manifestCatalog->manifestId != payload.required_manifest_id) {
-            fail(tr("FULL_SNAPSHOT invalide ou manifeste absent"));
+            fail(tr("Invalid FULL_SNAPSHOT or missing manifest"));
             return;
         }
         rememberReliable(header);
@@ -639,10 +639,10 @@ private:
             protocol::StateImage candidate;
             QString error;
             if (!decodeCompletedSnapshot(completed, candidate)) {
-                fail(tr("Snapshot métier invalide"));
+                fail(tr("Invalid business snapshot"));
                 return;
             }
-            auto radar = makeRadarImage(candidate, m_manifestCatalog.get(), &error);
+            auto radar = makeRadarImage(candidate, m_manifestCatalog.get(), m_sessionId, &error);
             if (!radar) {
                 fail(error);
                 return;
@@ -657,7 +657,7 @@ private:
             publish(std::move(radar));
         } else if (outcome.result != protocol::TransactionAssemblyResult::Accepted &&
                    outcome.result != protocol::TransactionAssemblyResult::Duplicate) {
-            fail(tr("Transaction FULL_SNAPSHOT invalide"));
+            fail(tr("Invalid FULL_SNAPSHOT transaction"));
         }
     }
 
@@ -680,7 +680,7 @@ private:
             return;
         }
         QString error;
-        auto radar = makeRadarImage(candidate, m_manifestCatalog.get(), &error);
+        auto radar = makeRadarImage(candidate, m_manifestCatalog.get(), m_sessionId, &error);
         if (!radar) {
             fail(error);
             return;

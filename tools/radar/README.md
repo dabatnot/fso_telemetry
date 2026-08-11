@@ -8,7 +8,7 @@ ni la cible ni l'état du jeu.
 ## Construction
 
 Prérequis : CMake 3.22+, un compilateur C++20 et Qt 6.2+ avec Core, Gui,
-Widgets, Network, Svg et Test. LinguistTools est utilisé lorsqu'il est disponible.
+Widgets, Network, Svg et Test. LinguistTools n'est pas requis.
 
 ```sh
 cmake -S tools/radar -B build/radar -G Ninja -DCMAKE_BUILD_TYPE=Release
@@ -24,15 +24,21 @@ Sous Windows avec Qt installé hors du `PATH`, ajouter par exemple
 Au premier lancement, saisir l'hôte et le port du producteur FS2Open. Les
 valeurs par défaut sont `127.0.0.1:42042`. `Échap` ou `Ctrl+,` rouvre les
 réglages. Hôte, port et géométrie de fenêtre sont mémorisés par `QSettings`.
+L'interface distribuée est exclusivement en anglais, comme celle du jeu.
 
 Le fichier [`examples/fs2open.telemetry.json`](examples/fs2open.telemetry.json)
 active le profil requis et autorise deux clients simultanés afin de comparer
 le dashboard et ce radar.
 
 Après trois secondes sans progrès, la dernière image est conservée, assombrie
-et marquée `STALE`, puis une resynchronisation est demandée. Après dix secondes,
+et marquée `SENSOR FEED LOST`, puis une resynchronisation est demandée. Après dix secondes,
 le client crée un nouvel endpoint UDP et renégocie une session, sans effacer la
 dernière image affichée.
+
+Les overlays système emploient les fontes bitmap VFNT historiques de FreeSpace :
+`font02.vf` pour le titre et `font01.vf` pour le détail. Ils sont colorés selon
+l'état du lien (cyan, ambre ou rouge), tandis que le Target Callout et les
+réglages conservent leurs fontes Qt.
 
 Les 44 SVG de `assets` sont embarqués dans l'exécutable. Le client choisit les
 familles de vaisseaux et d'armes uniquement à partir des informations révélées

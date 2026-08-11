@@ -703,7 +703,20 @@ Presence bits : `PREVIOUS_TARGET=0`, `REVEALED_IDENTITY=1`, `TIME_ON_TARGET=2`, 
 | 23 | `nearest_locked_entity_id` | `entity_id` | non nul | A | bit 12 |
 | 24 | `exact_hud_distance` | `float32` | `[0;1,0e12]` wu | A | bit 13, uniquement si les règles HUD ne sont pas reproductibles ; nom interdit pour une distance géométrique dérivable |
 
-Distance centre-à-centre, vitesses relatives, intégrités, azimut, élévation, temps d'interception et orientation relative sont `D`. Coordonnées écran, triangles, pixels de lock et animations sont exclus. Un changement de cible peut aussi produire `EVENTS.TARGET_CHANGED` selon la couverture annoncée.
+Sous FSTL 1.1, les extensions Phase 3 sont sélectionnées exclusivement par
+`record_version`. V2 ajoute `EXACT_HUD_SPEED=bit14`, v3
+`HUD_TYPE_LABEL=bit15`, v4 `HUD_TARGET_COLOR=bit16`, v5 les libellés de
+sous-système aux bits 17 et 18, puis v6 ajoute le groupe terminal
+`HUD_TARGET_STRENGTH=bit19` : `hull_ratio:f32[0,1]`, `has_shields:bool8` et
+`shield_ratio:f32[0,1]` si et seulement si le booléen vaut vrai. V1 à v5
+restent byte-identiques et aucune variante n'est détectée par longueur.
+
+Distance centre-à-centre, vitesses relatives, azimut, élévation, temps
+d'interception et orientation relative sont `D`. Les ratios de force v6 sont
+les seules intégrités autoritaires de la Target Box dans ce record ; points de
+vie bruts et segments restent absents. Coordonnées écran, triangles, pixels de
+lock et animations sont exclus. Un changement de cible peut aussi produire
+`EVENTS.TARGET_CHANGED` selon la couverture annoncée.
 
 ## 8. Capteurs, opérations et effets
 

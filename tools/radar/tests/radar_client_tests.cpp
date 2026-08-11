@@ -105,10 +105,10 @@ private slots:
         u8(1); u8(RecordFlagNone); u16(30);
         u64(1); u64(0); u64(1); u8(1); u8(1); u32(0);
 
-        // Minimal TARGET_STATE v5: observer 1, no optional fields and no
-        // selected target. Version 5 is legal only after FSTL 1.1 negotiation.
+        // Minimal TARGET_STATE v6: observer 1, no optional fields and no
+        // selected target. Version 6 is legal only after FSTL 1.1 negotiation.
         u16(static_cast<std::uint16_t>(RecordType::TargetState));
-        u8(5); u8(RecordFlagNone); u16(32);
+        u8(6); u8(RecordFlagNone); u16(32);
         u64(1); u64(0); u64(1); u64(0);
 
         StateImage legacy;

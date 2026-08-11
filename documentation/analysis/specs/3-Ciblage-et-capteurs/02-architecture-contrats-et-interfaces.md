@@ -54,6 +54,7 @@ Le collecteur copie dans un DTO possédé :
 - sous-système ciblé et sous-système de lock ;
 - dernière observation furtive autorisée ;
 - tendances, cône, lead et banque ;
+- ratios HUD de coque et de bouclier total pour une cible vaisseau ;
 - attaquant, arme dangereuse et cible verrouillée la plus proche ;
 - liste complète des locks.
 
@@ -249,4 +250,4 @@ Le client de référence :
 ## 10. Traçabilité
 
 Ce document couvre `P3-REQ-009` à `P3-REQ-018`, `P3-REQ-037`,
-`P3-REQ-043` à `P3-REQ-045`.
+`P3-REQ-043` à `P3-REQ-045` et `P3-REQ-048`.

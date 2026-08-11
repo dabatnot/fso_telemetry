@@ -37,6 +37,10 @@
       "sha256": "34983b6b3edff7b5fea93b017abbc65d9aa22941052804907b877828a42ab8e3"
     },
     {
+      "path": "expected-v1.1/target-state-v6-strength.json",
+      "sha256": "5939dbc0ae4a58e6fcb69cbb90fa932e1400741d3b93c704fb99768b9d3e17ed"
+    },
+    {
       "path": "expected-v1.1/welcome-accepted-minor-one.json",
       "sha256": "b983199b9596733ad4c63b65e81d0f3418b0fdc2978c0265d0a389153de7eb27"
     },
@@ -219,6 +223,14 @@
     {
       "path": "vectors-v1.1/player-lifecycle-non-ship/player-lifecycle-non-ship.json",
       "sha256": "160c9b3bb9eab506e15b62b041f1c9bcc7dcb1b5a671dee1928cfec6b95e1cbc"
+    },
+    {
+      "path": "vectors-v1.1/target-state-v6-strength/target-state-v6-strength.bin",
+      "sha256": "8db43c1fe7426c08d81008ff843c83dafe58aebc61258e02f9e7a3e61974fad9"
+    },
+    {
+      "path": "vectors-v1.1/target-state-v6-strength/target-state-v6-strength.json",
+      "sha256": "d100409c49f7e4474b5a44adb281cf9803a214130634964b92baf8339007000d"
     },
     {
       "path": "vectors-v1.1/unexpected-ship-identity/unexpected-ship-identity.bin",

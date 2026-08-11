@@ -213,7 +213,8 @@ ValidationError validate_business_record(const RecordEnvelopeView& record,
 		   record.record_version == 4U)) ||
 		 ((candidate.type == RecordType::TargetState) &&
 		  (record.record_version == 2U || record.record_version == 3U ||
-		   record.record_version == 4U || record.record_version == 5U))) &&
+		   record.record_version == 4U || record.record_version == 5U ||
+		   record.record_version == 6U))) &&
 		protocol_minor >= VersionMinorV1_1;
 	if (record.record_version != 1U && !phase3_extended_version) {
 		return ValidationError::UnsupportedRecordVersion;

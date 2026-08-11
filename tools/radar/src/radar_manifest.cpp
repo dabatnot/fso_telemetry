@@ -19,7 +19,7 @@ bool buildRadarManifestCatalog(
     if (transaction.message_type != protocol::MessageType::Manifest ||
         transaction.transaction_id == 0 ||
         transaction.kind_or_flags != static_cast<std::uint16_t>(protocol::ManifestKind::FullRequired)) {
-        return fail(QStringLiteral("Transaction MANIFEST non canonique"));
+        return fail(QStringLiteral("Non-canonical MANIFEST transaction"));
     }
 
     auto candidate = std::make_shared<RadarManifestCatalog>();
@@ -31,7 +31,7 @@ bool buildRadarManifestCatalog(
             protocol::RecordEnvelopeView record;
             bool hasValue = false;
             if (iterator.next(record, hasValue) != protocol::ValidationError::None)
-                return fail(QStringLiteral("Enveloppe MANIFEST invalide"));
+                return fail(QStringLiteral("Invalid MANIFEST envelope"));
             if (!hasValue) break;
 
             if (record.raw_record_type ==
@@ -45,7 +45,7 @@ bool buildRadarManifestCatalog(
                     !candidate->shipRadarIconIds.emplace(
                         metadata.class_id,
                         metadata.has_radar_icon ? metadata.radar_icon_id : 0U).second) {
-                    return fail(QStringLiteral("Classe MANIFEST radar invalide ou dupliquée"));
+                    return fail(QStringLiteral("Invalid or duplicate radar MANIFEST class"));
                 }
             } else if (record.raw_record_type ==
                        static_cast<std::uint16_t>(protocol::RecordType::WeaponManifest)) {
@@ -56,11 +56,12 @@ bool buildRadarManifestCatalog(
                     metadata.manifest_generation != transaction.transaction_id ||
                     metadata.weapon_class_id == 0 ||
                     !candidate->weapons.emplace(metadata.weapon_class_id,
-                        RadarWeaponMetadata{metadata.subtype, metadata.weapon_flags}).second) {
-                    return fail(QStringLiteral("Arme MANIFEST radar invalide ou dupliquée"));
+                        RadarWeaponMetadata{metadata.subtype, metadata.weapon_flags,
+                            metadata.nominal_lock_time_us, metadata.has_lock}).second) {
+                    return fail(QStringLiteral("Invalid or duplicate radar MANIFEST weapon"));
                 }
             } else {
-                return fail(QStringLiteral("Record MANIFEST inattendu"));
+                return fail(QStringLiteral("Unexpected MANIFEST record"));
             }
         }
     }

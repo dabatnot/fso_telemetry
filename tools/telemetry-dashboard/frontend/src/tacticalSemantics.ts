@@ -186,7 +186,7 @@ const LEGACY_NEUTRAL_COLOR = "#70e4d1";
 const LEGACY_TARGET_COLOR = "#ffd466";
 const LEGACY_THREAT_COLOR = "#ff6b55";
 const RADAR_COLOR_RECORD_VERSIONS = [4] as const;
-const TARGET_COLOR_RECORD_VERSIONS = [4, 5] as const;
+const TARGET_COLOR_RECORD_VERSIONS = [4, 5, 6] as const;
 
 function byte(value: unknown): number | null {
   const numeric = Number(value);

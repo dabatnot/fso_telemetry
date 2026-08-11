@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <new>
 #include <string_view>
 
@@ -368,6 +369,20 @@ ValidationError parse_target(const StateAtom& atom, TargetFacts& facts) noexcept
 		std::string_view ignored_label;
 		if (!reader.read_utf8(255U, ignored_label) || ignored_label.empty()) {
 			return ValidationError::BadRecordLength;
+		}
+	}
+	if ((facts.presence & TargetStatePresenceFlagHudTargetStrength) != 0U) {
+		if (atom.record_version < 6U) return ValidationError::UnsupportedRecordVersion;
+		float hull_ratio = 0.0F;
+		float shield_ratio = 0.0F;
+		bool has_shields = false;
+		if (!reader.read_f32(hull_ratio) || !std::isfinite(hull_ratio) ||
+			hull_ratio < 0.0F || hull_ratio > 1.0F ||
+			!reader.read_bool8(has_shields) ||
+			(has_shields && (!reader.read_f32(shield_ratio) ||
+				!std::isfinite(shield_ratio) || shield_ratio < 0.0F ||
+				shield_ratio > 1.0F))) {
+			return ValidationError::OutOfRange;
 		}
 	}
 	return reader.at_end() ? ValidationError::None : ValidationError::BadRecordLength;
@@ -739,7 +754,8 @@ ValidationError validate_target_references(const StateAtom& atom,
 	}
 	constexpr std::uint64_t HudSubsystemLabelFlags =
 		TargetStatePresenceFlagHudTargetSubsystemLabel |
-		TargetStatePresenceFlagHudLockSubsystemLabel;
+		TargetStatePresenceFlagHudLockSubsystemLabel |
+		TargetStatePresenceFlagHudTargetStrength;
 	if ((facts.presence & HudSubsystemLabelFlags) != 0U &&
 		((facts.presence & TargetStatePresenceFlagRevealedIdentity) == 0U ||
 		 facts.revealed_object_type != ObjectType::Ship)) {

@@ -1,0 +1,19 @@
+{
+  "context": {
+    "recordContainer": "full-snapshot"
+  },
+  "expectedCanonicalJson": "expected-v1.1/target-state-v6-strength.json",
+  "expectedValidationError": 0,
+  "expectedValidationErrorName": "NONE",
+  "inputFiles": [
+    "target-state-v6-strength.bin"
+  ],
+  "kind": "record",
+  "name": "target-state-v6-strength",
+  "notes": "Deterministic FSTL 1.1 TARGET_STATE v6 Target Box strength fixture.",
+  "recordFlags": 0,
+  "recordType": 16,
+  "recordVersion": 6,
+  "schema": "FSTL-1.1",
+  "valid": true
+}

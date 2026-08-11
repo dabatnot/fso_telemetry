@@ -243,13 +243,17 @@ bool make_target(const Phase3Projection& source, StateAtom& atom)
 				target.hud_target_subsystem_label.size}, 255U)) ||
 		((target.presence & protocol::TargetStatePresenceFlagHudLockSubsystemLabel) != 0U &&
 			!writer.write_utf8({target.hud_lock_subsystem_label.bytes.data(),
-				target.hud_lock_subsystem_label.size}, 255U)))
+				 target.hud_lock_subsystem_label.size}, 255U)) ||
+		((target.presence & protocol::TargetStatePresenceFlagHudTargetStrength) != 0U &&
+			(!writer.write_f32(target.hud_hull_ratio) ||
+			 !writer.write_bool8(target.hud_has_shields) ||
+			 (target.hud_has_shields && !writer.write_f32(target.hud_shield_ratio)))))
 		return false;
 	if (!set_entity_key(atom, RecordType::TargetState, source.player_entity_id) ||
 		!assign_payload(writer, atom)) {
 		return false;
 	}
-	atom.record_version = 5U;
+	atom.record_version = 6U;
 	return validate_encoded(atom);
 }
 

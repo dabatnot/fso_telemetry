@@ -8,11 +8,13 @@
 #include "hud/hudconfig.h"
 #include "hud/hudparse.h"
 #include "hud/hudtarget.h"
+#include "hud/hudtargetbox.h"
 #include "iff_defs/iff_defs.h"
 #include "jumpnode/jumpnode.h"
 #include "mod_table/mod_table.h"
 #include "object/object.h"
 #include "object/objectdock.h"
+#include "object/objectshield.h"
 #include "object/waypoint.h"
 #include "playerman/player.h"
 #include "radar/radarsetup.h"
@@ -731,43 +733,59 @@ Phase3EngineCollectStatus collect_target_and_locks(
 		// exact HUD-authoritative result with an installed primary-bank ID.
 		(void)collect_default_primary_lead(target, installed_manifest,
 			output.target);
-			if (target.type == OBJ_SHIP &&
+		if (target.type == OBJ_SHIP &&
 				target.instance >= 0 &&
 				target.instance < MAX_SHIPS) {
-				const auto& target_ship = Ships[target.instance];
-				const auto* installed = installed_ship_class(
-					installed_manifest,
-					target_ship.ship_info_index);
-				// Capture exactly the two strings rendered by
-				// HudGaugeTargetBox::renderTargetShipInfo().  Target selection is
-				// its own HUD disclosure and does not require a radar contact or a
-				// CLASS_MANIFEST entry merely to reproduce visible text.
-				if (capture_hud_ship_text(target_ship,
-						output.target.revealed_name,
-						output.target.hud_type_label) &&
-					output.target.hud_type_label.size != 0U) {
-					output.target.presence |=
-						protocol::TargetStatePresenceFlagRevealedIdentity |
-						protocol::TargetStatePresenceFlagHudTypeLabel;
-					output.target.revealed_object_type = object_type(target.type);
-					if (installed != nullptr) {
-						output.target.revealed_class_id =
-							installed->class_id;
-						output.target.revealed_iff_id = installed->iff_id;
-					}
-					output.target.revealed_team_id = 0U;
+			const auto& target_ship = Ships[target.instance];
+			const auto* installed = installed_ship_class(
+				installed_manifest, target_ship.ship_info_index);
+			// Capture exactly the two strings rendered by
+			// HudGaugeTargetBox::renderTargetShipInfo(). Target selection is its
+			// own HUD disclosure and does not require a manifest entry.
+			if (capture_hud_ship_text(target_ship,
+					output.target.revealed_name,
+					output.target.hud_type_label) &&
+				output.target.hud_type_label.size != 0U) {
+				output.target.presence |=
+					protocol::TargetStatePresenceFlagRevealedIdentity |
+					protocol::TargetStatePresenceFlagHudTypeLabel;
+				output.target.revealed_object_type = object_type(target.type);
+				if (installed != nullptr) {
+					output.target.revealed_class_id = installed->class_id;
+					output.target.revealed_iff_id = installed->iff_id;
 				}
-			} else {
-				const auto* label = target_box_type_label(target.type);
-				if (label != nullptr &&
-					output.target.revealed_name.assign(label, std::strlen(label)) &&
-					output.target.hud_type_label.assign(label, std::strlen(label))) {
-					output.target.presence |=
-						protocol::TargetStatePresenceFlagRevealedIdentity |
-						protocol::TargetStatePresenceFlagHudTypeLabel;
-					output.target.revealed_object_type = object_type(target.type);
+				output.target.revealed_team_id = 0U;
+
+				float shield_ratio = 0.0F;
+				float hull_ratio = 0.0F;
+				hud_get_target_strength(&target, &shield_ratio, &hull_ratio);
+				const auto shield_maximum = shield_get_max_strength(&target, true);
+				if (!std::isfinite(hull_ratio) || hull_ratio < 0.0F ||
+					hull_ratio > 1.0F || !std::isfinite(shield_ratio) ||
+					shield_ratio < 0.0F || shield_ratio > 1.0F ||
+					!std::isfinite(shield_maximum)) {
+					return Phase3EngineCollectStatus::InvalidSource;
 				}
+				output.target.hud_hull_ratio = hull_ratio;
+				output.target.hud_has_shields =
+					!target.flags[Object::Object_Flags::No_shields] &&
+					shield_maximum > 0.0F;
+				output.target.hud_shield_ratio =
+					output.target.hud_has_shields ? shield_ratio : 0.0F;
+				output.target.presence |=
+					protocol::TargetStatePresenceFlagHudTargetStrength;
 			}
+		} else {
+			const auto* label = target_box_type_label(target.type);
+			if (label != nullptr &&
+				output.target.revealed_name.assign(label, std::strlen(label)) &&
+				output.target.hud_type_label.assign(label, std::strlen(label))) {
+				output.target.presence |=
+					protocol::TargetStatePresenceFlagRevealedIdentity |
+					protocol::TargetStatePresenceFlagHudTypeLabel;
+				output.target.revealed_object_type = object_type(target.type);
+			}
+		}
 		// The Target Box renders the instance-aware, localized HUD subsystem name.
 		// Capture it independently from CLASS_MANIFEST so newly spawned ship
 		// classes remain reproducible without rebuilding the installed manifest.

@@ -1,5 +1,6 @@
 #include "radar_image.h"
 #include "radar_icons.h"
+#include "radar_display_settings.h"
 
 #include "telemetry/protocol/telemetry_protocol_constants.h"
 
@@ -27,6 +28,20 @@ private slots:
         QCOMPARE(upper.y(), -0.5);
     }
 
+    void enhancedSettingsDefaultsAreFailSafe()
+    {
+        const RadarDisplaySettings settings;
+        QVERIFY(settings.targetCallout);
+        QVERIFY(settings.targetStrength);
+        QVERIFY(settings.lead);
+        QVERIFY(settings.lock);
+        QVERIFY(settings.subsystems);
+        QVERIFY(settings.edgeThreats);
+        QVERIFY(settings.sensorEffects);
+        QVERIFY(!settings.motionVectors);
+        QVERIFY(!settings.trails);
+    }
+
     void projectionCentersUndefinedTransverseDirection()
     {
         bool defined = true;
@@ -40,6 +55,15 @@ private slots:
     {
         QCOMPARE(projectContact(1.0, 0.0, 0.0, 0.0), QPointF());
         QCOMPARE(projectContact(std::nan(""), 0.0, 0.0, 1.0), QPointF());
+    }
+
+    void azimuthUsesPlayerLocalDirection()
+    {
+        QCOMPARE(contactAzimuthRadians(0.0, 0.0, 1.0), 0.0);
+        QVERIFY(contactAzimuthRadians(1.0, 0.0, 1.0) > 0.0);
+        QVERIFY(contactAzimuthRadians(-1.0, 0.0, 1.0) < 0.0);
+        QCOMPARE(contactAzimuthRadians(1.0, 0.0, 0.0), std::acos(-1.0) * 0.5);
+        QVERIFY(std::isnan(contactAzimuthRadians(std::nan(""), 0.0, 1.0)));
     }
 
     void visibilityAlphaMatchesDashboard()

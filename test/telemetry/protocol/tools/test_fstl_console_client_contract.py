@@ -1498,6 +1498,24 @@ class FstlConsoleClientContractTest(unittest.TestCase):
         hud = projection()
         self.assertEqual(809.0, hud["entities.1.target.distance"]["value"])
         self.assertEqual(92.0, hud["entities.1.target.hud_speed"]["value"])
+        target_envelope["recordVersion"] = 6
+        target["hud_target_strength"] = {
+            "hull_ratio": 0.625,
+            "has_shields": True,
+            "shield_ratio": 0.25,
+        }
+        strength = projection()
+        self.assertEqual(0.625, strength["entities.1.target.hull_ratio"]["value"])
+        self.assertTrue(strength["entities.1.target.has_shields"]["value"])
+        self.assertEqual(0.25, strength["entities.1.target.shield_ratio"]["value"])
+        target["hud_target_strength"] = {"hull_ratio": 0.5, "has_shields": False}
+        no_shields = projection()
+        self.assertFalse(no_shields["entities.1.target.has_shields"]["value"])
+        self.assertFalse(no_shields["entities.1.target.shield_ratio"]["available"])
+        self.assertEqual("target-has-no-shields",
+                         no_shields["entities.1.target.shield_ratio"]["reason"])
+        target.pop("hud_target_strength")
+        target_envelope["recordVersion"] = 2
         self.assertEqual(
             "p3.dashboard.target-distance.v2",
             next(item["formulaId"] for item in console.DashboardProjection(
@@ -1575,7 +1593,7 @@ class FstlConsoleClientContractTest(unittest.TestCase):
             cwd=REPO, text=True, capture_output=True, check=False,
         )
         self.assertEqual(0, result.returncode, result.stderr + result.stdout)
-        self.assertIn("23 FSTL 1.1 corpus cases cross-decoded", result.stdout)
+        self.assertIn("24 FSTL 1.1 corpus cases cross-decoded", result.stdout)
         self.assertIn("CRC and simulated cross-endian checks passed", result.stdout)
 
     def test_phase1_independent_reader_keeps_decoding_known_v1_phase2_records(self) -> None:

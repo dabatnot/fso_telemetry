@@ -122,6 +122,31 @@ ValidationError decode_weapon_manifest_radar_metadata(
 		return ValidationError::BadRecordLength;
 	}
 	candidate.subtype = static_cast<WeaponSubtype>(subtype);
+	float ignored_f32 = 0.0F;
+	std::uint64_t ignored_u64 = 0;
+	std::uint32_t ignored_u32 = 0;
+	if (!reader.read_f32(ignored_f32) ||
+		((presence & WeaponManifestPresenceFlagAcceleration) != 0U &&
+		 !reader.read_u64(ignored_u64)) ||
+		!reader.skip(2U * sizeof(float) + sizeof(std::uint64_t)) ||
+		((presence & WeaponManifestPresenceFlagRanges) != 0U &&
+		 !reader.skip(3U * sizeof(float))) ||
+		((presence & WeaponManifestPresenceFlagFire) != 0U &&
+		 !reader.skip(sizeof(std::uint64_t) + sizeof(float))) ||
+		((presence & WeaponManifestPresenceFlagDamage) != 0U &&
+		 (!reader.read_f32(ignored_f32) || !reader.read_u32(ignored_u32) ||
+		  !reader.read_u32(ignored_u32))) ||
+		((presence & WeaponManifestPresenceFlagGuidance) != 0U &&
+		 !reader.skip(sizeof(std::uint8_t) + sizeof(float)))) {
+		return ValidationError::BadRecordLength;
+	}
+	if ((presence & WeaponManifestPresenceFlagLock) != 0U) {
+		if (!reader.read_u64(candidate.nominal_lock_time_us) ||
+			!reader.read_f32(ignored_f32)) {
+			return ValidationError::BadRecordLength;
+		}
+		candidate.has_lock = true;
+	}
 	output = candidate;
 	return ValidationError::None;
 }

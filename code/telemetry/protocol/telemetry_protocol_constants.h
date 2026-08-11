@@ -1005,9 +1005,10 @@ enum TargetStatePresenceFlag : std::uint64_t {
 	TargetStatePresenceFlagHudTargetColor = 0x0000000000010000ULL,
 	TargetStatePresenceFlagHudTargetSubsystemLabel = 0x0000000000020000ULL,
 	TargetStatePresenceFlagHudLockSubsystemLabel = 0x0000000000040000ULL,
+	TargetStatePresenceFlagHudTargetStrength = 0x0000000000080000ULL,
 };
-constexpr std::uint64_t KnownTargetStatePresenceFlags = 0x000000000007ffffULL;
-constexpr std::uint64_t ReservedTargetStatePresenceFlags = 0xfffffffffff80000ULL;
+constexpr std::uint64_t KnownTargetStatePresenceFlags = 0x00000000000fffffULL;
+constexpr std::uint64_t ReservedTargetStatePresenceFlags = 0xfffffffffff00000ULL;
 
 enum RadarStatePresenceFlag : std::uint64_t {
 	RadarStatePresenceFlagNone = 0,

@@ -1,0 +1,6 @@
+<RCC>
+  <qresource prefix="/radar/fonts">
+    <file alias="font01.vf">../../test/test_data/data/fonts/font01.vf</file>
+    <file alias="font02.vf">../../test/test_data/data/fonts/font02.vf</file>
+  </qresource>
+</RCC>
