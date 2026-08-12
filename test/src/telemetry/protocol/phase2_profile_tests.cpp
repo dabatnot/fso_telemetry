@@ -33,6 +33,12 @@ TEST(TelemetryPhase3ProfileGate, CockpitSensorsMapsToTheFrozenCoverage)
 	EXPECT_EQ(Phase2Profile::CockpitSensors, phase2_profile_from_coverage(0x07CBULL));
 }
 
+TEST(TelemetryPhase4ProfileGate, TrustedFullStateMapsToTheFrozenCoverage)
+{
+	EXPECT_EQ(0x07DBULL, phase2_profile_coverage(Phase2Profile::TrustedFullState));
+	EXPECT_EQ(Phase2Profile::TrustedFullState, phase2_profile_from_coverage(0x07DBULL));
+}
+
 TEST(TelemetryPhase3ProfileGate, CockpitSensorsExcludesGlobalEffectsCommunicationAndVideo)
 {
 	const auto coverage =
@@ -83,6 +89,41 @@ TEST(TelemetryPhase3ProfileGate, ExactCoverageSelectsCockpitSensors)
 	EXPECT_EQ(Phase2ProfileError::None,
 		validate_phase2_profile_coverage(0x07CBULL, selected));
 	EXPECT_EQ(Phase2Profile::CockpitSensors, selected);
+}
+
+TEST(TelemetryPhase4ProfileGate, ExactCoverageSelectsTrustedFullState)
+{
+	Phase2Profile selected = Phase2Profile::None;
+	EXPECT_EQ(Phase2ProfileError::None,
+		validate_phase2_profile_coverage(0x07DBULL, selected));
+	EXPECT_EQ(Phase2Profile::TrustedFullState, selected);
+}
+
+TEST(TelemetryPhase4ProfileGate, TrustedFullStateRequiresExplicitSoloTrustedEligibility)
+{
+	using telemetry::protocol::AuthorityMode;
+	using telemetry::protocol::VisibilityMode;
+
+	Phase2Profile selected = Phase2Profile::None;
+	const Phase2ProfileEligibility eligible{
+		AuthorityMode::Solo, VisibilityMode::TrustedFullState, true, false, false};
+	EXPECT_EQ(Phase2ProfileError::None,
+		select_phase2_profile(eligible, Phase2Profile::TrustedFullState, selected));
+	EXPECT_EQ(Phase2Profile::TrustedFullState, selected);
+
+	const std::array<Phase2ProfileEligibility, 5> ineligible{{
+		{AuthorityMode::MultiplayerClient, VisibilityMode::TrustedFullState, true, false, false},
+		{AuthorityMode::MultiplayerMaster, VisibilityMode::TrustedFullState, true, false, false},
+		{AuthorityMode::Solo, VisibilityMode::Cockpit, true, false, false},
+		{AuthorityMode::Solo, VisibilityMode::TrustedFullState, false, false, false},
+		{AuthorityMode::Solo, VisibilityMode::TrustedFullState, true, true, false},
+	}};
+	for (const auto& input : ineligible) {
+		selected = Phase2Profile::TrustedFullState;
+		EXPECT_NE(Phase2ProfileError::None,
+			select_phase2_profile(input, Phase2Profile::TrustedFullState, selected));
+		EXPECT_EQ(Phase2Profile::None, selected);
+	}
 }
 
 TEST(TelemetryPhase2ProfileGate, ProfileErrorRegistryIsClosed)

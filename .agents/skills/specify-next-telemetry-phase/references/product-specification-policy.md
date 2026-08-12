@@ -42,9 +42,9 @@ Un test ou outil rouge peut signifier :
 3. **complétude indémontrable** : l'outil manque et aucune autre preuve ne
    permet de conclure.
 
-Dans les trois cas, ne pas spécifier la phase suivante tant que la totalité de
-la phase courante n'est pas démontrée. Rapporter la catégorie sans réparer
-pendant ce workflow documentaire.
+Dans les trois cas, qualifier et rapporter la catégorie sans réparer pendant ce
+workflow documentaire. Un résultat de preuve ne constitue pas une autorisation
+ni une interdiction de spécifier la phase suivante.
 
 ## Forme d'une exigence
 
@@ -91,10 +91,11 @@ actives :
 - `06` : validation, sécurité et conformité produit ;
 - `07` : livraison, traçabilité et observations.
 
-Ne pas ajouter de document de gate, de tracker ou de campagne dans le package
-de spécification. Le registre d’implémentation machine-readable vit séparément
-dans `documentation/analysis/implementation-status/phase-<N>.json`; seul le
-skill d’implémentation le crée et le met à jour. Le skill de spécification le
-valide et le lit sans le modifier.
+Ne pas ajouter de document de gate, de tracker, de registre de fraîcheur ou de
+campagne dans le package de spécification. Le document `07` reste la source de
+vérité : une ligne canonique par exigence, son observable et le test court ou
+l’observation manuelle qui peuvent le démontrer. Les résultats d’exécution
+restent dans les sorties CI ou de build, jamais dans un mécanisme d’autorisation
+pour la phase suivante.
 
 Les éventuels exemples futurs restent explicitement non normatifs.

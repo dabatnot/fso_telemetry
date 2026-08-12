@@ -1,6 +1,6 @@
 ---
 name: specify-next-telemetry-phase
-description: Spécifier exclusivement la prochaine phase de télémétrie FS2Open à partir du contrat produit actif. Utiliser ce skill lorsque l'utilisateur demande de préparer, créer ou lancer la phase suivante. Auditer d'abord l'implémentation complète de la dernière phase spécifiée, quitter sans écrire si une exigence ou observation produit manque, sinon produire uniquement la phase N+1 sans recréer de gates, campagnes de certification ou validation auto-entretenue du harness.
+description: Spécifier exclusivement la prochaine phase de télémétrie FS2Open à partir du contrat produit actif. Utiliser ce skill lorsque l'utilisateur demande de préparer, créer ou lancer la phase suivante. Auditer les contrats actifs et produire uniquement la phase N+1, sans gate d’implémentation, tracker de preuve, campagne de certification ou validation auto-entretenue du harness.
 ---
 
 # Spécifier la prochaine phase de télémétrie
@@ -28,63 +28,28 @@ python .agents/skills/specify-next-telemetry-phase/scripts/inspect_next_phase.py
 5. Traiter le wire et les golden vectors comme autorités binaires. Traiter la
    roadmap et `documentation/analysis/archive` comme non normatives.
 
-Le script inventorie la dernière phase, ses exigences, son tracker attendu et
-la phase suivante. Il ne prouve jamais que l'implémentation est complète.
+Le script inventorie la dernière phase, ses exigences et la phase suivante. Il
+ne rend aucun verdict sur l’implémentation ou la livraison.
 
-## 2. Bloquer avant toute écriture si la phase courante est incomplète
+## 2. Auditer sans gate d’implémentation
 
-Le tracker canonique doit exister à :
+Le document `07` de la dernière phase est le seul index des exigences, de leurs
+observables et des tests courts pertinents. Lire ses lignes canoniques et les
+chemins de code directement nécessaires au périmètre suivant ; consulter les
+résultats CI ou build existants seulement lorsqu’ils éclairent un comportement
+précis.
 
-```text
-documentation/analysis/implementation-status/phase-<N>.json
-```
-
-Le skill de spécification ne crée, ne réinitialise et ne corrige jamais ce
-tracker. Exécuter :
-
-```text
-python .agents/skills/implement-latest-telemetry-phase/scripts/phase_tracker.py \
-  validate --repo-root . --phase-number <N> --require-complete --json
-```
-
-Le tracker ne possède aucun champ de complétude déclaratif. Le validateur
-recalcule l’état à partir :
-
-- des exigences et observations canoniques du document `07` ;
-- de l’empreinte du contrat actif ;
-- des chemins d’implémentation présents ;
-- des preuves courtes et de l’empreinte actuelle de leurs entrées ;
-- des observations produit relues par un humain ;
-- de l’absence de blocage.
-
-Utiliser le tracker comme index, jamais comme preuve autonome. Pour chaque
-preuve marquée réussie, lire la commande et le résultat consignés, inspecter les
-chemins concernés et vérifier que l’observable exact est réellement couvert.
-Si le résultat ne peut pas être corroboré, réexécuter uniquement la preuve
-courte correspondante en respectant `AGENTS.md`.
+Un échec de test, une observation humaine absente ou une preuve insuffisante ne
+constitue pas une permission manquante pour écrire la Phase `N+1`. Les signaler
+comme dette, défaut produit démontré, défaut d’outil ou question ouverte, sans
+réparer le code ni le harness dans ce workflow documentaire.
 
 Ne pas lancer de campagne longue. Ne pas lancer le jeu ou répondre à une
 autorisation système à la place de l’utilisateur.
 
-Si le tracker manque, est invalide, périmé, incomplet ou si une preuve reste
-invérifiable :
-
-1. ne créer ni modifier aucun fichier de spécification ;
-2. ne pas réparer le code, le test ou le harness ;
-3. quitter immédiatement ;
-4. rapporter les exigences concernées, le comportement manquant et la preuve ou
-   observation attendue à partir de la sortie du validateur ;
-5. distinguer clairement défaut produit, défaut d'outil et preuve humaine
-   absente.
-
-Une défaillance du harness n'est un défaut produit que si elle démontre un
-écart observable : données incorrectes, crash, incompatibilité wire, ressource
-non bornée ou impact gameplay. Si elle empêche seulement de conclure, indiquer
-que la complétude n'est pas démontrée et s'arrêter.
-
 ## 3. Cibler exactement la phase suivante
 
-Si la dernière phase complète est `N`, spécifier uniquement `N+1`.
+Si la dernière phase spécifiée est `N`, spécifier uniquement `N+1`.
 
 - Ne jamais accepter un numéro fourni qui saute une phase.
 - Ne jamais créer `N+2` dans le même run.
@@ -169,8 +134,8 @@ mécanique en preuve d'implémentation.
 
 Rapporter :
 
-- la phase antérieure et la preuve de sa complétude ;
-- le chemin et l’état dérivé de son tracker ;
+- la phase antérieure et les éléments de contexte produit pertinents ;
+- les exigences ou constats antérieurs pertinents, sans verdict de complétude ;
 - le numéro et le périmètre de la phase créée ;
 - le nombre d'exigences et d'observations ;
 - les invariants wire préservés ;

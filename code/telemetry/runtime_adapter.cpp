@@ -31,7 +31,9 @@ Phase2ProfileEligibility current_phase2_profile_eligibility(
 	} else {
 		eligibility.authority_mode = protocol::AuthorityMode::MultiplayerClient;
 	}
-	eligibility.visibility_mode = protocol::VisibilityMode::Cockpit;
+	eligibility.visibility_mode = config.visibility_mode == VisibilityMode::TrustedFullState
+		? protocol::VisibilityMode::TrustedFullState
+		: protocol::VisibilityMode::Cockpit;
 	eligibility.trusted_full_state = config.trusted_full_state;
 	eligibility.dedicated =
 		Is_standalone || (Game_mode & GM_STANDALONE_SERVER) != 0;

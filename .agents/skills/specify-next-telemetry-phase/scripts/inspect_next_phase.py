@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Inventory active telemetry phases and locate their implementation tracker."""
+"""Inventory active telemetry phases and identify their immediate successor."""
 
 from __future__ import annotations
 
@@ -141,16 +141,8 @@ def main() -> int:
                     + ", ".join(wrong_observations)
                 )
 
-    tracker_relative = (
-        Path("documentation")
-        / "analysis"
-        / "implementation-status"
-        / f"phase-{last_number}.json"
-        if last_number >= 0
-        else None
-    )
     result = {
-        "schema": "telemetry-next-phase-inventory-v2",
+        "schema": "telemetry-next-phase-inventory-v3",
         "repositoryRoot": str(root),
         "lastSpecifiedPhase": last_number if last_number >= 0 else None,
         "lastPhaseDirectory": (
@@ -161,13 +153,6 @@ def main() -> int:
         "requirementIds": sorted(set(requirements)),
         "observationCount": len(set(observations)),
         "observationIds": sorted(set(observations)),
-        "implementationTracker": (
-            tracker_relative.as_posix() if tracker_relative else None
-        ),
-        "implementationTrackerExists": (
-            (root / tracker_relative).is_file() if tracker_relative else False
-        ),
-        "readiness": "tracker-validation-required",
         "errors": errors,
     }
 
@@ -178,13 +163,7 @@ def main() -> int:
         print(f"last phase directory: {result['lastPhaseDirectory']}")
         print(f"canonical requirements: {result['requirementCount']}")
         print(f"defined observations: {result['observationCount']}")
-        print(f"implementation tracker: {result['implementationTracker']}")
-        print(
-            "implementation tracker exists: "
-            f"{str(result['implementationTrackerExists']).lower()}"
-        )
-        print(f"next phase if product-complete: {result['nextPhase']}")
-        print("readiness: tracker validation required; inventory never grants readiness")
+        print(f"next phase: {result['nextPhase']}")
         for error in errors:
             print(f"error: {error}", file=sys.stderr)
 

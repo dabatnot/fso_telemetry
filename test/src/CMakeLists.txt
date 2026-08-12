@@ -536,6 +536,25 @@ source_group("Telemetry\\Producer" FILES
 )
 add_test(NAME telemetry_phase3_identity_tests COMMAND telemetry_phase3_identity_tests)
 
+add_executable(telemetry_phase4_entity_registry_tests
+	telemetry/producer/phase4_entity_registry_tests.cpp
+	${CMAKE_SOURCE_DIR}/code/telemetry/phase4_entity_registry.cpp
+)
+target_compile_features(telemetry_phase4_entity_registry_tests PRIVATE cxx_std_17)
+target_include_directories(telemetry_phase4_entity_registry_tests PRIVATE
+	${CMAKE_CURRENT_SOURCE_DIR}
+	${CODE_HEADERS}
+	${FREESPACE_HEADERS}
+	${GENERATED_SOURCE_DIR}
+	${GENERATED_SOURCE_DIR}/code
+)
+target_link_libraries(telemetry_phase4_entity_registry_tests PRIVATE gtest_main)
+set_target_properties(telemetry_phase4_entity_registry_tests PROPERTIES FOLDER "tests")
+source_group("Telemetry\\Producer" FILES
+	telemetry/producer/phase4_entity_registry_tests.cpp
+)
+add_test(NAME telemetry_phase4_entity_registry_tests COMMAND telemetry_phase4_entity_registry_tests)
+
 add_executable(telemetry_phase3_state_image_tests
 	telemetry/producer/phase3_state_image_tests.cpp
 	${CMAKE_SOURCE_DIR}/code/telemetry/phase3_state_image.cpp)

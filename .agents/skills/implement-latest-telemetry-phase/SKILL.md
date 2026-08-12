@@ -1,13 +1,13 @@
 ---
 name: implement-latest-telemetry-phase
-description: Implémenter exclusivement la dernière phase de télémétrie FS2Open déjà spécifiée et tenir son tracker produit par exigence. Utiliser ce skill pour commencer, reprendre ou terminer l’implémentation de la phase active, ajouter les tests courts nécessaires, consigner les observations produit et fournir au skill de spécification un état vérifiable sans recréer de gates ni de campagnes de certification.
+description: Implémenter exclusivement la dernière phase de télémétrie FS2Open déjà spécifiée. Utiliser ce skill pour commencer, reprendre ou terminer l’implémentation de la phase active, ajouter les tests courts nécessaires et consigner les observations produit sans créer de gate, tracker de preuve ou campagne de certification.
 ---
 
 # Implémenter la dernière phase de télémétrie
 
-Implémenter le contrat produit actif, une phase à la fois. Le tracker indexe les
-preuves ; il ne remplace ni les résultats observés ni la décision humaine de
-livraison.
+Implémenter le contrat produit actif, une phase à la fois. Le document `07`
+indexe les exigences et les preuves minimales attendues ; les sorties de test
+restent dans CI ou dans le build, et ne servent jamais d’autorisation machine.
 
 Lire [references/implementation-policy.md](references/implementation-policy.md)
 avant toute modification.
@@ -33,33 +33,12 @@ python .agents/skills/specify-next-telemetry-phase/scripts/inspect_next_phase.py
 Les schémas wire et golden vectors restent les autorités binaires. La roadmap
 et `documentation/analysis/archive` restent non normatives.
 
-## 2. Ouvrir et valider le tracker
+## 2. Relier le travail au contrat
 
-Le tracker canonique est :
-
-```text
-documentation/analysis/implementation-status/phase-<N>.json
-```
-
-S’il manque, l’initialiser une seule fois :
-
-```text
-python .agents/skills/implement-latest-telemetry-phase/scripts/phase_tracker.py \
-  init --repo-root . --phase-number <N>
-```
-
-S’il existe, ne jamais le réinitialiser ni écraser son historique factuel.
-Exécuter :
-
-```text
-python .agents/skills/implement-latest-telemetry-phase/scripts/phase_tracker.py \
-  validate --repo-root . --phase-number <N> --json
-```
-
-Corriger d’abord une erreur de structure ou de correspondance avec la table
-canonique. Une empreinte de contrat différente impose de relire l’impact,
-d’invalider les preuves touchées, puis seulement d’adopter la nouvelle
-empreinte.
+Lire la table canonique du document `07`. Pour chaque exigence traitée, relever
+l’observable exact, les chemins de production concernés, le test court ou
+l’observation Release qui peuvent le démontrer. Ne créer aucun JSON de suivi,
+hash de fraîcheur ou état déclaratif de complétude.
 
 ## 3. Implémenter par exigence
 
@@ -99,52 +78,28 @@ Sous Windows, transmettre `/m:1 /p:CL_MPCount=1` à MSBuild.
   les sources.
 - Laisser à l’utilisateur le lancement du jeu et toute autorisation système.
 
-Après un résultat, calculer l’empreinte de ses entrées :
-
-```text
-python .agents/skills/implement-latest-telemetry-phase/scripts/phase_tracker.py \
-  fingerprint --repo-root . --path <fichier-produit> --path <fichier-test>
-```
-
-Ne marquer une preuve `passed` qu’après son exécution réelle. Son champ
-`inputs` doit couvrir tous les fichiers d’implémentation concernés et son
-`inputFingerprint` doit être celui imprimé après l’exécution.
-
-## 5. Tenir le tracker à jour
-
-Mettre à jour le JSON avec `apply_patch` après chaque lot cohérent :
-
-- `updatedAtUtc` indique la date UTC de la dernière mise à jour factuelle ;
-- `implementationStatus` reflète le produit, pas l’état du test ;
-- `implementationPaths` contient seulement les sources ou artefacts actifs ;
-- `proofs` consigne commande, résultat, date, entrées et empreinte ;
-- `requiredObservations` reste identique au document `07` ;
-- une observation réussie contient attendu, observé, écart, impact et relecteur ;
-- un blocage contient `category`, `summary` et `nextAction`.
-
-Ne jamais rafraîchir une empreinte de preuve sans réexécuter la preuve. Ne pas
-versionner les logs bruts. Ne jamais ajouter de score, budget, verdict
+Ne consigner dans les sources ni hash de fraîcheur ni historique de sortie. Ne
+pas versionner les logs bruts. Ne jamais ajouter de score, budget, verdict
 d’éligibilité, work package ou gate.
+
+## 5. Consigner les observations Release
+
+Une observation humaine se relève dans le document ou l’artefact Release prévu
+par la phase, avec `attendu`, `observé`, `écart` et `impact`. Ne pas simuler le
+lancement du jeu, la décision humaine ou une autorisation système.
 
 ## 6. Arrêter proprement ou terminer
 
-En cas de blocage durable, préserver le travail, renseigner les exigences
-touchées et leur catégorie de blocage, valider le tracker puis quitter avec la
-prochaine action exacte. Ne pas compenser par une boucle de tests élargie.
+En cas de blocage durable, préserver le travail et rapporter les exigences
+touchées, sa catégorie (produit, outil ou humain) et la prochaine action exacte.
+Ne pas compenser par une boucle de tests élargie.
 
 Pour terminer, exécuter :
 
 ```text
-python .agents/skills/implement-latest-telemetry-phase/scripts/phase_tracker.py \
-  validate --repo-root . --phase-number <N> --require-complete
 python test/telemetry/tools/check_no_legacy_certification.py .
 git diff --check
 ```
-
-Le validateur dérive `complete` uniquement si chaque exigence est implémentée,
-chaque preuve requise est actuelle et chaque observation obligatoire est
-consignée. Cela signifie « phase correctement implémentée », jamais « livraison
-automatiquement autorisée ».
 
 ## 7. Rapporter
 
@@ -152,7 +107,7 @@ Indiquer :
 
 - phase et exigences traitées ;
 - comportements produit ajoutés ou corrigés ;
-- preuves exécutées et preuves réutilisées avec leur empreinte ;
+- preuves exécutées et leurs résultats ;
 - observations humaines restantes ;
 - défauts produit, défauts d’outil et blocages ;
-- état dérivé du tracker et prochaine action.
+- prochaine action.

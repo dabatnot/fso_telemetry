@@ -74,7 +74,7 @@ enum class TelemetryPhase2ManifestResult : std::uint8_t {
 	Built = 0, Reused, Rejected, Count
 };
 enum class TelemetryPhase2Profile : std::uint8_t {
-	None = 0, CoreGate, CompleteShip, CockpitSensors, Count
+	None = 0, CoreGate, CompleteShip, CockpitSensors, TrustedFullState, Count
 };
 enum class TelemetryPhase2LifecycleKind : std::uint8_t {
 	Appeared = 0, Disabled, DyingStarted, Destroyed, Disappeared, Count

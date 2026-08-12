@@ -231,6 +231,26 @@ TEST(TelemetryConfigContract, VersionThreeRequiresOneClosedProfile)
 	}
 }
 
+TEST(TelemetryConfigContract, VersionFourEnablesTrustedFullStateOnlyWithAnExplicitAllowlist)
+{
+	const auto valid = parse(R"({"schemaVersion":4,"profile":"TrustedFullState","enabled":true,"visibilityMode":"TrustedFullState","trustedFullState":true,"allowedClients":["127.0.0.1/32"]})");
+	ASSERT_EQ(ConfigStatus::ValidEnabled, valid.status);
+	EXPECT_EQ(4U, valid.effective.schema_version);
+	EXPECT_EQ(telemetry::Phase2Profile::TrustedFullState, valid.effective.phase2_profile);
+	EXPECT_EQ(telemetry::VisibilityMode::TrustedFullState, valid.effective.visibility_mode);
+	EXPECT_TRUE(valid.effective.trusted_full_state);
+
+	for (const auto input : {
+			 R"({"schemaVersion":4,"profile":"TrustedFullState","visibilityMode":"TrustedFullState","trustedFullState":true})",
+			 R"({"schemaVersion":4,"profile":"TrustedFullState","visibilityMode":"Cockpit","trustedFullState":true,"allowedClients":["127.0.0.1/32"]})",
+			 R"({"schemaVersion":4,"profile":"TrustedFullState","visibilityMode":"TrustedFullState","trustedFullState":false,"allowedClients":["127.0.0.1/32"]})",
+			 R"({"schemaVersion":4,"profile":"CockpitSensors","visibilityMode":"TrustedFullState","trustedFullState":true,"allowedClients":["127.0.0.1/32"]})"}) {
+		SCOPED_TRACE(input);
+		const auto result = parse(input);
+		EXPECT_EQ(ConfigStatus::Invalid, result.status);
+	}
+}
+
 TEST(TelemetryConfigContract, EnabledMinimalObjectUsesTheLoopbackOnlyProfile)
 {
 	const auto result = parse(R"({"schemaVersion":1,"enabled":true})");

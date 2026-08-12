@@ -45,6 +45,8 @@ TelemetryPhase2Profile telemetry_profile(
 		return TelemetryPhase2Profile::CompleteShip;
 	case Phase2Profile::CockpitSensors:
 		return TelemetryPhase2Profile::CockpitSensors;
+	case Phase2Profile::TrustedFullState:
+		return TelemetryPhase2Profile::TrustedFullState;
 	case Phase2Profile::None:
 	default:
 		return TelemetryPhase2Profile::None;
@@ -138,6 +140,8 @@ TelemetryPhase2ProfileRejection telemetry_profile_rejection(
 		return TelemetryPhase2ProfileRejection::UnsupportedAuthority;
 	case Phase2ProfileError::UnsupportedVisibility:
 	case Phase2ProfileError::TrustedFullStateNotAllowed:
+	case Phase2ProfileError::TrustedFullStateRequired:
+	case Phase2ProfileError::TrustedFullStateNotReady:
 		return TelemetryPhase2ProfileRejection::UnsupportedVisibility;
 	case Phase2ProfileError::UnsupportedCoverage:
 	case Phase2ProfileError::UnsupportedProfile:
@@ -951,6 +955,19 @@ NativeSessionStartStatus NativeSessionRuntime::start(const NativeSessionStartReq
 				phase2_profile_coverage(
 					request.requested_phase2_profile));
 		// This rejection precedes controller/DTO allocation, bind and WELCOME.
+		return NativeSessionStartStatus::InvalidConfiguration;
+	}
+	if (selected_phase2_profile == Phase2Profile::TrustedFullState) {
+		// The Phase 4 registry and state-image path must be provisioned before
+		// this profile can publish. Refuse before controller allocation, bind or
+		// WELCOME rather than advertising TrustedFullState with a cockpit image.
+		const auto reason = telemetry_profile_rejection(
+			Phase2ProfileError::TrustedFullStateNotReady);
+		if (request.metrics != nullptr)
+			request.metrics->record_phase2_profile_rejection(reason);
+		if (request.log != nullptr)
+			request.log->phase2_profile_rejected(reason,
+				phase2_profile_coverage(selected_phase2_profile));
 		return NativeSessionStartStatus::InvalidConfiguration;
 	}
 	m_startup_allocation_count = 0U;

@@ -16,6 +16,7 @@ constexpr std::size_t MaximumTelemetryConfigBytes = 16U * 1024U;
 
 enum class VisibilityMode : std::uint8_t {
 	Cockpit = 0,
+	TrustedFullState,
 };
 
 // A numeric address without a port. Keeping the parsed binary form prevents
@@ -78,7 +79,7 @@ struct TelemetryConfig {
 
 	std::uint8_t schema_version = 1;
 	// schemaVersion 1 is migrated explicitly to CompleteShip. Version 2
-	// requires phase2Profile. Version 3 requires the closed profile key.
+	// requires phase2Profile. Versions 3 and 4 require the closed profile key.
 	Phase2Profile phase2_profile = Phase2Profile::CompleteShip;
 	bool enabled = false;
 	BindAddressList bind_addresses;

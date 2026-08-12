@@ -14,14 +14,20 @@ constexpr std::uint64_t CockpitSensorsCoverage = CompleteShipCoverage |
 	protocol::StateDomainCoverageBitRadarSensors |
 	protocol::StateDomainCoverageBitTargeting |
 	protocol::StateDomainCoverageBitNavigation;
+constexpr std::uint64_t TrustedFullStateCoverage =
+	CockpitSensorsCoverage | protocol::StateDomainCoverageBitAllEntities;
 
 static_assert(CoreGateCoverage == 0x0401ULL, "The Phase 2 core gate coverage is frozen");
 static_assert(CompleteShipCoverage == 0x0583ULL, "The Phase 2 complete ship coverage is frozen");
 static_assert(CockpitSensorsCoverage == 0x07cbULL, "The Phase 3 cockpit sensor coverage is frozen");
+static_assert(TrustedFullStateCoverage == 0x07dbULL,
+	"The Phase 4 trusted full-state coverage is frozen");
 static_assert((CompleteShipCoverage & ~protocol::KnownStateDomainCoverageBitsV1_1) == 0U,
 	"Phase 2 profiles must use only existing FSTL 1.1 state domains");
 static_assert((CockpitSensorsCoverage & ~protocol::KnownStateDomainCoverageBitsV1_1) == 0U,
 	"The Phase 3 profile must use only existing FSTL 1.1 state domains");
+static_assert((TrustedFullStateCoverage & ~protocol::KnownStateDomainCoverageBitsV1_1) == 0U,
+	"The Phase 4 profile must use only existing FSTL 1.1 state domains");
 static_assert(static_cast<std::uint8_t>(Phase2ProfileError::Count) >
 		static_cast<std::uint8_t>(Phase2ProfileError::None),
 	"The private Phase 2 profile error registry must not be empty");
@@ -37,6 +43,8 @@ std::uint64_t phase2_profile_coverage(Phase2Profile profile) noexcept
 		return CompleteShipCoverage;
 	case Phase2Profile::CockpitSensors:
 		return CockpitSensorsCoverage;
+	case Phase2Profile::TrustedFullState:
+		return TrustedFullStateCoverage;
 	case Phase2Profile::None:
 	default:
 		return protocol::StateDomainCoverageBitNone;
@@ -52,6 +60,8 @@ Phase2Profile phase2_profile_from_coverage(std::uint64_t coverage) noexcept
 		return Phase2Profile::CompleteShip;
 	case CockpitSensorsCoverage:
 		return Phase2Profile::CockpitSensors;
+	case TrustedFullStateCoverage:
+		return Phase2Profile::TrustedFullState;
 	default:
 		return Phase2Profile::None;
 	}
@@ -70,17 +80,27 @@ Phase2ProfileError select_phase2_profile(const Phase2ProfileEligibility& eligibi
 	selected = Phase2Profile::None;
 	if (requested != Phase2Profile::CoreGate &&
 		requested != Phase2Profile::CompleteShip &&
-		requested != Phase2Profile::CockpitSensors) {
+		requested != Phase2Profile::CockpitSensors &&
+		requested != Phase2Profile::TrustedFullState) {
 		return Phase2ProfileError::UnsupportedProfile;
 	}
 	if (eligibility.authority_mode != protocol::AuthorityMode::Solo) {
 		return Phase2ProfileError::UnsupportedAuthority;
 	}
-	if (eligibility.visibility_mode != protocol::VisibilityMode::Cockpit) {
-		return Phase2ProfileError::UnsupportedVisibility;
-	}
-	if (eligibility.trusted_full_state) {
-		return Phase2ProfileError::TrustedFullStateNotAllowed;
+	if (requested == Phase2Profile::TrustedFullState) {
+		if (eligibility.visibility_mode != protocol::VisibilityMode::TrustedFullState) {
+			return Phase2ProfileError::UnsupportedVisibility;
+		}
+		if (!eligibility.trusted_full_state) {
+			return Phase2ProfileError::TrustedFullStateRequired;
+		}
+	} else {
+		if (eligibility.visibility_mode != protocol::VisibilityMode::Cockpit) {
+			return Phase2ProfileError::UnsupportedVisibility;
+		}
+		if (eligibility.trusted_full_state) {
+			return Phase2ProfileError::TrustedFullStateNotAllowed;
+		}
 	}
 	if (eligibility.dedicated) {
 		return Phase2ProfileError::DedicatedNotAllowed;

@@ -11,6 +11,7 @@ enum class Phase2Profile : std::uint8_t {
 	CoreGate,
 	CompleteShip,
 	CockpitSensors,
+	TrustedFullState,
 };
 
 enum class Phase2ProfileError : std::uint8_t {
@@ -20,6 +21,8 @@ enum class Phase2ProfileError : std::uint8_t {
 	UnsupportedAuthority,
 	UnsupportedVisibility,
 	TrustedFullStateNotAllowed,
+	TrustedFullStateRequired,
+	TrustedFullStateNotReady,
 	DedicatedNotAllowed,
 	HeadlessNotAllowed,
 	Count,

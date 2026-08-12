@@ -489,7 +489,7 @@ ConfigLoadResult parse_config_json(std::string_view input) noexcept
 	}
 	const auto parsed_schema_version = json_integer_value(schema_version);
 	if (parsed_schema_version != 1 && parsed_schema_version != 2 &&
-		parsed_schema_version != 3) {
+		parsed_schema_version != 3 && parsed_schema_version != 4) {
 		return invalid_result(ConfigError::OutOfRange);
 	}
 
@@ -543,6 +543,8 @@ ConfigLoadResult parse_config_json(std::string_view input) noexcept
 			config.phase2_profile = Phase2Profile::CompleteShip;
 		} else if (value == "CockpitSensors") {
 			config.phase2_profile = Phase2Profile::CockpitSensors;
+		} else if (parsed_schema_version == 4 && value == "TrustedFullState") {
+			config.phase2_profile = Phase2Profile::TrustedFullState;
 		} else {
 			return invalid_result(ConfigError::InvalidProfile);
 		}
@@ -573,9 +575,12 @@ ConfigLoadResult parse_config_json(std::string_view input) noexcept
 		if (!json_is_string(visibility)) {
 			return invalid_result(ConfigError::InvalidType);
 		}
-		constexpr std::string_view Cockpit{"Cockpit"};
-		if (json_string_length(visibility) != Cockpit.size() ||
-			std::memcmp(json_string_value(visibility), Cockpit.data(), Cockpit.size()) != 0) {
+		const std::string_view value{json_string_value(visibility), json_string_length(visibility)};
+		if (value == "Cockpit") {
+			config.visibility_mode = VisibilityMode::Cockpit;
+		} else if (parsed_schema_version == 4 && value == "TrustedFullState") {
+			config.visibility_mode = VisibilityMode::TrustedFullState;
+		} else {
 			return invalid_result(ConfigError::OutOfRange);
 		}
 	}
@@ -583,7 +588,14 @@ ConfigLoadResult parse_config_json(std::string_view input) noexcept
 	if (!read_boolean(root.get(), "trustedFullState", config.trusted_full_state, error)) {
 		return invalid_result(error);
 	}
-	if (config.trusted_full_state) {
+	if (parsed_schema_version == 4 &&
+		(config.phase2_profile != Phase2Profile::TrustedFullState ||
+			config.visibility_mode != VisibilityMode::TrustedFullState ||
+			!config.trusted_full_state || !allowed_clients_explicit ||
+			config.allowed_clients.empty())) {
+		return invalid_result(ConfigError::UnsafeExposure);
+	}
+	if (parsed_schema_version != 4 && config.trusted_full_state) {
 		return invalid_result(ConfigError::OutOfRange);
 	}
 
