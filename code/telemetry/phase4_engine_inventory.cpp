@@ -145,6 +145,24 @@ Phase4EngineInventoryStatus collect_phase4_engine_inventory(
 		entry.entity_id = resolved.entity_id;
 		output.push_back(entry);
 	}
+	// Retire only after the complete source traversal and all identity resolves
+	// succeeded. A transient invalid object therefore cannot erase an otherwise
+	// coherent exported graph.
+	if (identities.begin_reconciliation() != Phase4EntityRegistryStatus::Reconciled) {
+		output.clear();
+		return Phase4EngineInventoryStatus::IdentityFailure;
+	}
+	for (const auto& entry : output) {
+		if (identities.mark_observed(entry.identity) !=
+			Phase4EntityRegistryStatus::Existing) {
+			output.clear();
+			return Phase4EngineInventoryStatus::IdentityFailure;
+		}
+	}
+	if (identities.commit_reconciliation() != Phase4EntityRegistryStatus::Reconciled) {
+		output.clear();
+		return Phase4EngineInventoryStatus::IdentityFailure;
+	}
 	return Phase4EngineInventoryStatus::Collected;
 }
 

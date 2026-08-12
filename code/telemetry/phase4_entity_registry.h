@@ -27,6 +27,7 @@ enum class Phase4EntityRegistryStatus : std::uint8_t {
 	CounterExhausted,
 	NotFound,
 	AlreadyRetired,
+	Reconciled,
 	Count,
 };
 
@@ -48,6 +49,14 @@ class Phase4EntityRegistry final {
 	void reset_session() noexcept;
 	Phase4EntityResolveResult resolve(const Phase4EntityIdentityKey& key) noexcept;
 	Phase4EntityRegistryStatus retire(const Phase4EntityIdentityKey& key) noexcept;
+	// Commits an exact collector inventory. Every active identity absent from
+	// observed becomes a tombstone only after the complete input is valid.
+	Phase4EntityRegistryStatus reconcile_observed(
+		const Phase4EntityIdentityKey* observed, std::size_t observed_count) noexcept;
+	Phase4EntityRegistryStatus begin_reconciliation() noexcept;
+	Phase4EntityRegistryStatus mark_observed(
+		const Phase4EntityIdentityKey& key) noexcept;
+	Phase4EntityRegistryStatus commit_reconciliation() noexcept;
 
 	bool ready() const noexcept;
 	std::size_t identity_count() const noexcept;
@@ -61,6 +70,7 @@ class Phase4EntityRegistry final {
 		std::uint64_t entity_id = 0U;
 		bool occupied = false;
 		bool retired = false;
+		bool observed = false;
 	};
 
 	static bool valid_key(const Phase4EntityIdentityKey& key) noexcept;
@@ -75,6 +85,7 @@ class Phase4EntityRegistry final {
 	std::size_t m_identity_count = 0U;
 	std::size_t m_active_count = 0U;
 	std::uint64_t m_last_allocated_entity_id = 0U;
+	bool m_reconciliation_active = false;
 };
 
 } // namespace telemetry::detail

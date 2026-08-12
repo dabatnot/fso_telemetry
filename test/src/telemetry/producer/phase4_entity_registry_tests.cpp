@@ -79,6 +79,24 @@ TEST(TelemetryPhase4EntityRegistry, RetiredEntityIdsRemainTombstonedAndNeverReus
 	EXPECT_EQ(1U, registry.active_count());
 }
 
+TEST(TelemetryPhase4EntityRegistry, ExactInventoryRetiresOnlyUnobservedActiveIdentities)
+{
+	Phase4EntityRegistry registry;
+	ASSERT_EQ(Phase4EntityRegistryStatus::Allocated, registry.provision());
+	ASSERT_EQ(Phase4EntityRegistryStatus::Allocated,
+		registry.resolve(key(10U, ObjectType::Ship)).status);
+	ASSERT_EQ(Phase4EntityRegistryStatus::Allocated,
+		registry.resolve(key(11U, ObjectType::Weapon)).status);
+	const auto observed = key(11U, ObjectType::Weapon);
+	EXPECT_EQ(Phase4EntityRegistryStatus::Reconciled,
+		registry.reconcile_observed(&observed, 1U));
+	EXPECT_EQ(1U, registry.active_count());
+	EXPECT_EQ(Phase4EntityRegistryStatus::AlreadyRetired,
+		registry.resolve(key(10U, ObjectType::Ship)).status);
+	EXPECT_EQ(Phase4EntityRegistryStatus::Existing,
+		registry.resolve(observed).status);
+}
+
 TEST(TelemetryPhase4EntityRegistry, ResetIsTheOnlyOperationThatRestartsTheSessionCounter)
 {
 	Phase4EntityRegistry registry;

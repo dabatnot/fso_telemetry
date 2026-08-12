@@ -16,6 +16,7 @@ Phase4EntityRegistryStatus Phase4EntityRegistry::provision() noexcept
 	m_identity_count = 0U;
 	m_active_count = 0U;
 	m_last_allocated_entity_id = 0U;
+	m_reconciliation_active = false;
 	return Phase4EntityRegistryStatus::Allocated;
 }
 
@@ -25,6 +26,7 @@ void Phase4EntityRegistry::reset_session() noexcept
 	m_identity_count = 0U;
 	m_active_count = 0U;
 	m_last_allocated_entity_id = 0U;
+	m_reconciliation_active = false;
 }
 
 Phase4EntityResolveResult Phase4EntityRegistry::resolve(const Phase4EntityIdentityKey& key) noexcept
@@ -59,6 +61,65 @@ Phase4EntityRegistryStatus Phase4EntityRegistry::retire(const Phase4EntityIdenti
 	entry->retired = true;
 	--m_active_count;
 	return Phase4EntityRegistryStatus::Retired;
+}
+
+Phase4EntityRegistryStatus Phase4EntityRegistry::reconcile_observed(
+	const Phase4EntityIdentityKey* observed, std::size_t observed_count) noexcept
+{
+	if (!ready()) return Phase4EntityRegistryStatus::NotReady;
+	if (observed_count > Capacity || (observed_count != 0U && observed == nullptr))
+		return Phase4EntityRegistryStatus::InvalidKey;
+	for (std::size_t index = 0U; index < Capacity; ++index)
+		m_entries[index].observed = false;
+	for (std::size_t index = 0U; index < observed_count; ++index) {
+		if (!valid_key(observed[index])) return Phase4EntityRegistryStatus::InvalidKey;
+		auto* entry = find_entry(observed[index]);
+		if (entry == nullptr) return Phase4EntityRegistryStatus::NotFound;
+		if (entry->retired) return Phase4EntityRegistryStatus::AlreadyRetired;
+		entry->observed = true;
+	}
+	for (std::size_t index = 0U; index < Capacity; ++index) {
+		auto& entry = m_entries[index];
+		if (!entry.occupied || entry.retired || entry.observed) continue;
+		entry.retired = true;
+		--m_active_count;
+	}
+	return Phase4EntityRegistryStatus::Reconciled;
+}
+
+Phase4EntityRegistryStatus Phase4EntityRegistry::begin_reconciliation() noexcept
+{
+	if (!ready()) return Phase4EntityRegistryStatus::NotReady;
+	for (std::size_t index = 0U; index < Capacity; ++index)
+		m_entries[index].observed = false;
+	m_reconciliation_active = true;
+	return Phase4EntityRegistryStatus::Reconciled;
+}
+
+Phase4EntityRegistryStatus Phase4EntityRegistry::mark_observed(
+	const Phase4EntityIdentityKey& key) noexcept
+{
+	if (!valid_key(key)) return Phase4EntityRegistryStatus::InvalidKey;
+	if (!ready()) return Phase4EntityRegistryStatus::NotReady;
+	if (!m_reconciliation_active) return Phase4EntityRegistryStatus::NotReady;
+	auto* entry = find_entry(key);
+	if (entry == nullptr) return Phase4EntityRegistryStatus::NotFound;
+	if (entry->retired) return Phase4EntityRegistryStatus::AlreadyRetired;
+	entry->observed = true;
+	return Phase4EntityRegistryStatus::Existing;
+}
+
+Phase4EntityRegistryStatus Phase4EntityRegistry::commit_reconciliation() noexcept
+{
+	if (!ready() || !m_reconciliation_active) return Phase4EntityRegistryStatus::NotReady;
+	for (std::size_t index = 0U; index < Capacity; ++index) {
+		auto& entry = m_entries[index];
+		if (!entry.occupied || entry.retired || entry.observed) continue;
+		entry.retired = true;
+		--m_active_count;
+	}
+	m_reconciliation_active = false;
+	return Phase4EntityRegistryStatus::Reconciled;
 }
 
 bool Phase4EntityRegistry::ready() const noexcept { return m_entries != nullptr; }
