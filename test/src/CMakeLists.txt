@@ -585,6 +585,21 @@ set_target_properties(telemetry_phase4_catalog_dependencies_tests PROPERTIES FOL
 add_test(NAME telemetry_phase4_catalog_dependencies_tests
 	COMMAND telemetry_phase4_catalog_dependencies_tests)
 
+add_executable(telemetry_phase4_manifest_plan_tests
+	telemetry/producer/phase4_manifest_plan_tests.cpp
+	${CMAKE_SOURCE_DIR}/code/telemetry/phase4_manifest_plan.cpp
+	${CMAKE_SOURCE_DIR}/code/telemetry/phase2_manifest_builder.cpp
+)
+target_compile_features(telemetry_phase4_manifest_plan_tests PRIVATE cxx_std_17)
+target_include_directories(telemetry_phase4_manifest_plan_tests PRIVATE
+	${CMAKE_SOURCE_DIR}/code
+	${CMAKE_SOURCE_DIR}/test/src
+)
+target_link_libraries(telemetry_phase4_manifest_plan_tests PRIVATE gtest_main fstl_protocol)
+set_target_properties(telemetry_phase4_manifest_plan_tests PROPERTIES FOLDER "tests")
+add_test(NAME telemetry_phase4_manifest_plan_tests
+	COMMAND telemetry_phase4_manifest_plan_tests)
+
 add_executable(telemetry_phase4_entity_projection_tests
 	telemetry/producer/phase4_entity_projection_tests.cpp
 	${CMAKE_SOURCE_DIR}/code/telemetry/phase4_entity_projection.cpp
