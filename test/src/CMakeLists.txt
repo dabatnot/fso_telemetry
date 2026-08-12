@@ -600,6 +600,20 @@ set_target_properties(telemetry_phase4_manifest_plan_tests PROPERTIES FOLDER "te
 add_test(NAME telemetry_phase4_manifest_plan_tests
 	COMMAND telemetry_phase4_manifest_plan_tests)
 
+add_executable(telemetry_phase4_ship_state_scope_tests
+	telemetry/producer/phase4_ship_state_scope_tests.cpp
+	${CMAKE_SOURCE_DIR}/code/telemetry/phase4_ship_state_scope.cpp
+)
+target_compile_features(telemetry_phase4_ship_state_scope_tests PRIVATE cxx_std_17)
+target_include_directories(telemetry_phase4_ship_state_scope_tests PRIVATE
+	${CMAKE_SOURCE_DIR}/code
+	${CMAKE_SOURCE_DIR}/test/src
+)
+target_link_libraries(telemetry_phase4_ship_state_scope_tests PRIVATE gtest_main fstl_protocol)
+set_target_properties(telemetry_phase4_ship_state_scope_tests PROPERTIES FOLDER "tests")
+add_test(NAME telemetry_phase4_ship_state_scope_tests
+	COMMAND telemetry_phase4_ship_state_scope_tests)
+
 add_executable(telemetry_phase4_entity_projection_tests
 	telemetry/producer/phase4_entity_projection_tests.cpp
 	${CMAKE_SOURCE_DIR}/code/telemetry/phase4_entity_projection.cpp
@@ -658,9 +672,11 @@ add_test(NAME telemetry_phase4_publication_gate_tests COMMAND telemetry_phase4_p
 add_executable(telemetry_phase4_trusted_image_tests
 	telemetry/producer/phase4_trusted_image_tests.cpp
 	${CMAKE_SOURCE_DIR}/code/telemetry/phase4_trusted_image.cpp
+	${CMAKE_SOURCE_DIR}/code/telemetry/phase4_catalog_bindings.cpp
 	${CMAKE_SOURCE_DIR}/code/telemetry/phase4_entity_image.cpp
 	${CMAKE_SOURCE_DIR}/code/telemetry/phase4_entity_projection.cpp
 	${CMAKE_SOURCE_DIR}/code/telemetry/phase4_docking_projection.cpp
+	${CMAKE_SOURCE_DIR}/code/telemetry/phase2_manifest_builder.cpp
 )
 target_compile_features(telemetry_phase4_trusted_image_tests PRIVATE cxx_std_17)
 target_include_directories(telemetry_phase4_trusted_image_tests PRIVATE

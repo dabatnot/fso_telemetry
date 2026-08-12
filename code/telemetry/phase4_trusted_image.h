@@ -1,5 +1,6 @@
 #pragma once
 
+#include "telemetry/phase4_catalog_bindings.h"
 #include "telemetry/phase4_docking_projection.h"
 #include "telemetry/phase4_entity_image.h"
 
@@ -15,6 +16,17 @@ enum class Phase4TrustedImageStatus : std::uint8_t {
 	AllocationFailure,
 	Count,
 };
+
+// Performs the production-side handoff from the ABI-free engine inventory to
+// the public entity image.  Public class IDs are resolved exclusively through
+// an already installed manifest; a missing definition therefore fails before
+// any StateImage can be observed by the caller.
+Phase4TrustedImageStatus build_phase4_trusted_image_from_inventory(
+	const std::vector<Phase4EngineInventoryEntry>& inventory,
+	const Phase2ManifestCandidate* manifest,
+	const std::vector<Phase4DockingRelation>& docking_relations,
+	std::uint64_t sample_time_us,
+	protocol::StateImage& output);
 
 // Combines the entity graph and its ship docking topology into one immutable
 // candidate. The caller observes output only once both projections succeed.

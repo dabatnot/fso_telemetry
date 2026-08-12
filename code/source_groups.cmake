@@ -1837,6 +1837,8 @@ add_file_folder("Telemetry"
 	telemetry/phase4_catalog_dependencies.h
 	telemetry/phase4_manifest_plan.cpp
 	telemetry/phase4_manifest_plan.h
+	telemetry/phase4_ship_state_scope.cpp
+	telemetry/phase4_ship_state_scope.h
 	telemetry/phase4_entity_projection.cpp
 	telemetry/phase4_entity_projection.h
 	telemetry/phase4_entity_image.cpp

@@ -2,12 +2,16 @@
 
 #include <gtest/gtest.h>
 
+#include <memory>
+
 namespace {
 
 using telemetry::detail::Phase4DockingRelation;
+using telemetry::detail::Phase4EngineInventoryEntry;
 using telemetry::detail::Phase4EntityProjectionInput;
 using telemetry::detail::Phase4TrustedImageStatus;
 using telemetry::detail::build_phase4_trusted_image;
+using telemetry::detail::build_phase4_trusted_image_from_inventory;
 using telemetry::protocol::ObjectType;
 using telemetry::protocol::RecordType;
 
@@ -47,6 +51,26 @@ TEST(TelemetryPhase4TrustedImage, LeavesOutputUntouchedWhenDockingCannotJoinTheE
 		build_phase4_trusted_image({entity(1U, ObjectType::Waypoint)},
 			{{1U, 2U, 0U, 0U, "", ""}}, 1U, image));
 	EXPECT_EQ(original_size, image.records().size());
+}
+
+TEST(TelemetryPhase4TrustedImage, ResolvesInventoryOnlyThroughInstalledManifest)
+{
+	auto manifest = std::make_unique<telemetry::Phase2ManifestCandidate>();
+	ASSERT_NE(nullptr, manifest);
+	manifest->class_record_count = 1U;
+	manifest->class_records[0].source_key = 7U;
+	manifest->class_records[0].class_id = 42U;
+	Phase4EngineInventoryEntry ship;
+	ship.identity = {100U, ObjectType::Ship};
+	ship.entity_id = 1U;
+	ship.source_class_key = 7U;
+	telemetry::protocol::StateImage image;
+	ASSERT_EQ(Phase4TrustedImageStatus::Created,
+		build_phase4_trusted_image_from_inventory({ship}, manifest.get(), {}, 75U, image));
+	EXPECT_EQ(3U, image.records().size());
+	EXPECT_EQ(Phase4TrustedImageStatus::InvalidEntities,
+		build_phase4_trusted_image_from_inventory({ship}, nullptr, {}, 75U, image));
+	EXPECT_EQ(3U, image.records().size());
 }
 
 } // namespace

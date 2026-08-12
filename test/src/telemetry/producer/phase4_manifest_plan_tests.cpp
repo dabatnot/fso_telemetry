@@ -9,6 +9,8 @@ namespace {
 using telemetry::Phase2ManifestCandidate;
 using telemetry::detail::Phase4CatalogDependencies;
 using telemetry::detail::Phase4ManifestPlan;
+using telemetry::detail::Phase4ManifestSourceStatus;
+using telemetry::detail::build_phase4_manifest_source;
 using telemetry::detail::plan_phase4_manifest;
 
 TEST(TelemetryPhase4ManifestPlan, RequiresManifestForMissingOrChangedDefinitions)
@@ -41,6 +43,55 @@ TEST(TelemetryPhase4ManifestPlan, RejectsUnsortedOrDuplicateDependencies)
 	dependencies.ship_class_count = 2U;
 	EXPECT_EQ(Phase4ManifestPlan::InvalidDependencies,
 		plan_phase4_manifest(dependencies, nullptr));
+}
+
+TEST(TelemetryPhase4ManifestPlan, BuildsExactInventoryManifestWithShipWeaponDependencies)
+{
+	auto available = std::make_unique<telemetry::Phase2ManifestSource>();
+	auto output = std::make_unique<telemetry::Phase2ManifestSource>();
+	ASSERT_NE(nullptr, available);
+	ASSERT_NE(nullptr, output);
+	available->ship_class_count = 1U;
+	available->ship_classes[0].source_key = 4U;
+	available->ship_classes[0].bank_count = 1U;
+	available->ship_classes[0].banks[0].weapon_source_key = 8U;
+	available->ship_classes[0].countermeasure_weapon_source_key = 9U;
+	available->weapon_count = 3U;
+	available->weapons[0].source_key = 8U;
+	available->weapons[1].source_key = 9U;
+	available->weapons[2].source_key = 12U;
+	Phase4CatalogDependencies dependencies;
+	dependencies.ship_class_source_keys[0] = 4U;
+	dependencies.ship_class_count = 1U;
+	dependencies.weapon_source_keys[0] = 12U;
+	dependencies.weapon_count = 1U;
+	ASSERT_EQ(Phase4ManifestSourceStatus::Created,
+		build_phase4_manifest_source(*available, dependencies, *output));
+	EXPECT_EQ(1U, output->referenced_ship_class_count);
+	EXPECT_EQ(4U, output->referenced_ship_class_keys[0]);
+	ASSERT_EQ(3U, output->referenced_weapon_count);
+	EXPECT_EQ(8U, output->referenced_weapon_keys[0]);
+	EXPECT_EQ(9U, output->referenced_weapon_keys[1]);
+	EXPECT_EQ(12U, output->referenced_weapon_keys[2]);
+}
+
+TEST(TelemetryPhase4ManifestPlan, RefusesMissingDependentWeaponWithoutChangingOutput)
+{
+	auto available = std::make_unique<telemetry::Phase2ManifestSource>();
+	auto output = std::make_unique<telemetry::Phase2ManifestSource>();
+	ASSERT_NE(nullptr, available);
+	ASSERT_NE(nullptr, output);
+	available->ship_class_count = 1U;
+	available->ship_classes[0].source_key = 4U;
+	available->ship_classes[0].bank_count = 1U;
+	available->ship_classes[0].banks[0].weapon_source_key = 8U;
+	output->referenced_ship_class_count = 7U;
+	Phase4CatalogDependencies dependencies;
+	dependencies.ship_class_source_keys[0] = 4U;
+	dependencies.ship_class_count = 1U;
+	EXPECT_EQ(Phase4ManifestSourceStatus::MissingDefinition,
+		build_phase4_manifest_source(*available, dependencies, *output));
+	EXPECT_EQ(7U, output->referenced_ship_class_count);
 }
 
 } // namespace

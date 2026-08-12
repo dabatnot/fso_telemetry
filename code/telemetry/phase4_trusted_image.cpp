@@ -7,6 +7,29 @@
 
 namespace telemetry::detail {
 
+Phase4TrustedImageStatus build_phase4_trusted_image_from_inventory(
+	const std::vector<Phase4EngineInventoryEntry>& inventory,
+	const Phase2ManifestCandidate* manifest,
+	const std::vector<Phase4DockingRelation>& docking_relations,
+	std::uint64_t sample_time_us,
+	protocol::StateImage& output)
+{
+	std::vector<Phase4EntityProjectionInput> entities;
+	try {
+		entities.reserve(inventory.size());
+	} catch (const std::bad_alloc&) {
+		return Phase4TrustedImageStatus::AllocationFailure;
+	}
+	const auto bindings = bind_phase4_catalogs(inventory, manifest,
+		sample_time_us, entities);
+	if (bindings == Phase4CatalogBindingStatus::AllocationFailure)
+		return Phase4TrustedImageStatus::AllocationFailure;
+	if (bindings != Phase4CatalogBindingStatus::Created)
+		return Phase4TrustedImageStatus::InvalidEntities;
+	return build_phase4_trusted_image(entities, docking_relations,
+		sample_time_us, output);
+}
+
 Phase4TrustedImageStatus build_phase4_trusted_image(
 	const std::vector<Phase4EntityProjectionInput>& entities,
 	const std::vector<Phase4DockingRelation>& docking_relations,
