@@ -32,7 +32,7 @@ TEST(TelemetryP91MetricsContract, FixedCardinalitySnapshotAndClosedLabelCatalogA
 	EXPECT_EQ(5U, static_cast<std::size_t>(detail::TelemetryDeltaDropReason::Count));
 	EXPECT_EQ(6U, static_cast<std::size_t>(detail::TelemetrySessionEndReason::Count));
 	EXPECT_EQ(7U, static_cast<std::size_t>(detail::TelemetryRuntimeFaultReason::Count));
-	EXPECT_EQ(7U, static_cast<std::size_t>(detail::TelemetryPhase3Block::Count));
+	EXPECT_EQ(8U, static_cast<std::size_t>(detail::TelemetryPhase3Block::Count));
 	EXPECT_EQ(9U,
 		static_cast<std::size_t>(detail::TelemetryPhase3CaptureFailure::Count));
 	EXPECT_EQ(9U, detail::TelemetryMetricHistogramBucketCount);

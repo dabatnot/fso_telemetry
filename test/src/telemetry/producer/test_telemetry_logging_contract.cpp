@@ -3,6 +3,7 @@
 #include <gtest/gtest.h>
 
 #include <limits>
+#include <string>
 #include <string_view>
 #include <type_traits>
 
@@ -50,9 +51,12 @@ TEST(TelemetryP92LoggingContract, Phase3FailureCarriesOnlyClosedBlockAndReason)
 	std::array<char, detail::TelemetryLogLineCapacity> line{};
 	ASSERT_TRUE(detail::format_telemetry_log_record(record, line));
 	const std::string_view rendered{line.data()};
-	EXPECT_NE(std::string_view::npos, rendered.find("p3_block=2"));
 	EXPECT_NE(std::string_view::npos,
-		rendered.find("p3_capture_failure=2"));
+		rendered.find("p3_block=" + std::to_string(
+			static_cast<unsigned>(detail::TelemetryPhase3Block::Radar))));
+	EXPECT_NE(std::string_view::npos,
+		rendered.find("p3_capture_failure=" + std::to_string(
+			static_cast<unsigned>(detail::TelemetryPhase3CaptureFailure::InvalidSource))));
 }
 
 TEST(TelemetryP92LoggingContract,

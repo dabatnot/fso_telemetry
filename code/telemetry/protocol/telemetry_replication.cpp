@@ -1470,8 +1470,12 @@ ProducerBaselineResult ProducerBaselineTracker::capture_snapshot(std::uint32_t s
 	m_candidate_deadline_us = saturating_add(now_us, TransactionAssemblyTimeoutUs);
 	m_highest_snapshot_id = snapshot_id;
 	m_candidate_dirty_index_count = 0U;
-	m_candidate_incremental_record_set_compatible =
-		captured.records().size() <= MaxIncrementalDirtyStateAtomCount;
+	// A snapshot may be captured after m_current has already advanced. There
+	// are no incremental indices for that pre-existing difference, so retain
+	// the full comparison until a subsequent incremental update supplies them.
+	// Treating this candidate as index-compatible would acknowledge the
+	// snapshot and silently omit the required cumulative delta.
+	m_candidate_incremental_record_set_compatible = false;
 	return ProducerBaselineResult::Applied;
 }
 

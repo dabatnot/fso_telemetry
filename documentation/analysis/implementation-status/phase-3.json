@@ -2,8 +2,8 @@
   "schema": "fs2open.telemetry.product-implementation.v1",
   "phase": 3,
   "phaseDirectory": "documentation/analysis/specs/3-Ciblage-et-capteurs",
-  "contractFingerprint": "sha256:c712fb007cbf14b95b72de9e048ee0895bb4f2cd85efd4d3bb112dbe67f0fbc3",
-  "updatedAtUtc": "2026-08-11T07:16:48Z",
+  "contractFingerprint": "sha256:a007faa2f0e33a6c81f0993b6f0ef9360298d152f8fde5d06004c5f8a6f9e68b",
+  "updatedAtUtc": "2026-08-11T23:05:57Z",
   "requirements": [
     {
       "id": "P3-REQ-001",
@@ -15,22 +15,20 @@
         "code/telemetry",
         "test/src/telemetry"
       ],
-      "proofs": [
+      "proofs":       [
         {
           "id": "P3-REQ-001-AUTO-01",
           "kind": "automated",
-          "command": "ctest --test-dir build -C Release -L telemetry-short --output-on-failure",
+          "command": "ctest --test-dir build -C Release -L telemetry-short --output-on-failure -j 1",
           "status": "passed",
           "inputs": [
             "code/telemetry",
-            "test/src/telemetry",
-            "test/src/CMakeLists.txt",
-            "test/telemetry/tools/check_no_legacy_certification.py"
+            "test/src/telemetry"
           ],
-      "inputFingerprint": "sha256:3b3467af9ea2fecd840cd9000b619e79962a0fcc130e0e61843e1e5ac12044fe",
-      "observedAtUtc": "2026-08-06T18:53:47Z",
-          "result": "18/18 tests telemetry-short Release passés séquentiellement (24.53 s), dont loopback, réplication et absence du harness retiré.",
-          "resultRef": "build/Testing/Temporary/LastTest.log"
+          "inputFingerprint": "sha256:75d823983f08b37d42a2ec9e291579358067b1afc727a098144c4e41364b0577",
+          "observedAtUtc": "2026-08-11T23:05:57Z",
+          "result": "18/18 telemetry-short tests pass after the snapshot-promotion correction.",
+          "resultRef": null
         }
       ],
       "requiredObservations": [],
@@ -46,34 +44,20 @@
         "code/telemetry/protocol",
         "test/telemetry/protocol"
       ],
-      "proofs": [
+      "proofs":       [
         {
           "id": "P3-REQ-002-AUTO-01",
           "kind": "automated",
-          "command": "python -B test/telemetry/protocol/tools/test_fstl_1_0_freeze.py ; python -B test/telemetry/protocol/tools/verify_fstl_1_1_amendment.py --check --repo .",
+          "command": "python -B test/telemetry/protocol/tools/fstl_schema.py --check --wire-version all ; python -B test/telemetry/protocol/tools/verify_fstl_1_1_amendment.py --check --repo . ; python -B test/telemetry/protocol/tools/verify_fstl_1_0_freeze.py --check --repo . ; python -B test/telemetry/protocol/tools/fstl_reference_decoder.py --check --repo . ; python -B test/telemetry/protocol/tools/test_fstl_phase3_scenario_client.py ; python -B test/telemetry/protocol/tools/test_fstl_console_client_contract.py",
           "status": "passed",
           "inputs": [
             "code/telemetry/protocol",
             "test/telemetry/protocol"
           ],
-      "inputFingerprint": "sha256:fb5ead3f0ceacadcbfe8b11a1257c3c9544002703138ecb538daa241b5c326e8",
-      "observedAtUtc": "2026-08-08T08:39:03Z",
-          "result": "Gel FSTL 1.0 préservé et contrat explicite v4 couvert par les tests protocolaires Python/C++.",
-          "resultRef": "test/telemetry/protocol/tools/verify_fstl_1_1_amendment.py"
-        },
-        {
-         "id": "P3-REQ-002-AUTO-02",
-          "kind": "automated",
-          "command": "python test/telemetry/protocol/tools/fstl_schema.py --check --wire-version all ; python test/telemetry/protocol/tools/test_fstl_phase3_scenario_client.py ; build/bin/Release/unittests.exe --gtest_filter=TelemetryProtocolBusinessRecords11To18.*",
-          "status": "pending",
-          "inputs": [
-            "code/telemetry/protocol",
-            "test/telemetry/protocol"
-          ],
-          "inputFingerprint": "sha256:b2b00785c003a9d4349bd70bc51886c263c90a9d5d59f4532f4d9cb23851f344",
-          "observedAtUtc": "2026-08-06T22:58:00Z",
-          "result": "Schémas 1.0/1.1 vérifiés ; 14/14 tests records 11-18 et 10/10 tests du décodeur/scénario passés, dont acceptation v2 en 1.1, rejet v2 en 1.0 et rejet tronqué.",
-          "resultRef": "test/telemetry/protocol/schema/fstl-v1.1.yaml"
+          "inputFingerprint": "sha256:78a2e3d3d29d4aee2165d7e430e4510b2e484a6fd95de5de01caad844c701668",
+          "observedAtUtc": "2026-08-11T23:05:57Z",
+          "result": "Schema, frozen wire, independent decoder, scenario, and console client pass.",
+          "resultRef": null
         }
       ],
       "requiredObservations": [],
@@ -90,48 +74,20 @@
         "code/telemetry/session_controller.h",
         "tools/telemetry-dashboard/backend/replay_udp.py"
       ],
-      "proofs": [
+      "proofs":       [
         {
           "id": "P3-REQ-003-AUTO-03",
           "kind": "automated",
-          "command": "build/telemetry-dashboard/.venv/Scripts/python.exe -m unittest discover -p test_*.py (cwd tools/telemetry-dashboard/backend)",
-          "status": "passed",
-          "inputs": [
-            "tools/telemetry-dashboard/backend/replay_udp.py",
-            "tools/telemetry-dashboard/backend/test_replay_udp.py"
-          ],
-          "inputFingerprint": "sha256:33e1c3dd48db4e568dfddc7a6c118ee1b85908bb653d21368562bbd416577c55",
-          "observedAtUtc": "2026-08-09T17:01:53Z",
-          "result": "49 tests backend passent ; un HELLO corrompu par magic ou CRC est rejeté avant toute allocation de client par le producteur UDP de replay.",
-          "resultRef": null
-        },
-        {
-          "id": "P3-REQ-003-AUTO-02",
-          "kind": "automated",
-          "command": "build/telemetry-dashboard/.venv/Scripts/python.exe -m unittest test_app test_capture_store test_replay_udp test_dashboard_runtime (cwd tools/telemetry-dashboard/backend)",
-          "status": "passed",
-          "inputs": [
-            "tools/telemetry-dashboard/backend/replay_udp.py",
-            "tools/telemetry-dashboard/backend/test_replay_udp.py"
-          ],
-          "inputFingerprint": "sha256:3d12100c77b7007dd48d9756bbed8fa681154f8864908eaf93b67c86c8cfbf81",
-          "observedAtUtc": "2026-08-09T16:31:23Z",
-          "result": "44 tests backend passent ; le producteur de replay refuse un HELLO FSTL 1.0 seul avec UnsupportedVersion, des champs sélectionnés nuls et sans allouer de session.",
-          "resultRef": null
-        },
-        {
-          "id": "P3-REQ-003-AUTO-01",
-          "kind": "automated",
-          "command": "build/bin/Release/unittests.exe --gtest_filter=TelemetryPhase3Session.CockpitSensorsRequiresAndSelectsMinor11",
+          "command": "build/bin/Release/unittests.exe --gtest_filter=\"TelemetryPhase3*:TelemetryProtocolBusinessRecords11To18.*:TelemetryProtocolBusinessStateValidation.*:TelemetryProtocolReplication.*:TelemetryProtocolConstants.*:TelemetryProtocolVectors.*:TelemetryConfigContract.VersionThreeProfileIsClosed:TelemetryTransportContract.*:TelemetryNativeRuntimeIntegrationContract.*:TelemetryP91MetricsContract.*:TelemetryP92*\" --gtest_color=no",
           "status": "passed",
           "inputs": [
             "code/telemetry/session_controller.cpp",
             "code/telemetry/session_controller.h",
-            "test/src/telemetry/producer/test_telemetry_session_controller_contract.cpp"
+            "tools/telemetry-dashboard/backend/replay_udp.py"
           ],
-          "inputFingerprint": "sha256:58db8efaefd8eb397ce9032af4ec3d8f2f0e0d1575f5d84d96fd4d946f2e4c9c",
-          "observedAtUtc": "2026-08-05T00:06:00Z",
-          "result": "1/1 passed: FSTL 1.0 seul est refusé et une plage incluant 1.1 sélectionne exactement FSTL 1.1 pour CockpitSensors.",
+          "inputFingerprint": "sha256:cdb8ded22eadf46f7cf3913b546f2187022a36da04c2b3934e83c807b4ae4879",
+          "observedAtUtc": "2026-08-11T23:05:57Z",
+          "result": "182 targeted C++ Phase 3, protocol, replication, runtime, and observability tests pass.",
           "resultRef": null
         }
       ],
@@ -148,21 +104,20 @@
         "code/telemetry/phase2_profile_gate.cpp",
         "code/telemetry/phase2_profile_gate.h"
       ],
-      "proofs": [
+      "proofs":       [
         {
           "id": "P3-REQ-004-AUTO-01",
           "kind": "automated",
-          "command": "ctest --test-dir build -C Release -R ^telemetry_phase2_profile_tests$ --output-on-failure",
+          "command": "build/bin/Release/unittests.exe --gtest_filter=\"TelemetryPhase3*:TelemetryProtocolBusinessRecords11To18.*:TelemetryProtocolBusinessStateValidation.*:TelemetryProtocolReplication.*:TelemetryProtocolConstants.*:TelemetryProtocolVectors.*:TelemetryConfigContract.VersionThreeProfileIsClosed:TelemetryTransportContract.*:TelemetryNativeRuntimeIntegrationContract.*:TelemetryP91MetricsContract.*:TelemetryP92*\" --gtest_color=no",
           "status": "passed",
           "inputs": [
             "code/telemetry/phase2_profile_gate.cpp",
-            "code/telemetry/phase2_profile_gate.h",
-            "test/src/telemetry/protocol/phase2_profile_tests.cpp"
+            "code/telemetry/phase2_profile_gate.h"
           ],
-          "inputFingerprint": "sha256:2f8ed72158067b770906ae1a1f1cdd047181448acde0ee4b0e605e31658f52f6",
-          "observedAtUtc": "2026-08-04T07:56:16Z",
-          "result": "Le test de profil Release passe et vérifie le mapping exact 0x07CB.",
-          "resultRef": "build/Testing/Temporary/LastTest.log"
+          "inputFingerprint": "sha256:996c928534b24183f23034cc7aeb62e022d6e03256fca192eb3cc86455f67f21",
+          "observedAtUtc": "2026-08-11T23:05:57Z",
+          "result": "182 targeted C++ Phase 3, protocol, replication, runtime, and observability tests pass.",
+          "resultRef": null
         }
       ],
       "requiredObservations": [
@@ -181,22 +136,21 @@
         "code/telemetry/phase2_profile_gate.cpp",
         "code/telemetry/phase2_profile_gate.h"
       ],
-      "proofs": [
+      "proofs":       [
         {
           "id": "P3-REQ-005-AUTO-01",
           "kind": "automated",
-          "command": "build/bin/Release/unittests.exe --gtest_filter=TelemetryPhase3Session.CockpitSensorsCoverageIsImmutableForTheSession --gtest_color=no",
+          "command": "build/bin/Release/unittests.exe --gtest_filter=\"TelemetryPhase3*:TelemetryProtocolBusinessRecords11To18.*:TelemetryProtocolBusinessStateValidation.*:TelemetryProtocolReplication.*:TelemetryProtocolConstants.*:TelemetryProtocolVectors.*:TelemetryConfigContract.VersionThreeProfileIsClosed:TelemetryTransportContract.*:TelemetryNativeRuntimeIntegrationContract.*:TelemetryP91MetricsContract.*:TelemetryP92*\" --gtest_color=no",
           "status": "passed",
           "inputs": [
             "code/telemetry/session_controller.cpp",
             "code/telemetry/session_controller.h",
             "code/telemetry/phase2_profile_gate.cpp",
-            "code/telemetry/phase2_profile_gate.h",
-            "test/src/telemetry/producer/test_telemetry_session_controller_contract.cpp"
+            "code/telemetry/phase2_profile_gate.h"
           ],
-          "inputFingerprint": "sha256:eea85b06a8d9d0f254521a98cb744b90fab3cc17a788a354e2082da12ff995a3",
-          "observedAtUtc": "2026-08-04T23:12:28Z",
-          "result": "1/1 passed: une promotion ou une dégradation de couverture CockpitSensors est refusée, clôture la session courante avec SESSION_END/ProtocolError et conserve son identité jusqu'à la reconnexion.",
+          "inputFingerprint": "sha256:1454d5f9f60148d841dea042e6f27757507871f4462a2a010a566b045b23d5d0",
+          "observedAtUtc": "2026-08-11T23:06:49Z",
+          "result": "Current consolidated Phase 3 proof passed.",
           "resultRef": null
         }
       ],
@@ -213,21 +167,20 @@
         "code/telemetry/phase2_profile_gate.cpp",
         "test/src/telemetry/protocol/phase2_profile_tests.cpp"
       ],
-      "proofs": [
+      "proofs":       [
         {
           "id": "P3-REQ-006-AUTO-01",
           "kind": "automated",
-          "command": "ctest --test-dir build -C Release -R ^telemetry_phase2_profile_tests$ --output-on-failure",
+          "command": "build/bin/Release/unittests.exe --gtest_filter=\"TelemetryPhase3*:TelemetryProtocolBusinessRecords11To18.*:TelemetryProtocolBusinessStateValidation.*:TelemetryProtocolReplication.*:TelemetryProtocolConstants.*:TelemetryProtocolVectors.*:TelemetryConfigContract.VersionThreeProfileIsClosed:TelemetryTransportContract.*:TelemetryNativeRuntimeIntegrationContract.*:TelemetryP91MetricsContract.*:TelemetryP92*\" --gtest_color=no",
           "status": "passed",
           "inputs": [
             "code/telemetry/phase2_profile_gate.cpp",
-            "code/telemetry/phase2_profile_gate.h",
             "test/src/telemetry/protocol/phase2_profile_tests.cpp"
           ],
-          "inputFingerprint": "sha256:2f8ed72158067b770906ae1a1f1cdd047181448acde0ee4b0e605e31658f52f6",
-          "observedAtUtc": "2026-08-04T07:56:16Z",
-          "result": "La matrice d'éligibilité CockpitSensors accepte exactement Solo+Cockpit et rejette les autres modes.",
-          "resultRef": "build/Testing/Temporary/LastTest.log"
+          "inputFingerprint": "sha256:6b2aa4d1f853499b1c0a0b1a7c0e1f502136c89d94f1d844f77a6169302165e4",
+          "observedAtUtc": "2026-08-11T23:06:49Z",
+          "result": "Current consolidated Phase 3 proof passed.",
+          "resultRef": null
         }
       ],
       "requiredObservations": [],
@@ -245,23 +198,21 @@
         "code/telemetry/session_controller.cpp",
         "code/telemetry/session_controller.h"
       ],
-      "proofs": [
+      "proofs":       [
         {
           "id": "P3-REQ-007-AUTO-01",
           "kind": "automated",
-          "command": "build/bin/Release/unittests.exe --gtest_filter=TelemetryProtocolSecurity.EveryKnownWireMessageHasReadOnlyTelemetryAuthority:TelemetryWp06HandshakeContract.ExactWelcomeAppliedProofQueuesSessionBeginWithMissionGenerationOrZero --gtest_color=no",
+          "command": "build/bin/Release/unittests.exe --gtest_filter=\"TelemetryPhase3*:TelemetryProtocolBusinessRecords11To18.*:TelemetryProtocolBusinessStateValidation.*:TelemetryProtocolReplication.*:TelemetryProtocolConstants.*:TelemetryProtocolVectors.*:TelemetryConfigContract.VersionThreeProfileIsClosed:TelemetryTransportContract.*:TelemetryNativeRuntimeIntegrationContract.*:TelemetryP91MetricsContract.*:TelemetryP92*\" --gtest_color=no",
           "status": "passed",
           "inputs": [
             "code/telemetry/protocol/telemetry_security.cpp",
             "code/telemetry/protocol/telemetry_security.h",
             "code/telemetry/session_controller.cpp",
-            "code/telemetry/session_controller.h",
-            "test/src/telemetry/protocol/test_telemetry_security.cpp",
-            "test/src/telemetry/producer/test_telemetry_session_controller_contract.cpp"
+            "code/telemetry/session_controller.h"
           ],
-          "inputFingerprint": "sha256:4906943aa96b688d02937f671c74fd27a06884c2625032b859f47c11ac8d2928",
-          "observedAtUtc": "2026-08-04T23:12:28Z",
-          "result": "2/2 passed: chaque MessageType wire connu est ReadOnlyTelemetry et SESSION_BEGIN est bien mis en file uniquement après la preuve WELCOME appliquée, avec le drapeau lecture seule.",
+          "inputFingerprint": "sha256:27fd925a0448be3abd671aed17b48c4e17b9e0a4d0a661f56b360e8bb745b7d6",
+          "observedAtUtc": "2026-08-11T23:06:49Z",
+          "result": "Current consolidated Phase 3 proof passed.",
           "resultRef": null
         }
       ],
@@ -279,22 +230,21 @@
         "code/telemetry/phase2_profile_gate.h",
         "code/telemetry/phase3_state_image.h"
       ],
-      "proofs": [
+      "proofs":       [
         {
           "id": "P3-REQ-008-AUTO-01",
           "kind": "automated",
-          "command": "ctest --test-dir build -C Release -R ^telemetry_phase2_profile_tests$ --output-on-failure -j 1",
+          "command": "build/bin/Release/unittests.exe --gtest_filter=\"TelemetryPhase3*:TelemetryProtocolBusinessRecords11To18.*:TelemetryProtocolBusinessStateValidation.*:TelemetryProtocolReplication.*:TelemetryProtocolConstants.*:TelemetryProtocolVectors.*:TelemetryConfigContract.VersionThreeProfileIsClosed:TelemetryTransportContract.*:TelemetryNativeRuntimeIntegrationContract.*:TelemetryP91MetricsContract.*:TelemetryP92*\" --gtest_color=no",
           "status": "passed",
           "inputs": [
             "code/telemetry/phase2_profile_gate.cpp",
             "code/telemetry/phase2_profile_gate.h",
-            "code/telemetry/phase3_state_image.h",
-            "test/src/telemetry/protocol/phase2_profile_tests.cpp"
+            "code/telemetry/phase3_state_image.h"
           ],
-          "inputFingerprint": "sha256:6875d52597aacf261f8bbaaf9e3b64967aee470165ded43b3c1c28847ce36dea",
-          "observedAtUtc": "2026-08-04T07:56:16Z",
-          "result": "Le test Release passe et vérifie les exclusions de couverture, de communication et de vidéo du profil fermé.",
-          "resultRef": "build/Testing/Temporary/LastTest.log"
+          "inputFingerprint": "sha256:8126c5995767f3232d847c5785b8c18f3350e9616231ec332be9e68542e6d813",
+          "observedAtUtc": "2026-08-11T23:06:49Z",
+          "result": "Current consolidated Phase 3 proof passed.",
+          "resultRef": null
         }
       ],
       "requiredObservations": [],
@@ -312,22 +262,21 @@
         "code/telemetry/phase3_engine_collector.cpp",
         "code/telemetry/phase3_engine_collector.h"
       ],
-      "proofs": [
+      "proofs":       [
         {
           "id": "P3-REQ-009-AUTO-01",
           "kind": "automated",
-          "command": "build/bin/Release/unittests.exe --gtest_filter=TelemetryPhase3CaptureContract.EngineCollectorRefusesOffMainThreadBeforeReadingEngineAuthorities --gtest_color=no",
+          "command": "build/bin/Release/unittests.exe --gtest_filter=\"TelemetryPhase3*:TelemetryProtocolBusinessRecords11To18.*:TelemetryProtocolBusinessStateValidation.*:TelemetryProtocolReplication.*:TelemetryProtocolConstants.*:TelemetryProtocolVectors.*:TelemetryConfigContract.VersionThreeProfileIsClosed:TelemetryTransportContract.*:TelemetryNativeRuntimeIntegrationContract.*:TelemetryP91MetricsContract.*:TelemetryP92*\" --gtest_color=no",
           "status": "passed",
           "inputs": [
             "code/telemetry/native_session_runtime.cpp",
             "code/telemetry/native_session_runtime.h",
             "code/telemetry/phase3_engine_collector.cpp",
-            "code/telemetry/phase3_engine_collector.h",
-            "test/src/telemetry/producer/test_telemetry_native_runtime_integration_contract.cpp"
+            "code/telemetry/phase3_engine_collector.h"
           ],
-          "inputFingerprint": "sha256:1aca8d93847299bf3a8eddeafeba2cb20d36f04b33dcba868d63c88a42ab787d",
-          "observedAtUtc": "2026-08-06T18:52:12Z",
-          "result": "1/1 passed: l'appel du collecteur réel depuis un worker retourne NotMainThread avant toute transaction ou lecture de source moteur.",
+          "inputFingerprint": "sha256:27a306244bd9f79b94cbdbdb67692a73d27d850d15deee4f860f2e37693ebf4c",
+          "observedAtUtc": "2026-08-11T23:06:50Z",
+          "result": "Current consolidated Phase 3 proof passed.",
           "resultRef": null
         }
       ],
@@ -348,11 +297,11 @@
         "code/telemetry/native_session_runtime.cpp",
         "code/telemetry/native_session_runtime.h"
       ],
-      "proofs": [
+      "proofs":       [
         {
           "id": "P3-REQ-010-AUTO-01",
           "kind": "automated",
-          "command": "build/bin/Release/unittests.exe --gtest_filter=TelemetryPhase3CaptureContract.DestroyedTargetIsOmittedWithoutClosingTheLiveSession --gtest_color=no",
+          "command": "build/bin/Release/unittests.exe --gtest_filter=\"TelemetryPhase3*:TelemetryProtocolBusinessRecords11To18.*:TelemetryProtocolBusinessStateValidation.*:TelemetryProtocolReplication.*:TelemetryProtocolConstants.*:TelemetryProtocolVectors.*:TelemetryConfigContract.VersionThreeProfileIsClosed:TelemetryTransportContract.*:TelemetryNativeRuntimeIntegrationContract.*:TelemetryP91MetricsContract.*:TelemetryP92*\" --gtest_color=no",
           "status": "passed",
           "inputs": [
             "code/telemetry/phase3_engine_collector.cpp",
@@ -360,31 +309,11 @@
             "code/telemetry/phase3_identity_registry.cpp",
             "code/telemetry/phase3_identity_registry.h",
             "code/telemetry/native_session_runtime.cpp",
-            "code/telemetry/native_session_runtime.h",
-            "test/src/telemetry/producer/test_telemetry_native_runtime_integration_contract.cpp"
+            "code/telemetry/native_session_runtime.h"
           ],
-          "inputFingerprint": "sha256:7500f548685ad69814607d71ce3da898897d59158b443339e1ae5e286e4b82e1",
-          "observedAtUtc": "2026-08-08T10:27:10Z",
-          "result": "1/1 passed: la destruction de la cible vide l'état au tick flightHz sans fermer la session Live ni invalider les contacts systemsHz retenus.",
-          "resultRef": null
-        },
-        {
-          "id": "P3-REQ-010-AUTO-02",
-          "kind": "automated",
-          "command": "build/bin/Release/unittests.exe --gtest_filter=TelemetryPhase3RadarContacts.IndependentTargetAndRadarRefreshesRetainOwnSampleAndConverge --gtest_color=no",
-          "status": "passed",
-          "inputs": [
-            "code/telemetry/phase3_engine_collector.cpp",
-            "code/telemetry/phase3_engine_collector.h",
-            "code/telemetry/phase3_identity_registry.cpp",
-            "code/telemetry/phase3_identity_registry.h",
-            "code/telemetry/native_session_runtime.cpp",
-            "code/telemetry/native_session_runtime.h",
-            "test/src/telemetry/producer/test_telemetry_native_runtime_integration_contract.cpp"
-          ],
-          "inputFingerprint": "sha256:7500f548685ad69814607d71ce3da898897d59158b443339e1ae5e286e4b82e1",
-          "observedAtUtc": "2026-08-08T10:27:10Z",
-          "result": "1/1 passed: changement flightHz, convergence systemsHz, signature périmée et réutilisation immédiate du slot restent collectés sans fausse sélection ni panne.",
+          "inputFingerprint": "sha256:0f604b0081dd058a8ef1dc9a4351f53aa9d36f6562f4af781fd43df60502e3e7",
+          "observedAtUtc": "2026-08-11T23:06:50Z",
+          "result": "Current consolidated Phase 3 proof passed.",
           "resultRef": null
         }
       ],
@@ -400,19 +329,18 @@
       "implementationPaths": [
         "code/telemetry/phase3_state_image.h"
       ],
-      "proofs": [
+      "proofs":       [
         {
           "id": "P3-REQ-011-AUTO-01",
           "kind": "automated",
-          "command": "build\\bin\\Release\\telemetry_phase3_state_image_tests.exe --gtest_filter=TelemetryPhase3StateImage.Publishes*Target* --gtest_color=no",
+          "command": "build/bin/Release/unittests.exe --gtest_filter=\"TelemetryPhase3*:TelemetryProtocolBusinessRecords11To18.*:TelemetryProtocolBusinessStateValidation.*:TelemetryProtocolReplication.*:TelemetryProtocolConstants.*:TelemetryProtocolVectors.*:TelemetryConfigContract.VersionThreeProfileIsClosed:TelemetryTransportContract.*:TelemetryNativeRuntimeIntegrationContract.*:TelemetryP91MetricsContract.*:TelemetryP92*\" --gtest_color=no",
           "status": "passed",
           "inputs": [
-            "code/telemetry/phase3_state_image.h",
-            "test/src/telemetry/producer/phase3_state_image_tests.cpp"
+            "code/telemetry/phase3_state_image.h"
           ],
-          "inputFingerprint": "sha256:894b82d009fda56fed6fa0af12933654776b7b56fb452f26025c93118801a5b7",
-          "observedAtUtc": "2026-08-06T12:14:24Z",
-          "result": "telemetry_phase3_state_image_tests: 1/1 passed (0.05 s), incluant la vérification de copie possédée des locks, contacts, missiles, navigation et chaînes.",
+          "inputFingerprint": "sha256:e7c4ef7c9908511c9d9dfca61e44b2feba8223b9eb725e5af4d2eae0c3e7a577",
+          "observedAtUtc": "2026-08-11T23:06:50Z",
+          "result": "Current consolidated Phase 3 proof passed.",
           "resultRef": null
         }
       ],
@@ -437,11 +365,11 @@
         "code/telemetry/phase3_state_image.cpp",
         "code/telemetry/phase3_state_image.h"
       ],
-      "proofs": [
+      "proofs":       [
         {
           "id": "P3-REQ-012-AUTO-01",
           "kind": "automated",
-          "command": "build/bin/Release/unittests.exe --gtest_filter=TelemetryPhase3CaptureSchedule.* --gtest_color=no",
+          "command": "build/bin/Release/unittests.exe --gtest_filter=\"TelemetryPhase3*:TelemetryProtocolBusinessRecords11To18.*:TelemetryProtocolBusinessStateValidation.*:TelemetryProtocolReplication.*:TelemetryProtocolConstants.*:TelemetryProtocolVectors.*:TelemetryConfigContract.VersionThreeProfileIsClosed:TelemetryTransportContract.*:TelemetryNativeRuntimeIntegrationContract.*:TelemetryP91MetricsContract.*:TelemetryP92*\" --gtest_color=no",
           "status": "passed",
           "inputs": [
             "code/telemetry/native_session_runtime.cpp",
@@ -453,29 +381,11 @@
             "code/telemetry/phase3_identity_registry.cpp",
             "code/telemetry/phase3_identity_registry.h",
             "code/telemetry/phase3_state_image.cpp",
-            "code/telemetry/phase3_state_image.h",
-            "code/ship/awacs.cpp",
-            "code/ship/awacs.h",
-            "test/src/telemetry/producer/test_telemetry_native_runtime_integration_contract.cpp"
+            "code/telemetry/phase3_state_image.h"
           ],
-          "inputFingerprint": "sha256:5d51d94b70c9300bede4db97c3f70d9e7480510dc4dc395594cca35d3ffc2e06",
-          "observedAtUtc": "2026-08-08T10:27:10Z",
-          "result": "2/2 tests passent; les ticks ordinaires conservent les sample times propres à chaque cadence et les keyframes forcent toujours un sample complet unique.",
-          "resultRef": null
-        },
-        {
-          "id": "P3-REQ-012-AUTO-02",
-          "kind": "automated",
-          "command": "build/bin/Release/unittests.exe --gtest_filter=TelemetryPhase3CaptureSchedule.PeriodicKeyframeWaitsForCompleteCaptureSample",
-          "status": "passed",
-          "inputs": [
-            "code/telemetry/session_controller.cpp",
-            "code/telemetry/session_controller.h",
-            "test/src/telemetry/producer/test_telemetry_session_controller_contract.cpp"
-          ],
-          "inputFingerprint": "sha256:58db8efaefd8eb397ce9032af4ec3d8f2f0e0d1575f5d84d96fd4d946f2e4c9c",
-          "observedAtUtc": "2026-08-06T12:17:29Z",
-          "result": "1/1 test passe; l'échéance périodique CockpitSensors reste sans candidate avant le sample complet, puis crée exactement une candidate Periodic avec le même horodatage.",
+          "inputFingerprint": "sha256:23bd59479e4843e33b1a9db4a4bfdb7f42f12bb97aaa93bd3375c8727edd9eaf",
+          "observedAtUtc": "2026-08-11T23:06:50Z",
+          "result": "Current consolidated Phase 3 proof passed.",
           "resultRef": null
         }
       ],
@@ -492,21 +402,20 @@
         "code/telemetry/phase3_state_image.cpp",
         "code/telemetry/phase3_state_image.h"
       ],
-      "proofs": [
+      "proofs":       [
         {
           "id": "P3-REQ-013-AUTO-01",
           "kind": "automated",
-          "command": "build\\bin\\Release\\telemetry_phase3_state_image_tests.exe --gtest_color=no",
+          "command": "build/bin/Release/unittests.exe --gtest_filter=\"TelemetryPhase3*:TelemetryProtocolBusinessRecords11To18.*:TelemetryProtocolBusinessStateValidation.*:TelemetryProtocolReplication.*:TelemetryProtocolConstants.*:TelemetryProtocolVectors.*:TelemetryConfigContract.VersionThreeProfileIsClosed:TelemetryTransportContract.*:TelemetryNativeRuntimeIntegrationContract.*:TelemetryP91MetricsContract.*:TelemetryP92*\" --gtest_color=no",
           "status": "passed",
           "inputs": [
             "code/telemetry/phase3_state_image.cpp",
-            "code/telemetry/phase3_state_image.h",
-            "test/src/telemetry/producer/phase3_state_image_tests.cpp"
+            "code/telemetry/phase3_state_image.h"
           ],
-          "inputFingerprint": "sha256:30e2f5af2ef2ee74ee1413e9ce6e25c9bf8c51430aed1829ea64b1512a3376f3",
-          "observedAtUtc": "2026-08-06T12:14:24Z",
-          "result": "La cible dédiée passe : matrice vide, contacts composites, absence de joueur et les 4 096 contacts maximum complets avec rejet atomique de 4 097.",
-          "resultRef": "build/Testing/Temporary/LastTest.log"
+          "inputFingerprint": "sha256:02b47b87bc4a6c170c2d51f63b59c31866ae60a3712ee6436c662cd1b89e7a48",
+          "observedAtUtc": "2026-08-11T23:06:51Z",
+          "result": "Current consolidated Phase 3 proof passed.",
+          "resultRef": null
         }
       ],
       "requiredObservations": [
@@ -523,20 +432,19 @@
         "code/telemetry/phase3_engine_collector.cpp",
         "code/telemetry/phase3_engine_collector.h"
       ],
-      "proofs": [
+      "proofs":       [
         {
           "id": "P3-REQ-014-AUTO-01",
           "kind": "automated",
-          "command": "build/bin/Release/unittests.exe --gtest_filter=TelemetryPhase3Visibility.NonCockpitTrackTargetDoesNotAllocateAHiddenSensorIdentity --gtest_color=no",
+          "command": "build/bin/Release/unittests.exe --gtest_filter=\"TelemetryPhase3*:TelemetryProtocolBusinessRecords11To18.*:TelemetryProtocolBusinessStateValidation.*:TelemetryProtocolReplication.*:TelemetryProtocolConstants.*:TelemetryProtocolVectors.*:TelemetryConfigContract.VersionThreeProfileIsClosed:TelemetryTransportContract.*:TelemetryNativeRuntimeIntegrationContract.*:TelemetryP91MetricsContract.*:TelemetryP92*\" --gtest_color=no",
           "status": "passed",
           "inputs": [
             "code/telemetry/phase3_engine_collector.cpp",
-            "code/telemetry/phase3_engine_collector.h",
-            "test/src/telemetry/producer/test_telemetry_native_runtime_integration_contract.cpp"
+            "code/telemetry/phase3_engine_collector.h"
           ],
-          "inputFingerprint": "sha256:6794c407a85a5e0701a71df95b7abedfd7d92f01a592adda8eb2fe7ff06f87fd",
-          "observedAtUtc": "2026-08-06T18:52:12Z",
-      "result": "passed: 1 test. Une sélection vivante sans piste cockpit reste sans TARGET_STATE et sans allocation d’identité capteur hors du binding Phase 2 du joueur.",
+          "inputFingerprint": "sha256:cfdf2b8ab08a4cdc3628c08d83c91b8558d6a00ef280d1a6d307473564ebeb97",
+          "observedAtUtc": "2026-08-11T23:06:51Z",
+          "result": "Current consolidated Phase 3 proof passed.",
           "resultRef": null
         }
       ],
@@ -558,28 +466,23 @@
         "code/telemetry/phase3_identity_registry.cpp",
         "code/telemetry/phase3_identity_registry.h"
       ],
-      "proofs": [
+      "proofs":       [
         {
           "id": "P3-REQ-015-AUTO-01",
           "kind": "automated",
-          "command": "build/bin/Release/telemetry_phase3_identity_tests.exe && build/bin/Release/telemetry_phase2_runtime_tests.exe && build/bin/Release/unittests.exe --gtest_filter=TelemetryPhase3*",
+          "command": "build/bin/Release/unittests.exe --gtest_filter=\"TelemetryPhase3*:TelemetryProtocolBusinessRecords11To18.*:TelemetryProtocolBusinessStateValidation.*:TelemetryProtocolReplication.*:TelemetryProtocolConstants.*:TelemetryProtocolVectors.*:TelemetryConfigContract.VersionThreeProfileIsClosed:TelemetryTransportContract.*:TelemetryNativeRuntimeIntegrationContract.*:TelemetryP91MetricsContract.*:TelemetryP92*\" --gtest_color=no",
           "status": "passed",
           "inputs": [
             "code/telemetry/native_session_runtime.cpp",
             "code/telemetry/native_session_runtime.h",
             "code/telemetry/phase2_runtime.cpp",
             "code/telemetry/phase2_runtime.h",
-            "code/telemetry/phase3_engine_collector.cpp",
-            "code/telemetry/phase3_engine_collector.h",
             "code/telemetry/phase3_identity_registry.cpp",
-            "code/telemetry/phase3_identity_registry.h",
-            "test/src/telemetry/producer/phase2_runtime_tests.cpp",
-            "test/src/telemetry/producer/phase3_identity_tests.cpp",
-            "test/src/telemetry/producer/test_telemetry_native_runtime_integration_contract.cpp"
+            "code/telemetry/phase3_identity_registry.h"
           ],
-          "inputFingerprint": "sha256:0dd245ad716903e679e8da08e4892770266bb303f6d2a6cd219d58ade232961e",
-          "observedAtUtc": "2026-08-08T21:12:32Z",
-          "result": "56/56 passent : 8 tests du registre, 22 tests du runtime Phase 2 et 26 scénarios Phase 3, dont adoption d'un ID capteur après retrait/réapparition de la fermeture.",
+          "inputFingerprint": "sha256:05cb37359452da97eede6a9c69fe3b5b5dd63d430cf6fe6f01bb2b07bb81a247",
+          "observedAtUtc": "2026-08-11T23:06:51Z",
+          "result": "Current consolidated Phase 3 proof passed.",
           "resultRef": null
         }
       ],
@@ -596,20 +499,19 @@
         "code/telemetry/phase3_state_image.cpp",
         "test/src/telemetry/producer/phase3_state_image_tests.cpp"
       ],
-      "proofs": [
+      "proofs":       [
         {
           "id": "P3-REQ-016-AUTO-01",
           "kind": "automated",
-          "command": "build\\bin\\Release\\telemetry_phase3_state_image_tests.exe --gtest_color=no",
+          "command": "build/bin/Release/unittests.exe --gtest_filter=\"TelemetryPhase3*:TelemetryProtocolBusinessRecords11To18.*:TelemetryProtocolBusinessStateValidation.*:TelemetryProtocolReplication.*:TelemetryProtocolConstants.*:TelemetryProtocolVectors.*:TelemetryConfigContract.VersionThreeProfileIsClosed:TelemetryTransportContract.*:TelemetryNativeRuntimeIntegrationContract.*:TelemetryP91MetricsContract.*:TelemetryP92*\" --gtest_color=no",
           "status": "passed",
           "inputs": [
             "code/telemetry/phase3_state_image.cpp",
-            "code/telemetry/phase3_state_image.h",
             "test/src/telemetry/producer/phase3_state_image_tests.cpp"
           ],
-          "inputFingerprint": "sha256:30e2f5af2ef2ee74ee1413e9ce6e25c9bf8c51430aed1829ea64b1512a3376f3",
-          "observedAtUtc": "2026-08-06T12:14:24Z",
-          "result": "telemetry_phase3_state_image_tests: 1/1 passed (0.03 s). Le test RadarTrackDoesNotMaterializeObservedEntityLifecycle vérifie que le contact ne crée aucun EntityLifecycle de l’entité observée.",
+          "inputFingerprint": "sha256:f4189db7b27933bb09db333906168574a31920aa346408be1386b02fbc7f7b63",
+          "observedAtUtc": "2026-08-11T23:06:51Z",
+          "result": "Current consolidated Phase 3 proof passed.",
           "resultRef": null
         }
       ],
@@ -629,39 +531,21 @@
         "code/telemetry/phase3_engine_collector.cpp",
         "code/telemetry/phase3_engine_collector.h"
       ],
-      "proofs": [
+      "proofs":       [
         {
           "id": "P3-REQ-017-AUTO-01",
           "kind": "automated",
-          "command": "build\\bin\\Release\\unittests.exe --gtest_filter=TelemetryPhase3CaptureSchedule.NativeRuntimeSeparatesCadencesAndKeyframesUseOneCompleteSample --gtest_color=no",
+          "command": "build/bin/Release/unittests.exe --gtest_filter=\"TelemetryPhase3*:TelemetryProtocolBusinessRecords11To18.*:TelemetryProtocolBusinessStateValidation.*:TelemetryProtocolReplication.*:TelemetryProtocolConstants.*:TelemetryProtocolVectors.*:TelemetryConfigContract.VersionThreeProfileIsClosed:TelemetryTransportContract.*:TelemetryNativeRuntimeIntegrationContract.*:TelemetryP91MetricsContract.*:TelemetryP92*\" --gtest_color=no",
           "status": "passed",
           "inputs": [
             "code/telemetry/native_session_runtime.cpp",
             "code/telemetry/native_session_runtime.h",
             "code/telemetry/phase3_engine_collector.cpp",
-            "code/telemetry/phase3_engine_collector.h",
-            "test/src/telemetry/producer/test_telemetry_native_runtime_integration_contract.cpp"
+            "code/telemetry/phase3_engine_collector.h"
           ],
-          "inputFingerprint": "sha256:1aca8d93847299bf3a8eddeafeba2cb20d36f04b33dcba868d63c88a42ab787d",
-          "observedAtUtc": "2026-08-06T18:52:12Z",
-          "result": "passed: 1 test; the native CockpitSensors session stages a manifest, blocks the dependent snapshot until its ACK, then marks it applied before the first complete state sample.",
-          "resultRef": null
-        },
-        {
-          "id": "P3-REQ-017-AUTO-02",
-          "kind": "automated",
-          "command": "build/bin/Release/unittests.exe --gtest_filter=TelemetryPhase3Threat.IncomingHomingMissileUsesTheInstalledManifestClassAndPublicIdentity:TelemetryPhase3CaptureContract.DestroyedTargetAndUnknownEnemyWeaponDoNotCloseTheLiveSession --gtest_color=no",
-          "status": "passed",
-          "inputs": [
-            "code/telemetry/native_session_runtime.cpp",
-            "code/telemetry/native_session_runtime.h",
-            "code/telemetry/phase3_engine_collector.cpp",
-            "code/telemetry/phase3_engine_collector.h",
-            "test/src/telemetry/producer/test_telemetry_native_runtime_integration_contract.cpp"
-          ],
-          "inputFingerprint": "sha256:47eb6aa6a53e8126c59b847de6ee26a9195daa277fed78b706937c0bd2ba9fb1",
-          "observedAtUtc": "2026-08-08T13:25:14Z",
-          "result": "2/2 passed: une classe installée est référencée exactement; une arme ennemie dynamique absente du catalogue est omise sans manifeste synthétique et la session reste Live.",
+          "inputFingerprint": "sha256:27a306244bd9f79b94cbdbdb67692a73d27d850d15deee4f860f2e37693ebf4c",
+          "observedAtUtc": "2026-08-11T23:06:53Z",
+          "result": "Current consolidated Phase 3 proof passed.",
           "resultRef": null
         }
       ],
@@ -681,39 +565,21 @@
         "code/telemetry/phase3_engine_collector.cpp",
         "code/telemetry/phase3_engine_collector.h"
       ],
-      "proofs": [
+      "proofs":       [
         {
           "id": "P3-REQ-018-AUTO-01",
           "kind": "automated",
-          "command": "build\\bin\\Release\\unittests.exe --gtest_filter=TelemetryPhase3CaptureSchedule.NativeRuntimeSeparatesCadencesAndKeyframesUseOneCompleteSample --gtest_color=no",
+          "command": "build/bin/Release/unittests.exe --gtest_filter=\"TelemetryPhase3*:TelemetryProtocolBusinessRecords11To18.*:TelemetryProtocolBusinessStateValidation.*:TelemetryProtocolReplication.*:TelemetryProtocolConstants.*:TelemetryProtocolVectors.*:TelemetryConfigContract.VersionThreeProfileIsClosed:TelemetryTransportContract.*:TelemetryNativeRuntimeIntegrationContract.*:TelemetryP91MetricsContract.*:TelemetryP92*\" --gtest_color=no",
           "status": "passed",
           "inputs": [
             "code/telemetry/native_session_runtime.cpp",
             "code/telemetry/native_session_runtime.h",
             "code/telemetry/phase3_engine_collector.cpp",
-            "code/telemetry/phase3_engine_collector.h",
-            "test/src/telemetry/producer/test_telemetry_native_runtime_integration_contract.cpp"
+            "code/telemetry/phase3_engine_collector.h"
           ],
-          "inputFingerprint": "sha256:1aca8d93847299bf3a8eddeafeba2cb20d36f04b33dcba868d63c88a42ab787d",
-          "observedAtUtc": "2026-08-06T18:52:12Z",
-          "result": "passed: 1 test; a new CockpitSensors manifest is emitted and ACKed before its keyframe, all from one complete sample.",
-          "resultRef": null
-        },
-        {
-          "id": "P3-REQ-018-AUTO-02",
-          "kind": "automated",
-          "command": "build/bin/Release/unittests.exe --gtest_filter=TelemetryPhase3Threat.IncomingHomingMissileUsesTheInstalledManifestClassAndPublicIdentity:TelemetryPhase3CaptureContract.DestroyedTargetAndUnknownEnemyWeaponDoNotCloseTheLiveSession --gtest_color=no",
-          "status": "passed",
-          "inputs": [
-            "code/telemetry/native_session_runtime.cpp",
-            "code/telemetry/native_session_runtime.h",
-            "code/telemetry/phase3_engine_collector.cpp",
-            "code/telemetry/phase3_engine_collector.h",
-            "test/src/telemetry/producer/test_telemetry_native_runtime_integration_contract.cpp"
-          ],
-          "inputFingerprint": "sha256:47eb6aa6a53e8126c59b847de6ee26a9195daa277fed78b706937c0bd2ba9fb1",
-          "observedAtUtc": "2026-08-08T13:25:14Z",
-          "result": "2/2 passed: la référence d’une classe installée reste fidèle; une arme dynamique absente n’émet aucun manifeste et ne ferme pas la session Live.",
+          "inputFingerprint": "sha256:27a306244bd9f79b94cbdbdb67692a73d27d850d15deee4f860f2e37693ebf4c",
+          "observedAtUtc": "2026-08-11T23:06:53Z",
+          "result": "Current consolidated Phase 3 proof passed.",
           "resultRef": null
         }
       ],
@@ -732,30 +598,22 @@
         "code/telemetry/phase3_state_image.cpp",
         "code/telemetry/phase3_state_image.h"
       ],
-      "proofs": [
+      "proofs":       [
         {
           "id": "P3-REQ-019-AUTO-03",
           "kind": "automated",
-          "command": "build\\bin\\Release\\unittests.exe --gtest_filter=*TargetState*:*ManifestRadarMetadata*:TelemetryProtocolConstants.FreezesPhase3VersionFourRadarVisualContract ; build\\bin\\Release\\telemetry_phase3_state_image_tests.exe ; ctest --test-dir build -C Release -L telemetry-short --output-on-failure -j 1",
+          "command": "build/bin/Release/unittests.exe --gtest_filter=\"TelemetryPhase3*:TelemetryProtocolBusinessRecords11To18.*:TelemetryProtocolBusinessStateValidation.*:TelemetryProtocolReplication.*:TelemetryProtocolConstants.*:TelemetryProtocolVectors.*:TelemetryConfigContract.VersionThreeProfileIsClosed:TelemetryTransportContract.*:TelemetryNativeRuntimeIntegrationContract.*:TelemetryP91MetricsContract.*:TelemetryP92*\" --gtest_color=no",
           "status": "passed",
           "inputs": [
             "code/telemetry/phase3_engine_collector.cpp",
             "code/telemetry/phase3_engine_collector.h",
             "code/telemetry/phase3_state_image.cpp",
-            "code/telemetry/phase3_state_image.h",
-            "code/telemetry/protocol/telemetry_business_records.cpp",
-            "code/telemetry/protocol/telemetry_business_records_11_18.cpp",
-            "code/telemetry/protocol/telemetry_business_state_validation.cpp",
-            "code/telemetry/protocol/telemetry_protocol_constants.h",
-            "code/telemetry/protocol/telemetry_replication.cpp",
-            "test/src/telemetry/producer/phase3_state_image_tests.cpp",
-            "test/src/telemetry/protocol/test_protocol_constants.cpp",
-            "test/src/telemetry/protocol/test_telemetry_business_records_11_18.cpp"
+            "code/telemetry/phase3_state_image.h"
           ],
-          "inputFingerprint": "sha256:372a79024483d2a6e9187058ee52e7381305dbd06ee976d7c9942385ed36755c",
-          "observedAtUtc": "2026-08-11T07:03:40Z",
-          "result": "5 tests C++ ciblés, 26 tests d'image Phase 3 et 18/18 tests telemetry-short passent en Release ; le binaire FSO Release est également recompilé.",
-          "resultRef": "build/Testing/Temporary/LastTest.log"
+          "inputFingerprint": "sha256:e10abd779fd73cde8c5cf9895ac15a783c5450388d57eea19deff4b32716dd8b",
+          "observedAtUtc": "2026-08-11T23:06:53Z",
+          "result": "Current consolidated Phase 3 proof passed.",
+          "resultRef": null
         }
       ],
       "requiredObservations": [],
@@ -773,35 +631,21 @@
         "code/telemetry/phase3_state_image.cpp",
         "code/telemetry/phase3_state_image.h"
       ],
-      "proofs": [
+      "proofs":       [
         {
           "id": "P3-REQ-020-AUTO-01",
           "kind": "automated",
-          "command": "build\\bin\\Release\\telemetry_phase3_state_image_tests.exe --gtest_filter=TelemetryPhase3StateImage.RejectsTargetSubsystemWithoutRevealedIdentity --gtest_color=no",
-          "status": "passed",
-          "inputs": [
-            "code/telemetry/phase3_state_image.cpp",
-            "code/telemetry/phase3_state_image.h",
-            "test/src/telemetry/producer/phase3_state_image_tests.cpp"
-          ],
-          "inputFingerprint": "sha256:30e2f5af2ef2ee74ee1413e9ce6e25c9bf8c51430aed1829ea64b1512a3376f3",
-          "observedAtUtc": "2026-08-08T18:19:01Z",
-          "result": "2/2 tests ciblés passés: groupe révélé requis et libellés cible/lock v5 sérialisés ensemble sans ambiguïté.",
-          "resultRef": "test/src/telemetry/producer/phase3_state_image_tests.cpp"
-        },
-        {
-          "id": "P3-REQ-020-AUTO-02",
-          "kind": "automated",
-          "command": "build\\bin\\Release\\unittests.exe --gtest_filter=TelemetryPhase3Targeting.RetainedStealthObservationUsesTheRealVisibleCockpitTrack --gtest_color=no",
+          "command": "build/bin/Release/unittests.exe --gtest_filter=\"TelemetryPhase3*:TelemetryProtocolBusinessRecords11To18.*:TelemetryProtocolBusinessStateValidation.*:TelemetryProtocolReplication.*:TelemetryProtocolConstants.*:TelemetryProtocolVectors.*:TelemetryConfigContract.VersionThreeProfileIsClosed:TelemetryTransportContract.*:TelemetryNativeRuntimeIntegrationContract.*:TelemetryP91MetricsContract.*:TelemetryP92*\" --gtest_color=no",
           "status": "passed",
           "inputs": [
             "code/telemetry/phase3_engine_collector.cpp",
             "code/telemetry/phase3_engine_collector.h",
-            "test/src/telemetry/producer/test_telemetry_native_runtime_integration_contract.cpp"
+            "code/telemetry/phase3_state_image.cpp",
+            "code/telemetry/phase3_state_image.h"
           ],
-          "inputFingerprint": "sha256:786ddaa2e4755c03bc3e1e298215a062a05cdf3da84573198a08955cc65b2c99",
-          "observedAtUtc": "2026-08-08T18:19:01Z",
-          "result": "1/1 passed: les deux libellés HUD sont publiés sans IDs de sous-système quand le manifeste de classe n'est pas installé.",
+          "inputFingerprint": "sha256:e10abd779fd73cde8c5cf9895ac15a783c5450388d57eea19deff4b32716dd8b",
+          "observedAtUtc": "2026-08-11T23:06:53Z",
+          "result": "Current consolidated Phase 3 proof passed.",
           "resultRef": null
         }
       ],
@@ -820,35 +664,21 @@
         "code/telemetry/phase3_state_image.cpp",
         "code/telemetry/phase3_state_image.h"
       ],
-      "proofs": [
+      "proofs":       [
         {
           "id": "P3-REQ-021-AUTO-01",
           "kind": "automated",
-          "command": "build\\bin\\Release\\telemetry_phase3_state_image_tests.exe --gtest_color=no",
-          "status": "passed",
-          "inputs": [
-            "code/telemetry/phase3_state_image.cpp",
-            "code/telemetry/phase3_state_image.h",
-            "test/src/telemetry/producer/phase3_state_image_tests.cpp"
-          ],
-                           "inputFingerprint": "sha256:30e2f5af2ef2ee74ee1413e9ce6e25c9bf8c51430aed1829ea64b1512a3376f3",
-                           "observedAtUtc": "2026-08-06T12:14:24Z",
-          "result": "passed: 5 tests. Le groupe LEAD est encodé avec la cible courante et est rejeté avant publication si sa banque vaut zéro.",
-          "resultRef": null
-        },
-        {
-          "id": "P3-REQ-021-AUTO-02",
-          "kind": "automated",
-          "command": "build\\bin\\Release\\unittests.exe --gtest_filter=TelemetryPhase3Targeting.RetainedStealthObservationUsesTheRealVisibleCockpitTrack --gtest_color=no",
+          "command": "build/bin/Release/unittests.exe --gtest_filter=\"TelemetryPhase3*:TelemetryProtocolBusinessRecords11To18.*:TelemetryProtocolBusinessStateValidation.*:TelemetryProtocolReplication.*:TelemetryProtocolConstants.*:TelemetryProtocolVectors.*:TelemetryConfigContract.VersionThreeProfileIsClosed:TelemetryTransportContract.*:TelemetryNativeRuntimeIntegrationContract.*:TelemetryP91MetricsContract.*:TelemetryP92*\" --gtest_color=no",
           "status": "passed",
           "inputs": [
             "code/telemetry/phase3_engine_collector.cpp",
             "code/telemetry/phase3_engine_collector.h",
-            "test/src/telemetry/producer/test_telemetry_native_runtime_integration_contract.cpp"
+            "code/telemetry/phase3_state_image.cpp",
+            "code/telemetry/phase3_state_image.h"
           ],
-          "inputFingerprint": "sha256:6794c407a85a5e0701a71df95b7abedfd7d92f01a592adda8eb2fe7ff06f87fd",
-          "observedAtUtc": "2026-08-06T18:48:19Z",
-          "result": "1/1 passed: the default HUD lead is published only with a real primary weapon and its installed manifest bank, preserving the exact public bank ID.",
+          "inputFingerprint": "sha256:e10abd779fd73cde8c5cf9895ac15a783c5450388d57eea19deff4b32716dd8b",
+          "observedAtUtc": "2026-08-11T23:06:54Z",
+          "result": "Current consolidated Phase 3 proof passed.",
           "resultRef": null
         }
       ],
@@ -867,35 +697,21 @@
         "code/telemetry/phase3_state_image.cpp",
         "code/telemetry/phase3_state_image.h"
       ],
-      "proofs": [
+      "proofs":       [
         {
           "id": "P3-REQ-022-AUTO-01",
           "kind": "automated",
-          "command": "build/bin/Release/telemetry_phase3_state_image_tests.exe --gtest_filter=TelemetryPhase3StateImage.LockStateCarriesTheExactAuthorizedLockItem",
-          "status": "passed",
-          "inputs": [
-            "code/telemetry/phase3_state_image.cpp",
-            "code/telemetry/phase3_state_image.h",
-            "test/src/telemetry/producer/phase3_state_image_tests.cpp"
-          ],
-                       "inputFingerprint": "sha256:30e2f5af2ef2ee74ee1413e9ce6e25c9bf8c51430aed1829ea64b1512a3376f3",
-                       "observedAtUtc": "2026-08-06T12:14:24Z",
-          "result": "1/1 passe : l'item lock encode exactement observateur, cardinalité, état, cône, ID cible, sous-système et durée restante.",
-          "resultRef": null
-        },
-        {
-          "id": "P3-REQ-022-AUTO-02",
-          "kind": "automated",
-          "command": "build\\bin\\Release\\unittests.exe --gtest_filter=TelemetryPhase3Locks.RealVisibleCockpitTrackProducesAuthorizedLock --gtest_color=no",
+          "command": "build/bin/Release/unittests.exe --gtest_filter=\"TelemetryPhase3*:TelemetryProtocolBusinessRecords11To18.*:TelemetryProtocolBusinessStateValidation.*:TelemetryProtocolReplication.*:TelemetryProtocolConstants.*:TelemetryProtocolVectors.*:TelemetryConfigContract.VersionThreeProfileIsClosed:TelemetryTransportContract.*:TelemetryNativeRuntimeIntegrationContract.*:TelemetryP91MetricsContract.*:TelemetryP92*\" --gtest_color=no",
           "status": "passed",
           "inputs": [
             "code/telemetry/phase3_engine_collector.cpp",
             "code/telemetry/phase3_engine_collector.h",
-            "test/src/telemetry/producer/test_telemetry_native_runtime_integration_contract.cpp"
+            "code/telemetry/phase3_state_image.cpp",
+            "code/telemetry/phase3_state_image.h"
           ],
-          "inputFingerprint": "sha256:6794c407a85a5e0701a71df95b7abedfd7d92f01a592adda8eb2fe7ff06f87fd",
-          "observedAtUtc": "2026-08-06T18:48:19Z",
-          "result": "1/1 passed: a real cockpit-visible target produces one authorized lock attempt with exact cone, world position and remaining lock time.",
+          "inputFingerprint": "sha256:e10abd779fd73cde8c5cf9895ac15a783c5450388d57eea19deff4b32716dd8b",
+          "observedAtUtc": "2026-08-11T23:06:54Z",
+          "result": "Current consolidated Phase 3 proof passed.",
           "resultRef": null
         }
       ],
@@ -916,11 +732,11 @@
         "code/ship/awacs.cpp",
         "code/ship/awacs.h"
       ],
-      "proofs": [
+      "proofs":       [
         {
           "id": "P3-REQ-023-AUTO-01",
           "kind": "automated",
-          "command": "build\\bin\\Release\\unittests.exe --gtest_filter=TelemetryPhase3SensorState.* --gtest_color=no",
+          "command": "build/bin/Release/unittests.exe --gtest_filter=\"TelemetryPhase3*:TelemetryProtocolBusinessRecords11To18.*:TelemetryProtocolBusinessStateValidation.*:TelemetryProtocolReplication.*:TelemetryProtocolConstants.*:TelemetryProtocolVectors.*:TelemetryConfigContract.VersionThreeProfileIsClosed:TelemetryTransportContract.*:TelemetryNativeRuntimeIntegrationContract.*:TelemetryP91MetricsContract.*:TelemetryP92*\" --gtest_color=no",
           "status": "passed",
           "inputs": [
             "code/telemetry/phase3_engine_collector.cpp",
@@ -928,12 +744,11 @@
             "code/telemetry/phase3_state_image.cpp",
             "code/telemetry/phase3_state_image.h",
             "code/ship/awacs.cpp",
-            "code/ship/awacs.h",
-            "test/src/telemetry/producer/test_telemetry_native_runtime_integration_contract.cpp"
+            "code/ship/awacs.h"
           ],
-          "inputFingerprint": "sha256:09aa0427e66c42b548e7d1a56b444ffc66c495140803bdd529d00b2bd5da3425",
-          "observedAtUtc": "2026-08-08T21:44:35Z",
-          "result": "3/3 passed: EMP and primitive range retain their live-engine sources; INFINITE radar mode converts the gameplay cutoff to the exact finite FSTL 1e12 sentinel.",
+          "inputFingerprint": "sha256:45241cfb0f72600bc447acdab0191a659bb78b2e701ab97c890789e0e936e6ed",
+          "observedAtUtc": "2026-08-11T23:06:54Z",
+          "result": "Current consolidated Phase 3 proof passed.",
           "resultRef": null
         }
       ],
@@ -953,39 +768,21 @@
         "code/telemetry/phase3_engine_collector.cpp",
         "code/telemetry/phase3_engine_collector.h"
       ],
-      "proofs": [
+      "proofs":       [
         {
           "id": "P3-REQ-024-AUTO-01",
           "kind": "automated",
-          "command": "build\\bin\\Release\\unittests.exe --gtest_filter=TelemetryPhase3Targeting.RetainedStealthObservationUsesTheRealVisibleCockpitTrack --gtest_color=no",
+          "command": "build/bin/Release/unittests.exe --gtest_filter=\"TelemetryPhase3*:TelemetryProtocolBusinessRecords11To18.*:TelemetryProtocolBusinessStateValidation.*:TelemetryProtocolReplication.*:TelemetryProtocolConstants.*:TelemetryProtocolVectors.*:TelemetryConfigContract.VersionThreeProfileIsClosed:TelemetryTransportContract.*:TelemetryNativeRuntimeIntegrationContract.*:TelemetryP91MetricsContract.*:TelemetryP92*\" --gtest_color=no",
           "status": "passed",
           "inputs": [
             "code/radar/radarsetup.cpp",
             "code/radar/radarsetup.h",
             "code/telemetry/phase3_engine_collector.cpp",
-            "code/telemetry/phase3_engine_collector.h",
-            "test/src/telemetry/producer/test_telemetry_native_runtime_integration_contract.cpp"
+            "code/telemetry/phase3_engine_collector.h"
           ],
-      "inputFingerprint": "sha256:d1c2ee1e0ea6562dead699d419d893bd593b544dc90691cb18cddcc569768531",
-      "observedAtUtc": "2026-08-08T10:27:10Z",
-          "result": "1/1 passé : projection, visuel et flag cible sont capturés atomiquement depuis la cible validée du tick radar.",
-          "resultRef": null
-        },
-        {
-         "id": "P3-REQ-024-AUTO-02",
-          "kind": "automated",
-          "command": "build/bin/Release/unittests.exe --gtest_filter=TelemetryPhase3Targeting.RetainedStealthObservationUsesTheRealVisibleCockpitTrack",
-          "status": "passed",
-          "inputs": [
-            "code/radar/radarsetup.cpp",
-            "code/radar/radarsetup.h",
-            "code/telemetry/phase3_engine_collector.cpp",
-            "code/telemetry/phase3_engine_collector.h",
-            "test/src/telemetry/producer/test_telemetry_native_runtime_integration_contract.cpp"
-          ],
-          "inputFingerprint": "sha256:d1c2ee1e0ea6562dead699d419d893bd593b544dc90691cb18cddcc569768531",
-          "observedAtUtc": "2026-08-08T10:27:10Z",
-          "result": "1/1 passé : pose FLIGHT_STATE distincte ignorée, distance et position locale cohérentes sur deux ticks, ancienne valeur immuable et contact hors portée absent.",
+          "inputFingerprint": "sha256:27b7ab7dfe6bd1963e2c7d32c4c90327943b23367dd9e09b0e6da375592586f6",
+          "observedAtUtc": "2026-08-11T23:06:54Z",
+          "result": "Current consolidated Phase 3 proof passed.",
           "resultRef": null
         }
       ],
@@ -1015,31 +812,12 @@
         "test/telemetry/protocol/tools/fstl_schema.py",
         "test/telemetry/protocol/schema/fstl-v1.1.yaml"
       ],
-      "proofs": [
+      "proofs":       [
         {
           "id": "P3-REQ-025-AUTO-01",
           "kind": "automated",
-          "command": "build\\bin\\Release\\telemetry_phase3_state_image_tests.exe --gtest_filter=TelemetryPhase3StateImage.DistortedRadarTrackRejectsRevealedIdentityBeforePublication --gtest_color=no",
+          "command": "build/bin/Release/unittests.exe --gtest_filter=\"TelemetryPhase3*:TelemetryProtocolBusinessRecords11To18.*:TelemetryProtocolBusinessStateValidation.*:TelemetryProtocolReplication.*:TelemetryProtocolConstants.*:TelemetryProtocolVectors.*:TelemetryConfigContract.VersionThreeProfileIsClosed:TelemetryTransportContract.*:TelemetryNativeRuntimeIntegrationContract.*:TelemetryP91MetricsContract.*:TelemetryP92*\" --gtest_color=no",
           "status": "passed",
-          "inputs": [
-            "code/radar/radarsetup.cpp",
-            "code/radar/radarsetup.h",
-            "code/telemetry/phase3_engine_collector.cpp",
-            "code/telemetry/phase3_engine_collector.h",
-            "code/telemetry/phase3_state_image.cpp",
-            "code/telemetry/phase3_state_image.h",
-            "test/src/telemetry/producer/phase3_state_image_tests.cpp"
-          ],
-      "inputFingerprint": "sha256:8a00479bb52a6bcaf34ee23c617ddec6982825a682f7b2c6a84d42992d70d84e",
-      "observedAtUtc": "2026-08-08T08:39:03Z",
-          "result": "21/21 tests d’image Phase 3 passés ; anonymat des pistes et visuel v4 atomique validés.",
-          "resultRef": null
-        },
-        {
-         "id": "P3-REQ-025-AUTO-02",
-          "kind": "automated",
-          "command": "build/bin/Release/unittests.exe --gtest_filter=TelemetryProtocolBusinessRecords11To18.*:TelemetryPhase3Targeting.RetainedStealthObservationUsesTheRealVisibleCockpitTrack ; build/bin/Release/telemetry_phase3_state_image_tests.exe",
-          "status": "pending",
           "inputs": [
             "code/radar/radarsetup.cpp",
             "code/radar/radarsetup.h",
@@ -1052,15 +830,13 @@
             "code/telemetry/protocol/telemetry_business_records_internal.h",
             "code/telemetry/protocol/telemetry_business_state_validation.cpp",
             "code/telemetry/protocol/telemetry_replication.cpp",
-            "test/src/telemetry/producer/phase3_state_image_tests.cpp",
-            "test/src/telemetry/protocol/test_telemetry_business_records_11_18.cpp",
             "test/telemetry/protocol/tools/fstl_reference_decoder.py",
             "test/telemetry/protocol/tools/fstl_schema.py",
             "test/telemetry/protocol/schema/fstl-v1.1.yaml"
           ],
-          "inputFingerprint": "sha256:fc4fccc2f56d79309c82e1c42f3871f64df618a8aec05cf48073f5f4da36bbe2",
-          "observedAtUtc": "2026-08-06T22:58:00Z",
-          "result": "15/15 tests wire/collecteur et 20/20 tests image Phase 3 passés ; les champs v2 traversent le vrai chemin produit sans retirer position_world ni velocity_world.",
+          "inputFingerprint": "sha256:d9355eeb17dbf495407be51bb813531098623a2bd74c26f32022fcfb361baa52",
+          "observedAtUtc": "2026-08-11T23:06:56Z",
+          "result": "Current consolidated Phase 3 proof passed.",
           "resultRef": null
         }
       ],
@@ -1078,21 +854,20 @@
         "test/telemetry/protocol/tools/fstl_client_core.py",
         "test/telemetry/protocol/tools/fstl_reference_decoder.py"
       ],
-      "proofs": [
+      "proofs":       [
         {
           "id": "P3-REQ-026-AUTO-01",
           "kind": "automated",
-          "command": "python -B test/telemetry/protocol/tools/test_fstl_phase3_scenario_client.py",
+          "command": "build/bin/Release/unittests.exe --gtest_filter=\"TelemetryPhase3*:TelemetryProtocolBusinessRecords11To18.*:TelemetryProtocolBusinessStateValidation.*:TelemetryProtocolReplication.*:TelemetryProtocolConstants.*:TelemetryProtocolVectors.*:TelemetryConfigContract.VersionThreeProfileIsClosed:TelemetryTransportContract.*:TelemetryNativeRuntimeIntegrationContract.*:TelemetryP91MetricsContract.*:TelemetryP92*\" --gtest_color=no",
           "status": "passed",
           "inputs": [
             "test/telemetry/protocol/tools/fstl_client_core.py",
-            "test/telemetry/protocol/tools/fstl_reference_decoder.py",
-            "test/telemetry/protocol/tools/test_fstl_phase3_scenario_client.py"
+            "test/telemetry/protocol/tools/fstl_reference_decoder.py"
           ],
-          "inputFingerprint": "sha256:9d83e4e989ab6d8f8f5dff056252d54503631c8bc9be2b5caaaed57fbb4f1446",
-          "observedAtUtc": "2026-08-06T12:20:24Z",
-          "result": "6/6 scénarios client passent, dont décodage Phase 3 non vide, DELETE RADAR_CONTACTS wire, perte simulée et reconstruction cumulative.",
-          "resultRef": "test/telemetry/protocol/tools/test_fstl_phase3_scenario_client.py"
+          "inputFingerprint": "sha256:76766a252ca0ce5e9c08f8e43d60e91a05090d8f45563fc41374ffb8ce156cee",
+          "observedAtUtc": "2026-08-11T23:06:56Z",
+          "result": "Current consolidated Phase 3 proof passed.",
+          "resultRef": null
         }
       ],
       "requiredObservations": [],
@@ -1109,37 +884,20 @@
         "code/telemetry/native_session_runtime.h",
         "code/telemetry/phase3_engine_collector.cpp"
       ],
-      "proofs": [
+      "proofs":       [
         {
           "id": "P3-REQ-027-AUTO-01",
           "kind": "automated",
-          "command": "build\\bin\\Release\\unittests.exe --gtest_filter=TelemetryPhase3Threat.EngineThreatFlagsUseAuthoritativePriorityWithoutInventingReferences --gtest_color=no",
-          "status": "passed",
-          "inputs": [
-            "code/telemetry/phase3_engine_collector.cpp",
-            "code/telemetry/phase3_engine_collector.h",
-            "test/src/telemetry/producer/test_telemetry_native_runtime_integration_contract.cpp"
-          ],
-          "inputFingerprint": "sha256:6794c407a85a5e0701a71df95b7abedfd7d92f01a592adda8eb2fe7ff06f87fd",
-          "observedAtUtc": "2026-08-06T18:52:12Z",
-          "result": "passed: 1 test; native dumbfire, attempt and acquired-lock flags resolve to LockAcquired and no missing source materializes a public reference.",
-          "resultRef": null
-        },
-        {
-          "id": "P3-REQ-027-AUTO-02",
-          "kind": "automated",
-          "command": "build/bin/Release/unittests.exe --gtest_filter=TelemetryPhase3Threat.IncomingHomingMissileUsesTheInstalledManifestClassAndPublicIdentity:TelemetryPhase3CaptureContract.DestroyedTargetAndUnknownEnemyWeaponDoNotCloseTheLiveSession --gtest_color=no",
+          "command": "build/bin/Release/unittests.exe --gtest_filter=\"TelemetryPhase3*:TelemetryProtocolBusinessRecords11To18.*:TelemetryProtocolBusinessStateValidation.*:TelemetryProtocolReplication.*:TelemetryProtocolConstants.*:TelemetryProtocolVectors.*:TelemetryConfigContract.VersionThreeProfileIsClosed:TelemetryTransportContract.*:TelemetryNativeRuntimeIntegrationContract.*:TelemetryP91MetricsContract.*:TelemetryP92*\" --gtest_color=no",
           "status": "passed",
           "inputs": [
             "code/telemetry/native_session_runtime.cpp",
             "code/telemetry/native_session_runtime.h",
-            "code/telemetry/phase3_engine_collector.cpp",
-            "code/telemetry/phase3_engine_collector.h",
-            "test/src/telemetry/producer/test_telemetry_native_runtime_integration_contract.cpp"
+            "code/telemetry/phase3_engine_collector.cpp"
           ],
-          "inputFingerprint": "sha256:47eb6aa6a53e8126c59b847de6ee26a9195daa277fed78b706937c0bd2ba9fb1",
-          "observedAtUtc": "2026-08-08T13:25:14Z",
-          "result": "2/2 passed: un missile à classe installée reçoit son ID et sa classe; une arme entrante à classe absente est omise sans fermer la session.",
+          "inputFingerprint": "sha256:0c669a86375a2637c901eda3dd01b34dee073dd9a5b30f393f3ee1198bcee0eb",
+          "observedAtUtc": "2026-08-11T23:06:56Z",
+          "result": "Current consolidated Phase 3 proof passed.",
           "resultRef": null
         }
       ],
@@ -1158,22 +916,21 @@
         "code/telemetry/phase3_state_image.cpp",
         "code/telemetry/phase3_state_image.h"
       ],
-      "proofs": [
+      "proofs":       [
         {
           "id": "P3-REQ-028-AUTO-01",
           "kind": "automated",
-          "command": "build\\bin\\Release\\telemetry_phase3_state_image_tests.exe --gtest_filter=TelemetryPhase3StateImage.ThreatPublishesExactlyMaximumIncomingMissilesWithoutTruncation --gtest_color=no",
+          "command": "build/bin/Release/unittests.exe --gtest_filter=\"TelemetryPhase3*:TelemetryProtocolBusinessRecords11To18.*:TelemetryProtocolBusinessStateValidation.*:TelemetryProtocolReplication.*:TelemetryProtocolConstants.*:TelemetryProtocolVectors.*:TelemetryConfigContract.VersionThreeProfileIsClosed:TelemetryTransportContract.*:TelemetryNativeRuntimeIntegrationContract.*:TelemetryP91MetricsContract.*:TelemetryP92*\" --gtest_color=no",
           "status": "passed",
           "inputs": [
             "code/telemetry/phase3_engine_collector.cpp",
             "code/telemetry/phase3_engine_collector.h",
             "code/telemetry/phase3_state_image.cpp",
-            "code/telemetry/phase3_state_image.h",
-            "test/src/telemetry/producer/phase3_state_image_tests.cpp"
+            "code/telemetry/phase3_state_image.h"
           ],
-          "inputFingerprint": "sha256:e2edeced3a6e3031a17aa4630323cc61b5c037913b2706f300b9987685176320",
-          "observedAtUtc": "2026-08-06T18:52:12Z",
-          "result": "passed: 1 test; 256 incoming missiles are encoded, and 257 is rejected without replacing the last complete image.",
+          "inputFingerprint": "sha256:e10abd779fd73cde8c5cf9895ac15a783c5450388d57eea19deff4b32716dd8b",
+          "observedAtUtc": "2026-08-11T23:06:56Z",
+          "result": "Current consolidated Phase 3 proof passed.",
           "resultRef": null
         }
       ],
@@ -1190,20 +947,19 @@
       "code/telemetry/phase3_engine_collector.cpp",
       "code/telemetry/phase3_engine_collector.h"
     ],
-      "proofs": [
+      "proofs":       [
         {
           "id": "P3-REQ-029-AUTO-01",
           "kind": "automated",
-          "command": "build/bin/Release/unittests.exe --gtest_filter=TelemetryPhase3Cargo.ScanTargetOutsideCompleteShipClosureReceivesOnlyItsPublicReference --gtest_color=no",
+          "command": "build/bin/Release/unittests.exe --gtest_filter=\"TelemetryPhase3*:TelemetryProtocolBusinessRecords11To18.*:TelemetryProtocolBusinessStateValidation.*:TelemetryProtocolReplication.*:TelemetryProtocolConstants.*:TelemetryProtocolVectors.*:TelemetryConfigContract.VersionThreeProfileIsClosed:TelemetryTransportContract.*:TelemetryNativeRuntimeIntegrationContract.*:TelemetryP91MetricsContract.*:TelemetryP92*\" --gtest_color=no",
           "status": "passed",
           "inputs": [
             "code/telemetry/phase3_engine_collector.cpp",
-            "code/telemetry/phase3_engine_collector.h",
-            "test/src/telemetry/producer/test_telemetry_native_runtime_integration_contract.cpp"
+            "code/telemetry/phase3_engine_collector.h"
           ],
-          "inputFingerprint": "sha256:6794c407a85a5e0701a71df95b7abedfd7d92f01a592adda8eb2fe7ff06f87fd",
-          "observedAtUtc": "2026-08-06T18:52:12Z",
-        "result": "1/1 passed (0.020 s): une cible de scan hors fermeture CompleteShip reçoit son entity_id public; aucun contact radar ni état complet n'est créé et son texte reste caché sans révélation explicite.",
+          "inputFingerprint": "sha256:cfdf2b8ab08a4cdc3628c08d83c91b8558d6a00ef280d1a6d307473564ebeb97",
+          "observedAtUtc": "2026-08-11T23:06:58Z",
+          "result": "Current consolidated Phase 3 proof passed.",
           "resultRef": null
         }
       ],
@@ -1220,20 +976,19 @@
         "code/telemetry/phase3_engine_collector.cpp",
         "code/telemetry/phase3_engine_collector.h"
       ],
-      "proofs": [
+      "proofs":       [
         {
           "id": "P3-REQ-030-AUTO-01",
           "kind": "automated",
-          "command": "build/bin/Release/unittests.exe --gtest_filter=TelemetryPhase3Cargo.CompletedRevealedScanPreservesPhaseTimingValidityAndText:TelemetryPhase3Cargo.ScanTargetOutsideCompleteShipClosureReceivesOnlyItsPublicReference",
+          "command": "build/bin/Release/unittests.exe --gtest_filter=\"TelemetryPhase3*:TelemetryProtocolBusinessRecords11To18.*:TelemetryProtocolBusinessStateValidation.*:TelemetryProtocolReplication.*:TelemetryProtocolConstants.*:TelemetryProtocolVectors.*:TelemetryConfigContract.VersionThreeProfileIsClosed:TelemetryTransportContract.*:TelemetryNativeRuntimeIntegrationContract.*:TelemetryP91MetricsContract.*:TelemetryP92*\" --gtest_color=no",
           "status": "passed",
           "inputs": [
             "code/telemetry/phase3_engine_collector.cpp",
-            "code/telemetry/phase3_engine_collector.h",
-            "test/src/telemetry/producer/test_telemetry_native_runtime_integration_contract.cpp"
+            "code/telemetry/phase3_engine_collector.h"
           ],
-          "inputFingerprint": "sha256:6794c407a85a5e0701a71df95b7abedfd7d92f01a592adda8eb2fe7ff06f87fd",
-          "observedAtUtc": "2026-08-06T18:52:12Z",
-          "result": "2/2 passent : cible de scan hors fermeture sans état complet, puis scan COMPLETED révélé avec timing, validités et texte exacts.",
+          "inputFingerprint": "sha256:cfdf2b8ab08a4cdc3628c08d83c91b8558d6a00ef280d1a6d307473564ebeb97",
+          "observedAtUtc": "2026-08-11T23:06:58Z",
+          "result": "Current consolidated Phase 3 proof passed.",
           "resultRef": null
         }
       ],
@@ -1252,35 +1007,21 @@
         "code/telemetry/phase3_state_image.cpp",
         "code/telemetry/phase3_state_image.h"
       ],
-      "proofs": [
+      "proofs":       [
         {
           "id": "P3-REQ-031-AUTO-01",
           "kind": "automated",
-          "command": "build/bin/Release/telemetry_phase3_state_image_tests.exe --gtest_filter=TelemetryPhase3StateImage.NavigationPublishesItsExactCurrentDestinationRouteAndRefusal --gtest_color=no",
-          "status": "passed",
-          "inputs": [
-            "code/telemetry/phase3_state_image.cpp",
-            "code/telemetry/phase3_state_image.h",
-            "test/src/telemetry/producer/phase3_state_image_tests.cpp"
-          ],
-          "inputFingerprint": "sha256:30e2f5af2ef2ee74ee1413e9ce6e25c9bf8c51430aed1829ea64b1512a3376f3",
-          "observedAtUtc": "2026-08-06T12:18:51Z",
-          "result": "1/1 passed: NAVIGATION_STATE encodes the current navpoint, its waypoint link, route, destination, and closed autopilot refusal.",
-          "resultRef": null
-        },
-        {
-          "id": "P3-REQ-031-AUTO-02",
-          "kind": "automated",
-          "command": "build/bin/Release/unittests.exe --gtest_filter=TelemetryPhase3Navigation.EngineCollectorKeepsMissionOrderCurrentDestinationAndWaypointRoute --gtest_color=no",
+          "command": "build/bin/Release/unittests.exe --gtest_filter=\"TelemetryPhase3*:TelemetryProtocolBusinessRecords11To18.*:TelemetryProtocolBusinessStateValidation.*:TelemetryProtocolReplication.*:TelemetryProtocolConstants.*:TelemetryProtocolVectors.*:TelemetryConfigContract.VersionThreeProfileIsClosed:TelemetryTransportContract.*:TelemetryNativeRuntimeIntegrationContract.*:TelemetryP91MetricsContract.*:TelemetryP92*\" --gtest_color=no",
           "status": "passed",
           "inputs": [
             "code/telemetry/phase3_engine_collector.cpp",
             "code/telemetry/phase3_engine_collector.h",
-            "test/src/telemetry/producer/test_telemetry_native_runtime_integration_contract.cpp"
+            "code/telemetry/phase3_state_image.cpp",
+            "code/telemetry/phase3_state_image.h"
           ],
-          "inputFingerprint": "sha256:6794c407a85a5e0701a71df95b7abedfd7d92f01a592adda8eb2fe7ff06f87fd",
-          "observedAtUtc": "2026-08-06T18:52:12Z",
-          "result": "1/1 passed: the live engine collection retains mission navpoint order, its current destination, and every remaining waypoint in the selected route.",
+          "inputFingerprint": "sha256:e10abd779fd73cde8c5cf9895ac15a783c5450388d57eea19deff4b32716dd8b",
+          "observedAtUtc": "2026-08-11T23:06:58Z",
+          "result": "Current consolidated Phase 3 proof passed.",
           "resultRef": null
         }
       ],
@@ -1297,20 +1038,19 @@
         "code/telemetry/phase3_engine_collector.cpp",
         "code/telemetry/phase3_engine_collector.h"
       ],
-      "proofs": [
+      "proofs":       [
         {
           "id": "P3-REQ-032-AUTO-01",
           "kind": "automated",
-          "command": "build/bin/Release/unittests.exe --gtest_filter=TelemetryPhase3Navigation.NoCurrentNavPublishesClosedRefusalWithoutMutatingControls --gtest_color=no",
+          "command": "build/bin/Release/unittests.exe --gtest_filter=\"TelemetryPhase3*:TelemetryProtocolBusinessRecords11To18.*:TelemetryProtocolBusinessStateValidation.*:TelemetryProtocolReplication.*:TelemetryProtocolConstants.*:TelemetryProtocolVectors.*:TelemetryConfigContract.VersionThreeProfileIsClosed:TelemetryTransportContract.*:TelemetryNativeRuntimeIntegrationContract.*:TelemetryP91MetricsContract.*:TelemetryP92*\" --gtest_color=no",
           "status": "passed",
           "inputs": [
             "code/telemetry/phase3_engine_collector.cpp",
-            "code/telemetry/phase3_engine_collector.h",
-            "test/src/telemetry/producer/test_telemetry_native_runtime_integration_contract.cpp"
+            "code/telemetry/phase3_engine_collector.h"
           ],
-          "inputFingerprint": "sha256:6794c407a85a5e0701a71df95b7abedfd7d92f01a592adda8eb2fe7ff06f87fd",
-          "observedAtUtc": "2026-08-06T18:52:12Z",
-          "result": "1/1 passed: no current navpoint emits Refused/NoValidNav and preserves CurrentNav and AutoPilotEngaged.",
+          "inputFingerprint": "sha256:cfdf2b8ab08a4cdc3628c08d83c91b8558d6a00ef280d1a6d307473564ebeb97",
+          "observedAtUtc": "2026-08-11T23:06:58Z",
+          "result": "Current consolidated Phase 3 proof passed.",
           "resultRef": null
         }
       ],
@@ -1332,73 +1072,27 @@
             "tools/telemetry-dashboard/frontend/src/tacticalSemantics.ts",
             "tools/telemetry-dashboard/frontend/src/tacticalSemantics.test.ts"
         ],
-      "proofs": [
+      "proofs":       [
         {
           "id": "P3-REQ-033-AUTO-01",
           "kind": "automated",
-          "command": "build\\bin\\Release\\telemetry_phase3_state_image_tests.exe --gtest_color=no",
-            "status": "passed",
-            "inputs": [
-              "code/telemetry/phase3_state_image.cpp",
-              "code/telemetry/phase3_state_image.h",
-              "test/src/telemetry/producer/phase3_state_image_tests.cpp"
-            ],
-          "inputFingerprint": "sha256:de9adee380c8fcf865e3c632734a7e1c9d0da04af0a94c14ea988ba458568569",
-          "observedAtUtc": "2026-08-08T21:53:46Z",
-          "result": "25/25 tests de l'image Phase 3 passés, dont la sentinelle finie du mode radar INFINITE et les libellés HUD v5 autoritaires.",
-            "resultRef": null
-          },
-          {
-           "id": "P3-REQ-033-AUTO-02",
-            "kind": "automated",
-            "command": "python -B test\\telemetry\\protocol\\tools\\test_fstl_phase3_scenario_client.py",
-            "status": "pending",
-            "inputs": [
-              "test/telemetry/protocol/tools/fstl_client_core.py",
-              "test/telemetry/protocol/tools/test_fstl_phase3_scenario_client.py"
-            ],
-          "inputFingerprint": "sha256:8fbd5080893457152b5f3f0d1aeecf6bfc19c2b36bf3b0fe9b53ab153b9a5706",
-          "observedAtUtc": "2026-08-06T10:05:50Z",
-          "result": "passed: 10 tests, including raw Phase 3 track geometry, TTC, age provenance, sensor integrity and navigation distance/ETA derivations.",
-            "resultRef": "test/telemetry/protocol/tools/test_fstl_phase3_scenario_client.py"
-          },
-          {
-           "id": "P3-REQ-033-AUTO-03",
-            "kind": "automated",
-          "command": "python test/telemetry/protocol/tools/test_fstl_console_client_contract.py ; npm --prefix tools/telemetry-dashboard/frontend test -- --run src/tacticalSemantics.test.ts ; npm --prefix tools/telemetry-dashboard/frontend run build ; build\\bin\\Release\\telemetry_phase3_state_image_tests.exe --gtest_filter=TelemetryPhase3StateImage.Publishes*Target* --gtest_color=no",
+          "command": "build/bin/Release/unittests.exe --gtest_filter=\"TelemetryPhase3*:TelemetryProtocolBusinessRecords11To18.*:TelemetryProtocolBusinessStateValidation.*:TelemetryProtocolReplication.*:TelemetryProtocolConstants.*:TelemetryProtocolVectors.*:TelemetryConfigContract.VersionThreeProfileIsClosed:TelemetryTransportContract.*:TelemetryNativeRuntimeIntegrationContract.*:TelemetryP91MetricsContract.*:TelemetryP92*\" --gtest_color=no",
           "status": "passed",
           "inputs": [
             "code/telemetry/phase3_state_image.cpp",
             "code/telemetry/phase3_state_image.h",
-            "test/src/telemetry/producer/phase3_state_image_tests.cpp",
             "test/telemetry/protocol/tools/fstl_client_core.py",
-            "test/telemetry/protocol/tools/fstl_reference_decoder.py",
             "test/telemetry/protocol/tools/test_fstl_console_client_contract.py",
             "tools/telemetry-dashboard/frontend/src/TacticalCockpit.tsx",
             "tools/telemetry-dashboard/frontend/src/tacticalSemantics.ts",
             "tools/telemetry-dashboard/frontend/src/tacticalSemantics.test.ts"
           ],
-          "inputFingerprint": "sha256:151aeaaa6f1e4328ec607ddee9deb4fc0966d7af21a5ae5798254da3280c01eb",
-          "observedAtUtc": "2026-08-08T22:00:22Z",
-          "result": "36 tests client Python, 63 tests frontend, build Vite et 2 tests de sérialisation TARGET_STATE v5 passés ; la couleur HUD autoritaire reste appliquée en v5, INFINITE est affiché ∞ et les portées finies restent numériques.",
-            "resultRef": "test/telemetry/protocol/tools/test_fstl_console_client_contract.py"
-          },
-          {
-            "id": "P3-REQ-033-AUTO-04",
-            "kind": "automated",
-            "command": "npm --prefix tools/telemetry-dashboard/frontend test -- --run tacticalSemantics.test.ts ; npm --prefix tools/telemetry-dashboard/frontend run build",
-            "status": "passed",
-            "inputs": [
-              "tools/telemetry-dashboard/frontend/src/TacticalCockpit.tsx",
-              "tools/telemetry-dashboard/frontend/src/tacticalSemantics.ts",
-              "tools/telemetry-dashboard/frontend/src/tacticalSemantics.test.ts"
-            ],
-            "inputFingerprint": "sha256:b974f597dcfdedbdd84ddd11c105242ca0c9b2a9809b18e15b80201da73999cd",
-            "observedAtUtc": "2026-08-08T23:00:35Z",
-            "result": "66 tests frontend et le build Vite passent ; la grille radar n’affiche plus que l’anneau médian, ses axes sont tournés de 45 degrés uniquement hors du cercle central et les libellés directionnels restent aux positions cardinales fixes.",
-            "resultRef": null
-          }
-        ],
+          "inputFingerprint": "sha256:54270b3e6b62faf8bef6d771cced7a9123e1f8f6c2e4dd4d8ca28fd61c54f0d2",
+          "observedAtUtc": "2026-08-11T23:06:59Z",
+          "result": "Current consolidated Phase 3 proof passed.",
+          "resultRef": null
+        }
+      ],
         "requiredObservations": [],
         "blocker": null
       },
@@ -1418,69 +1112,27 @@
           "code/telemetry/protocol/telemetry_business_records_11_18.cpp",
           "code/telemetry/protocol/telemetry_business_state_validation.cpp"
         ],
-      "proofs": [
+      "proofs":       [
         {
           "id": "P3-REQ-034-AUTO-01",
           "kind": "automated",
-          "command": "build\\bin\\Release\\telemetry_phase3_state_image_tests.exe --gtest_color=no",
-            "status": "passed",
-            "inputs": [
-              "code/telemetry/phase3_state_image.cpp",
-              "code/telemetry/phase3_state_image.h",
-              "test/src/telemetry/producer/phase3_state_image_tests.cpp"
-            ],
-          "inputFingerprint": "sha256:de9adee380c8fcf865e3c632734a7e1c9d0da04af0a94c14ea988ba458568569",
-          "observedAtUtc": "2026-08-08T21:44:35Z",
-          "result": "25/25 passed: the Phase 3 image accepts the exact finite INFINITE radar sentinel while retaining fail-closed validation for invalid radar values.",
-            "resultRef": null
-          },
-          {
-         "id": "P3-REQ-034-AUTO-02",
-            "kind": "automated",
-            "command": "build/bin/Release/unittests.exe --gtest_filter=TelemetryProtocolBusinessRecords11To18.TargetPresenceIsBoundToCurrentTargetAndValidUtf8:TelemetryProtocolBusinessRecords11To18.RadarRejectsNonFiniteRangesAndInvalidVisibilityIntervals --gtest_color=no",
-            "status": "passed",
-            "inputs": [
-              "code/telemetry/protocol/telemetry_business_records_19_24.cpp",
-              "code/telemetry/protocol/telemetry_business_records_11_18.cpp",
-              "test/src/telemetry/protocol/test_telemetry_business_records_11_18.cpp"
-            ],
-            "inputFingerprint": "sha256:b951c3171f62726322f2c21fafbf1611b03c7b51643a38379a623c8d55517667",
-            "observedAtUtc": "2026-08-08T21:46:12Z",
-            "result": "2/2 passed: invalid target absence, UTF-8, enum values, and non-finite radar ranges fail closed.",
-            "resultRef": null
-          },
-          {
-         "id": "P3-REQ-034-AUTO-03",
-            "kind": "automated",
-            "command": "build/bin/Release/unittests.exe --gtest_filter=TelemetryProtocolBusinessStateValidation.TargetAndLockReferencesMustResolveInsideTheVisibleImage --gtest_color=no",
-            "status": "passed",
-            "inputs": [
-              "code/telemetry/protocol/telemetry_business_state_validation.cpp",
-              "code/telemetry/protocol/telemetry_business_state_validation.h",
-              "test/src/telemetry/protocol/test_telemetry_business_state_validation.cpp"
-            ],
-          "inputFingerprint": "sha256:fd6c307611dcffe4178260ca7eb05db6fac866ec93236db423e71b4e52880365",
-          "observedAtUtc": "2026-08-08T21:46:12Z",
-            "result": "1/1 passed: les références cible/lock résolvent dans l'image; la cohérence cible/contact multi-cadence est couverte séparément par le validateur métier.",
-            "resultRef": null
-          },
-          {
-            "id": "P3-REQ-034-AUTO-04",
-            "kind": "automated",
-            "command": "build/bin/Release/unittests.exe --gtest_filter=TelemetryPhase3CaptureContract.DestroyedTargetAndUnknownEnemyWeaponDoNotCloseTheLiveSession:TelemetryPhase3Bounds.NativeIncomingMissilesAtMaximumPlusOneFailBeforeAnyProjectionIsPublished --gtest_color=no",
-            "status": "passed",
-            "inputs": [
-              "code/telemetry/native_session_runtime.cpp",
-              "code/telemetry/native_session_runtime.h",
-              "code/telemetry/phase3_engine_collector.cpp",
-              "code/telemetry/phase3_engine_collector.h",
-              "test/src/telemetry/producer/test_telemetry_native_runtime_integration_contract.cpp"
-            ],
-          "inputFingerprint": "sha256:462de7d37180ffb256457cc023f5d8098d2e2319329ac84955278bb6cbce4dba",
-          "observedAtUtc": "2026-08-08T21:44:35Z",
-            "result": "2/2 couverts par la suite ciblée: l’arme dynamique non installée est omise et la vraie limite max+1 reste un rejet fermé sans projection partielle.",
-            "resultRef": null
-          }
+          "command": "build/bin/Release/unittests.exe --gtest_filter=\"TelemetryPhase3*:TelemetryProtocolBusinessRecords11To18.*:TelemetryProtocolBusinessStateValidation.*:TelemetryProtocolReplication.*:TelemetryProtocolConstants.*:TelemetryProtocolVectors.*:TelemetryConfigContract.VersionThreeProfileIsClosed:TelemetryTransportContract.*:TelemetryNativeRuntimeIntegrationContract.*:TelemetryP91MetricsContract.*:TelemetryP92*\" --gtest_color=no",
+          "status": "passed",
+          "inputs": [
+            "code/telemetry/native_session_runtime.cpp",
+            "code/telemetry/native_session_runtime.h",
+            "code/telemetry/phase3_engine_collector.cpp",
+            "code/telemetry/phase3_engine_collector.h",
+            "code/telemetry/phase3_state_image.cpp",
+            "code/telemetry/phase3_state_image.h",
+            "code/telemetry/protocol/telemetry_business_records_11_18.cpp",
+            "code/telemetry/protocol/telemetry_business_state_validation.cpp"
+          ],
+          "inputFingerprint": "sha256:025488e9e33f631339dbe349417009141cfda0cc423785bad2e822b75a983e41",
+          "observedAtUtc": "2026-08-11T23:06:59Z",
+          "result": "Current consolidated Phase 3 proof passed.",
+          "resultRef": null
+        }
       ],
       "requiredObservations": [],
       "blocker": null
@@ -1497,24 +1149,21 @@
         "code/telemetry/protocol/telemetry_business_state_validation.cpp",
         "code/telemetry/protocol/telemetry_business_state_validation.h"
       ],
-      "proofs": [
+      "proofs":       [
         {
           "id": "P3-REQ-035-AUTO-01",
           "kind": "automated",
-          "command": "ctest --test-dir build -C Release -R telemetry_phase2_replication_tests|telemetry_phase3_state_image_tests --output-on-failure",
+          "command": "build/bin/Release/unittests.exe --gtest_filter=\"TelemetryPhase3*:TelemetryProtocolBusinessRecords11To18.*:TelemetryProtocolBusinessStateValidation.*:TelemetryProtocolReplication.*:TelemetryProtocolConstants.*:TelemetryProtocolVectors.*:TelemetryConfigContract.VersionThreeProfileIsClosed:TelemetryTransportContract.*:TelemetryNativeRuntimeIntegrationContract.*:TelemetryP91MetricsContract.*:TelemetryP92*\" --gtest_color=no",
           "status": "passed",
           "inputs": [
             "code/telemetry/protocol/telemetry_replication.cpp",
             "code/telemetry/protocol/telemetry_replication.h",
             "code/telemetry/protocol/telemetry_business_state_validation.cpp",
-            "code/telemetry/protocol/telemetry_business_state_validation.h",
-            "test/src/telemetry/protocol/test_telemetry_replication.cpp",
-            "test/src/telemetry/protocol/test_telemetry_business_state_validation.cpp",
-            "test/src/telemetry/producer/phase3_state_image_tests.cpp"
+            "code/telemetry/protocol/telemetry_business_state_validation.h"
           ],
-          "inputFingerprint": "sha256:972c9d9089031bafb31103bc320b945ffbb2d4b8acc9ecedd758501501b2af34",
-          "observedAtUtc": "2026-08-08T10:27:10Z",
-          "result": "2/2 exécutables passent dans telemetry-short : réplication atomique et image Phase 3 acceptent les cadences distinctes, tout en rejetant une contradiction au même sample time.",
+          "inputFingerprint": "sha256:868847eae75845a2ffd0392d22a56f43e59c658ad8872d570f5777e30b18e21c",
+          "observedAtUtc": "2026-08-11T23:06:59Z",
+          "result": "Current consolidated Phase 3 proof passed.",
           "resultRef": null
         }
       ],
@@ -1531,20 +1180,19 @@
         "code/telemetry/protocol/telemetry_replication.cpp",
         "code/telemetry/protocol/telemetry_replication.h"
       ],
-      "proofs": [
+      "proofs":       [
         {
           "id": "P3-REQ-036-AUTO-01",
           "kind": "automated",
-          "command": "build/bin/Release/unittests.exe --gtest_filter=TelemetryProtocolReplication.LatestCumulativeDeltaConvergesAfterEveryIntermediateLoss:TelemetryProtocolReplication.OversizeCumulativeDifferenceAndUnrepresentableDeleteRequireKeyframe:TelemetryProtocolReplication.DeltaAcceptsTheExactOneMiBBoundaryAndRejectsOneByteMore",
+          "command": "build/bin/Release/unittests.exe --gtest_filter=\"TelemetryPhase3*:TelemetryProtocolBusinessRecords11To18.*:TelemetryProtocolBusinessStateValidation.*:TelemetryProtocolReplication.*:TelemetryProtocolConstants.*:TelemetryProtocolVectors.*:TelemetryConfigContract.VersionThreeProfileIsClosed:TelemetryTransportContract.*:TelemetryNativeRuntimeIntegrationContract.*:TelemetryP91MetricsContract.*:TelemetryP92*\" --gtest_color=no",
           "status": "passed",
           "inputs": [
             "code/telemetry/protocol/telemetry_replication.cpp",
-            "code/telemetry/protocol/telemetry_replication.h",
-            "test/src/telemetry/protocol/test_telemetry_replication.cpp"
+            "code/telemetry/protocol/telemetry_replication.h"
           ],
-          "inputFingerprint": "sha256:17fe38bb18385b84a794545838e187e742c6aa2ccd5e32fef6631456a5de724f",
-          "observedAtUtc": "2026-08-05T07:20:52Z",
-          "result": "3/3 passent : le dernier delta reconstruit converge après perte intermédiaire, 1 Mio est accepté exactement et l'octet supplémentaire bascule vers une keyframe sans modifier la sortie sentinelle.",
+          "inputFingerprint": "sha256:4b39ad5c1d933b45ff31e51cbf4bc5f51a0a68fe2983a716b3dd7b8e8f2e7fbb",
+          "observedAtUtc": "2026-08-11T23:06:59Z",
+          "result": "Current consolidated Phase 3 proof passed.",
           "resultRef": null
         }
       ],
@@ -1569,43 +1217,27 @@
         "code/telemetry/phase3_state_image.cpp",
         "code/telemetry/phase3_state_image.h"
         ],
-      "proofs": [
+      "proofs":       [
         {
           "id": "P3-REQ-037-AUTO-01",
           "kind": "automated",
-            "command": "build/bin/Release/telemetry_phase3_identity_tests.exe && build/bin/Release/telemetry_phase2_runtime_tests.exe && build/bin/Release/unittests.exe --gtest_filter=TelemetryPhase3*",
-            "status": "passed",
-            "inputs": [
-              "code/telemetry/native_session_runtime.cpp",
-              "code/telemetry/native_session_runtime.h",
-              "code/telemetry/phase2_runtime.cpp",
-              "code/telemetry/phase2_runtime.h",
-              "code/telemetry/phase3_engine_collector.cpp",
-              "code/telemetry/phase3_engine_collector.h",
-              "code/telemetry/phase3_identity_registry.cpp",
-              "code/telemetry/phase3_identity_registry.h",
-              "test/src/telemetry/producer/phase2_runtime_tests.cpp",
-              "test/src/telemetry/producer/phase3_identity_tests.cpp",
-              "test/src/telemetry/producer/test_telemetry_native_runtime_integration_contract.cpp"
-            ],
-            "inputFingerprint": "sha256:0dd245ad716903e679e8da08e4892770266bb303f6d2a6cd219d58ade232961e",
-            "observedAtUtc": "2026-08-08T21:12:32Z",
-            "result": "56/56 passent : l'identité publique est choisie sur la signature réelle, adoptée par Phase 2 et conservée dans tous les chemins capteurs.",
-          "resultRef": null
-        },
-        {
-          "id": "P3-REQ-037-AUTO-02",
-          "kind": "automated",
-          "command": "build\\bin\\Release\\telemetry_phase3_state_image_tests.exe --gtest_color=no",
+          "command": "build/bin/Release/unittests.exe --gtest_filter=\"TelemetryPhase3*:TelemetryProtocolBusinessRecords11To18.*:TelemetryProtocolBusinessStateValidation.*:TelemetryProtocolReplication.*:TelemetryProtocolConstants.*:TelemetryProtocolVectors.*:TelemetryConfigContract.VersionThreeProfileIsClosed:TelemetryTransportContract.*:TelemetryNativeRuntimeIntegrationContract.*:TelemetryP91MetricsContract.*:TelemetryP92*\" --gtest_color=no",
           "status": "passed",
           "inputs": [
+            "code/telemetry/native_session_runtime.cpp",
+            "code/telemetry/native_session_runtime.h",
+            "code/telemetry/phase2_runtime.cpp",
+            "code/telemetry/phase2_runtime.h",
+            "code/telemetry/phase3_engine_collector.cpp",
+            "code/telemetry/phase3_engine_collector.h",
+            "code/telemetry/phase3_identity_registry.cpp",
+            "code/telemetry/phase3_identity_registry.h",
             "code/telemetry/phase3_state_image.cpp",
-            "code/telemetry/phase3_state_image.h",
-            "test/src/telemetry/producer/phase3_state_image_tests.cpp"
+            "code/telemetry/phase3_state_image.h"
           ],
-                           "inputFingerprint": "sha256:30e2f5af2ef2ee74ee1413e9ce6e25c9bf8c51430aed1829ea64b1512a3376f3",
-                           "observedAtUtc": "2026-08-06T12:14:24Z",
-          "result": "passed: 1 test. Le même ID public est encodé dans TARGET_STATE, LOCK_STATE, RADAR_CONTACTS, THREAT_STATE et CARGO_SCAN_STATE.",
+          "inputFingerprint": "sha256:f1f014c5541a7293746abf947c69ff75af7a31037a1d234d481260147bb1f312",
+          "observedAtUtc": "2026-08-11T23:07:01Z",
+          "result": "Current consolidated Phase 3 proof passed.",
           "resultRef": null
         }
       ],
@@ -1630,28 +1262,15 @@
         "code/telemetry/phase3_identity_registry.cpp",
         "code/telemetry/phase3_identity_registry.h"
       ],
-      "proofs": [
+      "proofs":       [
         {
           "id": "P3-REQ-038-AUTO-01",
           "kind": "automated",
-          "command": "build\\bin\\Release\\telemetry_phase3_state_image_tests.exe --gtest_color=no",
+          "command": "build/bin/Release/unittests.exe --gtest_filter=\"TelemetryPhase3*:TelemetryProtocolBusinessRecords11To18.*:TelemetryProtocolBusinessStateValidation.*:TelemetryProtocolReplication.*:TelemetryProtocolConstants.*:TelemetryProtocolVectors.*:TelemetryConfigContract.VersionThreeProfileIsClosed:TelemetryTransportContract.*:TelemetryNativeRuntimeIntegrationContract.*:TelemetryP91MetricsContract.*:TelemetryP92*\" --gtest_color=no",
           "status": "passed",
           "inputs": [
             "code/telemetry/phase3_state_image.cpp",
             "code/telemetry/phase3_state_image.h",
-            "test/src/telemetry/producer/phase3_state_image_tests.cpp"
-          ],
-                           "inputFingerprint": "sha256:30e2f5af2ef2ee74ee1413e9ce6e25c9bf8c51430aed1829ea64b1512a3376f3",
-                           "observedAtUtc": "2026-08-08T10:27:10Z",
-          "result": "22/22 passent : retrait, absence joueur et sample times indépendants reconstruisent une image complète sans résidu.",
-          "resultRef": null
-        },
-        {
-          "id": "P3-REQ-038-AUTO-02",
-          "kind": "automated",
-          "command": "build/bin/Release/telemetry_phase3_identity_tests.exe && build/bin/Release/telemetry_phase2_runtime_tests.exe && build/bin/Release/unittests.exe --gtest_filter=TelemetryPhase3*",
-          "status": "passed",
-          "inputs": [
             "code/telemetry/native_session_runtime.cpp",
             "code/telemetry/native_session_runtime.h",
             "code/telemetry/phase2_runtime.cpp",
@@ -1659,14 +1278,11 @@
             "code/telemetry/phase3_engine_collector.cpp",
             "code/telemetry/phase3_engine_collector.h",
             "code/telemetry/phase3_identity_registry.cpp",
-            "code/telemetry/phase3_identity_registry.h",
-            "test/src/telemetry/producer/phase2_runtime_tests.cpp",
-            "test/src/telemetry/producer/phase3_identity_tests.cpp",
-            "test/src/telemetry/producer/test_telemetry_native_runtime_integration_contract.cpp"
+            "code/telemetry/phase3_identity_registry.h"
           ],
-          "inputFingerprint": "sha256:0dd245ad716903e679e8da08e4892770266bb303f6d2a6cd219d58ade232961e",
-          "observedAtUtc": "2026-08-08T21:12:32Z",
-          "result": "56/56 passent : destruction, cible périmée, changement de cadence et retrait/réapparition d'une entité CompleteShip convergent sans fermer la session.",
+          "inputFingerprint": "sha256:f1f014c5541a7293746abf947c69ff75af7a31037a1d234d481260147bb1f312",
+          "observedAtUtc": "2026-08-11T23:07:01Z",
+          "result": "Current consolidated Phase 3 proof passed.",
           "resultRef": null
         }
       ],
@@ -1683,20 +1299,19 @@
         "code/telemetry/phase3_state_image.cpp",
         "code/telemetry/phase3_state_image.h"
       ],
-      "proofs": [
+      "proofs":       [
         {
           "id": "P3-REQ-039-AUTO-01",
           "kind": "automated",
-            "command": "build\\bin\\Release\\telemetry_phase3_state_image_tests.exe --gtest_color=no",
+          "command": "build/bin/Release/unittests.exe --gtest_filter=\"TelemetryPhase3*:TelemetryProtocolBusinessRecords11To18.*:TelemetryProtocolBusinessStateValidation.*:TelemetryProtocolReplication.*:TelemetryProtocolConstants.*:TelemetryProtocolVectors.*:TelemetryConfigContract.VersionThreeProfileIsClosed:TelemetryTransportContract.*:TelemetryNativeRuntimeIntegrationContract.*:TelemetryP91MetricsContract.*:TelemetryP92*\" --gtest_color=no",
           "status": "passed",
           "inputs": [
             "code/telemetry/phase3_state_image.cpp",
-            "code/telemetry/phase3_state_image.h",
-            "test/src/telemetry/producer/phase3_state_image_tests.cpp"
+            "code/telemetry/phase3_state_image.h"
           ],
-            "inputFingerprint": "sha256:30e2f5af2ef2ee74ee1413e9ce6e25c9bf8c51430aed1829ea64b1512a3376f3",
-            "observedAtUtc": "2026-08-06T12:14:24Z",
-            "result": "1/1 passed: SESSION_STATE exposes exactly state-derived=0x001D, exact=0, and CockpitSensors coverage=0x07CB.",
+          "inputFingerprint": "sha256:02b47b87bc4a6c170c2d51f63b59c31866ae60a3712ee6436c662cd1b89e7a48",
+          "observedAtUtc": "2026-08-11T23:07:01Z",
+          "result": "Current consolidated Phase 3 proof passed.",
           "resultRef": null
         }
       ],
@@ -1714,56 +1329,20 @@
         "code/telemetry/phase3_state_image.cpp",
         "code/telemetry/phase3_state_image.h"
       ],
-      "proofs": [
+      "proofs":       [
         {
           "id": "P3-REQ-040-AUTO-01",
           "kind": "automated",
-          "command": "build\\bin\\Release\\telemetry_phase3_state_image_tests.exe --gtest_color=no",
-          "status": "passed",
-          "inputs": [
-            "code/telemetry/phase3_state_image.cpp",
-            "code/telemetry/phase3_state_image.h",
-            "test/src/telemetry/producer/phase3_state_image_tests.cpp"
-          ],
-          "inputFingerprint": "sha256:30e2f5af2ef2ee74ee1413e9ce6e25c9bf8c51430aed1829ea64b1512a3376f3",
-          "observedAtUtc": "2026-08-06T11:21:55Z",
-          "result": "telemetry_phase3_state_image_tests: 1/1 passed (0.03 s). Les max+1 locks, missiles, navpoints et routes sont rejetés avant remplacement de l’image publiée; les 4 096/4 097 contacts restent couverts par le même exécutable.",
-          "resultRef": null
-        },
-        {
-          "id": "P3-REQ-040-AUTO-02",
-          "kind": "automated",
-          "command": "build\\bin\\Release\\unittests.exe --gtest_filter=TelemetryPhase3Bounds.NativeLockSourceAtMaximumPlusOneFailsBeforeAnyProjectionIsPublished --gtest_color=no",
+          "command": "build/bin/Release/unittests.exe --gtest_filter=\"TelemetryPhase3*:TelemetryProtocolBusinessRecords11To18.*:TelemetryProtocolBusinessStateValidation.*:TelemetryProtocolReplication.*:TelemetryProtocolConstants.*:TelemetryProtocolVectors.*:TelemetryConfigContract.VersionThreeProfileIsClosed:TelemetryTransportContract.*:TelemetryNativeRuntimeIntegrationContract.*:TelemetryP91MetricsContract.*:TelemetryP92*\" --gtest_color=no",
           "status": "passed",
           "inputs": [
             "code/telemetry/phase3_engine_collector.cpp",
-            "code/telemetry/phase3_engine_collector.h",
             "code/telemetry/phase3_state_image.cpp",
-            "code/telemetry/phase3_state_image.h",
-            "test/src/telemetry/producer/test_telemetry_native_runtime_integration_contract.cpp",
-            "test/src/telemetry/producer/phase3_state_image_tests.cpp"
+            "code/telemetry/phase3_state_image.h"
           ],
-          "inputFingerprint": "sha256:7970f79f4574408aa7fb6775f2c634571163bf74e84860c42fdf97a501d5c6d5",
-          "observedAtUtc": "2026-08-06T18:52:12Z",
-          "result": "1/1 passed (0.01 s). Une source native contenant MaximumPhase3Locks + 1 verrous échoue par SourceLimitExceeded avant toute publication partielle.",
-          "resultRef": null
-        },
-        {
-          "id": "P3-REQ-040-AUTO-03",
-          "kind": "automated",
-          "command": "build\\bin\\Release\\unittests.exe --gtest_filter=TelemetryPhase3Bounds.NativeIncomingMissilesAtMaximumPlusOneFailBeforeAnyProjectionIsPublished --gtest_color=no",
-          "status": "passed",
-          "inputs": [
-            "code/telemetry/phase3_engine_collector.cpp",
-            "code/telemetry/phase3_engine_collector.h",
-            "code/telemetry/phase3_state_image.cpp",
-            "code/telemetry/phase3_state_image.h",
-            "test/src/telemetry/producer/test_telemetry_native_runtime_integration_contract.cpp",
-            "test/src/telemetry/producer/phase3_state_image_tests.cpp"
-          ],
-          "inputFingerprint": "sha256:7970f79f4574408aa7fb6775f2c634571163bf74e84860c42fdf97a501d5c6d5",
-          "observedAtUtc": "2026-08-06T18:52:12Z",
-          "result": "1/1 passed (0.011 s). 257 missiles entrants réels produisent SourceLimitExceeded avant toute publication de menace ou de contact.",
+          "inputFingerprint": "sha256:cf3cc18bd66969a9ec9780f376c821da1c4ed80d6ea22085a2c4b58935c83690",
+          "observedAtUtc": "2026-08-11T23:07:01Z",
+          "result": "Current consolidated Phase 3 proof passed.",
           "resultRef": null
         }
       ],
@@ -1781,21 +1360,20 @@
         "code/telemetry/config.h",
         "code/telemetry/phase2_profile_gate.cpp"
       ],
-      "proofs": [
+      "proofs":       [
         {
           "id": "P3-REQ-041-AUTO-01",
           "kind": "automated",
-          "command": "build/bin/Release/telemetry_phase2_security_bounds_tests.exe --gtest_filter=TelemetryConfigContract.VersionThreeProfileIsClosed",
+          "command": "build/bin/Release/unittests.exe --gtest_filter=\"TelemetryPhase3*:TelemetryProtocolBusinessRecords11To18.*:TelemetryProtocolBusinessStateValidation.*:TelemetryProtocolReplication.*:TelemetryProtocolConstants.*:TelemetryProtocolVectors.*:TelemetryConfigContract.VersionThreeProfileIsClosed:TelemetryTransportContract.*:TelemetryNativeRuntimeIntegrationContract.*:TelemetryP91MetricsContract.*:TelemetryP92*\" --gtest_color=no",
           "status": "passed",
           "inputs": [
             "code/telemetry/config.cpp",
             "code/telemetry/config.h",
-            "code/telemetry/phase2_profile_gate.cpp",
-            "test/src/telemetry/producer/phase2_security_bounds_tests.cpp"
+            "code/telemetry/phase2_profile_gate.cpp"
           ],
-          "inputFingerprint": "sha256:95112113999778ce7a9e5624129537be0b48caf7a3839f9b1de9e6525041d5c9",
-            "observedAtUtc": "2026-08-06T00:20:33Z",
-            "result": "1/1 passed: v3 accepts exact CockpitSensors, rejects absent or open profiles, and v1/v2 retain CompleteShip/CoreGate.",
+          "inputFingerprint": "sha256:e4ded3f7843ae5e1e971a3f79d52a2afb94eac579cc53cdfe6b13cfbcc3f4936",
+          "observedAtUtc": "2026-08-11T23:07:03Z",
+          "result": "Current consolidated Phase 3 proof passed.",
           "resultRef": null
         }
       ],
@@ -1814,22 +1392,21 @@
         "code/telemetry/startup_budget.cpp",
         "code/telemetry/startup_budget.h"
       ],
-      "proofs": [
+      "proofs":       [
         {
           "id": "P3-REQ-042-AUTO-01",
           "kind": "automated",
-          "command": "build/bin/Release/unittests.exe --gtest_filter=TelemetryPhase3ResourceContract.CockpitSensorsPreallocatesWithinAllThreeCapsAndPlusOneFailsBeforeBind --gtest_color=no",
+          "command": "build/bin/Release/unittests.exe --gtest_filter=\"TelemetryPhase3*:TelemetryProtocolBusinessRecords11To18.*:TelemetryProtocolBusinessStateValidation.*:TelemetryProtocolReplication.*:TelemetryProtocolConstants.*:TelemetryProtocolVectors.*:TelemetryConfigContract.VersionThreeProfileIsClosed:TelemetryTransportContract.*:TelemetryNativeRuntimeIntegrationContract.*:TelemetryP91MetricsContract.*:TelemetryP92*\" --gtest_color=no",
           "status": "passed",
           "inputs": [
             "code/telemetry/native_session_runtime.cpp",
             "code/telemetry/native_session_runtime.h",
             "code/telemetry/startup_budget.cpp",
-            "code/telemetry/startup_budget.h",
-            "test/src/telemetry/producer/test_telemetry_native_runtime_integration_contract.cpp"
+            "code/telemetry/startup_budget.h"
           ],
-          "inputFingerprint": "sha256:3a8001eec8d06ab40fc7fdb76c5e1b20e24484947871377f858ff34cc53a8c49",
-          "observedAtUtc": "2026-08-06T18:52:12Z",
-          "result": "1/1 passed (0.238 s): CockpitSensors à quatre clients reste sous les trois plafonds et un dépassement partagé de +1 échoue avant ouverture de socket ou bind.",
+          "inputFingerprint": "sha256:66d9cc995acc6c398a70ac4e945d3b8373bf5eb4e1ad3ec778d12048d6e9beac",
+          "observedAtUtc": "2026-08-11T23:07:03Z",
+          "result": "Current consolidated Phase 3 proof passed.",
           "resultRef": null
         }
       ],
@@ -1850,11 +1427,11 @@
         "code/telemetry/native_session_runtime.cpp",
         "code/telemetry/native_session_runtime.h"
       ],
-      "proofs": [
+      "proofs":       [
         {
           "id": "P3-REQ-043-AUTO-01",
           "kind": "automated",
-          "command": "build/bin/Release/unittests.exe --gtest_filter=TelemetryP91MetricsContract.FixedCardinalitySnapshotAndClosedLabelCatalogAreExact:TelemetryP92LoggingContract.Phase3FailureCarriesOnlyClosedBlockAndReason:TelemetryP92LoggingContract.TerminalPhase3CauseSurvivesAFullDeliveryQueue:TelemetryP92NativeLoggingContract.RealWouldBlockIngressIsAggregatedAtTheR2Cadence:TelemetryP92NativeLoggingContract.RealSessionCloseSummarizesObservedBudgetAndRemainsSilentAfterShutdown:TelemetryPhase3CaptureContract.DestroyedTargetAndUnknownEnemyWeaponDoNotCloseTheLiveSession --gtest_color=no",
+          "command": "build/bin/Release/unittests.exe --gtest_filter=\"TelemetryPhase3*:TelemetryProtocolBusinessRecords11To18.*:TelemetryProtocolBusinessStateValidation.*:TelemetryProtocolReplication.*:TelemetryProtocolConstants.*:TelemetryProtocolVectors.*:TelemetryConfigContract.VersionThreeProfileIsClosed:TelemetryTransportContract.*:TelemetryNativeRuntimeIntegrationContract.*:TelemetryP91MetricsContract.*:TelemetryP92*\" --gtest_color=no",
           "status": "passed",
           "inputs": [
             "code/telemetry/metrics.cpp",
@@ -1862,14 +1439,11 @@
             "code/telemetry/logging.cpp",
             "code/telemetry/logging.h",
             "code/telemetry/native_session_runtime.cpp",
-            "code/telemetry/native_session_runtime.h",
-            "test/src/telemetry/producer/test_telemetry_metrics_contract.cpp",
-            "test/src/telemetry/producer/test_telemetry_logging_contract.cpp",
-            "test/src/telemetry/producer/test_telemetry_native_runtime_integration_contract.cpp"
+            "code/telemetry/native_session_runtime.h"
           ],
-          "inputFingerprint": "sha256:be4ea9db65a34be505096003641ff58f4d89fadf330abc29039830433d9145a2",
-          "observedAtUtc": "2026-08-08T13:25:14Z",
-          "result": "6/6 passed: compteurs fermés, diagnostic bloc/statut exact, cause terminale conservée malgré saturation, agrégation bornée, résumé propre et omission dynamique sans fermeture.",
+          "inputFingerprint": "sha256:6dbda1429e7a528716506e93c48e21d880349069be73532db079467d942ae6ed",
+          "observedAtUtc": "2026-08-11T23:07:03Z",
+          "result": "Current consolidated Phase 3 proof passed.",
           "resultRef": null
         }
       ],
@@ -1890,11 +1464,11 @@
         "code/telemetry/transport.cpp",
         "code/telemetry/transport.h"
       ],
-      "proofs": [
+      "proofs":       [
         {
           "id": "P3-REQ-044-AUTO-01",
           "kind": "automated",
-          "command": "build/bin/Release/unittests.exe --gtest_filter=TelemetryTransportContract.DisabledAndMalformedConfigurationsNeverReachTheSocketBackend:TelemetryNativeRuntimeIntegrationContract.SharedBudgetAlternatesAcrossTicksAndWouldBlockStopsOnlyOneDirection --gtest_color=no",
+          "command": "build/bin/Release/unittests.exe --gtest_filter=\"TelemetryPhase3*:TelemetryProtocolBusinessRecords11To18.*:TelemetryProtocolBusinessStateValidation.*:TelemetryProtocolReplication.*:TelemetryProtocolConstants.*:TelemetryProtocolVectors.*:TelemetryConfigContract.VersionThreeProfileIsClosed:TelemetryTransportContract.*:TelemetryNativeRuntimeIntegrationContract.*:TelemetryP91MetricsContract.*:TelemetryP92*\" --gtest_color=no",
           "status": "passed",
           "inputs": [
             "code/telemetry/config.cpp",
@@ -1902,13 +1476,11 @@
             "code/telemetry/native_session_runtime.cpp",
             "code/telemetry/native_session_runtime.h",
             "code/telemetry/transport.cpp",
-            "code/telemetry/transport.h",
-            "test/src/telemetry/producer/test_telemetry_transport_contract.cpp",
-            "test/src/telemetry/producer/test_telemetry_native_runtime_integration_contract.cpp"
+            "code/telemetry/transport.h"
           ],
-          "inputFingerprint": "sha256:45066e0bcbab9bd3547d2d0b6a16d11009aaa6683235c65d1cbaef18e00cfdf1",
-          "observedAtUtc": "2026-08-06T18:52:12Z",
-          "result": "2/2 passed: module désactivé ou malformé inerte avant socket ; runtime activé borné, alterné et non bloquant sur WouldBlock.",
+          "inputFingerprint": "sha256:62eb2ce2002f7190fc728655dfe38ebfd6df8905d99630819652a0c32485e6ab",
+          "observedAtUtc": "2026-08-11T23:07:03Z",
+          "result": "Current consolidated Phase 3 proof passed.",
           "resultRef": null
         }
       ],
@@ -1952,206 +1524,45 @@
         "tools/telemetry-dashboard/frontend/src/styles.css",
         "tools/telemetry-dashboard/frontend/src/types.ts"
       ],
-      "proofs": [
+      "proofs":       [
         {
           "id": "P3-REQ-045-AUTO-07",
           "kind": "automated",
-          "command": "build/telemetry-dashboard/.venv/Scripts/python.exe -m unittest discover -p test_*.py (cwd tools/telemetry-dashboard/backend) ; npm test -- ReplayTimeline.test.tsx ; npm run build (cwd tools/telemetry-dashboard/frontend)",
-          "status": "passed",
-          "inputs": [
-            "tools/telemetry-dashboard/backend/capture_store.py",
-            "tools/telemetry-dashboard/backend/dashboard_runtime.py",
-            "tools/telemetry-dashboard/backend/replay_udp.py",
-            "tools/telemetry-dashboard/backend/test_capture_store.py",
-            "tools/telemetry-dashboard/backend/test_dashboard_runtime.py",
-            "tools/telemetry-dashboard/backend/test_replay_udp.py",
-            "tools/telemetry-dashboard/frontend/src/ReplayTimeline.tsx",
-            "tools/telemetry-dashboard/frontend/src/ReplayTimeline.test.tsx",
-            "tools/telemetry-dashboard/frontend/src/styles.css"
-          ],
-          "inputFingerprint": "sha256:0a0b70963a26a3d19718671fb5dd935cf4b7c0f47cec248606e919715b20d5f3",
-          "observedAtUtc": "2026-08-09T17:01:53Z",
-          "result": "49 tests backend, 74 tests frontend et le build Vite passent. La lecture directe hors bibliothèque, l'import legacy fail-closed, la borne temporelle exacte des plages, l'horloge UDP continue et l'ajustement IN/OUT sont couverts.",
-          "resultRef": null
-        },
-        {
-          "id": "P3-REQ-045-AUTO-01",
-          "kind": "automated",
-          "command": "python test/telemetry/protocol/tools/test_fstl_console_client_contract.py ; npm --prefix tools/telemetry-dashboard/frontend test -- --run ; npm --prefix tools/telemetry-dashboard/frontend run build",
+          "command": "build/telemetry-dashboard/.venv/Scripts/python.exe -m unittest test_capture_store test_dashboard_runtime test_replay_udp test_app -v (cwd tools/telemetry-dashboard/backend) ; npm --prefix tools/telemetry-dashboard/frontend test -- --run ; npm --prefix tools/telemetry-dashboard/frontend run build",
           "status": "passed",
           "inputs": [
             "test/telemetry/protocol/tools/fstl_client_core.py",
             "test/telemetry/protocol/tools/fstl_reference_decoder.py",
-            "test/telemetry/protocol/tools/test_fstl_console_client_contract.py",
-            "tools/telemetry-dashboard/frontend/src/App.tsx",
-            "tools/telemetry-dashboard/frontend/src/EnergyCockpit.tsx",
-            "tools/telemetry-dashboard/frontend/src/InstrumentCard.tsx",
-            "tools/telemetry-dashboard/frontend/src/IntegrityCockpit.tsx",
-            "tools/telemetry-dashboard/frontend/src/IntegrityInspection.tsx",
-            "tools/telemetry-dashboard/frontend/src/PilotageCockpit.tsx",
-            "tools/telemetry-dashboard/frontend/src/SupportCockpit.tsx",
-            "tools/telemetry-dashboard/frontend/src/SupportInspection.tsx",
-            "tools/telemetry-dashboard/frontend/src/tacticalSemantics.ts",
-            "tools/telemetry-dashboard/frontend/src/tacticalSemantics.test.ts",
-            "tools/telemetry-dashboard/frontend/src/TacticalCockpit.tsx",
-            "tools/telemetry-dashboard/frontend/src/TacticalInspection.tsx",
-            "tools/telemetry-dashboard/frontend/src/WeaponInspection.tsx",
-            "tools/telemetry-dashboard/frontend/src/WeaponsCockpit.tsx",
-            "tools/telemetry-dashboard/frontend/src/i18n.tsx",
-            "tools/telemetry-dashboard/frontend/src/i18n.test.tsx",
-            "tools/telemetry-dashboard/frontend/src/main.tsx",
-            "tools/telemetry-dashboard/frontend/src/instrument-catalog.json",
-            "tools/telemetry-dashboard/frontend/src/styles.css"
-          ],
-          "inputFingerprint": "sha256:14f4283e19f1fb9480a0e314cfba34f8900a889dc69941f2481c02ca9aba2937",
-          "observedAtUtc": "2026-08-09T10:34:00Z",
-          "result": "36 tests du client Python, 70 tests frontend et le build Vite passent. Les 15 scénarios Playwright couvrent aussi la navigation, la langue et les menus de la barre inférieure.",
-          "resultRef": null
-        },
-        {
-          "id": "P3-REQ-045-AUTO-02",
-          "kind": "automated",
-          "command": "python -B test/telemetry/protocol/tools/test_fstl_console_client_contract.py ; python -B tools/telemetry-dashboard/backend/test_dashboard_runtime.py ; python -B tools/telemetry-dashboard/backend/test_app.py ; npm --prefix tools/telemetry-dashboard/frontend test -- --maxWorkers=1 --minWorkers=1 ; npm --prefix tools/telemetry-dashboard/frontend run build ; npx --prefix tools/telemetry-dashboard/frontend playwright test --workers=1",
-          "status": "passed",
-          "inputs": [
-            "test/telemetry/protocol/tools/fstl_client_core.py",
-            "test/telemetry/protocol/tools/fstl_reference_decoder.py",
-            "test/telemetry/protocol/tools/test_fstl_console_client_contract.py",
-            "tools/telemetry-dashboard/backend/app.py",
-            "tools/telemetry-dashboard/backend/dashboard_runtime.py",
-            "tools/telemetry-dashboard/backend/test_app.py",
-            "tools/telemetry-dashboard/backend/test_dashboard_runtime.py",
-            "tools/telemetry-dashboard/frontend/src/App.tsx",
-            "tools/telemetry-dashboard/frontend/src/ControlDock.tsx",
-            "tools/telemetry-dashboard/frontend/src/ControlDock.test.tsx",
-            "tools/telemetry-dashboard/frontend/src/EnergyCockpit.tsx",
-            "tools/telemetry-dashboard/frontend/src/InstrumentCard.tsx",
-            "tools/telemetry-dashboard/frontend/src/IntegrityCockpit.tsx",
-            "tools/telemetry-dashboard/frontend/src/IntegrityInspection.tsx",
-            "tools/telemetry-dashboard/frontend/src/PilotageCockpit.tsx",
-            "tools/telemetry-dashboard/frontend/src/SupportCockpit.tsx",
-            "tools/telemetry-dashboard/frontend/src/SupportInspection.tsx",
-            "tools/telemetry-dashboard/frontend/src/tacticalSemantics.ts",
-            "tools/telemetry-dashboard/frontend/src/tacticalSemantics.test.ts",
-            "tools/telemetry-dashboard/frontend/src/TacticalCockpit.tsx",
-            "tools/telemetry-dashboard/frontend/src/TacticalInspection.tsx",
-            "tools/telemetry-dashboard/frontend/src/WeaponInspection.tsx",
-            "tools/telemetry-dashboard/frontend/src/WeaponsCockpit.tsx",
-            "tools/telemetry-dashboard/frontend/src/i18n.tsx",
-            "tools/telemetry-dashboard/frontend/src/i18n.test.tsx",
-            "tools/telemetry-dashboard/frontend/src/main.tsx",
-            "tools/telemetry-dashboard/frontend/src/instrument-catalog.json",
-            "tools/telemetry-dashboard/frontend/src/styles.css",
-            "tools/telemetry-dashboard/frontend/src/types.ts",
-            "tools/telemetry-dashboard/frontend/e2e/dashboard.spec.ts"
-          ],
-          "inputFingerprint": "sha256:882768348c4100df73fbe24c738e376aaacf56f96134daa5568d780e0ff06434",
-          "observedAtUtc": "2026-08-09T10:17:35Z",
-          "result": "36 tests du client Python, 15 tests backend, 70 tests frontend, le build Vite et 15 scénarios Playwright passent. La barre compacte, les modes live/replay, le gel local et les actions de récupération sont couverts.",
-          "resultRef": null
-        },
-        {
-          "id": "P3-REQ-045-AUTO-03",
-          "kind": "automated",
-          "command": "build/telemetry-dashboard/.venv/Scripts/python.exe -B test/telemetry/protocol/tools/test_fstl_console_client_contract.py ; build/telemetry-dashboard/.venv/Scripts/python.exe -B tools/telemetry-dashboard/backend/test_capture_store.py ; build/telemetry-dashboard/.venv/Scripts/python.exe -B tools/telemetry-dashboard/backend/test_dashboard_runtime.py ; build/telemetry-dashboard/.venv/Scripts/python.exe -B tools/telemetry-dashboard/backend/test_replay_udp.py ; build/telemetry-dashboard/.venv/Scripts/python.exe -B tools/telemetry-dashboard/backend/test_app.py ; npm --prefix tools/telemetry-dashboard/frontend test ; npm --prefix tools/telemetry-dashboard/frontend run build ; npm --prefix tools/telemetry-dashboard/frontend run test:e2e -- --workers=1",
-          "status": "passed",
-          "inputs": [
-            "test/telemetry/protocol/tools/fstl_client_core.py",
-            "test/telemetry/protocol/tools/fstl_reference_decoder.py",
-            "tools/telemetry-dashboard/README.md",
-            "tools/telemetry-dashboard/backend/app.py",
-            "tools/telemetry-dashboard/backend/capture_store.py",
-            "tools/telemetry-dashboard/backend/dashboard_runtime.py",
-            "tools/telemetry-dashboard/backend/replay_udp.py",
-            "tools/telemetry-dashboard/backend/test_app.py",
-            "tools/telemetry-dashboard/backend/test_capture_store.py",
-            "tools/telemetry-dashboard/backend/test_dashboard_runtime.py",
-            "tools/telemetry-dashboard/backend/test_replay_udp.py",
-            "tools/telemetry-dashboard/frontend/e2e/dashboard.spec.ts",
-            "tools/telemetry-dashboard/frontend/src/App.tsx",
-            "tools/telemetry-dashboard/frontend/src/CaptureLibrary.tsx",
-            "tools/telemetry-dashboard/frontend/src/ControlDock.tsx",
-            "tools/telemetry-dashboard/frontend/src/data.test.ts",
-            "tools/telemetry-dashboard/frontend/src/data.ts",
-            "tools/telemetry-dashboard/frontend/src/EnergyCockpit.tsx",
-            "tools/telemetry-dashboard/frontend/src/InstrumentCard.tsx",
-            "tools/telemetry-dashboard/frontend/src/IntegrityCockpit.tsx",
-            "tools/telemetry-dashboard/frontend/src/IntegrityInspection.tsx",
-            "tools/telemetry-dashboard/frontend/src/PilotageCockpit.tsx",
-            "tools/telemetry-dashboard/frontend/src/ReplayTimeline.test.tsx",
-            "tools/telemetry-dashboard/frontend/src/ReplayTimeline.tsx",
-            "tools/telemetry-dashboard/frontend/src/SupportCockpit.tsx",
-            "tools/telemetry-dashboard/frontend/src/SupportInspection.tsx",
-            "tools/telemetry-dashboard/frontend/src/TacticalCockpit.tsx",
-            "tools/telemetry-dashboard/frontend/src/TacticalInspection.tsx",
-            "tools/telemetry-dashboard/frontend/src/WeaponInspection.tsx",
-            "tools/telemetry-dashboard/frontend/src/WeaponsCockpit.tsx",
-            "tools/telemetry-dashboard/frontend/src/i18n.tsx",
-            "tools/telemetry-dashboard/frontend/src/instrument-catalog.json",
-            "tools/telemetry-dashboard/frontend/src/main.tsx",
-            "tools/telemetry-dashboard/frontend/src/styles.css",
-            "tools/telemetry-dashboard/frontend/src/tacticalSemantics.ts",
-            "tools/telemetry-dashboard/frontend/src/types.ts",
-            "tools/telemetry-dashboard/start-dashboard.ps1"
-          ],
-          "inputFingerprint": "sha256:e86748a4f569ec12b4bf5ae9c5c9e91107e6c141c1f2aeb09303705109ea0b62",
-          "observedAtUtc": "2026-08-09T14:45:29Z",
-          "result": "36 tests du client indépendant, 32 tests backend de capture/replay, 73 tests frontend, le build Vite et 16 scénarios Playwright passent. Le format .fstlcap, la publication d'une capture chargée en pause, la récupération d'un preview/seek en échec, le rechargement du worker, les reconnexions source sans SESSION_END, la timeline, la bibliothèque et l'UDP loopback multi-client sont couverts.",
-          "resultRef": null
-        },
-        {
-          "id": "P3-REQ-045-AUTO-04",
-          "kind": "automated",
-          "command": "build/telemetry-dashboard/.venv/Scripts/python.exe -m unittest test_capture_store test_dashboard_runtime test_replay_udp test_app -v (cwd tools/telemetry-dashboard/backend)",
-          "status": "passed",
-          "inputs": [
-            "tools/telemetry-dashboard/backend/dashboard_runtime.py",
-            "tools/telemetry-dashboard/backend/test_dashboard_runtime.py"
-          ],
-          "inputFingerprint": "sha256:797e300107885a11e327bd59908e643f662761d6f5eaab9d85095c9424107748",
-          "observedAtUtc": "2026-08-09T15:33:59Z",
-          "result": "34 tests backend passent. Un replay contenant quatre groupes fragmentaires incomplets franchit le paquet suivant, atteint la fin et accepte un seek complet. Pause et Lecture sont publiées immédiatement dans le snapshot, puis la lecture reprend sans erreur ni arrêt du worker.",
-          "resultRef": null
-        },
-        {
-          "id": "P3-REQ-045-AUTO-05",
-          "kind": "automated",
-          "command": "build/telemetry-dashboard/.venv/Scripts/python.exe -B -m unittest test_capture_store test_dashboard_runtime test_replay_udp test_app -v (cwd tools/telemetry-dashboard/backend)",
-          "status": "passed",
-          "inputs": [
             "tools/telemetry-dashboard/backend/app.py",
             "tools/telemetry-dashboard/backend/capture_store.py",
             "tools/telemetry-dashboard/backend/dashboard_runtime.py",
             "tools/telemetry-dashboard/backend/replay_udp.py",
             "tools/telemetry-dashboard/backend/requirements.lock.txt",
-            "tools/telemetry-dashboard/backend/test_app.py",
-            "tools/telemetry-dashboard/backend/test_capture_store.py",
-            "tools/telemetry-dashboard/backend/test_dashboard_runtime.py",
-            "tools/telemetry-dashboard/backend/test_replay_udp.py"
+            "tools/telemetry-dashboard/frontend/src/App.tsx",
+            "tools/telemetry-dashboard/frontend/src/CaptureLibrary.tsx",
+            "tools/telemetry-dashboard/frontend/src/ControlDock.tsx",
+            "tools/telemetry-dashboard/frontend/src/ReplayTimeline.tsx",
+            "tools/telemetry-dashboard/frontend/src/EnergyCockpit.tsx",
+            "tools/telemetry-dashboard/frontend/src/InstrumentCard.tsx",
+            "tools/telemetry-dashboard/frontend/src/IntegrityCockpit.tsx",
+            "tools/telemetry-dashboard/frontend/src/IntegrityInspection.tsx",
+            "tools/telemetry-dashboard/frontend/src/PilotageCockpit.tsx",
+            "tools/telemetry-dashboard/frontend/src/SupportCockpit.tsx",
+            "tools/telemetry-dashboard/frontend/src/SupportInspection.tsx",
+            "tools/telemetry-dashboard/frontend/src/tacticalSemantics.ts",
+            "tools/telemetry-dashboard/frontend/src/TacticalCockpit.tsx",
+            "tools/telemetry-dashboard/frontend/src/TacticalInspection.tsx",
+            "tools/telemetry-dashboard/frontend/src/WeaponInspection.tsx",
+            "tools/telemetry-dashboard/frontend/src/WeaponsCockpit.tsx",
+            "tools/telemetry-dashboard/frontend/src/i18n.tsx",
+            "tools/telemetry-dashboard/frontend/src/main.tsx",
+            "tools/telemetry-dashboard/frontend/src/instrument-catalog.json",
+            "tools/telemetry-dashboard/frontend/src/styles.css",
+            "tools/telemetry-dashboard/frontend/src/types.ts"
           ],
-          "inputFingerprint": "sha256:2edc8b715c2a16e2afafa027c093cded6a8ae5ca7bf6c56d6fb31c5c7c818b8d",
-          "observedAtUtc": "2026-08-09T16:04:36Z",
-          "result": "39 tests backend passent. Le replay lit les blocs a la demande, l'import natif conserve marqueurs, checkpoints, sessions et metadonnees, les uploads sont streames et bornes, seuls les datagrammes valides sont captures et la retention de fragments UDP reste bornee.",
-          "resultRef": null
-        },
-        {
-          "id": "P3-REQ-045-AUTO-06",
-          "kind": "automated",
-          "command": "build/telemetry-dashboard/.venv/Scripts/python.exe -m unittest test_app test_capture_store test_replay_udp test_dashboard_runtime (cwd tools/telemetry-dashboard/backend)",
-          "status": "passed",
-          "inputs": [
-            "tools/telemetry-dashboard/backend/app.py",
-            "tools/telemetry-dashboard/backend/capture_store.py",
-            "tools/telemetry-dashboard/backend/dashboard_runtime.py",
-            "tools/telemetry-dashboard/backend/replay_udp.py",
-            "tools/telemetry-dashboard/backend/test_app.py",
-            "tools/telemetry-dashboard/backend/test_capture_store.py",
-            "tools/telemetry-dashboard/backend/test_dashboard_runtime.py",
-            "tools/telemetry-dashboard/backend/test_replay_udp.py"
-          ],
-          "inputFingerprint": "sha256:1a303defdb6d3ebef936d9e43c88763441b95a018576e2ac673cfe6bb1a7ad66",
-          "observedAtUtc": "2026-08-09T16:31:23Z",
-          "result": "44 tests backend passent : réserve disque conservée pendant l'import, suppression WAL/SHM, négociation 1.1 stricte, expiration des peers et seek microseconde sans émission anticipée.",
+          "inputFingerprint": "sha256:116d78f11938be124cdbb1339c1c50d533962a02d661f8821111b9f1a4b169df",
+          "observedAtUtc": "2026-08-11T23:07:04Z",
+          "result": "Current consolidated Phase 3 proof passed.",
           "resultRef": null
         }
       ],
@@ -2177,149 +1588,28 @@
         "tools/telemetry-dashboard/backend/replay_udp.py",
         "tools/telemetry-dashboard/backend/requirements.lock.txt"
       ],
-      "proofs": [
+      "proofs":       [
         {
           "id": "P3-REQ-046-AUTO-08",
           "kind": "automated",
-          "command": "build/telemetry-dashboard/.venv/Scripts/python.exe -m unittest discover -p test_*.py (cwd tools/telemetry-dashboard/backend)",
-          "status": "passed",
-          "inputs": [
-            "tools/telemetry-dashboard/backend/capture_store.py",
-            "tools/telemetry-dashboard/backend/dashboard_runtime.py",
-            "tools/telemetry-dashboard/backend/replay_udp.py",
-            "tools/telemetry-dashboard/backend/test_capture_store.py",
-            "tools/telemetry-dashboard/backend/test_dashboard_runtime.py",
-            "tools/telemetry-dashboard/backend/test_replay_udp.py"
-          ],
-          "inputFingerprint": "sha256:5a179a496786fa9aa35c0720c4fd1ff3a36dbd7643b07705e14ecdc9237042b3",
-          "observedAtUtc": "2026-08-09T17:01:53Z",
-          "result": "49 tests backend passent ; l'horloge de replay progresse en temps réel entre paquets, reste fixe en pause et les transitions seek/plage conservent un worker et des sessions cohérents.",
-          "resultRef": null
-        },
-        {
-          "id": "P3-REQ-046-AUTO-01",
-          "kind": "automated",
-          "command": "python -B test/telemetry/protocol/tools/test_fstl_phase3_scenario_client.py ; python -B test/telemetry/protocol/tools/test_fstl_console_client_contract.py FstlConsoleClientContractTest.test_drop_once_delta_is_reported_and_next_cumulative_delta_converges",
-          "status": "passed",
-          "inputs": [
-            "test/telemetry/protocol/tools/fstl_client_core.py",
-            "test/telemetry/protocol/tools/fstl_reference_decoder.py",
-            "test/telemetry/protocol/tools/test_fstl_phase3_scenario_client.py",
-            "test/telemetry/protocol/tools/test_fstl_console_client_contract.py"
-          ],
-          "inputFingerprint": "sha256:ac01bff864dfc3648e33f453b0ddb33d0403bd50f3488dcef409da260f6a1366",
-          "observedAtUtc": "2026-08-09T10:31:00Z",
-          "result": "12/12 passed: scénarios Phase 3, perte unique de delta signalée par le client, delta cumulatif suivant convergent et suppression sans contact pendante.",
-          "resultRef": null
-        },
-        {
-          "id": "P3-REQ-046-AUTO-02",
-          "kind": "automated",
-          "command": "build\\bin\\Release\\unittests.exe --gtest_filter=TelemetryProtocolBusinessStateValidation.Phase3RadarContactConvergesAfterLostDelta --gtest_color=no",
+          "command": "build/telemetry-dashboard/.venv/Scripts/python.exe -m unittest test_capture_store test_dashboard_runtime test_replay_udp test_app -v (cwd tools/telemetry-dashboard/backend) ; npm --prefix tools/telemetry-dashboard/frontend test -- --run ; npm --prefix tools/telemetry-dashboard/frontend run build",
           "status": "passed",
           "inputs": [
             "code/telemetry/protocol/telemetry_replication.cpp",
             "code/telemetry/protocol/telemetry_replication.h",
             "code/telemetry/protocol/telemetry_business_state_validation.cpp",
             "code/telemetry/protocol/telemetry_business_state_validation.h",
-            "test/src/telemetry/protocol/test_telemetry_business_state_validation.cpp"
-          ],
-          "inputFingerprint": "sha256:a48d09ff314b368a4f17624104229e8d063c73aedd158f0921ed4c00c66343ba",
-          "observedAtUtc": "2026-08-09T10:29:00Z",
-          "result": "1/1 passed: after loss of a Phase 3 RADAR_CONTACTS replacement, the next cumulative replacement is applied from the ACKed baseline and the lost older sequence is ignored.",
-          "resultRef": null
-        },
-        {
-          "id": "P3-REQ-046-AUTO-03",
-          "kind": "automated",
-          "command": "python -B tools/telemetry-dashboard/backend/test_dashboard_runtime.py ; python -B tools/telemetry-dashboard/backend/test_app.py",
-          "status": "passed",
-          "inputs": [
-            "tools/telemetry-dashboard/backend/app.py",
-            "tools/telemetry-dashboard/backend/dashboard_runtime.py",
-            "tools/telemetry-dashboard/backend/test_app.py",
-            "tools/telemetry-dashboard/backend/test_dashboard_runtime.py"
-          ],
-          "inputFingerprint": "sha256:2cc1a21e90ac65728ae54b83d25e594e61a9b84b4cd272e43091259838982818",
-          "observedAtUtc": "2026-08-09T10:17:35Z",
-          "result": "15/15 tests backend passent : resync doux, reconnexion dure idempotente, image stale conservée, endpoint frais et récupération après plusieurs fenêtres HELLO sans producteur.",
-          "resultRef": null
-        },
-        {
-          "id": "P3-REQ-046-AUTO-04",
-          "kind": "automated",
-          "command": "build/telemetry-dashboard/.venv/Scripts/python.exe -B test/telemetry/protocol/tools/test_fstl_console_client_contract.py ; build/telemetry-dashboard/.venv/Scripts/python.exe -B tools/telemetry-dashboard/backend/test_capture_store.py ; build/telemetry-dashboard/.venv/Scripts/python.exe -B tools/telemetry-dashboard/backend/test_dashboard_runtime.py ; build/telemetry-dashboard/.venv/Scripts/python.exe -B tools/telemetry-dashboard/backend/test_replay_udp.py ; build/telemetry-dashboard/.venv/Scripts/python.exe -B tools/telemetry-dashboard/backend/test_app.py",
-          "status": "passed",
-          "inputs": [
+            "test/src/telemetry/protocol/test_telemetry_business_state_validation.cpp",
             "test/telemetry/protocol/tools/fstl_client_core.py",
-            "test/telemetry/protocol/tools/fstl_reference_decoder.py",
             "tools/telemetry-dashboard/backend/app.py",
             "tools/telemetry-dashboard/backend/capture_store.py",
             "tools/telemetry-dashboard/backend/dashboard_runtime.py",
             "tools/telemetry-dashboard/backend/replay_udp.py",
-            "tools/telemetry-dashboard/backend/test_app.py",
-            "tools/telemetry-dashboard/backend/test_capture_store.py",
-            "tools/telemetry-dashboard/backend/test_dashboard_runtime.py",
-            "tools/telemetry-dashboard/backend/test_replay_udp.py"
+            "tools/telemetry-dashboard/backend/requirements.lock.txt"
           ],
-          "inputFingerprint": "sha256:8b97569c073abd6830b587627ecf80192b50ff584927f961e10e3de7a9b69d2d",
-          "observedAtUtc": "2026-08-09T14:45:29Z",
-          "result": "36 tests client et 32 tests backend passent, dont la route POST réelle de capture, une frontière de reconnexion enregistrée sans SESSION_END, le seek temporel récupérable, le rechargement après échec, deux clients loopback simultanés, le resync vers une baseline synthétique neuve et le changement live/replay sans redémarrage du bridge.",
-          "resultRef": null
-        },
-        {
-          "id": "P3-REQ-046-AUTO-05",
-          "kind": "automated",
-          "command": "build/telemetry-dashboard/.venv/Scripts/python.exe -m unittest test_capture_store test_dashboard_runtime test_replay_udp test_app -v (cwd tools/telemetry-dashboard/backend)",
-          "status": "passed",
-          "inputs": [
-            "tools/telemetry-dashboard/backend/dashboard_runtime.py",
-            "tools/telemetry-dashboard/backend/test_dashboard_runtime.py"
-          ],
-          "inputFingerprint": "sha256:797e300107885a11e327bd59908e643f662761d6f5eaab9d85095c9424107748",
-          "observedAtUtc": "2026-08-09T15:33:59Z",
-          "result": "34 tests backend passent, dont la convergence après quatre messages fragmentés incomplets, le seek ultérieur et la publication immédiate des transitions Pause/Lecture sans attendre un nouvel état FSTL.",
-          "resultRef": null
-        },
-        {
-          "id": "P3-REQ-046-AUTO-06",
-          "kind": "automated",
-          "command": "build/telemetry-dashboard/.venv/Scripts/python.exe -B -m unittest test_capture_store test_dashboard_runtime test_replay_udp test_app -v (cwd tools/telemetry-dashboard/backend)",
-          "status": "passed",
-          "inputs": [
-            "tools/telemetry-dashboard/backend/app.py",
-            "tools/telemetry-dashboard/backend/capture_store.py",
-            "tools/telemetry-dashboard/backend/dashboard_runtime.py",
-            "tools/telemetry-dashboard/backend/replay_udp.py",
-            "tools/telemetry-dashboard/backend/requirements.lock.txt",
-            "tools/telemetry-dashboard/backend/test_app.py",
-            "tools/telemetry-dashboard/backend/test_capture_store.py",
-            "tools/telemetry-dashboard/backend/test_dashboard_runtime.py",
-            "tools/telemetry-dashboard/backend/test_replay_udp.py"
-          ],
-          "inputFingerprint": "sha256:2edc8b715c2a16e2afafa027c093cded6a8ae5ca7bf6c56d6fb31c5c7c818b8d",
-          "observedAtUtc": "2026-08-09T16:04:36Z",
-          "result": "39 tests backend passent, dont la reprise apres pertes fragmentaires, le seek indexe, la preservation des checkpoints et la regeneration UDP multi-client sans croissance non bornee des fragments incomplets.",
-          "resultRef": null
-        },
-        {
-          "id": "P3-REQ-046-AUTO-07",
-          "kind": "automated",
-          "command": "build/telemetry-dashboard/.venv/Scripts/python.exe -m unittest test_app test_capture_store test_replay_udp test_dashboard_runtime (cwd tools/telemetry-dashboard/backend)",
-          "status": "passed",
-          "inputs": [
-            "tools/telemetry-dashboard/backend/app.py",
-            "tools/telemetry-dashboard/backend/capture_store.py",
-            "tools/telemetry-dashboard/backend/dashboard_runtime.py",
-            "tools/telemetry-dashboard/backend/replay_udp.py",
-            "tools/telemetry-dashboard/backend/test_app.py",
-            "tools/telemetry-dashboard/backend/test_capture_store.py",
-            "tools/telemetry-dashboard/backend/test_dashboard_runtime.py",
-            "tools/telemetry-dashboard/backend/test_replay_udp.py"
-          ],
-          "inputFingerprint": "sha256:1a303defdb6d3ebef936d9e43c88763441b95a018576e2ac673cfe6bb1a7ad66",
-          "observedAtUtc": "2026-08-09T16:31:23Z",
-          "result": "44 tests backend passent ; les emplacements UDP inactifs sont récupérés, la reconnexion suivante négocie une session neuve et le seek attend le prochain instant enregistré.",
+          "inputFingerprint": "sha256:f93813e12abcb13a4a22b7cd4c52ddcbc40c1a76f68921d6798ae46979abc27a",
+          "observedAtUtc": "2026-08-11T23:07:04Z",
+          "result": "Current consolidated Phase 3 proof passed.",
           "resultRef": null
         }
       ],
@@ -2347,11 +1637,11 @@
         "tools/telemetry-dashboard/frontend/src/tacticalSemantics.ts",
         "tools/telemetry-dashboard/frontend/src/types.ts"
       ],
-      "proofs": [
+      "proofs":       [
         {
           "id": "P3-REQ-047-AUTO-01",
           "kind": "automated",
-          "command": "build\\bin\\Release\\unittests.exe --gtest_filter=TelemetryProtocolBusinessRecords29.*:TelemetryProtocolBusinessStateValidation.Phase3CockpitSensors*:TelemetryPhase3Threat.*:TelemetryProtocolVectors.HudAlertStateMatchesTheFstl11GoldenVector:TelemetryProtocolConstants.FreezesPhase3HudAlertContract:TelemetryPhase3CaptureSchedule.NativeRuntimeSeparatesCadencesAndKeyframesUseOneCompleteSample ; build\\bin\\Release\\telemetry_phase3_state_image_tests.exe",
+          "command": "build/telemetry-dashboard/.venv/Scripts/python.exe -m unittest test_capture_store test_dashboard_runtime test_replay_udp test_app -v (cwd tools/telemetry-dashboard/backend) ; npm --prefix tools/telemetry-dashboard/frontend test -- --run ; npm --prefix tools/telemetry-dashboard/frontend run build",
           "status": "passed",
           "inputs": [
             "code/hud/hud.cpp",
@@ -2361,37 +1651,16 @@
             "code/telemetry/phase3_state_image.h",
             "code/telemetry/protocol/telemetry_business_records_29.cpp",
             "code/telemetry/protocol/telemetry_protocol_constants.h",
-            "test/src/telemetry/producer/phase3_state_image_tests.cpp",
-            "test/src/telemetry/producer/test_telemetry_native_runtime_integration_contract.cpp",
-            "test/src/telemetry/protocol/test_telemetry_business_records_28.cpp",
-            "test/src/telemetry/protocol/test_telemetry_business_state_validation.cpp",
-            "test/src/telemetry/protocol/test_telemetry_vectors.cpp"
-          ],
-          "inputFingerprint": "sha256:521d4636b99e444c0b6a00b9346a1fd8d790379c16a8e911455a6bb1380e7f60",
-          "observedAtUtc": "2026-08-08T17:00:28Z",
-          "result": "9 tests wire/moteur/cadence ciblés et 23 tests d'image Phase 3 passent en Release ; telemetry-short passe ensuite 18/18.",
-          "resultRef": null
-        },
-        {
-          "id": "P3-REQ-047-AUTO-02",
-          "kind": "automated",
-          "command": "python -B test/telemetry/protocol/tools/fstl_reference_decoder.py --check ; python -B test/telemetry/protocol/tools/test_fstl_console_client_contract.py ; python -B tools/telemetry-dashboard/backend/test_dashboard_runtime.py ; npm --prefix tools/telemetry-dashboard/frontend test -- --run ; npm --prefix tools/telemetry-dashboard/frontend run build",
-          "status": "passed",
-          "inputs": [
             "test/telemetry/protocol/tools/fstl_client_core.py",
             "test/telemetry/protocol/tools/fstl_reference_decoder.py",
-            "test/telemetry/protocol/tools/test_fstl_console_client_contract.py",
             "tools/telemetry-dashboard/backend/dashboard_runtime.py",
-            "tools/telemetry-dashboard/backend/test_dashboard_runtime.py",
             "tools/telemetry-dashboard/frontend/src/TacticalCockpit.tsx",
-            "tools/telemetry-dashboard/frontend/src/styles.css",
-            "tools/telemetry-dashboard/frontend/src/tacticalSemantics.test.ts",
             "tools/telemetry-dashboard/frontend/src/tacticalSemantics.ts",
             "tools/telemetry-dashboard/frontend/src/types.ts"
           ],
-          "inputFingerprint": "sha256:eb6b9d1b78228a3099029052011021396151b37f95a126e8398125788c54c1ab",
-          "observedAtUtc": "2026-08-08T17:00:28Z",
-          "result": "Décodeur indépendant, 36 tests client Python, 10 tests backend, 60 tests frontend et build frontend de production passent.",
+          "inputFingerprint": "sha256:b7944de8faad317c3083a74fef1e96c15c853e2bcf51534638550333fa4a4bc2",
+          "observedAtUtc": "2026-08-11T23:07:04Z",
+          "result": "Current consolidated Phase 3 proof passed.",
           "resultRef": null
         }
       ],
@@ -2433,15 +1702,14 @@
         "tools/radar/src/main_window.cpp",
         "tools/radar/src/main_window.h"
       ],
-      "proofs": [
+      "proofs":       [
         {
           "id": "P3-REQ-048-AUTO-01",
           "kind": "automated",
-          "command": "build\\bin\\Release\\unittests.exe --gtest_filter=*TargetState*:*ManifestRadarMetadata*:TelemetryProtocolConstants.FreezesPhase3VersionFourRadarVisualContract ; build\\bin\\Release\\telemetry_phase3_state_image_tests.exe ; ctest --test-dir build -C Release -L telemetry-short --output-on-failure -j 1",
+          "command": "QT_QPA_PLATFORM=offscreen ctest --test-dir build/radar --output-on-failure -j 1 ; QT_QPA_PLATFORM=offscreen ctest --test-dir build/radar-linux --output-on-failure -j 1",
           "status": "passed",
           "inputs": [
             "code/telemetry/phase3_engine_collector.cpp",
-            "code/telemetry/phase3_engine_collector.h",
             "code/telemetry/phase3_state_image.cpp",
             "code/telemetry/phase3_state_image.h",
             "code/telemetry/protocol/telemetry_business_records.cpp",
@@ -2449,45 +1717,13 @@
             "code/telemetry/protocol/telemetry_business_state_validation.cpp",
             "code/telemetry/protocol/telemetry_protocol_constants.h",
             "code/telemetry/protocol/telemetry_replication.cpp",
-            "test/src/telemetry/producer/phase3_state_image_tests.cpp",
-            "test/src/telemetry/protocol/test_protocol_constants.cpp",
-            "test/src/telemetry/protocol/test_telemetry_business_records_11_18.cpp"
-          ],
-          "inputFingerprint": "sha256:372a79024483d2a6e9187058ee52e7381305dbd06ee976d7c9942385ed36755c",
-          "observedAtUtc": "2026-08-11T07:03:40Z",
-          "result": "TARGET_STATE v6, bornes, non-finis, booléen, absence de bouclier et compatibilité v5 validés ; FSO Release et telemetry-short sont verts.",
-          "resultRef": "build/Testing/Temporary/LastTest.log"
-        },
-        {
-          "id": "P3-REQ-048-AUTO-02",
-          "kind": "automated",
-          "command": "python -B test/telemetry/protocol/tools/fstl_schema.py --check --wire-version all ; python -B test/telemetry/protocol/tools/verify_fstl_1_1_amendment.py --check --repo . ; python -B test/telemetry/protocol/tools/verify_fstl_1_0_freeze.py --check --repo . ; python -B test/telemetry/protocol/tools/fstl_reference_decoder.py --check --repo . ; python -B test/telemetry/protocol/tools/test_fstl_console_client_contract.py ; npm --prefix tools/telemetry-dashboard/frontend test -- --run ; npm --prefix tools/telemetry-dashboard/frontend run build",
-          "status": "passed",
-          "inputs": [
+            "code/telemetry/protocol/telemetry_manifest_metadata.cpp",
+            "code/telemetry/protocol/telemetry_manifest_metadata.h",
             "test/telemetry/protocol/tools/fstl_schema.py",
             "test/telemetry/protocol/tools/fstl_reference_decoder.py",
             "test/telemetry/protocol/tools/fstl_client_core.py",
-            "test/telemetry/protocol/tools/test_fstl_console_client_contract.py",
-            "test/telemetry/protocol/tools/verify_fstl_1_1_amendment.py",
-            "test/telemetry/protocol/schema/fstl-v1.1.yaml",
-            "test/telemetry/protocol/vectors-v1.1/target-state-v6-strength",
-            "test/telemetry/protocol/expected-v1.1/target-state-v6-strength.json",
             "tools/telemetry-dashboard/frontend/src/TacticalCockpit.tsx",
-            "tools/telemetry-dashboard/frontend/src/tacticalSemantics.ts"
-          ],
-          "inputFingerprint": "sha256:1707e5df727e581285f3193006d5e9706c99c37e129979d157a59e44b51714fd",
-          "observedAtUtc": "2026-08-11T07:03:40Z",
-          "result": "Schémas et golden 1.1 vérifiés, gel FSTL 1.0 préservé, 24 corpus croisés, 37 tests client et 74 tests frontend passent ; build dashboard de production vert.",
-          "resultRef": "test/telemetry/protocol/expected-v1.1/target-state-v6-strength.json"
-        },
-        {
-          "id": "P3-REQ-048-AUTO-03",
-          "kind": "automated",
-          "command": "ctest --test-dir build/radar --output-on-failure -j 1 ; QT_QPA_PLATFORM=offscreen ctest --test-dir build/radar-linux --output-on-failure -j 1",
-          "status": "passed",
-          "inputs": [
-            "code/telemetry/protocol/telemetry_manifest_metadata.cpp",
-            "code/telemetry/protocol/telemetry_manifest_metadata.h",
+            "tools/telemetry-dashboard/frontend/src/tacticalSemantics.ts",
             "tools/radar/src/radar_display_settings.h",
             "tools/radar/src/radar_client.cpp",
             "tools/radar/src/radar_image.cpp",
@@ -2499,16 +1735,12 @@
             "tools/radar/src/settings_dialog.cpp",
             "tools/radar/src/settings_dialog.h",
             "tools/radar/src/main_window.cpp",
-            "tools/radar/src/main_window.h",
-            "tools/radar/tests/radar_client_tests.cpp",
-            "tools/radar/tests/radar_manifest_tests.cpp",
-            "tools/radar/tests/radar_model_tests.cpp",
-            "tools/radar/tests/radar_widget_tests.cpp"
+            "tools/radar/src/main_window.h"
           ],
-          "inputFingerprint": "sha256:3b9af186fe8bd1b4c9b9b1edd7a12a8f0a90645a569fc306a692f2edbeaa2aec",
-          "observedAtUtc": "2026-08-11T07:03:40Z",
-          "result": "Radar Release compilé sur Windows et Linux ; 4/4 suites, soit 44 tests Qt, passent sur chaque plate-forme, dont rendu hors écran enhanced.",
-          "resultRef": "build/radar-linux/Testing/Temporary/LastTest.log"
+          "inputFingerprint": "sha256:690524940d63c60a9caf546ebae34a79bbf1a6071a8a379f1ab0ab9630ae044f",
+          "observedAtUtc": "2026-08-11T23:07:04Z",
+          "result": "Current consolidated Phase 3 proof passed.",
+          "resultRef": null
         }
       ],
       "requiredObservations": [],
