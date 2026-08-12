@@ -20,18 +20,15 @@ enum class Phase4ManifestSourceStatus : std::uint8_t {
 	InvalidDependencies,
 	MissingDefinition,
 	DuplicateDefinition,
-	AllocationFailure,
 	Count,
 };
 
-// Selects exactly the public class definitions required by the active Phase 4
-// inventory. SHIP dependencies also retain their declared weapon definitions,
-// so the resulting source is suitable for the existing manifest builder. On
-// error, output is left unchanged.
-Phase4ManifestSourceStatus build_phase4_manifest_source(
-	const Phase2ManifestSource& available_definitions,
-	const Phase4CatalogDependencies& dependencies,
-	Phase2ManifestSource& output) noexcept;
+// The caller owns the unpublished workspace, so references
+// can be committed in place after a complete validation pass. No allocation
+// is attempted and an error never yields a publishable source.
+Phase4ManifestSourceStatus prepare_phase4_manifest_source_in_place(
+	Phase2ManifestSource& source,
+	const Phase4CatalogDependencies& dependencies) noexcept;
 
 // Compares the exact active inventory dependencies with the installed public
 // manifest. A mismatch is deliberately not a partial-image condition: the

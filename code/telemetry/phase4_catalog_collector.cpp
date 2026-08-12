@@ -1,5 +1,52 @@
 #include "telemetry/phase4_catalog_collector.h"
 
+#include <new>
+
+namespace telemetry::detail {
+
+bool Phase4CatalogCollectorWorkspace::provision() noexcept
+{
+	reset();
+	if (!m_assembly.provision()) return false;
+	m_ship_source.reset(new (std::nothrow) Phase2ShipSource());
+	m_observation.reset(new (std::nothrow) Phase2ObservationDto());
+	if (!m_ship_source || !m_observation) {
+		reset();
+		return false;
+	}
+	return true;
+}
+
+void Phase4CatalogCollectorWorkspace::reset() noexcept
+{
+	m_assembly.reset();
+	m_ship_source.reset();
+	m_observation.reset();
+}
+
+void Phase4CatalogCollectorWorkspace::reset_cycle() noexcept
+{
+	m_assembly.reset_cycle();
+	if (m_observation) {
+		m_observation->ships.clear();
+		m_observation->capture = {};
+	}
+}
+
+bool Phase4CatalogCollectorWorkspace::ready() const noexcept
+{
+	return m_assembly.ready() && m_ship_source && m_observation;
+}
+
+std::size_t Phase4CatalogCollectorWorkspace::owned_backing_bytes() const noexcept
+{
+	return m_assembly.owned_backing_bytes() +
+		(m_ship_source ? sizeof(*m_ship_source) : 0U) +
+		(m_observation ? sizeof(*m_observation) : 0U);
+}
+
+} // namespace telemetry::detail
+
 #if !defined(FSO_TELEMETRY_TEST_SEAMS)
 #include "object/object.h"
 #include "ship/ship.h"
@@ -7,7 +54,6 @@
 
 #include <limits>
 #include <memory>
-#include <new>
 
 namespace telemetry::detail {
 namespace {
@@ -44,10 +90,11 @@ class FsoPhase4CatalogDefinitionReadView final
 	: public Phase4CatalogDefinitionReadView {
   public:
 	explicit FsoPhase4CatalogDefinitionReadView(
-		const FsoEngineReadView& engine) noexcept
-		: m_engine(engine),
-		  m_ship_source(new (std::nothrow) Phase2ShipSource()),
-		  m_observation(new (std::nothrow) Phase2ObservationDto())
+		const FsoEngineReadView& engine,
+		Phase2ShipSource& ship_source,
+		Phase2ObservationDto& observation) noexcept
+		: m_engine(engine), m_ship_source(ship_source),
+		  m_observation(observation)
 	{
 	}
 
@@ -85,16 +132,16 @@ class FsoPhase4CatalogDefinitionReadView final
 
 		const EngineEntityKey key{OBJ_INDEX(matched),
 			static_cast<std::uint32_t>(matched->signature)};
-		const auto read = m_engine.read_ship(key, *m_ship_source);
+		const auto read = m_engine.read_ship(key, m_ship_source);
 		if (read.status != Phase2SourceReadStatus::Valid)
 			return map_source_read(read.status);
-		m_observation->ships.clear();
-		m_observation->capture = {
+		m_observation.ships.clear();
+		m_observation.capture = {
 			Phase2CaptureStatus::Valid, Phase2CaptureReason::None};
-		if (!m_observation->raw_static_catalog.copy_from(
-				m_ship_source->raw_static_catalog))
+		if (!m_observation.raw_static_catalog.copy_from(
+				m_ship_source.raw_static_catalog))
 			return Phase4CatalogDefinitionReadStatus::SourceLimitExceeded;
-		return map_projection(project_phase2_catalog(*m_observation, output));
+		return map_projection(project_phase2_catalog(m_observation, output));
 	}
 
 	Phase4CatalogDefinitionReadStatus read_weapon_definition(
@@ -102,52 +149,59 @@ class FsoPhase4CatalogDefinitionReadView final
 		Phase2ManifestSource& output) const noexcept override
 	{
 		if (!ready()) return Phase4CatalogDefinitionReadStatus::NotReady;
-		m_observation->ships.clear();
-		m_observation->capture = {
+		m_observation.ships.clear();
+		m_observation.capture = {
 			Phase2CaptureStatus::Valid, Phase2CaptureReason::None};
 		const auto read = m_engine.read_phase4_weapon_static(
-			source_key, m_observation->raw_static_catalog);
+			source_key, m_observation.raw_static_catalog);
 		if (read.status == Phase2SourceReadStatus::InvalidSource)
 			return Phase4CatalogDefinitionReadStatus::MissingDefinition;
 		if (read.status != Phase2SourceReadStatus::Valid)
 			return map_source_read(read.status);
-		return map_projection(project_phase2_catalog(*m_observation, output));
+		return map_projection(project_phase2_catalog(m_observation, output));
 	}
 
   private:
 	bool ready() const noexcept
 	{
-		return m_ship_source != nullptr && m_observation != nullptr &&
-			m_engine.current_thread_is_main() && m_engine.in_mission();
+		return m_engine.current_thread_is_main() && m_engine.in_mission();
 	}
 
 	const FsoEngineReadView& m_engine;
-	std::unique_ptr<Phase2ShipSource> m_ship_source;
-	std::unique_ptr<Phase2ObservationDto> m_observation;
+	Phase2ShipSource& m_ship_source;
+	Phase2ObservationDto& m_observation;
 };
 
 } // namespace
 
-Phase4CatalogAssemblyStatus collect_phase4_catalog_definitions(
+Phase4CatalogAssemblyStatus collect_phase4_catalog_definitions_preallocated(
 	const FsoEngineReadView& engine,
 	const std::vector<Phase4EngineInventoryEntry>& inventory,
-	Phase2ManifestSource& output) noexcept
+	Phase4CatalogCollectorWorkspace& workspace,
+	const Phase2ManifestSource*& output) noexcept
 {
-	if (!engine.current_thread_is_main() || !engine.in_mission())
+	output = nullptr;
+	if (!engine.current_thread_is_main() || !engine.in_mission() ||
+		!workspace.ready())
 		return Phase4CatalogAssemblyStatus::NotReady;
-	FsoPhase4CatalogDefinitionReadView reader(engine);
-	return assemble_phase4_catalog_definitions(reader, inventory, output);
+	workspace.reset_cycle();
+	FsoPhase4CatalogDefinitionReadView reader(engine,
+		*workspace.m_ship_source, *workspace.m_observation);
+	return assemble_phase4_catalog_definitions_preallocated(
+		reader, inventory, workspace.m_assembly, output);
 }
 
 } // namespace telemetry::detail
 #else
 namespace telemetry::detail {
 
-Phase4CatalogAssemblyStatus collect_phase4_catalog_definitions(
+Phase4CatalogAssemblyStatus collect_phase4_catalog_definitions_preallocated(
 	const FsoEngineReadView&,
 	const std::vector<Phase4EngineInventoryEntry>&,
-	Phase2ManifestSource&) noexcept
+	Phase4CatalogCollectorWorkspace&,
+	const Phase2ManifestSource*& output) noexcept
 {
+	output = nullptr;
 	return Phase4CatalogAssemblyStatus::NotReady;
 }
 

@@ -1853,6 +1853,8 @@ add_file_folder("Telemetry"
 	telemetry/phase4_publication_gate.h
 	telemetry/phase4_trusted_image.cpp
 	telemetry/phase4_trusted_image.h
+	telemetry/phase4_runtime_storage.cpp
+	telemetry/phase4_runtime_storage.h
 	telemetry/runtime.cpp
 	telemetry/runtime.h
 	telemetry/runtime_adapter.cpp

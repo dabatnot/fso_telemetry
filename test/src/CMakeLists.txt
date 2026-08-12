@@ -706,6 +706,33 @@ target_link_libraries(telemetry_phase4_trusted_image_tests PRIVATE gtest_main fs
 set_target_properties(telemetry_phase4_trusted_image_tests PROPERTIES FOLDER "tests")
 add_test(NAME telemetry_phase4_trusted_image_tests COMMAND telemetry_phase4_trusted_image_tests)
 
+add_executable(telemetry_phase4_runtime_storage_tests
+	telemetry/producer/phase4_runtime_storage_tests.cpp
+	${CMAKE_SOURCE_DIR}/code/telemetry/phase4_runtime_storage.cpp
+	${CMAKE_SOURCE_DIR}/code/telemetry/phase4_entity_registry.cpp
+	${CMAKE_SOURCE_DIR}/code/telemetry/phase4_catalog_collector.cpp
+	${CMAKE_SOURCE_DIR}/code/telemetry/phase4_catalog_assembly.cpp
+	${CMAKE_SOURCE_DIR}/code/telemetry/phase4_catalog_dependencies.cpp
+	${CMAKE_SOURCE_DIR}/code/telemetry/phase4_manifest_plan.cpp
+	${CMAKE_SOURCE_DIR}/code/telemetry/phase4_entity_image.cpp
+	${CMAKE_SOURCE_DIR}/code/telemetry/phase4_entity_projection.cpp
+	${CMAKE_SOURCE_DIR}/code/telemetry/phase2_manifest_builder.cpp
+	${CMAKE_SOURCE_DIR}/code/telemetry/phase2_observation.cpp
+)
+target_compile_features(telemetry_phase4_runtime_storage_tests PRIVATE cxx_std_17)
+target_compile_definitions(telemetry_phase4_runtime_storage_tests PRIVATE
+	FSO_TELEMETRY_TEST_SEAMS=1)
+target_include_directories(telemetry_phase4_runtime_storage_tests PRIVATE
+	${CMAKE_SOURCE_DIR}/code
+	${CMAKE_SOURCE_DIR}/test/src
+)
+target_link_libraries(telemetry_phase4_runtime_storage_tests PRIVATE
+	gtest_main fstl_protocol)
+set_target_properties(telemetry_phase4_runtime_storage_tests PROPERTIES
+	FOLDER "tests")
+add_test(NAME telemetry_phase4_runtime_storage_tests
+	COMMAND telemetry_phase4_runtime_storage_tests)
+
 add_executable(telemetry_phase3_state_image_tests
 	telemetry/producer/phase3_state_image_tests.cpp
 	${CMAKE_SOURCE_DIR}/code/telemetry/phase3_state_image.cpp)

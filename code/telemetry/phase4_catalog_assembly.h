@@ -4,6 +4,7 @@
 #include "telemetry/phase4_engine_inventory.h"
 
 #include <cstdint>
+#include <memory>
 #include <vector>
 
 namespace telemetry::detail {
@@ -40,13 +41,36 @@ enum class Phase4CatalogAssemblyStatus : std::uint8_t {
 	Count,
 };
 
-// Builds the exact manifest source required by inventory. The reader may
-// return all weapons referenced by a ship class; direct WEAPON rows are read
-// separately. Output is replaced only after every definition, duplicate and
-// FSTL bound has been validated.
-Phase4CatalogAssemblyStatus assemble_phase4_catalog_definitions(
+class Phase4CatalogAssemblyWorkspace final {
+  public:
+	Phase4CatalogAssemblyWorkspace() = default;
+	Phase4CatalogAssemblyWorkspace(const Phase4CatalogAssemblyWorkspace&) = delete;
+	Phase4CatalogAssemblyWorkspace& operator=(const Phase4CatalogAssemblyWorkspace&) = delete;
+
+	bool provision() noexcept;
+	void reset() noexcept;
+	void reset_cycle() noexcept;
+	bool ready() const noexcept;
+	std::size_t owned_backing_bytes() const noexcept;
+
+  private:
+	friend Phase4CatalogAssemblyStatus
+	assemble_phase4_catalog_definitions_preallocated(
+		const Phase4CatalogDefinitionReadView&,
+		const std::vector<Phase4EngineInventoryEntry>&,
+		Phase4CatalogAssemblyWorkspace&,
+		const Phase2ManifestSource*&) noexcept;
+	std::unique_ptr<Phase2ManifestSource> m_available;
+	std::unique_ptr<Phase2ManifestSource> m_fragment;
+};
+
+// Runtime path. All storage must be provisioned before the capture tick.
+// output is null on failure and otherwise borrows workspace until the next
+// reset_cycle/assembly.
+Phase4CatalogAssemblyStatus assemble_phase4_catalog_definitions_preallocated(
 	const Phase4CatalogDefinitionReadView& reader,
 	const std::vector<Phase4EngineInventoryEntry>& inventory,
-	Phase2ManifestSource& output) noexcept;
+	Phase4CatalogAssemblyWorkspace& workspace,
+	const Phase2ManifestSource*& output) noexcept;
 
 } // namespace telemetry::detail

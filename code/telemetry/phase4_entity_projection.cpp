@@ -79,6 +79,18 @@ bool assign_and_validate(PacketWriter& writer, StateAtom& atom) noexcept
 		protocol::VersionMinorV1_1, metadata) == protocol::ValidationError::None;
 }
 
+void reset_atom_preserving_storage(StateAtom& atom) noexcept
+{
+	atom.key.record_type = 0U;
+	atom.key.identity.clear();
+	atom.record_version = 1U;
+	atom.lifecycle = protocol::StateRecordLifecycle::UpsertOnly;
+	atom.has_cascade_owner = false;
+	atom.cascade_owner.record_type = 0U;
+	atom.cascade_owner.identity.clear();
+	atom.value.clear();
+}
+
 } // namespace
 
 Phase4EntityProjectionStatus project_phase4_entity(const Phase4EntityProjectionInput& input,
@@ -102,8 +114,8 @@ Phase4EntityProjectionStatus project_phase4_entity(const Phase4EntityProjectionI
 		return Phase4EntityProjectionStatus::InvalidPose;
 	}
 
-	lifecycle = {};
-	flight = {};
+	reset_atom_preserving_storage(lifecycle);
+	reset_atom_preserving_storage(flight);
 	const auto presence = (has_public_class(input.object_type)
 		? protocol::EntityLifecyclePresenceFlagClassReference : 0U) |
 		(input.parent_entity_id != 0U ? protocol::EntityLifecyclePresenceFlagParent : 0U);

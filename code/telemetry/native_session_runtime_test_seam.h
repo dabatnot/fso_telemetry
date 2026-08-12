@@ -25,6 +25,12 @@ class NativeSessionRuntimeTestAccess final {
 		const NativeSessionRuntime& runtime) noexcept;
 	static std::uint64_t startup_allocation_count(
 		const NativeSessionRuntime& runtime) noexcept;
+	static bool provision_phase4_runtime_state(
+		NativeSessionRuntime& runtime, std::size_t client_count) noexcept;
+	static void release_phase4_runtime_state(
+		NativeSessionRuntime& runtime) noexcept;
+	static const Phase4RuntimeStorage* phase4_runtime_storage(
+		const NativeSessionRuntime& runtime) noexcept;
 	static Phase2CapturePlan prepare_phase2_keyframe_plan(
 		NativeSessionRuntime& runtime) noexcept;
 	static Phase2CapturePlan phase2_capture_plan(

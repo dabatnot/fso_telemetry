@@ -424,6 +424,41 @@ float observed_subsystem_hits(const Phase2ObservationDto& observation,
 	return fallback;
 }
 
+void reset_weapon_source_preserving_strings(Phase2WeaponSource& value) noexcept
+{
+	std::string name;
+	std::string title;
+	name.swap(value.name);
+	title.swap(value.title);
+	value = {};
+	name.swap(value.name);
+	title.swap(value.title);
+}
+
+void reset_auxiliary_source_preserving_string(
+	Phase2AuxiliaryEntry& value) noexcept
+{
+	std::string name;
+	name.swap(value.name);
+	value = {};
+	name.swap(value.name);
+}
+
+void reset_subsystem_source_preserving_strings(
+	Phase2SubsystemSource& value) noexcept
+{
+	std::string name;
+	std::string alt_name;
+	std::string hud_name;
+	name.swap(value.name);
+	alt_name.swap(value.alt_name);
+	hud_name.swap(value.hud_name);
+	value = {};
+	name.swap(value.name);
+	alt_name.swap(value.alt_name);
+	hud_name.swap(value.hud_name);
+}
+
 Phase2CatalogProjectionStatus project_phase2_catalog_impl(
 	const Phase2ObservationDto& observation,
 	Phase2ManifestSource& output) noexcept
@@ -449,12 +484,11 @@ Phase2CatalogProjectionStatus project_phase2_catalog_impl(
 	output.topology_fingerprint = {};
 	output.referenced_ship_class_keys.fill(0U);
 	output.referenced_weapon_keys.fill(0U);
-	for (std::uint32_t index = 0U; index < raw.class_count; ++index)
-		output.ship_classes[index] = {};
 	for (std::uint32_t index = 0U; index < raw.weapon_count; ++index)
-		output.weapons[index] = {};
+		reset_weapon_source_preserving_strings(output.weapons[index]);
 	for (std::uint32_t index = 0U; index < raw.auxiliary_count; ++index)
-		output.auxiliary_entries[index] = {};
+		reset_auxiliary_source_preserving_string(
+			output.auxiliary_entries[index]);
 
 	for (std::uint32_t index = 0U; index < raw.auxiliary_count;
 		 ++index) {
@@ -564,6 +598,8 @@ Phase2CatalogProjectionStatus project_phase2_catalog_impl(
 			source.bank_count > raw.bank_storage.size() -
 				source.bank_offset)
 			return Phase2CatalogProjectionStatus::InvalidSource;
+		target.full_angle_degrees_provenance = {};
+		target.half_angle_cosines = {1.0F, 1.0F, 1.0F};
 		target.source_key = source.class_capture_key;
 		target.name.assign(source.internal_name.view());
 		target.model_mass = source.model_mass;
@@ -660,6 +696,7 @@ Phase2CatalogProjectionStatus project_phase2_catalog_impl(
 				raw.subsystem_storage[
 					source.subsystem_offset + subsystem];
 			auto& mapped = target.subsystems[subsystem];
+			reset_subsystem_source_preserving_strings(mapped);
 			mapped.source_key =
 				raw_subsystem.subsystem_capture_key;
 			mapped.system_info_key =
@@ -701,6 +738,7 @@ Phase2CatalogProjectionStatus project_phase2_catalog_impl(
 			const auto& raw_bank =
 				raw.bank_storage[source.bank_offset + bank];
 			auto& mapped = target.banks[bank];
+			mapped = {};
 			if (raw_bank.family_source < 1U ||
 				raw_bank.family_source > 4U ||
 				raw_bank.source_family > 2U)
@@ -960,19 +998,6 @@ NativeSessionStartStatus NativeSessionRuntime::start(const NativeSessionStartReq
 		// This rejection precedes controller/DTO allocation, bind and WELCOME.
 		return NativeSessionStartStatus::InvalidConfiguration;
 	}
-	if (selected_phase2_profile == Phase2Profile::TrustedFullState) {
-		// The Phase 4 registry and state-image path must be provisioned before
-		// this profile can publish. Refuse before controller allocation, bind or
-		// WELCOME rather than advertising TrustedFullState with a cockpit image.
-		const auto reason = telemetry_profile_rejection(
-			Phase2ProfileError::TrustedFullStateNotReady);
-		if (request.metrics != nullptr)
-			request.metrics->record_phase2_profile_rejection(reason);
-		if (request.log != nullptr)
-			request.log->phase2_profile_rejected(reason,
-				phase2_profile_coverage(selected_phase2_profile));
-		return NativeSessionStartStatus::InvalidConfiguration;
-	}
 	m_startup_allocation_count = 0U;
 	Capture30Hz capture_cadence;
 	if (!capture_cadence.configure(request.config->flight_hz)) {
@@ -992,6 +1017,24 @@ NativeSessionStartStatus NativeSessionRuntime::start(const NativeSessionStartReq
 		controller_config.delta_payload_capacity =
 			Phase2CompleteShipDeltaBytes;
 	controller_config.phase2_profile = selected_phase2_profile;
+	if (selected_phase2_profile == Phase2Profile::TrustedFullState) {
+		// P4-REQ-019: prove the complete bounded ownership graph before any
+		// controller/session allocation, bind or WELCOME. The publication chain
+		// is not active yet, so release the successfully provisioned graph and
+		// retain the explicit readiness refusal.
+		if (!provision_phase4_runtime_state(request.config->max_clients))
+			return NativeSessionStartStatus::AllocationFailure;
+		++m_startup_allocation_count;
+		release_phase4_runtime_state();
+		const auto reason = telemetry_profile_rejection(
+			Phase2ProfileError::TrustedFullStateNotReady);
+		if (request.metrics != nullptr)
+			request.metrics->record_phase2_profile_rejection(reason);
+		if (request.log != nullptr)
+			request.log->phase2_profile_rejected(reason,
+				phase2_profile_coverage(selected_phase2_profile));
+		return NativeSessionStartStatus::InvalidConfiguration;
+	}
 	if (m_fail_session_controller_provision) {
 		// No controller has been published and no transport operation has begun.
 		// Keep State::Cold so clearing the test-only failpoint permits a retry.
@@ -2047,6 +2090,9 @@ void NativeSessionRuntime::purge_all(SessionCloseReason reason) noexcept
 	if (m_controller_ready) {
 		m_controller.purge_all(reason);
 	}
+	if (reason == SessionCloseReason::MissionDiscontinuity &&
+		m_phase4_runtime_storage)
+		m_phase4_runtime_storage->reset_mission();
 	const auto metric_reason = reason == SessionCloseReason::Timeout ? TelemetrySessionEndReason::Timeout :
 			reason == SessionCloseReason::MissionDiscontinuity ? TelemetrySessionEndReason::MissionDiscontinuity :
 			reason == SessionCloseReason::TransportError ? TelemetrySessionEndReason::TransportError :
@@ -3703,6 +3749,26 @@ bool NativeSessionRuntime::provision_phase2_core_gate_image_pools(
 	return true;
 }
 
+bool NativeSessionRuntime::provision_phase4_runtime_state(
+	std::size_t client_count) noexcept
+{
+	release_phase4_runtime_state();
+	auto storage = std::unique_ptr<Phase4RuntimeStorage>(
+		new (std::nothrow) Phase4RuntimeStorage());
+	if (!storage || !storage->provision(client_count)) return false;
+	const auto owned = storage->owned_backing_bytes();
+	if (owned == 0U) return false;
+	m_phase4_runtime_backing_bytes = owned;
+	m_phase4_runtime_storage = std::move(storage);
+	return true;
+}
+
+void NativeSessionRuntime::release_phase4_runtime_state() noexcept
+{
+	m_phase4_runtime_storage.reset();
+	m_phase4_runtime_backing_bytes = 0U;
+}
+
 void NativeSessionRuntime::release_state_image_pools() noexcept
 {
 	for (auto& pool : m_state_image_pools) {
@@ -3715,6 +3781,7 @@ void NativeSessionRuntime::release_state_image_pools() noexcept
 	m_state_image_pool_backing_bytes = 0U;
 	m_phase2_core_gate_image_pool_backing_bytes = 0U;
 	m_phase2_image_pool_backing_bytes = 0U;
+	release_phase4_runtime_state();
 	release_phase3_manifest_states();
 	release_phase2_manifest_state();
 }
@@ -3831,6 +3898,25 @@ std::uint64_t NativeSessionRuntimeTestAccess::startup_allocation_count(
 	const NativeSessionRuntime& runtime) noexcept
 {
 	return runtime.m_startup_allocation_count;
+}
+
+bool NativeSessionRuntimeTestAccess::provision_phase4_runtime_state(
+	NativeSessionRuntime& runtime, std::size_t client_count) noexcept
+{
+	return runtime.provision_phase4_runtime_state(client_count);
+}
+
+void NativeSessionRuntimeTestAccess::release_phase4_runtime_state(
+	NativeSessionRuntime& runtime) noexcept
+{
+	runtime.release_phase4_runtime_state();
+}
+
+const Phase4RuntimeStorage*
+NativeSessionRuntimeTestAccess::phase4_runtime_storage(
+	const NativeSessionRuntime& runtime) noexcept
+{
+	return runtime.m_phase4_runtime_storage.get();
 }
 
 Phase2CapturePlan NativeSessionRuntimeTestAccess::prepare_phase2_keyframe_plan(

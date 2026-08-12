@@ -9,6 +9,11 @@
 
 namespace telemetry::detail {
 
+// The engine owns at most MAX_OBJECTS live object slots. Keep this ABI-free
+// public-to-telemetry bound independent from the cumulative session identity
+// registry, which deliberately has a larger lifetime capacity.
+constexpr std::size_t Phase4MaximumLiveEntities = 5'000U;
+
 // Engine-derived, but ABI-free, inventory row.  The source class key is an
 // internal catalogue lookup key, not a public class_id and is never serialized.
 struct Phase4EngineInventoryEntry {

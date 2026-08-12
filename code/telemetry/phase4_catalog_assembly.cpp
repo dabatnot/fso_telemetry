@@ -235,12 +235,70 @@ const Phase4EngineInventoryEntry* find_ship_inventory_entry(
 	return nullptr;
 }
 
-} // namespace
+void clear_manifest_source_logical(Phase2ManifestSource& source) noexcept
+{
+	source.ship_class_count = 0U;
+	source.weapon_count = 0U;
+	source.referenced_ship_class_count = 0U;
+	source.referenced_weapon_count = 0U;
+	source.auxiliary_entry_count = 0U;
+	source.metadata = {};
+	source.player_instance_signature = 0U;
+	source.engine_index = 0U;
+	source.manifest_generation = 0U;
+	source.topology_fingerprint = {};
+	source.referenced_ship_class_keys.fill(0U);
+	source.referenced_weapon_keys.fill(0U);
+}
 
-Phase4CatalogAssemblyStatus assemble_phase4_catalog_definitions(
+bool reserve_manifest_source_strings(Phase2ManifestSource& source,
+	bool fragment) noexcept
+{
+	try {
+		const auto class_count = fragment ? 1U : Phase2ManifestLimits::MaxClasses;
+		for (std::uint32_t index = 0U; index < class_count; ++index) {
+			auto& ship_class = source.ship_classes[index];
+			ship_class.name.reserve(255U);
+			for (auto& subsystem : ship_class.subsystems) {
+				subsystem.name.reserve(255U);
+				subsystem.alt_name.reserve(255U);
+				subsystem.hud_name.reserve(255U);
+			}
+		}
+		for (auto& weapon : source.weapons) {
+			weapon.name.reserve(255U);
+			weapon.title.reserve(255U);
+		}
+		for (auto& auxiliary : source.auxiliary_entries)
+			auxiliary.name.reserve(255U);
+		return true;
+	} catch (const std::bad_alloc&) {
+		return false;
+	}
+}
+
+std::size_t manifest_source_backing_bytes(
+	const Phase2ManifestSource& source) noexcept
+{
+	std::size_t total = sizeof(source);
+	for (const auto& ship_class : source.ship_classes) {
+		total += ship_class.name.capacity();
+		for (const auto& subsystem : ship_class.subsystems)
+			total += subsystem.name.capacity() + subsystem.alt_name.capacity() +
+				subsystem.hud_name.capacity();
+	}
+	for (const auto& weapon : source.weapons)
+		total += weapon.name.capacity() + weapon.title.capacity();
+	for (const auto& auxiliary : source.auxiliary_entries)
+		total += auxiliary.name.capacity();
+	return total;
+}
+
+Phase4CatalogAssemblyStatus assemble_into(
 	const Phase4CatalogDefinitionReadView& reader,
 	const std::vector<Phase4EngineInventoryEntry>& inventory,
-	Phase2ManifestSource& output) noexcept
+	Phase2ManifestSource& available,
+	Phase2ManifestSource& fragment) noexcept
 {
 	Phase4CatalogDependencies dependencies;
 	const auto dependency_status =
@@ -250,12 +308,7 @@ Phase4CatalogAssemblyStatus assemble_phase4_catalog_definitions(
 	if (dependency_status != Phase4CatalogDependencyStatus::Collected)
 		return Phase4CatalogAssemblyStatus::SourceLimitExceeded;
 
-	auto available = std::unique_ptr<Phase2ManifestSource>(
-		new (std::nothrow) Phase2ManifestSource());
-	auto fragment = std::unique_ptr<Phase2ManifestSource>(
-		new (std::nothrow) Phase2ManifestSource());
-	if (available == nullptr || fragment == nullptr)
-		return Phase4CatalogAssemblyStatus::AllocationFailure;
+	clear_manifest_source_logical(available);
 	try {
 		for (std::uint32_t dependency = 0U;
 			 dependency < dependencies.ship_class_count; ++dependency) {
@@ -264,40 +317,36 @@ Phase4CatalogAssemblyStatus assemble_phase4_catalog_definitions(
 			const auto* entry = find_ship_inventory_entry(inventory, source_key);
 			if (entry == nullptr)
 				return Phase4CatalogAssemblyStatus::MissingDefinition;
-			fragment->ship_class_count = 0U;
-			fragment->weapon_count = 0U;
-			fragment->auxiliary_entry_count = 0U;
-			const auto read = reader.read_ship_definition(*entry, *fragment);
+			clear_manifest_source_logical(fragment);
+			const auto read = reader.read_ship_definition(*entry, fragment);
 			if (read != Phase4CatalogDefinitionReadStatus::Read)
 				return map_read_status(read);
-			if (fragment->ship_class_count != 1U ||
-				fragment->ship_classes[0].source_key != source_key)
+			if (fragment.ship_class_count != 1U ||
+				fragment.ship_classes[0].source_key != source_key)
 				return Phase4CatalogAssemblyStatus::InvalidDefinition;
-			if (available->ship_class_count == Phase2ManifestLimits::MaxClasses)
+			if (available.ship_class_count == Phase2ManifestLimits::MaxClasses)
 				return Phase4CatalogAssemblyStatus::SourceLimitExceeded;
-			const auto merged = merge_weapons(*fragment, *available);
+			const auto merged = merge_weapons(fragment, available);
 			if (merged != Phase4CatalogAssemblyStatus::Created) return merged;
-			available->ship_classes[available->ship_class_count++] =
-				fragment->ship_classes[0];
+			available.ship_classes[available.ship_class_count++] =
+				fragment.ship_classes[0];
 			const auto& canonical =
-				available->ship_classes[available->ship_class_count - 1U];
+				available.ship_classes[available.ship_class_count - 1U];
 			for (const auto& duplicate : inventory) {
 				if (&duplicate == entry ||
 					duplicate.identity.object_type != protocol::ObjectType::Ship ||
 					duplicate.source_class_key != source_key) continue;
-				fragment->ship_class_count = 0U;
-				fragment->weapon_count = 0U;
-				fragment->auxiliary_entry_count = 0U;
+				clear_manifest_source_logical(fragment);
 				const auto duplicate_read =
-					reader.read_ship_definition(duplicate, *fragment);
+					reader.read_ship_definition(duplicate, fragment);
 				if (duplicate_read != Phase4CatalogDefinitionReadStatus::Read)
 					return map_read_status(duplicate_read);
-				if (fragment->ship_class_count != 1U ||
-					fragment->ship_classes[0].source_key != source_key)
+				if (fragment.ship_class_count != 1U ||
+					fragment.ship_classes[0].source_key != source_key)
 					return Phase4CatalogAssemblyStatus::InvalidDefinition;
-				if (!same_ship_class(canonical, fragment->ship_classes[0]))
+				if (!same_ship_class(canonical, fragment.ship_classes[0]))
 					return Phase4CatalogAssemblyStatus::AmbiguousDefinition;
-				const auto duplicate_merge = merge_weapons(*fragment, *available);
+				const auto duplicate_merge = merge_weapons(fragment, available);
 				if (duplicate_merge != Phase4CatalogAssemblyStatus::Created)
 					return duplicate_merge;
 			}
@@ -307,42 +356,95 @@ Phase4CatalogAssemblyStatus assemble_phase4_catalog_definitions(
 			 dependency < dependencies.weapon_count; ++dependency) {
 			const auto source_key = dependencies.weapon_source_keys[dependency];
 			bool already_available = false;
-			for (std::uint32_t index = 0U; index < available->weapon_count; ++index)
-				if (available->weapons[index].source_key == source_key) {
+			for (std::uint32_t index = 0U; index < available.weapon_count; ++index)
+				if (available.weapons[index].source_key == source_key) {
 					already_available = true;
 					break;
 				}
 			if (already_available) continue;
-			fragment->ship_class_count = 0U;
-			fragment->weapon_count = 0U;
-			fragment->auxiliary_entry_count = 0U;
-			const auto read = reader.read_weapon_definition(source_key, *fragment);
+			clear_manifest_source_logical(fragment);
+			const auto read = reader.read_weapon_definition(source_key, fragment);
 			if (read != Phase4CatalogDefinitionReadStatus::Read)
 				return map_read_status(read);
-			if (fragment->ship_class_count != 0U || fragment->weapon_count != 1U ||
-				fragment->weapons[0].source_key != source_key)
+			if (fragment.ship_class_count != 0U ||
+				fragment.weapon_count != 1U ||
+				fragment.weapons[0].source_key != source_key)
 				return Phase4CatalogAssemblyStatus::InvalidDefinition;
-			const auto merged = merge_weapons(*fragment, *available);
+			const auto merged = merge_weapons(fragment, available);
 			if (merged != Phase4CatalogAssemblyStatus::Created) return merged;
 		}
-
-		const auto built =
-			build_phase4_manifest_source(*available, dependencies, output);
-		switch (built) {
+		const auto prepared =
+			prepare_phase4_manifest_source_in_place(available, dependencies);
+		switch (prepared) {
 		case Phase4ManifestSourceStatus::Created:
 			return Phase4CatalogAssemblyStatus::Created;
 		case Phase4ManifestSourceStatus::MissingDefinition:
 			return Phase4CatalogAssemblyStatus::MissingDefinition;
 		case Phase4ManifestSourceStatus::DuplicateDefinition:
 			return Phase4CatalogAssemblyStatus::AmbiguousDefinition;
-		case Phase4ManifestSourceStatus::AllocationFailure:
-			return Phase4CatalogAssemblyStatus::AllocationFailure;
 		default:
 			return Phase4CatalogAssemblyStatus::InvalidDefinition;
 		}
 	} catch (const std::bad_alloc&) {
 		return Phase4CatalogAssemblyStatus::AllocationFailure;
 	}
+}
+
+} // namespace
+
+bool Phase4CatalogAssemblyWorkspace::provision() noexcept
+{
+	reset();
+	m_available.reset(new (std::nothrow) Phase2ManifestSource());
+	m_fragment.reset(new (std::nothrow) Phase2ManifestSource());
+	if (!m_available || !m_fragment ||
+		!reserve_manifest_source_strings(*m_available, false) ||
+		!reserve_manifest_source_strings(*m_fragment, true)) {
+		reset();
+		return false;
+	}
+	reset_cycle();
+	return true;
+}
+
+void Phase4CatalogAssemblyWorkspace::reset() noexcept
+{
+	m_available.reset();
+	m_fragment.reset();
+}
+
+void Phase4CatalogAssemblyWorkspace::reset_cycle() noexcept
+{
+	if (m_available) clear_manifest_source_logical(*m_available);
+	if (m_fragment) clear_manifest_source_logical(*m_fragment);
+}
+
+bool Phase4CatalogAssemblyWorkspace::ready() const noexcept
+{
+	return m_available != nullptr && m_fragment != nullptr;
+}
+
+std::size_t Phase4CatalogAssemblyWorkspace::owned_backing_bytes() const noexcept
+{
+	return (m_available ? manifest_source_backing_bytes(*m_available) : 0U) +
+		(m_fragment ? manifest_source_backing_bytes(*m_fragment) : 0U);
+}
+
+Phase4CatalogAssemblyStatus assemble_phase4_catalog_definitions_preallocated(
+	const Phase4CatalogDefinitionReadView& reader,
+	const std::vector<Phase4EngineInventoryEntry>& inventory,
+	Phase4CatalogAssemblyWorkspace& workspace,
+	const Phase2ManifestSource*& output) noexcept
+{
+	output = nullptr;
+	if (!workspace.ready())
+		return Phase4CatalogAssemblyStatus::NotReady;
+	workspace.reset_cycle();
+	const auto status = assemble_into(reader, inventory,
+		*workspace.m_available, *workspace.m_fragment);
+	if (status == Phase4CatalogAssemblyStatus::Created)
+		output = workspace.m_available.get();
+	return status;
 }
 
 } // namespace telemetry::detail

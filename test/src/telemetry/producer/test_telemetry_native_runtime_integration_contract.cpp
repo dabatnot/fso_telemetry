@@ -393,6 +393,23 @@ struct NativeFixture {
 		request.requested_phase2_profile = telemetry::Phase2Profile::CoreGate;
 		return runtime.start(request);
 	}
+
+	detail::NativeSessionStartStatus start_requested_with_eligibility(
+		telemetry::TelemetryConfig& config,
+		telemetry::Phase2Profile requested_phase2_profile,
+		const telemetry::Phase2ProfileEligibility& eligibility)
+	{
+		detail::NativeSessionStartRequest request{
+			&config,
+			0x1020304050607080ULL,
+			&ids,
+			&packet_random,
+			nullptr,
+			&log};
+		request.phase2_eligibility = eligibility;
+		request.requested_phase2_profile = requested_phase2_profile;
+		return runtime.start(request);
+	}
 };
 
 using NativePlayerAccess = detail::NativeSessionRuntimePlayerTestAccess;
@@ -1397,6 +1414,33 @@ TEST(TelemetryNativeRuntimeIntegrationContract,
 		solo->start_with_eligibility(config, {}));
 	EXPECT_GT(solo->backend.open_calls, 0U);
 	EXPECT_GT(NativePlayerAccess::startup_allocation_count(solo->runtime), 0U);
+}
+
+TEST(TelemetryNativeRuntimeIntegrationContract,
+	TrustedStartProvisionsBoundedPhase4StorageBeforeReadinessRefusal)
+{
+	auto config = enabled_config(1U);
+	auto unauthorized = std::make_unique<NativeFixture>();
+	EXPECT_EQ(detail::NativeSessionStartStatus::InvalidConfiguration,
+		unauthorized->start_requested_with_eligibility(config,
+			telemetry::Phase2Profile::TrustedFullState, {}));
+	EXPECT_EQ(0U, NativePlayerAccess::startup_allocation_count(
+		unauthorized->runtime));
+	EXPECT_EQ(0U, unauthorized->backend.open_calls);
+
+	telemetry::Phase2ProfileEligibility eligibility;
+	eligibility.visibility_mode = protocol::VisibilityMode::TrustedFullState;
+	eligibility.trusted_full_state = true;
+	auto authorized = std::make_unique<NativeFixture>();
+	EXPECT_EQ(detail::NativeSessionStartStatus::InvalidConfiguration,
+		authorized->start_requested_with_eligibility(config,
+			telemetry::Phase2Profile::TrustedFullState, eligibility));
+	EXPECT_EQ(1U, NativePlayerAccess::startup_allocation_count(
+		authorized->runtime));
+	EXPECT_EQ(nullptr, NativePlayerAccess::phase4_runtime_storage(
+		authorized->runtime));
+	EXPECT_EQ(0U, authorized->backend.open_calls);
+	EXPECT_EQ(0U, authorized->runtime.socket_count());
 }
 
 TEST(TelemetryNativeRuntimeIntegrationContract,

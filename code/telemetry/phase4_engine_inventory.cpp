@@ -11,6 +11,11 @@
 namespace telemetry::detail {
 namespace {
 
+static_assert(MAX_OBJECTS == Phase4MaximumLiveEntities,
+	"Phase 4 startup storage must track the engine live-object ceiling");
+static_assert(Phase4MaximumLiveEntities <= Phase4EntityRegistry::Capacity,
+	"The session identity registry must cover every simultaneous engine object");
+
 protocol::ObjectType object_type(const object& source) noexcept
 {
 	switch (source.type) {

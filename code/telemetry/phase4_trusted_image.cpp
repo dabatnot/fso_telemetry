@@ -30,6 +30,30 @@ Phase4TrustedImageStatus build_phase4_trusted_image_from_inventory(
 		sample_time_us, output);
 }
 
+Phase4TrustedImageStatus build_phase4_trusted_image_from_inventory_preallocated(
+	const std::vector<Phase4EngineInventoryEntry>& inventory,
+	const Phase2ManifestCandidate* manifest,
+	std::uint64_t sample_time_us,
+	std::vector<Phase4EntityProjectionInput>& projections,
+	Phase4StateImagePool& pool,
+	protocol::StateImage& output) noexcept
+{
+	const auto bindings = bind_phase4_catalogs(inventory, manifest,
+		sample_time_us, projections);
+	if (bindings == Phase4CatalogBindingStatus::AllocationFailure)
+		return Phase4TrustedImageStatus::AllocationFailure;
+	if (bindings != Phase4CatalogBindingStatus::Created)
+		return Phase4TrustedImageStatus::InvalidEntities;
+	const auto image = build_phase4_entity_image_preallocated(
+		projections, pool, output);
+	if (image == Phase4EntityImageStatus::AllocationFailure ||
+		image == Phase4EntityImageStatus::TooManyEntities)
+		return Phase4TrustedImageStatus::AllocationFailure;
+	return image == Phase4EntityImageStatus::Created
+		? Phase4TrustedImageStatus::Created
+		: Phase4TrustedImageStatus::InvalidEntities;
+}
+
 Phase4TrustedImageStatus build_phase4_trusted_image(
 	const std::vector<Phase4EntityProjectionInput>& entities,
 	const std::vector<Phase4DockingRelation>& docking_relations,

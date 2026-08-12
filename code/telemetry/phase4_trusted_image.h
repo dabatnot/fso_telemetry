@@ -28,6 +28,17 @@ Phase4TrustedImageStatus build_phase4_trusted_image_from_inventory(
 	std::uint64_t sample_time_us,
 	protocol::StateImage& output);
 
+// Allocation-free first runtime slice. It intentionally emits only the two
+// universal records; docking and inherited ship records are added by later
+// increments before Phase 4 is declared complete.
+Phase4TrustedImageStatus build_phase4_trusted_image_from_inventory_preallocated(
+	const std::vector<Phase4EngineInventoryEntry>& inventory,
+	const Phase2ManifestCandidate* manifest,
+	std::uint64_t sample_time_us,
+	std::vector<Phase4EntityProjectionInput>& projections,
+	Phase4StateImagePool& pool,
+	protocol::StateImage& output) noexcept;
+
 // Combines the entity graph and its ship docking topology into one immutable
 // candidate. The caller observes output only once both projections succeed.
 Phase4TrustedImageStatus build_phase4_trusted_image(

@@ -1,7 +1,7 @@
 #include "telemetry/phase4_manifest_plan.h"
 
-#include <memory>
-#include <new>
+#include <algorithm>
+#include <array>
 
 namespace telemetry::detail {
 namespace {
@@ -63,71 +63,68 @@ bool manifest_matches(const std::uint32_t* required, std::uint32_t required_coun
 
 } // namespace
 
-Phase4ManifestSourceStatus build_phase4_manifest_source(
-	const Phase2ManifestSource& available_definitions,
-	const Phase4CatalogDependencies& dependencies,
-	Phase2ManifestSource& output) noexcept
+Phase4ManifestSourceStatus prepare_phase4_manifest_source_in_place(
+	Phase2ManifestSource& source,
+	const Phase4CatalogDependencies& dependencies) noexcept
 {
 	if (!sorted_unique_nonzero(dependencies.ship_class_source_keys.data(),
 		dependencies.ship_class_count, Phase2ManifestLimits::MaxClasses) ||
 		!sorted_unique_nonzero(dependencies.weapon_source_keys.data(),
 		dependencies.weapon_count, Phase2ManifestLimits::MaxWeapons) ||
-		available_definitions.ship_class_count > Phase2ManifestLimits::MaxClasses ||
-		available_definitions.weapon_count > Phase2ManifestLimits::MaxWeapons)
+		source.ship_class_count > Phase2ManifestLimits::MaxClasses ||
+		source.weapon_count > Phase2ManifestLimits::MaxWeapons)
 		return Phase4ManifestSourceStatus::InvalidDependencies;
-	for (std::uint32_t index = 0U; index < available_definitions.ship_class_count; ++index)
-		if (!exactly_one_definition(available_definitions.ship_classes,
-			available_definitions.ship_class_count,
-			available_definitions.ship_classes[index].source_key))
+	for (std::uint32_t index = 0U; index < source.ship_class_count; ++index)
+		if (!exactly_one_definition(source.ship_classes,
+			source.ship_class_count, source.ship_classes[index].source_key))
 			return Phase4ManifestSourceStatus::DuplicateDefinition;
-	for (std::uint32_t index = 0U; index < available_definitions.weapon_count; ++index)
-		if (!exactly_one_definition(available_definitions.weapons,
-			available_definitions.weapon_count,
-			available_definitions.weapons[index].source_key))
+	for (std::uint32_t index = 0U; index < source.weapon_count; ++index)
+		if (!exactly_one_definition(source.weapons,
+			source.weapon_count, source.weapons[index].source_key))
 			return Phase4ManifestSourceStatus::DuplicateDefinition;
 
-	auto candidate = std::unique_ptr<Phase2ManifestSource>(
-		new (std::nothrow) Phase2ManifestSource(available_definitions));
-	if (candidate == nullptr) return Phase4ManifestSourceStatus::AllocationFailure;
-	candidate->referenced_ship_class_count = 0U;
-	candidate->referenced_weapon_count = 0U;
-	candidate->referenced_ship_class_keys.fill(0U);
-	candidate->referenced_weapon_keys.fill(0U);
+	std::array<std::uint32_t, Phase2ManifestLimits::MaxClasses> class_keys{};
+	std::array<std::uint32_t, Phase2ManifestLimits::MaxWeapons> weapon_keys{};
+	std::uint32_t class_count = 0U;
+	std::uint32_t weapon_count = 0U;
 	for (std::uint32_t index = 0U; index < dependencies.ship_class_count; ++index) {
 		const auto key = dependencies.ship_class_source_keys[index];
-		const auto* ship_class = find_ship_class(available_definitions, key);
-		if (ship_class == nullptr) return Phase4ManifestSourceStatus::MissingDefinition;
-		if (!append_unique(key, candidate->referenced_ship_class_keys.data(),
-			candidate->referenced_ship_class_count,
-			Phase2ManifestLimits::MaxClasses))
-			return Phase4ManifestSourceStatus::InvalidDependencies;
-		if (ship_class->bank_count > Phase2ManifestLimits::MaxBanksPerClass)
+		const auto* ship_class = find_ship_class(source, key);
+		if (ship_class == nullptr)
+			return Phase4ManifestSourceStatus::MissingDefinition;
+		if (!append_unique(key, class_keys.data(), class_count,
+				Phase2ManifestLimits::MaxClasses) ||
+			ship_class->bank_count > Phase2ManifestLimits::MaxBanksPerClass)
 			return Phase4ManifestSourceStatus::InvalidDependencies;
 		for (std::uint32_t bank = 0U; bank < ship_class->bank_count; ++bank)
 			if (!append_unique(ship_class->banks[bank].weapon_source_key,
-				candidate->referenced_weapon_keys.data(),
-				candidate->referenced_weapon_count,
-				Phase2ManifestLimits::MaxWeapons))
+					weapon_keys.data(), weapon_count,
+					Phase2ManifestLimits::MaxWeapons))
 				return Phase4ManifestSourceStatus::InvalidDependencies;
 		if (ship_class->countermeasure_weapon_source_key != 0U &&
 			!append_unique(ship_class->countermeasure_weapon_source_key,
-				candidate->referenced_weapon_keys.data(),
-				candidate->referenced_weapon_count,
+				weapon_keys.data(), weapon_count,
 				Phase2ManifestLimits::MaxWeapons))
 			return Phase4ManifestSourceStatus::InvalidDependencies;
 	}
 	for (std::uint32_t index = 0U; index < dependencies.weapon_count; ++index)
 		if (!append_unique(dependencies.weapon_source_keys[index],
-			candidate->referenced_weapon_keys.data(),
-			candidate->referenced_weapon_count,
+			weapon_keys.data(), weapon_count,
 			Phase2ManifestLimits::MaxWeapons))
 			return Phase4ManifestSourceStatus::InvalidDependencies;
-	for (std::uint32_t index = 0U; index < candidate->referenced_weapon_count; ++index)
-		if (!exactly_one_definition(available_definitions.weapons,
-			available_definitions.weapon_count,
-			candidate->referenced_weapon_keys[index]))
+	for (std::uint32_t index = 0U; index < weapon_count; ++index)
+		if (!exactly_one_definition(source.weapons, source.weapon_count,
+				weapon_keys[index]))
 			return Phase4ManifestSourceStatus::MissingDefinition;
-	output = std::move(*candidate);
+
+	source.referenced_ship_class_keys.fill(0U);
+	source.referenced_weapon_keys.fill(0U);
+	std::copy_n(class_keys.begin(), class_count,
+		source.referenced_ship_class_keys.begin());
+	std::copy_n(weapon_keys.begin(), weapon_count,
+		source.referenced_weapon_keys.begin());
+	source.referenced_ship_class_count = class_count;
+	source.referenced_weapon_count = weapon_count;
 	return Phase4ManifestSourceStatus::Created;
 }
 

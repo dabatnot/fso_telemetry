@@ -11,6 +11,7 @@
 #include "telemetry/phase3_engine_collector.h"
 #include "telemetry/phase3_identity_registry.h"
 #include "telemetry/phase3_state_image.h"
+#include "telemetry/phase4_runtime_storage.h"
 #include "telemetry/session_controller.h"
 #include "telemetry/startup_budget.h"
 #include "telemetry/transport.h"
@@ -216,6 +217,8 @@ class NativeSessionRuntime final : private DatagramIoWork {
 	bool provision_phase2_core_gate_image_pools(
 		std::size_t client_count) noexcept;
 	bool provision_phase2_image_pools(std::size_t client_count) noexcept;
+	bool provision_phase4_runtime_state(std::size_t client_count) noexcept;
+	void release_phase4_runtime_state() noexcept;
 	void release_state_image_pools() noexcept;
 	void refresh_metrics_session_scope() noexcept;
 	void refresh_log_budget_high_water() noexcept;
@@ -278,6 +281,8 @@ class NativeSessionRuntime final : private DatagramIoWork {
 	std::size_t m_state_image_pool_backing_bytes = 0U;
 	std::size_t m_phase2_core_gate_image_pool_backing_bytes = 0U;
 	std::size_t m_phase2_image_pool_backing_bytes = 0U;
+	std::unique_ptr<Phase4RuntimeStorage> m_phase4_runtime_storage;
+	std::size_t m_phase4_runtime_backing_bytes = 0U;
 	Phase2OwnedBudget m_phase2_owned_budget{};
 	Phase2Wp07GlobalEventBatch m_phase2_event_batch_scratch{};
 	Phase2GlobalFanoutResult m_phase2_fanout_scratch{};
