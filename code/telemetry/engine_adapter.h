@@ -164,6 +164,9 @@ class FsoStaticAuthorityTestReadView final
 		output = {};
 		return {Phase2SourceReadStatus::InvalidSource};
 	}
+	// Reads the ship designated by key, not necessarily the player ship. This
+	// is the common static-authority extractor used by Phase 2 and the Phase 4
+	// trusted inventory catalogue.
 	SourceReadResult read_ship(
 		EngineEntityKey, Phase2ShipSource& output) const noexcept override
 	{

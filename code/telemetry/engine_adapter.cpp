@@ -1212,7 +1212,10 @@ SourceReadResult FsoEngineReadView::read_discovery_node(
 	EngineEntityKey key, Phase2DiscoveryNode& output) const noexcept
 {
 	output = {};
-	if (!player_source_is_consistent() || key.object_index < 0 ||
+	// The requested key owns every engine reference below. Requiring the global
+	// player source here would incorrectly exclude valid non-player ships from
+	// the Phase 4 trusted catalogue (and an otherwise valid no-player mission).
+	if (!current_thread_is_main() || !in_mission() || key.object_index < 0 ||
 		key.object_index >= MAX_OBJECTS) {
 		return {Phase2SourceReadStatus::InvalidSource};
 	}
