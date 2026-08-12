@@ -102,6 +102,7 @@ struct SessionControllerConfig {
 	std::size_t delta_payload_capacity =
 		Phase1DeltaScratchBytes;
 	Phase2Profile phase2_profile = Phase2Profile::None;
+	protocol::VisibilityMode visibility_mode = protocol::VisibilityMode::Cockpit;
 	protocol::TelemetryOperationalConfig security;
 };
 

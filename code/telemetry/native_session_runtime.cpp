@@ -252,6 +252,9 @@ bool make_controller_config(const TelemetryConfig& source,
 	output.mission_heartbeat_ms = source.mission_heartbeat_ms;
 	output.idle_heartbeat_ms = source.idle_heartbeat_ms;
 	output.keyframe_seconds = source.keyframe_seconds;
+	output.visibility_mode = source.visibility_mode == VisibilityMode::TrustedFullState
+		? protocol::VisibilityMode::TrustedFullState
+		: protocol::VisibilityMode::Cockpit;
 	output.security.enabled = true;
 	output.security.port = source.bind_port;
 	output.security.discovery_enabled = source.discovery_enabled;

@@ -44,7 +44,8 @@ bool Phase2RuntimeSlot::configure(
 {
 	if ((profile != Phase2Profile::CoreGate &&
 		 profile != Phase2Profile::CompleteShip &&
-		 profile != Phase2Profile::CockpitSensors) ||
+		 profile != Phase2Profile::CockpitSensors &&
+		 profile != Phase2Profile::TrustedFullState) ||
 		session_slot >= Phase2Wp07EpisodeLatches::SessionCapacity)
 		return false;
 	reset();

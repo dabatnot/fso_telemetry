@@ -236,7 +236,8 @@ detail::SessionController make_controller(detail::SessionIdAllocator& ids,
 	std::size_t max_clients = 1U,
 	std::uint8_t keyframe_seconds = 2U,
 	telemetry::Phase2Profile phase2_profile =
-		telemetry::Phase2Profile::None)
+		telemetry::Phase2Profile::None,
+	protocol::VisibilityMode visibility_mode = protocol::VisibilityMode::Cockpit)
 {
 	struct PacketSequences final : detail::RandomSource {
 		std::uint64_t next = 0x10203040U;
@@ -251,6 +252,7 @@ detail::SessionController make_controller(detail::SessionIdAllocator& ids,
 	auto controller_config = config(max_clients);
 	controller_config.keyframe_seconds = keyframe_seconds;
 	controller_config.phase2_profile = phase2_profile;
+	controller_config.visibility_mode = visibility_mode;
 	if (phase2_profile != telemetry::Phase2Profile::None)
 		controller_config.delta_payload_capacity =
 			detail::Phase2CompleteShipDeltaBytes;
@@ -693,6 +695,19 @@ TEST(TelemetryWp06HandshakeContract, AcceptsOnlyExact11AndBuildsCanonicalWelcome
 	EXPECT_EQ(0U, controller.slot(0U).reassembly_bytes_reserved);
 	EXPECT_EQ(1U, controller.slot(0U).reliable_items_in_use)
 		<< "WELCOME Accepted is retained reliably until its exact APPLIED proof.";
+}
+
+TEST(TelemetryPhase4HandshakeContract, TrustedProfileAnnouncesTrustedFullStateInWelcome)
+{
+	IdentityHarness ids{{{true, 0x1111222233334444ULL}}};
+	auto controller = make_controller(ids.allocator, nullptr, 1U, 2U,
+		telemetry::Phase2Profile::TrustedFullState,
+		protocol::VisibilityMode::TrustedFullState);
+	const auto result = controller.ingest(endpoint(), view(hello(77U).bytes), 1'010'000U, 0U, false);
+	ASSERT_EQ(detail::SessionIngressDisposition::ResponseQueued, result.disposition);
+	const auto welcome = decode_welcome(pop_output(controller));
+	EXPECT_EQ(protocol::WelcomeStatus::Accepted, welcome.status);
+	EXPECT_EQ(protocol::VisibilityMode::TrustedFullState, welcome.selected_visibility_mode);
 }
 
 TEST(TelemetryWp06IngressContract, ValidHelloTraversesTheNormativeStagesBeforeSessionMutation)

@@ -267,7 +267,12 @@ SessionControllerConfigureResult SessionController::configure(const SessionContr
 		(config.phase2_profile != Phase2Profile::None &&
 		 config.phase2_profile != Phase2Profile::CoreGate &&
 		 config.phase2_profile != Phase2Profile::CompleteShip &&
-		 config.phase2_profile != Phase2Profile::CockpitSensors) ||
+		 config.phase2_profile != Phase2Profile::CockpitSensors &&
+		 config.phase2_profile != Phase2Profile::TrustedFullState) ||
+		(config.phase2_profile == Phase2Profile::TrustedFullState &&
+		 config.visibility_mode != protocol::VisibilityMode::TrustedFullState) ||
+		(config.phase2_profile != Phase2Profile::TrustedFullState &&
+		 config.visibility_mode != protocol::VisibilityMode::Cockpit) ||
 		config.security.resources.max_clients != config.max_clients ||
 		protocol::validate_security_configuration(config.security, totals) !=
 			protocol::SecurityConfigurationError::None) {
@@ -823,7 +828,7 @@ SessionIngressResult SessionController::ingest_hello(const protocol::EndpointKey
 	welcome.status = supported ? protocol::WelcomeStatus::Accepted : protocol::WelcomeStatus::UnsupportedVersion;
 	welcome.selected_major = supported ? protocol::VersionMajor : 0U;
 	welcome.selected_minor = supported ? protocol::VersionMinorV1_1 : 0U;
-	welcome.selected_visibility_mode = protocol::VisibilityMode::Cockpit;
+	welcome.selected_visibility_mode = m_config.visibility_mode;
 	welcome.heartbeat_interval_ms =
 		supported ? (mission_active ? m_config.mission_heartbeat_ms : m_config.idle_heartbeat_ms) : 0U;
 	welcome.reliable_reassembly_timeout_ms = supported ? protocol::ReliableReassemblyTimeoutV1Ms : 0U;
