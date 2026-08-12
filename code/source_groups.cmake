@@ -1831,6 +1831,8 @@ add_file_folder("Telemetry"
 	telemetry/phase4_entity_registry.h
 	telemetry/phase4_entity_projection.cpp
 	telemetry/phase4_entity_projection.h
+	telemetry/phase4_entity_image.cpp
+	telemetry/phase4_entity_image.h
 	telemetry/runtime.cpp
 	telemetry/runtime.h
 	telemetry/runtime_adapter.cpp
