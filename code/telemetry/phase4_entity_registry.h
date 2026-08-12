@@ -47,6 +47,11 @@ class Phase4EntityRegistry final {
 
 	Phase4EntityRegistryStatus provision() noexcept;
 	void reset_session() noexcept;
+	// Starts a new mission without restarting the session-owned public ID
+	// sequence.  All prior mission identities become unreachable locally; a
+	// subsequent resolve therefore receives an ID strictly greater than every
+	// ID issued earlier in this session.
+	void reset_mission() noexcept;
 	Phase4EntityResolveResult resolve(const Phase4EntityIdentityKey& key) noexcept;
 	Phase4EntityRegistryStatus retire(const Phase4EntityIdentityKey& key) noexcept;
 	// Commits an exact collector inventory. Every active identity absent from

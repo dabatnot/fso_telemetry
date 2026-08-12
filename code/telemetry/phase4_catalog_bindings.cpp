@@ -1,7 +1,5 @@
 #include "telemetry/phase4_catalog_bindings.h"
 
-#include <new>
-
 namespace telemetry::detail {
 namespace {
 
@@ -55,12 +53,9 @@ Phase4CatalogBindingStatus bind_phase4_catalogs(
 	if (output.capacity() < inventory.size())
 		return Phase4CatalogBindingStatus::AllocationFailure;
 
-	std::vector<Phase4EntityProjectionInput> candidate;
-	try {
-		candidate.reserve(inventory.size());
-	} catch (const std::bad_alloc&) {
-		return Phase4CatalogBindingStatus::AllocationFailure;
-	}
+	// Validate completely before mutating the caller-owned, pre-reserved
+	// workspace.  A second pass then materializes the projection without any
+	// allocation in the capture tick.
 	for (const auto& source : inventory) {
 		const auto type = source.identity.object_type;
 		if (source.entity_id == 0U || type < protocol::ObjectType::Ship ||
@@ -71,11 +66,15 @@ Phase4CatalogBindingStatus bind_phase4_catalogs(
 			return Phase4CatalogBindingStatus::MissingClass;
 		if (!public_class_type(type) && source.source_class_key != 0U)
 			return Phase4CatalogBindingStatus::InvalidInventory;
+	}
+	output.clear();
+	for (const auto& source : inventory) {
+		const auto type = source.identity.object_type;
 		Phase4EntityProjectionInput entry;
 		entry.entity_id = source.entity_id;
 		entry.object_type = type;
 		entry.sample_time_us = sample_time_us;
-		entry.class_id = class_id;
+		entry.class_id = public_class_id(*manifest, type, source.source_class_key);
 		entry.position_world = source.position_world;
 		entry.orientation_local_to_world = source.orientation_local_to_world;
 		entry.velocity_world = source.velocity_world;
@@ -83,9 +82,8 @@ Phase4CatalogBindingStatus bind_phase4_catalogs(
 		entry.radius = source.radius;
 		entry.physics_mode_flags = source.physics_mode_flags;
 		entry.static_marker = source.static_marker;
-		candidate.push_back(entry);
+		output.push_back(entry);
 	}
-	output = std::move(candidate);
 	return Phase4CatalogBindingStatus::Created;
 }
 

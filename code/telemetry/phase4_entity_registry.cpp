@@ -29,6 +29,14 @@ void Phase4EntityRegistry::reset_session() noexcept
 	m_reconciliation_active = false;
 }
 
+void Phase4EntityRegistry::reset_mission() noexcept
+{
+	if (m_entries) std::fill_n(m_entries.get(), Capacity, Entry{});
+	m_identity_count = 0U;
+	m_active_count = 0U;
+	m_reconciliation_active = false;
+}
+
 Phase4EntityResolveResult Phase4EntityRegistry::resolve(const Phase4EntityIdentityKey& key) noexcept
 {
 	if (!valid_key(key)) return {Phase4EntityRegistryStatus::InvalidKey, 0U};

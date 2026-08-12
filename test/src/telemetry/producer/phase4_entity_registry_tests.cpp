@@ -108,4 +108,15 @@ TEST(TelemetryPhase4EntityRegistry, ResetIsTheOnlyOperationThatRestartsTheSessio
 	EXPECT_EQ(1U, registry.resolve(key(4U, ObjectType::Weapon)).entity_id);
 }
 
+TEST(TelemetryPhase4EntityRegistry, MissionResetPreservesTheSessionIdSequence)
+{
+	Phase4EntityRegistry registry;
+	ASSERT_EQ(Phase4EntityRegistryStatus::Allocated, registry.provision());
+	ASSERT_EQ(1U, registry.resolve(key(3U, ObjectType::Weapon)).entity_id);
+	registry.reset_mission();
+	EXPECT_EQ(0U, registry.identity_count());
+	EXPECT_EQ(1U, registry.last_allocated_entity_id());
+	EXPECT_EQ(2U, registry.resolve(key(4U, ObjectType::Weapon)).entity_id);
+}
+
 } // namespace

@@ -173,6 +173,12 @@ class FsoStaticAuthorityTestReadView final
 		output = {};
 		return {Phase2SourceReadStatus::InvalidSource};
 	}
+	SourceReadResult read_phase4_weapon_static(
+		std::uint32_t, Phase2RawStaticCatalog& output) const noexcept
+	{
+		output = {};
+		return {Phase2SourceReadStatus::InvalidSource};
+	}
 	bool read_player_controls(
 		PlayerControlObservation& output) const noexcept override
 	{
@@ -224,6 +230,8 @@ class FsoEngineReadView final : public EngineReadView, public Phase2EngineReadVi
 		Phase2CaptureLocalKey key, EngineEntityKey& output) const noexcept override;
 	SourceReadResult read_ship(
 		EngineEntityKey key, Phase2ShipSource& output) const noexcept override;
+	SourceReadResult read_phase4_weapon_static(
+		std::uint32_t source_key, Phase2RawStaticCatalog& output) const noexcept;
 	SourceReadResult read_ship_flight(
 		EngineEntityKey key,
 		ShipFlightObservation& output) const noexcept override;

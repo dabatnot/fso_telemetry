@@ -242,7 +242,7 @@ SourceReadResult extract_production_static_authorities(const object& ship_object
 		}
 		for (std::uint32_t index = 0U; index < referenced_weapon_count; ++index) {
 			if (referenced_weapon_indices[index] == engine_index) {
-				capture_key = index + 1U;
+				capture_key = static_cast<std::uint32_t>(engine_index) + 1U;
 				return true;
 			}
 		}
@@ -250,7 +250,11 @@ SourceReadResult extract_production_static_authorities(const object& ship_object
 			return false;
 		}
 		referenced_weapon_indices[referenced_weapon_count] = engine_index;
-		capture_key = ++referenced_weapon_count;
+		++referenced_weapon_count;
+		// Phase 4 inventories expose weapons by their engine definition key.
+		// Keep that key through the raw catalogue so a projectile can never be
+		// rebound to a different weapon merely because capture order changed.
+		capture_key = static_cast<std::uint32_t>(engine_index) + 1U;
 		return true;
 	};
 	input.guards_valid = true;
@@ -507,7 +511,10 @@ SourceReadResult extract_production_static_authorities(const object& ship_object
 	}
 
 	auto& raw_class = input.ship_info;
-	raw_class.class_capture_key = 1U;
+	// The class key is shared with the Phase 4 inventory.  It deliberately
+	// does not depend on the order in which ships happen to be discovered.
+	raw_class.class_capture_key =
+		static_cast<std::uint32_t>(ship_instance.ship_info_index) + 1U;
 	raw_class.center_of_mass = input.model.center_of_mass;
 	raw_class.subsystem_count = input.subsystem_count;
 	raw_class.subsystem_offset = 0U;
@@ -572,7 +579,8 @@ SourceReadResult extract_production_static_authorities(const object& ship_object
 		}
 		for (std::uint32_t index = 0U; index < referenced_weapon_count; ++index) {
 			if (referenced_weapon_indices[index] == ship_class.cmeasure_type) {
-				raw_class.countermeasure_weapon_capture_key = index + 1U;
+				raw_class.countermeasure_weapon_capture_key =
+					static_cast<std::uint32_t>(ship_class.cmeasure_type) + 1U;
 				raw_class.countermeasure_cargo_size =
 					Weapon_info[ship_class.cmeasure_type].cargo_size;
 				raw_class.countermeasure_firewait_ms =
@@ -598,7 +606,9 @@ SourceReadResult extract_production_static_authorities(const object& ship_object
 			: input.weapon_info.additional_definitions[index - 1U];
 		raw_weapon = {};
 		const auto& source = Weapon_info[referenced_weapon_indices[index]];
-		if (!fill_raw_weapon_definition(source, index + 1U, raw_weapon)) {
+		if (!fill_raw_weapon_definition(source,
+				static_cast<std::uint32_t>(referenced_weapon_indices[index]) + 1U,
+				raw_weapon)) {
 			return {Phase2SourceReadStatus::SourceLimitExceeded};
 		}
 	}
@@ -607,19 +617,23 @@ SourceReadResult extract_production_static_authorities(const object& ship_object
 		[&](Phase2RawAuxiliaryRegistry registry,
 			std::string_view name,
 			std::uint8_t pattern_code,
+			std::uint32_t engine_source_key,
 			std::uint32_t& capture_key) noexcept {
 			if (registry != Phase2RawAuxiliaryRegistry::Pattern &&
-				name.empty()) {
+				(name.empty() || engine_source_key == 0U)) {
 				return false;
 			}
+			if (registry == Phase2RawAuxiliaryRegistry::Pattern &&
+				engine_source_key == 0U) return false;
 			for (std::uint32_t index = 0U;
 				 index < input.registries.additional_count;
 				 ++index) {
 				const auto& existing =
 					input.registries.additional_entries[index];
 				if (existing.registry == registry &&
-					existing.firing_pattern_source_code == pattern_code &&
-					existing.name.view() == name) {
+					existing.capture_key == engine_source_key) {
+					if (existing.firing_pattern_source_code != pattern_code ||
+						existing.name.view() != name) return false;
 					capture_key = existing.capture_key;
 					return true;
 				}
@@ -632,7 +646,7 @@ SourceReadResult extract_production_static_authorities(const object& ship_object
 				input.registries.additional_count++];
 			entry = {};
 			entry.registry = registry;
-			entry.capture_key = input.registries.additional_count;
+			entry.capture_key = engine_source_key;
 			entry.firing_pattern_source_code = pattern_code;
 			if (!name.empty() && !entry.name.assign(name)) {
 				--input.registries.additional_count;
@@ -647,6 +661,7 @@ SourceReadResult extract_production_static_authorities(const object& ship_object
 			!add_auxiliary(Phase2RawAuxiliaryRegistry::Species,
 				Species_info[ship_class.species].species_name,
 				0U,
+				static_cast<std::uint32_t>(ship_class.species) + 1U,
 				raw_class.species_capture_key))) {
 		return {Phase2SourceReadStatus::UnsupportedEngineState};
 	}
@@ -656,6 +671,7 @@ SourceReadResult extract_production_static_authorities(const object& ship_object
 			!add_auxiliary(Phase2RawAuxiliaryRegistry::ShipType,
 				Ship_types[ship_class.class_type].name,
 				0U,
+				static_cast<std::uint32_t>(ship_class.class_type) + 1U,
 				raw_class.ship_type_capture_key))) {
 		return {Phase2SourceReadStatus::UnsupportedEngineState};
 	}
@@ -664,6 +680,7 @@ SourceReadResult extract_production_static_authorities(const object& ship_object
 		!add_auxiliary(Phase2RawAuxiliaryRegistry::Iff,
 			Iff_info[ship_instance.team].iff_name,
 			0U,
+			static_cast<std::uint32_t>(ship_instance.team) + 1U,
 			raw_class.iff_capture_key)) {
 		return {Phase2SourceReadStatus::UnsupportedEngineState};
 	}
@@ -672,6 +689,7 @@ SourceReadResult extract_production_static_authorities(const object& ship_object
 			!add_auxiliary(Phase2RawAuxiliaryRegistry::Wing,
 				Wings[ship_instance.wingnum].name,
 				0U,
+				static_cast<std::uint32_t>(ship_instance.wingnum) + 1U,
 				raw_class.wing_capture_key))) {
 		return {Phase2SourceReadStatus::UnsupportedEngineState};
 	}
@@ -681,6 +699,7 @@ SourceReadResult extract_production_static_authorities(const object& ship_object
 			!add_auxiliary(Phase2RawAuxiliaryRegistry::Armor,
 				Armor_types[ship_instance.armor_type_idx].GetNamePtr(),
 				0U,
+				static_cast<std::uint32_t>(ship_instance.armor_type_idx) + 1U,
 				raw_class.armor_capture_key))) {
 		return {Phase2SourceReadStatus::UnsupportedEngineState};
 	}
@@ -692,6 +711,7 @@ SourceReadResult extract_production_static_authorities(const object& ship_object
 				!add_auxiliary(Phase2RawAuxiliaryRegistry::Armor,
 					Armor_types[armor_index].GetNamePtr(),
 					0U,
+					static_cast<std::uint32_t>(armor_index) + 1U,
 					input.subsystems[index].armor_capture_key))) {
 			return {Phase2SourceReadStatus::UnsupportedEngineState};
 		}
@@ -702,6 +722,7 @@ SourceReadResult extract_production_static_authorities(const object& ship_object
 				!add_auxiliary(Phase2RawAuxiliaryRegistry::Armor,
 					Armor_types[instance_armor_source - 1U].GetNamePtr(),
 					0U,
+					instance_armor_source,
 					instance_subsystem_armor_capture_keys[index]))) {
 			return {Phase2SourceReadStatus::UnsupportedEngineState};
 		}
@@ -715,6 +736,7 @@ SourceReadResult extract_production_static_authorities(const object& ship_object
 				!add_auxiliary(Phase2RawAuxiliaryRegistry::DamageType,
 					Damage_types[damage_index].name,
 					0U,
+					static_cast<std::uint32_t>(damage_index) + 1U,
 					(index == 0U
 						? static_cast<Phase2RawWeaponDefinition&>(
 							input.weapon_info)
@@ -748,6 +770,7 @@ SourceReadResult extract_production_static_authorities(const object& ship_object
 				!add_auxiliary(Phase2RawAuxiliaryRegistry::Pattern,
 					{},
 					pattern_code,
+					static_cast<std::uint32_t>(pattern_code) + 1U,
 					ignored_key)) {
 				return {Phase2SourceReadStatus::UnsupportedEngineState};
 			}
@@ -758,7 +781,8 @@ SourceReadResult extract_production_static_authorities(const object& ship_object
 	output.raw_static_references.weapon_count =
 		referenced_weapon_count;
 	for (std::uint32_t index = 0U; index < referenced_weapon_count; ++index) {
-		output.raw_static_references.weapon_capture_keys[index] = index + 1U;
+		output.raw_static_references.weapon_capture_keys[index] =
+			static_cast<std::uint32_t>(referenced_weapon_indices[index]) + 1U;
 	}
 	output.raw_static_references.auxiliary_count =
 		input.registries.additional_count;
@@ -1337,7 +1361,10 @@ SourceReadResult FsoEngineReadView::read_ship_for_projection(
 	clear_phase2_ship_source_logical(output);
 	if (!core_gate && phase2_wp07_seam_overflowed())
 		return {Phase2SourceReadStatus::SourceLimitExceeded};
-	if (!player_source_is_consistent() || key.object_index < 0 ||
+	// This read is keyed by the requested ship.  The trusted catalogue must
+	// therefore remain available for non-player ships and in a valid mission
+	// that currently has no locally controlled player object.
+	if (!current_thread_is_main() || !in_mission() || key.object_index < 0 ||
 		key.object_index >= MAX_OBJECTS) {
 		return {Phase2SourceReadStatus::InvalidSource};
 	}
@@ -2459,6 +2486,35 @@ SourceReadResult FsoEngineReadView::read_ship_for_projection(
 		output.raw_static_catalog.clear();
 		output.raw_static_references = {};
 		return static_result;
+	}
+	return {Phase2SourceReadStatus::Valid};
+}
+
+SourceReadResult FsoEngineReadView::read_phase4_weapon_static(
+	std::uint32_t source_key, Phase2RawStaticCatalog& output) const noexcept
+{
+	output.clear();
+	if (!current_thread_is_main() || !in_mission() || source_key == 0U ||
+		source_key > Weapon_info.size()) return {Phase2SourceReadStatus::InvalidSource};
+	const auto& source = Weapon_info[source_key - 1U];
+	if (!fill_raw_weapon_definition(source, source_key,
+		output.weapon_definitions[0]))
+		return {Phase2SourceReadStatus::SourceLimitExceeded};
+	if (source.damage_type_idx < -1 ||
+		source.damage_type_idx >= static_cast<int>(Damage_types.size()))
+		return {Phase2SourceReadStatus::UnsupportedEngineState};
+	output.weapon_count = 1U;
+	if (source.damage_type_idx >= 0) {
+		auto& damage = output.auxiliary_entries[0];
+		damage = {};
+		damage.registry = Phase2RawAuxiliaryRegistry::DamageType;
+		damage.capture_key = static_cast<std::uint32_t>(source.damage_type_idx) + 1U;
+		if (!damage.name.assign(Damage_types[source.damage_type_idx].name)) {
+			output.clear();
+			return {Phase2SourceReadStatus::SourceLimitExceeded};
+		}
+		output.weapon_definitions[0].damage_type_capture_key = damage.capture_key;
+		output.auxiliary_count = 1U;
 	}
 	return {Phase2SourceReadStatus::Valid};
 }
