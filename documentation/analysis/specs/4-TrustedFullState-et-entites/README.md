@@ -29,3 +29,18 @@ La phase couvre vaisseaux, armes, projectiles, astéroïdes, débris, jump nodes
 ## Frontière de phase
 
 Les objets non exportables, les événements brefs exacts, le client final, Talking Head et la vidéo cible restent hors Phase 4.
+
+## Ordre d’implémentation
+
+1. Construire les catalogues globaux depuis l’inventaire moteur : classes de
+   configurations effectives de `SHIP` et définitions `WEAPON`.
+2. Projeter les états hérités pour chaque `SHIP` et la pose/lifecycle pour tout
+   objet exporté.
+3. Collecter et valider le docking global.
+4. Raccorder le runtime : manifeste appliqué, keyframe exhaustive, puis ACK.
+5. Ajouter deltas cumulatifs, retraits, resync et les observations fermées.
+
+L’étape 4 ne retire le refus temporaire de `TrustedFullState` que lorsque les
+trois étapes précédentes produisent une image exhaustive dans le vrai chemin
+moteur. Cet ordre décrit les dépendances produit ; il n’est pas un tracker ni
+une autorisation automatique de poursuivre.

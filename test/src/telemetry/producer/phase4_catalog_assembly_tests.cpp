@@ -120,7 +120,7 @@ class FakeCatalogReader final : public Phase4CatalogDefinitionReadView {
 
 Phase4CatalogAssemblyStatus assemble(
 	const Phase4CatalogDefinitionReadView& reader,
-	const std::vector<Phase4EngineInventoryEntry>& inventory,
+	std::vector<Phase4EngineInventoryEntry>& inventory,
 	Phase4CatalogAssemblyWorkspace& workspace,
 	const Phase2ManifestSource*& output)
 {
@@ -140,7 +140,7 @@ TEST(TelemetryPhase4CatalogAssembly,
 	reader.ship_definitions.push_back({2U, std::move(class_two)});
 	reader.ship_definitions.push_back({9U, ship_fragment(9U, {7U})});
 	reader.weapon_definitions.push_back({17U, weapon_fragment(17U)});
-	const std::vector<Phase4EngineInventoryEntry> inventory{
+	std::vector<Phase4EngineInventoryEntry> inventory{
 		inventory_entry(101U, 1U, ObjectType::Ship, 9U),
 		inventory_entry(102U, 2U, ObjectType::Ship, 2U),
 		inventory_entry(103U, 3U, ObjectType::Ship, 2U),
@@ -155,17 +155,17 @@ TEST(TelemetryPhase4CatalogAssembly,
 	EXPECT_EQ(3U, reader.ship_reads);
 	EXPECT_EQ(1U, reader.weapon_reads);
 	ASSERT_EQ(2U, output->ship_class_count);
-	EXPECT_EQ(2U, output->ship_classes[0].source_key);
-	EXPECT_EQ(9U, output->ship_classes[1].source_key);
+	EXPECT_EQ(1U, output->ship_classes[0].source_key);
+	EXPECT_EQ(2U, output->ship_classes[1].source_key);
 	ASSERT_EQ(5U, output->weapon_count);
-	EXPECT_EQ(5U, output->weapons[0].source_key);
-	EXPECT_EQ(6U, output->weapons[1].source_key);
-	EXPECT_EQ(8U, output->weapons[2].source_key);
-	EXPECT_EQ(7U, output->weapons[3].source_key);
+	EXPECT_EQ(7U, output->weapons[0].source_key);
+	EXPECT_EQ(5U, output->weapons[1].source_key);
+	EXPECT_EQ(6U, output->weapons[2].source_key);
+	EXPECT_EQ(8U, output->weapons[3].source_key);
 	EXPECT_EQ(17U, output->weapons[4].source_key);
 	ASSERT_EQ(2U, output->referenced_ship_class_count);
-	EXPECT_EQ(2U, output->referenced_ship_class_keys[0]);
-	EXPECT_EQ(9U, output->referenced_ship_class_keys[1]);
+	EXPECT_EQ(1U, output->referenced_ship_class_keys[0]);
+	EXPECT_EQ(2U, output->referenced_ship_class_keys[1]);
 	ASSERT_EQ(5U, output->referenced_weapon_count);
 }
 
@@ -219,7 +219,7 @@ TEST(TelemetryPhase4CatalogAssembly,
 	EXPECT_EQ(0U, catalog_allocations.load(std::memory_order_relaxed));
 	ASSERT_NE(nullptr, output);
 	ASSERT_EQ(1U, output->ship_class_count);
-	EXPECT_EQ(2U, output->ship_classes[0].source_key);
+	EXPECT_EQ(1U, output->ship_classes[0].source_key);
 	ASSERT_EQ(2U, output->weapon_count);
 	EXPECT_EQ(5U, output->weapons[0].source_key);
 	EXPECT_EQ(17U, output->weapons[1].source_key);
@@ -228,7 +228,7 @@ TEST(TelemetryPhase4CatalogAssembly,
 }
 
 TEST(TelemetryPhase4CatalogAssembly,
-	RejectsTwoPublicVariantsSharingOneInventoryClassKey)
+	AssignsDistinctEffectiveClassesToTwoPublicVariants)
 {
 	class VariantReader final : public Phase4CatalogDefinitionReadView {
 	  public:
@@ -247,16 +247,21 @@ TEST(TelemetryPhase4CatalogAssembly,
 			return Phase4CatalogDefinitionReadStatus::MissingDefinition;
 		}
 	} reader;
-	const std::vector<Phase4EngineInventoryEntry> inventory{
+	std::vector<Phase4EngineInventoryEntry> inventory{
 		inventory_entry(101U, 1U, ObjectType::Ship, 2U),
 		inventory_entry(102U, 2U, ObjectType::Ship, 2U),
 	};
 	Phase4CatalogAssemblyWorkspace workspace;
 	const Phase2ManifestSource* output = nullptr;
 
-	EXPECT_EQ(Phase4CatalogAssemblyStatus::AmbiguousDefinition,
+	ASSERT_EQ(Phase4CatalogAssemblyStatus::Created,
 		assemble(reader, inventory, workspace, output));
-	EXPECT_EQ(nullptr, output);
+	ASSERT_NE(nullptr, output);
+	ASSERT_EQ(2U, output->ship_class_count);
+	EXPECT_EQ(1U, output->ship_classes[0].source_key);
+	EXPECT_EQ(2U, output->ship_classes[1].source_key);
+	EXPECT_EQ(1U, inventory[0].source_class_key);
+	EXPECT_EQ(2U, inventory[1].source_class_key);
 }
 
 TEST(TelemetryPhase4CatalogAssembly,
@@ -268,7 +273,7 @@ TEST(TelemetryPhase4CatalogAssembly,
 	second->weapons[0].damage = 99.0F;
 	reader.ship_definitions.push_back({2U, std::move(first)});
 	reader.ship_definitions.push_back({9U, std::move(second)});
-	const std::vector<Phase4EngineInventoryEntry> inventory{
+	std::vector<Phase4EngineInventoryEntry> inventory{
 		inventory_entry(101U, 1U, ObjectType::Ship, 2U),
 		inventory_entry(102U, 2U, ObjectType::Ship, 9U),
 	};
@@ -284,7 +289,7 @@ TEST(TelemetryPhase4CatalogAssembly,
 	RejectsMissingDirectProjectileDefinitionWithoutPublishing)
 {
 	FakeCatalogReader reader;
-	const std::vector<Phase4EngineInventoryEntry> inventory{
+	std::vector<Phase4EngineInventoryEntry> inventory{
 		inventory_entry(104U, 4U, ObjectType::Weapon, 17U),
 	};
 	Phase4CatalogAssemblyWorkspace workspace;
@@ -296,25 +301,46 @@ TEST(TelemetryPhase4CatalogAssembly,
 }
 
 TEST(TelemetryPhase4CatalogAssembly,
-	RejectsMismatchedClassDefinitionWithoutPublishing)
+	AssignsAnEffectiveKeyIndependentOfTheEngineClassIndex)
 {
 	FakeCatalogReader reader;
 	reader.ship_definitions.push_back({2U, ship_fragment(3U, {5U})});
-	const std::vector<Phase4EngineInventoryEntry> inventory{
+	std::vector<Phase4EngineInventoryEntry> inventory{
 		inventory_entry(101U, 1U, ObjectType::Ship, 2U),
 	};
 	Phase4CatalogAssemblyWorkspace workspace;
 	const Phase2ManifestSource* output = nullptr;
 
-	EXPECT_EQ(Phase4CatalogAssemblyStatus::InvalidDefinition,
+	ASSERT_EQ(Phase4CatalogAssemblyStatus::Created,
 		assemble(reader, inventory, workspace, output));
-	EXPECT_EQ(nullptr, output);
+	ASSERT_NE(nullptr, output);
+	EXPECT_EQ(1U, output->ship_classes[0].source_key);
+	EXPECT_EQ(1U, inventory[0].source_class_key);
 }
 
 TEST(TelemetryPhase4CatalogAssembly,
 	RejectsTheSixtyFifthShipClassBeforeReadingOrPublishing)
 {
-	FakeCatalogReader reader;
+	class LimitReader final : public Phase4CatalogDefinitionReadView {
+	  public:
+		Phase4CatalogDefinitionReadStatus read_ship_definition(
+			const Phase4EngineInventoryEntry& entry,
+			Phase2ManifestSource& output) const noexcept override
+		{
+			++ship_reads;
+			output.ship_class_count = 1U;
+			output.ship_classes[0] = {};
+			output.ship_classes[0].source_key = entry.source_class_key;
+			output.ship_classes[0].name.assign(std::to_string(entry.source_class_key));
+			return Phase4CatalogDefinitionReadStatus::Read;
+		}
+		Phase4CatalogDefinitionReadStatus read_weapon_definition(
+			std::uint32_t, Phase2ManifestSource&) const noexcept override
+		{
+			return Phase4CatalogDefinitionReadStatus::MissingDefinition;
+		}
+		mutable std::uint32_t ship_reads = 0U;
+	} reader;
 	std::vector<Phase4EngineInventoryEntry> inventory;
 	for (std::uint32_t key = 1U; key <= 65U; ++key)
 		inventory.push_back(inventory_entry(100U + key, key,
@@ -324,7 +350,7 @@ TEST(TelemetryPhase4CatalogAssembly,
 
 	EXPECT_EQ(Phase4CatalogAssemblyStatus::SourceLimitExceeded,
 		assemble(reader, inventory, workspace, output));
-	EXPECT_EQ(0U, reader.ship_reads);
+	EXPECT_EQ(65U, reader.ship_reads);
 	EXPECT_EQ(nullptr, output);
 }
 

@@ -1417,7 +1417,7 @@ TEST(TelemetryNativeRuntimeIntegrationContract,
 }
 
 TEST(TelemetryNativeRuntimeIntegrationContract,
-	TrustedStartProvisionsBoundedPhase4StorageBeforeReadinessRefusal)
+	TrustedStartRetainsBoundedPhase4StorageBeforePublication)
 {
 	auto config = enabled_config(1U);
 	auto unauthorized = std::make_unique<NativeFixture>();
@@ -1432,15 +1432,30 @@ TEST(TelemetryNativeRuntimeIntegrationContract,
 	eligibility.visibility_mode = protocol::VisibilityMode::TrustedFullState;
 	eligibility.trusted_full_state = true;
 	auto authorized = std::make_unique<NativeFixture>();
-	EXPECT_EQ(detail::NativeSessionStartStatus::InvalidConfiguration,
+	EXPECT_EQ(detail::NativeSessionStartStatus::Started,
 		authorized->start_requested_with_eligibility(config,
 			telemetry::Phase2Profile::TrustedFullState, eligibility));
-	EXPECT_EQ(1U, NativePlayerAccess::startup_allocation_count(
-		authorized->runtime));
-	EXPECT_EQ(nullptr, NativePlayerAccess::phase4_runtime_storage(
-		authorized->runtime));
-	EXPECT_EQ(0U, authorized->backend.open_calls);
-	EXPECT_EQ(0U, authorized->runtime.socket_count());
+	EXPECT_GT(NativePlayerAccess::startup_allocation_count(
+		authorized->runtime), 1U);
+	const auto* phase4 = NativePlayerAccess::phase4_runtime_storage(
+		authorized->runtime);
+	ASSERT_NE(nullptr, phase4);
+	EXPECT_TRUE(phase4->ready());
+	EXPECT_EQ(1U, phase4->client_count());
+	EXPECT_GT(authorized->backend.open_calls, 0U);
+	EXPECT_EQ(1U, authorized->runtime.socket_count());
+	const auto budget = NativePlayerAccess::phase2_owned_budget(
+		authorized->runtime);
+	EXPECT_EQ(detail::StartupBudgetError::None, budget.error);
+	EXPECT_TRUE(detail::phase4_owned_scope_within_cap(
+		detail::TelemetryPhase2MemoryScope::Shared,
+		budget.shared_owned_bytes));
+	EXPECT_TRUE(detail::phase4_owned_scope_within_cap(
+		detail::TelemetryPhase2MemoryScope::ClientTotal,
+		budget.client_owned_bytes));
+	EXPECT_TRUE(detail::phase4_owned_scope_within_cap(
+		detail::TelemetryPhase2MemoryScope::ProcessTotal,
+		budget.process_owned_bytes));
 }
 
 TEST(TelemetryNativeRuntimeIntegrationContract,

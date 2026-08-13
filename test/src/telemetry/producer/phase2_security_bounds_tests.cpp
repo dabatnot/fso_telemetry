@@ -314,6 +314,38 @@ TEST(Phase3SecurityBounds, ExactOwnedCapsAndReplicationScratchCoverFourThousandN
 		detail::calculate_phase3_owned_budget(overflow).error);
 }
 
+TEST(Phase4SecurityBounds, ExactOwnedCapsAndClosedOverflowRejection)
+{
+	static_assert(detail::Phase4SharedOwnedCapBytes == 335'544'320U);
+	static_assert(detail::Phase4ClientOwnedCapBytes == 117'440'512U);
+	static_assert(detail::Phase4ProcessOwnedCapBytes == 805'306'368U);
+	const detail::Phase2OwnedBudgetRequest exact{
+		detail::Phase4SharedOwnedCapBytes,
+		detail::Phase4ClientOwnedCapBytes,
+		4U};
+	const auto accepted = detail::calculate_phase4_owned_budget(exact);
+	EXPECT_EQ(detail::StartupBudgetError::None, accepted.error);
+	EXPECT_EQ(detail::Phase4ProcessOwnedCapBytes,
+		accepted.process_owned_bytes);
+
+	for (const auto scope : {detail::TelemetryPhase2MemoryScope::Shared,
+			detail::TelemetryPhase2MemoryScope::ClientTotal,
+			detail::TelemetryPhase2MemoryScope::ProcessTotal}) {
+		const auto cap = scope == detail::TelemetryPhase2MemoryScope::Shared
+			? detail::Phase4SharedOwnedCapBytes
+			: scope == detail::TelemetryPhase2MemoryScope::ClientTotal
+			? detail::Phase4ClientOwnedCapBytes
+			: detail::Phase4ProcessOwnedCapBytes;
+		EXPECT_TRUE(detail::phase4_owned_scope_within_cap(scope, cap));
+		EXPECT_FALSE(detail::phase4_owned_scope_within_cap(scope, cap + 1U));
+	}
+	EXPECT_EQ(detail::StartupBudgetError::InvalidClientCount,
+		detail::calculate_phase4_owned_budget({0U, 0U, 0U}).error);
+	EXPECT_EQ(detail::StartupBudgetError::ArithmeticOverflow,
+		detail::calculate_phase4_owned_budget(
+			{0U, std::numeric_limits<std::size_t>::max(), 4U}).error);
+}
+
 TEST(Phase2SecurityBounds, P2AC012Phase2MetricsAreClosedBoundedResettableAndHighWatered)
 {
 	static_assert(std::is_trivially_copyable_v<detail::TelemetryMetricsSnapshot>);
@@ -519,7 +551,7 @@ TEST(Phase2SecurityBounds, P2AC011DiagnosticsContainOnlyClosedNumericLabels)
 		static_cast<std::size_t>(detail::TelemetryPhase2ClosureResult::Count));
 	EXPECT_EQ(3U,
 		static_cast<std::size_t>(detail::TelemetryPhase2ManifestResult::Count));
-	EXPECT_EQ(4U,
+	EXPECT_EQ(5U,
 		static_cast<std::size_t>(detail::TelemetryPhase2Profile::Count));
 	EXPECT_EQ(5U,
 		static_cast<std::size_t>(

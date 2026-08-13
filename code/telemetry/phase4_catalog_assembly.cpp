@@ -99,7 +99,7 @@ bool same_bank(const Phase2BankSource& left,
 bool same_ship_class(const Phase2ClassSource& left,
 	const Phase2ClassSource& right) noexcept
 {
-	if (std::tie(left.source_key, left.name, left.model_mass,
+	if (std::tie(left.name, left.model_mass,
 		left.density_provenance, left.effective_mass, left.model_inertia,
 		left.effective_inertia, left.full_angle_degrees_provenance,
 		left.half_angle_cosines, left.effective_inertia_matrix,
@@ -120,7 +120,7 @@ bool same_ship_class(const Phase2ClassSource& left,
 		left.countermeasure_uses_capacity,
 		left.countermeasure_weapon_source_key,
 		left.countermeasure_firewait_ms) !=
-		std::tie(right.source_key, right.name, right.model_mass,
+		std::tie(right.name, right.model_mass,
 		right.density_provenance, right.effective_mass, right.model_inertia,
 		right.effective_inertia, right.full_angle_degrees_provenance,
 		right.half_angle_cosines, right.effective_inertia_matrix,
@@ -225,16 +225,6 @@ Phase4CatalogAssemblyStatus merge_weapons(
 	return merge_auxiliary(fragment, available);
 }
 
-const Phase4EngineInventoryEntry* find_ship_inventory_entry(
-	const std::vector<Phase4EngineInventoryEntry>& inventory,
-	std::uint32_t source_key) noexcept
-{
-	for (const auto& entry : inventory)
-		if (entry.identity.object_type == protocol::ObjectType::Ship &&
-			entry.source_class_key == source_key) return &entry;
-	return nullptr;
-}
-
 void clear_manifest_source_logical(Phase2ManifestSource& source) noexcept
 {
 	source.ship_class_count = 0U;
@@ -296,61 +286,62 @@ std::size_t manifest_source_backing_bytes(
 
 Phase4CatalogAssemblyStatus assemble_into(
 	const Phase4CatalogDefinitionReadView& reader,
-	const std::vector<Phase4EngineInventoryEntry>& inventory,
+	std::vector<Phase4EngineInventoryEntry>& inventory,
 	Phase2ManifestSource& available,
 	Phase2ManifestSource& fragment) noexcept
 {
-	Phase4CatalogDependencies dependencies;
-	const auto dependency_status =
-		discover_phase4_catalog_dependencies(inventory, dependencies);
-	if (dependency_status == Phase4CatalogDependencyStatus::InvalidInventory)
-		return Phase4CatalogAssemblyStatus::InvalidInventory;
-	if (dependency_status != Phase4CatalogDependencyStatus::Collected)
-		return Phase4CatalogAssemblyStatus::SourceLimitExceeded;
-
 	clear_manifest_source_logical(available);
 	try {
-		for (std::uint32_t dependency = 0U;
-			 dependency < dependencies.ship_class_count; ++dependency) {
-			const auto source_key =
-				dependencies.ship_class_source_keys[dependency];
-			const auto* entry = find_ship_inventory_entry(inventory, source_key);
-			if (entry == nullptr)
-				return Phase4CatalogAssemblyStatus::MissingDefinition;
+		// Read SHIPs in stable engine-signature order. The resulting source keys
+		// name effective static configurations, not a raw ship_info_index.
+		std::uint64_t previous_ship_identity = 0U;
+		for (;;) {
+			Phase4EngineInventoryEntry* entry = nullptr;
+			for (auto& candidate : inventory) {
+				if (candidate.identity.object_type != protocol::ObjectType::Ship ||
+					candidate.identity.stable_identity == 0U ||
+					candidate.identity.stable_identity <= previous_ship_identity) continue;
+				if (entry == nullptr || candidate.identity.stable_identity <
+					entry->identity.stable_identity)
+					entry = &candidate;
+			}
+			if (entry == nullptr) break;
+			previous_ship_identity = entry->identity.stable_identity;
+			if (entry->source_class_key == 0U)
+				return Phase4CatalogAssemblyStatus::InvalidInventory;
 			clear_manifest_source_logical(fragment);
 			const auto read = reader.read_ship_definition(*entry, fragment);
 			if (read != Phase4CatalogDefinitionReadStatus::Read)
 				return map_read_status(read);
 			if (fragment.ship_class_count != 1U ||
-				fragment.ship_classes[0].source_key != source_key)
+				fragment.ship_classes[0].source_key == 0U)
 				return Phase4CatalogAssemblyStatus::InvalidDefinition;
-			if (available.ship_class_count == Phase2ManifestLimits::MaxClasses)
-				return Phase4CatalogAssemblyStatus::SourceLimitExceeded;
-			const auto merged = merge_weapons(fragment, available);
-			if (merged != Phase4CatalogAssemblyStatus::Created) return merged;
-			available.ship_classes[available.ship_class_count++] =
-				fragment.ship_classes[0];
-			const auto& canonical =
-				available.ship_classes[available.ship_class_count - 1U];
-			for (const auto& duplicate : inventory) {
-				if (&duplicate == entry ||
-					duplicate.identity.object_type != protocol::ObjectType::Ship ||
-					duplicate.source_class_key != source_key) continue;
-				clear_manifest_source_logical(fragment);
-				const auto duplicate_read =
-					reader.read_ship_definition(duplicate, fragment);
-				if (duplicate_read != Phase4CatalogDefinitionReadStatus::Read)
-					return map_read_status(duplicate_read);
-				if (fragment.ship_class_count != 1U ||
-					fragment.ship_classes[0].source_key != source_key)
-					return Phase4CatalogAssemblyStatus::InvalidDefinition;
-				if (!same_ship_class(canonical, fragment.ship_classes[0]))
-					return Phase4CatalogAssemblyStatus::AmbiguousDefinition;
-				const auto duplicate_merge = merge_weapons(fragment, available);
-				if (duplicate_merge != Phase4CatalogAssemblyStatus::Created)
-					return duplicate_merge;
+			std::uint32_t effective_key = 0U;
+			for (std::uint32_t index = 0U; index < available.ship_class_count; ++index)
+				if (same_ship_class(available.ship_classes[index],
+					fragment.ship_classes[0])) {
+					effective_key = available.ship_classes[index].source_key;
+					break;
+				}
+			if (effective_key == 0U) {
+				if (available.ship_class_count == Phase2ManifestLimits::MaxClasses)
+					return Phase4CatalogAssemblyStatus::SourceLimitExceeded;
+				effective_key = available.ship_class_count + 1U;
+				fragment.ship_classes[0].source_key = effective_key;
+				const auto merged = merge_weapons(fragment, available);
+				if (merged != Phase4CatalogAssemblyStatus::Created) return merged;
+				available.ship_classes[available.ship_class_count++] =
+					fragment.ship_classes[0];
 			}
+			entry->source_class_key = effective_key;
 		}
+		Phase4CatalogDependencies dependencies;
+		const auto dependency_status =
+			discover_phase4_catalog_dependencies(inventory, dependencies);
+		if (dependency_status == Phase4CatalogDependencyStatus::InvalidInventory)
+			return Phase4CatalogAssemblyStatus::InvalidInventory;
+		if (dependency_status != Phase4CatalogDependencyStatus::Collected)
+			return Phase4CatalogAssemblyStatus::SourceLimitExceeded;
 
 		for (std::uint32_t dependency = 0U;
 			 dependency < dependencies.weapon_count; ++dependency) {
@@ -432,7 +423,7 @@ std::size_t Phase4CatalogAssemblyWorkspace::owned_backing_bytes() const noexcept
 
 Phase4CatalogAssemblyStatus assemble_phase4_catalog_definitions_preallocated(
 	const Phase4CatalogDefinitionReadView& reader,
-	const std::vector<Phase4EngineInventoryEntry>& inventory,
+	std::vector<Phase4EngineInventoryEntry>& inventory,
 	Phase4CatalogAssemblyWorkspace& workspace,
 	const Phase2ManifestSource*& output) noexcept
 {

@@ -22,7 +22,6 @@ enum class Phase2ProfileError : std::uint8_t {
 	UnsupportedVisibility,
 	TrustedFullStateNotAllowed,
 	TrustedFullStateRequired,
-	TrustedFullStateNotReady,
 	DedicatedNotAllowed,
 	HeadlessNotAllowed,
 	Count,

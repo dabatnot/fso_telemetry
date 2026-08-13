@@ -18,6 +18,7 @@ TEST(TelemetryPhase4RuntimeStorage,
 	ASSERT_TRUE(storage.ready());
 	EXPECT_EQ(2U, storage.client_count());
 	EXPECT_GT(storage.owned_backing_bytes(), 0U);
+	EXPECT_GT(storage.shared_owned_backing_bytes(), 0U);
 	EXPECT_TRUE(storage.identities().ready());
 	EXPECT_EQ(Phase4MaximumLiveEntities, storage.inventory().capacity());
 	EXPECT_EQ(Phase4MaximumLiveEntities, storage.projections().capacity());
@@ -28,6 +29,11 @@ TEST(TelemetryPhase4RuntimeStorage,
 	EXPECT_EQ(nullptr, storage.image_pool(2U));
 	EXPECT_EQ(Phase4MaximumLiveEntities,
 		storage.image_pool(0U)->maximum_entities());
+	EXPECT_EQ(storage.client_owned_backing_bytes(0U),
+		storage.client_owned_backing_bytes(1U));
+	EXPECT_EQ(storage.owned_backing_bytes(),
+		storage.shared_owned_backing_bytes() +
+			2U * storage.client_owned_backing_bytes(0U));
 }
 
 TEST(TelemetryPhase4RuntimeStorage,

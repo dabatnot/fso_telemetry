@@ -176,7 +176,7 @@ class FsoPhase4CatalogDefinitionReadView final
 
 Phase4CatalogAssemblyStatus collect_phase4_catalog_definitions_preallocated(
 	const FsoEngineReadView& engine,
-	const std::vector<Phase4EngineInventoryEntry>& inventory,
+	std::vector<Phase4EngineInventoryEntry>& inventory,
 	Phase4CatalogCollectorWorkspace& workspace,
 	const Phase2ManifestSource*& output) noexcept
 {
@@ -197,7 +197,7 @@ namespace telemetry::detail {
 
 Phase4CatalogAssemblyStatus collect_phase4_catalog_definitions_preallocated(
 	const FsoEngineReadView&,
-	const std::vector<Phase4EngineInventoryEntry>&,
+	std::vector<Phase4EngineInventoryEntry>&,
 	Phase4CatalogCollectorWorkspace&,
 	const Phase2ManifestSource*& output) noexcept
 {

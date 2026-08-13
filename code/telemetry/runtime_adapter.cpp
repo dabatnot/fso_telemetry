@@ -484,7 +484,8 @@ RuntimeTickStatus RuntimeAdapterPlayerTestAccess::service_tick(NativeSessionRunt
 		runtime->service_tick(
 			{context.now_us, context.mission_generation, context.mission_active},
 			view,
-			phase2_view));
+			phase2_view,
+			&view));
 }
 
 RuntimeTickStatus RuntimeAdapterPlayerTestAccess::map_tick_status(NativeSessionTickStatus status) noexcept

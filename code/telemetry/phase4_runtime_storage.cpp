@@ -62,14 +62,26 @@ void Phase4RuntimeStorage::reset_mission() noexcept
 
 std::size_t Phase4RuntimeStorage::owned_backing_bytes() const noexcept
 {
-	std::size_t total = m_identities.provisioned_bytes() +
+	std::size_t total = shared_owned_backing_bytes();
+	for (std::size_t slot = 0U; slot < m_client_count; ++slot)
+		total += client_owned_backing_bytes(slot);
+	return total;
+}
+
+std::size_t Phase4RuntimeStorage::shared_owned_backing_bytes() const noexcept
+{
+	return m_identities.provisioned_bytes() +
 		m_inventory.capacity() * sizeof(Phase4EngineInventoryEntry) +
 		m_projections.capacity() * sizeof(Phase4EntityProjectionInput) +
 		m_docking_relations.capacity() * sizeof(Phase4DockingRelation) +
 		m_catalog.owned_backing_bytes();
-	for (std::size_t slot = 0U; slot < m_client_count; ++slot)
-		total += m_image_pools[slot].owned_backing_bytes();
-	return total;
+}
+
+std::size_t Phase4RuntimeStorage::client_owned_backing_bytes(
+	std::size_t client_slot) const noexcept
+{
+	return m_ready && client_slot < m_client_count
+		? m_image_pools[client_slot].owned_backing_bytes() : 0U;
 }
 
 Phase4StateImagePool* Phase4RuntimeStorage::image_pool(

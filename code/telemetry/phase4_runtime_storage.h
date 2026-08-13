@@ -26,6 +26,9 @@ class Phase4RuntimeStorage final {
 	bool ready() const noexcept { return m_ready; }
 	std::size_t client_count() const noexcept { return m_client_count; }
 	std::size_t owned_backing_bytes() const noexcept;
+	std::size_t shared_owned_backing_bytes() const noexcept;
+	std::size_t client_owned_backing_bytes(
+		std::size_t client_slot) const noexcept;
 
 	Phase4EntityRegistry& identities() noexcept { return m_identities; }
 	std::vector<Phase4EngineInventoryEntry>& inventory() noexcept {

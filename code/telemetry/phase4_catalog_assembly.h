@@ -57,7 +57,7 @@ class Phase4CatalogAssemblyWorkspace final {
 	friend Phase4CatalogAssemblyStatus
 	assemble_phase4_catalog_definitions_preallocated(
 		const Phase4CatalogDefinitionReadView&,
-		const std::vector<Phase4EngineInventoryEntry>&,
+		std::vector<Phase4EngineInventoryEntry>&,
 		Phase4CatalogAssemblyWorkspace&,
 		const Phase2ManifestSource*&) noexcept;
 	std::unique_ptr<Phase2ManifestSource> m_available;
@@ -69,7 +69,7 @@ class Phase4CatalogAssemblyWorkspace final {
 // reset_cycle/assembly.
 Phase4CatalogAssemblyStatus assemble_phase4_catalog_definitions_preallocated(
 	const Phase4CatalogDefinitionReadView& reader,
-	const std::vector<Phase4EngineInventoryEntry>& inventory,
+	std::vector<Phase4EngineInventoryEntry>& inventory,
 	Phase4CatalogAssemblyWorkspace& workspace,
 	const Phase2ManifestSource*& output) noexcept;
 

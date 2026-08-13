@@ -174,7 +174,8 @@ class NativeSessionRuntime final : private DatagramIoWork {
 	NativeSessionStartStatus start(const NativeSessionStartRequest& request) noexcept;
 	NativeSessionTickStatus service_tick(const NativeSessionTickContext& context,
 		const EngineReadView& engine_view,
-		const Phase2EngineReadView* phase2_view = nullptr) noexcept;
+		const Phase2EngineReadView* phase2_view = nullptr,
+		const FsoEngineReadView* phase4_view = nullptr) noexcept;
 	void stop_collection() noexcept;
 	void purge_all(SessionCloseReason reason) noexcept;
 	void shutdown() noexcept;
@@ -218,6 +219,9 @@ class NativeSessionRuntime final : private DatagramIoWork {
 		std::size_t client_count) noexcept;
 	bool provision_phase2_image_pools(std::size_t client_count) noexcept;
 	bool provision_phase4_runtime_state(std::size_t client_count) noexcept;
+	bool collect_phase4_runtime_cycle(
+		const FsoEngineReadView& engine_view) noexcept;
+	void clear_phase4_capture_cycle() noexcept;
 	void release_phase4_runtime_state() noexcept;
 	void release_state_image_pools() noexcept;
 	void refresh_metrics_session_scope() noexcept;
@@ -283,6 +287,11 @@ class NativeSessionRuntime final : private DatagramIoWork {
 	std::size_t m_phase2_image_pool_backing_bytes = 0U;
 	std::unique_ptr<Phase4RuntimeStorage> m_phase4_runtime_storage;
 	std::size_t m_phase4_runtime_backing_bytes = 0U;
+	const Phase2ManifestSource* m_phase4_catalog_source = nullptr;
+	Phase4EngineInventoryStatus m_last_phase4_inventory_status =
+		Phase4EngineInventoryStatus::NotReady;
+	Phase4CatalogAssemblyStatus m_last_phase4_catalog_status =
+		Phase4CatalogAssemblyStatus::NotReady;
 	Phase2OwnedBudget m_phase2_owned_budget{};
 	Phase2Wp07GlobalEventBatch m_phase2_event_batch_scratch{};
 	Phase2GlobalFanoutResult m_phase2_fanout_scratch{};
