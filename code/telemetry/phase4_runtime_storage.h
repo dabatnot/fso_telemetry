@@ -5,6 +5,8 @@
 #include "telemetry/phase4_docking_projection.h"
 #include "telemetry/phase4_entity_image.h"
 #include "telemetry/phase4_engine_inventory.h"
+#include "telemetry/phase2_manifest_builder.h"
+#include "telemetry/protocol/telemetry_replication.h"
 
 #include <array>
 #include <cstddef>
@@ -44,6 +46,21 @@ class Phase4RuntimeStorage final {
 	std::vector<Phase4DockingRelation>& docking_relations() noexcept {
 		return m_docking_relations;
 	}
+	std::vector<protocol::StateAtom>& inherited_ship_records() noexcept {
+		return m_inherited_ship_records;
+	}
+	const Phase2ManifestCandidate* rebuild_local_manifest(
+		const Phase2ManifestSource& source) noexcept;
+	const Phase2ManifestCandidate* current_manifest() const noexcept {
+		return m_current_manifest;
+	}
+	const protocol::StateImage& candidate_image() const noexcept {
+		return m_candidate_image;
+	}
+	void set_candidate_image(protocol::StateImage image) noexcept {
+		m_candidate_image = std::move(image);
+	}
+	void clear_candidate_image() noexcept { m_candidate_image = {}; }
 	Phase4StateImagePool* image_pool(std::size_t client_slot) noexcept;
 
   private:
@@ -53,6 +70,12 @@ class Phase4RuntimeStorage final {
 	Phase4CatalogCollectorWorkspace m_catalog;
 	std::vector<Phase4EntityProjectionInput> m_projections;
 	std::vector<Phase4DockingRelation> m_docking_relations;
+	std::vector<protocol::StateAtom> m_inherited_ship_records;
+	std::unique_ptr<std::uint8_t[]> m_manifest_backing;
+	std::unique_ptr<Phase2ManifestStorage> m_manifest_storage;
+	std::unique_ptr<Phase2ManifestSlot> m_manifest_slot;
+	const Phase2ManifestCandidate* m_current_manifest = nullptr;
+	protocol::StateImage m_candidate_image;
 	std::array<Phase4StateImagePool, Phase4MaximumClients> m_image_pools{};
 	std::size_t m_client_count = 0U;
 	bool m_ready = false;

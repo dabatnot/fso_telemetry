@@ -131,6 +131,15 @@ TEST(TelemetryPhase4EntityProjection, RejectsUnknownTypesInvalidClassesAndInvali
 	bomb_asteroid.lifecycle_flags = telemetry::protocol::EntityLifecycleFlagBomb;
 	EXPECT_EQ(Phase4EntityProjectionStatus::InvalidLifecycle,
 		project_phase4_entity(bomb_asteroid, lifecycle, flight));
+	auto unknown_phase = input(ObjectType::Ship);
+	unknown_phase.lifecycle_phase =
+		static_cast<telemetry::protocol::LifecyclePhase>(6U);
+	EXPECT_EQ(Phase4EntityProjectionStatus::InvalidLifecycle,
+		project_phase4_entity(unknown_phase, lifecycle, flight));
+	auto reserved_flag = input(ObjectType::Ship);
+	reserved_flag.lifecycle_flags = 0x80000000U;
+	EXPECT_EQ(Phase4EntityProjectionStatus::InvalidLifecycle,
+		project_phase4_entity(reserved_flag, lifecycle, flight));
 }
 
 } // namespace

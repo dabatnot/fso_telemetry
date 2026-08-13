@@ -1,4 +1,0 @@
-interface:
-  display_name: "Validate telemetry product"
-  short_description: "Short evidence on the real product"
-  default_prompt: "Use $validate-telemetry-product to verify telemetry against the active phase specifications with short deterministic evidence."

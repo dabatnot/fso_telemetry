@@ -1843,12 +1843,16 @@ add_file_folder("Telemetry"
 	telemetry/phase4_manifest_plan.h
 	telemetry/phase4_ship_state_scope.cpp
 	telemetry/phase4_ship_state_scope.h
+	telemetry/phase4_ship_collector.cpp
+	telemetry/phase4_ship_collector.h
 	telemetry/phase4_entity_projection.cpp
 	telemetry/phase4_entity_projection.h
 	telemetry/phase4_entity_image.cpp
 	telemetry/phase4_entity_image.h
 	telemetry/phase4_docking_projection.cpp
 	telemetry/phase4_docking_projection.h
+	telemetry/phase4_docking_collector.cpp
+	telemetry/phase4_docking_collector.h
 	telemetry/phase4_publication_gate.cpp
 	telemetry/phase4_publication_gate.h
 	telemetry/phase4_trusted_image.cpp

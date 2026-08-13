@@ -694,6 +694,7 @@ add_executable(telemetry_phase4_trusted_image_tests
 	${CMAKE_SOURCE_DIR}/code/telemetry/phase4_catalog_bindings.cpp
 	${CMAKE_SOURCE_DIR}/code/telemetry/phase4_entity_image.cpp
 	${CMAKE_SOURCE_DIR}/code/telemetry/phase4_entity_projection.cpp
+	${CMAKE_SOURCE_DIR}/code/telemetry/phase4_ship_state_scope.cpp
 	${CMAKE_SOURCE_DIR}/code/telemetry/phase4_docking_projection.cpp
 	${CMAKE_SOURCE_DIR}/code/telemetry/phase2_manifest_builder.cpp
 )
@@ -837,6 +838,18 @@ set(TELEMETRY_SHORT_TESTS
 	telemetry_phase2_security_bounds_tests
 	telemetry_phase3_identity_tests
 	telemetry_phase3_state_image_tests
+	telemetry_phase4_entity_registry_tests
+	telemetry_phase4_catalog_bindings_tests
+	telemetry_phase4_catalog_dependencies_tests
+	telemetry_phase4_catalog_assembly_tests
+	telemetry_phase4_manifest_plan_tests
+	telemetry_phase4_ship_state_scope_tests
+	telemetry_phase4_entity_projection_tests
+	telemetry_phase4_entity_image_tests
+	telemetry_phase4_docking_projection_tests
+	telemetry_phase4_publication_gate_tests
+	telemetry_phase4_trusted_image_tests
+	telemetry_phase4_runtime_storage_tests
 	telemetry_no_legacy_certification)
 set_tests_properties(${TELEMETRY_SHORT_TESTS} PROPERTIES
 	LABELS "telemetry-short"

@@ -1,4 +1,0 @@
-interface:
-  display_name: "Implementer la derniere phase telemetrie"
-  short_description: "Implementer la phase active avec preuves courtes"
-  default_prompt: "Utilise $implement-latest-telemetry-phase pour implementer entierement la derniere phase de telemetrie specifiee et verifier ses observables avec des preuves courtes."

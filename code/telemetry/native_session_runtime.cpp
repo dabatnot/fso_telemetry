@@ -5,6 +5,9 @@
 #include "telemetry/logging.h"
 #include "telemetry/phase2_catalog_projection.h"
 #include "telemetry/phase3_engine_collector.h"
+#include "telemetry/phase4_ship_collector.h"
+#include "telemetry/phase4_docking_collector.h"
+#include "telemetry/phase4_trusted_image.h"
 #include "telemetry/protocol/telemetry_protocol_constants.h"
 #include "telemetry/startup_budget.h"
 
@@ -2555,12 +2558,9 @@ NativeSessionTickStatus NativeSessionRuntime::apply_collected_player_capture(con
 		fail_capture(NativePlayerCaptureStatus::CaptureInvariantFailure);
 		return NativeSessionTickStatus::PermanentCaptureFailure;
 	}
-	// TrustedFullState cannot enter any legacy player-only publication path.
-	// Inventory and its exact catalogue are captured above, but publication
-	// remains closed until the manifest/APPLIED/keyframe chain is connected.
 	if (m_selected_phase2_profile == Phase2Profile::TrustedFullState) {
 		m_last_player_capture_status = status;
-		return NativeSessionTickStatus::Complete;
+		return publish_phase4_runtime_cycle();
 	}
 
 	const auto materialization = m_controller.apply_player_observation(result, effective_observation);
@@ -3827,6 +3827,9 @@ bool NativeSessionRuntime::collect_phase4_runtime_cycle(
 		!engine_view.in_mission())
 		return false;
 	auto& storage = *m_phase4_runtime_storage;
+	// A collection failure must never leave a prior graph eligible for a later
+	// publication attempt in this capture cycle.
+	storage.clear_candidate_image();
 	m_last_phase4_inventory_status = collect_phase4_engine_inventory(
 		storage.identities(), storage.inventory());
 	if (m_last_phase4_inventory_status !=
@@ -3841,7 +3844,71 @@ bool NativeSessionRuntime::collect_phase4_runtime_cycle(
 		m_phase4_catalog_source = nullptr;
 		return false;
 	}
+	const auto* manifest = storage.rebuild_local_manifest(*m_phase4_catalog_source);
+	if (manifest == nullptr ||
+		collect_phase4_ship_records(engine_view, storage.inventory(), manifest,
+			m_tick_context.now_us, storage.inherited_ship_records()) !=
+			Phase4ShipCollectorStatus::Collected)
+		return false;
+	if (collect_phase4_docking_relations(storage.inventory(),
+		storage.docking_relations()) != Phase4DockingCollectorStatus::Collected)
+		return false;
+	protocol::StateImage candidate;
+	const auto image = build_phase4_trusted_image_from_inventory(storage.inventory(),
+		manifest, storage.docking_relations(), storage.inherited_ship_records(), m_tick_context.now_us,
+		candidate);
+	if (image != Phase4TrustedImageStatus::Created) {
+		if (image == Phase4TrustedImageStatus::SizeLimitExceeded)
+			purge_all(SessionCloseReason::ProtocolError);
+		return false;
+	}
+	storage.set_candidate_image(std::move(candidate));
 	return true;
+}
+
+NativeSessionTickStatus NativeSessionRuntime::publish_phase4_runtime_cycle() noexcept
+{
+	if (!m_applying_engine_capture || !m_tick_context.mission_active ||
+		m_phase4_runtime_storage == nullptr)
+		return NativeSessionTickStatus::Complete;
+	const auto& storage = *m_phase4_runtime_storage;
+	const auto* manifest = storage.current_manifest();
+	if (manifest == nullptr || manifest->manifest_id == 0U ||
+		storage.candidate_image().empty())
+		return NativeSessionTickStatus::Complete;
+	for (std::size_t index = 0U;
+		index < m_controller.owned_capacity().client_slots; ++index) {
+		const auto& slot = m_controller.slot(index);
+		if (slot.progress != ProducerSessionProgress::ReadyForState)
+			continue;
+		const auto manifest_state = m_controller.stage_phase2_manifest(
+			index, *manifest, m_tick_context.now_us);
+		if (manifest_state == Phase2RuntimeResult::InvalidInput ||
+			manifest_state == Phase2RuntimeResult::Stale ||
+			manifest_state == Phase2RuntimeResult::CounterExhausted) {
+			fail_capture(NativePlayerCaptureStatus::CaptureInvariantFailure);
+			return NativeSessionTickStatus::PermanentCaptureFailure;
+		}
+		if (slot.required_manifest_id != manifest->manifest_id ||
+			!slot.required_manifest_applied)
+			continue;
+		if (!slot.snapshot.has_candidate() && !slot.snapshot.has_active_baseline()) {
+			(void)m_controller.begin_phase2_snapshot(index,
+				storage.candidate_image(), Phase2RuntimeSnapshotCause::Initial,
+				m_tick_context.now_us);
+			continue;
+		}
+		if (m_controller.replace_current_state(index,
+				storage.candidate_image()) !=
+			protocol::ProducerBaselineResult::Applied) {
+			fail_capture(NativePlayerCaptureStatus::CaptureInvariantFailure);
+			return NativeSessionTickStatus::PermanentCaptureFailure;
+		}
+		if (slot.snapshot.has_active_baseline())
+			(void)m_controller.queue_cumulative_delta(index,
+				m_tick_context.now_us);
+	}
+	return NativeSessionTickStatus::Complete;
 }
 
 void NativeSessionRuntime::clear_phase4_capture_cycle() noexcept

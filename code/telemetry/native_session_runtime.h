@@ -221,6 +221,7 @@ class NativeSessionRuntime final : private DatagramIoWork {
 	bool provision_phase4_runtime_state(std::size_t client_count) noexcept;
 	bool collect_phase4_runtime_cycle(
 		const FsoEngineReadView& engine_view) noexcept;
+	NativeSessionTickStatus publish_phase4_runtime_cycle() noexcept;
 	void clear_phase4_capture_cycle() noexcept;
 	void release_phase4_runtime_state() noexcept;
 	void release_state_image_pools() noexcept;

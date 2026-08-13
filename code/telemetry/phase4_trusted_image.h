@@ -13,6 +13,7 @@ enum class Phase4TrustedImageStatus : std::uint8_t {
 	InvalidEntities,
 	InvalidDocking,
 	InvalidCompositeRecord,
+	SizeLimitExceeded,
 	AllocationFailure,
 	Count,
 };
@@ -21,6 +22,16 @@ enum class Phase4TrustedImageStatus : std::uint8_t {
 // the public entity image.  Public class IDs are resolved exclusively through
 // an already installed manifest; a missing definition therefore fails before
 // any StateImage can be observed by the caller.
+Phase4TrustedImageStatus build_phase4_trusted_image_from_inventory(
+	const std::vector<Phase4EngineInventoryEntry>& inventory,
+	const Phase2ManifestCandidate* manifest,
+	const std::vector<Phase4DockingRelation>& docking_relations,
+	const std::vector<protocol::StateAtom>& inherited_ship_records,
+	std::uint64_t sample_time_us,
+	protocol::StateImage& output);
+
+// Compatibility entry point for callers that have not yet collected the
+// inherited SHIP records. It deliberately publishes no detailed ship state.
 Phase4TrustedImageStatus build_phase4_trusted_image_from_inventory(
 	const std::vector<Phase4EngineInventoryEntry>& inventory,
 	const Phase2ManifestCandidate* manifest,
@@ -41,6 +52,13 @@ Phase4TrustedImageStatus build_phase4_trusted_image_from_inventory_preallocated(
 
 // Combines the entity graph and its ship docking topology into one immutable
 // candidate. The caller observes output only once both projections succeed.
+Phase4TrustedImageStatus build_phase4_trusted_image(
+	const std::vector<Phase4EntityProjectionInput>& entities,
+	const std::vector<Phase4DockingRelation>& docking_relations,
+	const std::vector<protocol::StateAtom>& inherited_ship_records,
+	std::uint64_t sample_time_us,
+	protocol::StateImage& output);
+
 Phase4TrustedImageStatus build_phase4_trusted_image(
 	const std::vector<Phase4EntityProjectionInput>& entities,
 	const std::vector<Phase4DockingRelation>& docking_relations,

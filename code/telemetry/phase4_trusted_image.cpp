@@ -1,5 +1,7 @@
 #include "telemetry/phase4_trusted_image.h"
 
+#include "telemetry/phase4_ship_state_scope.h"
+
 #include <algorithm>
 #include <iterator>
 #include <new>
@@ -11,6 +13,7 @@ Phase4TrustedImageStatus build_phase4_trusted_image_from_inventory(
 	const std::vector<Phase4EngineInventoryEntry>& inventory,
 	const Phase2ManifestCandidate* manifest,
 	const std::vector<Phase4DockingRelation>& docking_relations,
+	const std::vector<protocol::StateAtom>& inherited_ship_records,
 	std::uint64_t sample_time_us,
 	protocol::StateImage& output)
 {
@@ -26,8 +29,20 @@ Phase4TrustedImageStatus build_phase4_trusted_image_from_inventory(
 		return Phase4TrustedImageStatus::AllocationFailure;
 	if (bindings != Phase4CatalogBindingStatus::Created)
 		return Phase4TrustedImageStatus::InvalidEntities;
-	return build_phase4_trusted_image(entities, docking_relations,
+	return build_phase4_trusted_image(entities, docking_relations, inherited_ship_records,
 		sample_time_us, output);
+}
+
+Phase4TrustedImageStatus build_phase4_trusted_image_from_inventory(
+	const std::vector<Phase4EngineInventoryEntry>& inventory,
+	const Phase2ManifestCandidate* manifest,
+	const std::vector<Phase4DockingRelation>& docking_relations,
+	std::uint64_t sample_time_us,
+	protocol::StateImage& output)
+{
+	static const std::vector<protocol::StateAtom> EmptyShipRecords;
+	return build_phase4_trusted_image_from_inventory(inventory, manifest,
+		docking_relations, EmptyShipRecords, sample_time_us, output);
 }
 
 Phase4TrustedImageStatus build_phase4_trusted_image_from_inventory_preallocated(
@@ -57,6 +72,7 @@ Phase4TrustedImageStatus build_phase4_trusted_image_from_inventory_preallocated(
 Phase4TrustedImageStatus build_phase4_trusted_image(
 	const std::vector<Phase4EntityProjectionInput>& entities,
 	const std::vector<Phase4DockingRelation>& docking_relations,
+	const std::vector<protocol::StateAtom>& inherited_ship_records,
 	std::uint64_t sample_time_us,
 	protocol::StateImage& output)
 {
@@ -68,6 +84,13 @@ Phase4TrustedImageStatus build_phase4_trusted_image(
 			: Phase4TrustedImageStatus::InvalidEntities;
 	}
 	try {
+		std::vector<Phase4EntityTypeBinding> bindings;
+		bindings.reserve(entities.size());
+		for (const auto& entity : entities)
+			bindings.push_back({entity.entity_id, entity.object_type});
+		if (validate_phase4_ship_state_scope(inherited_ship_records, bindings) !=
+			Phase4ShipStateScopeStatus::Valid)
+			return Phase4TrustedImageStatus::InvalidEntities;
 		std::vector<std::uint64_t> ships;
 		ships.reserve(entities.size());
 		for (const auto& entity : entities) {
@@ -82,11 +105,13 @@ Phase4TrustedImageStatus build_phase4_trusted_image(
 			return Phase4TrustedImageStatus::InvalidDocking;
 		}
 		std::vector<protocol::StateAtom> atoms = entity_image.records();
+		atoms.insert(atoms.end(), inherited_ship_records.begin(), inherited_ship_records.end());
 		atoms.insert(atoms.end(), std::make_move_iterator(docking.begin()), std::make_move_iterator(docking.end()));
 		protocol::StateImage candidate;
 		protocol::StateImageInvalidRecordReason reason;
 		const auto result = protocol::StateImage::create(std::move(atoms), candidate, reason);
 		if (result == protocol::StateImageResult::AllocationFailed) return Phase4TrustedImageStatus::AllocationFailure;
+		if (result == protocol::StateImageResult::SizeLimitExceeded) return Phase4TrustedImageStatus::SizeLimitExceeded;
 		if (result != protocol::StateImageResult::Created) {
 			return reason == protocol::StateImageInvalidRecordReason::None
 				? Phase4TrustedImageStatus::InvalidEntities
@@ -97,6 +122,17 @@ Phase4TrustedImageStatus build_phase4_trusted_image(
 	} catch (const std::bad_alloc&) {
 		return Phase4TrustedImageStatus::AllocationFailure;
 	}
+}
+
+Phase4TrustedImageStatus build_phase4_trusted_image(
+	const std::vector<Phase4EntityProjectionInput>& entities,
+	const std::vector<Phase4DockingRelation>& docking_relations,
+	std::uint64_t sample_time_us,
+	protocol::StateImage& output)
+{
+	static const std::vector<protocol::StateAtom> EmptyShipRecords;
+	return build_phase4_trusted_image(entities, docking_relations,
+		EmptyShipRecords, sample_time_us, output);
 }
 
 } // namespace telemetry::detail
