@@ -31,31 +31,26 @@ Le système doit permettre à un client distant de reconstruire une réplique co
 
 Cette réplique vise les tableaux de bord, radars, jauges, clients de visualisation, enregistrements et ESP32. Elle ne constitue pas une seconde simulation déterministe de FS2Open : reproduire exactement la simulation demanderait également les scripts de mission, les collisions, tous les projectiles, les entrées, l'autorité réseau et les états aléatoires.
 
-## Politique de validation produit
+## Validation simple
 
-Les spécifications de phase dérivées de ce dossier DOIVENT valider le comportement observable du produit, pas construire une procédure de certification autonome. Une phase est livrable lorsque le jeu fonctionne normalement et délivre la télémétrie attendue pendant une session de jeu représentative, avec les transitions directement concernées par son périmètre.
+Le dépôt ne maintient aucun système de preuve, tracker, empreinte de fraîcheur,
+gate, score ou statut calculé de complétude. Une phase n'en bloque jamais une
+autre.
 
-Chaque phase possède une seule décision de livraison, fondée sur une checklist produit courte. Elle ne possède aucune gate intermédiaire de tests, de harness, de performance, de campagne ou de preuve. Les dépendances techniques entre composants restent de simples dépendances de développement et n'exigent pas de rapport de gate pour poursuivre.
+Pour vérifier un changement, les tests unitaires ou d'intégration directement
+utiles et une vérification manuelle en jeu suffisent. Les schémas et golden
+vectors restent testés lorsqu'un changement touche le wire, car ils protègent
+l'interopérabilité réelle des clients.
 
-La décision de livraison utilise :
+Les résultats sont rapportés simplement dans la conversation ou la CI et ne
+sont pas recopiés dans les sources. Le propriétaire du projet peut poursuivre,
+réordonner, sauter ou explorer une phase malgré un test rouge après avoir été
+informé du risque.
 
-- les tests unitaires et contractuels courts déjà utiles au développement ;
-- une vérification directe de démarrage, arrêt et transitions concernées ;
-- une session de jeu représentative démontrant que la télémétrie attendue est réellement délivrée ;
-- les golden vectors nécessaires à la compatibilité filaire et quelques entrées invalides représentatives ;
-- une observation simple de l'impact en jeu, sans exiger de microbenchmark ou de seuil produit uniquement par le harness.
-
-Lorsque le produit n'est pas encore exécutable, comme pendant la définition initiale du wire, la vérification directe porte sur l'artefact livré : schéma cohérent, golden vectors décodables et cas invalides rejetés. Elle ne crée pas une chaîne de gates pour les phases suivantes.
-
-### Frontière avec la validation de phase
-
-Lorsqu'une phase est spécifiée, ses livrables et critères produit sont définis en premier. Un plan de validation séparé choisit ensuite les observations et outils adaptés à ces livrables.
-
-Le relevé de validation présente les cibles, les résultats observés, les écarts et leur impact. L'humain décide de l'acceptation du produit, d'une correction ou de l'ouverture d'une issue.
-
-Un scénario de plus de cinq minutes est une campagne longue et requiert une demande humaine explicite. Ses découvertes alimentent le backlog produit.
-
-Les anciennes spécifications et pièces de certification sont conservées dans [`archive/legacy-certification-2026-07-31`](archive/legacy-certification-2026-07-31) à des fins historiques. Les spécifications actives sont celles de [`specs`](specs).
+Les anciennes pièces de certification restent uniquement dans
+[`archive/legacy-certification-2026-07-31`](archive/legacy-certification-2026-07-31)
+à titre historique. Elles ne définissent aucun processus actif et ne doivent
+pas être restaurées.
 
 ## Décisions actées
 

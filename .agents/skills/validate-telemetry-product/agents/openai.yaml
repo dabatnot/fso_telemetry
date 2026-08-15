@@ -1,4 +1,4 @@
 interface:
   display_name: "Validate telemetry product"
-  short_description: "Short evidence on the real product"
-  default_prompt: "Use $validate-telemetry-product to verify telemetry against the active phase specifications with short deterministic evidence."
+  short_description: "Run tests and assist the manual check"
+  default_prompt: "Use $validate-telemetry-product to run the relevant automated tests and assist with the user-controlled manual in-game check."

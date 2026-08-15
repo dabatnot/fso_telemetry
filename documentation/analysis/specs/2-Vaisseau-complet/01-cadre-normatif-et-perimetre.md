@@ -180,4 +180,4 @@ Le profil final DOIT annoncer `event_coverage_state_derived = ENTITY | DAMAGE (0
 5. Une session ne survit pas à une modification de son bitmap de couverture.
 6. Les identités publiques sont monotones ou stables dans leur scope ; les indices locaux ne quittent jamais l’adaptateur.
 7. Un champ optionnel absent signifie exactement l’absence définie par le schéma, jamais zéro par commodité.
-8. La livraison exige la totalité des `P2-REQ-001` à `P2-REQ-050`, les preuves courtes de la table de traçabilité et une décision humaine ; aucun critère de certification séparé ne s'ajoute.
+8. Les tests automatisés pertinents et une vérification manuelle en jeu suffisent ; leur résultat ne bloque aucune autre phase et la décision appartient au propriétaire du projet.

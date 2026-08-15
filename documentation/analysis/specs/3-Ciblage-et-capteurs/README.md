@@ -78,7 +78,7 @@ Phase 3 et aucune promotion n’est permise dans une session existante.
 | [04](04-modele-de-donnees-et-regles-metier.md) | records, cardinalités et règles métier |
 | [05](05-integration-configuration-et-observabilite.md) | configuration, ressources, métriques et logs |
 | [06](06-validation-securite-et-conformite.md) | validation comportementale, sécurité et confidentialité |
-| [07](07-livraison-et-tracabilite.md) | traçabilité et observations Release |
+| [07](07-livraison-et-tracabilite.md) | résumé et tests utiles |
 
 ## 5. Qualité attendue
 

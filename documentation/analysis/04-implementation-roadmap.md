@@ -1,4 +1,4 @@
-# Feuille de route d'implémentation et validation produit
+# Feuille de route d'implémentation
 
 ## 1. Définition de « terminé »
 
@@ -17,9 +17,14 @@ Le premier système complet est considéré opérationnel lorsqu'un client dista
 11. ne jamais influencer la simulation ;
 12. ne pas introduire de ralentissement sensible lorsque la télémétrie est désactivée.
 
-Ces propriétés sont acceptées par une session de jeu représentative et des vérifications courtes ciblées sur le comportement livré. Toute campagne de plus de cinq minutes, tout soak et toute matrice longue sont non bloquants et ne peuvent être lancés que sur demande humaine explicite.
+Cette roadmap est indicative. Elle ne fixe ni ordre obligatoire, ni gate, ni
+état de complétude. Le propriétaire du projet peut réordonner, sauter ou
+explorer une phase selon les besoins du simpit.
 
-Chaque phase possède une seule décision de livraison et aucune gate intermédiaire. Cette décision repose sur sa checklist produit, une session représentative et des vérifications directes courtes. Le harness, les rapports et les campagnes ne conditionnent ni le lot suivant ni la fermeture de la phase. Si le harness échoue alors que le comportement produit est directement accepté, il est simplifié ou consigné comme issue et la livraison continue. Seul un défaut produit grave directement reproduit peut bloquer.
+Les tests unitaires pertinents et une vérification manuelle en jeu suffisent.
+Leurs résultats sont rapportés directement et ne sont enregistrés dans aucun
+système de preuve. Un test rouge est un risque à signaler, pas une interdiction
+automatique de poursuivre.
 
 ## 2. Phase 0 — Contrat de protocole
 
@@ -62,7 +67,7 @@ Livrables producteur, dans cet ordre :
 - deltas cumulatifs contre la dernière baseline appliquée et acquittée par `ACK APPLIED`, et renouvellement périodique de cette baseline ;
 - métriques et tests d'intégration du producteur.
 
-Une fois ce premier flux producteur stabilisé, un décodeur puis un client console minimal l'affichent et le valident. Ce client de preuve ne préjuge pas de l'architecture du client distant de la phase 5.
+Une fois ce premier flux producteur stabilisé, un décodeur puis un client console minimal l'affichent et le testent. Ce client minimal ne préjuge pas de l'architecture du client distant d'une phase ultérieure.
 
 Critère de sortie : une mission solo représentative peut être observée à distance, puis arrêtée et relancée proprement ; le client valide la complétude `PLAYER_KINEMATICS`, une nouvelle keyframe accompagne tout changement de mission ou de joueur observé, et le corpus FSTL 1.0 reste byte-identical. Une observation prolongée ou un soak peut rechercher des défauts rares après livraison, uniquement sur demande humaine explicite, sans bloquer ce critère.
 
@@ -222,7 +227,7 @@ Sous perte UDP, la vidéo ne doit jamais retarder la télémétrie numérique :
 
 Les specs racines ne définissent aucun harness, aucune matrice de tests et aucun seuil de campagne. Lors de la spécification d'une phase, ses livrables et critères produit sont établis d'abord. Un plan de validation séparé peut ensuite définir les quelques tests et outils nécessaires à ces seuls livrables.
 
-Ce plan de validation reste non normatif, remplaçable et sans gate. Il ne peut pas étendre le périmètre produit, imposer une architecture destinée uniquement aux tests ni être hérité automatiquement par les phases suivantes. Les campagnes longues restent soumises à une demande humaine explicite.
+Ces idées de tests restent facultatives et remplaçables. Elles ne peuvent pas étendre le périmètre produit, imposer une architecture destinée uniquement aux tests ni bloquer un autre travail. Les campagnes longues restent soumises à une demande humaine explicite.
 
 ## 10. Observabilité du module
 

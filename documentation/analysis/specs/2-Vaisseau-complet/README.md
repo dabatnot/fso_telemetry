@@ -37,7 +37,7 @@ Le profil final est `PLAYER_KINEMATICS | CORE_SHIP | CONTROL_INPUTS | WEAPONS | 
 | [04](04-modele-de-donnees-et-regles-metier.md) | records et règles métier du vaisseau |
 | [05](05-integration-configuration-et-observabilite.md) | configuration, ressources, métriques et performance |
 | [06](06-validation-securite-et-conformite.md) | sécurité et critères de qualité |
-| [07](07-livraison-et-tracabilite.md) | contenu livré et relevé d'acceptation |
+| [07](07-livraison-et-tracabilite.md) | résumé et tests utiles |
 
 ## 5. Qualité attendue
 

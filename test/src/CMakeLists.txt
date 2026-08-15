@@ -616,12 +616,6 @@ add_custom_target(telemetry_phase2_integration_tests DEPENDS
 )
 set_target_properties(telemetry_phase2_integration_tests PROPERTIES FOLDER "tests")
 
-find_package(Python3 COMPONENTS Interpreter REQUIRED)
-add_test(NAME telemetry_no_legacy_certification
-	COMMAND ${Python3_EXECUTABLE}
-		"${CMAKE_SOURCE_DIR}/test/telemetry/tools/check_no_legacy_certification.py"
-		"${CMAKE_SOURCE_DIR}")
-
 set(TELEMETRY_SHORT_TESTS
 	telemetry_native_runtime_loopback_contract_tests
 	telemetry_phase2_profile_tests
@@ -639,8 +633,7 @@ set(TELEMETRY_SHORT_TESTS
 	telemetry_phase2_runtime_tests
 	telemetry_phase2_security_bounds_tests
 	telemetry_phase3_identity_tests
-	telemetry_phase3_state_image_tests
-	telemetry_no_legacy_certification)
+	telemetry_phase3_state_image_tests)
 set_tests_properties(${TELEMETRY_SHORT_TESTS} PROPERTIES
 	LABELS "telemetry-short"
 	TIMEOUT 60)

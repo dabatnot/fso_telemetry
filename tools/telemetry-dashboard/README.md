@@ -173,7 +173,7 @@ vitesse relative et rapprochement sont des mesures géométriques et ne servent
 jamais à inventer une ETA. Le scanner cargo utilise sa durée autoritaire
 `required_us`; une cible extérieure volontairement masquée affiche `— cible non
 exposée`, pas `ND`. Le retour du support à `NONE` n’est pas présenté comme une
-preuve de réussite.
+réparation réussie.
 
 ## Développement et tests
 

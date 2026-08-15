@@ -30,7 +30,7 @@ Avec une configuration absente ou invalide, le module reste désactivé et le je
 | [04](04-modele-de-donnees-et-regles-metier.md) | profil `PLAYER_KINEMATICS` et sources moteur |
 | [05](05-integration-configuration-et-observabilite.md) | configuration, intégration et métriques |
 | [06](06-validation-securite-et-conformite.md) | sécurité et critères de qualité |
-| [07](07-livraison-et-tracabilite.md) | contenu livré et relevé d'acceptation |
+| [07](07-livraison-et-tracabilite.md) | résumé et tests utiles |
 
 La Phase 0 reste normative pour le wire. La Phase 1 ajoute uniquement le domaine `PLAYER_KINEMATICS` de FSTL 1.1.
 

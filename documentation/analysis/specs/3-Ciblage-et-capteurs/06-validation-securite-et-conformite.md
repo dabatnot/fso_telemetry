@@ -1,22 +1,22 @@
-# 06 — Validation, sécurité et conformité
+# 06 — Tests, sécurité et conformité
 
 ## 1. Objet
 
-Ce document définit les preuves courtes minimales capables d’observer le produit
-Phase 3. Il ne crée ni gate intermédiaire, ni score, ni campagne autonome.
+Ce document rassemble les comportements Phase 3 utiles à tester. Il ne définit
+aucune condition d'autorisation ou de passage à une autre phase.
 
-## 2. Hiérarchie de preuve
+## 2. Contrôles utiles
 
-Les preuves utilisent, dans cet ordre :
+Selon le changement, utiliser :
 
 1. schémas wire et golden vectors pour les octets ;
 2. invariants actifs et contrat Phase 3 ;
 3. vrai chemin moteur → projection filtrée → réplication ;
 4. décodeur indépendant ;
-5. observations Release contrôlées par l’utilisateur.
+5. une vérification manuelle en jeu contrôlée par l’utilisateur.
 
-La présence d’une classe, d’un fichier ou d’un nom de fonction ne prouve aucun
-comportement produit.
+Tester un comportement observable plutôt que la seule présence d'une classe ou
+d'un fichier.
 
 ## 3. Compatibilité wire
 
@@ -37,7 +37,7 @@ du producteur.
 
 ### 4.1 Oracle produit
 
-Pour une capture déterministe, la preuve rapproche :
+Pour une capture déterministe, le test rapproche :
 
 - décision radar/HUD autorisée du moteur ;
 - DTO public après filtrage ;
@@ -52,8 +52,8 @@ Le résultat exact compare :
 - cardinalités de locks et missiles ;
 - phases cargo et navigation.
 
-Une liste synthétique injectée directement dans le producteur n’est pas une
-preuve acceptable.
+Une liste synthétique injectée directement dans le producteur ne remplace pas un
+test du vrai chemin produit.
 
 ### 4.2 Cas de confidentialité
 
@@ -180,7 +180,7 @@ peut choisir une cible, engager l’autopilote ou déclencher un scan.
 
 ## 9. Ressources et impact en jeu
 
-Les preuves déterministes vérifient :
+Les tests déterministes peuvent vérifier :
 
 - préallocation avant `Ready` ;
 - budget 160 Mio partagé, 88 Mio/client et 512 Mio total ;
@@ -189,23 +189,21 @@ Les preuves déterministes vérifient :
 - aucune attente réseau dans la frame ;
 - module désactivé inerte.
 
-L’observation Release consigne si le jeu reste normal pendant les transitions
-visées. Aucun percentile, seuil matériel universel ou microbenchmark ne décide
-automatiquement de la livraison.
+Le test manuel vérifie simplement que le jeu reste normal pendant les
+transitions visées.
 
-## 10. Observations Release
+## 10. Test manuel
 
-Trois observations courtes, d’une durée combinée inférieure à cinq minutes,
-sont prévues :
+Selon le changement, vérifier rapidement :
 
 1. radar et confidentialité ;
 2. cible, locks, menace et cargo ;
 3. navigation et autopilote.
 
-Chaque relevé contient `attendu`, `observé`, `écart` et `impact`. L’utilisateur
-contrôle le jeu et décide de l’acceptation.
+L’utilisateur contrôle le jeu, décrit ce qu'il observe et décide si le résultat
+lui convient. Aucun relevé versionné n'est demandé.
 
-## 11. Critères de conformité
+## 11. Comportements attendus
 
 | Critère | Résultat attendu |
 |---|---|

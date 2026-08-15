@@ -27,7 +27,7 @@ Le livrable est un contrat filaire complet, décodable et suffisamment borné po
 | [04](04-modele-de-donnees-v1.md) | records et modèle de données FSTL 1.0 |
 | [05](05-capabilities-et-vues-specialisees.md) | capabilities, communication et vidéo de cible |
 | [06](06-validation-securite-et-conformite.md) | robustesse, sécurité et critères de qualité |
-| [07](07-livraison-et-tracabilite.md) | contenu livré, décisions et relevé d'acceptation |
+| [07](07-livraison-et-tracabilite.md) | résumé et tests utiles |
 
 Les analyses racines définissent les invariants communs et la terminologie. Cette phase définit le wire. Pour l'encodage binaire, le schéma versionné et les golden vectors prévalent ; roadmap, exemples prospectifs et archives sont non normatifs.
 

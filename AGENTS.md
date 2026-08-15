@@ -11,6 +11,20 @@
 - A dashboard, replay tool, test harness, or diagnostic need does not justify
   exposing hidden mission state or adding an omniscient profile.
 
+## Development process
+
+- The repository has no phase gate, proof ledger, evidence tracker, freshness
+  fingerprint, certification workflow, or mandatory phase-completion state.
+- Automated unit/integration tests and a manual in-game check are sufficient.
+  Test results are reported plainly; they are never copied into a proof
+  registry or used to calculate eligibility.
+- The user owns product direction and may start, skip, reorder, explore, or
+  continue a phase even when tests are failing or a previous phase is
+  unfinished. Agents must report known failures and risks, then follow the
+  user's explicit decision.
+- Do not recreate a tracker, gate, scoring system, proof workflow, mandatory
+  checklist, or mechanism that blocks later work based on earlier validation.
+
 ## Build and test concurrency
 
 - A single agent owns compilation and test execution at any given time.

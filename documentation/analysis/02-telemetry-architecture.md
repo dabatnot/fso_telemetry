@@ -13,7 +13,7 @@
 - vue 3D de cible produite par un rendu hors écran haute résolution et un flux H.264 optionnel ;
 - protocole indépendant de la version et de l'ABI C++ de FS2Open.
 
-Ce document fixe les choix d'architecture et les invariants attendus, mais ne constitue pas à lui seul le schéma filaire normatif. La phase 0 doit livrer un schéma v1 exhaustif : valeurs numériques des messages, records, enums et flags, ordre et bornes de chaque champ, valeurs par défaut, règles d'évolution, ainsi que des vecteurs binaires et tests de compatibilité. L'implémentation ne peut figer la v1 avant une revue courte de cohérence du schéma et de ses vecteurs. Cette dépendance protège la compatibilité filaire ; elle n'autorise ni campagne longue, ni certification générale du produit, ni multiplication de gates intermédiaires.
+Ce document fixe les choix d'architecture et les invariants attendus, mais ne constitue pas à lui seul le schéma filaire normatif. La phase 0 doit livrer un schéma v1 exhaustif : valeurs numériques des messages, records, enums et flags, ordre et bornes de chaque champ, valeurs par défaut, règles d'évolution, ainsi que des vecteurs binaires et tests de compatibilité. Une revue courte de cohérence du schéma et de ses vecteurs protège l'interopérabilité ; elle ne bloque pas les travaux exploratoires décidés par le propriétaire du projet.
 
 ## 2. Surface de patch upstream
 

@@ -1,4 +1,4 @@
 interface:
   display_name: "Implementer la derniere phase telemetrie"
-  short_description: "Implementer la phase active avec tracabilite"
-  default_prompt: "Utilise $implement-latest-telemetry-phase pour implementer entierement la derniere phase de telemetrie specifiee et tenir son tracker produit a jour."
+  short_description: "Implementer ou explorer une phase simplement"
+  default_prompt: "Utilise $implement-latest-telemetry-phase pour implementer la phase choisie, lancer les tests utiles et rapporter simplement le resultat."

@@ -269,9 +269,11 @@ Le module désactivé conserve zéro socket, zéro allocation persistante Phase 
 
 Le runtime réutilise une projection pré-ID immuable et les arènes fiables existantes par client. Chaque tick et chaque transaction possède une borne de cardinalité et de travail ; aucune attente réseau ni allocation steady-state non bornée n'est permise. Les fixtures `193e banque`, `record_length=65 536`, maximum de profil `+1` et chaque cap mémoire `+1` sont refusées avant egress.
 
-### 8.3 Relevé de performance
+### 8.3 Test manuel
 
-Deux observations Release courtes utilisent le vrai produit, l'une `CoreGate`, l'autre `CompleteShip`, pour une durée combinée inférieure à cinq minutes. Le relevé indique plateforme, mission, profil, cadences, nombre de clients et cardinalités, puis consigne attendu, observé, écart et impact. Il ne calcule aucun score ni percentile de certification.
+Les scénarios `CoreGate` et `CompleteShip` peuvent être vérifiés rapidement dans
+le vrai jeu. Aucun relevé, seuil, score ou rapport n'est requis ; le propriétaire
+du projet décide si le comportement observé lui convient.
 
 ## 9. Matrice configuration / résultat
 
