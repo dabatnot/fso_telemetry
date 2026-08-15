@@ -24,7 +24,7 @@ constexpr std::uint64_t ProducerOwnedCapabilityMask =
 
 bool is_known_visibility_mode(VisibilityMode mode) noexcept
 {
-	return mode == VisibilityMode::Cockpit || mode == VisibilityMode::TrustedFullState;
+	return mode == VisibilityMode::Cockpit;
 }
 
 bool active_capability_pairs_are_complete(std::uint64_t capabilities) noexcept

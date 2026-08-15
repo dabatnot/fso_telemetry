@@ -19,8 +19,7 @@
 namespace telemetry::detail {
 namespace {
 
-Phase2ProfileEligibility current_phase2_profile_eligibility(
-	const TelemetryConfig& config) noexcept
+Phase2ProfileEligibility current_phase2_profile_eligibility() noexcept
 {
 	Phase2ProfileEligibility eligibility;
 	if ((Game_mode & GM_MULTIPLAYER) == 0) {
@@ -31,8 +30,6 @@ Phase2ProfileEligibility current_phase2_profile_eligibility(
 	} else {
 		eligibility.authority_mode = protocol::AuthorityMode::MultiplayerClient;
 	}
-	eligibility.visibility_mode = protocol::VisibilityMode::Cockpit;
-	eligibility.trusted_full_state = config.trusted_full_state;
 	eligibility.dedicated =
 		Is_standalone || (Game_mode & GM_STANDALONE_SERVER) != 0;
 	eligibility.headless = gr_screen.mode == GraphicsAPI::Stub;
@@ -282,7 +279,7 @@ class NativeRuntimeStartupServices final : public RuntimeStartupServices {
 			&m_random,
 			&m_metrics,
 			&m_log,
-			current_phase2_profile_eligibility(m_effective_config),
+			current_phase2_profile_eligibility(),
 			m_effective_config.phase2_profile};
 		if (native->start(request) != NativeSessionStartStatus::Started) {
 			return RuntimeTransportStatus::Unavailable;

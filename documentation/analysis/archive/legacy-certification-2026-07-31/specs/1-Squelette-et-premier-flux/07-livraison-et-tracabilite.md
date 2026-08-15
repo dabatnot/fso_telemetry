@@ -103,7 +103,7 @@ Une gate échouée bloque ses lots descendants. Aucune dérogation ne peut redé
 | `D1-005` | sens d'« identité joueur » | ID observé + lifecycle `SHIP`; nom, classe, callsign et rôle détaillé restent Phase 2 |
 | `D1-006` | compatibilité producteur Phase 1 | profil producteur 1.1 uniquement ; client 1.0 rejeté explicitement ; décodeur garde 1.0 |
 | `D1-007` | erreurs et reload JSON | schéma strict, fail-closed, clés inconnues invalides, relecture au redémarrage uniquement |
-| `D1-008` | exposition par défaut | loopback, `Cockpit`, un client, découverte et `TrustedFullState` désactivés |
+| `D1-008` | exposition par défaut | loopback, `Cockpit`, un client et découverte désactivée |
 | `D1-009` | dual-stack | un socket dual-stack sûr ou deux sockets dédiés ; jamais de wildcard implicite |
 | `D1-010` | threading initial | collecte, protocole et I/O non bloquante sur thread principal ; aucun worker/SPSC Phase 1 |
 | `D1-011` | cadences | vol 30 Hz, keyframe 2 s, heartbeat 500 ms mission/1000 ms hors mission ; tous configurables dans les bornes |

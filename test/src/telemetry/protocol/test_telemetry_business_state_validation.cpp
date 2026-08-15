@@ -1152,19 +1152,6 @@ TEST(TelemetryProtocolBusinessStateValidation, GenericCargoDomainDoesNotRequireP
 	EXPECT_EQ(ValidationError::None, validator.validate(image));
 }
 
-TEST(TelemetryProtocolBusinessStateValidation, Fstl11PlayerKinematicsRequiresCockpitEvenWhenTrustedFullStateIsAuthorized)
-{
-	auto context = valid_context();
-	context.protocol_minor = VersionMinorV1_1;
-	context.required_manifest_id = 0U;
-	context.trusted_full_state_authorized = true;
-	context.source_endpoint_allowlisted = true;
-	BusinessStateImageValidator validator(context);
-	const auto trusted = make_phase1_image(
-		StateDomainCoverageBitPlayerKinematics, 1U, VisibilityMode::TrustedFullState);
-	EXPECT_EQ(ValidationError::VisibilityViolation, validator.validate(trusted));
-}
-
 TEST(TelemetryProtocolBusinessStateValidation, Fstl11PlayerKinematicsProfileAndDeltaInvariants)
 {
 	auto context = valid_context();
@@ -1243,19 +1230,6 @@ TEST(TelemetryProtocolBusinessStateValidation, SessionMissionManifestAndVisibili
 	auto context = valid_context();
 	BusinessStateImageValidator missing_mission_validator(context);
 	EXPECT_EQ(ValidationError::InvalidAbsence, missing_mission_validator.validate(no_mission));
-}
-
-TEST(TelemetryProtocolBusinessStateValidation, TrustedFullStateRequiresBothOptInAndAllowlistedSource)
-{
-	const auto image = make_image(session_payload(VisibilityMode::TrustedFullState));
-	auto context = valid_context();
-	BusinessStateImageValidator closed(context);
-	EXPECT_EQ(ValidationError::VisibilityViolation, closed.validate(image));
-
-	context.trusted_full_state_authorized = true;
-	context.source_endpoint_allowlisted = true;
-	BusinessStateImageValidator allowed(context);
-	EXPECT_EQ(ValidationError::None, allowed.validate(image));
 }
 
 TEST(TelemetryProtocolBusinessStateValidation, ImmutableSessionFactsCannotChangeAcrossBaselines)

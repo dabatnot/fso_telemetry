@@ -99,23 +99,7 @@ Ajouter :
 
 Critère de sortie : le radar distant montre les mêmes contacts autorisés que le HUD du producteur, sans révéler un contact caché en mode `Cockpit`.
 
-## 6. Phase 4 — Réplication de toutes les entités
-
-Ajouter le mode `TrustedFullState` :
-
-- registre de tous les objets exportables ;
-- cycle de vie complet ;
-- état de tous les vaisseaux ;
-- armes et projectiles pertinents ;
-- docking global ;
-- catalogues et relations parent/cible ;
-- join-in-progress ;
-- keyframes périodiques complètes ;
-- contrôle de bande passante et priorités.
-
-Critère de sortie : après connexion en cours de mission, le client converge vers le même graphe d'entités que le producteur, puis reste cohérent sous perte et réordonnancement pris en charge.
-
-## 7. Phase 5 — Vue de communication et client distant utilisable
+## 6. Phase 4 — Vue de communication et client distant utilisable
 
 Les livrables producteur de la vue de communication sont terminés avant son intégration au client :
 
@@ -158,7 +142,7 @@ Fonctions :
 
 Le client doit conserver la sémantique brute et calculer les valeurs d'affichage sans altérer l'état reçu.
 
-## 8. Phase 6 — Événements exacts et optimisation
+## 7. Phase 5 — Événements exacts et optimisation
 
 Comparer les événements détectés par diff aux besoins réels. Ajouter un hook moteur explicite uniquement lorsqu'un événement peut être manqué entre deux captures :
 
@@ -167,7 +151,7 @@ Comparer les événements détectés par diff aux besoins réels. Ajouter un hoo
 - événement de script non représenté dans l'état final ;
 - transition apparaissant et disparaissant dans une seule frame.
 
-Le hook `Talking Head`, requis fonctionnellement et déjà livré en phase 5, sert de modèle pour ces hooks additionnels.
+Le hook `Talking Head`, requis fonctionnellement et déjà livré en phase 4, sert de modèle pour ces hooks additionnels.
 
 Chaque hook doit :
 
@@ -184,7 +168,7 @@ Optimisations possibles après mesure :
 - thread réseau et file SPSC ;
 - adaptation dynamique de fréquence.
 
-## 9. Phase 7 — Vue de cible 3D haute résolution
+## 8. Phase 6 — Vue de cible 3D haute résolution
 
 Livrables producteur :
 
@@ -234,13 +218,13 @@ Sous perte UDP, la vidéo ne doit jamais retarder la télémétrie numérique :
 | 5 % | session et télémétrie restent `Live`, le trafic d'état n'est jamais privé de bande passante et la vidéo récupère sur une IDR complète en 1 s au plus |
 | 20 % | session et télémétrie restent `Live`, mémoire et files restent bornées, et le flux retrouve une frame décodable en 2 s au plus ; aucune qualité, cadence ou continuité nominale n'est exigée à ce niveau de perte |
 
-## 10. Validation définie avec chaque phase
+## 9. Validation définie avec chaque phase
 
 Les specs racines ne définissent aucun harness, aucune matrice de tests et aucun seuil de campagne. Lors de la spécification d'une phase, ses livrables et critères produit sont établis d'abord. Un plan de validation séparé peut ensuite définir les quelques tests et outils nécessaires à ces seuls livrables.
 
 Ce plan de validation reste non normatif, remplaçable et sans gate. Il ne peut pas étendre le périmètre produit, imposer une architecture destinée uniquement aux tests ni être hérité automatiquement par les phases suivantes. Les campagnes longues restent soumises à une demande humaine explicite.
 
-## 11. Observabilité du module
+## 10. Observabilité du module
 
 Prévoir des compteurs consultables dans les logs :
 
@@ -267,7 +251,7 @@ Prévoir des compteurs consultables dans les logs :
 
 Les logs ne doivent pas imprimer les données complètes à chaque frame.
 
-## 12. Risques principaux
+## 11. Risques principaux
 
 | Risque | Réponse prévue |
 |---|---|
@@ -278,7 +262,7 @@ Les logs ne doivent pas imprimer les données complètes à chaque frame.
 | Snapshot trop volumineux | fragmentation applicative bornée et priorités |
 | Blocage de la frame | socket non bloquant et files bornées |
 | Data race | lecture moteur exclusivement sur le thread principal |
-| Fuite d'informations radar | modes `Cockpit` et `TrustedFullState` explicites |
+| Fuite d'informations radar | filtrage cockpit avant sérialisation et tests de non-divulgation |
 | Réutilisation d'un ID | combinaison session + ID monotone |
 | Client incompatible | négociation de versions et capabilities |
 | Bundle visuel absent ou différent | capability de communication refusée si le hash négocié diffère ; placeholder réservé aux assets manquants ou corrompus dans un bundle compatible ; réplication générale maintenue |
@@ -294,14 +278,14 @@ Les logs ne doivent pas imprimer les données complètes à chaque frame.
 | POF HUD insuffisant en 1024 | profil `MfdHigh` utilisant le modèle principal |
 | Dette de fork | seams isolés : socle, Talking Head, helper target box et readback générique |
 
-## 13. Ordre de développement recommandé
+## 12. Ordre de développement recommandé
 
 1. schéma wire v1 exhaustif, golden vectors et tests sans moteur ;
 2. squelette producteur `code/telemetry`, transport, session et observabilité ;
 3. heartbeat, premier snapshot producteur, baseline et deltas cumulatifs ;
 4. décodeur puis client console minimal pour valider ce premier flux ;
 5. collecteurs producteur du vaisseau et des systèmes, dont `CONTROL_STATE` et `SUPPORT_STATE` ;
-6. collecteurs producteur radar/ciblage, puis toutes les entités et join-in-progress ;
+6. collecteurs producteur radar/ciblage, puis vues de communication ;
 7. hook producteur `Talking Head`, packager CFile, bundle et manifeste ;
 8. `ReplicaStore` et client distant, puis vue de communication locale ;
 9. vue cible côté producteur : rendu hors écran et readback OpenGL PBO/fences ;

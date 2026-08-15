@@ -64,7 +64,6 @@ Exemple complet normatif :
   "allowedClients": ["127.0.0.1/32", "::1/128"],
   "discoveryEnabled": false,
   "visibilityMode": "Cockpit",
-  "trustedFullState": false,
   "maxClients": 1,
   "flightHz": 30,
   "keyframeSeconds": 2,
@@ -85,7 +84,6 @@ L'objet racine DOIT être un objet JSON sans clés dupliquées. `schemaVersion` 
 | `allowedClients` | tableau de strings | loopback v4/v6 | 1–32 CIDR numériques canoniques et uniques lorsque activé |
 | `discoveryEnabled` | booléen | `false` | exactement `false` en Phase 1 |
 | `visibilityMode` | string | `Cockpit` | exactement `Cockpit` |
-| `trustedFullState` | booléen | `false` | exactement `false` en Phase 1 |
 | `maxClients` | entier | `1` | 1–4 |
 | `flightHz` | entier | `30` | 1–60 |
 | `keyframeSeconds` | entier | `2` | 1–5 |
@@ -324,7 +322,7 @@ Le relevé indique la build, la plateforme, la mission, `flightHz`, le nombre de
 | dual-stack explicitement vérifié | `Ready` | 1 | un info agrégé |
 | bind partiel | `Faulted` après rollback | 0 | un error |
 | non-loopback sans allowlist | `Disabled` | 0 | un warning config |
-| découverte ou `TrustedFullState` activé | `Disabled` | 0 | un warning config |
+| découverte activée | `Disabled` | 0 | un warning config |
 | erreur socket permanente en cours | `Faulted` | 0 après purge | un error puis résumé |
 
 ## 12. Qualité de l'observabilité

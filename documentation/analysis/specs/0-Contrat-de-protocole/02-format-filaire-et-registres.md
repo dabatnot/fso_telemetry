@@ -412,7 +412,9 @@ Préfixe fixe de 38 octets :
 | 36 | `extension_count` | `u16` | nombre exact |
 | 38 | `extensions` | bytes | enveloppes de capability |
 
-`VisibilityMode` est fermé : `0 COCKPIT` et `1 TRUSTED_FULL_STATE`. Un client ne peut jamais imposer `TRUSTED_FULL_STATE` : le producteur le sélectionne seulement si sa configuration autorise cet endpoint ; sinon il choisit `COCKPIT` ou rejette avec `Welcome Unauthorized`. Le payload total est limité à 806 octets. Le `Hello` initial porte `session_id = 0` et n'est pas fragmenté.
+`VisibilityMode` est fermé à l'unique valeur `0 COCKPIT`; les valeurs `1..255`
+sont réservées et rejetées. Le payload total est limité à 806 octets. Le
+`Hello` initial porte `session_id = 0` et n'est pas fragmenté.
 
 ### 9.4 WelcomePayload
 

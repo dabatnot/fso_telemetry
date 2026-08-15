@@ -7,7 +7,6 @@
   "allowedClients": ["127.0.0.1/32", "::1/128"],
   "discoveryEnabled": false,
   "visibilityMode": "Cockpit",
-  "trustedFullState": false,
   "maxClients": 1,
   "flightHz": 30,
   "systemsHz": 10,

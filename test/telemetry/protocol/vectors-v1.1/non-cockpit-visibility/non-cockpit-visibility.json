@@ -1,6 +1,6 @@
 {
-  "expectedValidationError": 43,
-  "expectedValidationErrorName": "VisibilityViolation",
+  "expectedValidationError": 35,
+  "expectedValidationErrorName": "UnknownEnum",
   "headerVersion": "1.1",
   "inputFiles": [
     "non-cockpit-visibility.bin"

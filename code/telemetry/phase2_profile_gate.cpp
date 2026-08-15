@@ -76,12 +76,6 @@ Phase2ProfileError select_phase2_profile(const Phase2ProfileEligibility& eligibi
 	if (eligibility.authority_mode != protocol::AuthorityMode::Solo) {
 		return Phase2ProfileError::UnsupportedAuthority;
 	}
-	if (eligibility.visibility_mode != protocol::VisibilityMode::Cockpit) {
-		return Phase2ProfileError::UnsupportedVisibility;
-	}
-	if (eligibility.trusted_full_state) {
-		return Phase2ProfileError::TrustedFullStateNotAllowed;
-	}
 	if (eligibility.dedicated) {
 		return Phase2ProfileError::DedicatedNotAllowed;
 	}

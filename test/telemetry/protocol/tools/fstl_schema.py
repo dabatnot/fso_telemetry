@@ -49,8 +49,8 @@ FROZEN_LEDGER_PATH = REPO_ROOT / "test" / "telemetry" / "protocol" / "fstl-1.0-a
 CPP_CONSTANTS_PATH = REPO_ROOT / "code" / "telemetry" / "protocol" / "telemetry_protocol_constants.h"
 SCHEMA_VECTOR_CHECKER_PATH = Path(__file__).resolve().with_name("verify_schema_vectors.py")
 
-FROZEN_SCHEMA_V1_0_BYTES = 499_786
-FROZEN_SCHEMA_V1_0_SHA256 = "1d89c4a95a121c178bf85570cd616568fd939942b8d053835069b2d7d6a1f0d4"
+FROZEN_SCHEMA_V1_0_BYTES = 499_494
+FROZEN_SCHEMA_V1_0_SHA256 = "a870d85fdb0070d61a57e40d7d2b1183a9a83458cedf446708511fcaac5134cc"
 FROZEN_ARTIFACT_COUNT_V1_0 = 438
 FROZEN_ARTIFACT_TREE_SHA256_V1_0 = "9baac6a20db33bcf350066ed533c5581b7117410899d7bc4a6dc24406e47856d"
 SOURCE_NAMES = (
@@ -1487,18 +1487,15 @@ def parse_doc02_numeric_registries(
     )
 
     hello_section = extract_section(doc02, r"### 9\.3 .*HelloPayload")
-    visibility_match = re.search(r"`VisibilityMode`.*?`0\s+([A-Z_]+)`.*?`1\s+([A-Z_]+)`", hello_section)
+    visibility_match = re.search(r"`VisibilityMode`.*?`0\s+([A-Z_]+)`", hello_section)
     if visibility_match is None:
         raise SchemaError("VisibilityMode normative values not found")
     registries["VisibilityMode"] = make_enum_registry(
         "VisibilityMode",
         8,
-        [
-            {"name": visibility_match.group(1), "value": 0},
-            {"name": visibility_match.group(2), "value": 1},
-        ],
+        [{"name": visibility_match.group(1), "value": 0}],
         registry_source("02-format-filaire-et-registres.md", "9.3"),
-        reserved_ranges=((2, 255),),
+        reserved_ranges=((1, 255),),
     )
     return registries
 
@@ -2923,9 +2920,9 @@ def verify_cpp_correspondence(
         "VersionMinorV1_0": 0,
         "VersionMinorV1_1": 1,
         "LatestSupportedVersionMinor": 1,
-        "KnownStateDomainCoverageBitsV1_0": 0x3FF,
-        "KnownStateDomainCoverageBits": 0x3FF,
-        "ReservedStateDomainCoverageBits": 0xFFFFFFFFFFFFFC00,
+        "KnownStateDomainCoverageBitsV1_0": 0x3EF,
+        "KnownStateDomainCoverageBits": 0x3EF,
+        "ReservedStateDomainCoverageBits": 0xFFFFFFFFFFFFFC10,
     }
     for name, expected in amendment_constants.items():
         if cpp_constants.get(name) != expected:
@@ -3114,9 +3111,9 @@ def build_schema() -> dict[str, object]:
         "wire_version": f"{core_constants['version_major']}.{core_constants['version_minor']}",
         "wire_version_scope": "frozen FSTL 1.0 compatibility view",
         "supported_wire_versions": {
-            "1.0": {"minor": 0, "state_domain_known_mask": 0x3FF,
+            "1.0": {"minor": 0, "state_domain_known_mask": 0x3EF,
                     "player_kinematics": "reserved_and_rejected"},
-            "1.1": {"minor": 1, "state_domain_known_mask": 0x7FF,
+            "1.1": {"minor": 1, "state_domain_known_mask": 0x7EF,
                     "player_kinematics": 0x400},
         },
         "producer_profiles": {
@@ -3170,9 +3167,9 @@ def build_schema() -> dict[str, object]:
 
 def validate_schema_shape(schema: dict[str, object]) -> None:
     expected_versions = {
-        "1.0": {"minor": 0, "state_domain_known_mask": 0x3FF,
+        "1.0": {"minor": 0, "state_domain_known_mask": 0x3EF,
                 "player_kinematics": "reserved_and_rejected"},
-        "1.1": {"minor": 1, "state_domain_known_mask": 0x7FF,
+        "1.1": {"minor": 1, "state_domain_known_mask": 0x7EF,
                 "player_kinematics": 0x400},
     }
     expected_profiles = {"phase1_minimal": {"minimum_minor": 1, "maximum_minor": 1,
@@ -3580,9 +3577,9 @@ def build_fstl_v1_1_schema() -> dict[str, object]:
     }
 
     schema["supported_wire_versions"] = {
-        "1.0": {"minor": 0, "state_domain_known_mask": 0x3FF,
+        "1.0": {"minor": 0, "state_domain_known_mask": 0x3EF,
                 "player_kinematics": "reserved_and_rejected"},
-        "1.1": {"minor": 1, "state_domain_known_mask": 0x7FF,
+        "1.1": {"minor": 1, "state_domain_known_mask": 0x7EF,
                 "player_kinematics": 0x400},
     }
     schema["producer_profiles"] = {
@@ -3689,8 +3686,8 @@ def build_fstl_v1_1_schema() -> dict[str, object]:
         "known_mask_constant": "KnownStateDomainCoverageBitsV1_1",
         "reserved_mask_constant": "ReservedStateDomainCoverageBitsV1_1",
     }
-    state_coverage["reserved"]["known_mask"] = 0x7FF
-    state_coverage["reserved"]["reserved_mask"] = 0xFFFFFFFFFFFFF800
+    state_coverage["reserved"]["known_mask"] = 0x7EF
+    state_coverage["reserved"]["reserved_mask"] = 0xFFFFFFFFFFFFF810
     values = state_coverage["values"]
     values.append({
         "bit": 10,
@@ -3980,6 +3977,7 @@ def build_fstl_v1_1_schema() -> dict[str, object]:
         "id": 29,
         "name": "HUD_ALERT_STATE",
         "version": 1,
+        "position_kind": "order",
         "scope": "player",
         "delta_atom": "entity_id",
         "create_delete": "no",

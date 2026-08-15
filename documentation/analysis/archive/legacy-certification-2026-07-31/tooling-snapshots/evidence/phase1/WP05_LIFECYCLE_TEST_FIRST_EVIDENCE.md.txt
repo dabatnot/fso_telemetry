@@ -343,7 +343,7 @@ All final freeze/amendment/schema/assets and specification commands exited `0`:
 - FSTL 1.1 amendment: 15 snapshots, 6 messages, 3 negotiations, 2 internal
   oracles, with the same 438 Phase 0 artifacts and tree hash;
 - schema vectors: 20 messages, 28 records, 2,479 bytes, layout SHA-256
-  `d5e7ae20571bc0e08f1d123f7529fd6430466872ad0dd5cb22ea37b24128e0aa`
+  `fd99d8265e81307529d0c6ba2a528e95e95a5cd3aaff0ceb142edf27bd3cc6b4`
   and encoded-probe SHA-256
   `ee45ad75728442145aa2689211f237868f095a39a2735b89ae5868c3dbe95438`;
 - assets: 182 fixtures (54 valid, 128 invalid), 20/20 messages, 28/28

@@ -95,11 +95,10 @@ FSTL 1.0 ne fusionne pas deux producteurs dans une même session. Un serveur/mas
 
 `SESSION_STATE.observed_player_entity_id` et les métadonnées de mission permettent une corrélation volontaire. Toute fusion de sessions, résolution des conflits d'autorité ou association externe appartient à l'application consommatrice et NE DOIT PAS modifier les baselines FSTL.
 
-Cette règle résout la séparation d'autorité suivante :
-
-- un serveur/master peut fournir `TrustedFullState` sans renderer ;
-- un processus joueur peut fournir `Cockpit`, Talking Head et vidéo cible ;
-- aucune capability visuelle n'est déduite du mode d'état.
+Cette règle maintient les autorités réseau séparées. Le produit de télémétrie
+est toujours émis par un processus joueur observé et reste limité à sa
+projection cockpit ; aucune capability visuelle n'est déduite de l'autorité
+réseau.
 
 ## 5. Modes d'autorité et complétude
 
@@ -116,19 +115,7 @@ Le producteur DOIT filtrer avant sérialisation :
 
 Un contact radar `DISTORTED` ou une dernière observation furtive représente une **observation capteur**, pas nécessairement l'état réel de l'entité. Le producteur NE DOIT PAS contourner ce filtrage en envoyant simultanément un record d'entité complet non autorisé.
 
-### 5.2 `TrustedFullState`
-
-Le mode `TrustedFullState` exporte toutes les entités et relations connues de la source autoritaire. Il est destiné au diagnostic, au replay ou à un client explicitement de confiance.
-
-Ce mode :
-
-- est désactivé par défaut ;
-- nécessite une configuration explicite ;
-- n'est annoncé que par une source possédant l'autorité correspondante ;
-- ne rend pas disponibles par lui-même Talking Head ou vidéo cible ;
-- ne doit jamais être activé automatiquement à la demande d'un client.
-
-### 5.3 Sens de « snapshot complet »
+### 5.2 Sens de « snapshot complet »
 
 Un `FULL_SNAPSHOT` est complet par rapport :
 
@@ -255,7 +242,7 @@ FSTL 1.0 cible un LAN de confiance relative, mais tout datagramme reçu est cons
 - amplification par `HELLO`, `NACK`, resync ou demande d'IDR ;
 - épuisement mémoire par tailles, fragments ou sessions multiples ;
 - épuisement CPU/GPU par abonnements et changements vidéo ;
-- fuite de données `Cockpit`/`TrustedFullState` ;
+- fuite d'informations non autorisées par les capteurs du cockpit ;
 - rejeu d'une ancienne session ou génération ;
 - chemins d'assets hostiles et contenu local corrompu.
 
@@ -273,7 +260,9 @@ Toute valeur numérique citée dans l'analyse est classée par la spécification
 - **valeur négociée** : intersection des offres producteur/client ;
 - **valeur d'observation** : utile pour qualifier une implémentation sans changer le wire.
 
-Le port `42042` est un défaut configurable, pas un identifiant de protocole. La découverte est désactivée par défaut. Une écoute non-loopback et `TrustedFullState` requièrent toutes deux une activation explicite et une allowlist non vide.
+Le port `42042` est un défaut configurable, pas un identifiant de protocole.
+La découverte est désactivée par défaut. Une écoute non-loopback requiert une
+activation explicite et une allowlist non vide.
 
 ## 12. Hors périmètre
 

@@ -173,15 +173,12 @@ Les modes de visibilité sont :
 | Valeur | Nom | Sémantique |
 |---:|---|---|
 | 0 | `COCKPIT` | connaissance locale/autorisée du joueur |
-| 1 | `TRUSTED_FULL_STATE` | état exhaustif réservé à un endpoint de confiance |
 
 Le producteur est autoritaire :
 
-- `TRUSTED_FULL_STATE` exige une option explicite et un endpoint allowlisté ;
-- un producteur en `MULTIPLAYER_CLIENT` ne peut sélectionner que `COCKPIT` ;
-- `TRUSTED_FULL_STATE` est possible en `SOLO` ou `MULTIPLAYER_MASTER` si la configuration l'autorise ;
-- un master headless peut fournir l'état exhaustif sans annoncer de capability visuelle ;
-- un refus de la demande peut être un downgrade vers `COCKPIT` ou `Welcome Unauthorized` selon la politique configurée.
+- tout producteur sélectionne uniquement `COCKPIT` ;
+- les valeurs de visibilité non définies sont rejetées, sans downgrade ;
+- un processus sans cockpit observé n'annonce pas de profil de télémétrie.
 
 `AuthorityMode` (`SOLO`, `MULTIPLAYER_CLIENT`, `MULTIPLAYER_MASTER`) n'est jamais demandé par le client. Il est observé et publié dans `SessionState`.
 

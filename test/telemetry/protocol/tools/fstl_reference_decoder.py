@@ -357,7 +357,7 @@ def decode_record_payload(
             observed = reader.u64()
             require(observed != 0, 34, "observed player id")
             fields["observed_player_entity_id"] = u64s(observed)
-        require(authority in (0, 1, 2) and visibility in (0, 1) and phase in (0, 1, 2, 3), 35, "enum")
+        require(authority in (0, 1, 2) and visibility == 0 and phase in (0, 1, 2, 3), 35, "enum")
         require(reserved == 0 and generation >= 1 and producer_id != 0, 34, "SESSION_STATE invariant")
         return fields
 
@@ -2925,11 +2925,19 @@ def verify_fstl11_corpus(root: Path) -> int:
                     f"FSTL 1.1 valid transport metadata drift for {metadata['name']}")
         elif kind == "message-payload" and metadata["messageType"] == 6:
             payload = (metadata_path.parent / metadata["inputFiles"][0]).read_bytes()
-            decoded = decode_message(6, 0, payload, {})
-            actual = fstl11_snapshot_result(decoded, int(metadata["versionMinor"]))
-            require(error_ids[actual] == metadata["expectedValidationError"] and
-                    actual == metadata["expectedValidationErrorName"], 44,
-                    f"FSTL 1.1 expected result drift for {metadata['name']}: {actual}")
+            try:
+                decoded = decode_message(6, 0, payload, {})
+            except DecodeFailure as exc:
+                require(not metadata["valid"] and
+                        exc.code == metadata["expectedValidationError"] and
+                        exc.code == 35 and metadata["expectedValidationErrorName"] == "UnknownEnum",
+                        44, f"FSTL 1.1 decode result drift for {metadata['name']}: {exc.code}")
+                decoded = None
+            if decoded is not None:
+                actual = fstl11_snapshot_result(decoded, int(metadata["versionMinor"]))
+                require(error_ids[actual] == metadata["expectedValidationError"] and
+                        actual == metadata["expectedValidationErrorName"], 44,
+                        f"FSTL 1.1 expected result drift for {metadata['name']}: {actual}")
         elif kind == "record":
             encoded = (metadata_path.parent / metadata["inputFiles"][0]).read_bytes()
             decoded = decode_record(encoded, metadata.get("context", {}), "standalone")
@@ -2938,7 +2946,7 @@ def verify_fstl11_corpus(root: Path) -> int:
         else:
             fail(44, f"unexpected FSTL 1.1 corpus kind {kind}")
         canonical = metadata.get("expectedCanonicalJson")
-        if canonical:
+        if canonical and decoded is not None:
             expected = json.loads((root / canonical).read_text(encoding="utf-8"))
             decoded["schema"] = "FSTL-1.1"
             if metadata.get("messageType") in (6, 7):

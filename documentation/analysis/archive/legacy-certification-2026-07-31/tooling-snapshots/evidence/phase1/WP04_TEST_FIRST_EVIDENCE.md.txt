@@ -164,7 +164,7 @@ All protocol and specification gates were rerun after production and test change
 |---|---|
 | `verify_fstl_1_0_freeze.py --check --repo .` | exit `0`; 438 files; tree SHA-256 `9baac6a20db33bcf350066ed533c5581b7117410899d7bc4a6dc24406e47856d` |
 | `verify_fstl_1_1_amendment.py --check --repo .` | exit `0`; 15 snapshots, 6 messages, 3 negotiations, 2 internal oracles; v1.0 hash unchanged |
-| `verify_schema_vectors.py --check` | exit `0`; 20 messages, 28 records, 2,479 bytes; layout SHA-256 `d5e7ae20571bc0e08f1d123f7529fd6430466872ad0dd5cb22ea37b24128e0aa`; encoded SHA-256 `ee45ad75728442145aa2689211f237868f095a39a2735b89ae5868c3dbe95438` |
+| `verify_schema_vectors.py --check` | exit `0`; 20 messages, 28 records, 2,479 bytes; layout SHA-256 `fd99d8265e81307529d0c6ba2a528e95e95a5cd3aaff0ceb142edf27bd3cc6b4`; encoded SHA-256 `ee45ad75728442145aa2689211f237868f095a39a2735b89ae5868c3dbe95438` |
 | `verify_telemetry_assets.py --repo . --require-complete` | exit `0`; 182 fixtures: 54 valid, 128 invalid; 20/20 messages and 28/28 records; 126 invalid categories and 4 seeds |
 | `inspect_phase_contract.ps1` on Phase 0 | exit `0`; 8 documents, 5,300 lines, 27 requirements, 24 acceptance criteria, 12 work packages, 6 gates |
 | `inspect_phase_contract.ps1` on Phase 1 | exit `0`; 8 documents, 1,912 lines, 38 requirements, 20 acceptance criteria, 11 work packages, 7 gates |

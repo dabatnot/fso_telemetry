@@ -18,7 +18,7 @@ Les termes **DOIT**, **NE DOIT PAS**, **DEVRAIT** et **PEUT** sont normatifs. FS
 
 Le profil final de livraison est FSTL 1.1 avec `state_domain_coverage = 0x0583`, soit `PLAYER_KINEMATICS | CORE_SHIP | CONTROL_INPUTS | WEAPONS | CARGO_DOCK_SUPPORT`. Cette valeur résout une contrainte du contrat Phase 0 : `CONTROL_STATE`, `WEAPON_STATE` et `SUPPORT_STATE` sont invalides sans leurs domaines respectifs. La promotion intermédiaire demandée par la roadmap vers `PLAYER_KINEMATICS | CORE_SHIP = 0x0401` reste une gate distincte ; elle ne permet pas encore d’émettre ces trois records.
 
-La fermeture `CARGO_DOCK_SUPPORT` est le moindre point fixe autorisé : joueur observé, support de chaque membre, leaders et composantes de docking atteints transitivement ; une cible cargo n’est incluse que si elle appartient déjà à cet ensemble. La présentation métier du scan reste Phase 3 et le docking global de toutes les entités reste Phase 4.
+La fermeture `CARGO_DOCK_SUPPORT` est le moindre point fixe autorisé : joueur observé, support de chaque membre, leaders et composantes de docking atteints transitivement ; une cible cargo n’est incluse que si elle appartient déjà à cet ensemble. La présentation métier du scan reste Phase 3 et le docking global reste hors produit.
 
 Le client DOIT retrouver l’état correct après perte, duplication et réordonnancement artificiels de datagrammes, sans chaîne de deltas et sans intervention manuelle.
 
@@ -52,7 +52,7 @@ Toute référence ship non nulle est matérialisée par son lifecycle et son ét
 La Phase 2 exclut :
 
 - le ciblage, les locks, le radar, AWACS, la furtivité, les menaces et la navigation de Phase 3 ;
-- l’export global de toutes les entités et le docking global de Phase 4 ;
+- l’export global de mission et le docking global ;
 - `ReplicaStore`, l’UI et le packaging du client applicatif de Phase 5 ;
 - le worker/SPSC et la couverture exacte des événements brefs de Phase 6 ;
 - `COMM_*`, les bundles visuels, la vidéo H.264 et le rendu de cible des Phases 6 et 7 ;

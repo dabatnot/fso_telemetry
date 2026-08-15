@@ -326,8 +326,8 @@
                   },
                   {
                       "path":  "test/telemetry/protocol/schema/fstl-v1.yaml",
-                      "bytes":  499786,
-                      "sha256":  "1d89c4a95a121c178bf85570cd616568fd939942b8d053835069b2d7d6a1f0d4"
+                      "bytes":  499494,
+                      "sha256":  "a870d85fdb0070d61a57e40d7d2b1183a9a83458cedf446708511fcaac5134cc"
                   },
                   {
                       "path":  "test/telemetry/protocol/transport-harness-seeds.json",

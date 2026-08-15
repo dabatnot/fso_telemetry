@@ -280,7 +280,7 @@ Cette arborescence est une proposition de packaging. Une fusion de fichiers est 
 
 ## 11. Évolutivité sans anticipation
 
-Les frontières prévoient les phases suivantes sans les implémenter : un futur worker pourra consommer des DTO sans relire les globals ; de nouveaux collecteurs pourront fournir d'autres domaines ; le transport pourra évoluer derrière son interface. En Phase 1, ces points d'extension restent inactifs : aucune SPSC, aucun `CORE_SHIP`, aucune `ALL_ENTITIES`, aucun Talking Head, aucune vidéo ni QoS avancée n'est ajouté.
+Les frontières prévoient les phases suivantes sans les implémenter : un futur worker pourra consommer des DTO sans relire les globals ; de nouveaux collecteurs pourront fournir d'autres domaines cockpit ; le transport pourra évoluer derrière son interface. En Phase 1, ces points d'extension restent inactifs : aucune SPSC, aucun `CORE_SHIP`, aucun Talking Head, aucune vidéo ni QoS avancée n'est ajouté.
 
 ## 12. Traçabilité
 

@@ -7,6 +7,15 @@ Ce dossier contient les seules spécifications de phase actives :
 - [Phase 2 — vaisseau complet](2-Vaisseau-complet/README.md), 50 exigences ;
 - [Phase 3 — ciblage et capteurs](3-Ciblage-et-capteurs/README.md), 46 exigences.
 
+## Décision produit irréversible
+
+`TrustedFullState` est abandonné définitivement. Il ne fait partie ni du
+produit, ni du protocole accepté, ni de la configuration, ni d'une phase
+future. Une évolution ajoute uniquement les données nécessaires au simpit
+dans la projection `CockpitSensors`, après filtrage producteur. Les besoins du
+dashboard, du replay, des tests ou du diagnostic ne peuvent pas élargir ce
+périmètre.
+
 Les 161 exigences apparaissent exactement une fois dans le document
 `07-livraison-et-tracabilite.md` de leur phase. Les dépendances vers une phase
 antérieure sont des liens et ne créent pas une seconde exigence.

@@ -291,9 +291,15 @@ Le serveur est la source de vérité pour :
 - cycle de vie des entités ;
 - cargo, docking et état global.
 
-Le mode `TrustedFullState` doit donc être produit depuis le serveur/master lorsqu'une vue réellement exhaustive de la mission est requise.
+Cette autorité serveur n'est pas exportée comme une vue omnisciente. La
+télémétrie reste la projection capteurs du cockpit observé.
 
-Les deux vues de présentation constituent des capabilities du processus joueur observé, pas une conséquence de `TrustedFullState`. La vue Talking Head dépend du gauge HUD actif et de sa résolution finale de l'asset ; la vue vidéo de cible dépend de `Player_obj`, de la cible du HUD et d'un renderer graphique. Elles sont produites par le processus joueur en solo ou par le client multijoueur observé. Un serveur dédié/headless peut fournir l'état autoritaire, mais ne garantit pas la capability producteur de la vue de communication et n'annonce pas `TARGET_VIDEO_REMOTE_RENDER`.
+Les deux vues de présentation constituent des capabilities du processus
+joueur observé. La vue Talking Head dépend du gauge HUD actif et de sa
+résolution finale de l'asset ; la vue vidéo de cible dépend de `Player_obj`,
+de la cible du HUD et d'un renderer graphique. Elles sont produites par le
+processus joueur en solo ou par le client multijoueur observé. Un serveur
+dédié/headless n'annonce pas ces capabilities.
 
 ## 8. Threading et impact sur la frame
 
@@ -361,11 +367,13 @@ Exemple :
 
 ```json
 {
+	"schemaVersion": 3,
+	"profile": "CockpitSensors",
   "enabled": true,
-  "mode": "TrustedFullState",
-  "bindAddress": "0.0.0.0",
+	"visibilityMode": "Cockpit",
+	"bindAddresses": ["127.0.0.1", "::1"],
   "bindPort": 42042,
-  "allowedClients": ["192.168.1.50"],
+	"allowedClients": ["127.0.0.1/32", "::1/128"],
   "communicationView": {
     "enabled": true,
     "bundleManifest": "data/telemetry-assets/manifest.json",

@@ -136,9 +136,6 @@ TelemetryPhase2ProfileRejection telemetry_profile_rejection(
 	case Phase2ProfileError::DedicatedNotAllowed:
 	case Phase2ProfileError::HeadlessNotAllowed:
 		return TelemetryPhase2ProfileRejection::UnsupportedAuthority;
-	case Phase2ProfileError::UnsupportedVisibility:
-	case Phase2ProfileError::TrustedFullStateNotAllowed:
-		return TelemetryPhase2ProfileRejection::UnsupportedVisibility;
 	case Phase2ProfileError::UnsupportedCoverage:
 	case Phase2ProfileError::UnsupportedProfile:
 	default:

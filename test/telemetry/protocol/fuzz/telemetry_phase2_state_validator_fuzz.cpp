@@ -18,8 +18,6 @@ extern "C" int LLVMFuzzerTestOneInput(
 		static_cast<std::uint32_t>(data[0]);
 	context.class_manifest_installed = (data[1] & 1U) != 0U;
 	context.weapon_manifest_installed = (data[1] & 2U) != 0U;
-	context.trusted_full_state_authorized = (data[1] & 4U) != 0U;
-	context.source_endpoint_allowlisted = (data[1] & 8U) != 0U;
 	context.enforce_negotiated_capabilities = true;
 	context.negotiated_capabilities =
 		static_cast<std::uint64_t>(data[1] >> 4U);

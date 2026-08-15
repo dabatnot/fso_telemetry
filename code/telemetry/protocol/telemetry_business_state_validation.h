@@ -32,8 +32,6 @@ struct BusinessSessionInvariants {
 struct BusinessStateValidationContext {
 	std::uint8_t protocol_minor = VersionMinor;
 	std::uint32_t required_manifest_id = 0;
-	bool trusted_full_state_authorized = false;
-	bool source_endpoint_allowlisted = false;
 	bool communication_exact_hook_available = false;
 	// Current CockpitSensors sessions require HUD_ALERT_STATE. Replay callers
 	// leave this false when loading captures produced by an older Phase 3

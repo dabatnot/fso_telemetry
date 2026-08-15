@@ -96,7 +96,7 @@ Phase 3 et aucune promotion n’est permise dans une session existante.
 
 Cette phase ne livre pas :
 
-- `TrustedFullState`, `ALL_ENTITIES` ou la réplication complète des objets ;
+- une vue globale de mission ou la réplication complète des objets ;
 - le docking global hors fermeture joueur/support héritée ;
 - la vue de communication et son bundle d’assets ;
 - le client applicatif final et ses interfaces graphiques ;

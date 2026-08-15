@@ -31,7 +31,7 @@ Les valeurs moteur capturées sont `A` ou `C` selon [01-telemetry-data-inventory
 | Harness d’oracle | compare au même tick la copie moteur et l’état décodé ; il n’est pas livré comme API publique moteur |
 | Réseau local | transport non fiable et non authentifié ; loopback et allowlist hérités restent les défenses par défaut |
 
-Le périmètre de livraison obligatoire est `AuthorityMode.SOLO`, `VisibilityMode.COCKPIT`, `trustedFullState=false`. Les chemins `MULTIPLAYER_CLIENT` et `MULTIPLAYER_MASTER` doivent être préservés dans l’architecture et soumis à des tests de non-régression de validation, mais leur production métier complète est différée. `DEDICATED_SERVER` sans joueur de cockpit NE DOIT PAS annoncer le profil Phase 2.
+Le périmètre de livraison obligatoire est `AuthorityMode.SOLO` et `VisibilityMode.COCKPIT`. Les chemins `MULTIPLAYER_CLIENT` et `MULTIPLAYER_MASTER` doivent être préservés dans l’architecture et soumis à des tests de non-régression de validation, mais leur production métier complète est différée. `DEDICATED_SERVER` sans joueur de cockpit NE DOIT PAS annoncer le profil Phase 2.
 
 Le client NE DOIT envoyer aucune commande de vol, arme, support ou mission. Aucun message reçu ne peut modifier un champ moteur.
 
@@ -66,7 +66,7 @@ Il ajoute :
 - un `CARGO_SCAN_STATE` pour le joueur ;
 - un `DOCKING_STATE` et un `SUPPORT_STATE` pour chaque vaisseau exporté, avec phase `NONE` et listes vides lorsque non applicables.
 
-Cette fermeture du domaine `CARGO_DOCK_SUPPORT` est imposée par la matrice et la validation référentielle Phase 0 : toute entité ship référencée DOIT posséder `ENTITY_LIFECYCLE`, puis tous les records `CORE_SHIP` et `WEAPONS`. La closure contient donc le joueur et la composante service/docking transitivement référencée et autorisée, sans devenir `ALL_ENTITIES`. Une cible de scan extérieure à cette closure provoque `SESSION_END` plutôt qu’une divulgation ; la Phase 3 conserve la propriété du scan/ciblage étendu et la Phase 4 celle du docking global.
+Cette fermeture du domaine `CARGO_DOCK_SUPPORT` est imposée par la matrice et la validation référentielle Phase 0 : toute entité ship référencée DOIT posséder `ENTITY_LIFECYCLE`, puis tous les records `CORE_SHIP` et `WEAPONS`. La closure contient donc le joueur et la composante service/docking transitivement référencée et autorisée. Une cible de scan extérieure à cette closure provoque `SESSION_END` plutôt qu’une divulgation ; la Phase 3 conserve la propriété du scan/ciblage étendu et le docking global reste hors produit.
 
 ### 4.4 Immutabilité et promotion
 
@@ -85,7 +85,7 @@ Le profil final DOIT annoncer `event_coverage_state_derived = ENTITY | DAMAGE (0
 | `P2-REQ-003` | Une session Phase 2 DOIT négocier exactement FSTL 1.1 et refuser tout intervalle sans minor 1. |
 | `P2-REQ-004` | La gate cœur DOIT utiliser exactement `0x0401` et le profil final exactement `0x0583`. Toute autre combinaison est hors contrat Phase 2. |
 | `P2-REQ-005` | La couverture DOIT être figée avant `WELCOME`; toute promotion ou perte ultérieure exige une nouvelle session. |
-| `P2-REQ-006` | Le mode livré DOIT être `SOLO + COCKPIT`; `TrustedFullState`, headless et les autres autorités NE DOIVENT PAS être annoncés comme conformes Phase 2. |
+| `P2-REQ-006` | Le mode livré DOIT être `SOLO + COCKPIT`; headless et les autres autorités NE DOIVENT PAS être annoncés comme conformes Phase 2. |
 | `P2-REQ-007` | Le producteur DOIT rester strictement read-only et NE DOIT exposer aucune commande distante. |
 | `P2-REQ-008` | Les données de cible, radar, navigation, communication et vidéo DOIVENT rester absentes du profil et des dépendances de réussite. |
 
@@ -162,7 +162,7 @@ Le profil final DOIT annoncer `event_coverage_state_derived = ENTITY | DAMAGE (0
 |---|---|---|
 | cible, locks, lead, radar, contacts, AWACS, stealth, menaces, navigation | Phase 3 | aucun record 15–19 ou 23, aucune cible de tourelle publiée |
 | UI cargo/scan | Phase 3 | le record 20 n’est présent que pour fermer le domaine ; aucune vue applicative anticipée |
-| toutes les entités, projectiles, docking global | Phase 4 | seuls le joueur et le point fixe autorisé support/docking/leader sont matérialisés |
+| vue globale de mission, projectiles hors capteurs, docking global | hors produit | seuls le joueur et le point fixe autorisé support/docking/leader sont matérialisés |
 | client applicatif, `ReplicaStore`, UI | Phase 5 | seulement un harness et tableau de bord de preuve |
 | worker/SPSC, hooks exhaustifs des événements brefs, communication | Phase 6 | couverture exacte à zéro, aucun `COMM_*` |
 | rendu/encodage vidéo de cible | Phase 7 | aucune dépendance FFmpeg, render target ou H.264 |

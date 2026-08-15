@@ -39,14 +39,15 @@ class VectorSchemaError(RuntimeError):
 
 
 EXPECTED_MESSAGE_FIELD_COUNT = 192
-EXPECTED_RECORD_FIELD_COUNT = 422
+EXPECTED_RECORD_FIELD_COUNT_V1_0 = 422
+EXPECTED_RECORD_FIELD_COUNT_V1_1 = 431
 EXPECTED_STRUCTURED_TYPE_COUNT = 25
 EXPECTED_STRUCTURED_FIELD_COUNT = 241
 EXPECTED_EVENT_ITEM_FIELD_COUNT = 30
-EXPECTED_LAYOUT_SHA256_V1_0 = "d5e7ae20571bc0e08f1d123f7529fd6430466872ad0dd5cb22ea37b24128e0aa"
-EXPECTED_LAYOUT_SHA256_V1_1 = "416ff38c4549d2d9fba89e114b94c4fa0ef1fb1f27be59e2126db7fd5ea61136"
+EXPECTED_LAYOUT_SHA256_V1_0 = "fd99d8265e81307529d0c6ba2a528e95e95a5cd3aaff0ceb142edf27bd3cc6b4"
+EXPECTED_LAYOUT_SHA256_V1_1 = "c79f0ee81f1bf0cd0179015e8acc45f3e1486c60cf4e7e7f8193eb522fb8c94b"
 EXPECTED_ENCODED_PROBE_SHA256_V1_0 = "ee45ad75728442145aa2689211f237868f095a39a2735b89ae5868c3dbe95438"
-EXPECTED_ENCODED_PROBE_SHA256_V1_1 = EXPECTED_ENCODED_PROBE_SHA256_V1_0
+EXPECTED_ENCODED_PROBE_SHA256_V1_1 = "57ca49e31db463d2e3da177134d2c5834ff9707cc1d0008718d0d8fbc8d591ef"
 
 
 def expected_layout_sha256(schema: dict[str, Any]) -> str:
@@ -64,6 +65,15 @@ def expected_encoded_probe_sha256(schema: dict[str, Any]) -> str:
         return EXPECTED_ENCODED_PROBE_SHA256_V1_0
     if version == "1.1":
         return EXPECTED_ENCODED_PROBE_SHA256_V1_1
+    raise VectorSchemaError(f"unsupported schema wire_version {version!r}")
+
+
+def expected_record_field_count(schema: dict[str, Any]) -> int:
+    version = schema.get("wire_version")
+    if version == "1.0":
+        return EXPECTED_RECORD_FIELD_COUNT_V1_0
+    if version == "1.1":
+        return EXPECTED_RECORD_FIELD_COUNT_V1_1
     raise VectorSchemaError(f"unsupported schema wire_version {version!r}")
 
 
@@ -595,7 +605,7 @@ def verify_layout_probes(schema: dict[str, Any], encoder: SchemaEncoder) -> Layo
     )
     expected = (
         EXPECTED_MESSAGE_FIELD_COUNT,
-        EXPECTED_RECORD_FIELD_COUNT,
+        expected_record_field_count(schema),
         EXPECTED_STRUCTURED_TYPE_COUNT,
         EXPECTED_STRUCTURED_FIELD_COUNT,
         EXPECTED_EVENT_ITEM_FIELD_COUNT,
@@ -802,7 +812,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         f"{summary.covered_record_fields}/{summary.total_record_fields}; golden nested "
         f"{', '.join(summary.covered_structured_types)}. Schema layout probes: "
         f"messages {summary.layout_probes.message_fields}/{EXPECTED_MESSAGE_FIELD_COUNT}, "
-        f"records {summary.layout_probes.record_fields}/{EXPECTED_RECORD_FIELD_COUNT}, "
+        f"records {summary.layout_probes.record_fields}/{expected_record_field_count(schema)}, "
         f"nested {summary.layout_probes.structured_types}/{EXPECTED_STRUCTURED_TYPE_COUNT} types and "
         f"{summary.layout_probes.structured_fields}/{EXPECTED_STRUCTURED_FIELD_COUNT} fields, "
         f"EventItemV1 {summary.layout_probes.event_item_fields}/{EXPECTED_EVENT_ITEM_FIELD_COUNT}; "

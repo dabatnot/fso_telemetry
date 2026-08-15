@@ -1,5 +1,16 @@
 # Repository agent instructions
 
+## Product scope
+
+- The telemetry product is cockpit-only. `TrustedFullState` is permanently
+  abandoned and must not be restored, specified, implemented, migrated, or
+  kept as a compatibility option.
+- New telemetry data must be justified by a concrete simpit cockpit need and
+  added to the existing `CockpitSensors` projection with producer-side
+  visibility filtering.
+- A dashboard, replay tool, test harness, or diagnostic need does not justify
+  exposing hidden mission state or adding an omniscient profile.
+
 ## Build and test concurrency
 
 - A single agent owns compilation and test execution at any given time.

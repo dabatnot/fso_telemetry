@@ -41,7 +41,7 @@ En cas d'écart entre un document d'analyse et ce dossier, les sept documents ca
 
 La spécification croise l'intégralité des documents suivants :
 
-- [`README.md`](../../README.md) : objectif, décisions actées, modes `Cockpit` et `TrustedFullState` ;
+- [`README.md`](../../README.md) : objectif, décisions actées et périmètre `Cockpit` ;
 - [`01-telemetry-data-inventory.md`](../../01-telemetry-data-inventory.md) : inventaire `A/C/D/E`, champs, unités, données dérivées et exclusions ;
 - [`02-telemetry-architecture.md`](../../02-telemetry-architecture.md) : découplage moteur, pipeline, autorité, threading, socket et sérialisation ;
 - [`03-udp-protocol.md`](../../03-udp-protocol.md) : format proposé, négociation, fragmentation, fiabilité et sécurité ;
@@ -65,7 +65,7 @@ Les décisions suivantes s'appliquent à toute la phase :
 - Un `FULL_SNAPSHOT` est autonome par rapport à l'historique dynamique, mais dépend d'un ensemble explicite de manifestes déjà validé et acquitté.
 - Un `DELTA` est cumulatif depuis une baseline immuable et acquittée par `ACK APPLIED` ; il n'est jamais différentiel depuis le delta précédent.
 - Les états rapides sont remplaçables ; les éléments indispensables sont fiables au niveau applicatif avec rétention bornée.
-- `Cockpit` signifie état complet **autorisé** par les capteurs du producteur ; `TrustedFullState` est sensible et désactivé par défaut.
+- `Cockpit` signifie état complet **autorisé** par les capteurs du producteur.
 - Les vues visuelles ont des capabilities séparées de l'état canonique et du mode d'autorité.
 - La vue de communication transporte identité, offset et vitesse de lecture, jamais ses pixels ni son audio.
 - La vue cible transporte des access units H.264 Annex B produites par un rendu natif hors écran, jamais une image HUD agrandie.

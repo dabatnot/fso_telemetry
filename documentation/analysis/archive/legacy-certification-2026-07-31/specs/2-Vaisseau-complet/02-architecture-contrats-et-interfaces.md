@@ -335,7 +335,7 @@ Une généralisation de `phase1_state_image.*` est acceptable si elle conserve e
 
 Les builders manipulent les `RecordType` existants et peuvent accepter de futurs blocs, mais la Phase 2 ne provisionne et n’annonce que les cinq domaines `0x0583`. Aucun placeholder de cible, radar, communication ou vidéo ne doit être créé.
 
-La closure Cockpit prépare le filtrage des phases suivantes sans annoncer `ALL_ENTITIES`. Tout ship support/docking effectivement référencé est toutefois un vaisseau exporté complet, car la validation FSTL exige son lifecycle, `CORE_SHIP` et `WEAPONS`. La closure est transitive, limitée à 64 ships et refusée dès qu’un membre n’est pas autorisé.
+La closure Cockpit prépare le filtrage des phases suivantes. Tout ship support/docking effectivement référencé est toutefois un vaisseau exporté complet, car la validation FSTL exige son lifecycle, `CORE_SHIP` et `WEAPONS`. La closure est transitive, limitée à 64 ships et refusée dès qu’un membre n’est pas autorisé.
 
 ## 12. Traçabilité
 

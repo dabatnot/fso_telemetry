@@ -185,7 +185,6 @@ TEST(TelemetryProtocolConstants, FreezesCapabilitiesAndControlRegistries) {
 	EXPECT_EQ(0x1fULL, KnownCapabilities);
 
 	EXPECT_EQ(0U, static_cast<std::uint8_t>(VisibilityMode::Cockpit));
-	EXPECT_EQ(1U, static_cast<std::uint8_t>(VisibilityMode::TrustedFullState));
 	EXPECT_EQ(0x01U, static_cast<std::uint8_t>(AckFlag::Validated));
 	EXPECT_EQ(0x02U, static_cast<std::uint8_t>(AckFlag::Applied));
 

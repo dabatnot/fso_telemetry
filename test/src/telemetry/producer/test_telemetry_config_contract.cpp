@@ -83,7 +83,6 @@ void expect_safe_defaults(const ConfigLoadResult& result)
 	EXPECT_EQ(ipv6_loopback, result.effective.allowed_clients[1].network());
 	EXPECT_FALSE(result.effective.discovery_enabled);
 	EXPECT_EQ(telemetry::VisibilityMode::Cockpit, result.effective.visibility_mode);
-	EXPECT_FALSE(result.effective.trusted_full_state);
 	EXPECT_EQ(1U, result.effective.max_clients);
 	EXPECT_EQ(30U, result.effective.flight_hz);
 	EXPECT_EQ(10U, result.effective.systems_hz);
@@ -239,7 +238,6 @@ TEST(TelemetryConfigContract, EnabledMinimalObjectUsesTheLoopbackOnlyProfile)
 	EXPECT_EQ(2U, result.effective.bind_addresses.size());
 	EXPECT_EQ(2U, result.effective.allowed_clients.size());
 	EXPECT_FALSE(result.effective.discovery_enabled);
-	EXPECT_FALSE(result.effective.trusted_full_state);
 }
 
 TEST(TelemetryConfigContract, StrictJsonRejectsMissingSchemaSyntaxAndNonObjectRoots)
@@ -375,8 +373,6 @@ TEST(TelemetryConfigContract, EveryConfigurationKeyHasAnExactJsonType)
 		{"discoveryEnabled", R"("false")"},
 		{"visibilityMode", "false"},
 		{"visibilityMode", "1"},
-		{"trustedFullState", "0"},
-		{"trustedFullState", R"("false")"},
 		{"maxClients", "1.0"},
 		{"maxClients", R"("1")"},
 		{"flightHz", "30.0"},
@@ -430,10 +426,7 @@ TEST(TelemetryConfigContract, ConfigurationValuesAreClosed)
 	expect_valid_disabled(object_with("discoveryEnabled", "false"));
 	expect_invalid(object_with("discoveryEnabled", "true"));
 	expect_valid_disabled(object_with("visibilityMode", R"("Cockpit")"));
-	expect_invalid(object_with("visibilityMode", R"("TrustedFullState")"));
 	expect_invalid(object_with("visibilityMode", R"("cockpit")"));
-	expect_valid_disabled(object_with("trustedFullState", "false"));
-	expect_invalid(object_with("trustedFullState", "true"));
 	expect_invalid(object_with("schemaVersion", "0"));
 	expect_invalid(object_with("schemaVersion", "4"));
 }

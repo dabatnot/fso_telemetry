@@ -33,14 +33,12 @@ TEST(TelemetryPhase3ProfileGate, CockpitSensorsMapsToTheFrozenCoverage)
 	EXPECT_EQ(Phase2Profile::CockpitSensors, phase2_profile_from_coverage(0x07CBULL));
 }
 
-TEST(TelemetryPhase3ProfileGate, CockpitSensorsExcludesGlobalEffectsCommunicationAndVideo)
+TEST(TelemetryPhase3ProfileGate, CockpitSensorsExcludesLowFrequencyEffectsCommunicationAndVideo)
 {
 	const auto coverage =
 		phase2_profile_coverage(Phase2Profile::CockpitSensors);
 	EXPECT_EQ(0U,
-		coverage &
-			(protocol::StateDomainCoverageBitAllEntities |
-			 protocol::StateDomainCoverageBitLowFrequencyEffects));
+		coverage & protocol::StateDomainCoverageBitLowFrequencyEffects);
 	EXPECT_EQ(0U,
 		Phase3StateDerivedEventCoverage &
 			protocol::EventFamilyBitCommunication);
@@ -91,25 +89,21 @@ TEST(TelemetryPhase2ProfileGate, ProfileErrorRegistryIsClosed)
 		static_cast<std::uint8_t>(Phase2ProfileError::None));
 }
 
-TEST(TelemetryPhase2ProfileGate, CompleteShipEligibilityIsSoloCockpitNonTrustedOnly)
+TEST(TelemetryPhase2ProfileGate, CompleteShipEligibilityIsSoloGraphicalOnly)
 {
 	using telemetry::protocol::AuthorityMode;
-	using telemetry::protocol::VisibilityMode;
 
 	Phase2Profile selected = Phase2Profile::None;
-	const Phase2ProfileEligibility eligible{
-		AuthorityMode::Solo, VisibilityMode::Cockpit, false, false, false};
+	const Phase2ProfileEligibility eligible{AuthorityMode::Solo, false, false};
 	EXPECT_EQ(Phase2ProfileError::None,
 		select_phase2_profile(eligible, Phase2Profile::CompleteShip, selected));
 	EXPECT_EQ(Phase2Profile::CompleteShip, selected);
 
-	const std::array<Phase2ProfileEligibility, 6> ineligible{{
-		{AuthorityMode::MultiplayerClient, VisibilityMode::Cockpit, false, false, false},
-		{AuthorityMode::MultiplayerMaster, VisibilityMode::Cockpit, false, false, false},
-		{AuthorityMode::Solo, VisibilityMode::Cockpit, true, false, false},
-		{AuthorityMode::Solo, VisibilityMode::Cockpit, false, true, false},
-		{AuthorityMode::Solo, VisibilityMode::TrustedFullState, false, false, false},
-		{AuthorityMode::Solo, VisibilityMode::Cockpit, false, false, true},
+	const std::array<Phase2ProfileEligibility, 4> ineligible{{
+		{AuthorityMode::MultiplayerClient, false, false},
+		{AuthorityMode::MultiplayerMaster, false, false},
+		{AuthorityMode::Solo, true, false},
+		{AuthorityMode::Solo, false, true},
 	}};
 	for (const auto& input : ineligible) {
 		selected = Phase2Profile::CompleteShip;
@@ -120,26 +114,22 @@ TEST(TelemetryPhase2ProfileGate, CompleteShipEligibilityIsSoloCockpitNonTrustedO
 	}
 }
 
-TEST(TelemetryPhase3ProfileGate, CockpitSensorsEligibilityIsSoloCockpitNonTrustedOnly)
+TEST(TelemetryPhase3ProfileGate, CockpitSensorsEligibilityIsSoloGraphicalOnly)
 {
 	using telemetry::protocol::AuthorityMode;
-	using telemetry::protocol::VisibilityMode;
 
-	const Phase2ProfileEligibility eligible{
-		AuthorityMode::Solo, VisibilityMode::Cockpit, false, false, false};
+	const Phase2ProfileEligibility eligible{AuthorityMode::Solo, false, false};
 	Phase2Profile selected = Phase2Profile::None;
 	EXPECT_EQ(Phase2ProfileError::None,
 		select_phase2_profile(
 			eligible, Phase2Profile::CockpitSensors, selected));
 	EXPECT_EQ(Phase2Profile::CockpitSensors, selected);
 
-	const std::array<Phase2ProfileEligibility, 6> ineligible{{
-		{AuthorityMode::MultiplayerClient, VisibilityMode::Cockpit, false, false, false},
-		{AuthorityMode::MultiplayerMaster, VisibilityMode::Cockpit, false, false, false},
-		{AuthorityMode::Solo, VisibilityMode::Cockpit, true, false, false},
-		{AuthorityMode::Solo, VisibilityMode::Cockpit, false, true, false},
-		{AuthorityMode::Solo, VisibilityMode::TrustedFullState, false, false, false},
-		{AuthorityMode::Solo, VisibilityMode::Cockpit, false, false, true},
+	const std::array<Phase2ProfileEligibility, 4> ineligible{{
+		{AuthorityMode::MultiplayerClient, false, false},
+		{AuthorityMode::MultiplayerMaster, false, false},
+		{AuthorityMode::Solo, true, false},
+		{AuthorityMode::Solo, false, true},
 	}};
 	for (const auto& input : ineligible) {
 		selected = Phase2Profile::CockpitSensors;
@@ -154,28 +144,23 @@ TEST(TelemetryPhase3ProfileGate, CockpitSensorsEligibilityIsSoloCockpitNonTruste
 TEST(TelemetryPhase2ProfileGate, EveryEligibilityRejectionHasItsClosedObservableReason)
 {
 	using telemetry::protocol::AuthorityMode;
-	using telemetry::protocol::VisibilityMode;
 
 	struct Rejection {
 		Phase2ProfileEligibility eligibility;
 		Phase2Profile requested;
 		Phase2ProfileError expected;
 	};
-	constexpr std::array<Rejection, 7> rejections{{
-		{{AuthorityMode::Solo, VisibilityMode::Cockpit, false, false, false},
+	constexpr std::array<Rejection, 5> rejections{{
+		{{AuthorityMode::Solo, false, false},
 			Phase2Profile::None, Phase2ProfileError::UnsupportedProfile},
-		{{AuthorityMode::MultiplayerClient, VisibilityMode::Cockpit, false, false, false},
+		{{AuthorityMode::MultiplayerClient, false, false},
 			Phase2Profile::CompleteShip, Phase2ProfileError::UnsupportedAuthority},
-		{{AuthorityMode::Solo, VisibilityMode::TrustedFullState, false, false, false},
-			Phase2Profile::CompleteShip, Phase2ProfileError::UnsupportedVisibility},
-		{{AuthorityMode::Solo, VisibilityMode::Cockpit, true, false, false},
-			Phase2Profile::CompleteShip, Phase2ProfileError::TrustedFullStateNotAllowed},
-		{{AuthorityMode::Solo, VisibilityMode::Cockpit, false, true, false},
+		{{AuthorityMode::MultiplayerMaster, false, false},
+			Phase2Profile::CompleteShip, Phase2ProfileError::UnsupportedAuthority},
+		{{AuthorityMode::Solo, true, false},
 			Phase2Profile::CompleteShip, Phase2ProfileError::DedicatedNotAllowed},
-		{{AuthorityMode::Solo, VisibilityMode::Cockpit, false, false, true},
+		{{AuthorityMode::Solo, false, true},
 			Phase2Profile::CompleteShip, Phase2ProfileError::HeadlessNotAllowed},
-		{{AuthorityMode::MultiplayerMaster, VisibilityMode::TrustedFullState, true, true, true},
-			Phase2Profile::CompleteShip, Phase2ProfileError::UnsupportedAuthority},
 	}};
 
 	for (const auto& rejection : rejections) {
@@ -187,30 +172,25 @@ TEST(TelemetryPhase2ProfileGate, EveryEligibilityRejectionHasItsClosedObservable
 	}
 }
 
-TEST(TelemetryPhase2ProfileGate, S11TST008EligibilityMatrixSelectsOnlySoloCockpitUntrusted)
+TEST(TelemetryPhase2ProfileGate, S11TST008EligibilityMatrixSelectsOnlySoloGraphical)
 {
 	using telemetry::protocol::AuthorityMode;
-	using telemetry::protocol::VisibilityMode;
 
 	struct Case {
 		Phase2ProfileEligibility eligibility;
 		Phase2ProfileError expected_error;
 		Phase2Profile expected_profile;
 	};
-	constexpr std::array<Case, 7> cases{{
-		{{AuthorityMode::Solo, VisibilityMode::Cockpit, false, false, false},
+	constexpr std::array<Case, 5> cases{{
+		{{AuthorityMode::Solo, false, false},
 			Phase2ProfileError::None, Phase2Profile::CompleteShip},
-		{{AuthorityMode::MultiplayerClient, VisibilityMode::Cockpit, false, false, false},
+		{{AuthorityMode::MultiplayerClient, false, false},
 			Phase2ProfileError::UnsupportedAuthority, Phase2Profile::None},
-		{{AuthorityMode::MultiplayerMaster, VisibilityMode::Cockpit, false, false, false},
+		{{AuthorityMode::MultiplayerMaster, false, false},
 			Phase2ProfileError::UnsupportedAuthority, Phase2Profile::None},
-		{{AuthorityMode::Solo, VisibilityMode::TrustedFullState, false, false, false},
-			Phase2ProfileError::UnsupportedVisibility, Phase2Profile::None},
-		{{AuthorityMode::Solo, VisibilityMode::Cockpit, true, false, false},
-			Phase2ProfileError::TrustedFullStateNotAllowed, Phase2Profile::None},
-		{{AuthorityMode::Solo, VisibilityMode::Cockpit, false, true, false},
+		{{AuthorityMode::Solo, true, false},
 			Phase2ProfileError::DedicatedNotAllowed, Phase2Profile::None},
-		{{AuthorityMode::Solo, VisibilityMode::Cockpit, false, false, true},
+		{{AuthorityMode::Solo, false, true},
 			Phase2ProfileError::HeadlessNotAllowed, Phase2Profile::None},
 	}};
 

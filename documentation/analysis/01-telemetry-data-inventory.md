@@ -438,7 +438,9 @@ Pour chaque contact :
 
 La position et la vélocité monde sont les sources canoniques `A`. Position relative, distance, azimut et élévation sont `D` dans le repère du vaisseau observateur. La catégorie « bombe » d'un contact signifie ici `OBJ_WEAPON` dont la classe porte le flag `Bomb`.
 
-En mode `Cockpit`, le filtrage capteurs/AWACS/furtivité doit être effectué côté producteur afin de ne pas révéler les objets cachés. En mode `TrustedFullState`, les objets non visibles peuvent être transmis avec une indication explicite de leur visibilité pour permettre les outils de diagnostic.
+Le filtrage capteurs/AWACS/furtivité doit être effectué côté producteur afin
+de ne jamais sérialiser un objet caché. Les outils de diagnostic et de replay
+consomment exactement la même projection cockpit.
 
 ## 12. Missiles entrants et alertes
 

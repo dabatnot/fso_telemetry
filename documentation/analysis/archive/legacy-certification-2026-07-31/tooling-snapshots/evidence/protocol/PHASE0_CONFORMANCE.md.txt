@@ -146,7 +146,7 @@ Toutes les commandes partent de la racine du dépôt.
 | `P0-AC-018` | `PASS` | classification QoS, token buckets et test de saturation vidéo exécutés | conserver en CI/fuzz |
 | `P0-AC-019` | `PASS` | 54 fixtures valides et 42 invalides messages/records concordent entre Python et C++ ; 86 transports invalides également rejoués | conserver le double replay en CI |
 | `P0-AC-020` | `PASS` | huit campagnes libFuzzer ASan/UBSan, 539 775 229 exécutions, 8 046 unités nouvelles et 0 crash ; rapports, corpus et checksums vérifiés | publier puis conserver les assets et checksums de release |
-| `P0-AC-021` | `PASS` | defaults loopback, discovery, allowlist et `TrustedFullState` opt-in exécutés ; configuration sûre approuvée | conserver le lien d'approbation |
+| `P0-AC-021` | `PASS` | defaults loopback, discovery et allowlist exécutés ; configuration sûre approuvée | conserver le lien d'approbation |
 | `P0-AC-022` | `PASS` | 20 messages read-only, authority mapper et tests d'absence de commande verts | conserver en CI |
 | `P0-AC-023` | `PASS` | bibliothèque C++17 pure ; scan sans type moteur/socket/renderer ; suite dédiée verte ; frontière acceptée par les revues modèle/client | conserver le scan en CI |
 | `P0-AC-024` | `PASS` | docs → schéma → 134 constantes ; golden minimaux reconstruits ; probes figés 192/192, 422/422, 25/25, 241/241 et 4 mutations wire rejetées | conserver les deux empreintes figées et le self-test en CI |
@@ -386,7 +386,7 @@ seeds et le dictionnaire fuzz. L'ancien digest `099fffd0…` ne couvrait que
 |---|---|
 | schéma FSTL 1.0 gelé | `1d89c4a95a121c178bf85570cd616568fd939942b8d053835069b2d7d6a1f0d4` |
 | schéma FSTL 1.1 séparé | `147439b3ad2d4521a109bf8b191d66a41bfcfdba2201de3be9e19ea75d8cf947` |
-| ledger FSTL 1.0 | `4a437ee1300e86319ebd07a2fc4910cba96c4d15387a30eba5354eec49d1242f` |
+| ledger FSTL 1.0 | `800bc258719b7992b1ae38a30d8dc1f8a7373a5dd0415a618a0d4e62a47dbc92` |
 | manifeste vectors FSTL 1.1 | `56c2c6d4c3cb662c9d2f780293be173d5d31bbcc2e36612ecd08ab53f581e846` |
 | jeu documentaire normatif FSTL 1.1 | tree `55855dea16285c185eed64bafed2a6a7f1b4cc54522128a36b39b0b1911fb631` |
 

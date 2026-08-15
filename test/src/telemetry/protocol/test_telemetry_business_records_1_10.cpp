@@ -663,15 +663,15 @@ TEST(TelemetryProtocolBusinessRecords1To10, SessionEnforcesCapabilityPairsCovera
 
 	payload = session_state(SessionStatePresenceFlagObservedPlayer,
 		static_cast<std::uint8_t>(AuthorityMode::MultiplayerClient),
-		static_cast<std::uint8_t>(VisibilityMode::TrustedFullState));
-	EXPECT_EQ(ValidationError::InvalidStateTransition, validate(RecordType::SessionState, payload));
+		1U);
+	EXPECT_EQ(ValidationError::UnknownEnum, validate(RecordType::SessionState, payload));
 
 	payload = session_state(0U,
 		static_cast<std::uint8_t>(AuthorityMode::Solo),
 		static_cast<std::uint8_t>(VisibilityMode::Cockpit),
 		0U,
-		StateDomainCoverageBitCoreShip | StateDomainCoverageBitAllEntities);
-	EXPECT_EQ(ValidationError::VisibilityViolation, validate(RecordType::SessionState, payload));
+		StateDomainCoverageBitCoreShip | 0x0010ULL);
+	EXPECT_EQ(ValidationError::ReservedFlag, validate(RecordType::SessionState, payload));
 
 	payload = session_state(0U,
 		static_cast<std::uint8_t>(AuthorityMode::Solo),

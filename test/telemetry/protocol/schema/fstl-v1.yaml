@@ -7387,9 +7387,9 @@
       },
       "kind": "bitmask",
       "reserved": {
-        "known_mask": 1023,
+        "known_mask": 1007,
         "policy": "reject_nonzero",
-        "reserved_mask": 18446744073709550592
+        "reserved_mask": 18446744073709550608
       },
       "source": {
         "document": "documentation/analysis/specs/0-Contrat-de-protocole/04-modele-de-donnees-v1.md",
@@ -7416,11 +7416,6 @@
           "bit": 3,
           "name": "RADAR_SENSORS",
           "value": 8
-        },
-        {
-          "bit": 4,
-          "name": "ALL_ENTITIES",
-          "value": 16
         },
         {
           "bit": 5,
@@ -8709,7 +8704,7 @@
         "policy": "reject",
         "ranges": [
           [
-            2,
+            1,
             255
           ]
         ]
@@ -8723,10 +8718,6 @@
         {
           "name": "COCKPIT",
           "value": 0
-        },
-        {
-          "name": "TRUSTED_FULL_STATE",
-          "value": 1
         }
       ],
       "width_bits": 8
@@ -11781,7 +11772,7 @@
           "name": "visibility_mode",
           "nature": "A",
           "position": "5",
-          "semantics": "TRUSTED_FULL_STATE seulement si explicitement autorisé",
+          "semantics": "toujours COCKPIT",
           "wire": "VisibilityMode"
         },
         {
@@ -15544,7 +15535,7 @@
           "name": "visibility",
           "nature": "A",
           "position": "7",
-          "semantics": "état de piste, conservé même en TrustedFullState",
+          "semantics": "état de la piste capteur",
           "wire": "RadarVisibility"
         },
         {
@@ -15552,7 +15543,7 @@
           "name": "position_world",
           "nature": "A",
           "position": "8",
-          "semantics": "observation capteur en Cockpit, vérité courante possible en TrustedFullState",
+          "semantics": "observation capteur autorisée",
           "wire": "vec3f"
         },
         {

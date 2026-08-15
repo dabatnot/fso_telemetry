@@ -300,7 +300,6 @@ Une configuration conforme utilise par défaut :
 - bind loopback IPv4 et IPv6 uniquement ;
 - découverte désactivée ;
 - `Cockpit` comme seul mode autorisé ;
-- `TrustedFullState = false` ;
 - vue vidéo désactivée tant que renderer, readback et encodeur ne sont pas validés ;
 - aucune adresse non-loopback sans allowlist explicite.
 

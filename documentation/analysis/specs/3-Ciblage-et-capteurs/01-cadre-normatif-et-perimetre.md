@@ -40,8 +40,8 @@ catalogue révélatrice.
 | client de référence | valide FSTL indépendamment et calcule uniquement les valeurs dérivées |
 | réseau local | transport UDP non fiable et non authentifié, soumis aux défenses héritées |
 
-Le périmètre livré reste `AuthorityMode.SOLO`,
-`VisibilityMode.COCKPIT`, `trustedFullState=false`. Les autres autorités,
+Le périmètre livré reste `AuthorityMode.SOLO` et
+`VisibilityMode.COCKPIT`. Les autres autorités,
 le headless et le multijoueur ne sont pas déclarés conformes à cette phase.
 
 ## 4. Profil FSTL 1.1
@@ -98,7 +98,7 @@ handshake et un nouveau `session_id`.
 | `P3-REQ-005` | Le profil et les couvertures DOIVENT être figés avant `WELCOME`; toute promotion ou perte ultérieure exige une nouvelle session. |
 | `P3-REQ-006` | Le mode livré DOIT rester `SOLO + COCKPIT`, non trusted et non headless. |
 | `P3-REQ-007` | Le producteur DOIT rester strictement en lecture seule et NE DOIT accepter aucune commande de ciblage, navigation, arme, scan, IA ou mission. |
-| `P3-REQ-008` | `ALL_ENTITIES`, `LOW_FREQUENCY_EFFECTS`, communication, client applicatif final et vidéo cible DOIVENT rester hors du profil et de ses dépendances de réussite. |
+| `P3-REQ-008` | `LOW_FREQUENCY_EFFECTS`, communication, client applicatif final et vidéo cible DOIVENT rester hors du profil et de ses dépendances de réussite. |
 
 ### 5.2 Capture, projection et identités
 
@@ -169,7 +169,7 @@ handshake et un nouveau `session_id`.
 
 | Domaine exclu | Propriétaire | Règle Phase 3 |
 |---|---|---|
-| toutes les entités et projectiles | Phase 4 | les pistes capteurs ne deviennent pas des entités complètes |
+| vue globale de mission et projectiles hors capteurs | hors produit | les pistes capteurs ne deviennent pas des entités complètes |
 | client applicatif et communication | Phase 5 | seul le client de référence est requis |
 | hooks exhaustifs et worker/SPSC | Phase 6 | couverture exacte nulle, capture main-thread |
 | rendu et vidéo cible | Phase 7 | aucun renderer, FFmpeg ou H.264 |

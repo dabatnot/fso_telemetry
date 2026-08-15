@@ -70,7 +70,6 @@ Exemple complet Phase 2 :
   "allowedClients": ["127.0.0.1/32", "::1/128"],
   "discoveryEnabled": false,
   "visibilityMode": "Cockpit",
-  "trustedFullState": false,
   "maxClients": 1,
   "flightHz": 30,
   "systemsHz": 10,
@@ -98,7 +97,6 @@ Les clés héritées conservent exactement leurs défauts et bornes :
 | `allowedClients` | loopback v4/v6 | 1–32 CIDR canoniques |
 | `discoveryEnabled` | `false` | exactement `false` |
 | `visibilityMode` | `Cockpit` | exactement `Cockpit` |
-| `trustedFullState` | `false` | exactement `false` |
 | `maxClients` | `1` | 1–4 |
 | `flightHz` | `30` | 1–60 |
 | `keyframeSeconds` | `2` | 1–5 |
@@ -112,7 +110,7 @@ Une clé inconnue, dupliquée, mal typée ou hors borne invalide l’objet entie
 
 - `systemsHz` et `flightHz` sont indépendants ; un tick systèmes capture sa propre cinématique cohérente si nécessaire et ne modifie pas la cadence de publication flight/control.
 - `keyframeSeconds × systemsHz >= 1` est naturellement garanti par les bornes et n’ajoute aucune restriction.
-- `visibilityMode=Cockpit`, `trustedFullState=false` et `discoveryEnabled=false` restent obligatoires.
+- `visibilityMode=Cockpit` et `discoveryEnabled=false` restent obligatoires.
 - Une écoute non-loopback exige l’activation explicite et l’allowlist Phase 1 ; elle ne change pas le profil de visibilité.
 
 Une violation ferme le runtime avant identité, allocation ou socket.

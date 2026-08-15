@@ -44,12 +44,12 @@ change the recorded G0-G/G1-A technical verdict above.
 |---|---:|---|
 | frozen `schema/fstl-v1.yaml` | 499,786 | `1d89c4a95a121c178bf85570cd616568fd939942b8d053835069b2d7d6a1f0d4` |
 | additive `schema/fstl-v1.1.yaml` | 505,222 | `9dbe67e18b2d26a1491e8be37433177f61e94f6e4f674a5e993735703c9cd989` |
-| `fstl-1.0-artifacts.manifest.json` | 131,635 | `4a437ee1300e86319ebd07a2fc4910cba96c4d15387a30eba5354eec49d1242f` |
+| `fstl-1.0-artifacts.manifest.json` | 131,635 | `800bc258719b7992b1ae38a30d8dc1f8a7373a5dd0415a618a0d4e62a47dbc92` |
 | complete frozen FSTL 1.0 set | 438 files | tree `9baac6a20db33bcf350066ed533c5581b7117410899d7bc4a6dc24406e47856d` |
 | Phase 1 seven-document FSTL 1.1 set | 7 files | tree `fd3660bdf7e7beb8261a67e0464136755e509d794755b27eee1b13f71a72d1ef` |
 | `fstl-1.1-vectors.manifest.json` | 10,328 | `56c2c6d4c3cb662c9d2f780293be173d5d31bbcc2e36612ecd08ab53f581e846` |
-| FSTL 1.0 layout lock | — | `d5e7ae20571bc0e08f1d123f7529fd6430466872ad0dd5cb22ea37b24128e0aa` |
-| FSTL 1.1 layout lock | — | `416ff38c4549d2d9fba89e114b94c4fa0ef1fb1f27be59e2126db7fd5ea61136` |
+| FSTL 1.0 layout lock | — | `fd99d8265e81307529d0c6ba2a528e95e95a5cd3aaff0ceb142edf27bd3cc6b4` |
+| FSTL 1.1 layout lock | — | `c79f0ee81f1bf0cd0179015e8acc45f3e1486c60cf4e7e7f8193eb522fb8c94b` |
 | common encoded-probe lock | — | `ee45ad75728442145aa2689211f237868f095a39a2735b89ae5868c3dbe95438` |
 
 The 438-file root covers the seven canonical Phase 0 documents, the frozen

@@ -14,7 +14,7 @@ Le livrable est un contrat filaire complet, décodable et suffisamment borné po
 - deux implémentations indépendantes peuvent encoder et décoder les mêmes messages ;
 - une session négocie sa version, installe ses manifestes et snapshots, applique ses deltas et se resynchronise ;
 - les paquets invalides sont rejetés sans état partiel, allocation non bornée ni effet sur la simulation ;
-- les modes `Cockpit` et `TrustedFullState` définissent clairement quelles données peuvent être publiées ;
+- le mode `Cockpit` définit strictement les seules données publiables ;
 - les vues de communication et de cible disposent de capabilities et de messages spécialisés cohérents avec le transport commun.
 
 ## 3. Documents actifs

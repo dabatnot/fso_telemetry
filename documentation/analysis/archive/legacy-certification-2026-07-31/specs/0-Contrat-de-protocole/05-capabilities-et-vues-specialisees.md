@@ -68,7 +68,9 @@ Le masque active_capabilities contient les deux bits d'une paire activée :
 - vidéo active : bits 2 et 3 présents ;
 - retrait dynamique autorisé : bit 4 annoncé par les deux pairs et présent dans active_capabilities.
 
-La présence d'un seul bit d'une paire n'active jamais la fonctionnalité. Une capability visuelle n'accorde aucun droit TrustedFullState et son absence n'empêche jamais la télémétrie canonique de devenir Live.
+La présence d'un seul bit d'une paire n'active jamais la fonctionnalité. Une
+capability visuelle n'élargit jamais le périmètre cockpit et son absence
+n'empêche jamais la télémétrie canonique de devenir Live.
 
 ### 3.2 Offre de bundle dans HELLO
 

@@ -304,7 +304,7 @@ Contraintes du hook :
 - copie des chaînes uniquement au démarrage ;
 - mise à jour scalaire de l'offset et de la vitesse signée pendant les frames suivantes.
 
-`code/telemetry` transforme ensuite la notification en état canonique et en événement réseau. Lorsque la télémétrie ou la capability est désactivée, l'appel retourne immédiatement. Un serveur dédié ou un processus sans gauge `Talking Head` actif n'annonce pas cette capability : il ne possède pas d'offset de lecture autoritaire, même s'il exporte `TrustedFullState`.
+`code/telemetry` transforme ensuite la notification en état canonique et en événement réseau. Lorsque la télémétrie ou la capability est désactivée, l'appel retourne immédiatement. Un serveur dédié ou un processus sans gauge `Talking Head` actif n'annonce pas cette capability : il ne possède pas d'offset de lecture autoritaire.
 
 ## 9. Cas d'erreur
 

@@ -224,7 +224,7 @@
       "observable": "Entités globales, effets, communication et vidéo restent hors profil.",
       "expectedAutomatedProof": "`telemetry_phase3_profile_tests`",
       "implementationStatus": "implemented",
-      "implementationSummary": "Le profil fermé exclut explicitement ALL_ENTITIES, LOW_FREQUENCY_EFFECTS et les événements de communication ; l'éligibilité rejette aussi la vidéo distante.",
+      "implementationSummary": "Le profil fermé exclut explicitement LOW_FREQUENCY_EFFECTS et les événements de communication ; l'éligibilité rejette aussi la vidéo distante.",
       "implementationPaths": [
         "code/telemetry/phase2_profile_gate.cpp",
         "code/telemetry/phase2_profile_gate.h",

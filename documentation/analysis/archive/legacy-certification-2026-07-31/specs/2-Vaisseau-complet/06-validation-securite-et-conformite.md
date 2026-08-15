@@ -143,7 +143,7 @@ Le harness génère un inventaire machine-readable de chaque champ reçu, sa nat
 | `P2-TST-005` | MSVC Debug/Release et CI non-Windows | build et suites fonctionnelles |
 | `P2-TST-006` | inventaire CMake | chaque nouveau fichier déclaré, aucun glob implicite |
 | `P2-TST-007` | seams cleanup/support/control/cargo, off puis on | mêmes contrôles et gameplay ; cargo avance au plus une fois par appel historique, mêmes resets/révélation/HUD ; hooks `noexcept`, zéro allocation/socket |
-| `P2-TST-008` | `SOLO`, puis `MULTIPLAYER_CLIENT`, `MULTIPLAYER_MASTER`, dedicated/headless et `TrustedFullState` | seul `SOLO+COCKPIT+trusted=false` annonce Phase 2 ; les autres refusent le profil avant `WELCOME`, sans fuite ni allocation métier |
+| `P2-TST-008` | `SOLO`, puis `MULTIPLAYER_CLIENT`, `MULTIPLAYER_MASTER` et dedicated/headless | seul `SOLO+COCKPIT` annonce Phase 2 ; les autres refusent le profil avant `WELCOME`, sans fuite ni allocation métier |
 | `P2-TST-009` | injection records 15–19/23, `COMM_*`, vidéo et capability spécialisée sous `0x0583`; scan binaire/build | `InvalidAbsence` ou `CapabilityNotNegotiated` selon le validateur ; aucune dépendance FFmpeg/OpenGL/commande ajoutée au producteur Phase 2 |
 
 ### 5.2 Compatibilité et profils

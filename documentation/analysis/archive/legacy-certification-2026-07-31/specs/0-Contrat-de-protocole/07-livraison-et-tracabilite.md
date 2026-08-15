@@ -287,7 +287,7 @@ Une gate échouée ne peut être contournée par une valeur hardcodée dans un p
 | `P0-AC-018` | la vidéo ne peut évincer ni retarder session, ACK/NACK, événements ou état |
 | `P0-AC-019` | chaque fixture valide et invalide donne le même résultat dans deux décodeurs indépendants |
 | `P0-AC-020` | le fuzzing ne révèle aucun crash, UB, dépassement ou croissance non bornée |
-| `P0-AC-021` | bind non-loopback, discovery et `TrustedFullState` sont opt-in et testés |
+| `P0-AC-021` | bind non-loopback et discovery sont opt-in et testés |
 | `P0-AC-022` | aucune API/message de commande de simulation n'existe en v1 |
 | `P0-AC-023` | le code Phase 0 ne lit aucune structure moteur et ne modifie pas la boucle FS2Open |
 | `P0-AC-024` | schéma, docs, constantes et vectors ont une vérification de cohérence automatique |

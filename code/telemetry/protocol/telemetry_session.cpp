@@ -45,8 +45,7 @@ bool structurally_valid_received_hello(const HelloPayload& hello) noexcept
 	if (hello.client_nonce == 0 ||
 		hello.min_major != VersionMajor || hello.max_major != VersionMajor ||
 		validate_protocol_minor_range({hello.min_minor, hello.max_minor}) != ValidationError::None ||
-		(hello.requested_visibility_mode != VisibilityMode::Cockpit &&
-			hello.requested_visibility_mode != VisibilityMode::TrustedFullState) ||
+		hello.requested_visibility_mode != VisibilityMode::Cockpit ||
 		hello.requested_heartbeat_ms < MinHeartbeatIntervalMs ||
 		hello.requested_heartbeat_ms > MaxHeartbeatIntervalMs) {
 		return false;

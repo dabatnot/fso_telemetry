@@ -38,7 +38,7 @@ Aggregate independent locks:
 - complete frozen set: 438 files, tree SHA-256
   `9baac6a20db33bcf350066ed533c5581b7117410899d7bc4a6dc24406e47856d`;
 - historical v1.0 layout lock:
-  `d5e7ae20571bc0e08f1d123f7529fd6430466872ad0dd5cb22ea37b24128e0aa`;
+  `fd99d8265e81307529d0c6ba2a528e95e95a5cd3aaff0ceb142edf27bd3cc6b4`;
 - historical encoded-probe lock:
   `ee45ad75728442145aa2689211f237868f095a39a2735b89ae5868c3dbe95438`.
 

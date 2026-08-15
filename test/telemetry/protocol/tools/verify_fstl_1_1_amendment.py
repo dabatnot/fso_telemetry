@@ -36,7 +36,7 @@ HUD_ALERT_STATE = 29
 TARGET_STATE = 16
 CORE_RECORDS = {1, 2, 5, 6, 7, 9, 10, 11, 12, 13}
 COMPLETE_SHIP_RECORDS = CORE_RECORDS | {8, 14, 20, 21, 22}
-ERROR_IDS = {"None": 0, "DuplicateRecord": 29, "ReservedFlag": 36,
+ERROR_IDS = {"None": 0, "DuplicateRecord": 29, "UnknownEnum": 35, "ReservedFlag": 36,
              "InvalidAbsence": 37, "MissingManifest": 41, "VisibilityViolation": 43,
              "InvalidStateTransition": 44}
 
@@ -221,7 +221,7 @@ def validate(decoded: dict[str, object], minor: int) -> str:
     presence = int.from_bytes(session[0:8], "little")
     coverage = int.from_bytes(session[40:48], "little")
     if session[24] != 0: return "InvalidStateTransition"
-    if session[25] != 0: return "VisibilityViolation"
+    if session[25] != 0: return "UnknownEnum"
     player = int.from_bytes(session[64:72], "little") if presence & 1 else None
     if minor == 0 and coverage & PLAYER_KINEMATICS: return "ReservedFlag"
     if minor != 1 or not coverage & PLAYER_KINEMATICS: return "UNSUPPORTED_VERSION"
@@ -290,7 +290,7 @@ def cases() -> dict[str, tuple[bytes, int, str]]:
         "non-solo-authority": (snapshot([session_state(player, PLAYER_KINEMATICS, authority=1), mission_state(),
                                           lifecycle(player), flight(player)]), 1, "InvalidStateTransition"),
         "non-cockpit-visibility": (snapshot([session_state(player, PLAYER_KINEMATICS, visibility=1), mission_state(),
-                                              lifecycle(player), flight(player)]), 1, "VisibilityViolation"),
+                                              lifecycle(player), flight(player)]), 1, "UnknownEnum"),
         "minor-zero-reserved-bit": (snapshot([session_state(None, PLAYER_KINEMATICS), mission_state()]), 0, "ReservedFlag"),
         "phase2-promotion-incomplete": (snapshot([session_state(player, PLAYER_KINEMATICS | CORE_SHIP), mission_state(), lifecycle(player), flight(player)], 1), 1, "MissingManifest"),
         "phase2-promotion": (snapshot(promotion, 1), 1, "None"),

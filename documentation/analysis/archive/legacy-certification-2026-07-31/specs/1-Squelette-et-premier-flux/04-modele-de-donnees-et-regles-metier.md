@@ -223,7 +223,7 @@ La Phase 1 ferme toujours les sessions client au changement ou à la sortie de m
 
 La phase 1 NE DOIT PAS :
 
-- annoncer `CORE_SHIP`, `ALL_ENTITIES` ou une capability visuelle ;
+- annoncer `CORE_SHIP` ou une capability visuelle ;
 - émettre `SHIP_IDENTITY` pour satisfaire artificiellement le mot « identité » de la roadmap ;
 - détourner `EVENT_BATCH` pour transporter une pose ;
 - utiliser `RecordFlag.PARTIAL` ;

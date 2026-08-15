@@ -465,7 +465,7 @@ ValidationError validate_session_state(ByteView payload, std::uint8_t protocol_m
 	std::uint64_t observed_player = 0;
 	if (!read_closed_flags(cursor, KnownSessionStatePresenceFlags, presence) ||
 		!read_nonzero_u64(cursor, producer_id) || !cursor.read_u64(sample_time) ||
-		!read_enum_u8(cursor, 2U, authority) || !read_enum_u8(cursor, 1U, visibility) ||
+		!read_enum_u8(cursor, 2U, authority) || !read_enum_u8(cursor, 0U, visibility) ||
 		!read_enum_u8(cursor, 3U, phase) || !cursor.read_u8(reserved) ||
 		!cursor.require(reserved == 0U, ValidationError::ReservedFlag) || !cursor.read_u32(generation) ||
 		!cursor.require(generation != 0U, ValidationError::OutOfRange) ||
@@ -495,9 +495,6 @@ ValidationError validate_session_state(ByteView payload, std::uint8_t protocol_m
 			ValidationError::InvalidStateTransition) ||
 		!cursor.require(authority != static_cast<std::uint8_t>(AuthorityMode::MultiplayerClient) || has_observed_player,
 			ValidationError::InvalidAbsence) ||
-		!cursor.require(visibility != static_cast<std::uint8_t>(VisibilityMode::Cockpit) ||
-			(state_coverage & StateDomainCoverageBitAllEntities) == 0U,
-			ValidationError::VisibilityViolation) ||
 		!cursor.require((exact_coverage & EventFamilyBitCommunication) == 0U ||
 			(capabilities & communication_pair) == communication_pair,
 			ValidationError::CapabilityNotNegotiated)) {

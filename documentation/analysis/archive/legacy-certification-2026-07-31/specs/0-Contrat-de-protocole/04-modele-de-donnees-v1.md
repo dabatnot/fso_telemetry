@@ -53,7 +53,11 @@ Dans un `FULL_SNAPSHOT`, tous les atomes requis par le mode et les capabilities 
 
 Chaque champ porte une nature principale : `A` état autoritaire, `C` catalogue, `D` dérivé ou `E` événement. Les champs `D` listés en section 11 ne sont pas sérialisés dans ces records.
 
-En mode `Cockpit`, le producteur DOIT filtrer avant sérialisation toute entité, identité, contact, cargo, navpoint et relation que le joueur observé ne connaît pas. Il NE DOIT PAS créer un record caché rempli de zéros : l'atome est absent, ou ses champs révélables sont absents selon le masque défini. En `TrustedFullState`, le serveur/master peut publier l'état exhaustif avec la visibilité réellement observée conservée comme champ autoritaire. Les records de présentation `COMM_*` appartiennent au processus joueur observé, indépendamment du mode d'autorité.
+Le producteur DOIT filtrer avant sérialisation toute entité, identité, contact,
+cargo, navpoint et relation que le joueur observé ne connaît pas. Il NE DOIT
+PAS créer un record caché rempli de zéros : l'atome est absent, ou ses champs
+révélables sont absents selon le masque défini. Les records de présentation
+`COMM_*` appartiennent au processus joueur observé.
 
 ## 3. Registre des `RecordType`
 
@@ -111,7 +115,7 @@ Toutes les valeurs non listées sont invalides en `record_version=1`.
 | Enum (`u8` sauf mention) | Valeurs numériques |
 |---|---|
 | `AuthorityMode` | `SOLO=0`, `MULTIPLAYER_CLIENT=1`, `MULTIPLAYER_MASTER=2` |
-| `VisibilityMode` | `COCKPIT=0`, `TRUSTED_FULL_STATE=1` |
+| `VisibilityMode` | `COCKPIT=0` ; `1..255` réservés et rejetés |
 | `SessionPhase` | `STARTING=0`, `SYNCHRONIZING=1`, `LIVE=2`, `ENDING=3` |
 | `MissionPhase` | `NONE=0`, `LOADING=1`, `ACTIVE=2`, `ENDING=3`, `ENDED=4` |
 | `ObjectType` | `UNKNOWN=0`, `SHIP=1`, `WEAPON=2`, `ASTEROID=3`, `DEBRIS=4`, `JUMP_NODE=5`, `WAYPOINT=6`, `FIREBALL=7`, `OTHER=8` |
@@ -165,7 +169,7 @@ Les bits non listés DOIVENT être nuls.
 | `ContactFlags:u32` | `BRIGHT=0x00000001`, `CURRENT_TARGET=0x00000002`, `STEALTH=0x00000004`, `TAGGED=0x00000008`, `WARP=0x00000010`, `BOMB=0x00000020`, `HOMING=0x00000040`, `THREAT=0x00000080` |
 | `EffectFlags:u32` | `CLOAKED=0x00000001`, `STEALTH=0x00000002`, `ELECTRIC_ARCS=0x00000004`, `SPARKS=0x00000008`, `WARP_VISUAL=0x00000010`, `DEATH_ROLL=0x00000020`, `AMMO_WARNING=0x00000040`, `TARGETING_LASER=0x00000080` |
 | `EventFamilyBits:u64` | `ENTITY=0x0001`, `WEAPON=0x0002`, `DAMAGE=0x0004`, `TARGET=0x0008`, `CARGO_SCAN=0x0010`, `DOCKING_SUPPORT=0x0020`, `WARP=0x0040`, `MISSION_SESSION=0x0080`, `CONTROL=0x0100`, `COMMUNICATION=0x0200` |
-| `StateDomainCoverage:u64` | `CORE_SHIP=0x0001`, `CONTROL_INPUTS=0x0002`, `PREDICTION=0x0004`, `RADAR_SENSORS=0x0008`, `ALL_ENTITIES=0x0010`, `LOW_FREQUENCY_EFFECTS=0x0020`, `TARGETING=0x0040`, `WEAPONS=0x0080`, `CARGO_DOCK_SUPPORT=0x0100`, `NAVIGATION=0x0200` |
+| `StateDomainCoverage:u64` | `CORE_SHIP=0x0001`, `CONTROL_INPUTS=0x0002`, `PREDICTION=0x0004`, `RADAR_SENSORS=0x0008`, `LOW_FREQUENCY_EFFECTS=0x0020`, `TARGETING=0x0040`, `WEAPONS=0x0080`, `CARGO_DOCK_SUPPORT=0x0100`, `NAVIGATION=0x0200` ; `0x0010` réservé |
 
 ## 5. Records globaux et catalogues
 
@@ -179,7 +183,7 @@ Scope global. Nature `A`. Atome : singleton session. `presence` autorise `OBSERV
 | 2 | `producer_id` | `u64` | non nul | A | installation/profil producteur, non secret |
 | 3 | `producer_sample_time_us` | `sample_time_us` | monotone | A | instant de cet état |
 | 4 | `authority_mode` | `AuthorityMode` | enum fermé | A | obligatoire |
-| 5 | `visibility_mode` | `VisibilityMode` | enum fermé | A | `TRUSTED_FULL_STATE` seulement si explicitement autorisé |
+| 5 | `visibility_mode` | `VisibilityMode` | enum fermé | A | toujours `COCKPIT` |
 | 6 | `session_phase` | `SessionPhase` | enum fermé | A | obligatoire |
 | 7 | `reserved` | `u8` | `0` | A | obligatoire, validation d'alignement logique uniquement |
 | 8 | `negotiated_capability_generation` | `u32` | `>=1`, croissant | A | génération locale, côté producteur, de la vue `negotiated_capabilities` ; commence à 1 et augmente après toute mise à jour appliquée qui change l'intersection |
@@ -742,8 +746,8 @@ Presence bits : `ICON_SIZE=0`, `REVEALED_NAME=1`, `REVEALED_CLASS=2`, `REVEALED_
 | 4 | `producer_sample_time_us` | `sample_time_us` | monotone | A | instant d'observation |
 | 5 | `object_type` | `ObjectType` | enum fermé | A | type révélé au niveau autorisé |
 | 6 | `category` | `RadarCategory` | enum fermé | A | catégorie radar |
-| 7 | `visibility` | `RadarVisibility` | enum fermé | A | état de piste, conservé même en `TrustedFullState` |
-| 8 | `position_world` | `vec3f` | position bornée | A | **observation capteur** en `Cockpit`, vérité courante possible en `TrustedFullState` |
+| 7 | `visibility` | `RadarVisibility` | enum fermé | A | état de la piste capteur |
+| 8 | `position_world` | `vec3f` | position bornée | A | **observation capteur** autorisée |
 | 9 | `velocity_world` | `vec3f` | vitesse bornée | A | même sémantique d'observation |
 | 10 | `radius` | `float32` | `[0;1,0e9]` wu | A | rayon révélé |
 | 11 | `contact_flags` | `ContactFlags` | bits connus | A | bright, cible, stealth, bombe, menace, etc. |
@@ -1073,7 +1077,6 @@ La présence d'un domaine n'est jamais implicite. Le bitmap `SESSION_STATE.state
 | `CONTROL_INPUTS` | `CONTROL_STATE` pour le joueur observé ; son absence est autorisée seulement si aucun joueur observé n'existe |
 | `PREDICTION` | autorise les bits 0–10 de `FLIGHT_STATE`; chaque bit est présent si et seulement si les champs moteur correspondants existent pour ce type d'entité |
 | `RADAR_SENSORS` | `RADAR_STATE`, tous les `RADAR_CONTACTS` autorisés et `THREAT_STATE` pour le joueur observé |
-| `ALL_ENTITIES` | `ENTITY_LIFECYCLE` et états applicables pour toutes les entités de mission ; bit interdit en `COCKPIT` |
 | `LOW_FREQUENCY_EFFECTS` | `EFFECT_STATE` pour chaque entité possédant au moins un effet public ; autorise le bit 11 cosmétique de `FLIGHT_STATE` |
 | `TARGETING` | `LOCK_STATE` et `TARGET_STATE` pour le joueur observé |
 | `WEAPONS` | génération `WEAPON_MANIFEST` référencée déjà installée et `WEAPON_STATE` pour chaque vaisseau exporté |
@@ -1087,10 +1090,9 @@ Les capabilities de la spec 05 sont réservées aux vues et mises à jour spéci
 ### 10.2 Règles d'autorité
 
 - En `SOLO`, le processus local est source de vérité des états qu'il annonce.
-- En `MULTIPLAYER_CLIENT`, le producteur publie la pose locale/prédite, les corrections reçues et les seules informations permises par ses capteurs. `VisibilityMode.TRUSTED_FULL_STATE` et `StateDomainCoverage.ALL_ENTITIES` y sont invalides.
-- En `MULTIPLAYER_MASTER`, le serveur/master est autoritaire pour coque, boucliers, dommages, sous-systèmes, énergie, munitions, cycles de vie, cargo, docking et état global. `TRUSTED_FULL_STATE` exige configuration explicite et endpoint allowlisté.
-- Un producteur `SOLO` peut accorder `TRUSTED_FULL_STATE` sous la même règle explicite. Il reste fermé par défaut.
-- Les vues `COMM_*` et cible H.264 appartiennent au processus du joueur observé. Un master headless peut publier l'état exhaustif mais n'annonce pas ces capabilities visuelles.
+- En `MULTIPLAYER_CLIENT`, le producteur publie la pose locale/prédite, les corrections reçues et les seules informations permises par ses capteurs.
+- En `MULTIPLAYER_MASTER`, l'autorité serveur ne devient pas un flux produit : la télémétrie reste attachée au cockpit observé.
+- Les vues `COMM_*` et cible H.264 appartiennent au processus du joueur observé. Un master headless n'annonce pas ces capabilities visuelles.
 - `producer_id`, `session_id` et `observed_player_entity_id` permettent d'identifier les producteurs ; FSTL 1.0 ne fusionne pas automatiquement un état serveur et les vues d'un client. Un consommateur qui les associe doit utiliser une configuration externe explicite, jamais une égalité de `net_signature`.
 
 ### 10.3 Sécurité de visibilité
@@ -1106,7 +1108,9 @@ En mode `COCKPIT`, avant calcul du snapshot et du dirty-set, le producteur :
 7. recalcule les comptes après filtrage ;
 8. compare et sérialise seulement cette vue filtrée.
 
-Le filtrage après sérialisation, les placeholders remplis de zéros et les IDs internes stables d'objets cachés sont interdits. En `TRUSTED_FULL_STATE`, `RadarVisibility` et `DisclosureState` restent transmis pour représenter ce qu'un cockpit verrait, même si la vérité complète est disponible.
+Le filtrage après sérialisation, les placeholders remplis de zéros et les IDs
+internes stables d'objets cachés sont interdits. `RadarVisibility` et
+`DisclosureState` représentent exclusivement ce que le cockpit observé sait.
 
 ### 10.4 Manifestes et snapshots paginés
 

@@ -86,7 +86,6 @@ struct TelemetryConfig {
 	protocol::SourceAllowlist allowed_clients;
 	bool discovery_enabled = false;
 	VisibilityMode visibility_mode = VisibilityMode::Cockpit;
-	bool trusted_full_state = false;
 	std::uint8_t max_clients = 1;
 	std::uint8_t flight_hz = 30;
 	std::uint8_t systems_hz = 10;

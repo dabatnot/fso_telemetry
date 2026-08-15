@@ -1410,11 +1410,6 @@ ValidationError BusinessStateImageValidator::validate(const StateImage& image) c
 	if (phase1_player_kinematics && session.visibility_mode != VisibilityMode::Cockpit) {
 		return ValidationError::VisibilityViolation;
 	}
-	if (session.visibility_mode == VisibilityMode::TrustedFullState &&
-		(!m_context.trusted_full_state_authorized || !m_context.source_endpoint_allowlisted ||
-			session.authority_mode == AuthorityMode::MultiplayerClient)) {
-		return ValidationError::VisibilityViolation;
-	}
 	if (phase1_player_kinematics && session.authority_mode != AuthorityMode::Solo) {
 		return ValidationError::InvalidStateTransition;
 	}

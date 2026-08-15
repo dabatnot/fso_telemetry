@@ -52,7 +52,6 @@ constexpr const char* KnownConfigKeys[]{
 	"allowedClients",
 	"discoveryEnabled",
 	"visibilityMode",
-	"trustedFullState",
 	"maxClients",
 	"flightHz",
 	"systemsHz",
@@ -578,13 +577,6 @@ ConfigLoadResult parse_config_json(std::string_view input) noexcept
 			std::memcmp(json_string_value(visibility), Cockpit.data(), Cockpit.size()) != 0) {
 			return invalid_result(ConfigError::OutOfRange);
 		}
-	}
-
-	if (!read_boolean(root.get(), "trustedFullState", config.trusted_full_state, error)) {
-		return invalid_result(error);
-	}
-	if (config.trusted_full_state) {
-		return invalid_result(ConfigError::OutOfRange);
 	}
 
 	integer = config.max_clients;

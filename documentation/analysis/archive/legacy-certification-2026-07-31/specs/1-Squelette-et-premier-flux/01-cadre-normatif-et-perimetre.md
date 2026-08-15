@@ -80,7 +80,7 @@ Le producteur Phase 1 annonce uniquement FSTL 1.1. Un client limité à FSTL 1.0
 | ID | Exigence | Preuve minimale attendue |
 |---|---|---|
 | `P1-REQ-006` | Le module DOIT lire le JSON optionnel `data/config/telemetry.json` avec Jansson. Absence, erreur syntaxique, type, borne ou clé inconnue DOIVENT laisser le module désactivé avant ouverture d'un socket et produire au plus un diagnostic de démarrage. | tests de table de configuration |
-| `P1-REQ-007` | Les défauts DOIVENT être `enabled=false`, loopback IPv4 et IPv6, port `42042`, découverte désactivée, `Cockpit`, `TrustedFullState=false`, `maxClients=1` et allowlist loopback. Toute écoute non-loopback exige une activation explicite et une allowlist non vide. | inspection de config effective et tests source |
+| `P1-REQ-007` | Les défauts DOIVENT être `enabled=false`, loopback IPv4 et IPv6, port `42042`, découverte désactivée, `Cockpit`, `maxClients=1` et allowlist loopback. Toute écoute non-loopback exige une activation explicite et une allowlist non vide. | inspection de config effective et tests source |
 | `P1-REQ-008` | La configuration DOIT borner `maxClients` à 1–4, `flightHz` à 1–60 (défaut 30), `keyframeSeconds` à 1–5 (défaut 2), les heartbeats à 200–5000 ms (défauts 500 ms en mission et 1000 ms hors mission), et `maxDatagramsPerTick` à 1–256 (défaut 64). Elle n'est relue qu'au prochain démarrage en Phase 1. | tests limites et redémarrage |
 | `P1-REQ-009` | `producer_id` DOIT être un `u64` non nul persistant ; `session_id` DOIT être non nul, imprévisible et non réutilisé pendant le processus. Un échec d'entropie désactive le module. | fixture de profil et injection d'échec RNG |
 
@@ -139,7 +139,7 @@ Le producteur Phase 1 annonce uniquement FSTL 1.1. Un client limité à FSTL 1.0
 |---:|---|
 | 2 | `CORE_SHIP`, `SHIP_IDENTITY`, catalogues de classes, coque, boucliers, énergie, ETS, propulsion, afterburner complet, contrôles, armes, sous-systèmes, support, mort/observer/respawn |
 | 3 | cible, lead, locks, radar, contacts, menaces, cargo, navigation et validation multijoueur métier |
-| 4 | `ALL_ENTITIES`, `TrustedFullState`, graphe complet, join-in-progress et contrôle de bande passante avancé |
+| 4 | vue de communication et client distant utilisable |
 | 5 | Talking Head, bundles, `ReplicaStore`, client graphique, API thread-safe et ESP32 |
 | 6 | hooks d'événements exacts, worker réseau/SPSC, quantification, compression et adaptation dynamique |
 | 7 | rendu cible, readback GPU, H.264, FFmpeg et QoS vidéo |

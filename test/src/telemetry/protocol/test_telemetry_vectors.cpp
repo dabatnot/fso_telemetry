@@ -286,6 +286,7 @@ json_t* canonical_v11_message(MessageType type, std::uint8_t flags, ByteView pay
 const char* stable_error_name(ValidationError error) {
 	switch (error) {
 	case ValidationError::DuplicateRecord: return "DuplicateRecord";
+	case ValidationError::UnknownEnum: return "UnknownEnum";
 	case ValidationError::InvalidAbsence: return "InvalidAbsence";
 	case ValidationError::InvalidStateTransition: return "InvalidStateTransition";
 	case ValidationError::ReservedFlag: return "ReservedFlag";
@@ -1085,7 +1086,7 @@ TEST(TelemetryProtocolVectors, Fstl11SnapshotsCrossTheProductionDecoder) {
 		{"unexpected-ship-identity", ValidationError::InvalidAbsence},
 		{"flight-presence-not-covered", ValidationError::InvalidAbsence},
 		{"non-solo-authority", ValidationError::InvalidStateTransition},
-		{"non-cockpit-visibility", ValidationError::VisibilityViolation},
+		{"non-cockpit-visibility", ValidationError::UnknownEnum},
 	}};
 	for (const auto& test_case : invalid) {
 		SCOPED_TRACE(test_case.first);

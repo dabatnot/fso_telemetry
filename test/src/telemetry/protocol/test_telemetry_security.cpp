@@ -70,7 +70,6 @@ TEST(TelemetryProtocolSecurity, DefaultsAreDisabledLoopbackOnlyCockpitOnlyAndBud
 	EXPECT_EQ(NetworkBindMode::LoopbackOnly, config.bind_mode);
 	EXPECT_FALSE(config.discovery_enabled);
 	EXPECT_EQ(0U, config.discovery_destination_count);
-	EXPECT_FALSE(config.trusted_full_state_enabled);
 	EXPECT_FALSE(config.target_video_enabled);
 	EXPECT_FALSE(config.target_video_renderer_validated);
 	EXPECT_FALSE(config.target_video_async_readback_validated);
@@ -92,7 +91,7 @@ TEST(TelemetryProtocolSecurity, DefaultsAreDisabledLoopbackOnlyCockpitOnlyAndBud
 	EXPECT_EQ(0U, budget.capacity_bytes(MessageSizeClass::Video));
 }
 
-TEST(TelemetryProtocolSecurity, LanDiscoveryAndTrustedVisibilityRequireIndependentExplicitOptIns)
+TEST(TelemetryProtocolSecurity, LanAndDiscoveryRequireIndependentExplicitOptIns)
 {
 	TelemetryOperationalConfig config;
 	config.enabled = true;
@@ -115,20 +114,7 @@ TEST(TelemetryProtocolSecurity, LanDiscoveryAndTrustedVisibilityRequireIndepende
 	config.discovery_destination_count = MaximumDiscoveryDestinations + 1U;
 	EXPECT_EQ(SecurityConfigurationError::TooManyDiscoveryDestinations,
 		validate_security_configuration(config, totals));
-
-	config = TelemetryOperationalConfig{};
-	config.enabled = true;
-	config.trusted_full_state_enabled = true;
-	EXPECT_EQ(SecurityConfigurationError::TrustedFullStateRequiresAllowlist,
-		validate_security_configuration(config, totals));
-	ASSERT_EQ(AllowlistAddResult::Added, config.source_allowlist.add(ipv4_cidr(127U, 0U, 0U, 1U, 32U)));
-	EXPECT_EQ(SecurityConfigurationError::None, validate_security_configuration(config, totals));
-	EXPECT_TRUE(trusted_full_state_is_authorized(config, ipv4(127U, 0U, 0U, 1U)));
-	EXPECT_FALSE(trusted_full_state_is_authorized(config, ipv4(127U, 0U, 0U, 2U)));
-	ASSERT_EQ(AllowlistAddResult::Added, config.source_allowlist.add(ipv4_cidr(192U, 0U, 2U, 9U, 32U)));
-	EXPECT_FALSE(trusted_full_state_is_authorized(config, ipv4(192U, 0U, 2U, 9U)));
-	config.bind_mode = NetworkBindMode::LoopbackAndAllowlisted;
-	EXPECT_TRUE(trusted_full_state_is_authorized(config, ipv4(192U, 0U, 2U, 9U)));
+	config.discovery_destination_count = 1U;
 
 	config.target_video_enabled = true;
 	EXPECT_EQ(SecurityConfigurationError::TargetVideoPrerequisitesMissing,
@@ -136,6 +122,7 @@ TEST(TelemetryProtocolSecurity, LanDiscoveryAndTrustedVisibilityRequireIndepende
 	config.target_video_renderer_validated = true;
 	config.target_video_async_readback_validated = true;
 	config.target_video_encoder_validated = true;
+	config.resources.global_video_reassembly_bytes = MaxVideoReassemblyBytesPerClient;
 	EXPECT_EQ(SecurityConfigurationError::None, validate_security_configuration(config, totals));
 	config.port = 0U;
 	EXPECT_EQ(SecurityConfigurationError::InvalidPort, validate_security_configuration(config, totals));

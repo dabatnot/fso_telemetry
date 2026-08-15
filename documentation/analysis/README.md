@@ -121,11 +121,15 @@ flowchart LR
 
 ## Sens du mot « tout »
 
-Deux modes pourront être proposés :
+La télémétrie expose uniquement l'état du vaisseau du joueur et la vue capteur
+autorisée du cockpit. Elle ne révèle jamais les objets cachés par le jeu et ne
+fournit aucune vue omnisciente de la mission.
 
-- `Cockpit` : état complet du vaisseau du joueur et vue capteur autorisée, sans révéler les objets cachés par le jeu ;
-- `TrustedFullState` : toutes les entités connues du processus exporteur, destiné à un client de confiance, au diagnostic ou au replay.
+« Tout » signifie tous les champs cockpit définis par le schéma de télémétrie.
+Les caches de rendu, pointeurs, handles audio, coordonnées écran et autres
+détails d'implémentation non nécessaires à la reconstruction ne font pas
+partie de ce modèle.
 
-Dans les deux modes, « tout » signifie tous les champs définis par le schéma de télémétrie. Les caches de rendu, pointeurs, handles audio, coordonnées écran et autres détails d'implémentation non nécessaires à la reconstruction ne font pas partie de ce modèle.
-
-Les vues de présentation dépendent en plus des capabilities du processus producteur. Un serveur dédié peut fournir `TrustedFullState` sans renderer, sans `TARGET_VIDEO_REMOTE_RENDER` et sans vue `Talking Head` autoritaire, puisque cette dernière n'existe que lorsqu'un gauge HUD actif fait réellement progresser l'animation. L'absence d'une capability visuelle ne rend donc pas l'état de simulation incomplet.
+Les vues de présentation dépendent en plus des capabilities du processus
+joueur producteur. Un serveur dédié sans cockpit ni renderer ne constitue pas
+une source produit pour ces vues.

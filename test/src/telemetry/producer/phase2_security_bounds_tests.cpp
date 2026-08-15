@@ -83,7 +83,6 @@ TEST(Phase2SecurityBounds, P2TST001LegacyConfigurationDefaultsSystemsToTenWithou
 	EXPECT_EQ(4U, result.effective.keyframe_seconds);
 	EXPECT_EQ(64U, result.effective.max_datagrams_per_tick);
 	EXPECT_FALSE(result.effective.discovery_enabled);
-	EXPECT_FALSE(result.effective.trusted_full_state);
 }
 
 TEST(Phase2SecurityBounds, P2TST002SystemsBoundsTypesAndIndependentSchedulersAreFailClosed)

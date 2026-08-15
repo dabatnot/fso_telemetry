@@ -18,8 +18,6 @@ enum class Phase2ProfileError : std::uint8_t {
 	UnsupportedCoverage,
 	UnsupportedProfile,
 	UnsupportedAuthority,
-	UnsupportedVisibility,
-	TrustedFullStateNotAllowed,
 	DedicatedNotAllowed,
 	HeadlessNotAllowed,
 	Count,
@@ -27,8 +25,6 @@ enum class Phase2ProfileError : std::uint8_t {
 
 struct Phase2ProfileEligibility {
 	protocol::AuthorityMode authority_mode = protocol::AuthorityMode::Solo;
-	protocol::VisibilityMode visibility_mode = protocol::VisibilityMode::Cockpit;
-	bool trusted_full_state = false;
 	bool dedicated = false;
 	bool headless = false;
 };

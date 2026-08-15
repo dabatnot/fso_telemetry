@@ -103,7 +103,6 @@ struct TelemetryOperationalConfig {
 	NetworkBindMode bind_mode = NetworkBindMode::LoopbackOnly;
 	bool discovery_enabled = false;
 	std::size_t discovery_destination_count = 0;
-	bool trusted_full_state_enabled = false;
 	bool target_video_enabled = false;
 	bool target_video_renderer_validated = false;
 	bool target_video_async_readback_validated = false;
@@ -120,7 +119,6 @@ enum class SecurityConfigurationError : std::uint8_t {
 	NonLoopbackRequiresAllowlist,
 	DiscoveryRequiresDestination,
 	TooManyDiscoveryDestinations,
-	TrustedFullStateRequiresAllowlist,
 	TargetVideoPrerequisitesMissing,
 	InvalidClientLimit,
 	ClientLimitExceeded,
@@ -144,12 +142,6 @@ bool telemetry_module_can_start(const TelemetryOperationalConfig& config,
 
 bool is_loopback_source(const EndpointKey& endpoint) noexcept;
 bool source_is_allowed(const TelemetryOperationalConfig& config, const EndpointKey& source_endpoint) noexcept;
-
-// TrustedFullState needs both its explicit opt-in and an explicit endpoint
-// allowlist match. The implicit loopback permission is intentionally not
-// sufficient for this more permissive visibility mode.
-bool trusted_full_state_is_authorized(const TelemetryOperationalConfig& config,
-	const EndpointKey& source_endpoint) noexcept;
 
 constexpr std::size_t ValidationErrorCount =
 	static_cast<std::size_t>(ValidationError::InternalSerializationError) + 1U;

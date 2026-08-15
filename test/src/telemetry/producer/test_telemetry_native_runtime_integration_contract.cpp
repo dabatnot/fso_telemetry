@@ -1367,12 +1367,6 @@ TEST(TelemetryNativeRuntimeIntegrationContract,
 	auto multiplayer_master = telemetry::Phase2ProfileEligibility{};
 	multiplayer_master.authority_mode = protocol::AuthorityMode::MultiplayerMaster;
 	rejected.push_back(multiplayer_master);
-	auto trusted = telemetry::Phase2ProfileEligibility{};
-	trusted.trusted_full_state = true;
-	rejected.push_back(trusted);
-	auto non_cockpit = telemetry::Phase2ProfileEligibility{};
-	non_cockpit.visibility_mode = protocol::VisibilityMode::TrustedFullState;
-	rejected.push_back(non_cockpit);
 	auto dedicated = telemetry::Phase2ProfileEligibility{};
 	dedicated.dedicated = true;
 	rejected.push_back(dedicated);

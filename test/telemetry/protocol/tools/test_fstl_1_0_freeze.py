@@ -21,17 +21,17 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[4]
 PROTOCOL_ROOT = REPO_ROOT / "test" / "telemetry" / "protocol"
 
-FROZEN_SCHEMA_BYTES = 499_786
-FROZEN_SCHEMA_SHA256 = "1d89c4a95a121c178bf85570cd616568fd939942b8d053835069b2d7d6a1f0d4"
+FROZEN_SCHEMA_BYTES = 499_494
+FROZEN_SCHEMA_SHA256 = "a870d85fdb0070d61a57e40d7d2b1183a9a83458cedf446708511fcaac5134cc"
 FROZEN_MACHINE_FILE_COUNT = 430
 FROZEN_MACHINE_TREE_SHA256 = "6174ef30453a25ff4810e7253343c84fcce787e445361f1aeb7b1d8964f5a2eb"
 FROZEN_IMMUTABLE_FILE_COUNT = 431
-FROZEN_IMMUTABLE_TREE_SHA256 = "5ebf2554e5e71b1e33f093b808fa6296a8e33c48d402c8762a68ec910083ef71"
+FROZEN_IMMUTABLE_TREE_SHA256 = "bdca3b1e3b317b44abb9e4869041767e6edf499acb728728b2eeaa8892300ea6"
 FROZEN_FULL_FILE_COUNT = 438
 FROZEN_FULL_TREE_SHA256 = "9baac6a20db33bcf350066ed533c5581b7117410899d7bc4a6dc24406e47856d"
 FROZEN_LEDGER_BYTES = 131_635
-FROZEN_LEDGER_SHA256 = "4a437ee1300e86319ebd07a2fc4910cba96c4d15387a30eba5354eec49d1242f"
-FROZEN_LAYOUT_SHA256 = "d5e7ae20571bc0e08f1d123f7529fd6430466872ad0dd5cb22ea37b24128e0aa"
+FROZEN_LEDGER_SHA256 = "800bc258719b7992b1ae38a30d8dc1f8a7373a5dd0415a618a0d4e62a47dbc92"
+FROZEN_LAYOUT_SHA256 = "fd99d8265e81307529d0c6ba2a528e95e95a5cd3aaff0ceb142edf27bd3cc6b4"
 FROZEN_ENCODED_PROBE_SHA256 = "ee45ad75728442145aa2689211f237868f095a39a2735b89ae5868c3dbe95438"
 FROZEN_LEDGER = PROTOCOL_ROOT / "fstl-1.0-artifacts.manifest.json"
 FREEZE_VERIFIER = PROTOCOL_ROOT / "tools" / "verify_fstl_1_0_freeze.py"
@@ -351,8 +351,8 @@ class FstlFrozenContractRedTest(unittest.TestCase):
             "FrozenV1_0MinorRange{VersionMinorV1_0, VersionMinorV1_0}",
             "Phase1ProducerMinorRange{VersionMinorV1_1, VersionMinorV1_1}",
             "StateDomainCoverageBitPlayerKinematics = 0x0400ULL",
-            "KnownStateDomainCoverageBitsV1_0 = 0x03ffULL",
-            "KnownStateDomainCoverageBitsV1_1 = 0x07ffULL",
+            "KnownStateDomainCoverageBitsV1_0 = 0x03efULL",
+            "KnownStateDomainCoverageBitsV1_1 = 0x07efULL",
             "KnownStateDomainCoverageBits = KnownStateDomainCoverageBitsV1_0",
         )
         for invariant in required:

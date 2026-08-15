@@ -74,14 +74,14 @@
     "file_count": 438,
     "path": "test/telemetry/protocol/fstl-1.0-artifacts.manifest.json",
     "schema": "FSTL-1.0-FROZEN-ARTIFACTS",
-    "sha256": "4a437ee1300e86319ebd07a2fc4910cba96c4d15387a30eba5354eec49d1242f",
+    "sha256": "800bc258719b7992b1ae38a30d8dc1f8a7373a5dd0415a618a0d4e62a47dbc92",
     "tree_sha256": "9baac6a20db33bcf350066ed533c5581b7117410899d7bc4a6dc24406e47856d",
     "wire_version": "1.0"
   },
   "base_schema": {
-    "bytes": 499786,
+    "bytes": 499494,
     "path": "test/telemetry/protocol/schema/fstl-v1.yaml",
-    "sha256": "1d89c4a95a121c178bf85570cd616568fd939942b8d053835069b2d7d6a1f0d4",
+    "sha256": "a870d85fdb0070d61a57e40d7d2b1183a9a83458cedf446708511fcaac5134cc",
     "wire_version": "1.0"
   },
   "capabilities": [
@@ -7631,9 +7631,9 @@
       },
       "kind": "bitmask",
       "reserved": {
-        "known_mask": 2047,
+        "known_mask": 2031,
         "policy": "reject_nonzero",
-        "reserved_mask": 18446744073709549568
+        "reserved_mask": 18446744073709549584
       },
       "source": {
         "document": "documentation/analysis/specs/0-Contrat-de-protocole/04-modele-de-donnees-v1.md",
@@ -7660,11 +7660,6 @@
           "bit": 3,
           "name": "RADAR_SENSORS",
           "value": 8
-        },
-        {
-          "bit": 4,
-          "name": "ALL_ENTITIES",
-          "value": 16
         },
         {
           "bit": 5,
@@ -9016,7 +9011,7 @@
         "policy": "reject",
         "ranges": [
           [
-            2,
+            1,
             255
           ]
         ]
@@ -9030,10 +9025,6 @@
         {
           "name": "COCKPIT",
           "value": 0
-        },
-        {
-          "name": "TRUSTED_FULL_STATE",
-          "value": 1
         }
       ],
       "width_bits": 8
@@ -12124,7 +12115,7 @@
           "name": "visibility_mode",
           "nature": "A",
           "position": "5",
-          "semantics": "TRUSTED_FULL_STATE seulement si explicitement autorisé",
+          "semantics": "toujours COCKPIT",
           "wire": "VisibilityMode"
         },
         {
@@ -18074,7 +18065,7 @@
           "name": "visibility",
           "nature": "A",
           "position": "7",
-          "semantics": "état de piste, conservé même en TrustedFullState",
+          "semantics": "état de la piste capteur",
           "wire": "RadarVisibility"
         },
         {
@@ -18082,7 +18073,7 @@
           "name": "position_world",
           "nature": "A",
           "position": "8",
-          "semantics": "observation capteur en Cockpit, vérité courante possible en TrustedFullState",
+          "semantics": "observation capteur autorisée",
           "wire": "vec3f"
         },
         {
@@ -18287,7 +18278,7 @@
               "name": "visibility",
               "nature": "A",
               "position": "7",
-              "semantics": "état de piste, conservé même en TrustedFullState",
+              "semantics": "état de la piste capteur",
               "wire": "RadarVisibility"
             },
             {
@@ -18295,7 +18286,7 @@
               "name": "position_world",
               "nature": "A",
               "position": "8",
-              "semantics": "observation capteur en Cockpit, vérité courante possible en TrustedFullState",
+              "semantics": "observation capteur autorisée",
               "wire": "vec3f"
             },
             {
@@ -18493,7 +18484,7 @@
               "name": "visibility",
               "nature": "A",
               "position": "7",
-              "semantics": "état de piste, conservé même en TrustedFullState",
+              "semantics": "état de la piste capteur",
               "wire": "RadarVisibility"
             },
             {
@@ -18501,7 +18492,7 @@
               "name": "position_world",
               "nature": "A",
               "position": "8",
-              "semantics": "observation capteur en Cockpit, vérité courante possible en TrustedFullState",
+              "semantics": "observation capteur autorisée",
               "wire": "vec3f"
             },
             {
@@ -18717,7 +18708,7 @@
               "name": "visibility",
               "nature": "A",
               "position": "7",
-              "semantics": "état de piste, conservé même en TrustedFullState",
+              "semantics": "état de la piste capteur",
               "wire": "RadarVisibility"
             },
             {
@@ -18725,7 +18716,7 @@
               "name": "position_world",
               "nature": "A",
               "position": "8",
-              "semantics": "observation capteur en Cockpit, vérité courante possible en TrustedFullState",
+              "semantics": "observation capteur autorisée",
               "wire": "vec3f"
             },
             {
@@ -18955,7 +18946,7 @@
               "name": "visibility",
               "nature": "A",
               "position": "7",
-              "semantics": "état de piste, conservé même en TrustedFullState",
+              "semantics": "état de la piste capteur",
               "wire": "RadarVisibility"
             },
             {
@@ -18963,7 +18954,7 @@
               "name": "position_world",
               "nature": "A",
               "position": "8",
-              "semantics": "observation capteur en Cockpit, vérité courante possible en TrustedFullState",
+              "semantics": "observation capteur autorisée",
               "wire": "vec3f"
             },
             {
@@ -20390,6 +20381,7 @@
       "id": 29,
       "minimum_minor": 1,
       "name": "HUD_ALERT_STATE",
+      "position_kind": "order",
       "required_profile": "CockpitSensors",
       "scope": "player",
       "source": {
@@ -20456,12 +20448,12 @@
     "1.0": {
       "minor": 0,
       "player_kinematics": "reserved_and_rejected",
-      "state_domain_known_mask": 1023
+      "state_domain_known_mask": 1007
     },
     "1.1": {
       "minor": 1,
       "player_kinematics": 1024,
-      "state_domain_known_mask": 2047
+      "state_domain_known_mask": 2031
     }
   },
   "unknown_value_policy": [

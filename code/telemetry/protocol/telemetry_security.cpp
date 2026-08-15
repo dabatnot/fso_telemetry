@@ -230,9 +230,6 @@ SecurityConfigurationError validate_security_configuration(const TelemetryOperat
 	if (config.discovery_enabled && config.discovery_destination_count == 0U) {
 		return SecurityConfigurationError::DiscoveryRequiresDestination;
 	}
-	if (config.trusted_full_state_enabled && config.source_allowlist.empty()) {
-		return SecurityConfigurationError::TrustedFullStateRequiresAllowlist;
-	}
 	if (config.target_video_enabled &&
 		(!config.target_video_renderer_validated || !config.target_video_async_readback_validated ||
 			!config.target_video_encoder_validated)) {
@@ -310,15 +307,6 @@ bool source_is_allowed(const TelemetryOperationalConfig& config, const EndpointK
 	}
 	return config.bind_mode == NetworkBindMode::LoopbackAndAllowlisted &&
 		config.source_allowlist.contains(source_endpoint);
-}
-
-bool trusted_full_state_is_authorized(const TelemetryOperationalConfig& config,
-	const EndpointKey& source_endpoint) noexcept
-{
-	TelemetryResourceBudgetTotals ignored;
-	return config.enabled && config.trusted_full_state_enabled &&
-		validate_security_configuration(config, ignored) == SecurityConfigurationError::None &&
-		source_is_allowed(config, source_endpoint) && config.source_allowlist.contains(source_endpoint);
 }
 
 void TelemetryIngressCounters::record(std::size_t datagram_bytes, ValidationError result) noexcept

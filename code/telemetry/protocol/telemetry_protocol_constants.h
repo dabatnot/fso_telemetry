@@ -714,7 +714,6 @@ enum StateDomainCoverageBit : std::uint64_t {
 	StateDomainCoverageBitControlInputs = 0x0002ULL,
 	StateDomainCoverageBitPrediction = 0x0004ULL,
 	StateDomainCoverageBitRadarSensors = 0x0008ULL,
-	StateDomainCoverageBitAllEntities = 0x0010ULL,
 	StateDomainCoverageBitLowFrequencyEffects = 0x0020ULL,
 	StateDomainCoverageBitTargeting = 0x0040ULL,
 	StateDomainCoverageBitWeapons = 0x0080ULL,
@@ -722,13 +721,13 @@ enum StateDomainCoverageBit : std::uint64_t {
 	StateDomainCoverageBitNavigation = 0x0200ULL,
 	StateDomainCoverageBitPlayerKinematics = 0x0400ULL,
 };
-constexpr std::uint64_t KnownStateDomainCoverageBitsV1_0 = 0x03ffULL;
-constexpr std::uint64_t KnownStateDomainCoverageBitsV1_1 = 0x07ffULL;
+constexpr std::uint64_t KnownStateDomainCoverageBitsV1_0 = 0x03efULL;
+constexpr std::uint64_t KnownStateDomainCoverageBitsV1_1 = 0x07efULL;
 // The unqualified aliases remain the frozen 1.0 view. This prevents code that
 // has no negotiated-version context from treating the 1.1 bit as valid.
 constexpr std::uint64_t KnownStateDomainCoverageBits = KnownStateDomainCoverageBitsV1_0;
-constexpr std::uint64_t ReservedStateDomainCoverageBits = 0xfffffffffffffc00ULL;
-constexpr std::uint64_t ReservedStateDomainCoverageBitsV1_1 = 0xfffffffffffff800ULL;
+constexpr std::uint64_t ReservedStateDomainCoverageBits = 0xfffffffffffffc10ULL;
+constexpr std::uint64_t ReservedStateDomainCoverageBitsV1_1 = 0xfffffffffffff810ULL;
 
 constexpr bool is_supported_version_minor(std::uint8_t minor) noexcept
 {
@@ -1528,7 +1527,6 @@ enum class ValidationError : std::uint8_t {
 
 enum class VisibilityMode : std::uint8_t {
 	Cockpit = 0,
-	TrustedFullState = 1,
 };
 
 enum class AckFlag : std::uint8_t {
