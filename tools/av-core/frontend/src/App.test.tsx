@@ -20,7 +20,24 @@ const config: AvCoreConfig = {
 const status: AvCoreStatus = {
   schema: "AvCoreStatusV1", version: "0.1.0", uptimeMs: 10,
   configuration: { state: "OK", message: null }, restartRequired: false,
-  telemetry: { state: "UNAVAILABLE", host: "127.0.0.1", port: 42042 },
+  telemetry: { state: "DISCONNECTED", host: "127.0.0.1", port: 42042, sessionId: null, lastLiveAgeMs: null, error: null },
+  cockpit: {
+    available: false,
+    warnings: { available: false, master: false, fire: false, missile: false, blast: false, collision: false, emp: false },
+    cautions: {
+      master: false,
+      engine: { state: "UNAVAILABLE", valuePercent: null },
+      sensor: { state: "UNAVAILABLE", sensorState: null },
+      shield: { state: "UNAVAILABLE", valuePercent: null },
+      hull: { state: "UNAVAILABLE", valuePercent: null },
+      weaponEnergy: { state: "UNAVAILABLE", valuePercent: null },
+      afterburnerFuel: { state: "UNAVAILABLE", valuePercent: null },
+      ammo: { state: "UNAVAILABLE", valuePercent: null },
+      countermeasures: { state: "UNAVAILABLE", valuePercent: null, valueCount: null },
+      subsystem: { state: "UNAVAILABLE", valuePercent: null }
+    },
+    threat: { available: false, sectorMask: 0, incomingMissileCount: 0, lockState: "NONE" }
+  },
   can: { state: "UNAVAILABLE", interface: "can0", bitrate: 1000000 },
   modules: ["WARN_CTRL", "THREAT_PROC", "SENS_PROC", "INST_PROC"].map((role) => ({ role, installed: role === "WARN_CTRL" || role === "THREAT_PROC", state: "UNAVAILABLE", protocolId: null, uid: null, firmwareVersion: null, lastHeartbeatMs: null })) as AvCoreStatus["modules"]
 };
@@ -37,6 +54,19 @@ class FakeEventSource {
 
 function jsonResponse(payload: unknown, statusCode = 200): Response {
   return { ok: statusCode >= 200 && statusCode < 300, status: statusCode, statusText: "", json: async () => payload, text: async () => JSON.stringify(payload) } as Response;
+}
+
+function liveStatus(): AvCoreStatus {
+  const value = structuredClone(status);
+  value.telemetry = { state: "LIVE", host: "127.0.0.1", port: 42042, sessionId: "42", lastLiveAgeMs: 18, error: null };
+  value.cockpit.available = true;
+  value.cockpit.warnings = { available: true, master: true, fire: true, missile: true, blast: false, collision: false, emp: false };
+  value.cockpit.cautions.master = true;
+  value.cockpit.cautions.engine = { state: "ACTIVE", valuePercent: 42.5 };
+  value.cockpit.cautions.sensor = { state: "CLEAR", sensorState: "ONLINE" };
+  value.cockpit.cautions.countermeasures = { state: "ACTIVE", valuePercent: 15, valueCount: 3 };
+  value.cockpit.threat = { available: true, sectorMask: 0x05, incomingMissileCount: 2, lockState: "ACQUIRED" };
+  return value;
 }
 
 describe("AV CORE application", () => {
@@ -99,6 +129,47 @@ describe("AV CORE application", () => {
     expect(screen.getByText("Configuration invalide")).toBeInTheDocument();
   });
 
+  it("renders live warnings, cautions and all active threat sectors", async () => {
+    render(<App />);
+    await screen.findByRole("heading", { name: "Modules" });
+    fireEvent.click(screen.getByRole("button", { name: /Alertes/ }));
+    act(() => FakeEventSource.instance.emit("status", liveStatus()));
+    expect(await screen.findByText("Missiles entrants · 2")).toBeInTheDocument();
+    expect(screen.getByText("FIRE")).toHaveClass("active");
+    expect(screen.getByText("42.5 %")).toBeInTheDocument();
+    expect(screen.getByText("3 · 15.0 %")).toBeInTheDocument();
+    expect(screen.getByText("ACQUIS")).toBeInTheDocument();
+    const ring = screen.getByLabelText("INDICATEUR DE MENACE");
+    expect(ring.querySelectorAll("span.active")).toHaveLength(2);
+  });
+
+  it("clears the cockpit preview when telemetry becomes stale", async () => {
+    render(<App />);
+    await screen.findByRole("heading", { name: "Modules" });
+    fireEvent.click(screen.getByRole("button", { name: /Alertes/ }));
+    act(() => FakeEventSource.instance.emit("status", liveStatus()));
+    const stale = structuredClone(status);
+    stale.telemetry.state = "STALE";
+    stale.telemetry.sessionId = "42";
+    stale.telemetry.lastLiveAgeMs = 1001;
+    act(() => FakeEventSource.instance.emit("status", stale));
+    expect(await screen.findByText("Données cockpit indisponibles")).toBeInTheDocument();
+    expect(screen.getAllByText("PÉRIMÉE").length).toBeGreaterThan(0);
+    expect(screen.getByText("FIRE")).not.toHaveClass("active");
+  });
+
+  it("shows the FSTL session, last data age and connection error on the system page", async () => {
+    render(<App />);
+    await screen.findByRole("heading", { name: "Modules" });
+    fireEvent.click(screen.getByRole("button", { name: /Système/ }));
+    const diagnostic = liveStatus();
+    diagnostic.telemetry.error = "Test de connexion";
+    act(() => FakeEventSource.instance.emit("status", diagnostic));
+    expect(await screen.findByText("42")).toBeInTheDocument();
+    expect(screen.getByText("18 ms")).toBeInTheDocument();
+    expect(screen.getByText("Test de connexion")).toBeInTheDocument();
+  });
+
   it("shows when saving requires a service restart", async () => {
     vi.mocked(fetch).mockImplementation(async (path: string | URL | Request, init?: RequestInit) => {
       if (path === "/api/config" && init?.method === "PUT") {
@@ -121,15 +192,17 @@ describe("AV CORE application", () => {
     expect(Array.from(selector.querySelectorAll("option"), (option) => option.textContent)).toEqual([
       "Deutsch", "English", "Español", "Français", "Italiano", "Português"
     ]);
-    for (const [code, saveLabel] of [
-      ["es", "Guardar y aplicar"],
-      ["pt", "Guardar e aplicar"],
-      ["it", "Salva e applica"],
-      ["de", "Speichern und anwenden"],
-      ["en", "Save and apply"]
+    act(() => FakeEventSource.instance.emit("status", liveStatus()));
+    for (const [code, saveLabel, liveLabel] of [
+      ["es", "Guardar y aplicar", "EN DIRECTO"],
+      ["pt", "Guardar e aplicar", "EM DIRETO"],
+      ["it", "Salva e applica", "LIVE"],
+      ["de", "Speichern und anwenden", "LIVE"],
+      ["en", "Save and apply", "LIVE"]
     ]) {
       fireEvent.change(selector, { target: { value: code } });
       expect(await screen.findByRole("button", { name: saveLabel })).toBeInTheDocument();
+      expect(screen.getAllByText(liveLabel).length).toBeGreaterThan(0);
     }
     expect(await screen.findByRole("button", { name: "Save and apply" })).toBeInTheDocument();
     expect(screen.getByRole("combobox", { name: "Language" })).toHaveValue("en");

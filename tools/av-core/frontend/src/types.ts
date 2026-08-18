@@ -51,13 +51,60 @@ export interface ModuleStatus {
   lastHeartbeatMs: number | null;
 }
 
+export type TelemetryState = "LIVE" | "STALE" | "DISCONNECTED";
+export type CautionState = "ACTIVE" | "CLEAR" | "UNAVAILABLE";
+
+export interface PercentCautionStatus {
+  state: CautionState;
+  valuePercent: number | null;
+}
+
+export interface AvCoreCockpitStatus {
+  available: boolean;
+  warnings: {
+    available: boolean;
+    master: boolean;
+    fire: boolean;
+    missile: boolean;
+    blast: boolean;
+    collision: boolean;
+    emp: boolean;
+  };
+  cautions: {
+    master: boolean;
+    engine: PercentCautionStatus;
+    sensor: { state: CautionState; sensorState: "ONLINE" | "DEGRADED" | "OFFLINE" | null };
+    shield: PercentCautionStatus;
+    hull: PercentCautionStatus;
+    weaponEnergy: PercentCautionStatus;
+    afterburnerFuel: PercentCautionStatus;
+    ammo: PercentCautionStatus;
+    countermeasures: PercentCautionStatus & { valueCount: number | null };
+    subsystem: PercentCautionStatus;
+  };
+  threat: {
+    available: boolean;
+    sectorMask: number;
+    incomingMissileCount: number;
+    lockState: "NONE" | "ATTEMPT" | "ACQUIRED";
+  };
+}
+
 export interface AvCoreStatus {
   schema: "AvCoreStatusV1";
   version: string;
   uptimeMs: number;
   configuration: { state: "OK" | "ERROR"; message: string | null };
   restartRequired: boolean;
-  telemetry: { state: "UNAVAILABLE"; host: string; port: number };
+  telemetry: {
+    state: TelemetryState;
+    host: string;
+    port: number;
+    sessionId: string | null;
+    lastLiveAgeMs: number | null;
+    error: string | null;
+  };
+  cockpit: AvCoreCockpitStatus;
   can: { state: "UNAVAILABLE"; interface: "can0"; bitrate: 1000000 };
   modules: ModuleStatus[];
 }

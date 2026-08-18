@@ -11,6 +11,7 @@ WorkingDirectory=/opt/fsotelemetry/av-core
 StateDirectory=fsotelemetry
 Environment=PYTHONUNBUFFERED=1
 Environment=PYTHONPATH=/opt/fsotelemetry/av-core/backend
+Environment=AV_CORE_FSTL_CLIENT_DIR=/opt/fsotelemetry/av-core/fstl-client
 ExecStart=/opt/fsotelemetry/av-core/.venv/bin/python -m av_core --host 0.0.0.0 --config /var/lib/fsotelemetry/av-core.json --frontend-dir /opt/fsotelemetry/av-core/frontend
 Restart=on-failure
 RestartSec=2

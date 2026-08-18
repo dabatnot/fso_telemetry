@@ -32,10 +32,14 @@ if ! id fsotelemetry >/dev/null 2>&1; then
 fi
 
 systemctl stop av-core.service 2>/dev/null || true
-install -d -m 0755 "$install_root/backend" "$install_root/frontend"
+install -d -m 0755 "$install_root/backend" "$install_root/frontend" "$install_root/fstl-client"
 rm -rf "$install_root/backend/av_core" "$install_root/frontend/assets"
 cp -a "$tool_root/backend/av_core" "$install_root/backend/"
 cp -a "$build_root/frontend/." "$install_root/frontend/"
+install -m 0644 \
+    "$repo_root/test/telemetry/protocol/tools/fstl_client_core.py" \
+    "$repo_root/test/telemetry/protocol/tools/fstl_reference_decoder.py" \
+    "$install_root/fstl-client/"
 python3 -m venv "$install_root/.venv"
 "$install_root/.venv/bin/python" -m pip install --disable-pip-version-check -r "$tool_root/backend/requirements.lock.txt"
 chown -R root:root "$install_root"

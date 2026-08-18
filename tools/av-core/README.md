@@ -1,9 +1,10 @@
 # FSO SimPit AV CORE
 
-`AV CORE` est le service local du Raspberry Pi du simpit. Le lot 1 fournit
-l'application Web de configuration et sa persistance. FSTL, SocketCAN et les
-calculateurs ESP32 restent explicitement indiqués comme indisponibles jusqu'aux
-lots suivants.
+`AV CORE` est le service local du Raspberry Pi du simpit. Le lot 2 relie
+l'application Web au profil cockpit FSTL de FS2Open et calcule en direct les
+warnings, cautions, secteurs de missiles et états de verrouillage. SocketCAN et
+les calculateurs ESP32 restent explicitement indisponibles jusqu'aux lots
+suivants.
 
 ## Développement sous Windows
 
@@ -15,7 +16,8 @@ Prérequis : Python 3.11+, Node.js 20+ et npm.
 
 Le script crée l'environnement Python et les fichiers générés sous
 `build/av-core`, construit le frontend puis lance le service sur
-`http://127.0.0.1:8080`. Il ne modifie pas la configuration de FS2Open.
+`http://127.0.0.1:8080`. Il se connecte par défaut à FSTL sur
+`127.0.0.1:42042` sans modifier la configuration de FS2Open.
 
 Pour développer le frontend avec rechargement automatique, lancer le backend
 puis exécuter séparément :
@@ -50,8 +52,9 @@ sudo bash tools/av-core/packaging/install.sh
 
 L'installateur construit le frontend, installe le service dans
 `/opt/fsotelemetry/av-core`, crée l'utilisateur système `fsotelemetry` et
-active `av-core.service`. La configuration persistante se trouve dans
-`/var/lib/fsotelemetry/av-core.json`.
+active `av-core.service`. Il installe également les deux sources communes du
+client FSTL dans `/opt/fsotelemetry/av-core/fstl-client`. La configuration
+persistante se trouve dans `/var/lib/fsotelemetry/av-core.json`.
 
 Commandes utiles :
 
@@ -61,7 +64,7 @@ journalctl -u av-core.service -f
 sudo systemctl restart av-core.service
 ```
 
-Le lot 1 est accessible par `http://<ip-du-raspberry>:8080`. L'alias mDNS
+AV CORE est accessible par `http://<ip-du-raspberry>:8080`. L'alias mDNS
 `av-core.local` sera finalisé avec le packaging du lot 6.
 
 L'interface est disponible en français, anglais, espagnol, portugais, italien
@@ -69,9 +72,32 @@ et allemand. La liste déroulante de la barre supérieure mémorise le choix dan
 le navigateur et pourra accueillir d'autres langues sans modifier le composant
 d'interface.
 
-## Limites du lot 1
+## États FSTL
 
-- aucune connexion FSTL ;
+- `LIVE` : un état cockpit valide progresse et les alertes sont calculées ;
+- `STALE` : les données ne progressent plus depuis le délai configuré, toutes
+  les alertes cockpit sont immédiatement effacées et une resynchronisation est
+  demandée ;
+- `DÉCONNECTÉ` : aucune session durable n'est disponible ou le producteur a
+  terminé sa session.
+
+Après dix secondes sans reprise, le socket est recréé et une nouvelle
+négociation commence automatiquement. Une modification de l'hôte, du port ou
+du délai FSTL applique le même redémarrage ciblé du client.
+
+## Vérification manuelle du lot 2
+
+1. Démarrer AV CORE avant FS2Open et vérifier que le Web reste disponible avec
+   FSTL déconnecté et CAN indisponible.
+2. Démarrer une mission et vérifier le passage à `LIVE`, les warnings,
+   cautions, secteurs de missiles et états de lock disponibles.
+3. Modifier un seuil dans la page Alertes et vérifier son application immédiate.
+4. Mettre le jeu en pause, reprendre avant puis après dix secondes, changer de
+   mission et redémarrer le jeu : AV CORE doit revenir seul à `LIVE`.
+5. Redémarrer `av-core.service` et vérifier la conservation de la configuration.
+
+## Limites du lot 2
+
 - aucun accès SocketCAN ;
 - aucun firmware ESP32 ;
 - aucun test physique de voyant ;

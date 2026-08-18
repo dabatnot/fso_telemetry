@@ -52,11 +52,13 @@ class AvCoreApiTest(unittest.TestCase):
         self.assertEqual(422, response.status_code)
         self.assertEqual(35, self.client.get("/api/config").json()["alerts"]["shield"]["clearAbovePercent"])
 
-    def test_initial_status_is_explicitly_unavailable(self) -> None:
+    def test_initial_status_is_disconnected_and_hardware_is_unavailable(self) -> None:
         status = self.client.get("/api/status").json()
         self.assertEqual("AvCoreStatusV1", status["schema"])
         self.assertEqual("OK", status["configuration"]["state"])
-        self.assertEqual("UNAVAILABLE", status["telemetry"]["state"])
+        self.assertEqual("DISCONNECTED", status["telemetry"]["state"])
+        self.assertFalse(status["cockpit"]["available"])
+        self.assertEqual("UNAVAILABLE", status["cockpit"]["cautions"]["engine"]["state"])
         self.assertEqual("UNAVAILABLE", status["can"]["state"])
         self.assertEqual("can0", status["can"]["interface"])
         self.assertEqual(1000000, status["can"]["bitrate"])
@@ -76,7 +78,7 @@ class AvCoreApiTest(unittest.TestCase):
         self.assertEqual(200, response.status_code)
         self.assertEqual("OK", client.get("/api/status").json()["configuration"]["state"])
 
-    def test_lamp_test_is_unavailable_in_lot_one(self) -> None:
+    def test_lamp_test_remains_unavailable_in_lot_two(self) -> None:
         response = self.client.post("/api/lamp-test", json={"target": "ALL", "active": True})
         self.assertEqual(503, response.status_code)
         self.assertEqual("CAN_UNAVAILABLE", response.json()["detail"])

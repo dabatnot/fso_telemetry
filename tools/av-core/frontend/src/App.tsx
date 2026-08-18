@@ -4,6 +4,7 @@ import { initialLanguage, LANGUAGE_OPTIONS, translate, type Language, type Trans
 import type {
   AvCoreConfig,
   AvCoreStatus,
+  CautionState,
   ModuleKey,
   ModuleRole,
   RgbColor,
@@ -64,7 +65,12 @@ function StatusPill({ label, state, t }: { label: string; state: string; t: Tran
 }
 
 function displayState(state: string, t: Translate): string {
-  return state === "UNAVAILABLE" ? t("unavailable") : state;
+  const labels: Record<string, TranslationKey> = {
+    UNAVAILABLE: "unavailable", LIVE: "live", STALE: "staleState", DISCONNECTED: "disconnected",
+    ACTIVE: "activeState", CLEAR: "clearState", ONLINE: "online", DEGRADED: "degraded", OFFLINE: "offline",
+    NONE: "noneState", ATTEMPT: "attempt", ACQUIRED: "acquired"
+  };
+  return labels[state] ? t(labels[state]) : state;
 }
 
 function SaveBar({ saving, errors, onSave, t }: { saving: boolean; errors: string[]; onSave: () => void; t: Translate }) {
@@ -112,12 +118,46 @@ interface PageProps {
   t: Translate;
 }
 
-function AlertsPage({ draft, setDraft, onSave, saving, errors, t }: PageProps) {
+function CautionPreview({ state, value, t }: { state: CautionState; value: string | null; t: Translate }) {
+  return <span className={`preview-state state-${state.toLowerCase()}`}><b>{displayState(state, t)}</b>{value && <em>{value}</em>}</span>;
+}
+
+function AlertsPage({ draft, status, setDraft, onSave, saving, errors, t }: PageProps) {
   const setThreshold = (key: ThresholdKey, field: "activateBelowPercent" | "clearAbovePercent", value: number) => {
     setDraft((previous) => ({ ...previous, alerts: { ...previous.alerts, [key]: { ...previous.alerts[key], [field]: value } } }));
   };
+  const cockpit = status?.cockpit;
+  const cautions = cockpit?.cautions;
+  const cautionFor = (key: ThresholdKey) => cautions?.[key];
+  const percentText = (value: number | null | undefined) => value == null ? null : `${value.toFixed(1)} %`;
+  const warnings = cockpit?.warnings;
+  const threat = cockpit?.threat;
+  const warningItems = [
+    ["FIRE", warnings?.fire], ["MISSILE", warnings?.missile], ["BLAST", warnings?.blast],
+    ["COLLISION", warnings?.collision], ["EMP", warnings?.emp]
+  ] as const;
+  const sectors = [
+    [7, "north-west", "↖"], [0, "north", "↑"], [1, "north-east", "↗"],
+    [6, "west", "←"], [2, "east", "→"],
+    [5, "south-west", "↙"], [4, "south", "↓"], [3, "south-east", "↘"]
+  ] as const;
   return (
     <>
+      <section className={`alert-preview-grid ${cockpit?.available ? "" : "is-unavailable"}`}>
+        <article className="panel warning-preview">
+          <div className="panel-heading"><div><span>{t("warnings")}</span><h2>MASTER WARNING</h2></div><span className={`master-lamp ${warnings?.master ? "active" : ""}`}>{warnings?.master ? t("activeState") : t("clearState")}</span></div>
+          {!cockpit?.available && <p className="cockpit-unavailable">{t("cockpitUnavailable")}</p>}
+          <div className="lamp-row">{warningItems.map(([label, active]) => <span key={label} className={`preview-lamp ${active ? "active" : ""}`}>{label}</span>)}</div>
+          <div className="master-caution"><strong>MASTER CAUTION</strong><span className={cautions?.master ? "active" : ""}>{cautions?.master ? t("activeState") : t("clearState")}</span></div>
+        </article>
+        <article className="panel threat-preview">
+          <div className="panel-heading"><div><span>{t("threatIndicator")}</span><h2>{t("incomingMissiles")} · {threat?.incomingMissileCount ?? 0}</h2></div></div>
+          <div className="threat-grid" aria-label={t("threatIndicator")}>
+            {sectors.map(([bit, position, arrow]) => <span key={bit} className={`${position} ${(threat?.sectorMask ?? 0) & (1 << bit) ? "active" : ""}`}>{arrow}</span>)}
+            <strong className={`lock lock-${threat?.lockState.toLowerCase() ?? "none"}`}>LOCK<br /><small>{displayState(threat?.lockState ?? "NONE", t)}</small></strong>
+          </div>
+        </article>
+      </section>
       <section className="panel">
         <div className="panel-heading"><div><span>{t("cautionPanel")}</span><h2>{t("thresholds")}</h2></div><p>{t("cockpitPreview")}</p></div>
         <div className="threshold-table" role="table">
@@ -126,15 +166,15 @@ function AlertsPage({ draft, setDraft, onSave, saving, errors, t }: PageProps) {
             <strong>{label}</strong>
             <label><span className="sr-only">{t("activation")} {label}</span><input aria-label={`${t("activation")} ${label}`} type="number" min="0" max="100" value={draft.alerts[key].activateBelowPercent} onChange={(event) => setThreshold(key, "activateBelowPercent", numberValue(event))} /><em>%</em></label>
             <label><span className="sr-only">{t("clear")} {label}</span><input aria-label={`${t("clear")} ${label}`} type="number" min="0" max="100" value={draft.alerts[key].clearAbovePercent} onChange={(event) => setThreshold(key, "clearAbovePercent", numberValue(event))} /><em>%</em></label>
-            <span className="unavailable">{t("unavailable")}</span>
+            <CautionPreview state={cautionFor(key)?.state ?? "UNAVAILABLE"} value={percentText(cautionFor(key)?.valuePercent)} t={t} />
           </div>)}
           <div className="threshold-row" role="row">
             <strong>CM LOW</strong>
             <label><span className="sr-only">{t("absoluteThreshold")} CM LOW</span><input aria-label={`${t("absoluteThreshold")} CM LOW`} type="number" min="0" max="255" value={draft.alerts.countermeasures.activateAtOrBelowCount} onChange={(event) => setDraft((previous) => ({ ...previous, alerts: { ...previous.alerts, countermeasures: { ...previous.alerts.countermeasures, activateAtOrBelowCount: numberValue(event) } } }))} /><em>{t("units")}</em></label>
             <label><span className="sr-only">{t("relativeThreshold")} CM LOW</span><input aria-label={`${t("relativeThreshold")} CM LOW`} type="number" min="0" max="100" value={draft.alerts.countermeasures.activateAtOrBelowPercent} onChange={(event) => setDraft((previous) => ({ ...previous, alerts: { ...previous.alerts, countermeasures: { ...previous.alerts.countermeasures, activateAtOrBelowPercent: numberValue(event) } } }))} /><em>%</em></label>
-            <span className="unavailable">{t("unavailable")}</span>
+            <CautionPreview state={cautions?.countermeasures.state ?? "UNAVAILABLE"} value={cautions?.countermeasures.valueCount == null ? null : `${cautions.countermeasures.valueCount} · ${percentText(cautions.countermeasures.valuePercent)}`} t={t} />
           </div>
-          <div className="threshold-row readonly-row" role="row"><strong>SENS</strong><span>{t("sensorState")}</span><span>{t("notConfigurable")}</span><span className="unavailable">{t("unavailable")}</span></div>
+          <div className="threshold-row readonly-row" role="row"><strong>SENS</strong><span>{t("sensorState")}</span><span>{t("notConfigurable")}</span><CautionPreview state={cautions?.sensor.state ?? "UNAVAILABLE"} value={cautions?.sensor.sensorState ? displayState(cautions.sensor.sensorState, t) : null} t={t} /></div>
         </div>
       </section>
       <SaveBar saving={saving} errors={errors} onSave={onSave} t={t} />
@@ -173,7 +213,12 @@ function SystemPage({ draft, status, setDraft, onSave, saving, errors, t }: Page
     <>
       <section className="settings-grid">
         <article className="panel">
-          <div className="panel-heading"><div><span>{t("fstlUdp")}</span><h2>{t("producer")}</h2></div><span className="unavailable">{t("unavailable")}</span></div>
+          <div className="panel-heading"><div><span>{t("fstlUdp")}</span><h2>{t("producer")}</h2></div><span className={`telemetry-state state-${status?.telemetry.state.toLowerCase() ?? "disconnected"}`}>{displayState(status?.telemetry.state ?? "DISCONNECTED", t)}</span></div>
+          <dl className="system-list telemetry-details">
+            <div><dt>{t("session")}</dt><dd>{status?.telemetry.sessionId ?? "—"}</dd></div>
+            <div><dt>{t("lastData")}</dt><dd>{status?.telemetry.lastLiveAgeMs == null ? "—" : `${status.telemetry.lastLiveAgeMs} ms`}</dd></div>
+            {status?.telemetry.error && <div className="connection-error"><dt>{t("connectionError")}</dt><dd>{status.telemetry.error}</dd></div>}
+          </dl>
           <label className="field"><span>{t("host")}</span><input aria-label={`${t("host")} FS2Open`} type="text" value={draft.telemetry.host} onChange={(event) => setDraft((previous) => ({ ...previous, telemetry: { ...previous.telemetry, host: event.target.value } }))} /></label>
           <label className="field"><span>{t("port")}</span><input aria-label={`${t("port")} FS2Open`} type="number" min="1" max="65535" value={draft.telemetry.port} onChange={(event) => setDraft((previous) => ({ ...previous, telemetry: { ...previous.telemetry, port: numberValue(event) } }))} /></label>
           <label className="field"><span>{t("stale")}</span><div><input aria-label={t("stale")} type="number" min="1" max="60000" value={draft.telemetry.staleAfterMs} onChange={(event) => setDraft((previous) => ({ ...previous, telemetry: { ...previous.telemetry, staleAfterMs: numberValue(event) } }))} /><em>ms</em></div></label>
@@ -267,7 +312,7 @@ export default function App() {
       <header>
         <div className="brand"><div className="brand-mark"><i /><i /><i /></div><div><strong>AV CORE</strong><span>FSO // SIMPIT CONFIGURATION</span></div></div>
         <div className="status-strip">
-          <StatusPill label={t("telemetry")} state={status?.telemetry.state ?? "UNAVAILABLE"} t={t} />
+          <StatusPill label={t("telemetry")} state={status?.telemetry.state ?? "DISCONNECTED"} t={t} />
           <StatusPill label="CAN" state={status?.can.state ?? "UNAVAILABLE"} t={t} />
           <StatusPill label="WARN CTRL" state={moduleState.WARN_CTRL ?? "UNAVAILABLE"} t={t} />
           <StatusPill label="THREAT PROC" state={moduleState.THREAT_PROC ?? "UNAVAILABLE"} t={t} />

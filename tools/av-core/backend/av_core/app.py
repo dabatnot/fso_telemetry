@@ -5,6 +5,7 @@ import asyncio
 import json
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
@@ -49,7 +50,15 @@ async def status_event_stream(
 
 
 def create_app(runtime: AvCoreRuntime, frontend_dir: Path) -> FastAPI:
-    app = FastAPI(title="FSO SimPit AV CORE", version="1")
+    @asynccontextmanager
+    async def lifespan(_: FastAPI):
+        runtime.start()
+        try:
+            yield
+        finally:
+            runtime.stop()
+
+    app = FastAPI(title="FSO SimPit AV CORE", version="1", lifespan=lifespan)
 
     @app.get("/api/config", response_model=AvCoreConfig)
     async def get_config() -> AvCoreConfig:

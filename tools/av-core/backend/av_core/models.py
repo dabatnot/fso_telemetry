@@ -128,10 +128,66 @@ class ConfigurationStatus(PublicModel):
     message: str | None
 
 
-class LinkStatus(PublicModel):
-    state: Literal["UNAVAILABLE"] = "UNAVAILABLE"
-    host: str | None = None
-    port: int | None = None
+class TelemetryStatus(PublicModel):
+    state: Literal["LIVE", "STALE", "DISCONNECTED"] = "DISCONNECTED"
+    host: str
+    port: int
+    session_id: str | None = None
+    last_live_age_ms: int | None = Field(default=None, ge=0)
+    error: str | None = None
+
+
+class WarningStatus(PublicModel):
+    available: bool = False
+    master: bool = False
+    fire: bool = False
+    missile: bool = False
+    blast: bool = False
+    collision: bool = False
+    emp: bool = False
+
+
+class PercentCautionStatus(PublicModel):
+    state: Literal["ACTIVE", "CLEAR", "UNAVAILABLE"] = "UNAVAILABLE"
+    value_percent: float | None = Field(default=None, ge=0, le=100)
+
+
+class SensorCautionStatus(PublicModel):
+    state: Literal["ACTIVE", "CLEAR", "UNAVAILABLE"] = "UNAVAILABLE"
+    sensor_state: Literal["ONLINE", "DEGRADED", "OFFLINE"] | None = None
+
+
+class CountermeasureCautionStatus(PublicModel):
+    state: Literal["ACTIVE", "CLEAR", "UNAVAILABLE"] = "UNAVAILABLE"
+    value_percent: float | None = Field(default=None, ge=0, le=100)
+    value_count: int | None = Field(default=None, ge=0)
+
+
+class CautionStatus(PublicModel):
+    master: bool = False
+    engine: PercentCautionStatus = Field(default_factory=PercentCautionStatus)
+    sensor: SensorCautionStatus = Field(default_factory=SensorCautionStatus)
+    shield: PercentCautionStatus = Field(default_factory=PercentCautionStatus)
+    hull: PercentCautionStatus = Field(default_factory=PercentCautionStatus)
+    weapon_energy: PercentCautionStatus = Field(default_factory=PercentCautionStatus)
+    afterburner_fuel: PercentCautionStatus = Field(default_factory=PercentCautionStatus)
+    ammo: PercentCautionStatus = Field(default_factory=PercentCautionStatus)
+    countermeasures: CountermeasureCautionStatus = Field(default_factory=CountermeasureCautionStatus)
+    subsystem: PercentCautionStatus = Field(default_factory=PercentCautionStatus)
+
+
+class ThreatStatus(PublicModel):
+    available: bool = False
+    sector_mask: int = Field(default=0, ge=0, le=255)
+    incoming_missile_count: int = Field(default=0, ge=0)
+    lock_state: Literal["NONE", "ATTEMPT", "ACQUIRED"] = "NONE"
+
+
+class CockpitStatus(PublicModel):
+    available: bool = False
+    warnings: WarningStatus = Field(default_factory=WarningStatus)
+    cautions: CautionStatus = Field(default_factory=CautionStatus)
+    threat: ThreatStatus = Field(default_factory=ThreatStatus)
 
 
 class CanStatus(PublicModel):
@@ -160,7 +216,8 @@ class AvCoreStatus(PublicModel):
     uptime_ms: int
     configuration: ConfigurationStatus
     restart_required: bool
-    telemetry: LinkStatus
+    telemetry: TelemetryStatus
+    cockpit: CockpitStatus = Field(default_factory=CockpitStatus)
     can: CanStatus = Field(default_factory=CanStatus)
     modules: list[ModuleStatus]
 
