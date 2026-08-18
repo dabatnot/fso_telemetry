@@ -143,7 +143,9 @@ une panne tant que ce rôle n'est pas déclaré installé.
 Un nœud qui se déclare dégradé allume sa légende en orange fixe. Un nœud attendu
 qui ne publie plus de heartbeat pendant trois secondes la fait clignoter. Si la
 télémétrie FS2Open devient périmée pendant une seconde, `FLT DATA` clignote et
-les indications tactiques périmées sont effacées. `WARN CTRL` détecte localement
+les indications tactiques périmées sont effacées. Une resynchronisation est
+demandée immédiatement ; sans reprise pendant la seconde suivante, `AV CORE`
+ouvre une nouvelle session FSTL. `WARN CTRL` détecte localement
 un état CAN `bus-off` et allume `AV BUS` même si le Raspberry n'est plus
 joignable.
 

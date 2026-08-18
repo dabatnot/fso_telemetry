@@ -81,9 +81,12 @@ d'interface.
 - `DÉCONNECTÉ` : aucune session durable n'est disponible ou le producteur a
   terminé sa session.
 
-Après dix secondes sans reprise, le socket est recréé et une nouvelle
-négociation commence automatiquement. Une modification de l'hôte, du port ou
-du délai FSTL applique le même redémarrage ciblé du client.
+Après une seconde supplémentaire sans reprise, le socket est recréé et une
+nouvelle négociation commence automatiquement. Avec le délai de fraîcheur par
+défaut, une pause de moins d'une seconde ne coupe pas la session, une reprise
+entre une et deux secondes utilise la resynchronisation en cours et un silence
+plus long déclenche une nouvelle session. Une modification de l'hôte, du port
+ou du délai FSTL applique le même redémarrage ciblé du client.
 
 ## Vérification manuelle du lot 2
 
@@ -92,7 +95,7 @@ du délai FSTL applique le même redémarrage ciblé du client.
 2. Démarrer une mission et vérifier le passage à `LIVE`, les warnings,
    cautions, secteurs de missiles et états de lock disponibles.
 3. Modifier un seuil dans la page Alertes et vérifier son application immédiate.
-4. Mettre le jeu en pause, reprendre avant puis après dix secondes, changer de
+4. Mettre le jeu en pause, reprendre avant puis après deux secondes, changer de
    mission et redémarrer le jeu : AV CORE doit revenir seul à `LIVE`.
 5. Redémarrer `av-core.service` et vérifier la conservation de la configuration.
 

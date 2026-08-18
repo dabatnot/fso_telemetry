@@ -256,8 +256,8 @@ class TelemetryRuntime:
         mission_heartbeat_ms: int,
         capture_dir: Path,
         replay_path: Path | None = None,
-        stale_us: int = 3_000_000,
-        recovery_reconnect_us: int = 10_000_000,
+        stale_us: int = 1_000_000,
+        recovery_grace_us: int = 1_000_000,
         capture_warn_bytes: int = 5 * 1024**3,
         capture_stop_bytes: int = 10 * 1024**3,
         capture_free_reserve_bytes: int = 2 * 1024**3,
@@ -278,7 +278,7 @@ class TelemetryRuntime:
         )
         self.replay_path = replay_path
         self.stale_us = stale_us
-        self.recovery_reconnect_us = recovery_reconnect_us
+        self.recovery_grace_us = recovery_grace_us
         self.quality = QualityTracker(flight_hz, systems_hz, mission_heartbeat_ms)
         self.client: fstl.ConsoleClient | None = None
         self.mode = "replay" if replay_path else "live"
@@ -626,6 +626,7 @@ class TelemetryRuntime:
         recovering_from_silence = False
         previous_endpoint: tuple[Any, ...] | None = None
         while not self._stop.is_set() and not self._mode_change.is_set():
+            local_error = False
             try:
                 sock, previous_endpoint = self._open_live_socket(family, previous_endpoint)
                 with sock:
@@ -637,6 +638,7 @@ class TelemetryRuntime:
                     if not recovering_from_silence:
                         self._publish(at_us, at_utc)
                     next_recovery_request_us = 0
+                    recovery_started_us = 0
                     while not self._stop.is_set() and not self._mode_change.is_set():
                         if self._restart_live.is_set():
                             self._restart_live.clear()
@@ -676,6 +678,7 @@ class TelemetryRuntime:
                                 self.quality.observe_state(self.client.state, received_us)
                                 if self.client.state.status == "Live":
                                     recovering_from_silence = False
+                                    recovery_started_us = 0
                                     self._recovery_state = (
                                         "resyncing" if self.client.pending_resync is not None else "idle"
                                     )
@@ -696,6 +699,7 @@ class TelemetryRuntime:
                                 and self.client.state.stale_reason == "silence"
                             ):
                                 recovering_from_silence = True
+                                recovery_started_us = now
                                 self._recovery_state = "resyncing"
                                 self._set_recovery_overlay("resyncing", status="Stale")
                         needs_recovery = (
@@ -721,14 +725,16 @@ class TelemetryRuntime:
                                 and now >= next_recovery_request_us
                                 and self.client.pending_resync is None
                             ):
-                                # Preserve the producer-side client identity
-                                # across an intentional game pause.  The
-                                # reliable request remains queued/retried until
-                                # FSO resumes, and a fresh keyframe atomically
-                                # returns the dashboard to Live.
+                                # Give a short pause one chance to preserve the
+                                # current session before rotating the endpoint.
                                 self.client._resync(now)
                                 next_recovery_request_us = now + fstl.RELIABLE_WINDOW_US
-                            if now - last_progress_us >= self.recovery_reconnect_us:
+                                if recovery_started_us == 0:
+                                    recovery_started_us = now
+                            if (
+                                recovery_started_us != 0
+                                and now - recovery_started_us >= self.recovery_grace_us
+                            ):
                                 recovering_from_silence = True
                                 self._set_recovery_overlay(
                                     "reconnecting", status="Disconnected", clear_session=True
@@ -740,6 +746,7 @@ class TelemetryRuntime:
                             self._publish(now, now_utc)
                             break
             except (OSError, ValueError, decoder.DecodeFailure) as exc:
+                local_error = True
                 if recovering_from_silence:
                     self._set_recovery_overlay(
                         "reconnecting", status="Disconnected", clear_session=True, error=str(exc)
@@ -749,9 +756,9 @@ class TelemetryRuntime:
                         self._snapshot = self._empty_snapshot("Disconnected")
                         self._snapshot["connection"]["error"] = str(exc)
                         self._version += 1
-            if self.capture.active and not self._stop.is_set() and not self._mode_change.is_set():
-                continue
-            if self._mode_change.wait(1.0):
+            if self._mode_change.is_set():
+                return
+            if local_error and self._mode_change.wait(0.25):
                 return
             if not self._stop.is_set():
                 continue

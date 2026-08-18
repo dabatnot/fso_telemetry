@@ -290,13 +290,23 @@ private slots:
 
     void staleAndReconnectThresholds()
     {
-        QCOMPARE(statusForSilence(2'999, true), ClientStatus::Live);
-        QCOMPARE(statusForSilence(3'000, true), ClientStatus::Stale);
-        QCOMPARE(statusForSilence(9'999, true), ClientStatus::Stale);
-        QCOMPARE(statusForSilence(10'000, true), ClientStatus::Reconnecting);
-        QCOMPARE(statusForSilence(20'000, false), ClientStatus::Connecting);
+        QCOMPARE(statusForSilence(999, true, true), ClientStatus::Live);
+        QCOMPARE(statusForSilence(1'000, true, true), ClientStatus::Stale);
+        QCOMPARE(statusForSilence(1'999, true, true), ClientStatus::Stale);
+        QCOMPARE(statusForSilence(2'000, true, true), ClientStatus::Reconnecting);
+        QCOMPARE(statusForSilence(20'000, false, false), ClientStatus::Connecting);
         // Producer progress returns immediately to Live.
-        QCOMPARE(statusForSilence(0, true), ClientStatus::Live);
+        QCOMPARE(statusForSilence(0, true, true), ClientStatus::Live);
+    }
+
+    void initialReliableTransactionsKeepTheirFullWindow()
+    {
+        QCOMPARE(statusForSilence(999, true, false), ClientStatus::Synchronizing);
+        QCOMPARE(statusForSilence(1'000, true, false), ClientStatus::Synchronizing);
+        QCOMPARE(statusForSilence(1'999, true, false), ClientStatus::Synchronizing);
+        QCOMPARE(statusForSilence(2'000, true, false), ClientStatus::Synchronizing);
+        QCOMPARE(statusForSilence(4'999, true, false), ClientStatus::Synchronizing);
+        QCOMPARE(statusForSilence(5'000, true, false), ClientStatus::Reconnecting);
     }
 
     void atomicDeltaDeletion()

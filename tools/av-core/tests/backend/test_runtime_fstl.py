@@ -3,18 +3,24 @@ from __future__ import annotations
 import sys
 import os
 import shutil
+import socket
 import subprocess
 import tempfile
+import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 BACKEND_ROOT = Path(__file__).resolve().parents[2] / "backend"
 sys.path.insert(0, str(BACKEND_ROOT))
 
 from av_core.config import ConfigStore  # noqa: E402
-from av_core.fstl_service import FstlFrame  # noqa: E402
+from av_core import fstl_service  # noqa: E402
+from av_core.fstl_service import FstlFrame, FstlService  # noqa: E402
+from av_core.models import TelemetryConfig  # noqa: E402
 from av_core.runtime import AvCoreRuntime  # noqa: E402
+import test_fstl_console_client_contract as contract  # noqa: E402
 
 
 class FakeFstlService:
@@ -109,6 +115,118 @@ class RuntimeFstlTest(unittest.TestCase):
         self.runtime.update_config(config)
         self.assertEqual(1, len(self.service.reconfigurations))
         self.assertEqual(42043, self.service.reconfigurations[0].port)
+
+
+class FstlServiceRecoveryTest(unittest.TestCase):
+    @staticmethod
+    def wait_for(predicate, timeout: float = 2.0):
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            value = predicate()
+            if value:
+                return value
+            time.sleep(0.01)
+        return None
+
+    @staticmethod
+    def negotiate(server: socket.socket, client_address, hello: bytes, session_id: int) -> None:
+        for message_type, payload, sequence in (
+            (3, contract.welcome_for(hello), 1),
+            (4, contract.session_begin_payload(), 2),
+            (6, contract.v11_payload("minimal-with-player", ".bin"), 3),
+        ):
+            server.sendto(
+                contract.packet(
+                    message_type,
+                    payload,
+                    session_id=session_id,
+                    sequence=sequence,
+                    sent_us=1_000_000 + sequence,
+                    flags=2,
+                ),
+                client_address,
+            )
+
+    def test_stale_session_resumes_during_the_grace_period(self) -> None:
+        frames: list[FstlFrame] = []
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as server, mock.patch.object(
+            fstl_service, "RECOVERY_GRACE_SECONDS", 0.5
+        ):
+            server.bind(("127.0.0.1", 0))
+            server.settimeout(2.0)
+            service = FstlService(
+                TelemetryConfig(host="127.0.0.1", port=server.getsockname()[1], stale_after_ms=20),
+                frames.append,
+            )
+            service.start()
+            try:
+                hello, client_address = server.recvfrom(1200)
+                session = 0x1122334455667788
+                self.negotiate(server, client_address, hello, session)
+                self.assertTrue(self.wait_for(lambda: frames and frames[-1].state == "LIVE"))
+                self.assertTrue(self.wait_for(lambda: frames and frames[-1].state == "STALE"))
+
+                while True:
+                    packet, address = server.recvfrom(1200)
+                    if contract.reference.read_header(packet)["message_type"] == 12:
+                        self.assertEqual(client_address, address)
+                        break
+                for part_index, payload in enumerate(contract.snapshot_parts(2)):
+                    server.sendto(
+                        contract.packet(
+                            6,
+                            payload,
+                            session_id=session,
+                            sequence=10 + part_index,
+                            sent_us=2_000_000 + part_index,
+                            flags=2,
+                        ),
+                        client_address,
+                    )
+                recovered = self.wait_for(
+                    lambda: frames[-1]
+                    if frames and frames[-1].state == "LIVE" and frames[-1].session_id == str(session)
+                    else None
+                )
+                self.assertIsNotNone(recovered)
+            finally:
+                service.stop()
+
+    def test_stale_session_rotates_endpoint_after_one_grace_period(self) -> None:
+        frames: list[FstlFrame] = []
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as server, mock.patch.object(
+            fstl_service, "RECOVERY_GRACE_SECONDS", 0.15
+        ):
+            server.bind(("127.0.0.1", 0))
+            server.settimeout(2.0)
+            service = FstlService(
+                TelemetryConfig(host="127.0.0.1", port=server.getsockname()[1], stale_after_ms=20),
+                frames.append,
+            )
+            service.start()
+            try:
+                hello, first_address = server.recvfrom(1200)
+                self.negotiate(server, first_address, hello, 0x1122334455667788)
+                self.assertTrue(self.wait_for(lambda: frames and frames[-1].state == "LIVE"))
+                self.assertTrue(self.wait_for(lambda: frames and frames[-1].state == "STALE"))
+
+                resync_count = 0
+                second_hello = None
+                second_address = None
+                deadline = time.monotonic() + 2.0
+                while time.monotonic() < deadline:
+                    packet, address = server.recvfrom(1200)
+                    message_type = contract.reference.read_header(packet)["message_type"]
+                    if message_type == 12 and address == first_address:
+                        resync_count += 1
+                    if message_type == 2 and address != first_address:
+                        second_hello, second_address = packet, address
+                        break
+                self.assertIsNotNone(second_hello)
+                self.assertNotEqual(first_address, second_address)
+                self.assertEqual(1, resync_count)
+            finally:
+                service.stop()
 
 
 class InstalledFstlImportTest(unittest.TestCase):

@@ -819,7 +819,7 @@ class DashboardRuntimeTest(unittest.TestCase):
                 mission_heartbeat_ms=500,
                 capture_dir=Path(directory),
                 stale_us=50_000,
-                recovery_reconnect_us=150_000,
+                recovery_grace_us=150_000,
             )
             runtime.start()
             try:

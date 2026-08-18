@@ -31,7 +31,8 @@ fstl, decoder = _load_fstl_modules()
 
 
 WINDOWS_SIO_UDP_CONNRESET = 0x9800000C
-HARD_RECONNECT_SECONDS = 10.0
+RECOVERY_GRACE_SECONDS = 1.0
+LOCAL_ERROR_RETRY_SECONDS = 0.25
 
 
 def _configure_socket(sock: socket.socket) -> None:
@@ -116,21 +117,37 @@ class FstlService:
         self._publish_callback(FstlFrame(last_live_monotonic=self._last_live_monotonic, **values))
 
     @staticmethod
-    def _open_socket(config: TelemetryConfig) -> socket.socket:
+    def _open_socket(
+        config: TelemetryConfig,
+        previous_endpoint: tuple[Any, ...] | None,
+    ) -> tuple[socket.socket, tuple[Any, ...]]:
         addresses = socket.getaddrinfo(config.host, config.port, type=socket.SOCK_DGRAM)
         if not addresses:
             raise OSError("FSTL endpoint did not resolve")
         last_error: OSError | None = None
         for family, socktype, protocol, _, address in addresses:
-            sock = socket.socket(family, socktype, protocol)
+            rejected: list[socket.socket] = []
             try:
-                _configure_socket(sock)
-                sock.settimeout(0.1)
-                sock.connect(address)
-                return sock
+                for _ in range(4):
+                    sock = socket.socket(family, socktype, protocol)
+                    try:
+                        _configure_socket(sock)
+                        sock.settimeout(0.1)
+                        sock.bind(("::", 0) if family == socket.AF_INET6 else ("0.0.0.0", 0))
+                        sock.connect(address)
+                        endpoint = sock.getsockname()
+                        if previous_endpoint is None or endpoint != previous_endpoint:
+                            return sock, endpoint
+                        rejected.append(sock)
+                    except OSError:
+                        sock.close()
+                        raise
+                last_error = OSError("unable to allocate a fresh UDP endpoint")
             except OSError as exc:
                 last_error = exc
-                sock.close()
+            finally:
+                for rejected_socket in rejected:
+                    rejected_socket.close()
         raise last_error or OSError("unable to open FSTL socket")
 
     def _frame_from_client(self, client: Any, now_us: int, *, error: str | None = None) -> FstlFrame:
@@ -159,16 +176,20 @@ class FstlService:
         )
 
     def _run(self) -> None:
+        previous_endpoint: tuple[Any, ...] | None = None
         while not self._stop.is_set():
             self._reconfigure.clear()
             config = self._current_config()
             self._publish(state="DISCONNECTED")
+            local_error = False
             try:
-                with self._open_socket(config) as sock:
+                sock, previous_endpoint = self._open_socket(config, previous_endpoint)
+                with sock:
                     client = fstl.ConsoleClient(sock, config.stale_after_ms * 1000)
                     client.begin()
                     last_progress_us = fstl.now_us()
                     recovery_started: float | None = None
+                    recovery_resync_sent = False
                     while not self._stop.is_set() and not self._reconfigure.is_set():
                         now_us = fstl.now_us()
                         client.poll_reliable(now_us)
@@ -182,6 +203,7 @@ class FstlService:
                                 if client.state.status == "Live":
                                     self._last_live_monotonic = time.monotonic()
                                     recovery_started = None
+                                    recovery_resync_sent = False
                                 self._publish_callback(self._frame_from_client(client, received_us))
                             if client.terminal_published:
                                 self._publish(state="DISCONNECTED")
@@ -196,22 +218,28 @@ class FstlService:
                         if client.state.status == "Stale":
                             if recovery_started is None:
                                 recovery_started = time.monotonic()
-                            if client.pending_resync is None:
+                            if not recovery_resync_sent and client.pending_resync is None:
                                 client._resync(now_us)
-                            if time.monotonic() - recovery_started >= HARD_RECONNECT_SECONDS:
+                                recovery_resync_sent = True
+                            if time.monotonic() - recovery_started >= RECOVERY_GRACE_SECONDS:
                                 break
                         elif client.state.status == "Synchronizing" and now_us - last_progress_us >= config.stale_after_ms * 1000:
-                            if client.pending_resync is None:
-                                client._resync(now_us)
                             if recovery_started is None:
                                 recovery_started = time.monotonic()
-                            if time.monotonic() - recovery_started >= HARD_RECONNECT_SECONDS:
+                            if not recovery_resync_sent and client.pending_resync is None:
+                                client._resync(now_us)
+                                recovery_resync_sent = True
+                            if time.monotonic() - recovery_started >= RECOVERY_GRACE_SECONDS:
                                 break
                         else:
                             recovery_started = None
+                            recovery_resync_sent = False
             except (OSError, ValueError, decoder.DecodeFailure) as exc:
+                local_error = True
                 self._publish(state="DISCONNECTED", error=str(exc))
             if self._stop.is_set():
                 break
-            if self._reconfigure.wait(1.0):
+            if self._reconfigure.is_set():
                 continue
+            if local_error:
+                self._reconfigure.wait(LOCAL_ERROR_RETRY_SECONDS)

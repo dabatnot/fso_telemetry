@@ -88,10 +88,10 @@ Ces exports ne donnent aucun verdict d’aptitude au simpit.
 
 Une vraie valeur zéro reste toujours affichée comme `0`.
 
-Après trois secondes sans état valide, le bridge conserve la dernière image et
-la marque `Stale` tout en demandant une resynchronisation. Après dix secondes
-sans progrès FSTL, il abandonne l’ancienne session, ouvre un nouvel endpoint UDP
-et renégocie automatiquement jusqu’au retour du jeu. Le menu **Session** permet
+Après une seconde sans état valide, le bridge conserve la dernière image et la
+marque `Stale` tout en demandant une resynchronisation. Après une seconde
+supplémentaire sans progrès FSTL, il abandonne l’ancienne session, ouvre un
+nouvel endpoint UDP et renégocie automatiquement jusqu’au retour du jeu. Le menu **Session** permet
 également de demander une resynchronisation douce ou une reconnexion complète ;
 ces actions redémarrent uniquement l’observateur du dashboard, jamais FS2Open.
 

@@ -30,10 +30,13 @@ Le fichier [`examples/fs2open.telemetry.json`](examples/fs2open.telemetry.json)
 active le profil requis et autorise deux clients simultanés afin de comparer
 le dashboard et ce radar.
 
-Après trois secondes sans progrès, la dernière image est conservée, assombrie
-et marquée `SENSOR FEED LOST`, puis une resynchronisation est demandée. Après dix secondes,
-le client crée un nouvel endpoint UDP et renégocie une session, sans effacer la
-dernière image affichée.
+Après la première image appliquée, une seconde sans progrès conserve la dernière
+image, l'assombrit et la marque `SENSOR FEED LOST`, puis demande une
+resynchronisation. Sans reprise pendant la seconde suivante, le client crée un
+nouvel endpoint UDP et renégocie une session, sans effacer la dernière image.
+Pendant la synchronisation initiale, chaque nouveau fragment de manifeste ou de
+snapshot prolonge la transaction et la fenêtre fiable complète de cinq secondes
+est conservée afin de ne pas abandonner une session saine en plein transfert.
 
 Les overlays système emploient les fontes bitmap VFNT historiques de FreeSpace :
 `font02.vf` pour le titre et `font01.vf` pour le détail. Ils sont colorés selon

@@ -33,11 +33,24 @@
 namespace simpit::radar {
 namespace protocol = telemetry::protocol;
 
-ClientStatus statusForSilence(qint64 silenceMilliseconds, bool sessionEstablished) noexcept
+constexpr qint64 StaleAfterMilliseconds = 1'000;
+constexpr qint64 RecoveryGraceMilliseconds = 1'000;
+constexpr qint64 ReconnectAfterMilliseconds =
+    StaleAfterMilliseconds + RecoveryGraceMilliseconds;
+constexpr std::uint64_t HelloAttemptWindowUs = 5'000'000ULL;
+
+ClientStatus statusForSilence(qint64 silenceMilliseconds,
+                              bool sessionEstablished,
+                              bool baselineApplied) noexcept
 {
     if (!sessionEstablished) return ClientStatus::Connecting;
-    if (silenceMilliseconds >= 10'000) return ClientStatus::Reconnecting;
-    if (silenceMilliseconds >= 3'000) return ClientStatus::Stale;
+    if (!baselineApplied) {
+        return silenceMilliseconds >= static_cast<qint64>(HelloAttemptWindowUs / 1'000ULL)
+            ? ClientStatus::Reconnecting
+            : ClientStatus::Synchronizing;
+    }
+    if (silenceMilliseconds >= ReconnectAfterMilliseconds) return ClientStatus::Reconnecting;
+    if (silenceMilliseconds >= StaleAfterMilliseconds) return ClientStatus::Stale;
     return ClientStatus::Live;
 }
 
@@ -585,7 +598,9 @@ private:
         rememberReliable(header);
         sendAck(header, static_cast<std::uint8_t>(protocol::AckFlag::Validated));
         protocol::CompletedTransaction completed;
-        const auto outcome = m_transactions.ingest(transactionPart(payload, header), nowUs() / 1000, completed);
+        const auto progressUs = nowUs();
+        const auto outcome = m_transactions.ingest(
+            transactionPart(payload, header), progressUs / 1000, completed);
         if (outcome.result == protocol::TransactionAssemblyResult::Completed) {
             std::shared_ptr<const RadarManifestCatalog> catalog;
             QString error;
@@ -597,6 +612,11 @@ private:
             m_manifestId = completed.transaction_id;
             applyTransactionAcks(completed);
             m_lastStateProgressUs = nowUs();
+        } else if (outcome.result == protocol::TransactionAssemblyResult::Accepted) {
+            // A new reliable fragment is real negotiation progress.  Do not
+            // abandon a healthy producer while its initial manifest is still
+            // being transferred to this client.
+            m_lastStateProgressUs = progressUs;
         } else if (outcome.result != protocol::TransactionAssemblyResult::Accepted &&
                    outcome.result != protocol::TransactionAssemblyResult::Duplicate) {
             fail(tr("Invalid MANIFEST transaction"));
@@ -634,7 +654,9 @@ private:
         rememberReliable(header);
         sendAck(header, static_cast<std::uint8_t>(protocol::AckFlag::Validated));
         protocol::CompletedTransaction completed;
-        const auto outcome = m_transactions.ingest(transactionPart(payload, header), nowUs() / 1000, completed);
+        const auto progressUs = nowUs();
+        const auto outcome = m_transactions.ingest(
+            transactionPart(payload, header), progressUs / 1000, completed);
         if (outcome.result == protocol::TransactionAssemblyResult::Completed) {
             protocol::StateImage candidate;
             QString error;
@@ -655,6 +677,10 @@ private:
             m_resyncPending = false;
             applyTransactionAcks(completed);
             publish(std::move(radar));
+        } else if (outcome.result == protocol::TransactionAssemblyResult::Accepted) {
+            // Keep the reliable five-second initial transaction window alive
+            // while distinct snapshot parts continue to arrive.
+            m_lastStateProgressUs = progressUs;
         } else if (outcome.result != protocol::TransactionAssemblyResult::Accepted &&
                    outcome.result != protocol::TransactionAssemblyResult::Duplicate) {
             fail(tr("Invalid FULL_SNAPSHOT transaction"));
@@ -732,7 +758,7 @@ private:
         if (m_sessionId == 0) {
             if (m_socket != nullptr && m_endpointReady && m_helloMessageId != 0 &&
                 !m_helloPayload.isEmpty()) {
-                if (m_helloFirstUs != 0 && now - m_helloFirstUs >= 10'000'000ULL) {
+                if (m_helloFirstUs != 0 && now - m_helloFirstUs >= HelloAttemptWindowUs) {
                     ++m_reconnectGeneration;
                     openEndpoint(true);
                 } else if (now - m_lastHelloUs >= 1'000'000ULL) {
@@ -741,18 +767,19 @@ private:
             }
             return;
         }
-        // Test semantic state progress before expiring an incomplete
-        // transaction.  Apart from matching the user-visible freshness rule,
-        // this guarantees that a wedged candidate is discarded by the fresh
-        // endpoint instead of being touched at the reconnect boundary.
+        // Initial reliable transactions retain their full five-second window.
+        // Once a baseline has been applied, the immersive 1 s / 2 s policy
+        // owns stale detection and endpoint rotation.
         if (m_lastStateProgressUs != 0) {
             const std::uint64_t silent = now - m_lastStateProgressUs;
-            if (silent >= 10'000'000ULL) {
+            const auto status = statusForSilence(
+                static_cast<qint64>(silent / 1'000ULL), true, m_hasBaseline);
+            if (status == ClientStatus::Reconnecting) {
                 ++m_reconnectGeneration;
                 openEndpoint(true);
                 return;
             }
-            if (silent >= 3'000'000ULL && !m_staleSignalled) {
+            if (status == ClientStatus::Stale && !m_staleSignalled) {
                 m_staleSignalled = true;
                 emit statusChanged(ClientStatus::Stale, tr("STALE"));
                 requestResync(protocol::ResyncReason::SessionStale);
