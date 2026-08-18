@@ -13,6 +13,9 @@ Cette phase livre le premier sous-système physique du simpit :
 - une application Web locale, hébergée par `AV CORE`, pour configurer les
   modules installés, les seuils et l'éclairage.
 
+La livraison est découpée en lots réordonnables dans la
+[roadmap de la Phase 4](ROADMAP.md).
+
 Le format FSTL et son transport UDP entre FS2Open et le Raspberry Pi ne changent
 pas. CAN est un bus interne au simpit, en aval du client de télémétrie. La phase
 utilise exclusivement les records cockpit déjà disponibles ; elle n'ajoute
