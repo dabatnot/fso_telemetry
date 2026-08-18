@@ -5,7 +5,8 @@ Ce dossier contient les spécifications de phase actives :
 - [Phase 0 — contrat de protocole](0-Contrat-de-protocole/README.md) ;
 - [Phase 1 — squelette et premier flux](1-Squelette-et-premier-flux/README.md) ;
 - [Phase 2 — vaisseau complet](2-Vaisseau-complet/README.md) ;
-- [Phase 3 — ciblage et capteurs](3-Ciblage-et-capteurs/README.md).
+- [Phase 3 — ciblage et capteurs](3-Ciblage-et-capteurs/README.md) ;
+- [Phase 4 — bus CAN et alertes du simpit](4-Bus-CAN-et-alertes-simpit/README.md).
 
 ## Décision produit irréversible
 
