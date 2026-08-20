@@ -1653,6 +1653,57 @@ class FstlConsoleClientContractTest(unittest.TestCase):
         self.assertNotIn(10, controls, "a mismatched WELCOME must not be ACKed")
         self.assertEqual("", stdout)
 
+    def test_recovery_ignores_delayed_welcome_from_previous_nonce(self) -> None:
+        current_nonce, current_t0 = 22, 2_000_000
+        client = console.ConsoleClient(
+            None,
+            1_000_000,
+            ignore_previous_session_datagrams=True,
+        )
+        client.state.hello_sent = True
+        client.state.hello_nonce = current_nonce
+        client.state.hello_t0_us = current_t0
+
+        previous_hello = packet(
+            2,
+            console.hello_payload(11, 1_000_000),
+            session_id=0,
+            sequence=1,
+            sent_us=1_000_000,
+        )
+        delayed_welcome = packet(
+            3,
+            welcome_for(previous_hello),
+            session_id=101,
+            sequence=2,
+            sent_us=1_000_100,
+            flags=2,
+        )
+        self.assertFalse(
+            client.receive(delayed_welcome, 2_000_100, "recovery")
+        )
+        self.assertEqual(0, client.state.session_id)
+
+        current_hello = packet(
+            2,
+            console.hello_payload(current_nonce, current_t0),
+            session_id=0,
+            sequence=3,
+            sent_us=current_t0,
+        )
+        current_welcome = packet(
+            3,
+            welcome_for(current_hello),
+            session_id=202,
+            sequence=4,
+            sent_us=current_t0 + 100,
+            flags=2,
+        )
+        self.assertTrue(
+            client.receive(current_welcome, current_t0 + 200, "recovered")
+        )
+        self.assertEqual(202, client.state.session_id)
+
     def test_lost_hello_retransmits_same_logical_message_with_retransmission_flag(self) -> None:
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as server:
             server.bind(("127.0.0.1", 0)); server.settimeout(1.5)
@@ -1685,6 +1736,35 @@ class FstlConsoleClientContractTest(unittest.TestCase):
         self.assertEqual(0, second_header["flags"] & 0x02, "HELLO retry must not request an ACK")
         self.assertNotEqual(0, second_header["flags"] & 0x10, "retry carries RETRANSMISSION")
         self.assertGreater(second_header["packet_sequence"], first_header["packet_sequence"])
+
+    def test_renewed_hello_window_keeps_one_nonce_t0_and_message(self) -> None:
+        class Sender:
+            def __init__(self) -> None:
+                self.packets: list[bytes] = []
+
+            def send(self, packet_bytes: bytes) -> None:
+                self.packets.append(packet_bytes)
+
+        sender = Sender()
+        client = console.ConsoleClient(sender, 1_000_000)
+        client.begin()
+        first = sender.packets[-1]
+        first_header = reference.read_header(first)
+        first_payload = first[68:]
+        expiry = client.hello_first_us + console.RELIABLE_WINDOW_US
+
+        client.poll_reliable(expiry)
+        self.assertEqual("Disconnected", client.state.status)
+        self.assertTrue(client.renew_hello_window(expiry))
+
+        renewed = sender.packets[-1]
+        renewed_header = reference.read_header(renewed)
+        self.assertEqual("Synchronizing", client.state.status)
+        self.assertEqual(expiry, client.hello_first_us)
+        self.assertEqual(first_header["message_id"], renewed_header["message_id"])
+        self.assertEqual(first_payload, renewed[68:])
+        self.assertNotEqual(0, renewed_header["flags"] & console.RETRANSMISSION)
+        self.assertGreater(renewed_header["packet_sequence"], first_header["packet_sequence"])
 
     def test_retransmitted_welcome_and_session_begin_are_applied_once_and_acked_idempotently(self) -> None:
         class Sender:
@@ -1811,6 +1891,47 @@ class FstlConsoleClientContractTest(unittest.TestCase):
             stdout, stderr = process.communicate(timeout=3)
 
         self.assertEqual(0, process.returncode, stderr + stdout)
+
+    def test_prewarmed_session_answers_heartbeats_before_session_begin(self) -> None:
+        class Sender:
+            def __init__(self) -> None:
+                self.packets: list[bytes] = []
+
+            def send(self, packet_bytes: bytes) -> None:
+                self.packets.append(packet_bytes)
+
+        sender = Sender()
+        client = console.ConsoleClient(sender, 3_000_000)
+        client.begin()
+        hello = sender.packets.pop()
+        session_id = 0x1122334455667788
+        self.assertTrue(client.receive(
+            packet(3, welcome_for(hello), session_id=session_id,
+                   sequence=1, sent_us=1_000_000, flags=2),
+            2_000_000, "2026-08-02T12:00:00.000000Z"))
+        self.assertEqual("Ready", client.state.status)
+        self.assertFalse(client.state.session_begun)
+
+        sender.packets.clear()
+        self.assertFalse(client.receive(
+            packet(9, heartbeat_request_payload(77, 2_100_000),
+                   session_id=session_id, sequence=2, sent_us=2_100_000),
+            2_100_100, "2026-08-02T12:00:00.100000Z"))
+        heartbeat_responses = [
+            item for item in sender.packets
+            if reference.read_header(item)["message_type"] == 9
+        ]
+        self.assertEqual(1, len(heartbeat_responses))
+        self.assertEqual(2_100_100, client.state.last_network_activity_us)
+
+    def test_paused_live_state_suspends_only_the_cockpit_progress_watchdog(self) -> None:
+        state = console.ConsoleState(status="Live", last_state_us=1_000_000)
+        state.records["MISSION_STATE"] = {"paused": 1}
+        state.stale_if_needed(3_000_000, "2026-08-02T12:00:02.000000Z", 1_000_000)
+        self.assertEqual("Live", state.status)
+        state.records["MISSION_STATE"]["paused"] = 0
+        state.stale_if_needed(3_000_000, "2026-08-02T12:00:02.000000Z", 1_000_000)
+        self.assertEqual("Stale", state.status)
 
     def test_resync_retransmits_until_validated_ack_then_enters_synchronizing(self) -> None:
         session_id = 0x1122334455667788

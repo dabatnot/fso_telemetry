@@ -222,11 +222,13 @@ bool encode_packet(protocol::TelemetryDatagramHeader header,
 			packet.size) == protocol::ValidationError::None;
 }
 
-bool make_hello(Packet& packet) noexcept
+bool make_hello(Packet& packet,
+	std::uint64_t nonce = 0x1122334455667788ULL,
+	std::uint64_t sent_us = 10'000U) noexcept
 {
 	protocol::HelloPayload hello;
-	hello.client_nonce = 0x1122334455667788ULL;
-	hello.client_send_t0_us = 10'000U;
+	hello.client_nonce = nonce;
+	hello.client_send_t0_us = sent_us;
 	hello.min_major = protocol::VersionMajor;
 	hello.max_major = protocol::VersionMajor;
 	hello.min_minor = protocol::VersionMinorV1_1;
@@ -243,7 +245,7 @@ bool make_hello(Packet& packet) noexcept
 	header.version_minor = protocol::VersionMinorV1_1;
 	header.message_type = protocol::MessageType::Hello;
 	header.packet_sequence = 1U;
-	header.sent_time_us = 10'000U;
+	header.sent_time_us = sent_us;
 	header.message_id = 1U;
 	return encode_packet(header, {payload.data(), written}, packet);
 }
@@ -825,6 +827,105 @@ testing::AssertionResult exercise_native_runtime_loopback(protocol::IpAddressFam
 			delta)) {
 		return testing::AssertionFailure()
 			<< "post-ACK delta did not resume immediately";
+	}
+
+	// A new nonce on the same native client socket replaces the live session
+	// without waiting for its disconnect timeout or consuming another slot.
+	Packet replacement_hello;
+	if (!make_hello(replacement_hello,
+			0x8877665544332211ULL, 50'000U) ||
+		client.try_send(opened_client.handle,
+			server_endpoint,
+			{replacement_hello.bytes.data(), replacement_hello.size}).status !=
+			detail::IoStatus::Complete) {
+		return testing::AssertionFailure()
+			<< "native client could not send replacement HELLO";
+	}
+	Packet replacement_welcome;
+	if (!pump_until_packet(*server,
+			client,
+			opened_client.handle,
+			protocol::MessageType::Welcome,
+			pump,
+			replacement_welcome)) {
+		return testing::AssertionFailure()
+			<< "replacement WELCOME was not received";
+	}
+	protocol::DatagramView replacement_welcome_view;
+	if (!decode_packet(replacement_welcome, replacement_welcome_view) ||
+		replacement_welcome_view.header.session_id == 0U ||
+		replacement_welcome_view.header.session_id ==
+			welcome_view.header.session_id ||
+		server->services.native->active_sessions() != 1U) {
+		return testing::AssertionFailure()
+			<< "same-endpoint HELLO did not atomically replace the session";
+	}
+	Packet replacement_welcome_ack;
+	if (!make_ack(replacement_welcome, 6U, replacement_welcome_ack) ||
+		client.try_send(opened_client.handle,
+			server_endpoint,
+			{replacement_welcome_ack.bytes.data(),
+				replacement_welcome_ack.size}).status !=
+			detail::IoStatus::Complete) {
+		return testing::AssertionFailure()
+			<< "native client could not ACK replacement WELCOME";
+	}
+	Packet replacement_begin;
+	if (!pump_until_packet(*server,
+			client,
+			opened_client.handle,
+			protocol::MessageType::SessionBegin,
+			pump,
+			replacement_begin)) {
+		return testing::AssertionFailure()
+			<< "replacement SESSION_BEGIN was not received";
+	}
+	Packet replacement_begin_ack;
+	const auto receives_before_replacement_begin =
+		server->services.backend.complete_receives;
+	if (!make_ack(replacement_begin, 7U, replacement_begin_ack) ||
+		client.try_send(opened_client.handle,
+			server_endpoint,
+			{replacement_begin_ack.bytes.data(),
+				replacement_begin_ack.size}).status !=
+			detail::IoStatus::Complete ||
+		!pump_until_server_receive(*server,
+			receives_before_replacement_begin + 1U, pump) ||
+		server->services.native->active_sessions() != 1U) {
+		return testing::AssertionFailure()
+			<< "replacement SESSION_BEGIN was not applied";
+	}
+	if (!controller->begin_initial_snapshot(
+			0U, loopback_state_image(12.0F, 50'100U), 50'100U)) {
+		return testing::AssertionFailure()
+			<< "replacement snapshot could not be staged";
+	}
+	Packet replacement_snapshot;
+	if (!pump_until_packet(*server,
+			client,
+			opened_client.handle,
+			protocol::MessageType::FullSnapshot,
+			pump,
+			replacement_snapshot)) {
+		return testing::AssertionFailure()
+			<< "replacement snapshot was not received";
+	}
+	Packet replacement_snapshot_ack;
+	const auto receives_before_replacement_snapshot =
+		server->services.backend.complete_receives;
+	if (!make_ack(replacement_snapshot, 8U,
+			replacement_snapshot_ack) ||
+		client.try_send(opened_client.handle,
+			server_endpoint,
+			{replacement_snapshot_ack.bytes.data(),
+				replacement_snapshot_ack.size}).status !=
+			detail::IoStatus::Complete ||
+		!pump_until_server_receive(*server,
+			receives_before_replacement_snapshot + 1U, pump) ||
+		controller->snapshot_progress(0U) !=
+			detail::Phase1SnapshotProgress::Live) {
+		return testing::AssertionFailure()
+			<< "replacement snapshot did not become live";
 	}
 	// The allowlist is address/CIDR based, but a live FSTL session is bound to
 	// the exact UDP endpoint.  A second native loopback socket therefore has

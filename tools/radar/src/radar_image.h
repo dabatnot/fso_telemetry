@@ -119,6 +119,8 @@ struct RadarImage final {
     std::uint64_t producerSampleTimeUs = 0;
     std::uint64_t playerEntityId = 0;
     std::uint64_t currentTargetEntityId = 0;
+	bool missionPaused = false;
+	float timeCompression = 1.0F;
     std::array<double, 3> playerWorldPosition{};
     std::array<double, 3> playerWorldVelocity{};
     std::array<double, 4> playerOrientationLocalToWorld{1.0, 0.0, 0.0, 0.0};

@@ -75,6 +75,14 @@ describe("instrument availability", () => {
       ...baseSnapshot,
       connection: { ...baseSnapshot.connection, status: "Disconnected" }
     }, true)).toEqual({ label: "Disconnected", statusClass: "disconnected" });
+    expect(dashboardSourcePresentation({
+      ...baseSnapshot,
+      connection: { ...baseSnapshot.connection, status: "Ready" }
+    }, true)).toEqual({ label: "PRÊT", statusClass: "ready" });
+    expect(dashboardSourcePresentation({
+      ...baseSnapshot,
+      mission: { ...baseSnapshot.mission, paused: true }
+    }, true)).toEqual({ label: "PAUSE", statusClass: "paused" });
   });
 
   it("preserves a real zero as live data", () => {

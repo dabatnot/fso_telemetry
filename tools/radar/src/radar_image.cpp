@@ -106,6 +106,23 @@ bool decodeSession(const StateAtom& atom,
     return true;
 }
 
+bool decodeMission(const StateAtom& atom, bool& paused, float& compression)
+{
+    PacketReader reader(ByteView{atom.value.data(), atom.value.size()});
+    std::uint64_t presence = 0, sample = 0;
+    std::uint32_t generation = 0;
+    std::uint8_t phase = 0, pausedValue = 0;
+    std::uint16_t reserved = 0;
+    if (!reader.read_u64(presence) || !reader.read_u32(generation) ||
+        !reader.read_u8(phase) || !reader.read_u8(pausedValue) ||
+        !reader.read_u16(reserved) || !reader.read_f32(compression) ||
+        !reader.read_u64(sample) || pausedValue > 1U || reserved != 0U ||
+        !std::isfinite(compression) || compression < 0.0F)
+        return false;
+    paused = pausedValue != 0U;
+    return true;
+}
+
 bool decodeFlight(const StateAtom& atom, FlightPose& pose)
 {
     PacketReader reader(ByteView{atom.value.data(), atom.value.size()});
@@ -574,6 +591,7 @@ std::shared_ptr<const RadarImage> makeRadarImage(
     image->sessionId = sessionId;
     FlightPose playerPose;
     bool sessionSeen = false;
+	bool missionSeen = false;
     for (const StateAtom& atom : state.records()) {
         const auto type = static_cast<RecordType>(atom.key.record_type);
         if (type == RecordType::SessionState) {
@@ -582,9 +600,14 @@ std::shared_ptr<const RadarImage> makeRadarImage(
                 return fail(localError.isEmpty() ? QStringLiteral("Duplicate SESSION_STATE") : localError);
             }
             sessionSeen = true;
+		} else if (type == RecordType::MissionState) {
+			if (missionSeen || !decodeMission(atom, image->missionPaused,
+					image->timeCompression))
+				return fail(QStringLiteral("Invalid MISSION_STATE"));
+			missionSeen = true;
         }
     }
-    if (!sessionSeen) return fail(QStringLiteral("Missing SESSION_STATE"));
+	if (!sessionSeen || !missionSeen) return fail(QStringLiteral("Missing session or mission state"));
     if (image->playerEntityId == 0) {
         if (error != nullptr) error->clear();
         return image;

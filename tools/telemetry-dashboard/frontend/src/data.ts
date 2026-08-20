@@ -14,6 +14,12 @@ export function dashboardSourcePresentation(
     };
   }
   const status = snapshot?.connection.status ?? "Synchronizing";
+	if (status === "Live" && Boolean(snapshot?.mission.paused)) {
+		return { label: "PAUSE", statusClass: "paused" };
+	}
+	if (status === "Ready") {
+		return { label: "PRÊT", statusClass: "ready" };
+	}
   return { label: status, statusClass: status.toLowerCase() };
 }
 
@@ -82,7 +88,7 @@ export function resolveInstrument(
       source: definition.source
     };
   }
-  if (!snapshot || snapshot.connection.status === "Synchronizing" || snapshot.connection.status === "Disconnected") {
+  if (!snapshot || snapshot.connection.status === "Ready" || snapshot.connection.status === "Synchronizing" || snapshot.connection.status === "Disconnected") {
     return {
       state: "waiting",
       value: null,

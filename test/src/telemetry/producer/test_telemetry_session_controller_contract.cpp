@@ -1,4 +1,5 @@
 #include "telemetry/session_controller.h"
+#include "telemetry/session_controller_test_seam.h"
 
 #include "telemetry/phase1_snapshot_slot.h"
 #include "telemetry/phase1_state_image.h"
@@ -135,11 +136,12 @@ EncodedDatagram encode_datagram(protocol::TelemetryDatagramHeader header, protoc
 EncodedDatagram hello(std::uint64_t nonce,
 	std::uint8_t min_minor = protocol::VersionMinorV1_1,
 	std::uint8_t max_minor = protocol::VersionMinorV1_1,
-	std::uint32_t packet_sequence = 1U)
+	std::uint32_t packet_sequence = 1U,
+	std::uint64_t client_send_t0_us = 1'000'000U)
 {
 	protocol::HelloPayload payload;
 	payload.client_nonce = nonce;
-	payload.client_send_t0_us = 1'000'000U;
+	payload.client_send_t0_us = client_send_t0_us;
 	payload.min_major = protocol::VersionMajor;
 	payload.max_major = protocol::VersionMajor;
 	payload.min_minor = min_minor;
@@ -292,7 +294,7 @@ template <typename T>
 void expect_physical_wp06_capacity(const T& owned)
 {
 	if constexpr (has_physical_wp06_capacity_fields<T>::value) {
-		EXPECT_EQ(owned.client_slots * sizeof(detail::SessionControllerSlot), owned.client_slot_bytes);
+		EXPECT_EQ(owned.client_slots * detail::Wp06ClientSlotStorageBytes, owned.client_slot_bytes);
 		EXPECT_EQ(sizeof(protocol::ProtocolRateLimiter), owned.rate_limiter_bytes);
 		EXPECT_GT(owned.handshake_cache_bytes, 0U);
 		EXPECT_GT(owned.preproof_ledger_bytes, 0U);
@@ -685,7 +687,7 @@ TEST(TelemetryWp06HandshakeContract, AcceptsOnlyExact11AndBuildsCanonicalWelcome
 	EXPECT_EQ(protocol::VisibilityMode::Cockpit, welcome.selected_visibility_mode);
 	EXPECT_EQ(0U, welcome.producer_capabilities);
 	EXPECT_EQ(0U, welcome.active_capabilities);
-	EXPECT_EQ(1000U, welcome.heartbeat_interval_ms);
+	EXPECT_EQ(500U, welcome.heartbeat_interval_ms);
 	EXPECT_EQ(protocol::ReliableReassemblyTimeoutV1Ms, welcome.reliable_reassembly_timeout_ms);
 	EXPECT_TRUE(welcome.extensions.empty());
 	EXPECT_EQ(1U, controller.active_slots());
@@ -875,6 +877,120 @@ TEST(TelemetryWp06HandshakeContract, DuplicateHelloWithinTenSecondsReplaysIdenti
 	EXPECT_EQ(1U, controller.active_slots());
 }
 
+TEST(TelemetryWp06HandshakeContract, NewNonceFromSameEndpointReplacesAwaitingSessionAtCapacity)
+{
+	IdentityHarness ids{{{true, 0x1111U}, {true, 0x2222U}}};
+	auto controller = make_controller(ids.allocator, nullptr, 1U);
+	const auto first_request = hello(0x901U);
+	ASSERT_EQ(detail::SessionIngressDisposition::ResponseQueued,
+		controller.ingest(endpoint(), view(first_request.bytes), 1'000U, 0U, false).disposition);
+	const auto first_welcome = pop_output(controller);
+	ASSERT_EQ(1U, controller.active_slots());
+	ASSERT_EQ(detail::ProducerSessionProgress::AwaitWelcomeApplied,
+		controller.slot(0U).progress);
+
+	const auto replacement_request = hello(0x902U,
+		protocol::VersionMinorV1_1, protocol::VersionMinorV1_1, 1U, 2'000'000U);
+	ASSERT_EQ(detail::SessionIngressDisposition::ResponseQueued,
+		controller.ingest(endpoint(), view(replacement_request.bytes), 2'000U, 0U, false).disposition);
+	const auto replacement_welcome = pop_output(controller);
+	EXPECT_NE(first_welcome.datagram.header.session_id,
+		replacement_welcome.datagram.header.session_id);
+	EXPECT_EQ(1U, controller.active_slots());
+	EXPECT_EQ(detail::ProducerSessionProgress::AwaitWelcomeApplied,
+		controller.slot(0U).progress);
+	EXPECT_EQ(1U, controller.handshake_cache_entries());
+}
+
+TEST(TelemetryWp06HandshakeContract, DelayedOlderHelloCannotReplaceNewerSameEndpointSession)
+{
+	IdentityHarness ids{{{true, 0x1111U}, {true, 0x2222U}, {true, 0x3333U}}};
+	auto controller = make_controller(ids.allocator, nullptr, 1U);
+	const auto older = hello(0xA01U,
+		protocol::VersionMinorV1_1, protocol::VersionMinorV1_1, 1U, 1'000'000U);
+	ASSERT_EQ(detail::SessionIngressDisposition::ResponseQueued,
+		controller.ingest(endpoint(), view(older.bytes), 1'100'000U, 0U, false).disposition);
+	(void)pop_output(controller);
+
+	const auto newer = hello(0xB02U,
+		protocol::VersionMinorV1_1, protocol::VersionMinorV1_1, 2U, 2'000'000U);
+	ASSERT_EQ(detail::SessionIngressDisposition::ResponseQueued,
+		controller.ingest(endpoint(), view(newer.bytes), 2'100'000U, 0U, false).disposition);
+	const auto newer_welcome = pop_output(controller);
+	const auto newer_session_id = newer_welcome.datagram.header.session_id;
+
+	const auto delayed = controller.ingest(
+		endpoint(), view(older.bytes), 2'200'000U, 0U, false);
+	EXPECT_EQ(detail::SessionIngressDisposition::Dropped, delayed.disposition);
+	EXPECT_EQ(detail::SessionIngressDropReason::PayloadInvalid, delayed.drop_reason);
+	EXPECT_FALSE(controller.has_output());
+	ASSERT_EQ(1U, controller.active_slots());
+	EXPECT_EQ(newer_session_id, controller.slot(0U).session_id);
+	EXPECT_EQ(2U, ids.random.calls)
+		<< "A delayed HELLO must not allocate a third session identity.";
+}
+
+TEST(TelemetryWp06HandshakeContract, NewNonceFromSameEndpointReplacesLiveAndStaleSessions)
+{
+	for (const bool stale : {false, true}) {
+		IdentityHarness ids{{{true, 0x3101U}, {true, 0x3102U}}};
+		auto controller = make_controller(ids.allocator, nullptr, 1U);
+		activate_phase1_live_baseline(controller, 0x903U);
+		const auto old_session_id = controller.slot(0U).session_id;
+		if (stale) {
+			ASSERT_TRUE(detail::SessionControllerTestAccess::mark_stale(controller, 0U));
+		}
+
+		const auto delayed_older_request = hello(stale ? 0x915U : 0x914U,
+			protocol::VersionMinorV1_1, protocol::VersionMinorV1_1, 1U, 500'000U);
+		const auto delayed_older = controller.ingest(
+			endpoint(), view(delayed_older_request.bytes), 19'000U, 7U, true);
+		EXPECT_EQ(detail::SessionIngressDisposition::Dropped, delayed_older.disposition);
+		EXPECT_EQ(detail::SessionIngressDropReason::PayloadInvalid, delayed_older.drop_reason);
+		EXPECT_FALSE(controller.has_output());
+		EXPECT_EQ(old_session_id, controller.slot(0U).session_id);
+
+		const auto replacement_request = hello(stale ? 0x905U : 0x904U,
+			protocol::VersionMinorV1_1, protocol::VersionMinorV1_1, 1U, 2'000'000U);
+		ASSERT_EQ(detail::SessionIngressDisposition::ResponseQueued,
+			controller.ingest(endpoint(), view(replacement_request.bytes), 20'000U, 7U, true).disposition);
+		const auto replacement_welcome = pop_output(controller);
+		EXPECT_NE(old_session_id, replacement_welcome.datagram.header.session_id);
+		EXPECT_EQ(1U, controller.active_slots());
+		EXPECT_EQ(detail::ProducerSessionProgress::AwaitWelcomeApplied,
+			controller.slot(0U).progress);
+		EXPECT_EQ(1U, controller.handshake_cache_entries());
+	}
+}
+
+TEST(TelemetryWp06HandshakeContract, ReplacementDoesNotEvictForInvalidOrDifferentEndpointHello)
+{
+	IdentityHarness ids{{{true, 0x4101U}, {true, 0x4102U}}};
+	auto controller = make_controller(ids.allocator, nullptr, 1U);
+	const auto accepted = hello(0x906U);
+	ASSERT_EQ(detail::SessionIngressDisposition::ResponseQueued,
+		controller.ingest(endpoint(), view(accepted.bytes), 1'000U, 0U, false).disposition);
+	const auto first_welcome = pop_output(controller);
+	const auto original_session_id = first_welcome.datagram.header.session_id;
+
+	const auto unsupported = hello(0x907U,
+		protocol::VersionMinorV1_0, protocol::VersionMinorV1_0);
+	ASSERT_EQ(detail::SessionIngressDisposition::ResponseQueued,
+		controller.ingest(endpoint(), view(unsupported.bytes), 2'000U, 0U, false).disposition);
+	EXPECT_EQ(protocol::WelcomeStatus::UnsupportedVersion,
+		decode_welcome(pop_output(controller)).status);
+	EXPECT_EQ(original_session_id, controller.slot(0U).session_id);
+
+	const auto other_client = hello(0x908U);
+	const auto full = controller.ingest(endpoint(3U),
+		view(other_client.bytes), 3'000U, 0U, false);
+	EXPECT_EQ(detail::SessionIngressDisposition::Dropped, full.disposition);
+	EXPECT_EQ(detail::SessionIngressDropReason::NoClientSlot,
+		full.drop_reason);
+	EXPECT_EQ(original_session_id, controller.slot(0U).session_id);
+	EXPECT_EQ(1U, controller.active_slots());
+}
+
 TEST(TelemetryWp06HandshakeContract, RejectedWelcomeIsCachedButExpiresExactlyAtTenSeconds)
 {
 	IdentityHarness ids{{{true, 1U}}};
@@ -961,7 +1077,9 @@ TEST(TelemetryWp06HandshakeContract, CacheAndPreproofLedgerStorageRecycleOnlyAft
 		const auto ack = applied_welcome_ack(welcome);
 		ASSERT_EQ(detail::SessionIngressDisposition::WelcomeProofApplied,
 			controller.ingest(endpoint(), view(ack.bytes), 1U, 0U, false).disposition);
-		(void)pop_output(controller);
+		EXPECT_FALSE(controller.has_output());
+		EXPECT_EQ(detail::ProducerSessionProgress::Prewarmed,
+			controller.slot(0U).progress);
 		EXPECT_EQ(1U, controller.handshake_cache_entries())
 			<< "proof releases anti-amplification state, not the normative 10-second replay cache";
 		EXPECT_EQ(0U, controller.preproof_account_count());
@@ -1879,7 +1997,7 @@ TEST(TelemetryPhase1DeltaEgressContract, WouldBlockDropsNonReliableDeltaAndDelta
 		<< "WouldBlock abandons the non-reliable delta so the next cumulative image can replace it.";
 }
 
-TEST(TelemetryWp06HandshakeContract, ExactWelcomeAppliedProofQueuesSessionBeginWithMissionGenerationOrZero)
+TEST(TelemetryWp06HandshakeContract, WelcomeProofPrewarmsOutsideMissionAndActivationReusesTheSession)
 {
 	for (const bool mission_active : {false, true}) {
 		IdentityHarness ids{{{true, mission_active ? 0x2222U : 0x1111U}}};
@@ -1891,6 +2009,13 @@ TEST(TelemetryWp06HandshakeContract, ExactWelcomeAppliedProofQueuesSessionBeginW
 		const auto ack = applied_welcome_ack(welcome);
 		ASSERT_EQ(detail::SessionIngressDisposition::WelcomeProofApplied,
 			controller.ingest(endpoint(), view(ack.bytes), 2'000U, 7U, mission_active).disposition);
+		if (!mission_active) {
+			EXPECT_EQ(detail::ProducerSessionProgress::Prewarmed, controller.slot(0U).progress);
+			EXPECT_EQ(welcome.datagram.header.session_id, controller.slot(0U).session_id);
+			EXPECT_FALSE(controller.has_output())
+				<< "A prewarmed transport must not expose a logical mission before mission entry.";
+			EXPECT_EQ(1U, controller.activate_prewarmed_sessions(7U, 2'500U));
+		}
 		const auto begin = pop_output(controller);
 		ASSERT_EQ(protocol::MessageType::SessionBegin, begin.datagram.header.message_type);
 		EXPECT_EQ(protocol::VersionMinorV1_1, begin.datagram.header.version_minor);
@@ -1902,13 +2027,12 @@ TEST(TelemetryWp06HandshakeContract, ExactWelcomeAppliedProofQueuesSessionBeginW
 		protocol::SessionBeginPayload payload;
 		ASSERT_EQ(protocol::ValidationError::None,
 			protocol::decode_session_begin_payload(begin.datagram.payload, payload));
-		EXPECT_EQ(mission_active ? 7U : 0U, payload.mission_instance_id);
+		EXPECT_EQ(7U, payload.mission_instance_id);
 		EXPECT_EQ(1'000U, payload.producer_session_start_us);
 		EXPECT_EQ(0U, payload.required_manifest_id);
 		EXPECT_EQ(0U, payload.initial_snapshot_id) << "WP08 owns the initial snapshot transaction.";
 		EXPECT_NE(0U, payload.session_flags & protocol::SessionBeginFlagReadOnly);
-		EXPECT_EQ(mission_active,
-			(payload.session_flags & protocol::SessionBeginFlagMissionActive) != 0U);
+		EXPECT_NE(0U, payload.session_flags & protocol::SessionBeginFlagMissionActive);
 		EXPECT_EQ(detail::ProducerSessionProgress::ReadyForState, controller.slot(0U).progress);
 		EXPECT_EQ(1U, controller.slot(0U).reliable_items_in_use)
 			<< "SESSION_BEGIN remains retained until its exact APPLIED proof.";
@@ -1987,10 +2111,10 @@ TEST(TelemetryWp06HandshakeContract, WelcomeProofBeforeReliableDeadlineIsAccepte
 		auto controller = make_controller(ids.allocator);
 		const auto request = hello(87U + delta);
 		ASSERT_EQ(detail::SessionIngressDisposition::ResponseQueued,
-			controller.ingest(endpoint(), view(request.bytes), 1'000U, 0U, false).disposition);
+			controller.ingest(endpoint(), view(request.bytes), 1'000U, 1U, true).disposition);
 		const auto welcome = pop_output(controller);
 		const auto ack = applied_welcome_ack(welcome);
-		const auto result = controller.ingest(endpoint(), view(ack.bytes), 1'000U + delta, 0U, false);
+		const auto result = controller.ingest(endpoint(), view(ack.bytes), 1'000U + delta, 1U, true);
 		if (delta < protocol::ReliableOrdinaryRetentionUs) {
 			EXPECT_EQ(detail::SessionIngressDisposition::WelcomeProofApplied, result.disposition);
 			(void)pop_output(controller);
@@ -2012,14 +2136,14 @@ TEST(TelemetryWp06HandshakeContract, OutOfOrderWelcomeAcksSelectTheExactEndpoint
 	const auto first_hello = hello(9001U);
 	const auto second_hello = hello(9002U);
 	ASSERT_EQ(detail::SessionIngressDisposition::ResponseQueued,
-		controller.ingest(first_endpoint, view(first_hello.bytes), 1'000U, 0U, false).disposition);
+		controller.ingest(first_endpoint, view(first_hello.bytes), 1'000U, 1U, true).disposition);
 	const auto first_welcome = pop_output(controller);
 	ASSERT_EQ(detail::SessionIngressDisposition::ResponseQueued,
-		controller.ingest(second_endpoint, view(second_hello.bytes), 1'001U, 0U, false).disposition);
+		controller.ingest(second_endpoint, view(second_hello.bytes), 1'001U, 1U, true).disposition);
 	const auto second_welcome = pop_output(controller);
 
 	const auto second_ack = applied_welcome_ack(second_welcome);
-	const auto second_result = controller.ingest(second_endpoint, view(second_ack.bytes), 2'000U, 0U, false);
+	const auto second_result = controller.ingest(second_endpoint, view(second_ack.bytes), 2'000U, 1U, true);
 	ASSERT_EQ(detail::SessionIngressDisposition::WelcomeProofApplied, second_result.disposition)
 		<< "ACK lookup must not select the first AwaitWelcomeApplied slot.";
 	const auto second_begin = pop_output(controller);
@@ -2029,7 +2153,7 @@ TEST(TelemetryWp06HandshakeContract, OutOfOrderWelcomeAcksSelectTheExactEndpoint
 
 	const auto first_ack = applied_welcome_ack(first_welcome);
 	EXPECT_EQ(detail::SessionIngressDisposition::WelcomeProofApplied,
-		controller.ingest(first_endpoint, view(first_ack.bytes), 2'001U, 0U, false).disposition);
+		controller.ingest(first_endpoint, view(first_ack.bytes), 2'001U, 1U, true).disposition);
 }
 
 TEST(TelemetryWp06HandshakeContract, ReliableSessionBeginSurvivesOutputPopAndComposesWithPhase0NackValidation)
@@ -2038,11 +2162,11 @@ TEST(TelemetryWp06HandshakeContract, ReliableSessionBeginSurvivesOutputPopAndCom
 	auto controller = make_controller(ids.allocator);
 	const auto request = hello(9010U);
 	ASSERT_EQ(detail::SessionIngressDisposition::ResponseQueued,
-		controller.ingest(endpoint(), view(request.bytes), 1'000U, 0U, false).disposition);
+		controller.ingest(endpoint(), view(request.bytes), 1'000U, 1U, true).disposition);
 	const auto welcome = pop_output(controller);
 	const auto proof = applied_welcome_ack(welcome);
 	ASSERT_EQ(detail::SessionIngressDisposition::WelcomeProofApplied,
-		controller.ingest(endpoint(), view(proof.bytes), 2'000U, 0U, false).disposition);
+		controller.ingest(endpoint(), view(proof.bytes), 2'000U, 1U, true).disposition);
 	auto begin = pop_output(controller);
 	const std::vector<std::uint8_t> retained_payload(begin.datagram.payload.data,
 		begin.datagram.payload.data + static_cast<std::ptrdiff_t>(begin.datagram.payload.size));
@@ -2131,36 +2255,86 @@ TEST(TelemetryWp06HandshakeContract, BusyOutputRejectsBeforeIdSlotCacheLedgerAnd
 	}
 }
 
-TEST(TelemetryWp06HandshakeContract, SameEndpointNonceLifetimesDoNotEraseOtherOutstandingPreproofAccounting)
+TEST(TelemetryWp06HandshakeContract, ValidHelloPreemptsQueuedDeltaSoAnotherClientCanConnect)
+{
+	IdentityHarness ids{{{true, 0x1111U}, {true, 0x2222U}}};
+	auto controller = make_controller(ids.allocator, nullptr, 2U);
+	activate_phase1_live_baseline(controller, 0x1111U);
+	ASSERT_EQ(protocol::ProducerBaselineResult::Applied,
+		controller.replace_current_state(0U, phase1_integration_image_at(9.0F, 5'000U)));
+	ASSERT_TRUE(controller.queue_cumulative_delta(0U, 5'001U));
+	ASSERT_EQ(1U, controller.service_delta_egress(1U, 5'002U));
+
+	const auto second_endpoint = endpoint(3U, 42043U);
+	const auto second = hello(9023U);
+	const auto result = controller.ingest(second_endpoint, view(second.bytes), 5'003U, 7U, true);
+	ASSERT_EQ(detail::SessionIngressDisposition::ResponseQueued, result.disposition);
+	const auto welcome = pop_output(controller);
+	EXPECT_EQ(protocol::MessageType::Welcome, welcome.datagram.header.message_type);
+	EXPECT_EQ(2U, controller.active_slots());
+	EXPECT_EQ(detail::ProducerSessionProgress::ReadyForState, controller.slot(0U).progress);
+	EXPECT_EQ(detail::ProducerSessionProgress::AwaitWelcomeApplied, controller.slot(1U).progress);
+	EXPECT_EQ(second_endpoint, controller.slot(1U).endpoint);
+}
+
+TEST(TelemetryWp06HandshakeContract, SameEndpointReplacementPreemptsQueuedDeltaAtomically)
+{
+	IdentityHarness ids{{{true, 0x1111U}, {true, 0x2222U}}};
+	auto controller = make_controller(ids.allocator, nullptr, 2U);
+	activate_phase1_live_baseline(controller, 0x1111U);
+	const auto previous_session = controller.slot(0U).session_id;
+	ASSERT_EQ(protocol::ProducerBaselineResult::Applied,
+		controller.replace_current_state(0U, phase1_integration_image_at(9.0F, 5'000U)));
+	ASSERT_TRUE(controller.queue_cumulative_delta(0U, 5'001U));
+	ASSERT_EQ(1U, controller.service_delta_egress(1U, 5'002U));
+
+	const auto replacement = hello(9024U,
+		protocol::VersionMinorV1_1, protocol::VersionMinorV1_1, 1U, 2'000'000U);
+	const auto result = controller.ingest(endpoint(), view(replacement.bytes), 5'003U, 7U, true);
+	ASSERT_EQ(detail::SessionIngressDisposition::ResponseQueued, result.disposition);
+	const auto welcome = pop_output(controller);
+	EXPECT_EQ(protocol::MessageType::Welcome, welcome.datagram.header.message_type);
+	EXPECT_NE(previous_session, welcome.datagram.header.session_id);
+	EXPECT_EQ(1U, controller.active_slots());
+	EXPECT_EQ(1U, controller.handshake_cache_entries());
+	EXPECT_EQ(detail::ProducerSessionProgress::AwaitWelcomeApplied, controller.slot(0U).progress);
+}
+
+TEST(TelemetryWp06HandshakeContract, SameEndpointReplacementRetainsOnlyNewNoncePreproofAccounting)
 {
 	IdentityHarness ids{{{true, 0x1111U}, {true, 0x2222U}}};
 	auto controller = make_controller(ids.allocator, nullptr, 2U);
 	const auto shared = endpoint();
-	const auto first = hello(9030U);
-	const auto second = hello(9031U);
+	const auto first = hello(9030U,
+		protocol::VersionMinorV1_1, protocol::VersionMinorV1_1, 1U, 1'000'000U);
+	const auto second = hello(9031U,
+		protocol::VersionMinorV1_1, protocol::VersionMinorV1_1, 2U, 2'000'000U);
 	ASSERT_EQ(detail::SessionIngressDisposition::ResponseQueued,
 		controller.ingest(shared, view(first.bytes), 0U, 0U, false).disposition);
 	(void)pop_output(controller);
 	ASSERT_EQ(detail::SessionIngressDisposition::ResponseQueued,
 		controller.ingest(shared, view(second.bytes), 1'000'000U, 0U, false).disposition);
 	(void)pop_output(controller);
-	ASSERT_EQ(2U, controller.handshake_cache_entries());
+	ASSERT_EQ(1U, controller.active_slots());
+	ASSERT_EQ(1U, controller.handshake_cache_entries());
 	ASSERT_EQ(1U, controller.preproof_account_count());
 
 	controller.expire_housekeeping(protocol::HandshakeCacheLifetimeMs * 1000U);
 	EXPECT_EQ(1U, controller.handshake_cache_entries());
 	EXPECT_EQ(1U, controller.preproof_account_count())
-		<< "Expiring nonce 9030 must retain the endpoint ledger contribution for nonce 9031.";
+		<< "Replacing nonce 9030 must retain only the endpoint ledger contribution for nonce 9031.";
 	EXPECT_GT(controller.preproof_account(shared).validated_bytes_received, 0U);
 }
 
-TEST(TelemetryWp06HandshakeContract, ClosingOneSameEndpointSessionRetainsTheOtherNoncePreproofLedger)
+TEST(TelemetryWp06HandshakeContract, ClosingReplacementClearsRemainingEndpointPreproofLedger)
 {
 	IdentityHarness ids{{{true, 0x1111U}, {true, 0x2222U}}};
 	auto controller = make_controller(ids.allocator, nullptr, 2U);
 	const auto shared = endpoint();
-	const auto first = hello(9040U);
-	const auto second = hello(9041U);
+	const auto first = hello(9040U,
+		protocol::VersionMinorV1_1, protocol::VersionMinorV1_1, 1U, 1'000'000U);
+	const auto second = hello(9041U,
+		protocol::VersionMinorV1_1, protocol::VersionMinorV1_1, 2U, 2'000'000U);
 	ASSERT_EQ(detail::SessionIngressDisposition::ResponseQueued,
 		controller.ingest(shared, view(first.bytes), 0U, 0U, false).disposition);
 	(void)pop_output(controller);
@@ -2168,10 +2342,10 @@ TEST(TelemetryWp06HandshakeContract, ClosingOneSameEndpointSessionRetainsTheOthe
 		controller.ingest(shared, view(second.bytes), 1U, 0U, false).disposition);
 	(void)pop_output(controller);
 	ASSERT_TRUE(controller.close_slot(0U, detail::SessionCloseReason::ProtocolError));
-	EXPECT_EQ(1U, controller.active_slots());
-	EXPECT_EQ(1U, controller.handshake_cache_entries());
-	EXPECT_EQ(1U, controller.preproof_account_count());
-	EXPECT_GT(controller.preproof_account(shared).validated_bytes_received, 0U);
+	EXPECT_EQ(0U, controller.active_slots());
+	EXPECT_EQ(0U, controller.handshake_cache_entries());
+	EXPECT_EQ(0U, controller.preproof_account_count());
+	EXPECT_EQ(0U, controller.preproof_account(shared).validated_bytes_received);
 }
 
 template <typename Controller,
@@ -2190,12 +2364,12 @@ void expect_packet_sequence_source_controls_presession_and_session_initializatio
 
 	const auto accepted = hello(9051U);
 	ASSERT_EQ(detail::SessionIngressDisposition::ResponseQueued,
-		controller.ingest(endpoint(), view(accepted.bytes), 1U, 0U, false).disposition);
+		controller.ingest(endpoint(), view(accepted.bytes), 1U, 1U, true).disposition);
 	const auto welcome = pop_output(controller);
 	EXPECT_EQ(0xABCDEF00U, welcome.datagram.header.packet_sequence);
 	const auto proof = applied_welcome_ack(welcome);
 	ASSERT_EQ(detail::SessionIngressDisposition::WelcomeProofApplied,
-		controller.ingest(endpoint(), view(proof.bytes), 2U, 0U, false).disposition);
+		controller.ingest(endpoint(), view(proof.bytes), 2U, 1U, true).disposition);
 	EXPECT_EQ(0xABCDEF01U, pop_output(controller).datagram.header.packet_sequence);
 }
 
@@ -2298,11 +2472,11 @@ DecodedOutput establish_session_begin(detail::SessionController& controller,
 {
 	const auto request = hello(nonce);
 	EXPECT_EQ(detail::SessionIngressDisposition::ResponseQueued,
-		controller.ingest(peer, view(request.bytes), hello_time_us, 0U, false).disposition);
+		controller.ingest(peer, view(request.bytes), hello_time_us, 1U, true).disposition);
 	const auto welcome = pop_output(controller);
 	const auto proof = applied_welcome_ack(welcome);
 	EXPECT_EQ(detail::SessionIngressDisposition::WelcomeProofApplied,
-		controller.ingest(peer, view(proof.bytes), proof_time_us, 0U, false).disposition);
+		controller.ingest(peer, view(proof.bytes), proof_time_us, 1U, true).disposition);
 	return pop_output(controller);
 }
 

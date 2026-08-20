@@ -79,7 +79,9 @@ Ces exports ne donnent aucun verdict d’aptitude au simpit.
 
 | État | Signification |
 |---|---|
+| `PRÊT` | transport préchauffé au menu ou au briefing, sans mission cockpit |
 | `LIVE` | valeur autoritaire reçue et fraîche |
+| `PAUSE` | session maintenue par heartbeat, dernière image volontairement figée |
 | `ND` | donnée prévue, mais source non produite actuellement |
 | `—` | source connue mais sans objet pour l’entité actuelle |
 | `STALE` | dernière valeur conservée après silence du producteur |
@@ -88,12 +90,27 @@ Ces exports ne donnent aucun verdict d’aptitude au simpit.
 
 Une vraie valeur zéro reste toujours affichée comme `0`.
 
-Après une seconde sans état valide, le bridge conserve la dernière image et la
+Une pause signalée par `MISSION_STATE` suspend le watchdog de progression
+cockpit sans suspendre le watchdog réseau. Le bridge conserve donc la session,
+les données et les heartbeats ; la reprise applique le keyframe immédiat du
+producteur. Hors mission, un `WELCOME` valide affiche `PRÊT` et aucun snapshot
+n'est attendu avant `SESSION_BEGIN`.
+
+En dehors de ces états explicites, après une seconde sans état valide, le bridge conserve la dernière image et la
 marque `Stale` tout en demandant une resynchronisation. Après une seconde
-supplémentaire sans progrès FSTL, il abandonne l’ancienne session, ouvre un
-nouvel endpoint UDP et renégocie automatiquement jusqu’au retour du jeu. Le menu **Session** permet
+supplémentaire sans progrès FSTL, il abandonne l’ancienne session et renégocie
+avec un nouveau nonce sur le même endpoint UDP. Tant que le jeu ne répond pas,
+ce même `HELLO` est retransmis, y compris au-delà de sa fenêtre fiable : le
+client n'empile pas de nouvelles générations de session. Le socket n'est recréé
+que pour une erreur réseau locale ou un changement d'adresse. Le menu **Session** permet
 également de demander une resynchronisation douce ou une reconnexion complète ;
 ces actions redémarrent uniquement l’observateur du dashboard, jamais FS2Open.
+Après acceptation du nouveau `WELCOME`, la reconstruction fiable de la session
+dispose de sa fenêtre complète de cinq secondes : le délai `1 s + 1 s` n'est pas
+réappliqué pendant le manifeste ou le snapshot initial.
+
+Pour utiliser simultanément AV CORE, le dashboard et le radar, régler
+`maxClients` à `4` dans la configuration de télémétrie FS2Open.
 
 La barre inférieure regroupe les actions dans **Session**, **Données** et
 **Affichage**. Figer l’affichage immobilise seulement les instruments : le

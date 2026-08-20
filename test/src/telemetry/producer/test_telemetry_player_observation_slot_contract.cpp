@@ -222,8 +222,13 @@ std::size_t open_ready(Harness& harness,
 	ingest(harness.controller, source, applied_ack(decode(welcome), sequence + 1U), base_time_us + 200U);
 	detail::SessionControllerOutput begin;
 	EXPECT_TRUE(harness.controller.pop_output(begin));
+	EXPECT_EQ(protocol::MessageType::SessionBegin, decode(begin).header.message_type);
 	ingest(harness.controller, source, applied_ack(decode(begin), sequence + 2U), base_time_us + 300U);
 	for (std::size_t i = 0U; i < harness.max_clients; ++i) {
+		if (harness.controller.slot(i).endpoint == source) {
+			EXPECT_EQ(detail::ProducerSessionProgress::ReadyForState,
+				harness.controller.slot(i).progress);
+		}
 		if (harness.controller.slot(i).progress == detail::ProducerSessionProgress::ReadyForState &&
 			harness.controller.slot(i).endpoint == source) return i;
 	}

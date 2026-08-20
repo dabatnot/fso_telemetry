@@ -20,6 +20,7 @@
 #include "ai/ai.h"
 #include "autopilot/autopilot.h"
 #include "globalincs/systemvars.h"
+#include "gamesequence/gamesequence.h"
 #include "hud/hud.h"
 #include "hud/hudconfig.h"
 #include "iff_defs/iff_defs.h"
@@ -805,7 +806,7 @@ std::uint64_t independent_period_us(std::uint32_t flight_hz) noexcept
 detail::NativeSessionTickStatus
 capture_tick(NativeFixture& fixture, CountingEngineReadView& view, std::uint64_t now_us, bool active = true) noexcept
 {
-	return NativePlayerProbe::service_tick(fixture.runtime, {now_us, 0U, active}, view);
+	return NativePlayerProbe::service_tick(fixture.runtime, {now_us, active ? 1U : 0U, active}, view);
 }
 
 detail::NativeSessionTickStatus native_tick(NativeFixture& fixture,
@@ -902,8 +903,8 @@ std::uint64_t establish_ready(NativeFixture& fixture,
 	std::uint64_t nonce,
 	std::uint64_t now_us,
 	std::uint32_t packet_base,
-	std::uint32_t mission_generation = 0U,
-	bool mission_active = false)
+	std::uint32_t mission_generation = 1U,
+	bool mission_active = true)
 {
 	const auto sessions_before = fixture.runtime.active_sessions();
 	auto drive_new_send = [&](std::size_t previous, std::uint64_t first_tick) {
@@ -3245,6 +3246,8 @@ TEST(TelemetryP85SteadyStateAllocationContract, LiveCaptureKeyframeDeltaAndEgres
 	auto* controller = NativePlayerAccess::controller(fixture->runtime);
 	ASSERT_NE(nullptr, controller);
 	const auto endpoint = peer(92U);
+	ASSERT_EQ(detail::NativeSessionTickStatus::Complete,
+		native_tick(*fixture, {999U, 7U, true}));
 	activate_live_baseline_without_acknowledging_session_begin(*controller, endpoint, 0x92U);
 
 	// Warm-up is deliberately outside the observation window. The tracked path
@@ -3514,6 +3517,10 @@ TEST(TelemetryRuntimeAdapterPlayerContract, StopCollectionDiffersFromMissionPurg
 	runtime.on_engine_update();
 	ASSERT_EQ(detail::RuntimeState::Ready, runtime.state());
 	ASSERT_NE(nullptr, services.native.get());
+	runtime.on_game_mission_load();
+	runtime.on_game_enter_state(GS_STATE_BRIEFING, GS_STATE_GAME_PLAY);
+	runtime.on_engine_update();
+	ASSERT_EQ(detail::RuntimeState::MissionActive, runtime.state());
 
 	auto drive = [&](std::uint64_t now_us) {
 		services.clock_now_us = now_us;
@@ -3587,15 +3594,33 @@ TEST(TelemetryRuntimeAdapterPlayerContract, StopCollectionDiffersFromMissionPurg
 	drive(30'000U);
 	EXPECT_EQ(detail::RuntimeState::MissionLoading, runtime.state());
 	EXPECT_EQ((std::vector<char>{'1', '2', '3', '4', '5'}), services.teardown)
-		<< "Mission update must stop collection before invalidating/purging the native runtime.";
+		<< "Mission update must stop collection and invalidate mission state without closing the transport.";
 	EXPECT_EQ((std::vector<char>{'C', 'L', 'T'}), services.runtime_trace)
 		<< "The helper-backed inactive tick follows the complete mission purge.";
 	EXPECT_EQ(1U, services.service_calls);
 	EXPECT_FALSE(services.last_tick.mission_active);
 	EXPECT_EQ(runtime.mission_generation(), services.last_tick.mission_generation);
-	EXPECT_EQ(0U, services.native->active_sessions());
+	EXPECT_EQ(1U, services.native->active_sessions())
+		<< "The ended mission remains only long enough to complete SESSION_END or be replaced by a new HELLO.";
 	EXPECT_EQ(1U, services.native->socket_count());
-	const auto second_session = establish(peer(91U), 901U, 40'000U, 2'000U);
+	runtime.on_game_enter_state(GS_STATE_BRIEFING, GS_STATE_GAME_PLAY);
+	drive(35'000U);
+	ASSERT_EQ(detail::RuntimeState::MissionActive, runtime.state());
+	ASSERT_FALSE(services.backend.sent.empty());
+	const auto end_index = services.backend.sent.size() - 1U;
+	ASSERT_EQ(protocol::MessageType::SessionEnd, sent_type(services.backend, end_index));
+	services.backend.receives.push_back(
+		{detail::IoStatus::Complete,
+			ack_for(services.backend.sent[end_index], peer(90U), 1'999U)});
+	for (std::uint64_t offset = 0U;
+		offset < 8U && services.native->active_sessions() != 0U;
+		++offset) {
+		drive(35'001U + offset);
+	}
+	ASSERT_EQ(0U, services.native->active_sessions());
+	// A living client keeps its UDP endpoint across missions and renews only
+	// its nonce, so the producer atomically replaces the ended logical session.
+	const auto second_session = establish(peer(90U), 901U, 40'000U, 2'000U);
 	EXPECT_NE(0U, second_session);
 	EXPECT_NE(first_session, second_session);
 	ASSERT_EQ(detail::NativeSessionTickStatus::Complete,
@@ -3654,15 +3679,15 @@ TEST(TelemetryNativeRuntimeIntegrationContract, FourBehavioralInversionsLockLife
 	ASSERT_EQ(detail::NativeSessionStartStatus::Started, timeout->start(broad));
 	timeout->backend.receives.push_back(
 		{detail::IoStatus::Complete, hello(protocol::VersionMinorV1_1, 110U, peer(4U))});
-	native_tick(*timeout, {1'000U, 0U, false});
+	native_tick(*timeout, {1'000U, 1U, true});
 	ASSERT_FALSE(timeout->backend.sent.empty());
 	const auto welcome = timeout->backend.sent.back();
 	timeout->backend.receives.push_back(
 		{detail::IoStatus::Complete, ack_for(welcome, peer(4U), 111U)});
-	native_tick(*timeout, {2'000U, 0U, false});
+	native_tick(*timeout, {2'000U, 1U, true});
 	ASSERT_GT(timeout->runtime.owned_usage().reliable_items, 0U);
 	const auto sends_before_timeout = timeout->backend.send_calls;
-	native_tick(*timeout, {2'000U + 10'000'000U, 0U, false});
+	native_tick(*timeout, {2'000U + 10'000'000U, 1U, true});
 	EXPECT_EQ(sends_before_timeout, timeout->backend.send_calls);
 	EXPECT_EQ(detail::SessionControllerOwnedUsage{}, timeout->runtime.owned_usage());
 
@@ -3678,7 +3703,7 @@ TEST(TelemetryNativeRuntimeIntegrationContract, FourBehavioralInversionsLockLife
 	priority->backend.receives.push_back(
 		{detail::IoStatus::Complete, hello(protocol::VersionMinorV1_1, 121U, peer(6U))});
 	for (std::uint64_t tick = 0U; tick < 8U && priority->backend.sent.size() == sent_before_second; ++tick) {
-		native_tick(*priority, {21'000U + tick, 0U, false});
+		native_tick(*priority, {21'000U + tick, 1U, true});
 	}
 	ASSERT_GT(priority->backend.sent.size(), sent_before_second);
 	const auto second_welcome = priority->backend.sent[sent_before_second];
@@ -3686,21 +3711,21 @@ TEST(TelemetryNativeRuntimeIntegrationContract, FourBehavioralInversionsLockLife
 	priority->backend.receives.push_back(
 		{detail::IoStatus::Complete, ack_for(second_welcome, peer(6U), 122U)});
 	for (std::uint64_t tick = 0U; tick < 8U && priority->backend.sent.size() == sent_before_begin; ++tick) {
-		native_tick(*priority, {22'000U + tick, 0U, false});
+		native_tick(*priority, {22'000U + tick, 1U, true});
 	}
 	ASSERT_GT(priority->backend.sent.size(), sent_before_begin);
 	ASSERT_EQ(protocol::MessageType::SessionBegin, sent_type(priority->backend, sent_before_begin));
 	const auto simultaneous_due = 1'020'100U;
 	const auto sent_before_due = priority->backend.sent.size();
 	for (std::uint64_t offset = 0U; offset < 4U && priority->backend.sent.size() == sent_before_due; ++offset) {
-		native_tick(*priority, {simultaneous_due + offset, 0U, false});
+		native_tick(*priority, {simultaneous_due + offset, 1U, true});
 	}
 	ASSERT_GT(priority->backend.sent.size(), sent_before_due);
 	EXPECT_EQ(protocol::MessageType::SessionBegin,
 		sent_type(priority->backend, sent_before_due));
 	const auto sent_after_rel = priority->backend.sent.size();
 	for (std::uint64_t offset = 4U; offset < 8U && priority->backend.sent.size() == sent_after_rel; ++offset) {
-		native_tick(*priority, {simultaneous_due + offset, 0U, false});
+		native_tick(*priority, {simultaneous_due + offset, 1U, true});
 	}
 	ASSERT_GT(priority->backend.sent.size(), sent_after_rel);
 	EXPECT_EQ(protocol::MessageType::Heartbeat,
@@ -3722,7 +3747,7 @@ TEST(TelemetryNativeRuntimeIntegrationContract, FourBehavioralInversionsLockLife
 	// WELCOME proof is applied at 30'010.  The SESSION_BEGIN ACK consumed at
 	// 30'020 makes the session Ready but does not re-anchor the periodic clock.
 	constexpr std::uint64_t ExactPeriodicDueUs = 1'030'010U;
-	native_tick(*periodic, {ExactPeriodicDueUs, 0U, false});
+	native_tick(*periodic, {ExactPeriodicDueUs, 1U, true});
 	ASSERT_GT(periodic->backend.sent.size(), sent_before_periodic);
 	EXPECT_EQ(protocol::MessageType::Heartbeat,
 		sent_type(periodic->backend, periodic->backend.sent.size() - 1U));
@@ -3738,6 +3763,8 @@ TEST(TelemetryPhase1DeltaEgressContract, RuntimeQueuesDeltaOnlyAfterReliableAndH
 	auto* controller = NativePlayerAccess::controller(fixture->runtime);
 	ASSERT_NE(nullptr, controller);
 	const auto endpoint = peer(91U);
+	ASSERT_EQ(detail::NativeSessionTickStatus::Complete,
+		native_tick(*fixture, {999U, 7U, true}));
 	activate_live_baseline_without_acknowledging_session_begin(*controller, endpoint, 0x91U);
 	ASSERT_GT(controller->slot(0U).reliable_items_in_use, 0U);
 	ASSERT_EQ(protocol::ProducerBaselineResult::Applied,
@@ -3772,6 +3799,8 @@ TEST(TelemetryPhase1DeltaEgressContract, RealRuntimeEventuallyEmitsQueuedDeltaAf
 	auto* controller = NativePlayerAccess::controller(fixture->runtime);
 	ASSERT_NE(nullptr, controller);
 	const auto endpoint = peer(93U);
+	ASSERT_EQ(detail::NativeSessionTickStatus::Complete,
+		native_tick(*fixture, {999U, 7U, true}));
 	// This establishes the same live baseline used by the native allocation
 	// contract, then drives the actual runtime R2 scheduler rather than invoking
 	// controller egress directly.
@@ -4435,7 +4464,7 @@ TEST(TelemetryNativePlayerCaptureContract, ReadyTransitionDuringInactiveMissionD
 	EXPECT_EQ(detail::NativeSessionTickStatus::Complete, capture_tick(*fixture, view, 60'020U, false));
 	EXPECT_EQ(0U, view.total_calls()) << "ReadyForState never bypasses the mission-active capture gate.";
 	ASSERT_NE(nullptr, slot(*fixture));
-	EXPECT_EQ(detail::ProducerSessionProgress::ReadyForState, slot(*fixture)->progress);
+	EXPECT_EQ(detail::ProducerSessionProgress::Prewarmed, slot(*fixture)->progress);
 	EXPECT_EQ(CaptureInactive, NativePlayerProbe::last_status(fixture->runtime));
 	expect_zero_materialization(NativePlayerProbe::materialization(fixture->runtime));
 }
@@ -4460,7 +4489,7 @@ TEST(TelemetryNativePlayerCaptureContract, OneSharedCaptureFansOutToReadyAndStal
 	const auto second_stale_due = second->heartbeat.last_valid_network_activity_us +
 		second->heartbeat.stale_timeout_us;
 	ASSERT_LT(first_stale_due, second_stale_due);
-	native_tick(*fixture, {first_stale_due, 0U, true});
+	native_tick(*fixture, {first_stale_due, 1U, true});
 	ASSERT_EQ(detail::ProducerSessionProgress::Stale, slot(*fixture, 0U)->progress);
 	ASSERT_EQ(detail::ProducerSessionProgress::ReadyForState, slot(*fixture, 1U)->progress);
 	CountingEngineReadView view;
@@ -4640,7 +4669,7 @@ TEST(TelemetryNativePlayerCaptureContract, ExhaustiveCaptureResultPairsAcceptOnl
 				EXPECT_EQ(TickPermanentCaptureFailure,
 					static_cast<std::uint8_t>(capture_tick(*fixture, fault_view, 30'000U)));
 				EXPECT_EQ(TickPermanentCaptureFailure,
-					static_cast<std::uint8_t>(native_tick(*fixture, {30'001U, 0U, true})));
+					static_cast<std::uint8_t>(native_tick(*fixture, {30'001U, 1U, true})));
 				EXPECT_EQ(0U, fault_view.total_calls());
 			}
 		}
@@ -4797,10 +4826,16 @@ TEST(TelemetryNativePlayerCaptureContract, R2OnlyTestSeamPreservesPlayerStateWhi
 	fixture->backend.receives.push_back(
 		{detail::IoStatus::Complete, heartbeat_request(ready_session_id, ready_endpoint, 991U, heartbeat_tick - 1U)});
 	const auto sends_before_heartbeat = fixture->backend.sent.size();
-	native_tick(*fixture, {heartbeat_tick, 0U, true});
-	ASSERT_GT(fixture->backend.sent.size(), sends_before_heartbeat);
-	EXPECT_EQ(protocol::MessageType::Heartbeat,
-		sent_type(fixture->backend, fixture->backend.sent.size() - 1U));
+	bool heartbeat_sent = false;
+	for (std::uint64_t offset = 0U; offset < 8U && !heartbeat_sent; ++offset) {
+		native_tick(*fixture, {heartbeat_tick + offset, 1U, true});
+		for (std::size_t index = sends_before_heartbeat;
+			index < fixture->backend.sent.size(); ++index) {
+			heartbeat_sent = heartbeat_sent ||
+				sent_type(fixture->backend, index) == protocol::MessageType::Heartbeat;
+		}
+	}
+	ASSERT_TRUE(heartbeat_sent);
 	ASSERT_NE(nullptr, slot(*fixture));
 	EXPECT_LT(activity_before, slot(*fixture)->heartbeat.last_valid_network_activity_us);
 	EXPECT_EQ(heartbeat_tick, slot(*fixture)->heartbeat.last_valid_network_activity_us);
@@ -4812,7 +4847,7 @@ TEST(TelemetryNativePlayerCaptureContract, R2OnlyTestSeamPreservesPlayerStateWhi
 	const auto sends_before_second_hello = fixture->backend.sent.size();
 	fixture->backend.receives.push_back(
 		{detail::IoStatus::Complete, hello(protocol::VersionMinorV1_1, 992U, second_endpoint)});
-	native_tick(*fixture, {heartbeat_tick + 1U, 0U, false});
+	native_tick(*fixture, {heartbeat_tick + 1U, 1U, true});
 	expect_preserved();
 	ASSERT_GT(fixture->backend.sent.size(), sends_before_second_hello);
 	const auto second_welcome = fixture->backend.sent.size() - 1U;
@@ -4825,7 +4860,7 @@ TEST(TelemetryNativePlayerCaptureContract, R2OnlyTestSeamPreservesPlayerStateWhi
 	fixture->backend.receives.push_back(
 		{detail::IoStatus::Complete, ack_for(fixture->backend.sent[second_welcome], second_endpoint, 993U)});
 	const auto second_welcome_ack_script_index = fixture->backend.receives.size() - 1U;
-	native_tick(*fixture, {heartbeat_tick + 2U, 0U, false});
+	native_tick(*fixture, {heartbeat_tick + 2U, 1U, true});
 	expect_preserved();
 	EXPECT_GT(fixture->backend.receive_script_index, second_welcome_ack_script_index)
 		<< "The R2-only test seam must ingest the real WELCOME ACK before later egress.";
@@ -4835,7 +4870,7 @@ TEST(TelemetryNativePlayerCaptureContract, R2OnlyTestSeamPreservesPlayerStateWhi
 	for (std::uint64_t offset = 0U;
 		offset < 8U && fixture->backend.sent.size() == sends_before_second_welcome_ack;
 		++offset) {
-		native_tick(*fixture, {heartbeat_tick + 3U + offset, 0U, false});
+		native_tick(*fixture, {heartbeat_tick + 3U + offset, 1U, true});
 		expect_preserved();
 	}
 	ASSERT_GT(fixture->backend.sent.size(), sends_before_second_welcome_ack);
@@ -4844,14 +4879,14 @@ TEST(TelemetryNativePlayerCaptureContract, R2OnlyTestSeamPreservesPlayerStateWhi
 	ASSERT_NE(nullptr, slot(*fixture, 1U));
 	EXPECT_EQ(detail::ProducerSessionProgress::ReadyForState, slot(*fixture, 1U)->progress);
 
-	native_tick(*fixture, {100'000U + period * 2U, 0U, true});
+	native_tick(*fixture, {100'000U + period * 2U, 1U, true});
 	expect_preserved();
-	native_tick(*fixture, {100'000U + period * 4U, 0U, true});
+	native_tick(*fixture, {100'000U + period * 4U, 1U, true});
 	expect_preserved();
 
 	const auto disconnect_due = slot(*fixture)->heartbeat.last_valid_network_activity_us +
 		slot(*fixture)->heartbeat.disconnect_timeout_us;
-	native_tick(*fixture, {disconnect_due, 0U, true});
+	native_tick(*fixture, {disconnect_due, 1U, true});
 	ASSERT_NE(nullptr, slot(*fixture));
 	EXPECT_EQ(detail::ProducerSessionProgress::Empty, slot(*fixture)->progress)
 		<< "Only the real R2 maintenance deadline may clear the preserved player slot.";

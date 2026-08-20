@@ -70,6 +70,7 @@ enum class SessionIngressStage : std::uint8_t {
 enum class ProducerSessionProgress : std::uint8_t {
 	Empty = 0,
 	AwaitWelcomeApplied,
+	Prewarmed,
 	ReadyForState,
 	Stale,
 	FaultedSession
@@ -145,6 +146,7 @@ struct SessionControllerSlot {
 	PlayerKinematicsSample latest_player_sample;
 	PlayerSampleMaterializeStatus latest_player_sample_status = PlayerSampleMaterializeStatus::InvalidCapture;
 	bool has_latest_player_sample = false;
+	bool mission_session_begun = false;
 	Phase1SnapshotSlot snapshot;
 	Phase1SnapshotEgress snapshot_egress;
 	Phase1DeltaEgress delta_egress;
@@ -265,6 +267,9 @@ class SessionController final {
 	void service_timeouts(std::uint64_t now_us) noexcept;
 	void service_periodic(std::uint64_t now_us) noexcept;
 	void service_session_maintenance(std::uint64_t now_us) noexcept;
+	std::size_t activate_prewarmed_sessions(std::uint32_t mission_generation,
+		std::uint64_t now_us) noexcept;
+	void request_all_keyframes() noexcept;
 	// Benchmark/test instrumentation for the production-owned P8 hot path.
 	// Normal runtime code never enables this observer.
 	void begin_phase1_allocation_observation() noexcept { m_phase1_allocation_observer.begin(); }
@@ -364,6 +369,8 @@ class SessionController final {
 	bool session_state_dirty(std::size_t slot_index) const noexcept;
 	bool consume_session_state_dirty(std::size_t slot_index) noexcept;
 	void clear_player_observations() noexcept;
+	void purge_mission_sessions(SessionCloseReason reason,
+		std::uint64_t now_us) noexcept;
 	void purge_all(SessionCloseReason reason) noexcept;
 	bool has_output() const noexcept { return m_has_output; }
 	std::size_t active_slots() const noexcept;
@@ -401,6 +408,7 @@ class SessionController final {
 	std::size_t free_cache() const noexcept;
 	std::size_t free_slot() const noexcept;
 	std::size_t find_awaiting_slot() const noexcept;
+	std::size_t find_slot(const protocol::EndpointKey& endpoint) const noexcept;
 	std::size_t find_slot(const protocol::EndpointKey& endpoint, std::uint64_t session_id) const noexcept;
 	bool ack_is_admissible_behind_output(const protocol::EndpointKey& endpoint,
 		const protocol::TelemetryDatagramHeader& header) const noexcept;
@@ -438,6 +446,10 @@ class SessionController final {
 		bool owns_probe,
 		const protocol::ProbeToken& probe) noexcept;
 	void note_network_activity(std::size_t slot_index, std::uint64_t now_us) noexcept;
+	bool queue_session_begin(std::size_t slot_index,
+		std::uint32_t mission_generation, std::uint64_t now_us) noexcept;
+	bool begin_mission_session_end(std::size_t slot_index,
+		std::uint64_t now_us) noexcept;
 	SessionIngressResult ingest_hello(const protocol::EndpointKey& endpoint,
 		const protocol::DatagramView& decoded,
 		std::size_t received_size,

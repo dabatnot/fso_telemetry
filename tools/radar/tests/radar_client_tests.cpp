@@ -141,7 +141,7 @@ private slots:
         QCOMPARE(decoded.requested_visibility_mode, VisibilityMode::Cockpit);
     }
 
-    void sessionEndReopensEndpointAndKeepsHelloRetriesAlive()
+    void sessionEndRehandshakesOnSameEndpointAndKeepsHelloRetriesAlive()
     {
         QUdpSocket producer;
         QVERIFY(producer.bind(QHostAddress(QHostAddress::LocalHost), 0));
@@ -188,8 +188,8 @@ private slots:
         QVERIFY2(receiveMessage(producer, MessageType::Ack, 2000, welcomeAck),
                  "WELCOME was not accepted by the client");
 
-        // SESSION_END exercises the same endpoint replacement used by the
-        // ten-second silence timeout, without making the test wait ten seconds.
+        // SESSION_END exercises the same endpoint-preserving replacement used
+        // by the silence timeout, without making the test wait for it.
         std::array<std::uint8_t, SessionEndPayloadSize> endBytes{};
         SessionEndPayload end;
         end.reason = SessionEndReason::Restart;
@@ -208,14 +208,55 @@ private slots:
 
         CapturedDatagram reopenedHello;
         QVERIFY2(receiveMessage(producer, MessageType::Hello, 3000, reopenedHello),
-                 "No HELLO from the reopened endpoint");
+                 "No HELLO from the preserved endpoint");
         QVERIFY((reopenedHello.header.flags & MessageFlagRetransmission) == 0);
+        QCOMPARE(reopenedHello.sender, firstHello.sender);
+        QCOMPARE(reopenedHello.senderPort, firstHello.senderPort);
+        HelloPayload replacementHello;
+        QCOMPARE(decode_hello_payload(
+                     {reinterpret_cast<const std::uint8_t*>(reopenedHello.payload.constData()),
+                      static_cast<std::size_t>(reopenedHello.payload.size())}, replacementHello),
+                 ValidationError::None);
+        QVERIFY(replacementHello.client_nonce != hello.client_nonce);
+
+        // The preserved UDP endpoint can still deliver the previous session's
+        // WELCOME after the new HELLO has been sent. It must be ignored rather
+        // than turning recovery into a permanent SENSOR LINK FAILURE loop.
+        welcomeHeader.packet_sequence = 3;
+        welcomeHeader.message_id = 3;
+        QVERIFY(sendMessage(producer, reopenedHello, welcomeHeader,
+                            {welcomeBytes.data(), welcomeWritten}));
 
         CapturedDatagram retryHello;
         QVERIFY2(receiveMessage(producer, MessageType::Hello, 2500, retryHello),
                  "HELLO retry timer stopped after endpoint replacement");
         QCOMPARE(retryHello.header.message_id, reopenedHello.header.message_id);
         QVERIFY((retryHello.header.flags & MessageFlagRetransmission) != 0);
+
+        // Crossing the five-second reliable window must roll only the timer,
+        // not create another nonce while the producer remains unavailable.
+        QTest::qWait(5'200);
+        int laterHelloCount = 0;
+        while (producer.hasPendingDatagrams()) {
+            const QNetworkDatagram network = producer.receiveDatagram();
+            const QByteArray wire = network.data();
+            DatagramView decoded;
+            const ByteView bytes{
+                reinterpret_cast<const std::uint8_t*>(wire.constData()),
+                static_cast<std::size_t>(wire.size())};
+            if (decode_and_validate_datagram(
+                    bytes, {VersionMinorV1_0, VersionMinorV1_1}, decoded) != ValidationError::None ||
+                decoded.header.message_type != MessageType::Hello) {
+                continue;
+            }
+            HelloPayload laterHello;
+            QCOMPARE(decode_hello_payload(decoded.payload, laterHello), ValidationError::None);
+            QCOMPARE(laterHello.client_nonce, replacementHello.client_nonce);
+            QCOMPARE(laterHello.client_send_t0_us, replacementHello.client_send_t0_us);
+            QCOMPARE(decoded.header.message_id, reopenedHello.header.message_id);
+            ++laterHelloCount;
+        }
+        QVERIFY(laterHelloCount >= 4);
 
         client.stop();
         QTest::qWait(50);

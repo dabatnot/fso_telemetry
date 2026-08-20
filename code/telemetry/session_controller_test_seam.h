@@ -12,6 +12,21 @@ namespace telemetry::detail {
 
 class SessionControllerTestAccess final {
   public:
+	static bool mark_stale(SessionController& controller,
+		std::size_t slot_index) noexcept
+	{
+		if (!controller.m_ready ||
+			slot_index >= controller.m_config.max_clients ||
+			!controller.m_slots ||
+			controller.m_slots[slot_index].progress !=
+				ProducerSessionProgress::ReadyForState) {
+			return false;
+		}
+		controller.m_slots[slot_index].progress =
+			ProducerSessionProgress::Stale;
+		return true;
+	}
+
 	static bool defer_due_keyframe(SessionController& controller,
 		std::size_t slot_index,
 		std::uint64_t now_us,

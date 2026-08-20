@@ -129,12 +129,19 @@ class ConfigurationStatus(PublicModel):
 
 
 class TelemetryStatus(PublicModel):
-    state: Literal["LIVE", "STALE", "DISCONNECTED"] = "DISCONNECTED"
+    state: Literal["READY", "LIVE", "STALE", "DISCONNECTED"] = "DISCONNECTED"
     host: str
     port: int
     session_id: str | None = None
     last_live_age_ms: int | None = Field(default=None, ge=0)
     error: str | None = None
+
+
+class MissionStatus(PublicModel):
+    active: bool = False
+    paused: bool = False
+    generation: int | None = Field(default=None, ge=0)
+    time_compression: float | None = Field(default=None, ge=0)
 
 
 class WarningStatus(PublicModel):
@@ -217,6 +224,7 @@ class AvCoreStatus(PublicModel):
     configuration: ConfigurationStatus
     restart_required: bool
     telemetry: TelemetryStatus
+    mission: MissionStatus = Field(default_factory=MissionStatus)
     cockpit: CockpitStatus = Field(default_factory=CockpitStatus)
     can: CanStatus = Field(default_factory=CanStatus)
     modules: list[ModuleStatus]

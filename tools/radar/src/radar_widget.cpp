@@ -189,6 +189,10 @@ SystemOverlayPresentation RadarWidget::systemOverlay(ClientStatus status)
         return {tr("ESTABLISHING SENSOR LINK"), tr("STANDBY"), LinkColor, true};
     case ClientStatus::Synchronizing:
         return {tr("BUILDING TACTICAL PICTURE"), tr("STANDBY"), LinkColor, true};
+	case ClientStatus::Ready:
+		return {tr("SENSOR LINK READY"), tr("WAITING FOR MISSION"), LinkColor, true};
+	case ClientStatus::Paused:
+		return {tr("MISSION PAUSED"), tr("SENSOR LINK MAINTAINED"), LinkColor, true};
     case ClientStatus::Stale:
         return {tr("SENSOR FEED LOST"), tr("HOLDING LAST CONTACT PICTURE"), StaleColor, true};
     case ClientStatus::Reconnecting:

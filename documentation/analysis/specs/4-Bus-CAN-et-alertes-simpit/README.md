@@ -145,7 +145,12 @@ qui ne publie plus de heartbeat pendant trois secondes la fait clignoter. Si la
 télémétrie FS2Open devient périmée pendant une seconde, `FLT DATA` clignote et
 les indications tactiques périmées sont effacées. Une resynchronisation est
 demandée immédiatement ; sans reprise pendant la seconde suivante, `AV CORE`
-ouvre une nouvelle session FSTL. `WARN CTRL` détecte localement
+ouvre une nouvelle session FSTL sur le même endpoint UDP avec un nouveau nonce.
+Si le producteur reste indisponible, ce `HELLO` logique est retransmis avec le
+même nonce au lieu de créer des générations de sessions successives.
+Pour le poste de développement réunissant AV CORE, dashboard et radar, la
+configuration FS2Open recommandée est `maxClients: 4`; le défaut moteur reste à
+un client. `WARN CTRL` détecte localement
 un état CAN `bus-off` et allume `AV BUS` même si le Raspberry n'est plus
 joignable.
 

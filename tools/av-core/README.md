@@ -74,19 +74,34 @@ d'interface.
 
 ## États FSTL
 
+- `PRÊT` : le transport FSTL est préchauffé au menu ou au briefing, sans donnée cockpit ;
 - `LIVE` : un état cockpit valide progresse et les alertes sont calculées ;
+- `PAUSE` : la connexion reste `LIVE`, les heartbeats maintiennent la session et les alertes restent figées ;
 - `STALE` : les données ne progressent plus depuis le délai configuré, toutes
   les alertes cockpit sont immédiatement effacées et une resynchronisation est
   demandée ;
 - `DÉCONNECTÉ` : aucune session durable n'est disponible ou le producteur a
   terminé sa session.
 
-Après une seconde supplémentaire sans reprise, le socket est recréé et une
-nouvelle négociation commence automatiquement. Avec le délai de fraîcheur par
-défaut, une pause de moins d'une seconde ne coupe pas la session, une reprise
-entre une et deux secondes utilise la resynchronisation en cours et un silence
-plus long déclenche une nouvelle session. Une modification de l'hôte, du port
+Après une seconde supplémentaire sans aucun trafic valide, l'état de session est recréé sur
+le même endpoint UDP avec un nouveau nonce et une nouvelle négociation commence
+automatiquement. Tant que le jeu ne répond pas, AV CORE retransmet ce même
+`HELLO`, sans générer de nouveaux nonces à chaque expiration de la fenêtre
+fiable. Le socket n'est recréé qu'après une erreur réseau locale ou un
+changement d'adresse. Avec le délai de fraîcheur par
+défaut, une pause de mission ne coupe plus la session : la progression cockpit
+est suspendue mais le transport reste surveillé. Seule une absence totale de
+trafic pendant deux secondes déclenche une nouvelle session. Une modification de l'hôte, du port
 ou du délai FSTL applique le même redémarrage ciblé du client.
+Une fois le nouveau `WELCOME` accepté, `SESSION_BEGIN`, le manifeste et le
+snapshot initial conservent leur fenêtre fiable complète de cinq secondes ; la
+politique `1 s + 1 s` ne crée pas un autre nonce pendant cette reconstruction.
+Hors mission, `WELCOME` place AV CORE en `PRÊT`. L'entrée en mission réutilise
+ce transport préchauffé ; la reprise après pause reçoit un keyframe immédiat.
+
+Pour utiliser simultanément AV CORE, le dashboard et le radar, configurer le
+producteur FS2Open avec `maxClients: 4`. Le défaut moteur reste volontairement à
+un client afin de ne pas préallouer quatre slots sur toutes les installations.
 
 ## Vérification manuelle du lot 2
 

@@ -102,6 +102,8 @@ Une retransmission conserve `message_id`, `message_size` et `message_crc32` mais
 
 Le producteur conserve le résultat d'un handshake accepté ou rejeté pendant 10 secondes. Un `Hello` identique reçu dans cette fenêtre renvoie le même résultat et, s'il avait été accepté, le même `session_id` ; il ne crée pas une deuxième session.
 
+Un `Hello` valide portant un nouveau `client_nonce` depuis un endpoint qui possède déjà une session ne remplace atomiquement cette session que si son `client_send_t0_us` est strictement supérieur à celui qui a créé la session active. Le producteur libère alors l'ancien slot et ses ressources puis attribue un nouveau `session_id` dans le même slot, y compris lorsque `maxClients` est atteint. Un `Hello` retardé avec un nonce différent et un `client_send_t0_us` antérieur ou égal est abandonné sans mutation ; il ne peut pas ramener l'endpoint vers une ancienne négociation après un réordonnancement UDP. Les datagrammes tardifs de l'ancien `session_id` sont rejetés. Un `Hello` invalide, incompatible, limité ou impossible à servir ne modifie jamais la session existante.
+
 Les compteurs pré-session ont des portées explicites :
 
 - `Discovery` : `packet_sequence` et `message_id` appartiennent au canal sortant `(producer_id, activation du processus)` ; chaque annonce est un nouveau message logique ;
@@ -119,15 +121,23 @@ Chaque canal pré-session initialise `packet_sequence` aléatoirement et `messag
 stateDiagram-v2
     [*] --> Disconnected
     Disconnected --> Negotiating: Hello
-    Negotiating --> Synchronizing: Welcome Accepted
+    Negotiating --> Ready: Welcome Accepted hors mission
     Negotiating --> Disconnected: Welcome rejeté ou timeout
+    Ready --> Synchronizing: SessionBegin à l'entrée en mission
     Synchronizing --> Live: SessionBegin + manifestes + snapshot commit
     Synchronizing --> Stale: timeout ou erreur
-    Live --> Stale: heartbeats manqués ou baseline inconnue
+    Live --> Live: pause, heartbeats maintenus
+    Live --> Stale: trafic de transport absent ou baseline inconnue
     Stale --> Synchronizing: ResyncRequest accepté
-    Live --> Disconnected: SessionEnd ou timeout long
+    Live --> Negotiating: SessionEnd puis nouveau Hello
+    Ready --> Disconnected: timeout de transport
     Stale --> Disconnected: timeout long
 ~~~
+
+`Ready` signifie que le transport est préchauffé : `Hello`, `Welcome` et son
+ACK sont terminés, mais aucune mission cockpit n'est active. Le client ne
+demande aucune resynchronisation tant que les heartbeats arrivent et ne publie
+aucune donnée cockpit dans cet état.
 
 Le client ne publie jamais un état « complet » avant :
 
@@ -143,7 +153,7 @@ Les sous-états communication et vidéo sont indépendants. Leur indisponibilit�
 ### 4.2 États producteur
 
 ~~~text
-Listening -> Negotiating -> Synchronizing -> Live -> Closing
+Listening -> Negotiating -> Prewarmed -> Synchronizing -> Live -> Closing
                          \-> Rejected
 Live -> Synchronizing lors d'un resync
 Live/Synchronizing -> Closing lors d'une expiration terminale
@@ -198,9 +208,15 @@ Le client capture localement `t3` dès réception du datagramme valide, avant d�
 
 Un `Welcome` rejeté n'est pas acquitté et ne crée aucun état de session durable.
 
-### 4.6 Synchronisation initiale
+### 4.6 Préchauffage et synchronisation initiale
 
-Après l'ACK de `Welcome`, le producteur envoie dans cet ordre logique :
+Après l'ACK de `Welcome`, hors mission active, le producteur conserve le slot,
+l'endpoint et le `session_id` dans l'état interne `Prewarmed`. Il utilise le
+heartbeat de mission de 500 ms, mais n'envoie ni `SessionBegin`, ni manifeste,
+ni snapshot.
+
+À l'entrée en mission, le producteur active le slot préchauffé sans changer son
+endpoint ni son `session_id`, puis envoie dans cet ordre logique :
 
 1. `SessionBegin` ;
 2. la transaction `Manifest` référencée par `required_manifest_id`, si non nulle ;
@@ -226,7 +242,15 @@ Chaque transaction `Manifest` v1.0 est exhaustive et autonome. Il n'existe ni ma
 2. envoie `Ack APPLIED` ;
 3. arrête les sous-flux spécialisés ;
 4. libère transactions, réassemblages et fenêtres lourdes ;
-5. passe `Disconnected`.
+5. conserve son socket UDP et envoie immédiatement un nouveau `Hello` afin de
+   préchauffer la mission suivante.
+
+Une pause ne produit jamais `SessionEnd`. Les heartbeats maintiennent la
+session, le watchdog de progression cockpit est suspendu et la dernière image
+reste affichable avec un indicateur de pause. L'entrée en pause force une image
+cohérente ; la reprise force un keyframe complet immédiat, sans rafale de
+rattrapage. Chaque mission conserve une génération et un
+`mission_instance_id` distincts.
 
 Le client conserve toutefois un tombstone minimal `(session_id, endpoint, message_id, message_crc32, résultat APPLIED)` pendant 7 secondes. Si l'ACK est perdu, un doublon du même `SessionEnd` reçoit de nouveau `Ack APPLIED` sans republier l'état terminal. Un timeout long produit le même nettoyage local, avec raison locale `Timeout`.
 

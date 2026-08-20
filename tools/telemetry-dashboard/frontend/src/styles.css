@@ -73,6 +73,8 @@ body::before {
 .connection-block small { text-align: right; }
 .connection-light { width: 13px; height: 13px; border: 2px solid currentColor; border-radius: 50%; color: var(--muted); box-shadow: 0 0 9px currentColor; }
 .connection-light.status-live { color: var(--cyan); background: var(--cyan); }
+.connection-light.status-ready { color: var(--cyan); }
+.connection-light.status-paused { color: var(--amber); background: var(--amber); }
 .connection-light.status-replay { color: var(--amber); background: var(--amber); }
 .connection-light.status-stale { color: var(--amber); background: var(--amber); }
 .connection-light.status-disconnected { color: var(--red); }

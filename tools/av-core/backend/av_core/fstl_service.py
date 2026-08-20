@@ -75,6 +75,10 @@ class FstlFrame:
     player_entity_id: str | int | None = None
     records: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
     derived: dict[str, Any] = field(default_factory=dict)
+    mission_active: bool = False
+    mission_paused: bool = False
+    mission_generation: int | None = None
+    time_compression: float | None = None
 
 
 class FstlService:
@@ -152,10 +156,16 @@ class FstlService:
 
     def _frame_from_client(self, client: Any, now_us: int, *, error: str | None = None) -> FstlFrame:
         state = client.state
-        public_state = "LIVE" if state.status == "Live" else "STALE" if state.status == "Stale" else "DISCONNECTED"
+        public_state = (
+            "LIVE" if state.status == "Live" else
+            "READY" if state.status == "Ready" else
+            "STALE" if state.status == "Stale" else
+            "DISCONNECTED"
+        )
         records: dict[str, list[dict[str, Any]]] = {}
         derived: dict[str, Any] = {}
         player: str | int | None = None
+        mission = state.records.get("MISSION_STATE", {})
         if public_state == "LIVE":
             for record in state.record_instances.values():
                 records.setdefault(record["recordName"], []).append(copy.deepcopy(record["fields"]))
@@ -173,68 +183,107 @@ class FstlService:
             player_entity_id=player,
             records=records,
             derived=derived,
+            mission_active=public_state == "LIVE",
+            mission_paused=public_state == "LIVE" and bool(mission.get("paused", 0)),
+            mission_generation=int(mission["mission_generation"]) if mission.get("mission_generation") is not None else None,
+            time_compression=float(mission["time_compression"]) if mission.get("time_compression") is not None else None,
         )
 
     def _run(self) -> None:
-        previous_endpoint: tuple[Any, ...] | None = None
         while not self._stop.is_set():
             self._reconfigure.clear()
             config = self._current_config()
             self._publish(state="DISCONNECTED")
             local_error = False
             try:
-                sock, previous_endpoint = self._open_socket(config, previous_endpoint)
+                sock, _ = self._open_socket(config, None)
                 with sock:
-                    client = fstl.ConsoleClient(sock, config.stale_after_ms * 1000)
-                    client.begin()
-                    last_progress_us = fstl.now_us()
-                    recovery_started: float | None = None
-                    recovery_resync_sent = False
+                    session_generation = 0
                     while not self._stop.is_set() and not self._reconfigure.is_set():
-                        now_us = fstl.now_us()
-                        client.poll_reliable(now_us)
-                        if client.state.status == "Disconnected" and not client.state.welcomed:
-                            break
-                        try:
-                            datagram = sock.recv(fstl.MAX_DATAGRAM)
-                            received_us, received_utc = fstl.local_observation()
-                            if client.receive(datagram, received_us, received_utc):
-                                last_progress_us = received_us
-                                if client.state.status == "Live":
-                                    self._last_live_monotonic = time.monotonic()
-                                    recovery_started = None
-                                    recovery_resync_sent = False
-                                self._publish_callback(self._frame_from_client(client, received_us))
-                            if client.terminal_published:
-                                self._publish(state="DISCONNECTED")
+                        client = fstl.ConsoleClient(
+                            sock,
+                            config.stale_after_ms * 1000,
+                            ignore_previous_session_datagrams=session_generation != 0,
+                        )
+                        session_generation += 1
+                        client.begin()
+                        last_progress_us = fstl.now_us()
+                        recovery_started: float | None = None
+                        recovery_resync_sent = False
+                        while not self._stop.is_set() and not self._reconfigure.is_set():
+                            now_us = fstl.now_us()
+                            client.poll_reliable(now_us)
+                            if client.state.status == "Disconnected" and not client.state.welcomed:
+                                if not client.renew_hello_window(now_us):
+                                    break
+                            try:
+                                datagram = sock.recv(fstl.MAX_DATAGRAM)
+                                received_us, received_utc = fstl.local_observation()
+                                if client.receive(datagram, received_us, received_utc):
+                                    last_progress_us = received_us
+                                    if client.state.status == "Live":
+                                        self._last_live_monotonic = time.monotonic()
+                                        recovery_started = None
+                                        recovery_resync_sent = False
+                                    self._publish_callback(self._frame_from_client(client, received_us))
+                                if client.terminal_published:
+                                    self._publish(state="DISCONNECTED")
+                                    break
+                            except socket.timeout:
+                                pass
+                            except (ValueError, decoder.DecodeFailure) as exc:
+                                self._publish(state="DISCONNECTED", error=str(exc))
                                 break
-                        except socket.timeout:
-                            pass
-                        now_us, now_utc = fstl.local_observation()
-                        previous = client.state.status
-                        client.state.stale_if_needed(now_us, now_utc, config.stale_after_ms * 1000)
-                        if previous != client.state.status:
-                            self._publish_callback(self._frame_from_client(client, now_us))
-                        if client.state.status == "Stale":
-                            if recovery_started is None:
-                                recovery_started = time.monotonic()
-                            if not recovery_resync_sent and client.pending_resync is None:
-                                client._resync(now_us)
-                                recovery_resync_sent = True
-                            if time.monotonic() - recovery_started >= RECOVERY_GRACE_SECONDS:
+                            now_us, now_utc = fstl.local_observation()
+                            previous = client.state.status
+                            client.state.stale_if_needed(now_us, now_utc, config.stale_after_ms * 1000)
+                            if previous != client.state.status:
+                                self._publish_callback(self._frame_from_client(client, now_us))
+                            if client.state.status == "Ready" and not client.state.session_begun:
+                                last_network = client.state.last_network_activity_us or last_progress_us
+                                silent_us = now_us - last_network
+                                if silent_us >= config.stale_after_ms * 1000:
+                                    self._publish(
+                                        state="STALE",
+                                        session_id=str(client.state.session_id),
+                                    )
+                                if silent_us >= config.stale_after_ms * 1000 + int(RECOVERY_GRACE_SECONDS * 1_000_000):
+                                    break
+                                recovery_started = None
+                                recovery_resync_sent = False
+                            elif client.state.status == "Stale":
+                                if recovery_started is None:
+                                    recovery_started = time.monotonic()
+                                if not recovery_resync_sent and client.pending_resync is None:
+                                    client._resync(now_us)
+                                    recovery_resync_sent = True
+                                if time.monotonic() - recovery_started >= RECOVERY_GRACE_SECONDS:
+                                    break
+                            elif (
+                                client.state.session_begun
+                                and client.state.welcomed
+                                and not client.state.keyframe_applied
+                                and now_us - last_progress_us >= fstl.RELIABLE_WINDOW_US
+                            ):
+                                # A replacement session has already been
+                                # accepted. Do not apply the Live 1 s + 1 s
+                                # policy a second time while its reliable
+                                # SESSION_BEGIN/manifest/snapshot pipeline is
+                                # progressing; otherwise each response can be
+                                # invalidated by a newer nonce. The bounded
+                                # reliable window remains the terminal limit.
                                 break
-                        elif client.state.status == "Synchronizing" and now_us - last_progress_us >= config.stale_after_ms * 1000:
-                            if recovery_started is None:
-                                recovery_started = time.monotonic()
-                            if not recovery_resync_sent and client.pending_resync is None:
-                                client._resync(now_us)
-                                recovery_resync_sent = True
-                            if time.monotonic() - recovery_started >= RECOVERY_GRACE_SECONDS:
-                                break
-                        else:
-                            recovery_started = None
-                            recovery_resync_sent = False
-            except (OSError, ValueError, decoder.DecodeFailure) as exc:
+                            else:
+                                recovery_started = None
+                                recovery_resync_sent = False
+                        if not self._stop.is_set() and not self._reconfigure.is_set():
+                            # A protocol recovery keeps the connected UDP socket
+                            # and therefore the source endpoint. A fresh client
+                            # state supplies a new nonce for atomic replacement.
+                            self._publish(state="DISCONNECTED")
+                            continue
+                        break
+            except OSError as exc:
                 local_error = True
                 self._publish(state="DISCONNECTED", error=str(exc))
             if self._stop.is_set():

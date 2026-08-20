@@ -51,7 +51,7 @@ export interface ModuleStatus {
   lastHeartbeatMs: number | null;
 }
 
-export type TelemetryState = "LIVE" | "STALE" | "DISCONNECTED";
+export type TelemetryState = "READY" | "LIVE" | "STALE" | "DISCONNECTED";
 export type CautionState = "ACTIVE" | "CLEAR" | "UNAVAILABLE";
 
 export interface PercentCautionStatus {
@@ -103,6 +103,12 @@ export interface AvCoreStatus {
     sessionId: string | null;
     lastLiveAgeMs: number | null;
     error: string | null;
+  };
+  mission?: {
+    active: boolean;
+    paused: boolean;
+    generation: number | null;
+    timeCompression: number | null;
   };
   cockpit: AvCoreCockpitStatus;
   can: { state: "UNAVAILABLE"; interface: "can0"; bitrate: 1000000 };

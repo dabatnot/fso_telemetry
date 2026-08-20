@@ -46,6 +46,21 @@ class DashboardRuntimeTest(unittest.TestCase):
         self.assertEqual(1, snapshot["gapCount"])
         self.assertAlmostEqual(19.9996, snapshot["observedHz"], places=3)
 
+    def test_transport_gap_counter_resets_when_session_changes(self) -> None:
+        quality = QualityTracker(30, 10, 500)
+        payload = contract.heartbeat_request_payload(1, 1_000_000)
+        for session_id, sequence in (
+            (11, 10),
+            (11, 11),
+            (22, 0x50000000),
+            (22, 0x50000002),
+        ):
+            quality.observe_packet(contract.packet(
+                9, payload, session_id=session_id, sequence=sequence,
+                sent_us=1_000_000 + sequence,
+            ))
+        self.assertEqual(1, quality.packet_gap_count)
+
     def test_rejected_live_datagram_is_not_persisted_in_capture(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             runtime = TelemetryRuntime(
@@ -805,7 +820,7 @@ class DashboardRuntimeTest(unittest.TestCase):
             finally:
                 runtime.stop()
 
-    def test_stuck_stale_session_rotates_endpoint_without_erasing_last_state(self) -> None:
+    def test_stuck_stale_session_rehandshakes_on_same_endpoint_without_erasing_last_state(self) -> None:
         with tempfile.TemporaryDirectory() as directory, socket.socket(
             socket.AF_INET, socket.SOCK_DGRAM
         ) as server:
@@ -824,6 +839,7 @@ class DashboardRuntimeTest(unittest.TestCase):
             runtime.start()
             try:
                 hello, first_address = server.recvfrom(1200)
+                first_nonce = int.from_bytes(hello[68:76], "little")
                 first_session = 0x1122334455667788
                 server.sendto(
                     contract.packet(
@@ -876,11 +892,15 @@ class DashboardRuntimeTest(unittest.TestCase):
                     packet_bytes, address = server.recvfrom(1200)
                     if (
                         contract.reference.read_header(packet_bytes)["message_type"] == 2
-                        and address != first_address
+                        and address == first_address
                     ):
                         second_hello, second_address = packet_bytes, address
                         break
                 self.assertIsNotNone(second_hello)
+                self.assertEqual(first_address, second_address)
+                self.assertNotEqual(
+                    first_nonce, int.from_bytes(second_hello[68:76], "little")
+                )
                 self.assertEqual("reconnecting", runtime.latest()["connection"]["recoveryState"])
                 self.assertEqual("Disconnected", runtime.latest()["connection"]["status"])
                 self.assertEqual("0", runtime.latest()["connection"]["sessionId"])
@@ -929,6 +949,95 @@ class DashboardRuntimeTest(unittest.TestCase):
                 )
                 self.assertIsNotNone(recovered)
                 self.assertEqual("idle", recovered["connection"]["recoveryState"])
+            finally:
+                runtime.stop()
+
+    def test_replacement_session_is_not_rotated_before_its_snapshot_window(self) -> None:
+        with tempfile.TemporaryDirectory() as directory, socket.socket(
+            socket.AF_INET, socket.SOCK_DGRAM
+        ) as server, mock.patch.object(fstl, "RELIABLE_WINDOW_US", 600_000):
+            server.bind(("127.0.0.1", 0))
+            server.settimeout(2.0)
+            runtime = TelemetryRuntime(
+                host="127.0.0.1",
+                port=server.getsockname()[1],
+                flight_hz=30,
+                systems_hz=10,
+                mission_heartbeat_ms=500,
+                capture_dir=Path(directory),
+                stale_us=50_000,
+                recovery_grace_us=150_000,
+            )
+            runtime.start()
+            try:
+                first_hello, address = server.recvfrom(1200)
+                first_session = 0x1122334455667788
+                for message_type, payload, sequence in (
+                    (3, contract.welcome_for(first_hello), 1),
+                    (4, contract.session_begin_payload(), 2),
+                    (6, contract.v11_payload("minimal-with-player", ".bin"), 3),
+                ):
+                    server.sendto(
+                        contract.packet(message_type, payload, session_id=first_session,
+                                        sequence=sequence, sent_us=1_000_000 + sequence, flags=2),
+                        address,
+                    )
+                self.assertTrue(self.wait_for(
+                    lambda: runtime.latest()["connection"]["status"] == "Live"
+                ))
+                self.assertTrue(self.wait_for(
+                    lambda: runtime.latest()["connection"]["status"] == "Stale"
+                ))
+
+                replacement_hello = None
+                deadline = time.monotonic() + 2.0
+                while time.monotonic() < deadline:
+                    packet, packet_address = server.recvfrom(1200)
+                    if contract.reference.read_header(packet)["message_type"] == 2:
+                        replacement_hello = packet
+                        self.assertEqual(address, packet_address)
+                        break
+                self.assertIsNotNone(replacement_hello)
+                replacement_session = 0x8877665544332211
+                for message_type, payload, sequence in (
+                    (3, contract.welcome_for(replacement_hello), 20),
+                    (4, contract.session_begin_payload(), 21),
+                ):
+                    server.sendto(
+                        contract.packet(message_type, payload, session_id=replacement_session,
+                                        sequence=sequence, sent_us=2_000_000 + sequence, flags=2),
+                        address,
+                    )
+
+                server.settimeout(0.35)
+                third_hello = None
+                try:
+                    while True:
+                        packet, _ = server.recvfrom(1200)
+                        if contract.reference.read_header(packet)["message_type"] == 2:
+                            third_hello = packet
+                            break
+                except socket.timeout:
+                    pass
+                self.assertIsNone(third_hello)
+
+                server.sendto(
+                    contract.packet(
+                        6, contract.v11_payload("minimal-with-player", ".bin"),
+                        session_id=replacement_session, sequence=22,
+                        sent_us=2_000_022, flags=2,
+                    ),
+                    address,
+                )
+                recovered = self.wait_for(
+                    lambda: (
+                        snapshot
+                        if (snapshot := runtime.latest())["connection"]["status"] == "Live"
+                        and snapshot["connection"]["sessionId"] == str(replacement_session)
+                        else None
+                    )
+                )
+                self.assertIsNotNone(recovered)
             finally:
                 runtime.stop()
 
@@ -981,7 +1090,7 @@ class DashboardRuntimeTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "live mode"):
                 replay.request_live_reconnect()
 
-    def test_reconnect_keeps_retrying_until_a_late_producer_appears(self) -> None:
+    def test_reconnect_keeps_one_hello_generation_until_a_late_producer_appears(self) -> None:
         with tempfile.TemporaryDirectory() as directory, socket.socket(
             socket.AF_INET, socket.SOCK_DGRAM
         ) as server, mock.patch.object(fstl, "RELIABLE_WINDOW_US", 120_000):
@@ -997,7 +1106,10 @@ class DashboardRuntimeTest(unittest.TestCase):
             )
             runtime.start()
             try:
-                _, first_address = server.recvfrom(1200)
+                first_hello, first_address = server.recvfrom(1200)
+                first_nonce = int.from_bytes(first_hello[68:76], "little")
+                first_t0 = int.from_bytes(first_hello[76:84], "little")
+                first_header = contract.reference.read_header(first_hello)
                 late_hello = None
                 late_address = None
                 deadline = time.monotonic() + 2.0
@@ -1005,11 +1117,19 @@ class DashboardRuntimeTest(unittest.TestCase):
                     packet_bytes, address = server.recvfrom(1200)
                     if (
                         contract.reference.read_header(packet_bytes)["message_type"] == 2
-                        and address != first_address
+                        and address == first_address
                     ):
                         late_hello, late_address = packet_bytes, address
                         break
                 self.assertIsNotNone(late_hello)
+                self.assertEqual(first_address, late_address)
+                self.assertEqual(
+                    first_nonce, int.from_bytes(late_hello[68:76], "little")
+                )
+                self.assertEqual(first_t0, int.from_bytes(late_hello[76:84], "little"))
+                late_header = contract.reference.read_header(late_hello)
+                self.assertEqual(first_header["message_id"], late_header["message_id"])
+                self.assertNotEqual(0, late_header["flags"] & fstl.RETRANSMISSION)
                 session = 0xAABBCCDDEEFF0011
                 server.sendto(
                     contract.packet(3, contract.welcome_for(late_hello), session_id=session,

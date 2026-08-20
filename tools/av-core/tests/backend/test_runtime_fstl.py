@@ -8,6 +8,7 @@ import subprocess
 import tempfile
 import time
 import unittest
+from dataclasses import replace
 from pathlib import Path
 from unittest import mock
 
@@ -68,6 +69,8 @@ class RuntimeFstlTest(unittest.TestCase):
         return FstlFrame(
             state="LIVE", session_id="42", last_live_monotonic=1.0,
             player_entity_id="1", records=records,
+            mission_active=True, mission_paused=False,
+            mission_generation=7, time_compression=1.0,
             derived={
                 "entities.1.engine_integrity_ratio": {
                     "available": True, "reason": None, "value": engine_ratio,
@@ -99,6 +102,25 @@ class RuntimeFstlTest(unittest.TestCase):
         self.assertEqual("CLEAR", resumed.cockpit.cautions.engine.state)
         self.runtime.stop()
         self.assertTrue(self.service.stopped)
+
+    def test_prewarmed_and_paused_mission_are_exposed_separately(self) -> None:
+        self.service.emit(FstlFrame(state="READY", session_id="41"))
+        ready = self.runtime.status()
+        self.assertEqual("READY", ready.telemetry.state)
+        self.assertFalse(ready.mission.active)
+        self.assertFalse(ready.cockpit.available)
+
+        paused_frame = replace(
+            self.live_frame(), mission_paused=True, time_compression=0.5
+        )
+        self.service.emit(paused_frame)
+        paused = self.runtime.status()
+        self.assertEqual("LIVE", paused.telemetry.state)
+        self.assertTrue(paused.mission.active)
+        self.assertTrue(paused.mission.paused)
+        self.assertEqual(7, paused.mission.generation)
+        self.assertEqual(0.5, paused.mission.time_compression)
+        self.assertTrue(paused.cockpit.available)
 
     def test_threshold_change_recalculates_without_fstl_reconnect(self) -> None:
         self.service.emit(self.live_frame(engine_ratio=0.45))
@@ -192,7 +214,33 @@ class FstlServiceRecoveryTest(unittest.TestCase):
             finally:
                 service.stop()
 
-    def test_stale_session_rotates_endpoint_after_one_grace_period(self) -> None:
+    def test_absent_producer_keeps_one_hello_generation(self) -> None:
+        frames: list[FstlFrame] = []
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as server, mock.patch.object(
+            fstl_service.fstl, "RELIABLE_WINDOW_US", 120_000
+        ):
+            server.bind(("127.0.0.1", 0))
+            server.settimeout(2.0)
+            service = FstlService(
+                TelemetryConfig(host="127.0.0.1", port=server.getsockname()[1], stale_after_ms=20),
+                frames.append,
+            )
+            service.start()
+            try:
+                first, first_address = server.recvfrom(1200)
+                renewed, renewed_address = server.recvfrom(1200)
+                first_header = contract.reference.read_header(first)
+                renewed_header = contract.reference.read_header(renewed)
+                self.assertEqual(first_address, renewed_address)
+                self.assertEqual(first[68:], renewed[68:])
+                self.assertEqual(first_header["message_id"], renewed_header["message_id"])
+                self.assertNotEqual(
+                    0, renewed_header["flags"] & fstl_service.fstl.RETRANSMISSION
+                )
+            finally:
+                service.stop()
+
+    def test_stale_session_rehandshakes_on_same_endpoint_after_one_grace_period(self) -> None:
         frames: list[FstlFrame] = []
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as server, mock.patch.object(
             fstl_service, "RECOVERY_GRACE_SECONDS", 0.15
@@ -206,6 +254,7 @@ class FstlServiceRecoveryTest(unittest.TestCase):
             service.start()
             try:
                 hello, first_address = server.recvfrom(1200)
+                first_nonce = int.from_bytes(hello[68:76], "little")
                 self.negotiate(server, first_address, hello, 0x1122334455667788)
                 self.assertTrue(self.wait_for(lambda: frames and frames[-1].state == "LIVE"))
                 self.assertTrue(self.wait_for(lambda: frames and frames[-1].state == "STALE"))
@@ -219,12 +268,82 @@ class FstlServiceRecoveryTest(unittest.TestCase):
                     message_type = contract.reference.read_header(packet)["message_type"]
                     if message_type == 12 and address == first_address:
                         resync_count += 1
-                    if message_type == 2 and address != first_address:
+                    if message_type == 2 and address == first_address:
                         second_hello, second_address = packet, address
                         break
                 self.assertIsNotNone(second_hello)
-                self.assertNotEqual(first_address, second_address)
+                self.assertEqual(first_address, second_address)
+                self.assertNotEqual(
+                    first_nonce, int.from_bytes(second_hello[68:76], "little")
+                )
                 self.assertEqual(1, resync_count)
+            finally:
+                service.stop()
+
+    def test_replacement_session_keeps_its_reliable_snapshot_window(self) -> None:
+        frames: list[FstlFrame] = []
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as server, \
+                mock.patch.object(fstl_service, "RECOVERY_GRACE_SECONDS", 0.05), \
+                mock.patch.object(fstl_service.fstl, "RELIABLE_WINDOW_US", 500_000):
+            server.bind(("127.0.0.1", 0))
+            server.settimeout(2.0)
+            service = FstlService(
+                TelemetryConfig(host="127.0.0.1", port=server.getsockname()[1], stale_after_ms=20),
+                frames.append,
+            )
+            service.start()
+            try:
+                first_hello, address = server.recvfrom(1200)
+                self.negotiate(server, address, first_hello, 0x1122334455667788)
+                self.assertTrue(self.wait_for(lambda: frames and frames[-1].state == "LIVE"))
+                self.assertTrue(self.wait_for(lambda: frames and frames[-1].state == "STALE"))
+
+                replacement_hello = None
+                deadline = time.monotonic() + 2.0
+                while time.monotonic() < deadline:
+                    packet, packet_address = server.recvfrom(1200)
+                    if contract.reference.read_header(packet)["message_type"] == 2:
+                        replacement_hello = packet
+                        self.assertEqual(address, packet_address)
+                        break
+                self.assertIsNotNone(replacement_hello)
+                replacement_session = 0x8877665544332211
+                for message_type, payload, sequence in (
+                    (3, contract.welcome_for(replacement_hello), 20),
+                    (4, contract.session_begin_payload(), 21),
+                ):
+                    server.sendto(
+                        contract.packet(message_type, payload, session_id=replacement_session,
+                                        sequence=sequence, sent_us=2_000_000 + sequence, flags=2),
+                        address,
+                    )
+
+                # This delay is longer than stale + recovery grace, but still
+                # inside the accepted replacement session's reliable window.
+                server.settimeout(0.3)
+                third_hello = None
+                try:
+                    while True:
+                        packet, _ = server.recvfrom(1200)
+                        if contract.reference.read_header(packet)["message_type"] == 2:
+                            third_hello = packet
+                            break
+                except socket.timeout:
+                    pass
+                self.assertIsNone(third_hello)
+
+                server.sendto(
+                    contract.packet(
+                        6, contract.v11_payload("minimal-with-player", ".bin"),
+                        session_id=replacement_session, sequence=22,
+                        sent_us=2_000_022, flags=2,
+                    ),
+                    address,
+                )
+                self.assertTrue(self.wait_for(
+                    lambda: frames and frames[-1].state == "LIVE"
+                    and frames[-1].session_id == str(replacement_session)
+                ))
             finally:
                 service.stop()
 

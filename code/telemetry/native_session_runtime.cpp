@@ -2062,6 +2062,16 @@ void NativeSessionRuntime::purge_all(SessionCloseReason reason) noexcept
 	clear_player_capture();
 }
 
+void NativeSessionRuntime::end_mission_sessions() noexcept
+{
+	if (m_controller_ready)
+		m_controller.purge_mission_sessions(
+			SessionCloseReason::MissionDiscontinuity,
+			m_tick_context.now_us);
+	m_pause_state_initialized = false;
+	m_last_mission_paused = false;
+}
+
 void NativeSessionRuntime::shutdown() noexcept
 {
 	if (m_state == State::Stopped) {
@@ -2186,6 +2196,21 @@ NativeSessionTickStatus NativeSessionRuntime::service_r2_tick(const NativeSessio
 	m_capture_for_phase3_keyframe = false;
 	m_tick_context = context;
 	m_controller.expire_housekeeping(context.now_us);
+	if (context.mission_active &&
+		m_controller.activate_prewarmed_sessions(
+			context.mission_generation, context.now_us) != 0U)
+		m_capture_after_ready_transition = true;
+	if (context.mission_active &&
+		(!m_pause_state_initialized ||
+		 context.mission_paused != m_last_mission_paused)) {
+		m_controller.request_all_keyframes();
+		m_capture_for_phase3_keyframe = true;
+		m_pause_state_initialized = true;
+		m_last_mission_paused = context.mission_paused;
+	} else if (!context.mission_active) {
+		m_pause_state_initialized = false;
+		m_last_mission_paused = false;
+	}
 	m_controller.service_timeouts(context.now_us);
 	m_controller.service_reliability(context.now_us);
 	m_controller.service_periodic(context.now_us);
@@ -2903,7 +2928,8 @@ NativeSessionTickStatus NativeSessionRuntime::apply_collected_player_capture(con
 				mission_generation;
 			phase2_input.mission.phase =
 				protocol::MissionPhase::Active;
-			phase2_input.mission.time_compression = 1.0F;
+			phase2_input.mission.paused = m_tick_context.mission_paused;
+			phase2_input.mission.time_compression = m_tick_context.time_compression;
 			phase2_input.observation = &phase2;
 			phase2_input.retained_state =
 				slot.snapshot.current_state().empty()
@@ -3424,8 +3450,8 @@ NativeSessionTickStatus NativeSessionRuntime::apply_collected_player_capture(con
 				mission_generation;
 			phase2_input.mission.phase =
 				protocol::MissionPhase::Active;
-			phase2_input.mission.paused = false;
-			phase2_input.mission.time_compression = 1.0F;
+			phase2_input.mission.paused = m_tick_context.mission_paused;
+			phase2_input.mission.time_compression = m_tick_context.time_compression;
 			phase2_input.player_entity_id = player_entity_id;
 			phase2_input.observation = &phase2;
 			phase2_input.installed_manifest = installed_manifest;
@@ -3519,8 +3545,8 @@ NativeSessionTickStatus NativeSessionRuntime::apply_collected_player_capture(con
 		input.mission.producer_sample_time_us = m_tick_context.now_us;
 		input.mission.mission_generation = mission_generation;
 		input.mission.phase = m_tick_context.mission_active ? protocol::MissionPhase::Active : protocol::MissionPhase::None;
-		input.mission.paused = false;
-		input.mission.time_compression = 1.0F;
+		input.mission.paused = m_tick_context.mission_paused;
+		input.mission.time_compression = m_tick_context.time_compression;
 		input.player_capture = result;
 		input.player = slot.latest_player_sample;
 		protocol::StateImage image;

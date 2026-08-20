@@ -2000,6 +2000,7 @@ class ConsoleState:
     keyframe_applied: bool = False
     reliable_dependency_pending: bool = False
     reliable_reassembly_timeout_us: int = 5_000_000
+    last_network_activity_us: int | None = None
 
     def invalidate_clock_filter(self, reason: str) -> None:
         self.clock_samples.clear()
@@ -2099,6 +2100,7 @@ class ConsoleState:
                 raise ValueError("WELCOME without session")
             self.invalidate_clock_filter("session-changed")
             self.session_id, self.welcomed, self.ended = header["session_id"], True, False
+            self.status = "Ready"
             self.reliable_reassembly_timeout_us = (
                 int(fields["reliable_reassembly_timeout_ms"]) * 1000
             )
@@ -2268,6 +2270,9 @@ class ConsoleState:
         return False, [], []
 
     def stale_if_needed(self, at_us: int, at_utc: str, stale_us: int) -> None:
+        mission = self.records.get("MISSION_STATE", {})
+        if self.status == "Live" and bool(mission.get("paused", 0)):
+            return
         if self.status == "Live" and self.last_state_us is not None and at_us - self.last_state_us > stale_us:
             self.status = "Stale"
             self.stale_reason = "silence"
@@ -2316,7 +2321,8 @@ class ConsoleState:
 
 class ConsoleClient:
     def __init__(self, sender: socket.socket | None, stale_us: int,
-                 drop_once_delta: bool = False) -> None:
+                 drop_once_delta: bool = False,
+                 ignore_previous_session_datagrams: bool = False) -> None:
         self.sender, self.stale_us = sender, stale_us
         self.state = ConsoleState()
         self.fragments: dict[tuple[int, int], FragmentSet] = {}
@@ -2333,6 +2339,10 @@ class ConsoleClient:
         self.hello_attempt = 0
         self.pending_resync: PendingReliable | None = None
         self.drop_once_delta = drop_once_delta
+        # Endpoint-preserving renegotiation can leave datagrams from the old
+        # session queued in either UDP stack.  Only recovery clients may ignore
+        # those packets; the first negotiation keeps its fail-closed contract.
+        self.ignore_previous_session_datagrams = ignore_previous_session_datagrams
         # WELCOME and SESSION_BEGIN are reliable lifecycle messages.  Keep only
         # their active-session identities so exact retransmissions can be
         # acknowledged idempotently after their state transition was applied.
@@ -2377,6 +2387,24 @@ class ConsoleClient:
         self.hello_next_us = sent + self._reliable_delay_us(self.hello_message_id, self.hello_attempt)
         self.hello_attempt += 1
 
+    def renew_hello_window(self, at_us: int) -> bool:
+        """Keep one logical negotiation alive while the producer is absent.
+
+        A protocol reconnect creates a fresh nonce once. Rolling the reliable
+        timer must retain that nonce, t0, message id and payload; otherwise a
+        long game pause queues generations of valid HELLOs which later consume
+        the shared pre-session creation bucket one after another.
+        """
+        if (self.sender is None or not self.state.hello_sent or
+                self.state.welcomed or not self.hello_message_id or
+                not self.hello_payload_bytes):
+            return False
+        self.hello_first_us = at_us
+        self.hello_attempt = 0
+        self.state.status = "Synchronizing"
+        self._send_hello(at_us, True)
+        return True
+
     def _ack(self, header: dict[str, int], ack_flags: int) -> None:
         if self.sender is None:
             return
@@ -2388,7 +2416,7 @@ class ConsoleClient:
         self._send(packet)
 
     def _respond_heartbeat(self, header: dict[str, int], fields: dict[str, Any], at_us: int) -> None:
-        if (not self.state.session_begun or header["session_id"] != self.state.session_id or
+        if (not self.state.welcomed or header["session_id"] != self.state.session_id or
                 fields["kind"] != 1 or fields["probe_id"] == 0 or
                 fields["receive_t1_us"] != "0" or fields["transmit_t2_us"] != "0"):
             raise ValueError("invalid HEARTBEAT request")
@@ -2517,6 +2545,20 @@ class ConsoleClient:
                                                "allowedSenderRoles": ["producer"],
                                                "retainEncodedRecord": True,
                                            })
+        self.state.last_network_activity_us = at_us
+        if self.ignore_previous_session_datagrams:
+            if header["message_type"] == 3:
+                fields = decoded["fields"]
+                if (
+                    fields["client_nonce"] != str(self.state.hello_nonce)
+                    or fields["client_send_t0_us"] != str(self.state.hello_t0_us)
+                ):
+                    return False
+            elif (
+                not self.state.welcomed
+                or header["session_id"] != self.state.session_id
+            ):
+                return False
         control_identity = (
             header["session_id"],
             header["message_id"],

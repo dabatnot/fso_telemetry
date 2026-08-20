@@ -73,6 +73,8 @@ struct NativeSessionTickContext {
 	std::uint64_t now_us = 0U;
 	std::uint32_t mission_generation = 0U;
 	bool mission_active = false;
+	bool mission_paused = false;
+	float time_compression = 1.0F;
 };
 
 struct Phase2CapturePlan {
@@ -175,6 +177,7 @@ class NativeSessionRuntime final : private DatagramIoWork {
 		const EngineReadView& engine_view,
 		const Phase2EngineReadView* phase2_view = nullptr) noexcept;
 	void stop_collection() noexcept;
+	void end_mission_sessions() noexcept;
 	void purge_all(SessionCloseReason reason) noexcept;
 	void shutdown() noexcept;
 
@@ -328,6 +331,8 @@ class NativeSessionRuntime final : private DatagramIoWork {
 		m_phase2_started_snapshot_sequences{};
 	bool m_capture_after_ready_transition = false;
 	bool m_capture_for_phase3_keyframe = false;
+	bool m_pause_state_initialized = false;
+	bool m_last_mission_paused = false;
 	bool m_applying_engine_capture = false;
 	bool m_phase2_event_pipeline_failed_closed = false;
 	bool m_performance_observation_active = false;

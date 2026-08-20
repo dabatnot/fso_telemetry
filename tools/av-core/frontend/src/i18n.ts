@@ -12,7 +12,7 @@ export const LANGUAGE_OPTIONS: ReadonlyArray<{ code: Language; nativeName: strin
 const fr = {
   modules: "Modules", alerts: "Alertes", lighting: "Éclairage", system: "Système",
   telemetry: "TÉLÉMÉTRIE", configuration: "CONFIGURATION", subsystem: "SOUS-SYSTÈME", language: "Langue",
-  unavailable: "INDISPONIBLE", live: "LIVE", staleState: "PÉRIMÉE", disconnected: "DÉCONNECTÉ",
+  unavailable: "INDISPONIBLE", ready: "PRÊT", live: "LIVE", paused: "PAUSE", staleState: "PÉRIMÉE", disconnected: "DÉCONNECTÉ",
   activeState: "ACTIVE", clearState: "ÉTEINTE", online: "EN LIGNE", degraded: "DÉGRADÉ", offline: "HORS LIGNE", noneState: "AUCUN", attempt: "ACQUISITION", acquired: "ACQUIS",
   cockpitUnavailable: "Données cockpit indisponibles", incomingMissiles: "Missiles entrants",
   session: "Session", lastData: "Dernière donnée", connectionError: "Erreur de connexion",
@@ -61,7 +61,7 @@ export type TranslationKey = keyof typeof fr;
 const en: Record<TranslationKey, string> = {
   modules: "Modules", alerts: "Alerts", lighting: "Lighting", system: "System",
   telemetry: "TELEMETRY", configuration: "CONFIGURATION", subsystem: "SUBSYSTEM", language: "Language",
-  unavailable: "UNAVAILABLE", live: "LIVE", staleState: "STALE", disconnected: "DISCONNECTED",
+  unavailable: "UNAVAILABLE", ready: "READY", live: "LIVE", paused: "PAUSED", staleState: "STALE", disconnected: "DISCONNECTED",
   activeState: "ACTIVE", clearState: "CLEAR", online: "ONLINE", degraded: "DEGRADED", offline: "OFFLINE", noneState: "NONE", attempt: "ATTEMPT", acquired: "ACQUIRED",
   cockpitUnavailable: "Cockpit data unavailable", incomingMissiles: "Incoming missiles",
   session: "Session", lastData: "Last data", connectionError: "Connection error",
@@ -108,7 +108,7 @@ const en: Record<TranslationKey, string> = {
 const es: Record<TranslationKey, string> = {
   modules: "Módulos", alerts: "Alertas", lighting: "Iluminación", system: "Sistema",
   telemetry: "TELEMETRÍA", configuration: "CONFIGURACIÓN", subsystem: "SUBSISTEMA", language: "Idioma",
-  unavailable: "NO DISPONIBLE", live: "EN DIRECTO", staleState: "OBSOLETA", disconnected: "DESCONECTADO",
+  unavailable: "NO DISPONIBLE", ready: "LISTO", live: "EN DIRECTO", paused: "PAUSA", staleState: "OBSOLETA", disconnected: "DESCONECTADO",
   activeState: "ACTIVA", clearState: "APAGADA", online: "EN LÍNEA", degraded: "DEGRADADO", offline: "FUERA DE LÍNEA", noneState: "NINGUNO", attempt: "ADQUISICIÓN", acquired: "ADQUIRIDO",
   cockpitUnavailable: "Datos de cabina no disponibles", incomingMissiles: "Misiles entrantes",
   session: "Sesión", lastData: "Último dato", connectionError: "Error de conexión",
@@ -155,7 +155,7 @@ const es: Record<TranslationKey, string> = {
 const pt: Record<TranslationKey, string> = {
   modules: "Módulos", alerts: "Alertas", lighting: "Iluminação", system: "Sistema",
   telemetry: "TELEMETRIA", configuration: "CONFIGURAÇÃO", subsystem: "SUBSISTEMA", language: "Idioma",
-  unavailable: "INDISPONÍVEL", live: "EM DIRETO", staleState: "DESATUALIZADA", disconnected: "DESCONECTADO",
+  unavailable: "INDISPONÍVEL", ready: "PRONTO", live: "EM DIRETO", paused: "PAUSA", staleState: "DESATUALIZADA", disconnected: "DESCONECTADO",
   activeState: "ATIVA", clearState: "APAGADA", online: "ONLINE", degraded: "DEGRADADO", offline: "OFFLINE", noneState: "NENHUM", attempt: "AQUISIÇÃO", acquired: "ADQUIRIDO",
   cockpitUnavailable: "Dados do cockpit indisponíveis", incomingMissiles: "Mísseis a chegar",
   session: "Sessão", lastData: "Último dado", connectionError: "Erro de ligação",
@@ -202,7 +202,7 @@ const pt: Record<TranslationKey, string> = {
 const it: Record<TranslationKey, string> = {
   modules: "Moduli", alerts: "Avvisi", lighting: "Illuminazione", system: "Sistema",
   telemetry: "TELEMETRIA", configuration: "CONFIGURAZIONE", subsystem: "SOTTOSISTEMA", language: "Lingua",
-  unavailable: "NON DISPONIBILE", live: "LIVE", staleState: "OBSOLETA", disconnected: "DISCONNESSO",
+  unavailable: "NON DISPONIBILE", ready: "PRONTO", live: "LIVE", paused: "PAUSA", staleState: "OBSOLETA", disconnected: "DISCONNESSO",
   activeState: "ATTIVA", clearState: "SPENTA", online: "ONLINE", degraded: "DEGRADATO", offline: "OFFLINE", noneState: "NESSUNO", attempt: "ACQUISIZIONE", acquired: "ACQUISITO",
   cockpitUnavailable: "Dati cockpit non disponibili", incomingMissiles: "Missili in arrivo",
   session: "Sessione", lastData: "Ultimo dato", connectionError: "Errore di connessione",
@@ -249,7 +249,7 @@ const it: Record<TranslationKey, string> = {
 const de: Record<TranslationKey, string> = {
   modules: "Module", alerts: "Warnungen", lighting: "Beleuchtung", system: "System",
   telemetry: "TELEMETRIE", configuration: "KONFIGURATION", subsystem: "SUBSYSTEM", language: "Sprache",
-  unavailable: "NICHT VERFÜGBAR", live: "LIVE", staleState: "VERALTET", disconnected: "GETRENNT",
+  unavailable: "NICHT VERFÜGBAR", ready: "BEREIT", live: "LIVE", paused: "PAUSE", staleState: "VERALTET", disconnected: "GETRENNT",
   activeState: "AKTIV", clearState: "AUS", online: "ONLINE", degraded: "EINGESCHRÄNKT", offline: "OFFLINE", noneState: "KEINER", attempt: "ERFASSUNG", acquired: "ERFASST",
   cockpitUnavailable: "Cockpit-Daten nicht verfügbar", incomingMissiles: "Anfliegende Raketen",
   session: "Sitzung", lastData: "Letzte Daten", connectionError: "Verbindungsfehler",

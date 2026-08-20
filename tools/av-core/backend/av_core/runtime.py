@@ -16,6 +16,7 @@ from .models import (
     ConfigUpdateResponse,
     ConfigurationStatus,
     ModuleStatus,
+    MissionStatus,
     TelemetryStatus,
 )
 
@@ -119,6 +120,12 @@ class AvCoreRuntime:
                     session_id=self._fstl_frame.session_id,
                     last_live_age_ms=self._last_live_age_ms_locked(),
                     error=self._fstl_frame.error,
+                ),
+                mission=MissionStatus(
+                    active=self._fstl_frame.mission_active,
+                    paused=self._fstl_frame.mission_paused,
+                    generation=self._fstl_frame.mission_generation,
+                    time_compression=self._fstl_frame.time_compression,
                 ),
                 cockpit=self._cockpit,
                 can=CanStatus(),

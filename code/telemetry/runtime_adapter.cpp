@@ -7,6 +7,7 @@
 #include "graphics/2d.h"
 #include "io/timer.h"
 #include "network/multi.h"
+#include "freespace.h"
 #include "telemetry/config.h"
 #include "telemetry/engine_adapter.h"
 #include "telemetry/logging.h"
@@ -477,7 +478,11 @@ RuntimeTickStatus RuntimeAdapterPlayerTestAccess::service_tick(NativeSessionRunt
 	}
 	return map_native_tick_status(
 		runtime->service_tick(
-			{context.now_us, context.mission_generation, context.mission_active},
+			{context.now_us,
+				context.mission_generation,
+				context.mission_active,
+				context.mission_active && game_time_is_stopped(),
+				f2fl(Game_time_compression)},
 			view,
 			phase2_view));
 }
@@ -540,14 +545,14 @@ void RuntimeAdapterPlayerTestAccess::stop_collection(NativeSessionRuntime* runti
 void RuntimeAdapterPlayerTestAccess::invalidate_mission_state_and_entities(NativeSessionRuntime* runtime) noexcept
 {
 	if (runtime != nullptr) {
-		runtime->purge_all(SessionCloseReason::MissionDiscontinuity);
+		runtime->end_mission_sessions();
 	}
 }
 
 void RuntimeAdapterPlayerTestAccess::close_sessions_and_stores(NativeSessionRuntime* runtime) noexcept
 {
 	if (runtime != nullptr) {
-		runtime->purge_all(SessionCloseReason::Shutdown);
+		runtime->end_mission_sessions();
 	}
 }
 

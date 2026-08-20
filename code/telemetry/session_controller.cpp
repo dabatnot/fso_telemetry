@@ -385,6 +385,17 @@ std::size_t SessionController::find_awaiting_slot() const noexcept
 	return InvalidIndex;
 }
 
+std::size_t SessionController::find_slot(const protocol::EndpointKey& endpoint) const noexcept
+{
+	for (std::size_t i = 0U; i < m_config.max_clients; ++i) {
+		if (m_slots[i].progress != ProducerSessionProgress::Empty &&
+			m_slots[i].endpoint == endpoint) {
+			return i;
+		}
+	}
+	return InvalidIndex;
+}
+
 std::size_t SessionController::find_slot(const protocol::EndpointKey& endpoint,
 	std::uint64_t session_id) const noexcept
 {
@@ -685,7 +696,9 @@ SessionIngressResult SessionController::ingest(const protocol::EndpointKey& endp
 			decoded.header.message_type == protocol::MessageType::Nack ||
 			decoded.header.message_type == protocol::MessageType::Heartbeat ||
 			decoded.header.message_type == protocol::MessageType::ResyncRequest;
-		// Only a tail-queued Delta can yield to ingress control work.  Do not
+		const auto can_preempt_delta = is_control_response ||
+			decoded.header.message_type == protocol::MessageType::Hello;
+		// Only a tail-queued Delta can yield to ingress control or handshake work.  Do not
 		// preempt here: endpoint/session, quota and payload semantic validation
 		// still belong to the concrete message handler.  The handler that has
 		// accepted and is about to queue its response performs the preemption.
@@ -705,7 +718,7 @@ SessionIngressResult SessionController::ingest(const protocol::EndpointKey& endp
 		if ((!m_output_delta_egress_pending &&
 				!heartbeat_is_admissible_behind_priority &&
 				!ack_is_admissible) ||
-			!is_control_response) {
+			!can_preempt_delta) {
 			return dropped(SessionIngressDropReason::OutputBusy);
 		}
 		predecoded_for_output_arbitration = true;
@@ -764,7 +777,8 @@ SessionIngressResult SessionController::ingest_hello(const protocol::EndpointKey
 		for (std::size_t i = 0U; i < m_config.max_clients; ++i) {
 			proof_already_applied = proof_already_applied ||
 				(cached.session_id != 0U && m_slots[i].session_id == cached.session_id &&
-				 m_slots[i].progress == ProducerSessionProgress::ReadyForState);
+				 m_slots[i].progress != ProducerSessionProgress::Empty &&
+				 m_slots[i].progress != ProducerSessionProgress::AwaitWelcomeApplied);
 		}
 		if (!proof_already_applied) {
 			if (m_preproof.note_validated_receive(endpoint, received_size) != PreproofLedgerResult::Recorded ||
@@ -775,6 +789,7 @@ SessionIngressResult SessionController::ingest_hello(const protocol::EndpointKey
 			cached.accounted_sent += cached.size;
 			cached.preproof_active = true;
 		}
+		preempt_queued_delta();
 		if (!queue_bytes(endpoint,
 			cached.bytes.data(),
 			cached.size,
@@ -783,21 +798,49 @@ SessionIngressResult SessionController::ingest_hello(const protocol::EndpointKey
 		}
 		return {SessionIngressDisposition::CachedResponseQueued, SessionIngressDropReason::None};
 	}
-	if (m_cache_size == m_cache.size()) {
-		return dropped(SessionIngressDropReason::HandshakeCacheFull);
-	}
-
 	const bool supported = hello.min_major <= protocol::VersionMajor && hello.max_major >= protocol::VersionMajor &&
 		hello.min_minor <= protocol::VersionMinorV1_1 && hello.max_minor >= protocol::VersionMinorV1_1;
 	std::uint64_t session_id = 0U;
 	std::uint32_t initial_packet_sequence = 0U;
 	std::size_t slot_index = InvalidIndex;
+	const auto replacement_slot = supported ? find_slot(endpoint) : InvalidIndex;
+	if (replacement_slot != InvalidIndex) {
+		const auto& active_slot = m_slots[replacement_slot];
+		// Before WELCOME is applied, next_keyframe_due_us has no scheduling
+		// role and retains the negotiation t0. Once the slot becomes ready,
+		// welcome_deadline_us is obsolete and takes over that value. This
+		// keeps the slot layout unchanged.
+		const auto active_client_send_t0_us =
+			active_slot.progress == ProducerSessionProgress::AwaitWelcomeApplied
+			? active_slot.next_keyframe_due_us
+			: active_slot.welcome_deadline_us;
+		if (hello.client_send_t0_us <= active_client_send_t0_us) {
+			// UDP may deliver a retransmitted HELLO from the superseded nonce
+			// after the endpoint has already negotiated a newer session. A
+			// different nonce alone is not an ordering guarantee: replacing the
+			// slot here would roll the endpoint back and make old/new HELLO retries
+			// oscillate indefinitely. Preserve the active slot unless the client
+			// negotiation timestamp advances strictly.
+			return dropped(SessionIngressDropReason::PayloadInvalid);
+		}
+	}
+	bool replacement_releases_cache = false;
+	if (replacement_slot != InvalidIndex) {
+		const auto replaced_session_id = m_slots[replacement_slot].session_id;
+		for (const auto& cache : m_cache) {
+			replacement_releases_cache = replacement_releases_cache ||
+				(cache.used && cache.session_id == replaced_session_id);
+		}
+	}
+	if (m_cache_size == m_cache.size() && !replacement_releases_cache) {
+		return dropped(SessionIngressDropReason::HandshakeCacheFull);
+	}
 	if (supported) {
 		if (m_rate_limiter->consume_pre_session(protocol::RateLimitClass::SessionCreation, endpoint, now_us) !=
 			protocol::ProtocolRateLimitResult::Allowed) {
 			return dropped(SessionIngressDropReason::SessionCreationRateLimited);
 		}
-		slot_index = free_slot();
+		slot_index = replacement_slot != InvalidIndex ? replacement_slot : free_slot();
 		if (slot_index == InvalidIndex) {
 			return dropped(SessionIngressDropReason::NoClientSlot);
 		}
@@ -824,8 +867,9 @@ SessionIngressResult SessionController::ingest_hello(const protocol::EndpointKey
 	welcome.selected_major = supported ? protocol::VersionMajor : 0U;
 	welcome.selected_minor = supported ? protocol::VersionMinorV1_1 : 0U;
 	welcome.selected_visibility_mode = protocol::VisibilityMode::Cockpit;
-	welcome.heartbeat_interval_ms =
-		supported ? (mission_active ? m_config.mission_heartbeat_ms : m_config.idle_heartbeat_ms) : 0U;
+	// Prewarmed cockpit sessions retain this negotiated interval when the
+	// mission starts, so use the mission cadence from the outset.
+	welcome.heartbeat_interval_ms = supported ? m_config.mission_heartbeat_ms : 0U;
 	welcome.reliable_reassembly_timeout_ms = supported ? protocol::ReliableReassemblyTimeoutV1Ms : 0U;
 	welcome.producer_id = m_config.producer_id;
 
@@ -853,8 +897,25 @@ SessionIngressResult SessionController::ingest_hello(const protocol::EndpointKey
 		return dropped(SessionIngressDropReason::AntiAmplificationLimit);
 	}
 
+	// A validated HELLO is priority control work.  Releasing only an unsent,
+	// cumulative Delta here guarantees room for WELCOME without disturbing
+	// committed reliable output or mutating the session before admission.
+	preempt_queued_delta();
 	stage(SessionIngressStage::SessionMutation);
+	if (replacement_slot != InvalidIndex &&
+		!close_slot(replacement_slot, SessionCloseReason::ProtocolError)) {
+		clear_all();
+		m_faulted = true;
+		return {SessionIngressDisposition::Faulted,
+			SessionIngressDropReason::SessionIdUnavailable};
+	}
 	const auto cache_index = free_cache();
+	if (cache_index == InvalidIndex) {
+		clear_all();
+		m_faulted = true;
+		return {SessionIngressDisposition::Faulted,
+			SessionIngressDropReason::SessionIdUnavailable};
+	}
 	auto& cache = m_cache[cache_index];
 	cache.used = true;
 	cache.endpoint = endpoint;
@@ -878,6 +939,8 @@ SessionIngressResult SessionController::ingest_hello(const protocol::EndpointKey
 		slot.endpoint = endpoint;
 		slot.session_id = session_id;
 		slot.session_start_us = now_us;
+		// This field is not a scheduler deadline before WELCOME is applied.
+		slot.next_keyframe_due_us = hello.client_send_t0_us;
 		slot.heartbeat.negotiated_interval_ms = welcome.heartbeat_interval_ms;
 		(void)slot.heartbeat.probes.reset_session(session_id);
 		slot.welcome_deadline_us = now_us > std::numeric_limits<std::uint64_t>::max() - protocol::ReliableOrdinaryRetentionUs
@@ -931,7 +994,8 @@ SessionIngressResult SessionController::ingest_ack(const protocol::EndpointKey& 
 	}
 	auto& slot = m_slots[awaiting];
 	if (slot.progress != ProducerSessionProgress::AwaitWelcomeApplied) {
-		if (slot.progress != ProducerSessionProgress::ReadyForState &&
+		if (slot.progress != ProducerSessionProgress::Prewarmed &&
+			slot.progress != ProducerSessionProgress::ReadyForState &&
 			slot.progress !=
 				ProducerSessionProgress::FaultedSession) {
 			return dropped(SessionIngressDropReason::PayloadInvalid);
@@ -1037,6 +1101,11 @@ SessionIngressResult SessionController::ingest_ack(const protocol::EndpointKey& 
 			return dropped(SessionIngressDropReason::PayloadInvalid);
 		}
 		stage(SessionIngressStage::SessionMutation);
+		if (ack.target_message_type == protocol::MessageType::SessionEnd &&
+			response == protocol::ReliableResponseResult::Released) {
+			(void)close_slot(awaiting, SessionCloseReason::MissionDiscontinuity);
+			return {SessionIngressDisposition::ResponseQueued, SessionIngressDropReason::None};
+		}
 		slot.reliable_items_in_use = m_reliable_windows[awaiting].entry_count();
 		note_network_activity(awaiting, now_us);
 		return {SessionIngressDisposition::ResponseQueued, SessionIngressDropReason::None};
@@ -1073,58 +1142,12 @@ SessionIngressResult SessionController::ingest_ack(const protocol::EndpointKey& 
 		return dropped(SessionIngressDropReason::WelcomeProofMismatch);
 	}
 
-	protocol::SessionBeginPayload begin;
-	begin.session_flags = protocol::SessionBeginFlagReadOnly |
-		(mission_active ? protocol::SessionBeginFlagMissionActive : 0U);
-	begin.producer_session_start_us = slot.session_start_us;
-	begin.mission_instance_id = mission_active ? mission_generation : 0U;
-	// The initial FullSnapshot is captured only after SESSION_BEGIN is ACKed.
-	// Zero keeps the peer synchronizing until that reliable transaction arrives.
-	begin.initial_snapshot_id = 0U;
-	begin.required_manifest_id = 0U;
-	std::array<std::uint8_t, protocol::SessionBeginPayloadSize> payload{};
-	std::size_t payload_size = 0U;
-	if (protocol::encode_session_begin_payload(begin, {payload.data(), payload.size()}, payload_size) !=
-		protocol::ValidationError::None) {
-		return dropped(SessionIngressDropReason::PayloadInvalid);
-	}
-	protocol::TelemetryDatagramHeader header;
-	header.version_minor = protocol::VersionMinorV1_1;
-	header.message_type = protocol::MessageType::SessionBegin;
-	header.flags = protocol::MessageFlagAckRequired;
-	header.session_id = slot.session_id;
-	header.packet_sequence = slot.next_packet_sequence++;
-	header.sent_time_us = now_us;
-	header.message_id = slot.next_message_id++;
-	std::array<std::uint8_t, protocol::MaxDatagramSize> encoded{};
-	std::size_t encoded_size = 0U;
-	if (!encode_control_datagram(header, {payload.data(), payload_size}, encoded, encoded_size) ||
-		encoded_size > m_output.bytes.size()) {
-		return dropped(SessionIngressDropReason::OutputBusy);
-	}
-	protocol::DatagramView begin_view;
-	if (protocol::decode_and_validate_datagram({encoded.data(), encoded_size},
-			protocol::ProtocolMinorRange{protocol::VersionMinorV1_1, protocol::VersionMinorV1_1},
-			begin_view) != protocol::ValidationError::None) {
-		return dropped(SessionIngressDropReason::PayloadInvalid);
-	}
-	protocol::ReliableMessageToRetain retained;
-	retained.session_id = slot.session_id;
-	retained.endpoint = endpoint;
-	retained.message_type = protocol::MessageType::SessionBegin;
-	retained.base_flags = protocol::MessageFlagAckRequired;
-	retained.message_id = begin_view.header.message_id;
-	retained.fragment_count = begin_view.header.fragment_count;
-	retained.message_crc32 = begin_view.header.message_crc32;
-	retained.logical_payload = {payload.data(), payload_size};
-	retained.required_ack = protocol::RequiredAckLevel::Applied;
-	retained.message_class = protocol::ReliableMessageClass::SessionCritical;
-	if (m_reliable_windows[awaiting].retain(retained, now_us) != protocol::ReliableRetainResult::Retained ||
-		!queue_bytes(endpoint, encoded.data(), encoded_size, awaiting)) {
-		return dropped(SessionIngressDropReason::OutputBusy);
-	}
 	stage(SessionIngressStage::SessionMutation);
-	slot.progress = ProducerSessionProgress::ReadyForState;
+	// Preserve the negotiation ordering token in the deadline field that is
+	// now obsolete, before next_keyframe_due_us becomes a scheduler deadline.
+	slot.welcome_deadline_us = slot.next_keyframe_due_us;
+	slot.progress = mission_active ? ProducerSessionProgress::ReadyForState :
+		ProducerSessionProgress::Prewarmed;
 	slot.reliable_items_in_use = m_reliable_windows[awaiting].entry_count();
 	std::uint32_t stale_timeout_ms = 0U;
 	std::uint32_t disconnect_timeout_ms = 0U;
@@ -1153,7 +1176,103 @@ SessionIngressResult SessionController::ingest_ack(const protocol::EndpointKey& 
 			release_cache_preproof(cache);
 		}
 	}
+	if (mission_active &&
+		!queue_session_begin(awaiting, mission_generation, now_us)) {
+		(void)close_slot(awaiting, SessionCloseReason::ProtocolError);
+		return dropped(SessionIngressDropReason::OutputBusy);
+	}
 	return {SessionIngressDisposition::WelcomeProofApplied, SessionIngressDropReason::None};
+}
+
+bool SessionController::queue_session_begin(std::size_t slot_index,
+	std::uint32_t mission_generation, std::uint64_t now_us) noexcept
+{
+	if (m_has_output || slot_index >= m_config.max_clients || mission_generation == 0U)
+		return false;
+	auto& slot = m_slots[slot_index];
+	if (slot.progress != ProducerSessionProgress::Prewarmed &&
+		slot.progress != ProducerSessionProgress::ReadyForState)
+		return false;
+
+	protocol::SessionBeginPayload begin;
+	begin.session_flags = protocol::SessionBeginFlagReadOnly |
+		protocol::SessionBeginFlagMissionActive;
+	begin.producer_session_start_us = slot.session_start_us;
+	begin.mission_instance_id = mission_generation;
+	std::array<std::uint8_t, protocol::SessionBeginPayloadSize> payload{};
+	std::size_t payload_size = 0U;
+	if (protocol::encode_session_begin_payload(begin,
+			{payload.data(), payload.size()}, payload_size) !=
+		protocol::ValidationError::None)
+		return false;
+
+	protocol::TelemetryDatagramHeader header;
+	header.version_minor = protocol::VersionMinorV1_1;
+	header.message_type = protocol::MessageType::SessionBegin;
+	header.flags = protocol::MessageFlagAckRequired;
+	header.session_id = slot.session_id;
+	header.packet_sequence = slot.next_packet_sequence;
+	header.sent_time_us = now_us;
+	header.message_id = slot.next_message_id;
+	std::array<std::uint8_t, protocol::MaxDatagramSize> encoded{};
+	std::size_t encoded_size = 0U;
+	if (!encode_control_datagram(header, {payload.data(), payload_size},
+			encoded, encoded_size))
+		return false;
+	protocol::DatagramView view;
+	if (protocol::decode_and_validate_datagram({encoded.data(), encoded_size},
+			{protocol::VersionMinorV1_1, protocol::VersionMinorV1_1}, view) !=
+		protocol::ValidationError::None)
+		return false;
+
+	protocol::ReliableMessageToRetain retained;
+	retained.session_id = slot.session_id;
+	retained.endpoint = slot.endpoint;
+	retained.message_type = protocol::MessageType::SessionBegin;
+	retained.base_flags = protocol::MessageFlagAckRequired;
+	retained.message_id = view.header.message_id;
+	retained.fragment_count = view.header.fragment_count;
+	retained.message_crc32 = view.header.message_crc32;
+	retained.logical_payload = {payload.data(), payload_size};
+	retained.required_ack = protocol::RequiredAckLevel::Applied;
+	retained.message_class = protocol::ReliableMessageClass::SessionCritical;
+	if (m_reliable_windows[slot_index].retain(retained, now_us) !=
+			protocol::ReliableRetainResult::Retained ||
+		!queue_bytes(slot.endpoint, encoded.data(), encoded_size, slot_index))
+		return false;
+
+	++slot.next_packet_sequence;
+	++slot.next_message_id;
+	slot.mission_session_begun = true;
+	slot.progress = ProducerSessionProgress::ReadyForState;
+	slot.reliable_items_in_use = m_reliable_windows[slot_index].entry_count();
+	return true;
+}
+
+std::size_t SessionController::activate_prewarmed_sessions(
+	std::uint32_t mission_generation, std::uint64_t now_us) noexcept
+{
+	if (!m_ready || m_faulted || m_has_output || mission_generation == 0U)
+		return 0U;
+	for (std::size_t index = 0U; index < m_config.max_clients; ++index) {
+		if (m_slots[index].progress == ProducerSessionProgress::Prewarmed &&
+			queue_session_begin(index, mission_generation, now_us))
+			return 1U;
+	}
+	return 0U;
+}
+
+void SessionController::request_all_keyframes() noexcept
+{
+	for (std::size_t index = 0U; index < m_config.max_clients; ++index) {
+		auto& slot = m_slots[index];
+		if (slot.progress != ProducerSessionProgress::ReadyForState)
+			continue;
+		slot.keyframe_due = true;
+		if (m_config.phase2_profile != Phase2Profile::None)
+			(void)slot.phase2_runtime.request_snapshot(
+				Phase2RuntimeSnapshotCause::Periodic);
+	}
 }
 
 SessionIngressResult SessionController::ingest_nack(const protocol::EndpointKey& endpoint,
@@ -1461,7 +1580,9 @@ SessionIngressResult SessionController::ingest_heartbeat(const protocol::Endpoin
 		return dropped(SessionIngressDropReason::EndpointSessionMismatch);
 	}
 	auto& slot = m_slots[index];
-	if (slot.progress != ProducerSessionProgress::ReadyForState && slot.progress != ProducerSessionProgress::Stale) {
+	if (slot.progress != ProducerSessionProgress::Prewarmed &&
+		slot.progress != ProducerSessionProgress::ReadyForState &&
+		slot.progress != ProducerSessionProgress::Stale) {
 		return dropped(SessionIngressDropReason::PayloadInvalid);
 	}
 	stage(SessionIngressStage::AntiAmplification);
@@ -1521,7 +1642,9 @@ SessionIngressResult SessionController::ingest_heartbeat(const protocol::Endpoin
 	}
 	slot.heartbeat.clock_stale = false;
 	if (slot.progress == ProducerSessionProgress::Stale) {
-		slot.progress = ProducerSessionProgress::ReadyForState;
+		slot.progress = slot.mission_session_begun
+			? ProducerSessionProgress::ReadyForState
+			: ProducerSessionProgress::Prewarmed;
 	}
 	stage(SessionIngressStage::SessionMutation);
 	return {SessionIngressDisposition::ResponseQueued, SessionIngressDropReason::None};
@@ -1889,7 +2012,8 @@ bool SessionController::service_timeouts_impl(std::uint64_t now_us) noexcept
 	for (std::size_t offset = 0U; offset < m_config.max_clients; ++offset) {
 		const auto index = (m_heartbeat_cursor + offset) % m_config.max_clients;
 		auto& slot = m_slots[index];
-		if ((slot.progress != ProducerSessionProgress::ReadyForState &&
+		if ((slot.progress != ProducerSessionProgress::Prewarmed &&
+				slot.progress != ProducerSessionProgress::ReadyForState &&
 				slot.progress != ProducerSessionProgress::Stale) ||
 			slot.heartbeat.negotiated_interval_ms == 0U) {
 			continue;
@@ -1986,7 +2110,8 @@ void SessionController::service_periodic(std::uint64_t now_us) noexcept
 	for (std::size_t offset = 0U; offset < m_config.max_clients; ++offset) {
 		const auto index = (m_heartbeat_cursor + offset) % m_config.max_clients;
 		auto& slot = m_slots[index];
-		if ((slot.progress != ProducerSessionProgress::ReadyForState &&
+		if ((slot.progress != ProducerSessionProgress::Prewarmed &&
+				slot.progress != ProducerSessionProgress::ReadyForState &&
 				slot.progress != ProducerSessionProgress::Stale) ||
 			slot.heartbeat.negotiated_interval_ms == 0U || now_us < slot.heartbeat.next_periodic_due_us) {
 			continue;
@@ -3049,6 +3174,93 @@ void SessionController::purge_all(SessionCloseReason reason) noexcept
 		(void)close_slot(index, reason);
 	}
 	clear_all();
+}
+
+bool SessionController::begin_mission_session_end(std::size_t slot_index,
+	std::uint64_t now_us) noexcept
+{
+	if (slot_index >= m_config.max_clients)
+		return false;
+	auto& slot = m_slots[slot_index];
+	if (!slot.mission_session_begun || slot.session_id == 0U)
+		return false;
+
+	protocol::SessionEndPayload end;
+	end.reason = protocol::SessionEndReason::MissionEnded;
+	end.end_flags = protocol::SessionEndFlagReconnectAllowed;
+	end.last_snapshot_id = slot.snapshot.active_snapshot_id();
+	end.producer_sample_time_us = now_us;
+	std::array<std::uint8_t, protocol::SessionEndPayloadSize> payload{};
+	std::size_t payload_size = 0U;
+	if (protocol::encode_session_end_payload(end,
+			{payload.data(), payload.size()}, payload_size) !=
+		protocol::ValidationError::None)
+		return false;
+
+	protocol::TelemetryDatagramHeader header;
+	header.version_minor = protocol::VersionMinorV1_1;
+	header.message_type = protocol::MessageType::SessionEnd;
+	header.flags = protocol::MessageFlagAckRequired;
+	header.session_id = slot.session_id;
+	header.packet_sequence = slot.next_packet_sequence;
+	header.sent_time_us = now_us;
+	header.message_id = slot.next_message_id;
+	std::array<std::uint8_t, protocol::MaxDatagramSize> encoded{};
+	std::size_t encoded_size = 0U;
+	if (!encode_control_datagram(header, {payload.data(), payload_size},
+			encoded, encoded_size))
+		return false;
+	protocol::DatagramView view;
+	if (protocol::decode_and_validate_datagram({encoded.data(), encoded_size},
+			{protocol::VersionMinorV1_1, protocol::VersionMinorV1_1}, view) !=
+		protocol::ValidationError::None)
+		return false;
+
+	protocol::ReliableMessageToRetain retained;
+	retained.session_id = slot.session_id;
+	retained.endpoint = slot.endpoint;
+	retained.message_type = protocol::MessageType::SessionEnd;
+	retained.base_flags = protocol::MessageFlagAckRequired;
+	retained.message_id = view.header.message_id;
+	retained.fragment_count = view.header.fragment_count;
+	retained.message_crc32 = view.header.message_crc32;
+	retained.logical_payload = {payload.data(), payload_size};
+	retained.required_ack = protocol::RequiredAckLevel::Applied;
+	retained.message_class = protocol::ReliableMessageClass::SessionClosing;
+
+	discard_exposed_output_for_slot(slot_index);
+	slot.delta_egress.discard();
+	slot.snapshot_egress.rollback_candidate();
+	slot.snapshot.rollback_candidate();
+	slot.phase2_runtime.reset();
+	(void)slot.player_entity_ids.invalidate();
+	slot.latest_player_sample = {};
+	slot.has_latest_player_sample = false;
+	slot.keyframe_due = false;
+	m_reliable_windows[slot_index].configure();
+	if (m_reliable_windows[slot_index].retain(retained, now_us) !=
+		protocol::ReliableRetainResult::Retained)
+		return false;
+	std::memcpy(slot.fault_session_end_bytes.data(), encoded.data(), encoded_size);
+	slot.fault_session_end_size = encoded_size;
+	slot.fault_session_end_pending = true;
+	slot.progress = ProducerSessionProgress::FaultedSession;
+	slot.reliable_items_in_use = m_reliable_windows[slot_index].entry_count();
+	++slot.next_packet_sequence;
+	++slot.next_message_id;
+	return true;
+}
+
+void SessionController::purge_mission_sessions(SessionCloseReason reason,
+	std::uint64_t now_us) noexcept
+{
+	if (!m_ready || m_rate_limiter == nullptr)
+		return;
+	for (std::size_t index = 0U; index < m_config.max_clients; ++index) {
+		if (m_slots[index].mission_session_begun &&
+			!begin_mission_session_end(index, now_us))
+			(void)close_slot(index, reason);
+	}
 }
 
 SessionControllerOwnedCapacity SessionController::owned_capacity() const noexcept

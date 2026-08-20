@@ -27,13 +27,21 @@ réglages. Hôte, port et géométrie de fenêtre sont mémorisés par `QSetting
 L'interface distribuée est exclusivement en anglais, comme celle du jeu.
 
 Le fichier [`examples/fs2open.telemetry.json`](examples/fs2open.telemetry.json)
-active le profil requis et autorise deux clients simultanés afin de comparer
-le dashboard et ce radar.
+active le profil requis et autorise quatre slots afin d'utiliser simultanément
+AV CORE, le dashboard et ce radar tout en gardant une marge de redémarrage.
 
-Après la première image appliquée, une seconde sans progrès conserve la dernière
+Au menu et au briefing, le handshake reste préchauffé et le radar affiche
+`SENSOR LINK READY · WAITING FOR MISSION`. Pendant une pause, les heartbeats
+maintiennent la session, la dernière image reste visible avec l'indicateur
+`MISSION PAUSED`, et la reprise applique un keyframe immédiat.
+
+En dehors de ces états explicites, une seconde sans progrès conserve la dernière
 image, l'assombrit et la marque `SENSOR FEED LOST`, puis demande une
-resynchronisation. Sans reprise pendant la seconde suivante, le client crée un
-nouvel endpoint UDP et renégocie une session, sans effacer la dernière image.
+resynchronisation. Sans reprise pendant la seconde suivante, le client conserve
+son endpoint UDP, renouvelle son nonce et renégocie une session, sans effacer la
+dernière image. Il retransmet ensuite ce même `HELLO` tant que le jeu reste
+indisponible, sans accumuler de nouvelles générations de session. Le socket
+n'est recréé qu'après une erreur réseau locale ou un changement de destination.
 Pendant la synchronisation initiale, chaque nouveau fragment de manifeste ou de
 snapshot prolonge la transaction et la fenêtre fiable complète de cinq secondes
 est conservée afin de ne pas abandonner une session saine en plein transfert.

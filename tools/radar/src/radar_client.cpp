@@ -208,15 +208,8 @@ private:
         return static_cast<std::uint64_t>(m_clock.nsecsElapsed() / 1000);
     }
 
-    void resetProtocol()
+    void resetSessionProtocol()
     {
-        // A reconnect resolves and binds a brand-new UDP endpoint.  Keeping the
-        // previous peer address here lets the still-running timer attempt a
-        // HELLO before lookupHost() completes; that empty HELLO used to stop
-        // the retry timer permanently after a producer restart.
-        m_endpointReady = false;
-        m_peerAddress.clear();
-        m_peerEndpoint = {};
         m_sessionId = 0;
         m_nonce = 0;
         m_sequence = 0;
@@ -227,7 +220,9 @@ private:
         m_lastDeltaSequence = 0;
         m_hasBaseline = false;
         m_sessionBegun = false;
+		m_missionPaused = false;
         m_lastStateProgressUs = 0;
+		m_lastNetworkActivityUs = 0;
         m_lastHelloUs = 0;
         m_helloFirstUs = 0;
         m_helloT0Us = 0;
@@ -241,6 +236,25 @@ private:
         m_reliableHeaders.clear();
         m_baseline = {};
         m_current = {};
+    }
+
+    void resetProtocol()
+    {
+        resetSessionProtocol();
+        m_endpointReady = false;
+        m_peerAddress.clear();
+        m_peerEndpoint = {};
+    }
+
+    void renegotiateSession()
+    {
+        if (m_socket == nullptr || !m_endpointReady || m_peerAddress.isNull()) {
+            openEndpoint(true);
+            return;
+        }
+        resetSessionProtocol();
+        emit statusChanged(ClientStatus::Reconnecting, tr("Reconnecting…"));
+        beginHello();
     }
 
     void openEndpoint(bool reconnecting)
@@ -411,6 +425,18 @@ private:
         m_lastHelloUs = nowUs();
     }
 
+    void renewHelloWindow(std::uint64_t now)
+    {
+        // A protocol reconnect chooses one new nonce. Keep that logical HELLO
+        // alive across reliable windows while the game is paused; generating
+        // another nonce every five seconds would queue superseded sessions
+        // and serialize all localhost clients through the creation limiter.
+        if (m_helloMessageId == 0 || m_helloPayload.isEmpty()) return;
+        m_helloFirstUs = now;
+        emit statusChanged(ClientStatus::Reconnecting, tr("Reconnecting…"));
+        sendHello(true);
+    }
+
     void sendAck(const protocol::TelemetryDatagramHeader& target, std::uint8_t flags)
     {
         protocol::AckPayload ack;
@@ -512,6 +538,7 @@ private:
 
     void processMessage(const protocol::TelemetryDatagramHeader& header, protocol::ByteView payload)
     {
+		m_lastNetworkActivityUs = nowUs();
         switch (header.message_type) {
         case protocol::MessageType::Welcome: processWelcome(header, payload); break;
         case protocol::MessageType::SessionBegin: processSessionBegin(header, payload); break;
@@ -522,7 +549,8 @@ private:
         case protocol::MessageType::Ack: processAck(payload); break;
         case protocol::MessageType::SessionEnd:
             sendAck(header, protocol::KnownAckFlags);
-            openEndpoint(true);
+            ++m_reconnectGeneration;
+            renegotiateSession();
             break;
         default:
             break;
@@ -532,9 +560,20 @@ private:
     void processWelcome(const protocol::TelemetryDatagramHeader& header, protocol::ByteView data)
     {
         protocol::WelcomePayload welcome;
-        if (protocol::decode_welcome_payload(data, welcome) != protocol::ValidationError::None ||
-            welcome.client_nonce != m_nonce || welcome.client_send_t0_us != m_helloT0Us ||
-            m_sessionId != 0) {
+        if (protocol::decode_welcome_payload(data, welcome) != protocol::ValidationError::None) {
+            fail(tr("Invalid FSTL 1.1 WELCOME"));
+            return;
+        }
+        if (welcome.client_nonce != m_nonce || welcome.client_send_t0_us != m_helloT0Us) {
+            // A protocol reconnect deliberately preserves the UDP endpoint.
+            // Its receive queue may therefore still contain a WELCOME for the
+            // nonce that was just abandoned.  It belongs to the old session,
+            // not to the current negotiation.
+            if (m_reconnectGeneration != 0) return;
+            fail(tr("Invalid FSTL 1.1 WELCOME"));
+            return;
+        }
+        if (m_sessionId != 0) {
             fail(tr("Invalid FSTL 1.1 WELCOME"));
             return;
         }
@@ -559,7 +598,7 @@ private:
         m_lastStateProgressUs = nowUs();
         if ((header.flags & protocol::MessageFlagAckRequired) != 0U)
             sendAck(header, protocol::KnownAckFlags);
-        emit statusChanged(ClientStatus::Synchronizing, tr("Synchronizing FSTL…"));
+		emit statusChanged(ClientStatus::Ready, tr("Waiting for mission…"));
     }
 
     void processSessionBegin(const protocol::TelemetryDatagramHeader& header, protocol::ByteView data)
@@ -572,6 +611,7 @@ private:
         m_sessionBegun = true;
         m_lastStateProgressUs = nowUs();
         sendAck(header, protocol::KnownAckFlags);
+		emit statusChanged(ClientStatus::Synchronizing, tr("Synchronizing FSTL…"));
     }
 
     void rememberReliable(const protocol::TelemetryDatagramHeader& header)
@@ -745,11 +785,13 @@ private:
 
     void publish(std::shared_ptr<const RadarImage> image)
     {
+		m_missionPaused = image->missionPaused;
         m_lastStateProgressUs = nowUs();
         m_staleSignalled = false;
         m_resyncPending = false;
         emit imageReady(std::move(image));
-        emit statusChanged(ClientStatus::Live, {});
+		emit statusChanged(m_missionPaused ? ClientStatus::Paused : ClientStatus::Live,
+			m_missionPaused ? tr("PAUSE") : QString{});
     }
 
     void onTick()
@@ -759,14 +801,30 @@ private:
             if (m_socket != nullptr && m_endpointReady && m_helloMessageId != 0 &&
                 !m_helloPayload.isEmpty()) {
                 if (m_helloFirstUs != 0 && now - m_helloFirstUs >= HelloAttemptWindowUs) {
-                    ++m_reconnectGeneration;
-                    openEndpoint(true);
+                    renewHelloWindow(now);
                 } else if (now - m_lastHelloUs >= 1'000'000ULL) {
                     sendHello(true);
                 }
             }
             return;
         }
+		const std::uint64_t networkSilent = m_lastNetworkActivityUs == 0
+			? 0 : now - m_lastNetworkActivityUs;
+		if (!m_sessionBegun || m_missionPaused) {
+			if (networkSilent >= 2'000'000ULL) {
+				++m_reconnectGeneration;
+				renegotiateSession();
+				return;
+			}
+			if (networkSilent >= 1'000'000ULL && !m_staleSignalled) {
+				m_staleSignalled = true;
+				emit statusChanged(ClientStatus::Stale, tr("STALE"));
+			} else if (networkSilent < 1'000'000ULL && !m_sessionBegun) {
+				m_staleSignalled = false;
+				emit statusChanged(ClientStatus::Ready, tr("Waiting for mission…"));
+			}
+			return;
+		}
         // Initial reliable transactions retain their full five-second window.
         // Once a baseline has been applied, the immersive 1 s / 2 s policy
         // owns stale detection and endpoint rotation.
@@ -776,7 +834,7 @@ private:
                 static_cast<qint64>(silent / 1'000ULL), true, m_hasBaseline);
             if (status == ClientStatus::Reconnecting) {
                 ++m_reconnectGeneration;
-                openEndpoint(true);
+                renegotiateSession();
                 return;
             }
             if (status == ClientStatus::Stale && !m_staleSignalled) {
@@ -826,6 +884,7 @@ private:
     std::uint64_t m_sessionId = 0;
     std::uint64_t m_nonce = 0;
     std::uint64_t m_lastStateProgressUs = 0;
+	std::uint64_t m_lastNetworkActivityUs = 0;
     std::uint64_t m_lastHelloUs = 0;
     std::uint64_t m_helloFirstUs = 0;
     std::uint64_t m_helloT0Us = 0;
@@ -843,6 +902,7 @@ private:
     QByteArray m_helloPayload;
     bool m_hasBaseline = false;
     bool m_sessionBegun = false;
+	bool m_missionPaused = false;
     bool m_staleSignalled = false;
     bool m_resyncPending = false;
 };

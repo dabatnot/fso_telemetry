@@ -66,7 +66,7 @@ function StatusPill({ label, state, t }: { label: string; state: string; t: Tran
 
 function displayState(state: string, t: Translate): string {
   const labels: Record<string, TranslationKey> = {
-    UNAVAILABLE: "unavailable", LIVE: "live", STALE: "staleState", DISCONNECTED: "disconnected",
+    UNAVAILABLE: "unavailable", READY: "ready", LIVE: "live", PAUSED: "paused", STALE: "staleState", DISCONNECTED: "disconnected",
     ACTIVE: "activeState", CLEAR: "clearState", ONLINE: "online", DEGRADED: "degraded", OFFLINE: "offline",
     NONE: "noneState", ATTEMPT: "attempt", ACQUIRED: "acquired"
   };
@@ -312,7 +312,7 @@ export default function App() {
       <header>
         <div className="brand"><div className="brand-mark"><i /><i /><i /></div><div><strong>AV CORE</strong><span>FSO // SIMPIT CONFIGURATION</span></div></div>
         <div className="status-strip">
-          <StatusPill label={t("telemetry")} state={status?.telemetry.state ?? "DISCONNECTED"} t={t} />
+          <StatusPill label={t("telemetry")} state={status?.mission?.paused ? "PAUSED" : status?.telemetry.state ?? "DISCONNECTED"} t={t} />
           <StatusPill label="CAN" state={status?.can.state ?? "UNAVAILABLE"} t={t} />
           <StatusPill label="WARN CTRL" state={moduleState.WARN_CTRL ?? "UNAVAILABLE"} t={t} />
           <StatusPill label="THREAT PROC" state={moduleState.THREAT_PROC ?? "UNAVAILABLE"} t={t} />

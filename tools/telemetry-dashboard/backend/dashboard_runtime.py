@@ -177,6 +177,7 @@ class QualityTracker:
         self.decode_error_count = 0
         self.resync_count = 0
         self.last_transport_sequence: int | None = None
+        self.last_transport_session: int | None = None
         self.history: deque[dict[str, Any]] = deque(maxlen=100_000)
 
     def configured_hz(self, record_name: str) -> float:
@@ -191,6 +192,10 @@ class QualityTracker:
         try:
             header = decoder.read_header(datagram)
             sequence = int(header["packet_sequence"])
+            session_id = int(header["session_id"])
+            if self.last_transport_session != session_id:
+                self.last_transport_sequence = None
+                self.last_transport_session = session_id
             if self.last_transport_sequence is not None:
                 distance = (sequence - self.last_transport_sequence) & 0xFFFFFFFF
                 if 1 < distance < 0x80000000:
@@ -627,10 +632,17 @@ class TelemetryRuntime:
         previous_endpoint: tuple[Any, ...] | None = None
         while not self._stop.is_set() and not self._mode_change.is_set():
             local_error = False
+            sock: socket.socket | None = None
             try:
                 sock, previous_endpoint = self._open_live_socket(family, previous_endpoint)
-                with sock:
-                    self.client = fstl.ConsoleClient(sock, self.stale_us)
+                session_generation = 0
+                while not self._stop.is_set() and not self._mode_change.is_set():
+                    self.client = fstl.ConsoleClient(
+                        sock,
+                        self.stale_us,
+                        ignore_previous_session_datagrams=session_generation != 0,
+                    )
+                    session_generation += 1
                     self.quality = QualityTracker(self.flight_hz, self.systems_hz, self.mission_heartbeat_ms)
                     self.client.begin()
                     at_us, at_utc = fstl.local_observation()
@@ -662,10 +674,11 @@ class TelemetryRuntime:
                             self.client.state.status == "Disconnected"
                             and not self.client.state.welcomed
                         ):
-                            if not recovering_from_silence:
-                                _, disconnected_utc = fstl.local_observation()
-                                self._publish(at_us, disconnected_utc)
-                            break
+                            if not self.client.renew_hello_window(at_us):
+                                if not recovering_from_silence:
+                                    _, disconnected_utc = fstl.local_observation()
+                                    self._publish(at_us, disconnected_utc)
+                                break
                         changed = False
                         try:
                             datagram = sock.recv(fstl.MAX_DATAGRAM)
@@ -689,6 +702,15 @@ class TelemetryRuntime:
                                     self._publish(received_us, received_utc)
                         except socket.timeout:
                             pass
+                        except (ValueError, decoder.DecodeFailure) as exc:
+                            recovering_from_silence = True
+                            self._set_recovery_overlay(
+                                "reconnecting",
+                                status="Disconnected",
+                                clear_session=True,
+                                error=str(exc),
+                            )
+                            break
                         now, now_utc = fstl.local_observation()
                         previous = self.client.state.status
                         self.client.state.stale_if_needed(now, now_utc, self.stale_us)
@@ -702,18 +724,19 @@ class TelemetryRuntime:
                                 recovery_started_us = now
                                 self._recovery_state = "resyncing"
                                 self._set_recovery_overlay("resyncing", status="Stale")
+                        if self.client.state.status == "Ready" and not self.client.state.session_begun:
+                            last_network = self.client.state.last_network_activity_us or last_progress_us
+                            silent_us = now - last_network
+                            if silent_us >= self.stale_us + self.recovery_grace_us:
+                                recovering_from_silence = True
+                                self._set_recovery_overlay(
+                                    "reconnecting", status="Disconnected", clear_session=True
+                                )
+                                break
                         needs_recovery = (
                             self.client.state.session_begun
-                            and (
-                                (
-                                    self.client.state.status == "Stale"
-                                    and self.client.state.stale_reason == "silence"
-                                )
-                                or (
-                                    self.client.state.status == "Synchronizing"
-                                    and not self.client.state.keyframe_applied
-                                )
-                            )
+                            and self.client.state.status == "Stale"
+                            and self.client.state.stale_reason == "silence"
                         )
                         if needs_recovery:
                             recovery_due = (
@@ -742,11 +765,32 @@ class TelemetryRuntime:
                                 break
                         else:
                             next_recovery_request_us = 0
+                        # The 1 s + 1 s recovery policy applies to a replica
+                        # which was already Live. Once a replacement WELCOME
+                        # has been accepted, let the bounded reliable setup
+                        # (SESSION_BEGIN, manifest and initial snapshot) use
+                        # its full window. Rotating again after one second can
+                        # make every delayed response belong to the nonce that
+                        # was just abandoned and starve recovery forever.
+                        if (
+                            self.client.state.session_begun
+                            and self.client.state.welcomed
+                            and not self.client.state.keyframe_applied
+                            and now - last_progress_us >= fstl.RELIABLE_WINDOW_US
+                        ):
+                            recovering_from_silence = True
+                            self._set_recovery_overlay(
+                                "reconnecting", status="Disconnected", clear_session=True
+                            )
+                            break
                         if self.client.terminal_published:
                             self._publish(now, now_utc)
                             break
-            except (OSError, ValueError, decoder.DecodeFailure) as exc:
+                sock.close()
+            except OSError as exc:
                 local_error = True
+                if sock is not None:
+                    sock.close()
                 if recovering_from_silence:
                     self._set_recovery_overlay(
                         "reconnecting", status="Disconnected", clear_session=True, error=str(exc)

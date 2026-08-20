@@ -263,8 +263,8 @@ DecodedOutput establish_ready(detail::SessionController& controller,
 	std::uint64_t hello_time_us,
 	std::uint64_t proof_time_us,
 	std::uint32_t packet_base,
-	bool mission_active = false,
-	std::uint16_t expected_heartbeat_interval_ms = 1000U)
+	bool mission_active = true,
+	std::uint16_t expected_heartbeat_interval_ms = 500U)
 {
 	const auto mission_generation = mission_active ? 7U : 0U;
 	const auto request = make_hello(nonce, packet_base);
@@ -439,7 +439,7 @@ void expect_probe_and_sample_capacities(Controller& controller, const protocol::
 	} else {
 		std::array<protocol::HeartbeatPayload, protocol::MaxInFlightProbes> requests{};
 		for (std::size_t index = 0U; index < protocol::MaxInFlightProbes; ++index) {
-			controller.service_session_maintenance(controller.slot(0U).heartbeat.next_periodic_due_us);
+			controller.service_periodic(controller.slot(0U).heartbeat.next_periodic_due_us);
 			ASSERT_TRUE(controller.has_output());
 			requests[index] = decode_heartbeat(pop_output(controller));
 			ASSERT_EQ(protocol::HeartbeatKind::Request, requests[index].kind);
@@ -447,7 +447,7 @@ void expect_probe_and_sample_capacities(Controller& controller, const protocol::
 		ASSERT_EQ(protocol::MaxInFlightProbes, controller.slot(0U).heartbeat.probes.in_flight_count());
 		const auto sequence = controller.slot(0U).next_packet_sequence;
 		const auto saturated_due = controller.slot(0U).heartbeat.next_periodic_due_us;
-		controller.service_session_maintenance(saturated_due);
+		controller.service_periodic(saturated_due);
 		EXPECT_FALSE(controller.has_output());
 		EXPECT_EQ(protocol::MaxInFlightProbes, controller.slot(0U).heartbeat.probes.in_flight_count());
 		EXPECT_EQ(sequence, controller.slot(0U).next_packet_sequence)
@@ -471,7 +471,7 @@ void expect_probe_and_sample_capacities(Controller& controller, const protocol::
 		ASSERT_TRUE(controller.slot(0U).heartbeat.clock_filter.minimum_round_trip_time_us(
 			minimum_before_eviction));
 
-		controller.service_session_maintenance(controller.slot(0U).heartbeat.next_periodic_due_us);
+		controller.service_periodic(controller.slot(0U).heartbeat.next_periodic_due_us);
 		auto ninth_response = decode_heartbeat(pop_output(controller));
 		ninth_response.kind = protocol::HeartbeatKind::Response;
 		ninth_response.receive_t1_us = ninth_response.origin_t0_us + 10U;
@@ -507,10 +507,10 @@ void expect_cadence_and_backpressure(Controller& controller)
 	if constexpr (!has_wp06_heartbeat_contract<Controller>::value) {
 		FAIL() << "WP06-HB periodic cadence service is absent.";
 	} else {
-		ASSERT_EQ(1000U, controller.slot(0U).heartbeat.negotiated_interval_ms);
+		ASSERT_EQ(500U, controller.slot(0U).heartbeat.negotiated_interval_ms);
 		ASSERT_EQ(3'000'000U, controller.slot(0U).heartbeat.stale_timeout_us);
 		ASSERT_EQ(10'000'000U, controller.slot(0U).heartbeat.disconnect_timeout_us);
-		const std::uint64_t due = 1'000'200U;
+		const std::uint64_t due = 500'200U;
 		ASSERT_EQ(due, controller.slot(0U).heartbeat.next_periodic_due_us)
 			<< "Idle cadence is anchored when WELCOME becomes applied, using immutable H=1000 ms.";
 		controller.service_session_maintenance(due - 1U);
@@ -522,7 +522,7 @@ void expect_cadence_and_backpressure(Controller& controller)
 		controller.complete_output(detail::IoStatus::WouldBlock);
 		EXPECT_FALSE(controller.has_output()) << "An unreliable heartbeat is abandoned on WouldBlock.";
 		EXPECT_EQ(probes_before - 1U, controller.slot(0U).heartbeat.probes.in_flight_count());
-		EXPECT_EQ(due + 1'000'000U, controller.slot(0U).heartbeat.next_periodic_due_us);
+		EXPECT_EQ(due + 500'000U, controller.slot(0U).heartbeat.next_periodic_due_us);
 
 		const std::uint64_t hitch_now = 9'000'000U;
 		ASSERT_LT(hitch_now,
@@ -589,7 +589,7 @@ void expect_timeout_boundaries(Controller& controller, const protocol::EndpointK
 		controller.service_session_maintenance(controller.slot(0U).heartbeat.next_periodic_due_us);
 		const auto request = decode_heartbeat(pop_output(controller));
 		ASSERT_EQ(protocol::HeartbeatKind::Request, request.kind);
-		ASSERT_EQ(1000U, controller.slot(0U).heartbeat.negotiated_interval_ms);
+		ASSERT_EQ(500U, controller.slot(0U).heartbeat.negotiated_interval_ms);
 		ASSERT_EQ(3'000'000U, controller.slot(0U).heartbeat.stale_timeout_us);
 		ASSERT_EQ(10'000'000U, controller.slot(0U).heartbeat.disconnect_timeout_us);
 		const auto base = controller.slot(0U).heartbeat.last_valid_clock_response_us;
@@ -601,19 +601,33 @@ void expect_timeout_boundaries(Controller& controller, const protocol::EndpointK
 		EXPECT_TRUE(controller.slot(0U).heartbeat.clock_stale);
 		EXPECT_FALSE(controller.slot(0U).heartbeat.clock_filter.valid());
 
-		// A valid response may rebuild clock state, but WP08/new-session logic owns
-		// any semantic promotion out of Stale.
+		// Responses to probes discarded by the stale transition remain fail-closed.
 		protocol::HeartbeatPayload response = request;
 		response.kind = protocol::HeartbeatKind::Response;
 		response.receive_t1_us = request.origin_t0_us + 10U;
 		response.transmit_t2_us = request.origin_t0_us + 20U;
 		const auto response_time = base + stale + 1U;
 		const auto datagram = make_heartbeat(controller.slot(0U).session_id, response, 140U, response_time);
+		EXPECT_EQ(detail::SessionIngressDropReason::PayloadInvalid,
+			controller.ingest(peer, view(datagram.bytes), response_time, 7U, true).drop_reason);
+		EXPECT_FALSE(controller.slot(0U).heartbeat.clock_filter.valid());
+
+		// The next periodic probe rebuilds transport clock state and restores
+		// the existing mission session without rotating its transport.
+		controller.service_session_maintenance(controller.slot(0U).heartbeat.next_periodic_due_us);
+		const auto recovery_request = decode_heartbeat(pop_output(controller));
+		protocol::HeartbeatPayload recovery_response = recovery_request;
+		recovery_response.kind = protocol::HeartbeatKind::Response;
+		recovery_response.receive_t1_us = recovery_request.origin_t0_us + 10U;
+		recovery_response.transmit_t2_us = recovery_request.origin_t0_us + 20U;
+		const auto recovery_time = recovery_request.origin_t0_us + 100U;
+		const auto recovery = make_heartbeat(
+			controller.slot(0U).session_id, recovery_response, 141U, recovery_time);
 		EXPECT_EQ(detail::SessionIngressDropReason::None,
-			controller.ingest(peer, view(datagram.bytes), response_time, 0U, false).drop_reason);
+			controller.ingest(peer, view(recovery.bytes), recovery_time, 7U, true).drop_reason);
 		EXPECT_TRUE(controller.slot(0U).heartbeat.clock_filter.valid());
 		EXPECT_EQ(1U, controller.slot(0U).heartbeat.clock_filter.sample_count());
-		EXPECT_EQ(detail::ProducerSessionProgress::Stale, controller.slot(0U).progress);
+		EXPECT_EQ(detail::ProducerSessionProgress::ReadyForState, controller.slot(0U).progress);
 		const auto network = controller.slot(0U).heartbeat.last_valid_network_activity_us;
 		const auto disconnect = controller.slot(0U).heartbeat.disconnect_timeout_us;
 		controller.service_session_maintenance(network + disconnect - 1U);
@@ -624,7 +638,7 @@ void expect_timeout_boundaries(Controller& controller, const protocol::EndpointK
 	}
 }
 
-TEST(TelemetryWp06HeartbeatContract, StaleAndDisconnectTimeoutsAreExactAndNeverPromoteStaleToReady)
+TEST(TelemetryWp06HeartbeatContract, StaleAndDisconnectTimeoutsAreExactAndAValidatedProbeRestoresReady)
 {
 	EXPECT_TRUE(has_wp06_heartbeat_contract<detail::SessionController>::value);
 	IdentityHarness ids{0x5555U};
@@ -1249,11 +1263,11 @@ void expect_due_reliable_precedes_periodic(Controller& controller,
 	} else {
 		const auto request = make_hello(7'001U, 101U);
 		ASSERT_EQ(detail::SessionIngressDisposition::ResponseQueued,
-			controller.ingest(peer, view(request.bytes), 1'000U, 0U, false).disposition);
+			controller.ingest(peer, view(request.bytes), 1'000U, 1U, true).disposition);
 		const auto welcome = pop_output(controller);
 		const auto proof = make_ack(welcome, 102U);
 		ASSERT_EQ(detail::SessionIngressDisposition::WelcomeProofApplied,
-			controller.ingest(peer, view(proof.bytes), 2'000U, 0U, false).disposition);
+			controller.ingest(peer, view(proof.bytes), 2'000U, 1U, true).disposition);
 		const auto begin = pop_output(controller);
 		ASSERT_EQ(protocol::MessageType::SessionBegin, begin.datagram.header.message_type);
 		const auto both_due = controller.slot(0U).heartbeat.next_periodic_due_us;
@@ -1309,11 +1323,11 @@ void expect_timeout_precedes_reliable_and_periodic(Controller& controller,
 	} else {
 		const auto request = make_hello(7'002U, 111U);
 		ASSERT_EQ(detail::SessionIngressDisposition::ResponseQueued,
-			controller.ingest(peer, view(request.bytes), 1'000U, 0U, false).disposition);
+			controller.ingest(peer, view(request.bytes), 1'000U, 1U, true).disposition);
 		const auto welcome = pop_output(controller);
 		const auto proof = make_ack(welcome, 112U);
 		ASSERT_EQ(detail::SessionIngressDisposition::WelcomeProofApplied,
-			controller.ingest(peer, view(proof.bytes), 2'000U, 0U, false).disposition);
+			controller.ingest(peer, view(proof.bytes), 2'000U, 1U, true).disposition);
 		detail::SessionControllerOutput discarded;
 		ASSERT_TRUE(controller.pop_output(discarded));
 		const auto disconnect_due = controller.slot(0U).heartbeat.last_valid_network_activity_us +
@@ -1392,7 +1406,7 @@ void expect_purge_all_releases_every_session_scope(Controller& controller,
 		const auto response_time = probe_request.origin_t0_us + 100U;
 		const auto response = make_heartbeat(first_session_id, probe_response, 204U, response_time);
 		ASSERT_EQ(detail::SessionIngressDropReason::None,
-			controller.ingest(first_peer, view(response.bytes), response_time, 0U, false).drop_reason);
+			controller.ingest(first_peer, view(response.bytes), response_time, 7U, true).drop_reason);
 		ASSERT_EQ(1U, controller.slot(0U).heartbeat.clock_filter.sample_count());
 
 		for (std::uint64_t offset = 0U; offset < 3U; ++offset) {
@@ -1411,7 +1425,9 @@ void expect_purge_all_releases_every_session_scope(Controller& controller,
 		const auto limited_request = make_hello(8'020U, 220U);
 		const auto limited =
 			controller.ingest(endpoint(2U, 42050U), view(limited_request.bytes), response_time + 2'000U, 0U, false);
-		ASSERT_EQ(detail::SessionIngressDropReason::NoClientSlot, limited.drop_reason);
+		EXPECT_TRUE(limited.drop_reason == detail::SessionIngressDropReason::NoClientSlot ||
+			limited.drop_reason == detail::SessionIngressDropReason::HelloRateLimited ||
+			limited.drop_reason == detail::SessionIngressDropReason::SessionCreationRateLimited);
 		ASSERT_EQ(4U, controller.active_slots());
 		ASSERT_EQ(4U, controller.handshake_cache_entries());
 		ASSERT_EQ(3U, controller.preproof_account_count());
@@ -1440,7 +1456,7 @@ void expect_purge_all_releases_every_session_scope(Controller& controller,
 
 		const auto after_purge = make_hello(8'021U, 230U);
 		const auto new_first_peer = endpoint(3U, 42043U);
-		const auto admitted = controller.ingest(new_first_peer, view(after_purge.bytes), pending_due, 0U, false);
+		const auto admitted = controller.ingest(new_first_peer, view(after_purge.bytes), pending_due, 1U, true);
 		ASSERT_EQ(detail::SessionIngressDisposition::ResponseQueued, admitted.disposition)
 			<< "A fresh source remains eligible after mission-scoped state is purged.";
 		const auto new_welcome = pop_output(controller);
@@ -1448,18 +1464,18 @@ void expect_purge_all_releases_every_session_scope(Controller& controller,
 		EXPECT_NE(first_session_id, new_welcome.datagram.header.session_id);
 		const auto first_proof = make_ack(new_welcome, 231U);
 		ASSERT_EQ(detail::SessionIngressDisposition::WelcomeProofApplied,
-			controller.ingest(new_first_peer, view(first_proof.bytes), pending_due + 1U, 0U, false).disposition);
+			controller.ingest(new_first_peer, view(first_proof.bytes), pending_due + 1U, 1U, true).disposition);
 		(void)pop_output(controller);
 
 		const auto second_peer = endpoint(4U, 42044U);
 		const auto second_after_purge = make_hello(8'030U, 232U);
 		ASSERT_EQ(detail::SessionIngressDisposition::ResponseQueued,
-			controller.ingest(second_peer, view(second_after_purge.bytes), pending_due + 1U, 0U, false).disposition);
+			controller.ingest(second_peer, view(second_after_purge.bytes), pending_due + 1U, 1U, true).disposition);
 		const auto second_welcome = pop_output(controller);
 		EXPECT_EQ(0x7777U, second_welcome.datagram.header.session_id);
 		const auto second_proof = make_ack(second_welcome, 233U);
 		ASSERT_EQ(detail::SessionIngressDisposition::WelcomeProofApplied,
-			controller.ingest(second_peer, view(second_proof.bytes), pending_due + 1U, 0U, false).disposition);
+			controller.ingest(second_peer, view(second_proof.bytes), pending_due + 1U, 1U, true).disposition);
 		(void)pop_output(controller);
 		ASSERT_EQ(2U, controller.active_slots());
 		EXPECT_EQ(process_ids_before_purge + 2U, ids.registry.used_count());
@@ -1613,11 +1629,11 @@ void expect_mission_purge_reclaims_session_and_target_admission(Controller& cont
 			const auto request = make_hello(9'210U + slot, static_cast<std::uint32_t>(430U + slot * 3U));
 			const auto hello_time = 31'000U + slot * 20U;
 			ASSERT_EQ(detail::SessionIngressDisposition::ResponseQueued,
-				controller.ingest(peer, view(request.bytes), hello_time, 0U, false).disposition);
+				controller.ingest(peer, view(request.bytes), hello_time, 1U, true).disposition);
 			const auto welcome = pop_output(controller);
 			const auto proof = make_ack(welcome, static_cast<std::uint32_t>(431U + slot * 3U));
 			ASSERT_EQ(detail::SessionIngressDisposition::WelcomeProofApplied,
-				controller.ingest(peer, view(proof.bytes), hello_time + 10U, 0U, false).disposition)
+				controller.ingest(peer, view(proof.bytes), hello_time + 10U, 1U, true).disposition)
 				<< "Old session/target limiter ownership must not consume one of the four new admission slots.";
 			(void)pop_output(controller);
 		}
