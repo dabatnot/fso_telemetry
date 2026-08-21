@@ -17,6 +17,7 @@
 #include "telemetry/runtime.h"
 #include "telemetry/startup_budget.h"
 #include "telemetry/transport.h"
+#include "gamesequence/gamesequence.h"
 
 #include <gtest/gtest.h>
 
@@ -444,9 +445,20 @@ struct LoopbackRuntimeServices final : detail::RuntimeStartupServices {
 	{
 		last_tick = context;
 		if (!native) return detail::RuntimeTickStatus::Unavailable;
+		if (network_only) {
+			return detail::NativeSessionRuntimeTestAccess::service_r2_tick(
+				*native,
+				{context.now_us, context.mission_generation,
+					context.mission_active, context.mission_paused}) ==
+				detail::NativeSessionTickStatus::Complete
+				? detail::RuntimeTickStatus::Complete
+				: detail::RuntimeTickStatus::PermanentTransportFailure;
+		}
 		auto engine_view = detail::make_fso_engine_read_view();
 		return native->service_tick(
-			{context.now_us, context.mission_generation, context.mission_active}, engine_view) ==
+		{context.now_us, context.mission_generation,
+			context.mission_active, context.mission_paused},
+		engine_view) ==
 				detail::NativeSessionTickStatus::Complete
 			? detail::RuntimeTickStatus::Complete
 			: detail::RuntimeTickStatus::PermanentTransportFailure;
@@ -489,6 +501,7 @@ struct LoopbackRuntimeServices final : detail::RuntimeStartupServices {
 	std::size_t native_constructions = 0U;
 	std::size_t sockets_after_stop = 0U;
 	bool captured = false;
+	bool network_only = false;
 };
 
 struct ServerFixture {
@@ -500,6 +513,12 @@ struct ServerFixture {
 	void start()
 	{
 		runtime.capture_main_thread();
+		runtime.on_engine_update();
+	}
+	void enter_active_mission()
+	{
+		runtime.on_game_mission_load();
+		runtime.on_game_enter_state(GS_STATE_BRIEFING, GS_STATE_GAME_PLAY);
 		runtime.on_engine_update();
 	}
 
@@ -623,6 +642,13 @@ testing::AssertionResult exercise_native_runtime_loopback(protocol::IpAddressFam
 		server->services.backend.successful_opens != 1U) {
 		return testing::AssertionFailure() << "synthetic Runtime did not own exactly one native server socket";
 	}
+	server->enter_active_mission();
+	if (server->runtime.state() != detail::RuntimeState::MissionActive ||
+		!server->runtime.mission_publication_allowed()) {
+		return testing::AssertionFailure()
+			<< "synthetic Runtime did not enter an active publishable mission";
+	}
+	server->services.network_only = true;
 
 	detail::NativeUdpSocketBackend client;
 	const detail::SocketOpenRequest client_request{
@@ -681,7 +707,6 @@ testing::AssertionResult exercise_native_runtime_loopback(protocol::IpAddressFam
 	if (!decode_packet(session_begin, begin_view) || begin_view.header.session_id != welcome_view.header.session_id) {
 		return testing::AssertionFailure() << "SESSION_BEGIN did not preserve the negotiated session";
 	}
-
 	Packet begin_ack;
 	const auto receives_before_begin_ack = server->services.backend.complete_receives;
 	if (!make_ack(session_begin, 3U, begin_ack) ||
@@ -701,7 +726,13 @@ testing::AssertionResult exercise_native_runtime_loopback(protocol::IpAddressFam
 	// egress must resume immediately afterwards.
 	auto* controller = detail::NativeSessionRuntimeTestAccess::controller(
 		*server->services.native);
-	if (controller == nullptr ||
+	if (controller == nullptr) {
+		return testing::AssertionFailure()
+			<< "native controller was unavailable for the loopback snapshot";
+	}
+	const auto& initial_slot = controller->slot(0U);
+	if (!initial_slot.snapshot.has_candidate() &&
+		!initial_slot.snapshot.has_active_baseline() &&
 		!controller->begin_initial_snapshot(
 			0U, loopback_state_image(1.0F, 40'000U), 40'000U)) {
 		return testing::AssertionFailure()
@@ -813,8 +844,9 @@ testing::AssertionResult exercise_native_runtime_loopback(protocol::IpAddressFam
 	}
 	if (controller->replace_current_state(
 			0U, loopback_state_image(9.0F, 40'100U)) !=
-			protocol::ProducerBaselineResult::Applied ||
-		!controller->queue_cumulative_delta(0U, 40'101U)) {
+		protocol::ProducerBaselineResult::Applied ||
+		!controller->queue_cumulative_delta(0U, 40'101U) ||
+		controller->service_delta_egress(1U, 40'101U) != 1U) {
 		return testing::AssertionFailure()
 			<< "native controller could not queue the post-ACK delta";
 	}

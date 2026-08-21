@@ -53,6 +53,9 @@ export function ControlDock({
   const replay = snapshot?.mode === "replay";
   const recoveryState = snapshot?.connection.recoveryState ?? "idle";
   const status = snapshot?.connection.status ?? "Disconnected";
+  const presentedStatus = recoveryState === "idle" && status === "Live" && Boolean(snapshot?.mission.paused)
+    ? "PAUSE"
+    : recoveryState === "idle" ? status : recoveryState.toUpperCase();
   const sessionAvailable = snapshot?.connection.sessionId !== undefined
     && snapshot.connection.sessionId !== "0"
     && recoveryState !== "reconnecting";
@@ -125,7 +128,7 @@ export function ControlDock({
     <div className="dock-menu session-menu" id="dock-session-menu" role="menu" ref={menuRef}>
       <div className="dock-menu-title">{t("ÉTAT DE SESSION")}</div>
       <dl className="dock-session-details">
-        <dt>{t("ÉTAT")}</dt><dd>{t(recoveryState === "idle" ? status : recoveryState.toUpperCase())}</dd>
+        <dt>{t("ÉTAT")}</dt><dd>{t(presentedStatus)}</dd>
         <dt>{t("SESSION")}</dt><dd>{sessionValue(snapshot?.connection.sessionId)}</dd>
         <dt>{t("BASELINE")}</dt><dd>{snapshot?.transport.baseline ?? 0}</dd>
         <dt>{t("DERNIER LIVE")}</dt><dd>{sessionValue(snapshot?.connection.lastLiveObservedUtc)}</dd>

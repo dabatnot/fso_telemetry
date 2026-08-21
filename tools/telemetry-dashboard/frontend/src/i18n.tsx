@@ -18,6 +18,8 @@ const ENGLISH: Record<string, string> = {
   "SESSION": "SESSION",
   "JOUEUR": "PLAYER",
   "MODE": "MODE",
+  "FLUX": "SOURCE",
+  "DIRECT": "DIRECT",
   "BRIDGE HORS LIGNE": "BRIDGE OFFLINE",
   "SYSTÈMES": "SYSTEMS",
   "MODULE ACTIF": "ACTIVE MODULE",

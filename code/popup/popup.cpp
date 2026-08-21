@@ -25,6 +25,7 @@
 #include "popup/popup.h"
 #include "popup/popupdead.h"
 #include "scripting/global_hooks.h"
+#include "telemetry/telemetry.h"
 #include "ui/ui.h"
 
 
@@ -920,6 +921,7 @@ int popup_do(popup_info *pi, int flags)
 		int k;
 
 		os_poll();
+		telemetry::modal_loop_update();
 
 		// if we were killed by a call to popup_kill_any_active(), kill the popup
 		if(Popup_should_die){
@@ -1010,6 +1012,7 @@ int popup_do_with_condition(popup_info *pi, int flags, int(*condition)())
 		int k;
 
 		os_poll();
+		telemetry::modal_loop_update();
 		
 		game_set_frametime(-1);
 		game_do_state_common(gameseq_get_state());	// do stuff common to all states 
@@ -1382,6 +1385,7 @@ int popup_conditional_do(int (*condition)(), const char *text)
 
 	while ( !done ) {
 		os_poll();
+		telemetry::modal_loop_update();
 
 		game_set_frametime(-1);
 		game_do_state_common(gameseq_get_state());	// do stuff common to all states

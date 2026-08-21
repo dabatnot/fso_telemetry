@@ -70,6 +70,16 @@ describe("ControlDock", () => {
     expect(callbacks.onReconnect).toHaveBeenCalledTimes(1);
   });
 
+  it("presents a live transport as paused when the mission is paused", () => {
+    const paused = snapshot();
+    paused.mission.paused = 1;
+    renderDock(paused);
+    fireEvent.click(screen.getByRole("button", { name: "SESSION" }));
+    const details = screen.getByText("ÉTAT").closest("dl");
+    expect(details?.textContent).toContain("PAUSE");
+    expect(details?.textContent).not.toContain("Live");
+  });
+
   it("reconnects immediately from Stale and exposes the data actions", () => {
     const callbacks = renderDock(snapshot("live", "Stale"));
     fireEvent.click(screen.getByRole("button", { name: "SESSION" }));

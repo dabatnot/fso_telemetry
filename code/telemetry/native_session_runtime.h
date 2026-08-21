@@ -75,6 +75,7 @@ struct NativeSessionTickContext {
 	bool mission_active = false;
 	bool mission_paused = false;
 	float time_compression = 1.0F;
+	bool resume_transport = false;
 };
 
 struct Phase2CapturePlan {
@@ -331,6 +332,7 @@ class NativeSessionRuntime final : private DatagramIoWork {
 		m_phase2_started_snapshot_sequences{};
 	bool m_capture_after_ready_transition = false;
 	bool m_capture_for_phase3_keyframe = false;
+	bool m_capture_for_pause_transition = false;
 	bool m_pause_state_initialized = false;
 	bool m_last_mission_paused = false;
 	bool m_applying_engine_capture = false;

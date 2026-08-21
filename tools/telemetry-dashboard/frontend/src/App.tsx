@@ -148,7 +148,10 @@ export default function App() {
           <div><span>{t("MISSION")}</span><strong>{formatValue(snapshot?.mission.phase ?? "—")}</strong></div>
           <div><span>{t("SESSION")}</span><strong>{latestSnapshot?.connection.sessionId ?? "0"}</strong></div>
           <div><span>{t("JOUEUR")}</span><strong>{snapshot?.playerEntityId ?? "—"}</strong></div>
-          <div><span>{t("MODE")}</span><strong>{snapshot?.mode?.toUpperCase() ?? "LIVE"}</strong></div>
+          <div>
+            <span>{t("FLUX")}</span>
+            <strong>{t(snapshot?.mode === "replay" ? "REPLAY" : "DIRECT")}</strong>
+          </div>
         </div>
         <div className="topbar-actions">
           <LanguageSelector />

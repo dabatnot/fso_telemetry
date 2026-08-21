@@ -14,6 +14,9 @@
 #include "telemetry/protocol/telemetry_transaction.h"
 
 #include <QElapsedTimer>
+#include <QDateTime>
+#include <QDir>
+#include <QFile>
 #include <QHash>
 #include <QHostAddress>
 #include <QHostInfo>
@@ -39,22 +42,39 @@ constexpr qint64 ReconnectAfterMilliseconds =
     StaleAfterMilliseconds + RecoveryGraceMilliseconds;
 constexpr std::uint64_t HelloAttemptWindowUs = 5'000'000ULL;
 
-ClientStatus statusForSilence(qint64 silenceMilliseconds,
+ClientStatus statusForSilence(qint64 stateSilenceMilliseconds,
+                              qint64 networkSilenceMilliseconds,
                               bool sessionEstablished,
                               bool baselineApplied) noexcept
 {
     if (!sessionEstablished) return ClientStatus::Connecting;
     if (!baselineApplied) {
-        return silenceMilliseconds >= static_cast<qint64>(HelloAttemptWindowUs / 1'000ULL)
+        return networkSilenceMilliseconds >= static_cast<qint64>(HelloAttemptWindowUs / 1'000ULL)
             ? ClientStatus::Reconnecting
             : ClientStatus::Synchronizing;
     }
-    if (silenceMilliseconds >= ReconnectAfterMilliseconds) return ClientStatus::Reconnecting;
-    if (silenceMilliseconds >= StaleAfterMilliseconds) return ClientStatus::Stale;
+    if (networkSilenceMilliseconds >= ReconnectAfterMilliseconds) return ClientStatus::Reconnecting;
+    if (stateSilenceMilliseconds >= StaleAfterMilliseconds) return ClientStatus::Stale;
     return ClientStatus::Live;
 }
 
 namespace {
+
+QString radarSessionLogPath()
+{
+    return QDir::temp().filePath(QStringLiteral("fstl-radar-session.log"));
+}
+
+void traceSession(const QString& message)
+{
+    QFile file(radarSessionLogPath());
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text)) return;
+    const QByteArray line = QStringLiteral("%1 %2\n")
+        .arg(QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs), message)
+        .toUtf8();
+    file.write(line);
+    file.flush();
+}
 
 class Fstl11StateImageValidator final : public protocol::StateImageValidator {
 public:
@@ -179,6 +199,8 @@ public:
 public slots:
     void startSession(const QString& host, quint16 port)
     {
+        QFile::remove(radarSessionLogPath());
+        traceSession(QStringLiteral("START host=%1 port=%2").arg(host).arg(port));
         m_host = host.trimmed();
         m_port = port;
         m_reconnectGeneration = 0;
@@ -252,6 +274,8 @@ private:
             openEndpoint(true);
             return;
         }
+        traceSession(QStringLiteral("RENEGOTIATE preserving localPort=%1 oldSession=%2")
+                         .arg(m_socket->localPort()).arg(m_sessionId));
         resetSessionProtocol();
         emit statusChanged(ClientStatus::Reconnecting, tr("Reconnecting…"));
         beginHello();
@@ -323,6 +347,8 @@ private:
         }
         m_socket->connectToHost(m_peerAddress, m_port, QIODevice::ReadWrite);
         m_endpointReady = true;
+        traceSession(QStringLiteral("ENDPOINT peer=%1:%2 localPort=%3")
+                         .arg(m_peerAddress.toString()).arg(m_port).arg(m_socket->localPort()));
         emit statusChanged(reconnecting ? ClientStatus::Reconnecting : ClientStatus::Connecting,
                            tr("Connecting to %1:%2…").arg(m_peerAddress.toString()).arg(m_port));
         beginHello();
@@ -409,6 +435,9 @@ private:
         }
         m_helloMessageId = ++m_messageId;
         m_helloFirstUs = nowUs();
+        traceSession(QStringLiteral("HELLO nonce=%1 messageId=%2 localPort=%3")
+                         .arg(m_nonce).arg(m_helloMessageId)
+                         .arg(m_socket != nullptr ? m_socket->localPort() : 0));
         sendHello(false);
     }
 
@@ -447,8 +476,15 @@ private:
         ack.target_message_crc32 = target.message_crc32;
         QByteArray payload;
         if (encodePayload(ack, protocol::AckPayloadSize, protocol::encode_ack_payload, payload)) {
-            sendMessage(protocol::MessageType::Ack, payload);
+            const bool sent = sendMessage(protocol::MessageType::Ack, payload);
             m_ackLevels.insert(messageKey(target), flags);
+            if (target.message_type == protocol::MessageType::Welcome ||
+                target.message_type == protocol::MessageType::SessionBegin) {
+                traceSession(QStringLiteral("ACK targetType=%1 targetId=%2 session=%3 flags=%4 sent=%5 socketError=%6")
+                                 .arg(static_cast<unsigned>(target.message_type))
+                                 .arg(target.message_id).arg(target.session_id).arg(flags).arg(sent)
+                                 .arg(m_socket != nullptr ? m_socket->errorString() : QStringLiteral("no socket")));
+            }
         }
     }
 
@@ -497,14 +533,39 @@ private:
             // every other message.
             const auto validation = protocol::decode_and_validate_datagram(
                 bytes(data), {protocol::VersionMinorV1_0, protocol::VersionMinorV1_1}, fragment);
-            if (validation != protocol::ValidationError::None) continue;
+            if (validation != protocol::ValidationError::None) {
+                traceSession(QStringLiteral("DROP datagram validation=%1 bytes=%2")
+                                 .arg(static_cast<unsigned>(validation)).arg(data.size()));
+                continue;
+            }
+            const bool lifecycleMessage = fragment.header.message_type == protocol::MessageType::Welcome ||
+                fragment.header.message_type == protocol::MessageType::SessionBegin;
+            if (lifecycleMessage) {
+                traceSession(QStringLiteral("RX type=%1 session=%2 id=%3 fragment=%4/%5 flags=%6 currentSession=%7")
+                                 .arg(static_cast<unsigned>(fragment.header.message_type))
+                                 .arg(fragment.header.session_id).arg(fragment.header.message_id)
+                                 .arg(fragment.header.fragment_index).arg(fragment.header.fragment_count)
+                                 .arg(fragment.header.flags).arg(m_sessionId));
+            }
             if (fragment.header.message_type != protocol::MessageType::Welcome &&
-                fragment.header.version_minor != protocol::VersionMinorV1_1) continue;
+                fragment.header.version_minor != protocol::VersionMinorV1_1) {
+                if (lifecycleMessage) traceSession(QStringLiteral("DROP lifecycle wrongMinor=%1").arg(fragment.header.version_minor));
+                continue;
+            }
             if (fragment.header.message_type != protocol::MessageType::Welcome &&
-                (m_sessionId == 0 || fragment.header.session_id != m_sessionId)) continue;
+                (m_sessionId == 0 || fragment.header.session_id != m_sessionId)) {
+                if (lifecycleMessage) traceSession(QStringLiteral("DROP lifecycle sessionMismatch current=%1 received=%2")
+                                                       .arg(m_sessionId).arg(fragment.header.session_id));
+                continue;
+            }
 
             const QString key = messageKey(fragment.header);
             if (m_ackLevels.contains(key)) {
+                // A reliable retransmission that we already acknowledged is
+                // still valid transport activity. In particular, repeated
+                // WELCOME packets keep the prewarmed session alive while the
+                // producer is waiting to emit SESSION_BEGIN.
+                m_lastNetworkActivityUs = nowUs();
                 if ((fragment.header.flags & protocol::MessageFlagAckRequired) != 0U)
                     sendAck(fragment.header, m_ackLevels.value(key));
                 continue;
@@ -514,8 +575,13 @@ private:
             const auto pipeline = m_reassembler.ingest_validated_fragment(
                 fragment, m_peerEndpoint, nowUs(), 250'000ULL, message);
             if (pipeline.reassembly == protocol::ReassemblyResult::Accepted ||
-                pipeline.reassembly == protocol::ReassemblyResult::Duplicate) continue;
+                pipeline.reassembly == protocol::ReassemblyResult::Duplicate) {
+                m_lastNetworkActivityUs = nowUs();
+                continue;
+            }
             if (pipeline.reassembly != protocol::ReassemblyResult::Completed) {
+                if (lifecycleMessage) traceSession(QStringLiteral("DROP lifecycle reassembly=%1")
+                                                       .arg(static_cast<unsigned>(pipeline.reassembly)));
                 if ((fragment.header.flags & protocol::MessageFlagAckRequired) != 0U) {
                     protocol::NackPayload nack;
                     nack.target_message_id = fragment.header.message_id;
@@ -548,6 +614,8 @@ private:
         case protocol::MessageType::Heartbeat: processHeartbeat(header, payload); break;
         case protocol::MessageType::Ack: processAck(payload); break;
         case protocol::MessageType::SessionEnd:
+            traceSession(QStringLiteral("SESSION_END session=%1 messageId=%2")
+                             .arg(header.session_id).arg(header.message_id));
             sendAck(header, protocol::KnownAckFlags);
             ++m_reconnectGeneration;
             renegotiateSession();
@@ -561,10 +629,14 @@ private:
     {
         protocol::WelcomePayload welcome;
         if (protocol::decode_welcome_payload(data, welcome) != protocol::ValidationError::None) {
+            traceSession(QStringLiteral("WELCOME decode failed session=%1").arg(header.session_id));
             fail(tr("Invalid FSTL 1.1 WELCOME"));
             return;
         }
         if (welcome.client_nonce != m_nonce || welcome.client_send_t0_us != m_helloT0Us) {
+            traceSession(QStringLiteral("WELCOME stale nonce=%1 expected=%2 t0=%3 expectedT0=%4")
+                             .arg(welcome.client_nonce).arg(m_nonce)
+                             .arg(welcome.client_send_t0_us).arg(m_helloT0Us));
             // A protocol reconnect deliberately preserves the UDP endpoint.
             // Its receive queue may therefore still contain a WELCOME for the
             // nonce that was just abandoned.  It belongs to the old session,
@@ -578,6 +650,7 @@ private:
             return;
         }
         if (welcome.status != protocol::WelcomeStatus::Accepted) {
+            traceSession(QStringLiteral("WELCOME rejected status=%1").arg(static_cast<unsigned>(welcome.status)));
             if (welcome.status == protocol::WelcomeStatus::Busy) {
                 ++m_reconnectGeneration;
                 retryEndpoint(tr("Producer busy, retrying…"));
@@ -596,6 +669,9 @@ private:
         }
         m_sessionId = header.session_id;
         m_lastStateProgressUs = nowUs();
+        traceSession(QStringLiteral("WELCOME accepted session=%1 messageId=%2 ackRequired=%3")
+                         .arg(m_sessionId).arg(header.message_id)
+                         .arg((header.flags & protocol::MessageFlagAckRequired) != 0U));
         if ((header.flags & protocol::MessageFlagAckRequired) != 0U)
             sendAck(header, protocol::KnownAckFlags);
 		emit statusChanged(ClientStatus::Ready, tr("Waiting for mission…"));
@@ -605,11 +681,15 @@ private:
     {
         protocol::SessionBeginPayload begin;
         if (protocol::decode_session_begin_payload(data, begin) != protocol::ValidationError::None) {
+            traceSession(QStringLiteral("SESSION_BEGIN decode failed session=%1 messageId=%2")
+                             .arg(header.session_id).arg(header.message_id));
             fail(tr("Invalid SESSION_BEGIN"));
             return;
         }
         m_sessionBegun = true;
         m_lastStateProgressUs = nowUs();
+        traceSession(QStringLiteral("SESSION_BEGIN accepted session=%1 messageId=%2 mission=%3")
+                         .arg(header.session_id).arg(header.message_id).arg(begin.mission_instance_id));
         sendAck(header, protocol::KnownAckFlags);
 		emit statusChanged(ClientStatus::Synchronizing, tr("Synchronizing FSTL…"));
     }
@@ -632,15 +712,22 @@ private:
     {
         protocol::ManifestPartPayload payload;
         if (protocol::decode_manifest_part_payload(data, payload) != protocol::ValidationError::None) {
+            traceSession(QStringLiteral("MANIFEST decode failed session=%1 messageId=%2")
+                             .arg(header.session_id).arg(header.message_id));
             fail(tr("Invalid MANIFEST"));
             return;
         }
+        traceSession(QStringLiteral("MANIFEST part session=%1 messageId=%2 manifest=%3 part=%4/%5")
+                         .arg(header.session_id).arg(header.message_id).arg(payload.manifest_id)
+                         .arg(payload.part_index).arg(payload.part_count));
         rememberReliable(header);
         sendAck(header, static_cast<std::uint8_t>(protocol::AckFlag::Validated));
         protocol::CompletedTransaction completed;
         const auto progressUs = nowUs();
         const auto outcome = m_transactions.ingest(
             transactionPart(payload, header), progressUs / 1000, completed);
+        traceSession(QStringLiteral("MANIFEST outcome=%1 transaction=%2")
+                         .arg(static_cast<unsigned>(outcome.result)).arg(payload.manifest_id));
         if (outcome.result == protocol::TransactionAssemblyResult::Completed) {
             std::shared_ptr<const RadarManifestCatalog> catalog;
             QString error;
@@ -650,6 +737,8 @@ private:
             }
             m_manifestCatalog = std::move(catalog);
             m_manifestId = completed.transaction_id;
+            traceSession(QStringLiteral("MANIFEST applied transaction=%1 parts=%2")
+                             .arg(m_manifestId).arg(completed.parts.size()));
             applyTransactionAcks(completed);
             m_lastStateProgressUs = nowUs();
         } else if (outcome.result == protocol::TransactionAssemblyResult::Accepted) {
@@ -688,15 +777,23 @@ private:
             payload.required_manifest_id == 0 || payload.required_manifest_id != m_manifestId ||
             m_manifestCatalog == nullptr ||
             m_manifestCatalog->manifestId != payload.required_manifest_id) {
+            traceSession(QStringLiteral("SNAPSHOT rejected session=%1 messageId=%2 currentManifest=%3 catalog=%4")
+                             .arg(header.session_id).arg(header.message_id).arg(m_manifestId)
+                             .arg(m_manifestCatalog != nullptr));
             fail(tr("Invalid FULL_SNAPSHOT or missing manifest"));
             return;
         }
+        traceSession(QStringLiteral("SNAPSHOT part session=%1 messageId=%2 snapshot=%3 part=%4/%5 manifest=%6")
+                         .arg(header.session_id).arg(header.message_id).arg(payload.snapshot_id)
+                         .arg(payload.part_index).arg(payload.part_count).arg(payload.required_manifest_id));
         rememberReliable(header);
         sendAck(header, static_cast<std::uint8_t>(protocol::AckFlag::Validated));
         protocol::CompletedTransaction completed;
         const auto progressUs = nowUs();
         const auto outcome = m_transactions.ingest(
             transactionPart(payload, header), progressUs / 1000, completed);
+        traceSession(QStringLiteral("SNAPSHOT outcome=%1 transaction=%2")
+                         .arg(static_cast<unsigned>(outcome.result)).arg(payload.snapshot_id));
         if (outcome.result == protocol::TransactionAssemblyResult::Completed) {
             protocol::StateImage candidate;
             QString error;
@@ -715,6 +812,8 @@ private:
             m_lastDeltaSequence = 0;
             m_hasBaseline = true;
             m_resyncPending = false;
+            traceSession(QStringLiteral("SNAPSHOT applied transaction=%1 parts=%2")
+                             .arg(m_baselineSnapshotId).arg(completed.parts.size()));
             applyTransactionAcks(completed);
             publish(std::move(radar));
         } else if (outcome.result == protocol::TransactionAssemblyResult::Accepted) {
@@ -760,6 +859,10 @@ private:
     {
         protocol::HeartbeatPayload heartbeat;
         if (protocol::decode_heartbeat_payload(data, heartbeat) != protocol::ValidationError::None) return;
+        traceSession(QStringLiteral("HEARTBEAT kind=%1 probe=%2 origin=%3 session=%4")
+                         .arg(static_cast<unsigned>(heartbeat.kind))
+                         .arg(heartbeat.probe_id).arg(heartbeat.origin_t0_us)
+                         .arg(m_sessionId));
         // A heartbeat proves only that the UDP session is alive.  It must not
         // make a frozen radar image look current; only an atomically applied
         // manifest/snapshot/delta advances the state-progress watchdog.
@@ -769,8 +872,11 @@ private:
             heartbeat.transmit_t2_us = nowUs();
             QByteArray payload;
             if (encodePayload(heartbeat, protocol::HeartbeatPayloadSize,
-                              protocol::encode_heartbeat_payload, payload))
-                sendMessage(protocol::MessageType::Heartbeat, payload);
+                              protocol::encode_heartbeat_payload, payload)) {
+                const bool sent = sendMessage(protocol::MessageType::Heartbeat, payload);
+                traceSession(QStringLiteral("HEARTBEAT response probe=%1 sent=%2")
+                                 .arg(heartbeat.probe_id).arg(sent));
+            }
         }
     }
 
@@ -810,12 +916,39 @@ private:
         }
 		const std::uint64_t networkSilent = m_lastNetworkActivityUs == 0
 			? 0 : now - m_lastNetworkActivityUs;
-		if (!m_sessionBegun || m_missionPaused) {
+		// Session liveness is a transport property. A quiet cockpit image may
+		// become stale and request a resynchronization, but it must never rotate
+		// a session while valid heartbeats or other FSTL traffic still arrive.
+		if (!m_sessionBegun && networkSilent >= 2'000'000ULL) {
+			traceSession(QStringLiteral("WATCHDOG transport reconnect session=%1 sessionBegun=%2 baseline=%3 paused=%4 networkSilentUs=%5")
+			                 .arg(m_sessionId).arg(m_sessionBegun).arg(m_hasBaseline)
+			                 .arg(m_missionPaused).arg(networkSilent));
+			++m_reconnectGeneration;
+			renegotiateSession();
+			return;
+		}
+		if (m_missionPaused) {
+			// Pause freezes cockpit progression, not transport liveness. Heartbeats
+			// preserve the session, while a stopped or restarted producer must still
+			// make this old paused session stale and trigger a new HELLO.
 			if (networkSilent >= 2'000'000ULL) {
+				traceSession(QStringLiteral("WATCHDOG paused transport reconnect session=%1 networkSilentUs=%2")
+				                 .arg(m_sessionId).arg(networkSilent));
 				++m_reconnectGeneration;
 				renegotiateSession();
 				return;
 			}
+			if (networkSilent >= 1'000'000ULL && !m_staleSignalled) {
+				m_staleSignalled = true;
+				emit statusChanged(ClientStatus::Stale, tr("STALE"));
+				requestResync(protocol::ResyncReason::SessionStale);
+			} else if (networkSilent < 1'000'000ULL && m_staleSignalled) {
+				m_staleSignalled = false;
+				emit statusChanged(ClientStatus::Paused, tr("PAUSE"));
+			}
+			return;
+		}
+		if (!m_sessionBegun) {
 			if (networkSilent >= 1'000'000ULL && !m_staleSignalled) {
 				m_staleSignalled = true;
 				emit statusChanged(ClientStatus::Stale, tr("STALE"));
@@ -831,13 +964,18 @@ private:
         if (m_lastStateProgressUs != 0) {
             const std::uint64_t silent = now - m_lastStateProgressUs;
             const auto status = statusForSilence(
-                static_cast<qint64>(silent / 1'000ULL), true, m_hasBaseline);
+                static_cast<qint64>(silent / 1'000ULL),
+                static_cast<qint64>(networkSilent / 1'000ULL), true, m_hasBaseline);
             if (status == ClientStatus::Reconnecting) {
+                traceSession(QStringLiteral("WATCHDOG transport reconnect session=%1 sessionBegun=%2 baseline=%3 paused=%4 stateSilentUs=%5 networkSilentUs=%6")
+                                 .arg(m_sessionId).arg(m_sessionBegun).arg(m_hasBaseline)
+                                 .arg(m_missionPaused).arg(silent).arg(networkSilent));
                 ++m_reconnectGeneration;
                 renegotiateSession();
                 return;
             }
-            if (status == ClientStatus::Stale && !m_staleSignalled) {
+            if (status == ClientStatus::Stale &&
+                !m_staleSignalled) {
                 m_staleSignalled = true;
                 emit statusChanged(ClientStatus::Stale, tr("STALE"));
                 requestResync(protocol::ResyncReason::SessionStale);

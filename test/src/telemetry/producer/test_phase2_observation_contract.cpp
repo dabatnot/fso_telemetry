@@ -3929,6 +3929,8 @@ TEST(TelemetryPhase2ObservationContract,
 		collect_phase2_observation(*buffer, *source, 700U,
 			Phase2ObservationProjection::CompleteShip).status);
 	ASSERT_EQ(1U, buffer->observation().ships.size());
+	EXPECT_EQ(buffer->observation().ships.size(),
+		buffer->accepted_capture_map().source_count);
 	const auto full_reads = source->read_calls;
 	const auto discovery_reads = source->discovery_read_calls;
 	const auto old_damage_sample =
@@ -3966,6 +3968,11 @@ TEST(TelemetryPhase2ObservationContract,
 		attempted);
 	EXPECT_EQ(Phase2ObservationRefresh::FlightControls,
 		buffer->capture_diagnostics().completed_refresh);
+	// The per-attempt diagnostics deliberately describe only the flight/control
+	// reads. The retained accepted map is still the complete ship map that owns
+	// the current observation rows.
+	EXPECT_EQ(buffer->observation().ships.size(),
+		buffer->accepted_capture_map().source_count);
 }
 
 TEST(TelemetryPhase2ObservationContract,

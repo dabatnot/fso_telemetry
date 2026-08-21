@@ -223,6 +223,12 @@ endpoint ni son `session_id`, puis envoie dans cet ordre logique :
 3. la transaction `FullSnapshot` référencée par `initial_snapshot_id` ;
 4. les événements fiables intervenus après l'échantillon du snapshot, le cas échéant.
 
+`SessionBegin` est un contrôle fiable de cycle de vie prioritaire sur toute
+nouvelle keyframe, tout nouveau snapshot ou tout delta d'une session déjà
+active. Une sortie déjà engagée est terminée normalement, puis l'activation
+d'un slot `Prewarmed` passe avant la préparation d'un nouvel état. Aucun client
+préchauffé ne peut ainsi être affamé par le trafic continu d'un client `Live`.
+
 Le producteur **DEVRAIT** attendre le commit du manifeste avant d'envoyer un snapshot qui le référence. Il **PEUT** les pipeliner si les quotas candidats le permettent, mais le client ne committe jamais le snapshot avant le manifeste.
 
 Un changement de manifeste pendant la session exige :

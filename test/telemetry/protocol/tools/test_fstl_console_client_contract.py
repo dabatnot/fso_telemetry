@@ -1925,12 +1925,14 @@ class FstlConsoleClientContractTest(unittest.TestCase):
         self.assertEqual(2_100_100, client.state.last_network_activity_us)
 
     def test_paused_live_state_suspends_only_the_cockpit_progress_watchdog(self) -> None:
-        state = console.ConsoleState(status="Live", last_state_us=1_000_000)
+        state = console.ConsoleState(
+            status="Live", last_state_us=1_000_000,
+            last_network_activity_us=2_500_000,
+        )
         state.records["MISSION_STATE"] = {"paused": 1}
         state.stale_if_needed(3_000_000, "2026-08-02T12:00:02.000000Z", 1_000_000)
         self.assertEqual("Live", state.status)
-        state.records["MISSION_STATE"]["paused"] = 0
-        state.stale_if_needed(3_000_000, "2026-08-02T12:00:02.000000Z", 1_000_000)
+        state.stale_if_needed(4_000_001, "2026-08-02T12:00:03.000001Z", 1_000_000)
         self.assertEqual("Stale", state.status)
 
     def test_resync_retransmits_until_validated_ack_then_enters_synchronizing(self) -> None:

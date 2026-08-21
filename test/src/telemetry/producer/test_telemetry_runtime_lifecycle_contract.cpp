@@ -658,6 +658,54 @@ TEST(TelemetryRuntimeLifecycleContract, InvalidTransitionRemainsStickyWhenAValid
 	EXPECT_EQ(detail::RuntimeTerminalReason::InvalidLifecycleTransition, runtime.terminal_reason());
 }
 
+TEST(TelemetryRuntimeLifecycleContract, ExplicitPauseEdgesArePublishedSynchronouslyAndResumeRearmsTransport)
+{
+	LifecycleServices services;
+	detail::Runtime runtime(services);
+	start_mission_active(runtime, services);
+	services.tick_contexts.clear();
+
+	runtime.on_game_leave_state(GS_STATE_GAME_PLAY, GS_STATE_GAME_PAUSED);
+	runtime.on_game_enter_state(GS_STATE_GAME_PLAY, GS_STATE_GAME_PAUSED);
+	runtime.on_mission_pause_changed(true);
+
+	ASSERT_EQ(8U, services.tick_contexts.size());
+	for (std::size_t index = 0U; index < services.tick_contexts.size(); ++index) {
+		const auto& context = services.tick_contexts[index];
+		EXPECT_TRUE(context.mission_active);
+		EXPECT_TRUE(context.mission_paused);
+		EXPECT_EQ(index == 0U, context.resume_transport);
+	}
+	const auto session_generation = services.tick_contexts.back().mission_generation;
+
+	// EngineUpdate continues to service the transport while pause UI states are
+	// active. The explicit edge must remain latched instead of being overwritten
+	// by the default tick context immediately after the synchronous drain.
+	services.tick_contexts.clear();
+	runtime.on_engine_update();
+	ASSERT_EQ(1U, services.tick_contexts.size());
+	EXPECT_TRUE(services.tick_contexts[0].mission_paused);
+
+	services.tick_contexts.clear();
+	runtime.on_game_leave_state(GS_STATE_GAME_PAUSED, GS_STATE_GAME_PLAY);
+	runtime.on_game_enter_state(GS_STATE_GAME_PAUSED, GS_STATE_GAME_PLAY);
+	runtime.on_mission_pause_changed(false);
+
+	ASSERT_EQ(8U, services.tick_contexts.size());
+	EXPECT_TRUE(services.tick_contexts[0].resume_transport);
+	EXPECT_FALSE(services.tick_contexts[1].resume_transport);
+	for (const auto& context : services.tick_contexts) {
+		EXPECT_TRUE(context.mission_active);
+		EXPECT_FALSE(context.mission_paused);
+		EXPECT_EQ(session_generation, context.mission_generation);
+	}
+	services.tick_contexts.clear();
+	runtime.on_engine_update();
+	ASSERT_EQ(1U, services.tick_contexts.size());
+	EXPECT_FALSE(services.tick_contexts[0].mission_paused);
+	EXPECT_TRUE(runtime.mission_publication_allowed());
+}
+
 TEST(TelemetryRuntimeLifecycleContract, MissionLoadBlocksPublicationImmediatelyThenPurgesOnTheNextMainThreadTick)
 {
 	LifecycleServices services;

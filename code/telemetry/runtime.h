@@ -80,6 +80,8 @@ struct RuntimeTickContext {
 	std::uint64_t now_us = 0U;
 	std::uint32_t mission_generation = 0U;
 	bool mission_active = false;
+	bool mission_paused = false;
+	bool resume_transport = false;
 };
 
 enum class RuntimeTickStatus : std::uint8_t {
@@ -157,6 +159,7 @@ class Runtime final {
 	void on_game_mission_load() noexcept;
 	void on_game_enter_state(int old_state, int new_state) noexcept;
 	void on_game_leave_state(int old_state, int new_state) noexcept;
+	void on_mission_pause_changed(bool paused) noexcept;
 
 	RuntimeState state() const noexcept
 	{
@@ -219,6 +222,7 @@ class Runtime final {
 	bool m_game_state_pending = false;
 	bool m_mission_load_pending = false;
 	bool m_mission_purge_pending = false;
+	bool m_mission_paused = false;
 	bool m_publication_blocked = false;
 };
 

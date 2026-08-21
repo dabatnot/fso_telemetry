@@ -170,6 +170,16 @@ describe("AV CORE application", () => {
     expect(screen.getByText("Test de connexion")).toBeInTheDocument();
   });
 
+  it("shows PAUSE consistently in the header and telemetry system panel", async () => {
+    render(<App />);
+    await screen.findByRole("heading", { name: "Modules" });
+    const paused = liveStatus();
+    paused.mission = { active: true, paused: true, generation: 1, timeCompression: 1 };
+    act(() => FakeEventSource.instance.emit("status", paused));
+    fireEvent.click(screen.getByRole("button", { name: /Système/ }));
+    expect(await screen.findAllByText("PAUSE")).toHaveLength(2);
+  });
+
   it("shows when saving requires a service restart", async () => {
     vi.mocked(fetch).mockImplementation(async (path: string | URL | Request, init?: RequestInit) => {
       if (path === "/api/config" && init?.method === "PUT") {

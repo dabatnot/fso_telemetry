@@ -224,6 +224,7 @@ void Runtime::teardown_faulted_runtime(RuntimeTerminalReason reason) noexcept
 
 bool Runtime::purge_mission() noexcept
 {
+	m_mission_paused = false;
 	m_services.stop_collection();
 	if (!callback_gate_is_open()) {
 		return false;
@@ -536,7 +537,8 @@ void Runtime::on_engine_update() noexcept
 		}
 		const RuntimeTickContext context{now_us,
 			m_mission_generation,
-			m_state == RuntimeState::MissionActive && !m_publication_blocked};
+			m_state == RuntimeState::MissionActive && !m_publication_blocked,
+			m_mission_paused};
 		switch (m_services.service_tick(context)) {
 		case RuntimeTickStatus::PermanentTransportFailure:
 			if (callback_gate_is_open()) {
@@ -548,6 +550,47 @@ void Runtime::on_engine_update() noexcept
 				teardown_faulted_runtime(RuntimeTerminalReason::CaptureFailure);
 			}
 			break;
+		case RuntimeTickStatus::Complete:
+		case RuntimeTickStatus::Unavailable:
+			break;
+		}
+	}
+}
+
+void Runtime::on_mission_pause_changed(bool paused) noexcept
+{
+	if (!callback_gate_is_open() || !callback_is_on_captured_thread() ||
+		m_state == RuntimeState::Disabled || m_state == RuntimeState::Faulted) {
+		return;
+	}
+	apply_pending_lifecycle();
+	if (!callback_gate_is_open() || m_state != RuntimeState::MissionActive ||
+		m_publication_blocked) {
+		return;
+	}
+	m_mission_paused = paused;
+
+	// The normal pause UI can hold the outer engine-update pump until input
+	// resumes it. Publish the pause edge synchronously: the first tick captures
+	// the changed MISSION_STATE and the following bounded passes drain its
+	// cumulative pause delta for every supported client slot.
+	// On resume, reset transport clocks before timeout processing, then perform
+	// the same two-tick keyframe handoff on the existing sessions.
+	constexpr int PauseTransitionDrainPasses = 8; // two pipeline stages x four slots
+	for (int pass = 0; pass < PauseTransitionDrainPasses; ++pass) {
+		const RuntimeTickContext context{
+			m_services.monotonic_now_us(),
+			m_mission_generation,
+			true,
+			paused,
+			pass == 0};
+		switch (m_services.service_tick(context)) {
+		case RuntimeTickStatus::PermanentTransportFailure:
+			teardown_faulted_runtime(RuntimeTerminalReason::TransportUnavailable);
+			return;
+		case RuntimeTickStatus::PermanentCaptureFailure:
+			teardown_faulted_runtime(RuntimeTerminalReason::CaptureFailure);
+			return;
 		case RuntimeTickStatus::Complete:
 		case RuntimeTickStatus::Unavailable:
 			break;

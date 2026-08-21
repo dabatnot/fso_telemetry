@@ -2272,7 +2272,12 @@ class ConsoleState:
     def stale_if_needed(self, at_us: int, at_utc: str, stale_us: int) -> None:
         mission = self.records.get("MISSION_STATE", {})
         if self.status == "Live" and bool(mission.get("paused", 0)):
-            return
+            # Pause freezes cockpit progression, not transport liveness. Keep
+            # the replica Live while heartbeats arrive, but let a stopped or
+            # restarted producer make the old paused session Stale.
+            last_activity_us = self.last_network_activity_us
+            if last_activity_us is not None and at_us - last_activity_us <= stale_us:
+                return
         if self.status == "Live" and self.last_state_us is not None and at_us - self.last_state_us > stale_us:
             self.status = "Stale"
             self.stale_reason = "silence"

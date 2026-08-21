@@ -1435,7 +1435,8 @@ NativeSessionTickStatus NativeSessionRuntime::service_tick(const NativeSessionTi
 	const auto flight_controls_cadence =
 		cadence.status == CaptureCadenceStatus::Due ||
 		m_capture_after_ready_transition ||
-		m_capture_for_phase3_keyframe;
+		m_capture_for_phase3_keyframe ||
+		m_capture_for_pause_transition;
 	const auto systems_capture_due =
 		systems_cadence.status == CaptureCadenceStatus::Due ||
 		m_capture_after_ready_transition ||
@@ -2194,18 +2195,36 @@ NativeSessionTickStatus NativeSessionRuntime::service_r2_tick(const NativeSessio
 
 	m_capture_after_ready_transition = false;
 	m_capture_for_phase3_keyframe = false;
+	m_capture_for_pause_transition = false;
 	m_tick_context = context;
+	if (context.resume_transport) {
+		m_controller.resume_after_pause(context.now_us);
+	}
 	m_controller.expire_housekeeping(context.now_us);
 	if (context.mission_active &&
 		m_controller.activate_prewarmed_sessions(
 			context.mission_generation, context.now_us) != 0U)
 		m_capture_after_ready_transition = true;
-	if (context.mission_active &&
-		(!m_pause_state_initialized ||
-		 context.mission_paused != m_last_mission_paused)) {
-		m_controller.request_all_keyframes();
-		m_capture_for_phase3_keyframe = true;
+	if (context.mission_active && !m_pause_state_initialized) {
 		m_pause_state_initialized = true;
+		m_last_mission_paused = context.mission_paused;
+	} else if (context.mission_active &&
+		context.mission_paused != m_last_mission_paused) {
+		// A pause edge must not wait behind an acknowledged keyframe candidate:
+		// the outer game loop may stop immediately after this callback. Capture a
+		// regular cumulative delta instead so MISSION_STATE.paused can be emitted
+		// on every live slot without rotating the session or starting another
+		// reliable snapshot transaction.
+		if (context.mission_paused) {
+			m_capture_for_pause_transition = true;
+		} else {
+			// Once the engine loop is running again, refresh every client from a
+			// reliable complete state. This also clears PAUSE for a client whose
+			// non-reliable pause delta arrived while the active baseline was already
+			// the unpaused state.
+			m_controller.request_all_keyframes();
+			m_capture_for_phase3_keyframe = true;
+		}
 		m_last_mission_paused = context.mission_paused;
 	} else if (!context.mission_active) {
 		m_pause_state_initialized = false;
@@ -2235,7 +2254,18 @@ NativeSessionTickStatus NativeSessionRuntime::service_r2_tick(const NativeSessio
 	const auto serialization_started = measure_performance ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
 	auto attempts_remaining = static_cast<std::uint16_t>(
 		m_maximum_attempts - result.attempts);
-	const auto queue_next_state = [&]() noexcept {
+	const auto queue_next_work = [&]() noexcept {
+		// A client that completed WELCOME while another slot was already
+		// publishing can otherwise remain Prewarmed forever: the live slot
+		// refills the single output slot with state at the end of every tick.
+		// Once previously queued work has drained, mission lifecycle control
+		// must therefore win over every newly prepared state item.
+		if (context.mission_active &&
+			m_controller.activate_prewarmed_sessions(
+				context.mission_generation, context.now_us) != 0U) {
+			m_capture_after_ready_transition = true;
+			return true;
+		}
 		const auto queue_budget = static_cast<std::size_t>(
 			attempts_remaining == 0U ? 1U : attempts_remaining);
 		bool queued = m_controller.service_next_phase2_manifest_egress(
@@ -2253,7 +2283,7 @@ NativeSessionTickStatus NativeSessionRuntime::service_r2_tick(const NativeSessio
 		return queued;
 	};
 	while (attempts_remaining != 0U) {
-		if (!queue_next_state())
+		if (!queue_next_work())
 			break;
 
 		const auto follow_started = measure_performance
@@ -2281,7 +2311,7 @@ NativeSessionTickStatus NativeSessionRuntime::service_r2_tick(const NativeSessio
 	// A fully consumed budget still prepares one tail item for the next tick.
 	// This preserves progress for maxDatagramsPerTick=1 without overspending.
 	if (!m_controller.has_output())
-		(void)queue_next_state();
+		(void)queue_next_work();
 	if (measure_performance) {
 		m_last_performance_sample.serialization_duration_ns = elapsed_nanoseconds(serialization_started, std::chrono::steady_clock::now());
 	}

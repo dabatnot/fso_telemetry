@@ -141,6 +141,24 @@ void initialize() noexcept
 	telemetry_callbacks_ready = true;
 }
 
+void mission_pause_changed(bool paused) noexcept
+{
+	if (telemetry_callbacks_ready && telemetry_runtime != nullptr) {
+		telemetry_runtime->on_mission_pause_changed(paused);
+	}
+}
+
+void modal_loop_update() noexcept
+{
+	// Modal UI loops (notably the in-mission ESC confirmation popup) block the
+	// outer game loop and therefore its EngineUpdate event. Keep servicing the
+	// non-blocking telemetry transport from the main thread so established
+	// sessions continue exchanging heartbeats while the simulation is stopped.
+	if (telemetry_callbacks_ready && telemetry_runtime != nullptr) {
+		telemetry_runtime->on_engine_update();
+	}
+}
+
 } // namespace telemetry
 
 #if defined(FSO_TELEMETRY_TEST_SEAMS)

@@ -267,6 +267,7 @@ class SessionController final {
 	void service_timeouts(std::uint64_t now_us) noexcept;
 	void service_periodic(std::uint64_t now_us) noexcept;
 	void service_session_maintenance(std::uint64_t now_us) noexcept;
+	void resume_after_pause(std::uint64_t now_us) noexcept;
 	std::size_t activate_prewarmed_sessions(std::uint32_t mission_generation,
 		std::uint64_t now_us) noexcept;
 	void request_all_keyframes() noexcept;

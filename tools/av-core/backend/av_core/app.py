@@ -97,10 +97,12 @@ def create_app(runtime: AvCoreRuntime, frontend_dir: Path) -> FastAPI:
         index = root / "index.html"
         candidate = (root / path).resolve()
         if path and candidate.is_relative_to(root) and candidate.is_file():
+            if candidate == index:
+                return FileResponse(candidate, headers={"Cache-Control": "no-cache"})
             return FileResponse(candidate)
         if not index.is_file():
             raise HTTPException(status_code=503, detail="FRONTEND_UNAVAILABLE")
-        return FileResponse(index)
+        return FileResponse(index, headers={"Cache-Control": "no-cache"})
 
     return app
 

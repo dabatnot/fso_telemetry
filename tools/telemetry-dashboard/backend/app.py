@@ -289,8 +289,13 @@ def create_app(runtime: TelemetryRuntime) -> FastAPI:
         async def frontend(path: str) -> FileResponse:
             candidate = (FRONTEND_DIST / path).resolve()
             if path and candidate.is_file() and FRONTEND_DIST.resolve() in candidate.parents:
+                if candidate == (FRONTEND_DIST / "index.html").resolve():
+                    return FileResponse(candidate, headers={"Cache-Control": "no-cache"})
                 return FileResponse(candidate)
-            return FileResponse(FRONTEND_DIST / "index.html")
+            return FileResponse(
+                FRONTEND_DIST / "index.html",
+                headers={"Cache-Control": "no-cache"},
+            )
 
     return app
 

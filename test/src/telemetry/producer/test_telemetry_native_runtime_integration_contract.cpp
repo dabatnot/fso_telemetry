@@ -4,6 +4,7 @@
 #include "telemetry/native_session_runtime.h"
 #include "telemetry/config.h"
 #include "telemetry/engine_adapter.h"
+#include "telemetry/phase2_catalog_projection.h"
 #include "telemetry/phase3_engine_collector.h"
 #include "telemetry/phase3_identity_registry.h"
 #include "telemetry/phase3_state_image.h"
@@ -944,6 +945,76 @@ std::uint64_t establish_ready(NativeFixture& fixture,
 	EXPECT_EQ(sessions_before + 1U, fixture.runtime.active_sessions())
 		<< "establish_ready adds exactly one session without assuming an empty fixture.";
 	return begin.header.session_id;
+}
+
+bool mission_paused(const protocol::StateImage& image)
+{
+	for (const auto& atom : image.records()) {
+		if (atom.key.record_type !=
+			static_cast<std::uint16_t>(protocol::RecordType::MissionState))
+			continue;
+		// MISSION_STATE: presence u64, generation u32, phase u8, paused bool.
+		EXPECT_GT(atom.value.size(), 13U);
+		return atom.value.size() > 13U && atom.value[13U] != 0U;
+	}
+	ADD_FAILURE() << "Missing MISSION_STATE";
+	return false;
+}
+
+std::uint64_t establish_prewarmed_controller_session(detail::SessionController& controller,
+	protocol::EndpointKey endpoint,
+	std::uint64_t nonce,
+	std::uint64_t now_us,
+	std::uint32_t packet_sequence)
+{
+	const auto request = hello(protocol::VersionMinorV1_1, nonce, endpoint);
+	EXPECT_EQ(detail::SessionIngressDisposition::ResponseQueued,
+		controller.ingest(endpoint, byte_view(request.bytes), now_us, 0U, false).disposition);
+	const auto welcome = pop_controller_packet(controller);
+	protocol::DatagramView decoded;
+	EXPECT_EQ(protocol::ValidationError::None,
+		protocol::decode_and_validate_datagram(byte_view(welcome.bytes),
+			protocol::ProtocolMinorRange{protocol::VersionMinorV1_0, protocol::VersionMinorV1_1}, decoded));
+	const auto ack = ack_for(welcome.bytes, endpoint, packet_sequence);
+	EXPECT_EQ(detail::SessionIngressDisposition::WelcomeProofApplied,
+		controller.ingest(endpoint, byte_view(ack.bytes), now_us + 1U, 0U, false).disposition);
+	return decoded.header.session_id;
+}
+
+std::uint64_t establish_live_controller_session(detail::SessionController& controller,
+	protocol::EndpointKey endpoint,
+	std::uint64_t nonce,
+	std::uint64_t now_us,
+	std::uint32_t packet_sequence)
+{
+	const auto request = hello(protocol::VersionMinorV1_1, nonce, endpoint);
+	EXPECT_EQ(detail::SessionIngressDisposition::ResponseQueued,
+		controller.ingest(endpoint, byte_view(request.bytes), now_us, 7U, true).disposition);
+	const auto welcome = pop_controller_packet(controller);
+	protocol::DatagramView decoded;
+	EXPECT_EQ(protocol::ValidationError::None,
+		protocol::decode_and_validate_datagram(byte_view(welcome.bytes),
+			protocol::ProtocolMinorRange{protocol::VersionMinorV1_0, protocol::VersionMinorV1_1}, decoded));
+	const auto welcome_ack = ack_for(welcome.bytes, endpoint, packet_sequence++);
+	EXPECT_EQ(detail::SessionIngressDisposition::WelcomeProofApplied,
+		controller.ingest(endpoint, byte_view(welcome_ack.bytes), now_us + 1U, 7U, true).disposition);
+	const auto begin = pop_controller_packet(controller);
+	const auto begin_ack = ack_for(begin.bytes, endpoint, packet_sequence++);
+	EXPECT_NE(detail::SessionIngressDisposition::Dropped,
+		controller.ingest(endpoint, byte_view(begin_ack.bytes), now_us + 2U, 7U, true).disposition);
+	EXPECT_TRUE(controller.begin_initial_snapshot(0U,
+		phase1_state_image_at(1.0F, now_us + 3U), now_us + 3U));
+	for (std::uint64_t offset = 0U;
+		offset < 16U && controller.snapshot_progress(0U) != detail::Phase1SnapshotProgress::Live;
+		++offset) {
+		EXPECT_EQ(1U, controller.service_initial_snapshot_egress(64U, now_us + 4U + offset));
+		const auto snapshot = pop_controller_packet(controller);
+		const auto snapshot_ack = ack_for(snapshot.bytes, endpoint, packet_sequence++);
+		EXPECT_NE(detail::SessionIngressDisposition::Dropped,
+			controller.ingest(endpoint, byte_view(snapshot_ack.bytes), now_us + 20U + offset, 7U, true).disposition);
+	}
+	EXPECT_EQ(detail::Phase1SnapshotProgress::Live, controller.snapshot_progress(0U));
+	return decoded.header.session_id;
 }
 
 // This fake is deliberately the only place where a synthetic complete startup
@@ -3132,12 +3203,61 @@ TEST(TelemetryPhase3CaptureSchedule,
 	ASSERT_EQ(detail::NativeSessionTickStatus::Complete,
 		fixture.runtime.service_tick({definition_sample + 7U, 1U, true}, player_view, &phase2_view));
 	bool definition_keyframe_sent = false;
+	std::size_t definition_keyframe = fixture.backend.sent.size();
 	for (std::size_t index = definition_manifest + 1U;
-		index < fixture.backend.sent.size(); ++index) {
+		 index < fixture.backend.sent.size(); ++index) {
 		definition_keyframe_sent = definition_keyframe_sent ||
 			(sent_type(fixture.backend, index) == protocol::MessageType::FullSnapshot);
+		if (sent_type(fixture.backend, index) ==
+				protocol::MessageType::FullSnapshot)
+			definition_keyframe = index;
 	}
 	EXPECT_TRUE(definition_keyframe_sent);
+	ASSERT_LT(definition_keyframe, fixture.backend.sent.size());
+	fixture.backend.receives.push_back({detail::IoStatus::Complete,
+		ack_for(fixture.backend.sent[definition_keyframe], endpoint, 932U)});
+	ASSERT_EQ(detail::NativeSessionTickStatus::Complete,
+		fixture.runtime.service_tick({definition_sample + 8U, 1U, true},
+			player_view, &phase2_view));
+
+	// Pausing is a cockpit state transition, not a transport transition. It
+	// must update the existing live slot without waiting for another reliable
+	// keyframe transaction: the outer game loop may stop immediately afterward.
+	const auto session_before_pause = slot(fixture)->session_id;
+	const auto pause_sample = definition_sample + 50'000U;
+	const auto sends_before_pause = fixture.backend.sent.size();
+	ASSERT_EQ(detail::NativeSessionTickStatus::Complete,
+		fixture.runtime.service_tick(
+			{pause_sample, 1U, true, true, 1.0F}, player_view, &phase2_view));
+	ASSERT_NE(nullptr, slot(fixture));
+	EXPECT_EQ(session_before_pause, slot(fixture)->session_id);
+	EXPECT_TRUE(mission_paused(slot(fixture)->snapshot.current_state()));
+	EXPECT_FALSE(NativePlayerAccess::phase2_capture_plan(fixture.runtime)
+		.force_complete_keyframe);
+	ASSERT_EQ(detail::NativeSessionTickStatus::Complete,
+		fixture.runtime.service_tick(
+			{pause_sample + 1U, 1U, true, true, 1.0F}, player_view,
+			&phase2_view));
+	bool pause_delta_sent = false;
+	bool pause_keyframe_sent = false;
+	for (std::size_t index = sends_before_pause;
+		 index < fixture.backend.sent.size(); ++index) {
+		pause_delta_sent = pause_delta_sent ||
+			(sent_type(fixture.backend, index) ==
+			 protocol::MessageType::Delta);
+		pause_keyframe_sent = pause_keyframe_sent ||
+			(sent_type(fixture.backend, index) ==
+			 protocol::MessageType::FullSnapshot);
+	}
+	EXPECT_TRUE(pause_delta_sent);
+	EXPECT_FALSE(pause_keyframe_sent);
+	ASSERT_EQ(detail::NativeSessionTickStatus::Complete,
+		fixture.runtime.service_tick(
+			{pause_sample + 2U, 1U, true, false, 1.0F, true}, player_view,
+			&phase2_view));
+	EXPECT_FALSE(mission_paused(slot(fixture)->snapshot.current_state()));
+	EXPECT_TRUE(NativePlayerAccess::phase2_capture_plan(fixture.runtime)
+		.force_complete_keyframe);
 
 }
 
@@ -3820,6 +3940,113 @@ TEST(TelemetryPhase1DeltaEgressContract, RealRuntimeEventuallyEmitsQueuedDeltaAf
 	}
 	EXPECT_TRUE(delta_emitted)
 		<< "Once no reliable/control/heartbeat work is due, queued DELTA must reach the real transport scheduler.";
+}
+
+TEST(TelemetryPhase1DeltaEgressContract, LiveStateCannotStarveAPrewarmedSessionBegin)
+{
+	REQUIRE_NATIVE_PLAYER_D3();
+	auto fixture = std::make_unique<NativeFixture>();
+	auto config = enabled_config(1U);
+	config.max_clients = 2U;
+	ASSERT_EQ(detail::NativeSessionStartStatus::Started, fixture->start(config));
+	auto* controller = NativePlayerAccess::controller(fixture->runtime);
+	ASSERT_NE(nullptr, controller);
+	const auto live_endpoint = peer(94U);
+	const auto waiting_endpoint = peer(95U);
+	ASSERT_NE(0U, establish_live_controller_session(
+		*controller, live_endpoint, 0x940U, 10'000U, 1'000U));
+	const auto waiting_session_id = establish_prewarmed_controller_session(
+		*controller, waiting_endpoint, 0x950U, 20'000U, 2'000U);
+	ASSERT_NE(0U, waiting_session_id);
+	ASSERT_EQ(detail::ProducerSessionProgress::ReadyForState,
+		controller->slot(0U).progress);
+	ASSERT_EQ(detail::ProducerSessionProgress::Prewarmed,
+		controller->slot(1U).progress);
+
+	ASSERT_EQ(protocol::ProducerBaselineResult::Applied,
+		controller->replace_current_state(0U,
+			phase1_state_image_at(9.0F, 30'000U)));
+	ASSERT_TRUE(controller->queue_cumulative_delta(0U, 30'001U));
+	CountingEngineReadView view;
+	const auto first_send = fixture->backend.sent.size();
+	const auto period = independent_period_us(config.flight_hz);
+	std::size_t waiting_begin = fixture->backend.sent.size();
+	for (std::uint64_t tick = 0U; tick < 12U &&
+		waiting_begin == fixture->backend.sent.size(); ++tick) {
+		const auto sent_before = fixture->backend.sent.size();
+		ASSERT_EQ(detail::NativeSessionTickStatus::Complete,
+			capture_tick(*fixture, view, 1'000'000U + tick * period));
+		EXPECT_LE(fixture->backend.sent.size() - sent_before, 1U)
+			<< "max_datagrams_per_tick=1 remains a hard shared budget.";
+		for (std::size_t index = sent_before;
+			index < fixture->backend.sent.size(); ++index) {
+			if (sent_type(fixture->backend, index) ==
+					protocol::MessageType::SessionBegin &&
+				fixture->backend.send_endpoints[index] == waiting_endpoint) {
+				waiting_begin = index;
+				break;
+			}
+		}
+	}
+
+	ASSERT_EQ(detail::ProducerSessionProgress::ReadyForState,
+		controller->slot(1U).progress)
+		<< "Continuous state capture from the live slot must not leave the other slot Prewarmed.";
+	ASSERT_LT(waiting_begin, fixture->backend.sent.size());
+	std::vector<std::uint8_t> stable;
+	EXPECT_EQ(waiting_session_id,
+		decode_sent(fixture->backend, waiting_begin, stable).header.session_id)
+		<< "Prewarm activation preserves the negotiated transport session.";
+	for (std::size_t index = first_send + 1U; index < waiting_begin; ++index) {
+		const auto type = sent_type(fixture->backend, index);
+		EXPECT_NE(protocol::MessageType::Delta, type);
+		EXPECT_NE(protocol::MessageType::FullSnapshot, type)
+			<< "After the already-queued output drains, SESSION_BEGIN precedes newly prepared state.";
+	}
+}
+
+TEST(TelemetryNativeRuntimeIntegrationContract, OneDatagramBudgetActivatesEveryPrewarmedClient)
+{
+	auto fixture = std::make_unique<NativeFixture>();
+	auto config = enabled_config(1U);
+	config.max_clients = 4U;
+	ASSERT_EQ(detail::NativeSessionStartStatus::Started, fixture->start(config));
+	auto* controller = NativePlayerAccess::controller(fixture->runtime);
+	ASSERT_NE(nullptr, controller);
+	std::array<std::uint64_t, 4U> session_ids{};
+	for (std::size_t index = 0U; index < session_ids.size(); ++index) {
+		session_ids[index] = establish_prewarmed_controller_session(
+			*controller,
+			peer(static_cast<std::uint8_t>(100U + index)),
+			0xa00U + index,
+			40'000U + index * 10U,
+			3'000U + static_cast<std::uint32_t>(index));
+		ASSERT_NE(0U, session_ids[index]);
+	}
+
+	const auto first_send = fixture->backend.sent.size();
+	for (std::uint64_t tick = 0U; tick < 16U; ++tick) {
+		const auto sent_before = fixture->backend.sent.size();
+		ASSERT_EQ(detail::NativeSessionTickStatus::Complete,
+			native_tick(*fixture, {50'000U + tick, 7U, true}));
+		EXPECT_LE(fixture->backend.sent.size() - sent_before, 1U);
+	}
+
+	std::array<bool, 4U> observed{};
+	for (std::size_t index = first_send; index < fixture->backend.sent.size(); ++index) {
+		if (sent_type(fixture->backend, index) != protocol::MessageType::SessionBegin)
+			continue;
+		std::vector<std::uint8_t> stable;
+		const auto session_id = decode_sent(fixture->backend, index, stable).header.session_id;
+		for (std::size_t slot_index = 0U; slot_index < session_ids.size(); ++slot_index)
+			observed[slot_index] = observed[slot_index] ||
+				session_id == session_ids[slot_index];
+	}
+	for (std::size_t index = 0U; index < session_ids.size(); ++index) {
+		EXPECT_EQ(detail::ProducerSessionProgress::ReadyForState,
+			controller->slot(index).progress);
+		EXPECT_TRUE(observed[index]);
+	}
 }
 
 TEST(TelemetryNativeRuntimeIntegrationContract, SharedBudgetAlternatesAcrossTicksAndWouldBlockStopsOnlyOneDirection)

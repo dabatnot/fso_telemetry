@@ -156,13 +156,18 @@ Cette règle rend `P1-REQ-011` mesurable et évite une interprétation double du
 Dans l'egress, le prochain datagramme est choisi par priorité stable :
 
 1. rejet/contrôle nécessaire pour la sûreté, sous anti-amplification ;
-2. ACK/NACK/heartbeat de session et retransmission fiable arrivée à échéance ;
+2. ACK/NACK/heartbeat de session, activation `SESSION_BEGIN` d'un slot
+   préchauffé et retransmission fiable arrivée à échéance ;
 3. fragments du `WELCOME` ou d'un `FULL_SNAPSHOT` fiable déjà engagé ;
 4. nouvelle keyframe/resync autorisée par les fenêtres ;
 5. heartbeat périodique ;
 6. dernier `DELTA` cumulatif remplaçable.
 
 Le contrôle fiable ne peut être évincé par un delta. Entre éléments d'une même priorité, un round-robin par slot client empêche la famine. Un slot ne peut consommer plus d'une émission consécutive si un autre slot de même priorité est prêt.
+Après évacuation d'une sortie déjà engagée, une activation `SESSION_BEGIN`
+disponible est préparée avant toute nouvelle keyframe ou tout nouveau delta ;
+un client `Live` ne peut donc pas maintenir indéfiniment un autre client dans
+l'état `Prewarmed`.
 
 ### 6.4 Cadences
 

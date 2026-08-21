@@ -476,13 +476,16 @@ RuntimeTickStatus RuntimeAdapterPlayerTestAccess::service_tick(NativeSessionRunt
 	if (!phase2_view->current_thread_is_main()) {
 		return RuntimeTickStatus::PermanentCaptureFailure;
 	}
+	const auto paused = context.mission_active &&
+		(context.mission_paused || game_time_is_stopped());
 	return map_native_tick_status(
 		runtime->service_tick(
 			{context.now_us,
 				context.mission_generation,
 				context.mission_active,
-				context.mission_active && game_time_is_stopped(),
-				f2fl(Game_time_compression)},
+				paused,
+				f2fl(Game_time_compression),
+				context.resume_transport},
 			view,
 			phase2_view));
 }

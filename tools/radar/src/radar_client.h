@@ -27,7 +27,8 @@ enum class ClientStatus : std::uint8_t {
     Error,
 };
 
-ClientStatus statusForSilence(qint64 silenceMilliseconds,
+ClientStatus statusForSilence(qint64 stateSilenceMilliseconds,
+                              qint64 networkSilenceMilliseconds,
                               bool sessionEstablished,
                               bool baselineApplied = true) noexcept;
 

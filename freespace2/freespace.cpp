@@ -5625,6 +5625,7 @@ void game_leave_state( int old_state, int new_state )
 
 		case GS_STATE_GAME_PAUSED:
 			game_start_time();
+			telemetry::mission_pause_changed(false);
 			if ( end_mission ) {
 				pause_close();
 			}
@@ -6064,6 +6065,7 @@ void game_enter_state( int old_state, int new_state )
 
 		case GS_STATE_GAME_PAUSED:
 			game_stop_time();
+			telemetry::mission_pause_changed(true);
 			pause_init();
 			break;
 

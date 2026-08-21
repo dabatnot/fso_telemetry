@@ -84,7 +84,9 @@ class AvCoreApiTest(unittest.TestCase):
         self.assertEqual("CAN_UNAVAILABLE", response.json()["detail"])
 
     def test_static_files_are_served_without_directory_escape(self) -> None:
-        self.assertIn("AV CORE", self.client.get("/").text)
+        index = self.client.get("/")
+        self.assertIn("AV CORE", index.text)
+        self.assertEqual("no-cache", index.headers["cache-control"])
         self.assertEqual("visible", self.client.get("/visible.txt").text)
         frontend_route = next(
             route for route in self.app.routes if getattr(route, "path", None) == "/{path:path}"

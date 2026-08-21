@@ -73,6 +73,10 @@ function displayState(state: string, t: Translate): string {
   return labels[state] ? t(labels[state]) : state;
 }
 
+function telemetryPresentationState(status: AvCoreStatus | null): string {
+  return status?.mission?.paused ? "PAUSED" : status?.telemetry.state ?? "DISCONNECTED";
+}
+
 function SaveBar({ saving, errors, onSave, t }: { saving: boolean; errors: string[]; onSave: () => void; t: Translate }) {
   return (
     <div className="save-bar">
@@ -209,11 +213,12 @@ function LightingPage({ draft, setDraft, onSave, saving, errors, t }: PageProps)
 }
 
 function SystemPage({ draft, status, setDraft, onSave, saving, errors, t }: PageProps) {
+  const telemetryState = telemetryPresentationState(status);
   return (
     <>
       <section className="settings-grid">
         <article className="panel">
-          <div className="panel-heading"><div><span>{t("fstlUdp")}</span><h2>{t("producer")}</h2></div><span className={`telemetry-state state-${status?.telemetry.state.toLowerCase() ?? "disconnected"}`}>{displayState(status?.telemetry.state ?? "DISCONNECTED", t)}</span></div>
+          <div className="panel-heading"><div><span>{t("fstlUdp")}</span><h2>{t("producer")}</h2></div><span className={`telemetry-state state-${telemetryState.toLowerCase()}`}>{displayState(telemetryState, t)}</span></div>
           <dl className="system-list telemetry-details">
             <div><dt>{t("session")}</dt><dd>{status?.telemetry.sessionId ?? "—"}</dd></div>
             <div><dt>{t("lastData")}</dt><dd>{status?.telemetry.lastLiveAgeMs == null ? "—" : `${status.telemetry.lastLiveAgeMs} ms`}</dd></div>
@@ -312,7 +317,7 @@ export default function App() {
       <header>
         <div className="brand"><div className="brand-mark"><i /><i /><i /></div><div><strong>AV CORE</strong><span>FSO // SIMPIT CONFIGURATION</span></div></div>
         <div className="status-strip">
-          <StatusPill label={t("telemetry")} state={status?.mission?.paused ? "PAUSED" : status?.telemetry.state ?? "DISCONNECTED"} t={t} />
+          <StatusPill label={t("telemetry")} state={telemetryPresentationState(status)} t={t} />
           <StatusPill label="CAN" state={status?.can.state ?? "UNAVAILABLE"} t={t} />
           <StatusPill label="WARN CTRL" state={moduleState.WARN_CTRL ?? "UNAVAILABLE"} t={t} />
           <StatusPill label="THREAT PROC" state={moduleState.THREAT_PROC ?? "UNAVAILABLE"} t={t} />

@@ -64,6 +64,7 @@
 #include "sound/audiostr.h"
 #include "scripting/hook_api.h"
 #include "scripting/global_hooks.h"
+#include "telemetry/telemetry.h"
 #include "cheats_table/cheats_table.h"
 /**
 * Natural number factor lookup class.
@@ -1526,6 +1527,7 @@ void game_do_end_mission_popup()
 		// single player version....
 		// do housekeeping things.
 		game_stop_time();
+		telemetry::mission_pause_changed(true);
 		game_stop_looped_sounds();
 		audiostream_pause_all();
 		weapon_pause_sounds();
@@ -1560,6 +1562,7 @@ void game_do_end_mission_popup()
 		}
 
 		game_start_time();
+		telemetry::mission_pause_changed(false);
 		game_flush();
 	}
 }

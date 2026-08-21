@@ -2147,6 +2147,50 @@ void SessionController::service_session_maintenance(std::uint64_t now_us) noexce
 	}
 }
 
+void SessionController::resume_after_pause(std::uint64_t now_us) noexcept
+{
+	if (!m_ready || m_faulted) {
+		return;
+	}
+	// A pause transition can spend longer than the client freshness window in
+	// modal UI initialization before the regular telemetry pump runs again.
+	// Preserve every established slot, restart its transport clocks and make a
+	// heartbeat immediately due on both pause edges.
+	if (m_has_output && m_output_heartbeat_pending) {
+		if (m_output_heartbeat_owns_probe && m_output_owner_slot < m_config.max_clients) {
+			(void)m_slots[m_output_owner_slot].heartbeat.probes.discard_probe(
+				m_output_heartbeat_probe.session_id,
+				m_output_heartbeat_probe.probe_id,
+				m_output_heartbeat_probe.origin_t0_us);
+		}
+		m_output = {};
+		m_has_output = false;
+		m_output_owner_slot = InvalidIndex;
+		m_output_heartbeat_pending = false;
+		m_output_heartbeat_owns_probe = false;
+		m_output_heartbeat_probe = {};
+	}
+	for (std::size_t index = 0U; index < m_config.max_clients; ++index) {
+		auto& slot = m_slots[index];
+		if (slot.progress != ProducerSessionProgress::Prewarmed &&
+			slot.progress != ProducerSessionProgress::ReadyForState &&
+			slot.progress != ProducerSessionProgress::Stale) {
+			continue;
+		}
+		slot.heartbeat.last_valid_network_activity_us = now_us;
+		slot.heartbeat.last_valid_clock_response_us = now_us;
+		slot.heartbeat.next_periodic_due_us = now_us;
+		slot.heartbeat.clock_filter.invalidate();
+		slot.heartbeat.clock_stale = false;
+		(void)slot.heartbeat.probes.reset_session(slot.session_id);
+		if (slot.progress == ProducerSessionProgress::Stale) {
+			slot.progress = slot.mission_session_begun
+				? ProducerSessionProgress::ReadyForState
+				: ProducerSessionProgress::Prewarmed;
+		}
+	}
+}
+
 SessionPlayerMaterializationResult SessionController::apply_player_observation(const CaptureResult& capture,
 	const PlayerObservationDto& observation) noexcept
 {

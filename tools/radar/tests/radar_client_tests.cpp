@@ -262,6 +262,93 @@ private slots:
         QTest::qWait(50);
     }
 
+    void duplicateWelcomeKeepsPrewarmedSessionAliveUntilSessionBegin()
+    {
+        QUdpSocket producer;
+        QVERIFY(producer.bind(QHostAddress(QHostAddress::LocalHost), 0));
+
+        RadarClient client;
+        client.start(QStringLiteral("127.0.0.1"), producer.localPort());
+
+        CapturedDatagram helloDatagram;
+        QVERIFY(receiveMessage(producer, MessageType::Hello, 3000, helloDatagram));
+        HelloPayload hello;
+        QCOMPARE(decode_hello_payload(
+                     {reinterpret_cast<const std::uint8_t*>(helloDatagram.payload.constData()),
+                      static_cast<std::size_t>(helloDatagram.payload.size())}, hello),
+                 ValidationError::None);
+
+        WelcomePayload welcome;
+        welcome.client_nonce = hello.client_nonce;
+        welcome.client_send_t0_us = hello.client_send_t0_us;
+        welcome.producer_receive_t1_us = hello.client_send_t0_us + 1;
+        welcome.producer_send_t2_us = hello.client_send_t0_us + 2;
+        welcome.status = WelcomeStatus::Accepted;
+        welcome.selected_major = VersionMajor;
+        welcome.selected_minor = VersionMinorV1_1;
+        welcome.selected_visibility_mode = VisibilityMode::Cockpit;
+        welcome.heartbeat_interval_ms = 1000;
+        welcome.reliable_reassembly_timeout_ms = ReliableReassemblyTimeoutV1Ms;
+        welcome.producer_id = 7;
+        std::array<std::uint8_t, WelcomePayloadPrefixSize> welcomeBytes{};
+        std::size_t welcomeWritten = 0;
+        QCOMPARE(encode_welcome_payload(welcome,
+                     {welcomeBytes.data(), welcomeBytes.size()}, welcomeWritten),
+                 ValidationError::None);
+
+        TelemetryDatagramHeader welcomeHeader;
+        welcomeHeader.version_minor = VersionMinorV1_1;
+        welcomeHeader.message_type = MessageType::Welcome;
+        welcomeHeader.flags = MessageFlagAckRequired;
+        welcomeHeader.session_id = 42;
+        welcomeHeader.message_id = 1;
+        for (std::uint32_t sequence = 1; sequence <= 4; ++sequence) {
+            welcomeHeader.packet_sequence = sequence;
+            if (sequence != 1) welcomeHeader.flags |= MessageFlagRetransmission;
+            QVERIFY(sendMessage(producer, helloDatagram, welcomeHeader,
+                                {welcomeBytes.data(), welcomeWritten}));
+            CapturedDatagram ack;
+            QVERIFY(receiveMessage(producer, MessageType::Ack, 1000, ack));
+            QTest::qWait(700);
+        }
+
+        SessionBeginPayload begin;
+        begin.session_flags = SessionBeginFlagReadOnly |
+            SessionBeginFlagMissionActive | SessionBeginFlagManifestRequired;
+        begin.producer_session_start_us = 1;
+        begin.mission_instance_id = 2;
+        begin.initial_snapshot_id = 1;
+        begin.required_manifest_id = 1;
+        std::array<std::uint8_t, SessionBeginPayloadSize> beginBytes{};
+        std::size_t beginWritten = 0;
+        QCOMPARE(encode_session_begin_payload(begin,
+                     {beginBytes.data(), beginBytes.size()}, beginWritten),
+                 ValidationError::None);
+        TelemetryDatagramHeader beginHeader;
+        beginHeader.version_minor = VersionMinorV1_1;
+        beginHeader.message_type = MessageType::SessionBegin;
+        beginHeader.flags = MessageFlagAckRequired;
+        beginHeader.session_id = 42;
+        beginHeader.packet_sequence = 5;
+        beginHeader.message_id = 2;
+        QVERIFY(sendMessage(producer, helloDatagram, beginHeader,
+                            {beginBytes.data(), beginWritten}));
+        CapturedDatagram beginAck;
+        QVERIFY2(receiveMessage(producer, MessageType::Ack, 1000, beginAck),
+                 "Client rotated the session despite valid WELCOME retransmissions");
+
+        AckPayload decodedAck;
+        QCOMPARE(decode_ack_payload(
+                     {reinterpret_cast<const std::uint8_t*>(beginAck.payload.constData()),
+                      static_cast<std::size_t>(beginAck.payload.size())}, decodedAck),
+                 ValidationError::None);
+        QCOMPARE(decodedAck.target_message_type, MessageType::SessionBegin);
+        QCOMPARE(decodedAck.target_message_id, beginHeader.message_id);
+
+        client.stop();
+        QTest::qWait(50);
+    }
+
     void ackTupleRoundTrips()
     {
         AckPayload ack;
@@ -331,23 +418,27 @@ private slots:
 
     void staleAndReconnectThresholds()
     {
-        QCOMPARE(statusForSilence(999, true, true), ClientStatus::Live);
-        QCOMPARE(statusForSilence(1'000, true, true), ClientStatus::Stale);
-        QCOMPARE(statusForSilence(1'999, true, true), ClientStatus::Stale);
-        QCOMPARE(statusForSilence(2'000, true, true), ClientStatus::Reconnecting);
-        QCOMPARE(statusForSilence(20'000, false, false), ClientStatus::Connecting);
+        QCOMPARE(statusForSilence(999, 999, true, true), ClientStatus::Live);
+        QCOMPARE(statusForSilence(1'000, 999, true, true), ClientStatus::Stale);
+        QCOMPARE(statusForSilence(1'999, 1'999, true, true), ClientStatus::Stale);
+        QCOMPARE(statusForSilence(2'000, 1'999, true, true), ClientStatus::Stale);
+        QCOMPARE(statusForSilence(2'000, 2'000, true, true), ClientStatus::Reconnecting);
+        // Heartbeats keep the transport session alive even when the cockpit
+        // image itself has not changed for longer than the reconnect grace.
+        QCOMPARE(statusForSilence(20'000, 100, true, true), ClientStatus::Stale);
+        QCOMPARE(statusForSilence(20'000, 20'000, false, false), ClientStatus::Connecting);
         // Producer progress returns immediately to Live.
-        QCOMPARE(statusForSilence(0, true, true), ClientStatus::Live);
+        QCOMPARE(statusForSilence(0, 0, true, true), ClientStatus::Live);
     }
 
     void initialReliableTransactionsKeepTheirFullWindow()
     {
-        QCOMPARE(statusForSilence(999, true, false), ClientStatus::Synchronizing);
-        QCOMPARE(statusForSilence(1'000, true, false), ClientStatus::Synchronizing);
-        QCOMPARE(statusForSilence(1'999, true, false), ClientStatus::Synchronizing);
-        QCOMPARE(statusForSilence(2'000, true, false), ClientStatus::Synchronizing);
-        QCOMPARE(statusForSilence(4'999, true, false), ClientStatus::Synchronizing);
-        QCOMPARE(statusForSilence(5'000, true, false), ClientStatus::Reconnecting);
+        QCOMPARE(statusForSilence(999, 999, true, false), ClientStatus::Synchronizing);
+        QCOMPARE(statusForSilence(1'000, 1'000, true, false), ClientStatus::Synchronizing);
+        QCOMPARE(statusForSilence(1'999, 1'999, true, false), ClientStatus::Synchronizing);
+        QCOMPARE(statusForSilence(2'000, 2'000, true, false), ClientStatus::Synchronizing);
+        QCOMPARE(statusForSilence(4'999, 4'999, true, false), ClientStatus::Synchronizing);
+        QCOMPARE(statusForSilence(5'000, 5'000, true, false), ClientStatus::Reconnecting);
     }
 
     void atomicDeltaDeletion()
