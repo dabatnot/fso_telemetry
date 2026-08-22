@@ -9,13 +9,10 @@ constexpr std::uint32_t Magic = 0x4c545346U;
 constexpr std::uint8_t VersionMajor = 1;
 constexpr std::uint8_t VersionMinorV1_0 = 0;
 constexpr std::uint8_t VersionMinorV1_1 = 1;
-// FSTL 1.2 appends the authoritative standard-radar projection inputs to
-// RADAR_CONTACTS.  Earlier minors retain their frozen record layout.
-constexpr std::uint8_t VersionMinorV1_2 = 2;
 // Keep the historical default pinned to the frozen FSTL 1.0 contract. Code
 // which emits or validates a negotiated 1.1 session must opt in explicitly.
 constexpr std::uint8_t VersionMinor = VersionMinorV1_0;
-constexpr std::uint8_t LatestSupportedVersionMinor = VersionMinorV1_2;
+constexpr std::uint8_t LatestSupportedVersionMinor = VersionMinorV1_1;
 
 struct ProtocolMinorRange {
 	std::uint8_t minimum = VersionMinor;
@@ -731,8 +728,7 @@ constexpr std::uint64_t ReservedStateDomainCoverageBitsV1_1 = 0xfffffffffffff810
 
 constexpr bool is_supported_version_minor(std::uint8_t minor) noexcept
 {
-	return minor == VersionMinorV1_0 || minor == VersionMinorV1_1 ||
-		minor == VersionMinorV1_2;
+	return minor == VersionMinorV1_0 || minor == VersionMinorV1_1;
 }
 
 constexpr std::uint64_t known_state_domain_coverage_bits(std::uint8_t minor) noexcept

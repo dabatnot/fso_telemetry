@@ -47,6 +47,18 @@ TEST(TelemetryProtocolConstants, FreezesWireIdentityAndResourceBounds) {
 	EXPECT_EQ(10'000U, TransactionAssemblyTimeoutMs);
 }
 
+TEST(TelemetryProtocolConstants, SupportsOnlyPublishedWireMinors) {
+	EXPECT_EQ(VersionMinorV1_1, LatestSupportedVersionMinor);
+	EXPECT_TRUE(is_supported_version_minor(VersionMinorV1_0));
+	EXPECT_TRUE(is_supported_version_minor(VersionMinorV1_1));
+	EXPECT_FALSE(is_supported_version_minor(2U));
+	EXPECT_EQ(KnownStateDomainCoverageBitsV1_0,
+		known_state_domain_coverage_bits(VersionMinorV1_0));
+	EXPECT_EQ(KnownStateDomainCoverageBitsV1_1,
+		known_state_domain_coverage_bits(VersionMinorV1_1));
+	EXPECT_EQ(0U, known_state_domain_coverage_bits(2U));
+}
+
 TEST(TelemetryProtocolConstants, FreezesMessageTypeRegistry) {
 	const std::array<MessageType, 21> values{
 		MessageType::Invalid,

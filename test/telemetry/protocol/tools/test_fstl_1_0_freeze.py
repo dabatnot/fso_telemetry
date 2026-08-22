@@ -348,6 +348,7 @@ class FstlFrozenContractRedTest(unittest.TestCase):
             "VersionMinorV1_0 = 0",
             "VersionMinorV1_1 = 1",
             "VersionMinor = VersionMinorV1_0",
+            "LatestSupportedVersionMinor = VersionMinorV1_1",
             "FrozenV1_0MinorRange{VersionMinorV1_0, VersionMinorV1_0}",
             "Phase1ProducerMinorRange{VersionMinorV1_1, VersionMinorV1_1}",
             "StateDomainCoverageBitPlayerKinematics = 0x0400ULL",
@@ -358,6 +359,7 @@ class FstlFrozenContractRedTest(unittest.TestCase):
         for invariant in required:
             with self.subTest(cpp_invariant=invariant):
                 self.assertIn(invariant, constants)
+        self.assertNotIn("VersionMinorV1_2", constants)
 
     def test_route_003_amendment_and_decoders_fail_on_v11_schema_drift(self) -> None:
         v11_schema = PROTOCOL_ROOT / "schema" / "fstl-v1.1.yaml"

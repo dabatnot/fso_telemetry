@@ -580,4 +580,18 @@ TEST(TelemetryProtocolControlMessages, Phase1ProfileSelectsMinorOneAndNeverDowng
 	EXPECT_EQ(0U, selected);
 }
 
+TEST(TelemetryProtocolControlMessages, UnpublishedMinorTwoInvalidatesTheWholeRange)
+{
+	EXPECT_EQ(ValidationError::UnsupportedMinor,
+		validate_protocol_minor_range({VersionMinorV1_1, 2U}));
+	EXPECT_EQ(ValidationError::UnsupportedMinor,
+		validate_protocol_minor_range({2U, 2U}));
+
+	std::uint8_t selected = 0xffU;
+	EXPECT_EQ(ProtocolMinorNegotiationResult::InvalidRange,
+		select_highest_common_minor(
+			{VersionMinorV1_1, 2U}, Phase1ProducerMinorRange, selected));
+	EXPECT_EQ(VersionMinorV1_0, selected);
+}
+
 } // namespace
