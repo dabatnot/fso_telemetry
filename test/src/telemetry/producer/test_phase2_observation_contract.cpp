@@ -4183,6 +4183,8 @@ void initialize_wp02_merge_source(Phase2ShipSource& source,
 	source.subsystems.values[0].hits_maximum = 100.0F;
 	auto& weapon = catalog.weapon_definitions[0];
 	weapon.weapon_capture_key = 21U;
+	catalog.weapon_engine_mapping_count = 1U;
+	catalog.weapon_engine_mappings[0] = {1001U, 21U};
 	weapon.reloaded_per_batch = 1U;
 	ASSERT_TRUE(weapon.internal_name.assign("same-weapon-name"));
 	weapon.damage = weapon_damage;
@@ -4238,6 +4240,7 @@ TEST(TelemetryPhase2ObservationContract,
 	second->raw_static_catalog.class_definitions[0].effective_mass = -0.0F;
 	second->raw_static_catalog.class_definitions[0].class_capture_key = 901U;
 	second->raw_static_catalog.weapon_definitions[0].weapon_capture_key = 701U;
+	second->raw_static_catalog.weapon_engine_mappings[0].weapon_capture_key = 701U;
 	second->raw_static_references.class_capture_key = 901U;
 	second->identity.class_source_key.value = 901U;
 	second->raw_static_references.weapon_capture_keys[0] = 701U;
@@ -4247,6 +4250,11 @@ TEST(TelemetryPhase2ObservationContract,
 			Phase2ObservationProjection::CompleteShip).status);
 	EXPECT_EQ(1U, observation->raw_static_catalog.class_count);
 	EXPECT_EQ(1U, observation->raw_static_catalog.weapon_count);
+	ASSERT_EQ(1U, observation->raw_static_catalog.weapon_engine_mapping_count);
+	EXPECT_EQ(1001U, observation->raw_static_catalog.weapon_engine_mappings[0]
+		.engine_weapon_source_key);
+	EXPECT_EQ(1U, observation->raw_static_catalog.weapon_engine_mappings[0]
+		.weapon_capture_key);
 	ASSERT_EQ(2U, observation->ships.size());
 	EXPECT_EQ(1U,
 		observation->ships[0].raw_static_references.class_capture_key);
@@ -4262,6 +4270,10 @@ TEST(TelemetryPhase2ObservationContract,
 		observation->ships[1].subsystems.values[0].source_key.value);
 
 	initialize_wp02_merge_source(*second, 11.0F, 21.0F);
+	// A real engine weapon index always identifies one descriptor. This fixture
+	// now intentionally creates a same-name variant, so it must not retain the
+	// mapping used above to prove deduplication of one engine definition.
+	second->raw_static_catalog.weapon_engine_mapping_count = 0U;
 	ASSERT_EQ(Phase2CaptureStatus::Valid,
 		collect_fake_phase2_observation(*source, 711U, *observation,
 			Phase2ObservationProjection::CompleteShip).status);

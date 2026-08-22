@@ -167,6 +167,7 @@ bool validate_raw_static_catalog_bounds(
 {
 	if(catalog.class_count>MaximumPhase2StaticClasses||
 		catalog.weapon_count>MaximumPhase2StaticWeapons||
+		catalog.weapon_engine_mapping_count>MaximumPhase2StaticWeapons||
 		catalog.auxiliary_count>MaximumPhase2StaticAuxiliaryEntries||
 		catalog.aggregate_subsystem_count>MaximumPhase2StaticSubsystems)return false;
 	std::array<bool, MaximumPhase2StaticSubsystems> subsystem_used{};
@@ -295,7 +296,26 @@ bool validate_raw_static_catalog_bounds(
 	}
 	std::uint32_t aggregate=0U;
 	for(const auto used:subsystem_used)if(used)++aggregate;
-	return aggregate==catalog.aggregate_subsystem_count;
+	if (aggregate != catalog.aggregate_subsystem_count) return false;
+	for (std::uint32_t index = 0U;
+		 index < catalog.weapon_engine_mapping_count; ++index) {
+		const auto& mapping = catalog.weapon_engine_mappings[index];
+		if (mapping.engine_weapon_source_key == 0U ||
+			mapping.weapon_capture_key == 0U) {
+			return false;
+		}
+		bool weapon_found = false;
+		for (std::uint32_t weapon = 0U; weapon < catalog.weapon_count;
+			 ++weapon) {
+			if (catalog.weapon_definitions[weapon].weapon_capture_key ==
+				mapping.weapon_capture_key) {
+				weapon_found = true;
+				break;
+			}
+		}
+		if (!weapon_found) return false;
+	}
+	return true;
 }
 
 bool semantic_equal(const Phase2RawVec3& left,
@@ -769,6 +789,46 @@ bool merge_raw_static_catalog(Phase2RawStaticCatalog& destination,
 				return weapon_map[index];
 		return 0U;
 	};
+	for (std::uint32_t index = 0U;
+		 index < source.weapon_engine_mapping_count; ++index) {
+		const auto& source_mapping = source.weapon_engine_mappings[index];
+		const auto target_weapon_key =
+			remap_weapon(source_mapping.weapon_capture_key);
+		if (target_weapon_key == 0U) {
+			diagnostic.reason =
+				Phase2ObservationDto::RawStaticDiagnostic::Reason::
+					MissingReferenceRemap;
+			return false;
+		}
+		bool found = false;
+		for (std::uint32_t target = 0U;
+			 target < destination.weapon_engine_mapping_count; ++target) {
+			auto& destination_mapping =
+				destination.weapon_engine_mappings[target];
+			if (destination_mapping.engine_weapon_source_key !=
+				source_mapping.engine_weapon_source_key) {
+				continue;
+			}
+			if (destination_mapping.weapon_capture_key != target_weapon_key) {
+				diagnostic.reason =
+					Phase2ObservationDto::RawStaticDiagnostic::Reason::
+						MissingReferenceRemap;
+				return false;
+			}
+			found = true;
+			break;
+		}
+		if (found) continue;
+		if (destination.weapon_engine_mapping_count >=
+			MaximumPhase2StaticWeapons) {
+			return false;
+		}
+		auto& destination_mapping = destination.weapon_engine_mappings[
+			destination.weapon_engine_mapping_count++];
+		destination_mapping.engine_weapon_source_key =
+			source_mapping.engine_weapon_source_key;
+		destination_mapping.weapon_capture_key = target_weapon_key;
+	}
 
 	std::array<std::uint32_t, MaximumPhase2StaticClasses> class_map{};
 	for (std::uint32_t source_index = 0U;
@@ -1818,6 +1878,7 @@ void Phase2RawStaticCatalog::clear() noexcept
 {
 	class_count = 0U;
 	weapon_count = 0U;
+	weapon_engine_mapping_count = 0U;
 	auxiliary_count = 0U;
 	aggregate_subsystem_count = 0U;
 }
@@ -1827,9 +1888,11 @@ bool Phase2RawStaticCatalog::copy_from(
 {
 	if (other.class_count > MaximumPhase2StaticClasses ||
 		other.weapon_count > MaximumPhase2StaticWeapons ||
+		other.weapon_engine_mapping_count > MaximumPhase2StaticWeapons ||
 		other.auxiliary_count > MaximumPhase2StaticAuxiliaryEntries ||
 		other.aggregate_subsystem_count > MaximumPhase2StaticSubsystems) {
 		class_count=other.class_count;weapon_count=other.weapon_count;
+		weapon_engine_mapping_count=other.weapon_engine_mapping_count;
 		auxiliary_count=other.auxiliary_count;
 		aggregate_subsystem_count=other.aggregate_subsystem_count;
 		return false;
@@ -1854,6 +1917,7 @@ bool Phase2RawStaticCatalog::copy_from(
 			source_class.bank_count >
 				bank_storage.size() - source_class.bank_offset) {
 			class_count=other.class_count;weapon_count=other.weapon_count;
+			weapon_engine_mapping_count=other.weapon_engine_mapping_count;
 			auxiliary_count=other.auxiliary_count;
 			aggregate_subsystem_count=other.aggregate_subsystem_count;
 			class_definitions[index]=source_class;
@@ -1864,6 +1928,7 @@ bool Phase2RawStaticCatalog::copy_from(
 					.fire_point_count >
 				MaximumPhase2StaticFirePoints) {
 				class_count=other.class_count;weapon_count=other.weapon_count;
+				weapon_engine_mapping_count=other.weapon_engine_mapping_count;
 				auxiliary_count=other.auxiliary_count;
 				aggregate_subsystem_count=other.aggregate_subsystem_count;
 				class_definitions[index]=source_class;
@@ -1873,6 +1938,7 @@ bool Phase2RawStaticCatalog::copy_from(
 	}
 	if (!validate_raw_static_catalog_bounds(other)) {
 		class_count=other.class_count;weapon_count=other.weapon_count;
+		weapon_engine_mapping_count=other.weapon_engine_mapping_count;
 		auxiliary_count=other.auxiliary_count;
 		aggregate_subsystem_count=other.aggregate_subsystem_count;
 		return false;
@@ -1895,11 +1961,16 @@ bool Phase2RawStaticCatalog::copy_from(
 	for (std::uint32_t index = 0U; index < other.weapon_count; ++index) {
 		weapon_definitions[index] = other.weapon_definitions[index];
 	}
+	for (std::uint32_t index = 0U;
+		 index < other.weapon_engine_mapping_count; ++index) {
+		weapon_engine_mappings[index] = other.weapon_engine_mappings[index];
+	}
 	for (std::uint32_t index = 0U; index < other.auxiliary_count; ++index) {
 		auxiliary_entries[index] = other.auxiliary_entries[index];
 	}
 	class_count = other.class_count;
 	weapon_count = other.weapon_count;
+	weapon_engine_mapping_count = other.weapon_engine_mapping_count;
 	auxiliary_count = other.auxiliary_count;
 	aggregate_subsystem_count = other.aggregate_subsystem_count;
 	return true;

@@ -783,6 +783,15 @@ SourceReadResult extract_production_static_authorities(const object& ship_object
 		output.raw_static_references = {};
 		return mapped;
 	}
+	output.raw_static_catalog.weapon_engine_mapping_count =
+		referenced_weapon_count;
+	for (std::uint32_t index = 0U; index < referenced_weapon_count;
+		 ++index) {
+		auto& mapping = output.raw_static_catalog.weapon_engine_mappings[index];
+		mapping.engine_weapon_source_key =
+			static_cast<std::uint32_t>(referenced_weapon_indices[index]) + 1U;
+		mapping.weapon_capture_key = index + 1U;
+	}
 	const auto remap_weapon_key =
 		[&](Phase2CaptureLocalKey& key) noexcept {
 			if (key.value == 0U) return true;

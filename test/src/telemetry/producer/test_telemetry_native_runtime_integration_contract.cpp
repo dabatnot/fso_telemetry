@@ -2617,6 +2617,11 @@ TEST(TelemetryPhase3Threat,
 	phase2->ships.resize(1U);
 	phase2->ships[0].capture_key.value =
 		static_cast<std::uint32_t>(Player_obj->signature);
+	phase2->raw_static_catalog.weapon_count = 1U;
+	phase2->raw_static_catalog.weapon_definitions[0].weapon_capture_key = 17U;
+	phase2->raw_static_catalog.weapon_engine_mapping_count = 1U;
+	phase2->raw_static_catalog.weapon_engine_mappings[0] = {
+		static_cast<std::uint32_t>(weapon_info_count) + 1U, 17U};
 	const telemetry::Phase2Wp05SubjectBinding binding{
 		phase2->ships[0].capture_key, 1U};
 	detail::Phase3CatalogDependencies dependencies;
@@ -2624,12 +2629,10 @@ TEST(TelemetryPhase3Threat,
 		detail::discover_phase3_catalog_dependencies(*phase2, dependencies));
 	EXPECT_EQ(0U, dependencies.ship_class_count);
 	ASSERT_EQ(1U, dependencies.weapon_count);
-	EXPECT_EQ(static_cast<std::uint32_t>(weapon_info_count) + 1U,
-		dependencies.weapon_source_keys[0]);
+	EXPECT_EQ(17U, dependencies.weapon_source_keys[0]);
 	telemetry::Phase2ManifestCandidate manifest;
 	manifest.weapon_record_count = 1U;
-	manifest.weapon_records[0].source_key =
-		static_cast<std::uint32_t>(weapon_info_count) + 1U;
+	manifest.weapon_records[0].source_key = 17U;
 	manifest.weapon_records[0].weapon_class_id = 9001U;
 	detail::Phase3IdentityRegistry identities;
 	ASSERT_EQ(detail::Phase3IdentityProvisionStatus::Ready,

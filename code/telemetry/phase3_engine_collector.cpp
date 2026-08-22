@@ -246,15 +246,29 @@ object* current_player_target() noexcept
 }
 
 std::uint32_t installed_weapon_class_id(
-	const Phase2ManifestCandidate* manifest, int engine_index) noexcept
+	const Phase2ManifestCandidate* manifest, std::uint32_t source_key) noexcept
 {
-	if (manifest == nullptr || engine_index < 0) return 0U;
-	const auto source_key =
-		static_cast<std::uint32_t>(engine_index) + 1U;
+	if (manifest == nullptr || source_key == 0U) return 0U;
 	for (std::uint32_t index = 0U;
 		 index < manifest->weapon_record_count; ++index) {
 		if (manifest->weapon_records[index].source_key == source_key)
 			return manifest->weapon_records[index].weapon_class_id;
+	}
+	return 0U;
+}
+
+std::uint32_t phase2_weapon_source_key(
+	const Phase2ObservationDto& observation, int engine_index) noexcept
+{
+	if (engine_index < 0) return 0U;
+	const auto engine_source_key =
+		static_cast<std::uint32_t>(engine_index) + 1U;
+	const auto& catalog = observation.raw_static_catalog;
+	for (std::uint32_t index = 0U;
+		 index < catalog.weapon_engine_mapping_count; ++index) {
+		const auto& mapping = catalog.weapon_engine_mappings[index];
+		if (mapping.engine_weapon_source_key == engine_source_key)
+			return mapping.weapon_capture_key;
 	}
 	return 0U;
 }
@@ -1210,6 +1224,7 @@ Phase3EngineCollectStatus collect_hud_alerts(
 
 Phase3EngineCollectStatus collect_threat(
 	std::uint64_t sample_time,
+	const Phase2ObservationDto& observation,
 	const Phase2ManifestCandidate* installed_manifest,
 	Phase3IdentityRegistry& identities,
 	Phase3Projection& output) noexcept
@@ -1330,8 +1345,10 @@ Phase3EngineCollectStatus collect_threat(
 			missile.weapon_info_index >= weapon_info_size()) {
 			continue;
 		}
+		const auto weapon_source_key = phase2_weapon_source_key(
+			observation, missile.weapon_info_index);
 		const auto weapon_class_id = installed_weapon_class_id(
-			installed_manifest, missile.weapon_info_index);
+			installed_manifest, weapon_source_key);
 		if (weapon_class_id == 0U) {
 			// Never expose a dynamic reference before its manifest
 			// definition is installed and APPLIED.  This is an omission, not
@@ -1695,8 +1712,11 @@ Phase3EngineCollectStatus discover_phase3_catalog_dependencies(
 		if (missile.weapon_info_index < 0 ||
 			missile.weapon_info_index >= weapon_info_size())
 			continue;
+		const auto weapon_source_key = phase2_weapon_source_key(
+			observation, missile.weapon_info_index);
+		if (weapon_source_key == 0U) continue;
 		if (!append(output.weapon_source_keys, output.weapon_count,
-			static_cast<std::uint32_t>(missile.weapon_info_index) + 1U))
+			weapon_source_key))
 			return Phase3EngineCollectStatus::SourceLimitExceeded;
 	}
 	return Phase3EngineCollectStatus::Collected;
@@ -1798,7 +1818,8 @@ Phase3EngineCollectStatus collect_phase3_engine_projection(
 		if (status != Phase3EngineCollectStatus::Collected)
 			return reject(Phase3EngineCollectBlock::Radar, status);
 		status = collect_threat(input.producer_sample_time_us,
-			input.installed_manifest, identities, scratch);
+			*input.phase2_observation, input.installed_manifest, identities,
+			scratch);
 		if (status != Phase3EngineCollectStatus::Collected)
 			return reject(Phase3EngineCollectBlock::Threat, status);
 		status = collect_cargo(input, identities, scratch);

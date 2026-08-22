@@ -300,13 +300,25 @@ struct Phase2RawAuxiliaryEntry {
 	std::uint8_t firing_pattern_source_code = 0U;
 };
 
+// Private capture metadata. Engine weapon indices never cross the Phase 2
+// boundary: manifests and all telemetry records continue to use capture-local
+// keys. The table only lets a later cockpit-sensor collector resolve a live
+// weapon object back to the catalog entry that produced its manifest record.
+struct Phase2RawWeaponEngineMapping {
+	std::uint32_t engine_weapon_source_key = 0U;
+	std::uint32_t weapon_capture_key = 0U;
+};
+
 struct Phase2RawStaticCatalog {
 	std::uint32_t class_count = 0U;
 	std::uint32_t weapon_count = 0U;
+	std::uint32_t weapon_engine_mapping_count = 0U;
 	std::uint32_t auxiliary_count = 0U;
 	std::uint32_t aggregate_subsystem_count = 0U;
 	std::array<Phase2RawClassDefinition, MaximumPhase2StaticClasses> class_definitions{};
 	std::array<Phase2RawWeaponDefinition, MaximumPhase2StaticWeapons> weapon_definitions{};
+	std::array<Phase2RawWeaponEngineMapping, MaximumPhase2StaticWeapons>
+		weapon_engine_mappings{};
 	std::array<Phase2RawAuxiliaryEntry, MaximumPhase2StaticAuxiliaryEntries> auxiliary_entries{};
 	std::array<Phase2RawSubsystemDefinition, MaximumPhase2StaticSubsystems> subsystem_storage{};
 	std::array<Phase2RawBankDefinition,
