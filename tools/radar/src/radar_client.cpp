@@ -89,7 +89,7 @@ public:
 
     std::uint8_t protocol_minor() const noexcept override
     {
-        return protocol::VersionMinorV1_1;
+        return protocol::VersionMinor;
     }
 };
 
@@ -394,7 +394,7 @@ private:
         if (m_socket == nullptr || m_peerAddress.isNull() || payload.size() >
             static_cast<qsizetype>(protocol::MaxFragmentPayload)) return false;
         protocol::TelemetryDatagramHeader header;
-        header.version_minor = protocol::VersionMinorV1_1;
+        header.version_minor = protocol::VersionMinor;
         header.message_type = type;
         header.flags = flags;
         header.session_id = sessionOverride == std::numeric_limits<std::uint64_t>::max()
@@ -407,7 +407,7 @@ private:
         std::array<std::uint8_t, protocol::MaxDatagramSize> datagram{};
         std::size_t written = 0;
         const auto result = protocol::encode_datagram(header,
-            {protocol::VersionMinorV1_1, protocol::VersionMinorV1_1}, bytes(payload),
+            protocol::SupportedMinorRange, bytes(payload),
             {datagram.data(), datagram.size()}, written);
         if (result != protocol::ValidationError::None) return false;
         return m_socket->write(reinterpret_cast<const char*>(datagram.data()),
@@ -424,8 +424,8 @@ private:
         hello.client_send_t0_us = m_helloT0Us;
         hello.min_major = protocol::VersionMajor;
         hello.max_major = protocol::VersionMajor;
-        hello.min_minor = protocol::VersionMinorV1_1;
-        hello.max_minor = protocol::VersionMinorV1_1;
+        hello.min_minor = protocol::VersionMinor;
+        hello.max_minor = protocol::VersionMinor;
         hello.requested_visibility_mode = protocol::VisibilityMode::Cockpit;
         hello.requested_heartbeat_ms = 1000;
         if (!encodePayload(hello, protocol::HelloPayloadPrefixSize,
@@ -527,12 +527,8 @@ private:
                 networkDatagram.senderPort() != m_port) continue;
             const QByteArray data = networkDatagram.data();
             protocol::DatagramView fragment;
-            // A rejected WELCOME is deliberately encoded with the frozen 1.0
-            // header, even when the offer requested 1.1.  Accept both minors
-            // while pre-session, then require the negotiated 1.1 minor for
-            // every other message.
             const auto validation = protocol::decode_and_validate_datagram(
-                bytes(data), {protocol::VersionMinorV1_0, protocol::VersionMinorV1_1}, fragment);
+                bytes(data), protocol::SupportedMinorRange, fragment);
             if (validation != protocol::ValidationError::None) {
                 traceSession(QStringLiteral("DROP datagram validation=%1 bytes=%2")
                                  .arg(static_cast<unsigned>(validation)).arg(data.size()));
@@ -548,7 +544,7 @@ private:
                                  .arg(fragment.header.flags).arg(m_sessionId));
             }
             if (fragment.header.message_type != protocol::MessageType::Welcome &&
-                fragment.header.version_minor != protocol::VersionMinorV1_1) {
+                fragment.header.version_minor != protocol::VersionMinor) {
                 if (lifecycleMessage) traceSession(QStringLiteral("DROP lifecycle wrongMinor=%1").arg(fragment.header.version_minor));
                 continue;
             }
@@ -661,7 +657,7 @@ private:
             return;
         }
         if (welcome.selected_major != protocol::VersionMajor ||
-            welcome.selected_minor != protocol::VersionMinorV1_1 ||
+            welcome.selected_minor != protocol::VersionMinor ||
             welcome.selected_visibility_mode != protocol::VisibilityMode::Cockpit ||
             header.session_id == 0) {
             fail(tr("Invalid FSTL 1.1 WELCOME"));
@@ -831,7 +827,7 @@ private:
         protocol::DeltaPayload payload;
         protocol::CumulativeStateDelta delta;
         if (!m_hasBaseline || protocol::decode_delta_payload(data, payload) != protocol::ValidationError::None ||
-            protocol::decode_business_delta(payload, protocol::VersionMinorV1_1, delta) !=
+            protocol::decode_business_delta(payload, protocol::VersionMinor, delta) !=
                 protocol::ValidationError::None ||
             payload.baseline_snapshot_id != m_baselineSnapshotId) {
             requestResync(protocol::ResyncReason::UnknownBaseline);

@@ -87,8 +87,8 @@ Datagram encode_datagram(protocol::TelemetryDatagramHeader header, protocol::Byt
 
 Datagram make_hello(std::uint64_t nonce,
 	std::uint32_t packet_sequence = 1U,
-	std::uint8_t min_minor = protocol::VersionMinorV1_1,
-	std::uint8_t max_minor = protocol::VersionMinorV1_1)
+	std::uint8_t min_minor = protocol::VersionMinor,
+	std::uint8_t max_minor = protocol::VersionMinor)
 {
 	protocol::HelloPayload hello;
 	hello.client_nonce = nonce;
@@ -114,6 +114,25 @@ Datagram make_hello(std::uint64_t nonce,
 	return encode_datagram(header, {payload.data(), written});
 }
 
+void write_u32_le(std::vector<std::uint8_t>& bytes, std::size_t offset, std::uint32_t value)
+{
+	for (std::size_t index = 0U; index < 4U; ++index) {
+		bytes[offset + index] = static_cast<std::uint8_t>((value >> (index * 8U)) & 0xffU);
+	}
+}
+
+Datagram make_invalid_hello(std::uint64_t nonce, std::uint32_t packet_sequence)
+{
+	auto request = make_hello(nonce, packet_sequence);
+	request.bytes[protocol::HeaderSizeV1 + 21U] = 1U;
+	const protocol::ByteView payload{request.bytes.data() + protocol::HeaderSizeV1,
+		request.bytes.size() - protocol::HeaderSizeV1};
+	write_u32_le(request.bytes, 60U, protocol::crc32_iso_hdlc(payload));
+	write_u32_le(request.bytes, 64U, 0U);
+	write_u32_le(request.bytes, 64U, protocol::crc32_iso_hdlc(view(request.bytes)));
+	return request;
+}
+
 struct DecodedOutput {
 	std::vector<std::uint8_t> storage;
 	protocol::DatagramView datagram;
@@ -128,7 +147,7 @@ DecodedOutput pop_output(detail::SessionController& controller)
 	if (!decoded.storage.empty()) {
 		EXPECT_EQ(protocol::ValidationError::None,
 			protocol::decode_and_validate_datagram(view(decoded.storage),
-				protocol::ProtocolMinorRange{protocol::VersionMinorV1_1, protocol::VersionMinorV1_1},
+				protocol::SupportedMinorRange,
 				decoded.datagram));
 	}
 	return decoded;
@@ -147,7 +166,7 @@ Datagram make_ack(const DecodedOutput& target, std::uint32_t packet_sequence)
 	EXPECT_EQ(protocol::ValidationError::None,
 		protocol::encode_ack_payload(ack, mutable_view(payload), written));
 	protocol::TelemetryDatagramHeader header;
-	header.version_minor = protocol::VersionMinorV1_1;
+	header.version_minor = protocol::VersionMinor;
 	header.message_type = protocol::MessageType::Ack;
 	header.session_id = target.datagram.header.session_id;
 	header.packet_sequence = packet_sequence;
@@ -168,7 +187,7 @@ Datagram make_heartbeat(std::uint64_t session_id,
 	EXPECT_EQ(protocol::ValidationError::None,
 		protocol::encode_heartbeat_payload(heartbeat, mutable_view(payload), written));
 	protocol::TelemetryDatagramHeader header;
-	header.version_minor = protocol::VersionMinorV1_1;
+	header.version_minor = protocol::VersionMinor;
 	header.message_type = protocol::MessageType::Heartbeat;
 	header.session_id = session_id;
 	header.packet_sequence = packet_sequence;
@@ -213,7 +232,7 @@ Datagram make_raw_heartbeat(std::uint64_t session_id,
 	write_u64_le(payload, 16U, receive_t1_us);
 	write_u64_le(payload, 24U, transmit_t2_us);
 	protocol::TelemetryDatagramHeader header;
-	header.version_minor = protocol::VersionMinorV1_1;
+	header.version_minor = protocol::VersionMinor;
 	header.message_type = protocol::MessageType::Heartbeat;
 	header.session_id = session_id;
 	header.packet_sequence = packet_sequence;
@@ -303,7 +322,7 @@ protocol::HeartbeatPayload decode_heartbeat(const detail::SessionControllerOutpu
 	protocol::DatagramView datagram;
 	EXPECT_EQ(protocol::ValidationError::None,
 		protocol::decode_and_validate_datagram({output.bytes.data(), output.size},
-			protocol::ProtocolMinorRange{protocol::VersionMinorV1_1, protocol::VersionMinorV1_1},
+			protocol::SupportedMinorRange,
 			datagram));
 	protocol::HeartbeatPayload heartbeat;
 	EXPECT_EQ(protocol::ValidationError::None, protocol::decode_heartbeat_payload(datagram.payload, heartbeat));
@@ -1192,7 +1211,7 @@ void expect_cleanup_purges_heartbeat_state(Controller& controller)
 		protocol::DatagramView pending_datagram;
 		ASSERT_EQ(protocol::ValidationError::None,
 			protocol::decode_and_validate_datagram({pending.bytes.data(), pending.size},
-				protocol::ProtocolMinorRange{protocol::VersionMinorV1_1, protocol::VersionMinorV1_1},
+				protocol::SupportedMinorRange,
 				pending_datagram));
 		ASSERT_EQ(protocol::MessageType::Heartbeat, pending_datagram.header.message_type);
 		ASSERT_EQ(1U, controller.slot(0U).heartbeat.probes.in_flight_count());
@@ -1229,7 +1248,7 @@ void expect_unrelated_close_preserves_heartbeat_output(Controller& controller)
 		protocol::DatagramView pending_datagram;
 		ASSERT_EQ(protocol::ValidationError::None,
 			protocol::decode_and_validate_datagram({before.bytes.data(), before.size},
-				protocol::ProtocolMinorRange{protocol::VersionMinorV1_1, protocol::VersionMinorV1_1},
+				protocol::SupportedMinorRange,
 				pending_datagram));
 		ASSERT_EQ(protocol::MessageType::Heartbeat, pending_datagram.header.message_type);
 		ASSERT_TRUE(controller.close_slot(unrelated, detail::SessionCloseReason::MissionDiscontinuity));
@@ -1279,7 +1298,7 @@ void expect_due_reliable_precedes_periodic(Controller& controller,
 		protocol::DatagramView selected_datagram;
 		ASSERT_EQ(protocol::ValidationError::None,
 			protocol::decode_and_validate_datagram({selected.bytes.data(), selected.size},
-				protocol::ProtocolMinorRange{protocol::VersionMinorV1_1, protocol::VersionMinorV1_1},
+				protocol::SupportedMinorRange,
 				selected_datagram));
 		EXPECT_EQ(protocol::MessageType::SessionBegin, selected_datagram.header.message_type)
 			<< "A due reliable control message must win over a periodic heartbeat.";
@@ -1299,7 +1318,7 @@ void expect_due_reliable_precedes_periodic(Controller& controller,
 		protocol::DatagramView periodic_datagram;
 		ASSERT_EQ(protocol::ValidationError::None,
 			protocol::decode_and_validate_datagram({periodic.bytes.data(), periodic.size},
-				protocol::ProtocolMinorRange{protocol::VersionMinorV1_1, protocol::VersionMinorV1_1},
+				protocol::SupportedMinorRange,
 				periodic_datagram));
 		EXPECT_EQ(protocol::MessageType::Heartbeat, periodic_datagram.header.message_type)
 			<< "Periodic work becomes eligible only after the higher-priority output completes.";
@@ -1488,7 +1507,7 @@ void expect_purge_all_releases_every_session_scope(Controller& controller,
 		protocol::DatagramView reliable_datagram;
 		ASSERT_EQ(protocol::ValidationError::None,
 			protocol::decode_and_validate_datagram({reliable.bytes.data(), reliable.size},
-				protocol::ProtocolMinorRange{protocol::VersionMinorV1_1, protocol::VersionMinorV1_1},
+				protocol::SupportedMinorRange,
 				reliable_datagram));
 		EXPECT_EQ(0x6666U, reliable_datagram.header.session_id)
 			<< "purge_all must restart the reliable round-robin cursor at slot zero.";
@@ -1500,7 +1519,7 @@ void expect_purge_all_releases_every_session_scope(Controller& controller,
 		protocol::DatagramView periodic_datagram;
 		ASSERT_EQ(protocol::ValidationError::None,
 			protocol::decode_and_validate_datagram({periodic.bytes.data(), periodic.size},
-				protocol::ProtocolMinorRange{protocol::VersionMinorV1_1, protocol::VersionMinorV1_1},
+				protocol::SupportedMinorRange,
 				periodic_datagram));
 		EXPECT_EQ(0x6666U, periodic_datagram.header.session_id)
 			<< "purge_all must restart the heartbeat round-robin cursor at slot zero.";
@@ -1524,11 +1543,9 @@ void expect_mission_purge_preserves_presession_source_quota(Controller& controll
 	} else {
 		const auto source_octet = 9U;
 		for (std::uint64_t nonce = 0U; nonce < protocol::HelloRateLimit.burst_tokens; ++nonce) {
-			const auto request = make_hello(9'000U + nonce,
-				static_cast<std::uint32_t>(300U + nonce),
-				protocol::VersionMinorV1_0,
-				protocol::VersionMinorV1_0);
-			ASSERT_EQ(detail::SessionIngressDisposition::ResponseQueued,
+			const auto request = make_invalid_hello(9'000U + nonce,
+				static_cast<std::uint32_t>(300U + nonce));
+			ASSERT_EQ(detail::SessionIngressDisposition::Dropped,
 				controller
 					.ingest(endpoint(source_octet, static_cast<std::uint16_t>(43000U + nonce)),
 						view(request.bytes),
@@ -1536,11 +1553,9 @@ void expect_mission_purge_preserves_presession_source_quota(Controller& controll
 						0U,
 						false)
 					.disposition);
-			detail::SessionControllerOutput unsupported_welcome;
-			ASSERT_TRUE(controller.pop_output(unsupported_welcome));
 		}
-		ASSERT_EQ(protocol::HelloRateLimit.burst_tokens, controller.handshake_cache_entries());
-		ASSERT_EQ(protocol::HelloRateLimit.burst_tokens, controller.preproof_account_count());
+		ASSERT_EQ(0U, controller.handshake_cache_entries());
+		ASSERT_EQ(0U, controller.preproof_account_count());
 		ASSERT_EQ(0U, ids.random.index);
 
 		controller.purge_all(detail::SessionCloseReason::MissionDiscontinuity);
@@ -1550,10 +1565,7 @@ void expect_mission_purge_preserves_presession_source_quota(Controller& controll
 		const auto before = controller.owned_usage();
 		const auto used_ids_before = ids.registry.used_count();
 
-		const auto still_limited = make_hello(9'999U,
-			399U,
-			protocol::VersionMinorV1_0,
-			protocol::VersionMinorV1_0);
+		const auto still_limited = make_invalid_hello(9'999U, 399U);
 		const auto result = controller.ingest(
 			endpoint(source_octet, 44000U), view(still_limited.bytes), 10'001U, 0U, false);
 		EXPECT_EQ(detail::SessionIngressDisposition::Dropped, result.disposition);
@@ -1579,22 +1591,14 @@ void expect_mission_purge_preserves_global_monotonic_watermark(Controller& contr
 	if constexpr (!has_wp06_ordered_tick_phases<Controller>::value) {
 		FAIL() << "SessionController lacks purge_all(reason).";
 	} else {
-		const auto before_purge = make_hello(9'100U,
-			410U,
-			protocol::VersionMinorV1_0,
-			protocol::VersionMinorV1_0);
-		ASSERT_EQ(detail::SessionIngressDisposition::ResponseQueued,
+		const auto before_purge = make_invalid_hello(9'100U, 410U);
+		ASSERT_EQ(detail::SessionIngressDisposition::Dropped,
 			controller.ingest(endpoint(10U), view(before_purge.bytes), 20'000U, 0U, false).disposition);
-		detail::SessionControllerOutput unsupported_welcome;
-		ASSERT_TRUE(controller.pop_output(unsupported_welcome));
 		controller.purge_all(detail::SessionCloseReason::MissionDiscontinuity);
 		const auto before = controller.owned_usage();
 		const auto used_ids_before = ids.registry.used_count();
 
-		const auto regressed = make_hello(9'101U,
-			411U,
-			protocol::VersionMinorV1_0,
-			protocol::VersionMinorV1_0);
+		const auto regressed = make_invalid_hello(9'101U, 411U);
 		const auto result =
 			controller.ingest(endpoint(11U), view(regressed.bytes), 19'999U, 0U, false);
 		EXPECT_EQ(detail::SessionIngressDisposition::Dropped, result.disposition);

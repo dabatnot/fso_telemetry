@@ -73,7 +73,7 @@ enum class TokenBucketResult : std::uint8_t {
 // token-microseconds, so sub-token refill is never discarded and repeated
 // calls do not accumulate rounding drift. The injected clock is never read
 // internally. A backwards timestamp latches a safe failure until reset() is
-// explicitly called; reset starts the bucket full as required by FSTL 1.0.
+// explicitly called; reset starts the bucket full as required by FSTL 1.1.
 class TokenBucket {
   public:
 	TokenBucket() noexcept = default;

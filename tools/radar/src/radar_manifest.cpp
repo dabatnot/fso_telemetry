@@ -38,7 +38,7 @@ bool buildRadarManifestCatalog(
                 static_cast<std::uint16_t>(protocol::RecordType::ClassManifest)) {
                 protocol::ClassManifestRadarMetadata metadata;
                 if (protocol::decode_class_manifest_radar_metadata(
-                        record, protocol::VersionMinorV1_1, metadata) !=
+                        record, protocol::VersionMinor, metadata) !=
                         protocol::ValidationError::None ||
                     metadata.manifest_generation != transaction.transaction_id ||
                     metadata.class_id == 0 ||
@@ -51,7 +51,7 @@ bool buildRadarManifestCatalog(
                        static_cast<std::uint16_t>(protocol::RecordType::WeaponManifest)) {
                 protocol::WeaponManifestRadarMetadata metadata;
                 if (protocol::decode_weapon_manifest_radar_metadata(
-                        record, protocol::VersionMinorV1_1, metadata) !=
+                        record, protocol::VersionMinor, metadata) !=
                         protocol::ValidationError::None ||
                     metadata.manifest_generation != transaction.transaction_id ||
                     metadata.weapon_class_id == 0 ||

@@ -183,7 +183,7 @@ CommViewClientLifecycleResult CommViewClientLifecycle::apply_capability_update(
 				   ? CommViewClientLifecycleResult::Duplicate
 				   : CommViewClientLifecycleResult::ConflictingDuplicate;
 	}
-	// FSTL 1.0 permits withdrawal only. A pair cannot be reactivated in the
+	// FSTL 1.1 permits withdrawal only. A pair cannot be reactivated in the
 	// same session, even with a larger generation.
 	if ((client_capability && !m_client_capability) || (producer_capability && !m_producer_capability)) {
 		return CommViewClientLifecycleResult::InvalidTransition;

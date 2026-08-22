@@ -2,7 +2,7 @@
   "expectedCanonicalJson": "expected-v1.1/hello-minor-one-only.json",
   "expectedValidationError": 0,
   "expectedValidationErrorName": "None",
-  "headerVersion": "1.0",
+  "headerVersion": "1.1",
   "inputFiles": [
     "hello-minor-one-only.bin"
   ],

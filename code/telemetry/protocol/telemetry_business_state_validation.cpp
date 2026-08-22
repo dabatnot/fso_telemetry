@@ -203,7 +203,7 @@ ValidationError parse_mission_generation(const StateAtom& atom, std::uint32_t& g
 
 bool is_phase1_player_kinematics_profile(std::uint8_t protocol_minor, std::uint64_t coverage) noexcept
 {
-	return protocol_minor == VersionMinorV1_1 && coverage == StateDomainCoverageBitPlayerKinematics;
+	return protocol_minor == VersionMinor && coverage == StateDomainCoverageBitPlayerKinematics;
 }
 
 bool is_phase2_complete_ship_profile(std::uint8_t protocol_minor, std::uint64_t coverage) noexcept
@@ -212,7 +212,7 @@ bool is_phase2_complete_ship_profile(std::uint8_t protocol_minor, std::uint64_t 
 		StateDomainCoverageBitCoreShip | StateDomainCoverageBitControlInputs | StateDomainCoverageBitWeapons |
 		StateDomainCoverageBitCargoDockSupport;
 	static_assert(complete_ship_coverage == 0x0583ULL, "The Phase 2 complete ship coverage is frozen");
-	return protocol_minor == VersionMinorV1_1 && coverage == complete_ship_coverage;
+	return protocol_minor == VersionMinor && coverage == complete_ship_coverage;
 }
 
 bool is_phase3_cockpit_sensors_profile(std::uint8_t protocol_minor,
@@ -229,7 +229,7 @@ bool is_phase3_cockpit_sensors_profile(std::uint8_t protocol_minor,
 		StateDomainCoverageBitNavigation;
 	static_assert(cockpit_sensors_coverage == 0x07cbULL,
 		"The Phase 3 cockpit sensor coverage is frozen");
-	return protocol_minor == VersionMinorV1_1 &&
+	return protocol_minor == VersionMinor &&
 		coverage == cockpit_sensors_coverage;
 }
 
@@ -1386,8 +1386,8 @@ ValidationError BusinessStateImageValidator::validate(const StateImage& image) c
 				return ValidationError::InvalidAbsence;
 			}
 		}
-	} else if (m_context.protocol_minor == VersionMinorV1_1 &&
-		(session.coverage & StateDomainCoverageBitCoreShip) != 0U && m_context.required_manifest_id == 0U) {
+	} else if ((session.coverage & StateDomainCoverageBitCoreShip) != 0U &&
+		m_context.required_manifest_id == 0U) {
 		return ValidationError::MissingManifest;
 	}
 	constexpr std::uint64_t SpecializedCommVideoCapabilities =

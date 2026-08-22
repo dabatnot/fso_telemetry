@@ -196,7 +196,7 @@ class Phase1DeltaEgress final {
 							protocol::
 								BusinessRecordContainer::
 									Delta,
-							protocol::VersionMinorV1_1,
+							protocol::VersionMinor,
 							{records.data() +
 								 record_offset,
 							 record_size},
@@ -297,7 +297,7 @@ class Phase1DeltaEgress final {
 							record,
 							protocol::
 								BusinessRecordContainer::Delta,
-							protocol::VersionMinorV1_1,
+							protocol::VersionMinor,
 							{records.data() + offset,
 							 records.size() - offset},
 							written) !=
@@ -374,7 +374,7 @@ class Phase1DeltaEgress final {
 			return false;
 		}
 		protocol::TelemetryDatagramHeader header;
-		header.version_minor = protocol::VersionMinorV1_1;
+		header.version_minor = protocol::VersionMinor;
 		header.message_type = protocol::MessageType::Delta;
 		header.flags = fragmenter.fragment_count() > 1U ? protocol::MessageFlagFragmented : protocol::MessageFlagNone;
 		header.session_id = m_session_id;
@@ -390,7 +390,7 @@ class Phase1DeltaEgress final {
 		Phase1DeltaDatagram output;
 		output.endpoint = m_endpoint;
 		if (protocol::encode_datagram(header,
-				protocol::ProtocolMinorRange{protocol::VersionMinorV1_1, protocol::VersionMinorV1_1},
+				protocol::SupportedMinorRange,
 				slice.payload,
 				{output.bytes.data(), output.bytes.size()},
 				output.size) != protocol::ValidationError::None) {

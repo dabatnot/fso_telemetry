@@ -137,8 +137,8 @@ Packet hello(std::uint64_t nonce, std::uint32_t sequence)
 	value.client_send_t0_us = 100U + sequence;
 	value.min_major = protocol::VersionMajor;
 	value.max_major = protocol::VersionMajor;
-	value.min_minor = protocol::VersionMinorV1_1;
-	value.max_minor = protocol::VersionMinorV1_1;
+	value.min_minor = protocol::VersionMinor;
+	value.max_minor = protocol::VersionMinor;
 	value.requested_visibility_mode = protocol::VisibilityMode::Cockpit;
 	value.requested_heartbeat_ms = 500U;
 	std::array<std::uint8_t, protocol::HelloPayloadPrefixSize> payload{};
@@ -146,7 +146,7 @@ Packet hello(std::uint64_t nonce, std::uint32_t sequence)
 	EXPECT_EQ(protocol::ValidationError::None,
 		protocol::encode_hello_payload(value, mutable_bytes(payload), written));
 	protocol::TelemetryDatagramHeader header;
-	header.version_minor = protocol::VersionMinorV1_1;
+	header.version_minor = protocol::VersionMinor;
 	header.message_type = protocol::MessageType::Hello;
 	header.packet_sequence = sequence;
 	header.sent_time_us = value.client_send_t0_us;
@@ -159,7 +159,7 @@ protocol::DatagramView decode(const detail::SessionControllerOutput& output)
 	protocol::DatagramView decoded;
 	EXPECT_EQ(protocol::ValidationError::None,
 		protocol::decode_and_validate_datagram({output.bytes.data(), output.size},
-			protocol::ProtocolMinorRange{protocol::VersionMinorV1_1, protocol::VersionMinorV1_1},
+			protocol::SupportedMinorRange,
 			decoded));
 	return decoded;
 }
@@ -177,7 +177,7 @@ Packet applied_ack(const protocol::DatagramView& target, std::uint32_t sequence)
 	EXPECT_EQ(protocol::ValidationError::None,
 		protocol::encode_ack_payload(value, mutable_bytes(payload), written));
 	protocol::TelemetryDatagramHeader header;
-	header.version_minor = protocol::VersionMinorV1_1;
+	header.version_minor = protocol::VersionMinor;
 	header.message_type = protocol::MessageType::Ack;
 	header.session_id = target.header.session_id;
 	header.packet_sequence = sequence;

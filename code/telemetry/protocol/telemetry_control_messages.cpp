@@ -111,24 +111,6 @@ ValidationError validate_protocol_minor_range(ProtocolMinorRange range) noexcept
 	return ValidationError::None;
 }
 
-ProtocolMinorNegotiationResult select_highest_common_minor(ProtocolMinorRange local,
-	ProtocolMinorRange remote,
-	std::uint8_t& selected_minor) noexcept
-{
-	selected_minor = VersionMinor;
-	if (validate_protocol_minor_range(local) != ValidationError::None ||
-		validate_protocol_minor_range(remote) != ValidationError::None) {
-		return ProtocolMinorNegotiationResult::InvalidRange;
-	}
-	const auto minimum = local.minimum > remote.minimum ? local.minimum : remote.minimum;
-	const auto maximum = local.maximum < remote.maximum ? local.maximum : remote.maximum;
-	if (minimum > maximum) {
-		return ProtocolMinorNegotiationResult::NoIntersection;
-	}
-	selected_minor = maximum;
-	return ProtocolMinorNegotiationResult::Selected;
-}
-
 ValidationError validate_discovery_payload(const DiscoveryPayload& payload) noexcept
 {
 	if (payload.producer_id == 0 || payload.listen_port == 0) {
@@ -382,7 +364,6 @@ ValidationError validate_welcome_payload(const WelcomePayload& payload) noexcept
 		}
 		return validate_capability_extensions(payload.extensions, payload.extension_count);
 
-	case WelcomeStatus::UnsupportedVersion:
 	case WelcomeStatus::Unauthorized:
 	case WelcomeStatus::Busy:
 	case WelcomeStatus::InvalidCapabilities:

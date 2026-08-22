@@ -111,7 +111,7 @@ ValidationError validate_atom(const StateAtom& value)
 		value.key.record_type, value.record_version, RecordFlagNone,
 		{value.value.data(), value.value.size()}};
 	return validate_business_record(
-		envelope, BusinessRecordContainer::FullSnapshot, VersionMinorV1_1, metadata);
+		envelope, BusinessRecordContainer::FullSnapshot, VersionMinor, metadata);
 }
 
 void configure_turret(Wp05Fixture& fixture)

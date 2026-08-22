@@ -94,7 +94,7 @@ ValidationError validate_hud_alert(const std::vector<std::uint8_t>& payload)
 		RecordFlagNone, ByteView{payload.data(), payload.size()}};
 	BusinessRecordMetadata metadata;
 	return validate_business_record(record,
-		BusinessRecordContainer::FullSnapshot, VersionMinorV1_1, metadata);
+		BusinessRecordContainer::FullSnapshot, VersionMinor, metadata);
 }
 
 ValidationError validate_hud_alert_minor(
@@ -195,14 +195,14 @@ TEST(TelemetryProtocolBusinessRecords29, RoundTripsTheAuthoritativeHudAlertState
 		RecordFlagNone, ByteView{payload.data(), payload.size()}};
 	BusinessRecordMetadata metadata;
 	ASSERT_EQ(ValidationError::None, validate_business_record(record,
-		BusinessRecordContainer::FullSnapshot, VersionMinorV1_1, metadata));
+		BusinessRecordContainer::FullSnapshot, VersionMinor, metadata));
 	EXPECT_TRUE(metadata.state_atom);
 	EXPECT_EQ(8U, metadata.key_size);
 	EXPECT_TRUE(metadata.cascades_with_entity);
-	EXPECT_EQ(ValidationError::UnsupportedRecordVersion,
-		validate_hud_alert_minor(payload, VersionMinorV1_0));
+	EXPECT_EQ(ValidationError::UnsupportedMinor,
+		validate_hud_alert_minor(payload, 0U));
 	EXPECT_EQ(ValidationError::None,
-		validate_hud_alert_minor(payload, VersionMinorV1_1));
+		validate_hud_alert_minor(payload, VersionMinor));
 }
 
 TEST(TelemetryProtocolBusinessRecords29, RejectsNonCanonicalEnumsAndIncompleteWarnings)

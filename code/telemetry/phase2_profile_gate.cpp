@@ -18,9 +18,9 @@ constexpr std::uint64_t CockpitSensorsCoverage = CompleteShipCoverage |
 static_assert(CoreGateCoverage == 0x0401ULL, "The Phase 2 core gate coverage is frozen");
 static_assert(CompleteShipCoverage == 0x0583ULL, "The Phase 2 complete ship coverage is frozen");
 static_assert(CockpitSensorsCoverage == 0x07cbULL, "The Phase 3 cockpit sensor coverage is frozen");
-static_assert((CompleteShipCoverage & ~protocol::KnownStateDomainCoverageBitsV1_1) == 0U,
+static_assert((CompleteShipCoverage & ~protocol::KnownStateDomainCoverageBits) == 0U,
 	"Phase 2 profiles must use only existing FSTL 1.1 state domains");
-static_assert((CockpitSensorsCoverage & ~protocol::KnownStateDomainCoverageBitsV1_1) == 0U,
+static_assert((CockpitSensorsCoverage & ~protocol::KnownStateDomainCoverageBits) == 0U,
 	"The Phase 3 profile must use only existing FSTL 1.1 state domains");
 static_assert(static_cast<std::uint8_t>(Phase2ProfileError::Count) >
 		static_cast<std::uint8_t>(Phase2ProfileError::None),

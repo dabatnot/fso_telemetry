@@ -85,7 +85,7 @@ bool validate_encoded(StateAtom& atom)
 		atom.value.size()};
 	return protocol::validate_business_record(envelope,
 			   protocol::BusinessRecordContainer::FullSnapshot,
-			   protocol::VersionMinorV1_1, metadata) ==
+			   protocol::VersionMinor, metadata) ==
 		protocol::ValidationError::None;
 }
 

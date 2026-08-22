@@ -166,8 +166,8 @@ std::vector<std::uint8_t> hello(std::uint64_t nonce)
 	payload.client_send_t0_us = 1'000U;
 	payload.min_major = protocol::VersionMajor;
 	payload.max_major = protocol::VersionMajor;
-	payload.min_minor = protocol::VersionMinorV1_1;
-	payload.max_minor = protocol::VersionMinorV1_1;
+	payload.min_minor = protocol::VersionMinor;
+	payload.max_minor = protocol::VersionMinor;
 	payload.requested_visibility_mode =
 		protocol::VisibilityMode::Cockpit;
 	payload.requested_heartbeat_ms = 1'000U;
@@ -179,7 +179,7 @@ std::vector<std::uint8_t> hello(std::uint64_t nonce)
 			mutable_view(encoded_payload), payload_size));
 
 	protocol::TelemetryDatagramHeader header;
-	header.version_minor = protocol::VersionMinorV1_1;
+	header.version_minor = protocol::VersionMinor;
 	header.message_type = protocol::MessageType::Hello;
 	header.packet_sequence = 1U;
 	header.sent_time_us = payload.client_send_t0_us;
@@ -193,8 +193,8 @@ std::vector<std::uint8_t> hello(std::uint64_t nonce)
 	std::size_t written = 0U;
 	EXPECT_EQ(protocol::ValidationError::None,
 		protocol::encode_datagram(header,
-			{protocol::VersionMinorV1_1,
-				protocol::VersionMinorV1_1},
+			{protocol::VersionMinor,
+				protocol::VersionMinor},
 			{encoded_payload.data(), payload_size},
 			mutable_view(encoded), written));
 	EXPECT_EQ(encoded.size(), written);
@@ -235,8 +235,8 @@ protocol::DatagramView decode_output(
 	EXPECT_EQ(protocol::ValidationError::None,
 		protocol::decode_and_validate_datagram(
 			{output.bytes.data(), output.size},
-			{protocol::VersionMinorV1_1,
-				protocol::VersionMinorV1_1}, decoded));
+			{protocol::VersionMinor,
+				protocol::VersionMinor}, decoded));
 	return decoded;
 }
 
@@ -260,7 +260,7 @@ std::vector<std::uint8_t> applied_ack(
 		protocol::encode_ack_payload(
 			ack, mutable_view(payload), payload_size));
 	protocol::TelemetryDatagramHeader header;
-	header.version_minor = protocol::VersionMinorV1_1;
+	header.version_minor = protocol::VersionMinor;
 	header.message_type = protocol::MessageType::Ack;
 	header.session_id = target.header.session_id;
 	header.packet_sequence = packet_sequence;
@@ -275,8 +275,8 @@ std::vector<std::uint8_t> applied_ack(
 	std::size_t written = 0U;
 	EXPECT_EQ(protocol::ValidationError::None,
 		protocol::encode_datagram(header,
-			{protocol::VersionMinorV1_1,
-				protocol::VersionMinorV1_1},
+			{protocol::VersionMinor,
+				protocol::VersionMinor},
 			{payload.data(), payload_size},
 			mutable_view(encoded), written));
 	return encoded;
@@ -737,7 +737,7 @@ TEST(Phase2Runtime,
 			mutable_view(request_payload),
 			request_payload_size));
 	protocol::TelemetryDatagramHeader request_header;
-	request_header.version_minor = protocol::VersionMinorV1_1;
+	request_header.version_minor = protocol::VersionMinor;
 	request_header.message_type =
 		protocol::MessageType::ResyncRequest;
 	request_header.flags = protocol::MessageFlagAckRequired;
@@ -757,8 +757,8 @@ TEST(Phase2Runtime,
 	std::size_t encoded_request_size = 0U;
 	ASSERT_EQ(protocol::ValidationError::None,
 		protocol::encode_datagram(request_header,
-			{protocol::VersionMinorV1_1,
-			 protocol::VersionMinorV1_1},
+			{protocol::VersionMinor,
+			 protocol::VersionMinor},
 			{request_payload.data(), request_payload_size},
 			mutable_view(encoded_request),
 			encoded_request_size));
@@ -938,7 +938,7 @@ TEST(Phase2Runtime,
 		protocol::encode_resync_request_payload(request,
 			mutable_view(request_payload), request_payload_size));
 	protocol::TelemetryDatagramHeader request_header;
-	request_header.version_minor = protocol::VersionMinorV1_1;
+	request_header.version_minor = protocol::VersionMinor;
 	request_header.message_type = protocol::MessageType::ResyncRequest;
 	request_header.flags = protocol::MessageFlagAckRequired;
 	request_header.session_id = controller.slot(0U).session_id;
@@ -955,8 +955,8 @@ TEST(Phase2Runtime,
 	std::size_t encoded_request_size = 0U;
 	ASSERT_EQ(protocol::ValidationError::None,
 		protocol::encode_datagram(request_header,
-			{protocol::VersionMinorV1_1,
-			 protocol::VersionMinorV1_1},
+			{protocol::VersionMinor,
+			 protocol::VersionMinor},
 			{request_payload.data(), request_payload_size},
 			mutable_view(encoded_request), encoded_request_size));
 

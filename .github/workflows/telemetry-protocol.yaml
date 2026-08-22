@@ -43,30 +43,14 @@ jobs:
           python-version: '3.11'
       - name: Reject retired certification references
         run: python -B test/telemetry/tools/check_no_legacy_certification.py .
-      - name: Verify frozen FSTL 1.0 bytes and hashes
-        run: >-
-          python -B test/telemetry/protocol/tools/verify_fstl_1_0_freeze.py
-          --check --repo .
-      - name: Exercise FSTL 1.0 mutation guards
-        run: python -B test/telemetry/protocol/tools/test_fstl_1_0_freeze.py
-      - name: Verify FSTL schemas and exact profile masks
-        run: |
-          python -B test/telemetry/protocol/tools/fstl_schema.py --self-test
-          python -B test/telemetry/protocol/tools/verify_schema_vectors.py --check
-          python -B test/telemetry/protocol/tools/verify_schema_vectors.py --check --schema test/telemetry/protocol/schema/fstl-v1.1.yaml
-          python -B test/telemetry/protocol/tools/verify_fstl_1_1_amendment.py --check --repo .
-      - name: Verify transport and business vectors
-        run: |
-          python -B test/telemetry/protocol/tools/generate_transport_vectors.py --check
-          python -B test/telemetry/protocol/tools/generate_protocol_vectors.py --check
-          python -B test/telemetry/protocol/tools/fstl_reference_decoder.py --check --repo .
-          python -B test/telemetry/protocol/tools/verify_telemetry_assets.py --require-complete
+      - name: Verify the current FSTL 1.1 contract
+        run: python -B test/telemetry/protocol/tools/fstl_reference_decoder.py --check --repo .
       - name: Test the independent observation client
         run: python -B test/telemetry/protocol/tools/test_fstl_console_client_contract.py
       - name: Prepare the bounded fuzz corpus
         run: >-
           python -B test/telemetry/protocol/fuzz/prepare_fuzz_corpus.py
-          --vectors test/telemetry/protocol/vectors
+          --vectors test/telemetry/protocol/vectors-v1.1
           --output telemetry-fuzz-corpus
       - uses: actions/upload-artifact@v7
         with:

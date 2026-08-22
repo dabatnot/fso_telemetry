@@ -2450,7 +2450,7 @@ class ConsoleClient:
         sent = now_us()
         packet = pack_header(message_type=10, flags=0, session_id=header["session_id"],
                              sequence=self.sequence, sent_us=sent, message_id=self.sequence,
-                             payload=ack_payload(header, ack_flags), minor=header["version_minor"])
+                             payload=ack_payload(header, ack_flags))
         self.sequence += 1
         self._send(packet)
 

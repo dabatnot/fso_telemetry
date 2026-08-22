@@ -540,7 +540,7 @@ bool SessionController::queue_retransmission(std::size_t slot_index,
 	}
 	const auto& retransmission = action.retransmission;
 	protocol::TelemetryDatagramHeader header;
-	header.version_minor = protocol::VersionMinorV1_1;
+	header.version_minor = protocol::VersionMinor;
 	header.message_type = retransmission.key.message_type;
 	header.flags = static_cast<std::uint8_t>(retransmission.base_flags | protocol::MessageFlagRetransmission);
 	header.session_id = retransmission.key.session_id;
@@ -598,7 +598,7 @@ bool SessionController::queue_heartbeat(std::size_t slot_index,
 		return false;
 	}
 	protocol::TelemetryDatagramHeader header;
-	header.version_minor = protocol::VersionMinorV1_1;
+	header.version_minor = protocol::VersionMinor;
 	header.message_type = protocol::MessageType::Heartbeat;
 	header.session_id = m_slots[slot_index].session_id;
 	header.packet_sequence = m_slots[slot_index].next_packet_sequence;
@@ -688,7 +688,7 @@ SessionIngressResult SessionController::ingest(const protocol::EndpointKey& endp
 	bool predecoded_for_output_arbitration = false;
 	if (m_has_output) {
 		if (protocol::decode_and_validate_datagram(datagram,
-				protocol::ProtocolMinorRange{protocol::VersionMinorV1_0, protocol::VersionMinorV1_1},
+				protocol::SupportedMinorRange,
 				decoded) != protocol::ValidationError::None) {
 			return dropped(SessionIngressDropReason::OutputBusy);
 		}
@@ -725,7 +725,7 @@ SessionIngressResult SessionController::ingest(const protocol::EndpointKey& endp
 	}
 	stage(SessionIngressStage::DatagramEnvelope);
 	if (!predecoded_for_output_arbitration && protocol::decode_and_validate_datagram(datagram,
-			protocol::ProtocolMinorRange{protocol::VersionMinorV1_0, protocol::VersionMinorV1_1},
+			protocol::SupportedMinorRange,
 			decoded) != protocol::ValidationError::None) {
 		return dropped(SessionIngressDropReason::DatagramEnvelopeInvalid);
 	}
@@ -798,12 +798,10 @@ SessionIngressResult SessionController::ingest_hello(const protocol::EndpointKey
 		}
 		return {SessionIngressDisposition::CachedResponseQueued, SessionIngressDropReason::None};
 	}
-	const bool supported = hello.min_major <= protocol::VersionMajor && hello.max_major >= protocol::VersionMajor &&
-		hello.min_minor <= protocol::VersionMinorV1_1 && hello.max_minor >= protocol::VersionMinorV1_1;
 	std::uint64_t session_id = 0U;
 	std::uint32_t initial_packet_sequence = 0U;
 	std::size_t slot_index = InvalidIndex;
-	const auto replacement_slot = supported ? find_slot(endpoint) : InvalidIndex;
+	const auto replacement_slot = find_slot(endpoint);
 	if (replacement_slot != InvalidIndex) {
 		const auto& active_slot = m_slots[replacement_slot];
 		// Before WELCOME is applied, next_keyframe_due_us has no scheduling
@@ -835,23 +833,21 @@ SessionIngressResult SessionController::ingest_hello(const protocol::EndpointKey
 	if (m_cache_size == m_cache.size() && !replacement_releases_cache) {
 		return dropped(SessionIngressDropReason::HandshakeCacheFull);
 	}
-	if (supported) {
-		if (m_rate_limiter->consume_pre_session(protocol::RateLimitClass::SessionCreation, endpoint, now_us) !=
-			protocol::ProtocolRateLimitResult::Allowed) {
-			return dropped(SessionIngressDropReason::SessionCreationRateLimited);
-		}
-		slot_index = replacement_slot != InvalidIndex ? replacement_slot : free_slot();
-		if (slot_index == InvalidIndex) {
-			return dropped(SessionIngressDropReason::NoClientSlot);
-		}
-		const auto id = m_ids->allocate();
-		if (id.status != SessionIdStatus::Allocated) {
-			clear_all();
-			m_faulted = true;
-			return {SessionIngressDisposition::Faulted, SessionIngressDropReason::SessionIdUnavailable};
-		}
-		session_id = id.session_id;
+	if (m_rate_limiter->consume_pre_session(protocol::RateLimitClass::SessionCreation, endpoint, now_us) !=
+		protocol::ProtocolRateLimitResult::Allowed) {
+		return dropped(SessionIngressDropReason::SessionCreationRateLimited);
 	}
+	slot_index = replacement_slot != InvalidIndex ? replacement_slot : free_slot();
+	if (slot_index == InvalidIndex) {
+		return dropped(SessionIngressDropReason::NoClientSlot);
+	}
+	const auto id = m_ids->allocate();
+	if (id.status != SessionIdStatus::Allocated) {
+		clear_all();
+		m_faulted = true;
+		return {SessionIngressDisposition::Faulted, SessionIngressDropReason::SessionIdUnavailable};
+	}
+	session_id = id.session_id;
 	if (!next_packet_sequence(initial_packet_sequence)) {
 		clear_all();
 		m_faulted = true;
@@ -863,14 +859,14 @@ SessionIngressResult SessionController::ingest_hello(const protocol::EndpointKey
 	welcome.client_send_t0_us = hello.client_send_t0_us;
 	welcome.producer_receive_t1_us = now_us;
 	welcome.producer_send_t2_us = now_us;
-	welcome.status = supported ? protocol::WelcomeStatus::Accepted : protocol::WelcomeStatus::UnsupportedVersion;
-	welcome.selected_major = supported ? protocol::VersionMajor : 0U;
-	welcome.selected_minor = supported ? protocol::VersionMinorV1_1 : 0U;
+	welcome.status = protocol::WelcomeStatus::Accepted;
+	welcome.selected_major = protocol::VersionMajor;
+	welcome.selected_minor = protocol::VersionMinor;
 	welcome.selected_visibility_mode = protocol::VisibilityMode::Cockpit;
 	// Prewarmed cockpit sessions retain this negotiated interval when the
 	// mission starts, so use the mission cadence from the outset.
-	welcome.heartbeat_interval_ms = supported ? m_config.mission_heartbeat_ms : 0U;
-	welcome.reliable_reassembly_timeout_ms = supported ? protocol::ReliableReassemblyTimeoutV1Ms : 0U;
+	welcome.heartbeat_interval_ms = m_config.mission_heartbeat_ms;
+	welcome.reliable_reassembly_timeout_ms = protocol::ReliableReassemblyTimeoutV1Ms;
 	welcome.producer_id = m_config.producer_id;
 
 	std::array<std::uint8_t, protocol::MaxCachedWelcomePayloadSize> payload{};
@@ -880,9 +876,9 @@ SessionIngressResult SessionController::ingest_hello(const protocol::EndpointKey
 		return dropped(SessionIngressDropReason::PayloadInvalid);
 	}
 	protocol::TelemetryDatagramHeader header;
-	header.version_minor = supported ? protocol::VersionMinorV1_1 : protocol::VersionMinorV1_0;
+	header.version_minor = protocol::VersionMinor;
 	header.message_type = protocol::MessageType::Welcome;
-	header.flags = supported ? protocol::MessageFlagAckRequired : protocol::MessageFlagNone;
+	header.flags = protocol::MessageFlagAckRequired;
 	header.session_id = session_id;
 	header.packet_sequence = initial_packet_sequence;
 	header.sent_time_us = now_us;
@@ -928,54 +924,52 @@ SessionIngressResult SessionController::ingest_hello(const protocol::EndpointKey
 	cache.size = encoded_size;
 	std::copy_n(encoded.data(), encoded_size, cache.bytes.data());
 	++m_cache_size;
-	if (supported) {
-		if (!initialize_slot(slot_index)) {
-			clear_all();
-			m_faulted = true;
-			return {SessionIngressDisposition::Faulted, SessionIngressDropReason::SessionIdUnavailable};
-		}
-		auto& slot = m_slots[slot_index];
-		slot.progress = ProducerSessionProgress::AwaitWelcomeApplied;
-		slot.endpoint = endpoint;
-		slot.session_id = session_id;
-		slot.session_start_us = now_us;
-		// This field is not a scheduler deadline before WELCOME is applied.
-		slot.next_keyframe_due_us = hello.client_send_t0_us;
-		slot.heartbeat.negotiated_interval_ms = welcome.heartbeat_interval_ms;
-		(void)slot.heartbeat.probes.reset_session(session_id);
-		slot.welcome_deadline_us = now_us > std::numeric_limits<std::uint64_t>::max() - protocol::ReliableOrdinaryRetentionUs
-			? std::numeric_limits<std::uint64_t>::max()
-			: now_us + protocol::ReliableOrdinaryRetentionUs;
-		slot.next_message_id = 2U;
-		slot.next_packet_sequence = initial_packet_sequence + 1U;
-		protocol::DatagramView welcome_view;
-		(void)protocol::decode_and_validate_datagram({encoded.data(), encoded_size},
-			protocol::ProtocolMinorRange{protocol::VersionMinorV1_1, protocol::VersionMinorV1_1}, welcome_view);
-		slot.welcome_message_id = welcome_view.header.message_id;
-		slot.welcome_fragment_count = welcome_view.header.fragment_count;
-		slot.welcome_message_crc32 = welcome_view.header.message_crc32;
-		protocol::ReliableMessageToRetain retained;
-		retained.session_id = session_id;
-		retained.endpoint = endpoint;
-		retained.message_type = protocol::MessageType::Welcome;
-		retained.base_flags = protocol::MessageFlagAckRequired;
-		retained.message_id = welcome_view.header.message_id;
-		retained.fragment_count = welcome_view.header.fragment_count;
-		retained.message_crc32 = welcome_view.header.message_crc32;
-		retained.logical_payload = {payload.data(), payload_size};
-		retained.required_ack = protocol::RequiredAckLevel::Applied;
-		retained.message_class = protocol::ReliableMessageClass::HandshakeCritical;
-		if (m_reliable_windows[slot_index].retain(retained, now_us) != protocol::ReliableRetainResult::Retained) {
-			clear_all();
-			m_faulted = true;
-			return {SessionIngressDisposition::Faulted, SessionIngressDropReason::SessionIdUnavailable};
-		}
-		slot.reliable_items_in_use = m_reliable_windows[slot_index].entry_count();
-		const auto account = m_preproof.account(endpoint);
-		slot.preproof_validated_bytes_received = account.validated_bytes_received;
-		slot.preproof_bytes_sent = account.bytes_sent;
+	if (!initialize_slot(slot_index)) {
+		clear_all();
+		m_faulted = true;
+		return {SessionIngressDisposition::Faulted, SessionIngressDropReason::SessionIdUnavailable};
 	}
-	if (!queue_bytes(endpoint, encoded.data(), encoded_size, supported ? slot_index : InvalidIndex)) {
+	auto& slot = m_slots[slot_index];
+	slot.progress = ProducerSessionProgress::AwaitWelcomeApplied;
+	slot.endpoint = endpoint;
+	slot.session_id = session_id;
+	slot.session_start_us = now_us;
+	// This field is not a scheduler deadline before WELCOME is applied.
+	slot.next_keyframe_due_us = hello.client_send_t0_us;
+	slot.heartbeat.negotiated_interval_ms = welcome.heartbeat_interval_ms;
+	(void)slot.heartbeat.probes.reset_session(session_id);
+	slot.welcome_deadline_us = now_us > std::numeric_limits<std::uint64_t>::max() - protocol::ReliableOrdinaryRetentionUs
+		? std::numeric_limits<std::uint64_t>::max()
+		: now_us + protocol::ReliableOrdinaryRetentionUs;
+	slot.next_message_id = 2U;
+	slot.next_packet_sequence = initial_packet_sequence + 1U;
+	protocol::DatagramView welcome_view;
+	(void)protocol::decode_and_validate_datagram({encoded.data(), encoded_size},
+		protocol::SupportedMinorRange, welcome_view);
+	slot.welcome_message_id = welcome_view.header.message_id;
+	slot.welcome_fragment_count = welcome_view.header.fragment_count;
+	slot.welcome_message_crc32 = welcome_view.header.message_crc32;
+	protocol::ReliableMessageToRetain retained;
+	retained.session_id = session_id;
+	retained.endpoint = endpoint;
+	retained.message_type = protocol::MessageType::Welcome;
+	retained.base_flags = protocol::MessageFlagAckRequired;
+	retained.message_id = welcome_view.header.message_id;
+	retained.fragment_count = welcome_view.header.fragment_count;
+	retained.message_crc32 = welcome_view.header.message_crc32;
+	retained.logical_payload = {payload.data(), payload_size};
+	retained.required_ack = protocol::RequiredAckLevel::Applied;
+	retained.message_class = protocol::ReliableMessageClass::HandshakeCritical;
+	if (m_reliable_windows[slot_index].retain(retained, now_us) != protocol::ReliableRetainResult::Retained) {
+		clear_all();
+		m_faulted = true;
+		return {SessionIngressDisposition::Faulted, SessionIngressDropReason::SessionIdUnavailable};
+	}
+	slot.reliable_items_in_use = m_reliable_windows[slot_index].entry_count();
+	const auto account = m_preproof.account(endpoint);
+	slot.preproof_validated_bytes_received = account.validated_bytes_received;
+	slot.preproof_bytes_sent = account.bytes_sent;
+	if (!queue_bytes(endpoint, encoded.data(), encoded_size, slot_index)) {
 		return dropped(SessionIngressDropReason::OutputBusy);
 	}
 	return {SessionIngressDisposition::ResponseQueued, SessionIngressDropReason::None};
@@ -1207,7 +1201,7 @@ bool SessionController::queue_session_begin(std::size_t slot_index,
 		return false;
 
 	protocol::TelemetryDatagramHeader header;
-	header.version_minor = protocol::VersionMinorV1_1;
+	header.version_minor = protocol::VersionMinor;
 	header.message_type = protocol::MessageType::SessionBegin;
 	header.flags = protocol::MessageFlagAckRequired;
 	header.session_id = slot.session_id;
@@ -1221,7 +1215,7 @@ bool SessionController::queue_session_begin(std::size_t slot_index,
 		return false;
 	protocol::DatagramView view;
 	if (protocol::decode_and_validate_datagram({encoded.data(), encoded_size},
-			{protocol::VersionMinorV1_1, protocol::VersionMinorV1_1}, view) !=
+			protocol::SupportedMinorRange, view) !=
 		protocol::ValidationError::None)
 		return false;
 
@@ -1465,7 +1459,7 @@ bool SessionController::queue_resync_validated_ack(std::size_t slot_index,
 		return false;
 	}
 	protocol::TelemetryDatagramHeader header;
-	header.version_minor = protocol::VersionMinorV1_1;
+	header.version_minor = protocol::VersionMinor;
 	header.message_type = protocol::MessageType::Ack;
 	header.session_id = slot.session_id;
 	// Reserve both identities when the ACK enters the single output slot. A
@@ -2726,7 +2720,7 @@ SessionController::reject_phase2_profile_mutation_for_slot(
 			protocol::ValidationError::None)
 		return result;
 	protocol::TelemetryDatagramHeader header;
-	header.version_minor = protocol::VersionMinorV1_1;
+	header.version_minor = protocol::VersionMinor;
 	header.message_type = protocol::MessageType::SessionEnd;
 	header.flags = protocol::MessageFlagAckRequired;
 	header.session_id = slot.session_id;
@@ -2743,8 +2737,8 @@ SessionController::reject_phase2_profile_mutation_for_slot(
 	protocol::DatagramView view;
 	if (protocol::decode_and_validate_datagram(
 			{encoded.data(), encoded_size},
-			{protocol::VersionMinorV1_1,
-			 protocol::VersionMinorV1_1},
+			{protocol::VersionMinor,
+			 protocol::VersionMinor},
 			view) != protocol::ValidationError::None)
 		return result;
 	protocol::ReliableMessageToRetain retained;
@@ -3242,7 +3236,7 @@ bool SessionController::begin_mission_session_end(std::size_t slot_index,
 		return false;
 
 	protocol::TelemetryDatagramHeader header;
-	header.version_minor = protocol::VersionMinorV1_1;
+	header.version_minor = protocol::VersionMinor;
 	header.message_type = protocol::MessageType::SessionEnd;
 	header.flags = protocol::MessageFlagAckRequired;
 	header.session_id = slot.session_id;
@@ -3256,7 +3250,7 @@ bool SessionController::begin_mission_session_end(std::size_t slot_index,
 		return false;
 	protocol::DatagramView view;
 	if (protocol::decode_and_validate_datagram({encoded.data(), encoded_size},
-			{protocol::VersionMinorV1_1, protocol::VersionMinorV1_1}, view) !=
+			protocol::SupportedMinorRange, view) !=
 		protocol::ValidationError::None)
 		return false;
 

@@ -694,7 +694,7 @@ std::size_t Phase1SnapshotEgress::service_initial(std::size_t datagram_budget,
 		return 0U;
 	}
 	protocol::TelemetryDatagramHeader header;
-	header.version_minor = protocol::VersionMinorV1_1;
+	header.version_minor = protocol::VersionMinor;
 	header.message_type = m_candidate_message_type;
 	header.flags = static_cast<std::uint8_t>(protocol::MessageFlagAckRequired |
 		(m_candidate_message_type == protocol::MessageType::FullSnapshot
@@ -715,7 +715,7 @@ std::size_t Phase1SnapshotEgress::service_initial(std::size_t datagram_budget,
 	Phase1SnapshotDatagram output;
 	output.endpoint = m_endpoint;
 	if (protocol::encode_datagram(header,
-			protocol::ProtocolMinorRange{protocol::VersionMinorV1_1, protocol::VersionMinorV1_1},
+			protocol::SupportedMinorRange,
 			slice.payload,
 			{output.bytes.data(), output.bytes.size()},
 			output.size) != protocol::ValidationError::None) {
@@ -871,7 +871,7 @@ bool Phase1SnapshotEgress::queue_retransmission_fragment(std::uint32_t packet_se
 		return false;
 	}
 	protocol::TelemetryDatagramHeader header;
-	header.version_minor = protocol::VersionMinorV1_1;
+	header.version_minor = protocol::VersionMinor;
 	header.message_type = m_candidate_message_type;
 	header.flags = static_cast<std::uint8_t>(protocol::MessageFlagAckRequired |
 		(m_candidate_message_type == protocol::MessageType::FullSnapshot
@@ -895,7 +895,7 @@ bool Phase1SnapshotEgress::queue_retransmission_fragment(std::uint32_t packet_se
 	Phase1SnapshotDatagram output;
 	output.endpoint = m_endpoint;
 	if (protocol::encode_datagram(header,
-			protocol::ProtocolMinorRange{protocol::VersionMinorV1_1, protocol::VersionMinorV1_1},
+			protocol::SupportedMinorRange,
 			slice.payload,
 			{output.bytes.data(), output.bytes.size()},
 			output.size) != protocol::ValidationError::None) {

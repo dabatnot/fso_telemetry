@@ -51,9 +51,8 @@ ValidationError expected_fragment_count(MessageType type,
 	                                     std::uint16_t& count) noexcept;
 ValidationError validate_fragment_layout(const TelemetryDatagramHeader& header) noexcept;
 
-// Version validation is deliberately contextual. The unqualified datagram
-// APIs below remain strict FSTL 1.0; negotiated 1.1 callers pass an explicit
-// one-element range (or the offered range while receiving WELCOME).
+// Every datagram is strict FSTL 1.1. The range remains part of the API because
+// the same shape is carried by HELLO, but only {1, 1} is valid.
 ValidationError validate_datagram_header_version(const TelemetryDatagramHeader& header,
 	ProtocolMinorRange accepted_minors) noexcept;
 

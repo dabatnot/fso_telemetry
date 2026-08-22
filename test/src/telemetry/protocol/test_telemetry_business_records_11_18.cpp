@@ -533,7 +533,7 @@ TEST(TelemetryProtocolBusinessRecords11To18, TargetPresenceIsBoundToCurrentTarge
 	BusinessRecordMetadata metadata;
 	EXPECT_EQ(ValidationError::None,
 		validate_business_record(record(RecordType::TargetState, hud_readout, 2U),
-			BusinessRecordContainer::FullSnapshot, VersionMinorV1_1, metadata));
+			BusinessRecordContainer::FullSnapshot, VersionMinor, metadata));
 
 	auto invalid_utf8 = target(TargetStatePresenceFlagRevealedIdentity, 2);
 	u8(invalid_utf8, static_cast<std::uint8_t>(ObjectType::Ship));
@@ -560,16 +560,16 @@ TEST(TelemetryProtocolBusinessRecords11To18,
 	BusinessRecordMetadata metadata;
 	EXPECT_EQ(ValidationError::None,
 		validate_business_record(record(RecordType::TargetState, payload, 4U),
-			BusinessRecordContainer::FullSnapshot, VersionMinorV1_1, metadata));
+			BusinessRecordContainer::FullSnapshot, VersionMinor, metadata));
 	EXPECT_EQ(ValidationError::UnsupportedRecordVersion,
 		validate_business_record(record(RecordType::TargetState, payload, 3U),
-			BusinessRecordContainer::FullSnapshot, VersionMinorV1_1, metadata));
+			BusinessRecordContainer::FullSnapshot, VersionMinor, metadata));
 
 	auto no_target = target(TargetStatePresenceFlagHudTargetColor, 0U);
 	u32(no_target, 0x40302010U);
 	EXPECT_EQ(ValidationError::InvalidAbsence,
 		validate_business_record(record(RecordType::TargetState, no_target, 4U),
-			BusinessRecordContainer::FullSnapshot, VersionMinorV1_1, metadata));
+			BusinessRecordContainer::FullSnapshot, VersionMinor, metadata));
 }
 
 TEST(TelemetryProtocolBusinessRecords11To18,
@@ -588,16 +588,16 @@ TEST(TelemetryProtocolBusinessRecords11To18,
 	BusinessRecordMetadata metadata;
 	EXPECT_EQ(ValidationError::None,
 		validate_business_record(record(RecordType::TargetState, payload, 5U),
-			BusinessRecordContainer::FullSnapshot, VersionMinorV1_1, metadata));
+			BusinessRecordContainer::FullSnapshot, VersionMinor, metadata));
 	EXPECT_EQ(ValidationError::UnsupportedRecordVersion,
 		validate_business_record(record(RecordType::TargetState, payload, 4U),
-			BusinessRecordContainer::FullSnapshot, VersionMinorV1_1, metadata));
+			BusinessRecordContainer::FullSnapshot, VersionMinor, metadata));
 
 	auto empty_label = target(TargetStatePresenceFlagHudTargetSubsystemLabel, 2U);
 	string(empty_label, "");
 	EXPECT_EQ(ValidationError::OutOfRange,
 		validate_business_record(record(RecordType::TargetState, empty_label, 5U),
-			BusinessRecordContainer::FullSnapshot, VersionMinorV1_1, metadata));
+			BusinessRecordContainer::FullSnapshot, VersionMinor, metadata));
 }
 
 TEST(TelemetryProtocolBusinessRecords11To18,
@@ -622,32 +622,32 @@ TEST(TelemetryProtocolBusinessRecords11To18,
 	EXPECT_EQ(ValidationError::None,
 		validate_business_record(record(RecordType::TargetState,
 			make_strength(0.0F, 1U, 1.0F), 6U),
-			BusinessRecordContainer::FullSnapshot, VersionMinorV1_1, metadata));
+			BusinessRecordContainer::FullSnapshot, VersionMinor, metadata));
 	EXPECT_EQ(ValidationError::None,
 		validate_business_record(record(RecordType::TargetState,
 			make_strength(1.0F, 0U, 0.0F), 6U),
-			BusinessRecordContainer::FullSnapshot, VersionMinorV1_1, metadata));
+			BusinessRecordContainer::FullSnapshot, VersionMinor, metadata));
 	EXPECT_EQ(ValidationError::UnsupportedRecordVersion,
 		validate_business_record(record(RecordType::TargetState,
 			make_strength(0.5F, 1U, 0.5F), 5U),
-			BusinessRecordContainer::FullSnapshot, VersionMinorV1_1, metadata));
+			BusinessRecordContainer::FullSnapshot, VersionMinor, metadata));
 	EXPECT_EQ(ValidationError::OutOfRange,
 		validate_business_record(record(RecordType::TargetState,
 			make_strength(1.01F, 1U, 0.5F), 6U),
-			BusinessRecordContainer::FullSnapshot, VersionMinorV1_1, metadata));
+			BusinessRecordContainer::FullSnapshot, VersionMinor, metadata));
 	EXPECT_EQ(ValidationError::NonFiniteFloat,
 		validate_business_record(record(RecordType::TargetState,
 			make_strength(std::numeric_limits<float>::infinity(), 1U, 0.5F), 6U),
-			BusinessRecordContainer::FullSnapshot, VersionMinorV1_1, metadata));
+			BusinessRecordContainer::FullSnapshot, VersionMinor, metadata));
 	EXPECT_EQ(ValidationError::OutOfRange,
 		validate_business_record(record(RecordType::TargetState,
 			make_strength(0.5F, 2U, 0.5F), 6U),
-			BusinessRecordContainer::FullSnapshot, VersionMinorV1_1, metadata));
+			BusinessRecordContainer::FullSnapshot, VersionMinor, metadata));
 	EXPECT_EQ(ValidationError::InvalidAbsence,
 		validate_business_record(record(RecordType::TargetState,
 			make_strength(0.5F, 0U, 0.0F,
 				static_cast<std::uint8_t>(ObjectType::Weapon)), 6U),
-			BusinessRecordContainer::FullSnapshot, VersionMinorV1_1, metadata));
+			BusinessRecordContainer::FullSnapshot, VersionMinor, metadata));
 }
 
 TEST(TelemetryProtocolBusinessRecords11To18, RadarRejectsNonFiniteRangesAndInvalidVisibilityIntervals)
@@ -682,8 +682,7 @@ TEST(TelemetryProtocolBusinessRecords11To18, RadarContactsValidateBombTypeAndDet
 	EXPECT_EQ(ValidationError::None, validate(RecordType::RadarContacts, valid_bomb));
 }
 
-TEST(TelemetryProtocolBusinessRecords11To18,
-	RadarContactsV2IsExplicitAndRequiresFstl11)
+TEST(TelemetryProtocolBusinessRecords11To18, RadarContactsV2IsExplicit)
 {
 	auto payload = radar_contact();
 	// v2 inserts its atomic standard-radar inputs immediately after the two
@@ -697,16 +696,12 @@ TEST(TelemetryProtocolBusinessRecords11To18,
 	EXPECT_EQ(ValidationError::None,
 		validate_business_record(record(RecordType::RadarContacts,
 			payload, 2U), BusinessRecordContainer::FullSnapshot,
-			VersionMinorV1_1, metadata));
-	EXPECT_EQ(ValidationError::UnsupportedRecordVersion,
-		validate_business_record(record(RecordType::RadarContacts,
-			payload, 2U), BusinessRecordContainer::FullSnapshot,
 			VersionMinor, metadata));
 	payload.erase(payload.begin() + 59, payload.begin() + 63);
 	EXPECT_EQ(ValidationError::TruncatedPayload,
 		validate_business_record(record(RecordType::RadarContacts,
 			payload, 2U), BusinessRecordContainer::FullSnapshot,
-			VersionMinorV1_1, metadata));
+			VersionMinor, metadata));
 }
 
 TEST(TelemetryProtocolBusinessRecords11To18,
@@ -726,24 +721,24 @@ TEST(TelemetryProtocolBusinessRecords11To18,
 	EXPECT_EQ(ValidationError::None,
 		validate_business_record(record(RecordType::RadarContacts,
 			payload, 3U), BusinessRecordContainer::FullSnapshot,
-			VersionMinorV1_1, metadata));
+			VersionMinor, metadata));
 	EXPECT_EQ(ValidationError::InvalidStateTransition,
 		validate_business_record(record(RecordType::RadarContacts,
 			payload, 2U), BusinessRecordContainer::FullSnapshot,
-			VersionMinorV1_1, metadata));
+			VersionMinor, metadata));
 
 	auto distorted = payload;
 	distorted[34U] = static_cast<std::uint8_t>(RadarVisibility::Distorted);
 	EXPECT_EQ(ValidationError::InvalidStateTransition,
 		validate_business_record(record(RecordType::RadarContacts,
 			distorted, 3U), BusinessRecordContainer::FullSnapshot,
-			VersionMinorV1_1, metadata));
+			VersionMinor, metadata));
 	auto weapon = payload;
 	weapon[32U] = static_cast<std::uint8_t>(ObjectType::Weapon);
 	EXPECT_EQ(ValidationError::InvalidStateTransition,
 		validate_business_record(record(RecordType::RadarContacts,
 			weapon, 3U), BusinessRecordContainer::FullSnapshot,
-			VersionMinorV1_1, metadata));
+			VersionMinor, metadata));
 
 	auto empty = payload;
 	empty.resize(empty.size() - std::strlen("GTF Myrmidon") - 2U);
@@ -751,7 +746,7 @@ TEST(TelemetryProtocolBusinessRecords11To18,
 	EXPECT_EQ(ValidationError::OutOfRange,
 		validate_business_record(record(RecordType::RadarContacts,
 			empty, 3U), BusinessRecordContainer::FullSnapshot,
-			VersionMinorV1_1, metadata));
+			VersionMinor, metadata));
 }
 
 TEST(TelemetryProtocolBusinessRecords11To18,
@@ -773,19 +768,19 @@ TEST(TelemetryProtocolBusinessRecords11To18,
 	BusinessRecordMetadata metadata;
 	EXPECT_EQ(ValidationError::None,
 		validate_business_record(record(RecordType::RadarContacts, payload, 4U),
-			BusinessRecordContainer::FullSnapshot, VersionMinorV1_1, metadata));
+			BusinessRecordContainer::FullSnapshot, VersionMinor, metadata));
 	EXPECT_EQ(ValidationError::UnsupportedRecordVersion,
 		validate_business_record(record(RecordType::RadarContacts, payload, 3U),
-			BusinessRecordContainer::FullSnapshot, VersionMinorV1_1, metadata));
+			BusinessRecordContainer::FullSnapshot, VersionMinor, metadata));
 
 	payload.back() = static_cast<std::uint8_t>(RadarBlipType::TaggedShip);
 	EXPECT_EQ(ValidationError::InvalidStateTransition,
 		validate_business_record(record(RecordType::RadarContacts, payload, 4U),
-			BusinessRecordContainer::FullSnapshot, VersionMinorV1_1, metadata));
+			BusinessRecordContainer::FullSnapshot, VersionMinor, metadata));
 	payload.back() = 6U;
 	EXPECT_EQ(ValidationError::UnknownEnum,
 		validate_business_record(record(RecordType::RadarContacts, payload, 4U),
-			BusinessRecordContainer::FullSnapshot, VersionMinorV1_1, metadata));
+			BusinessRecordContainer::FullSnapshot, VersionMinor, metadata));
 
 	std::vector<std::uint8_t> delete_key;
 	u64(delete_key, 1U);
@@ -794,7 +789,7 @@ TEST(TelemetryProtocolBusinessRecords11To18,
 		4U, RecordFlagDelete, view(delete_key)};
 	EXPECT_EQ(ValidationError::None,
 		validate_business_record(delete_record, BusinessRecordContainer::Delta,
-			VersionMinorV1_1, metadata));
+			VersionMinor, metadata));
 }
 
 } // namespace

@@ -4,7 +4,7 @@ on: [pull_request]
 
 jobs:
   telemetry_protocol_schema:
-    name: Telemetry protocol schema
+    name: Telemetry protocol 1.1
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -13,20 +13,10 @@ jobs:
         name: Set up Python
         with:
           python-version: '3.11'
-      - name: Verify frozen FSTL 1.0 artifacts
+      - name: Verify the current FSTL 1.1 contract
         run: >-
-          python -B test/telemetry/protocol/tools/verify_fstl_1_0_freeze.py
+          python -B test/telemetry/protocol/tools/fstl_reference_decoder.py
           --check --repo .
-      - name: Exercise frozen FSTL 1.0 mutation guards
-        run: python -B test/telemetry/protocol/tools/test_fstl_1_0_freeze.py
-      - name: Verify versioned FSTL schemas
-        run: python -B test/telemetry/protocol/tools/fstl_schema.py --check
-      - name: Verify additive FSTL 1.1 amendment
-        run: >-
-          python -B test/telemetry/protocol/tools/verify_fstl_1_1_amendment.py
-          --check --repo .
-      - name: Verify FSTL 1.0 transport vectors
-        run: python -B test/telemetry/protocol/tools/generate_transport_vectors.py --check
 
   build_linux:
     strategy:

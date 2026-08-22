@@ -212,8 +212,8 @@ Datagram make_hello(std::uint64_t nonce, std::uint32_t sequence, std::uint32_t m
 	hello.client_send_t0_us = 1'000U;
 	hello.min_major = protocol::VersionMajor;
 	hello.max_major = protocol::VersionMajor;
-	hello.min_minor = protocol::VersionMinorV1_1;
-	hello.max_minor = protocol::VersionMinorV1_1;
+	hello.min_minor = protocol::VersionMinor;
+	hello.max_minor = protocol::VersionMinor;
 	hello.requested_visibility_mode = protocol::VisibilityMode::Cockpit;
 	hello.requested_heartbeat_ms = 1000U;
 	std::array<std::uint8_t, protocol::HelloPayloadPrefixSize> payload{};
@@ -221,7 +221,7 @@ Datagram make_hello(std::uint64_t nonce, std::uint32_t sequence, std::uint32_t m
 	EXPECT_EQ(protocol::ValidationError::None,
 		protocol::encode_hello_payload(hello, {payload.data(), payload.size()}, written));
 	protocol::TelemetryDatagramHeader header;
-	header.version_minor = protocol::VersionMinorV1_1;
+	header.version_minor = protocol::VersionMinor;
 	header.message_type = protocol::MessageType::Hello;
 	header.packet_sequence = sequence;
 	header.sent_time_us = 1'000U;
@@ -240,7 +240,7 @@ protocol::DatagramView decode_output(const detail::SessionControllerOutput& outp
 	protocol::DatagramView view;
 	EXPECT_EQ(protocol::ValidationError::None,
 		protocol::decode_and_validate_datagram({output.bytes.data(), output.size},
-			protocol::ProtocolMinorRange{protocol::VersionMinorV1_1, protocol::VersionMinorV1_1},
+			protocol::SupportedMinorRange,
 			view));
 	return view;
 }
@@ -258,7 +258,7 @@ Datagram make_ack(const protocol::DatagramView& target, std::uint32_t packet_seq
 	EXPECT_EQ(protocol::ValidationError::None,
 		protocol::encode_ack_payload(ack, {payload.data(), payload.size()}, written));
 	protocol::TelemetryDatagramHeader header;
-	header.version_minor = protocol::VersionMinorV1_1;
+	header.version_minor = protocol::VersionMinor;
 	header.message_type = protocol::MessageType::Ack;
 	header.session_id = target.header.session_id;
 	header.packet_sequence = packet_sequence;
@@ -279,7 +279,7 @@ Datagram make_heartbeat(std::uint64_t session_id,
 	EXPECT_EQ(protocol::ValidationError::None,
 		protocol::encode_heartbeat_payload(heartbeat, {payload.data(), payload.size()}, written));
 	protocol::TelemetryDatagramHeader header;
-	header.version_minor = protocol::VersionMinorV1_1;
+	header.version_minor = protocol::VersionMinor;
 	header.message_type = protocol::MessageType::Heartbeat;
 	header.session_id = session_id;
 	header.packet_sequence = packet_sequence;
@@ -305,7 +305,7 @@ Datagram make_nack(const protocol::DatagramView& target)
 	EXPECT_EQ(protocol::ValidationError::None,
 		protocol::encode_nack_payload(nack, {payload.data(), payload.size()}, written));
 	protocol::TelemetryDatagramHeader header;
-	header.version_minor = protocol::VersionMinorV1_1;
+	header.version_minor = protocol::VersionMinor;
 	header.message_type = protocol::MessageType::Nack;
 	header.session_id = target.header.session_id;
 	header.packet_sequence = 9U;
@@ -718,7 +718,7 @@ protocol::DatagramView decode_fixed_datagram(const Datagram& datagram)
 	protocol::DatagramView view;
 	EXPECT_EQ(protocol::ValidationError::None,
 		protocol::decode_and_validate_datagram({datagram.bytes.data(), datagram.size},
-			protocol::ProtocolMinorRange{protocol::VersionMinorV1_0, protocol::VersionMinorV1_1},
+			protocol::SupportedMinorRange,
 			view));
 	return view;
 }

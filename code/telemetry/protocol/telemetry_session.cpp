@@ -28,7 +28,6 @@ void saturating_add(std::uint64_t& value, std::uint64_t addition) noexcept
 bool welcome_is_rejected(WelcomeStatus status) noexcept
 {
 	switch (status) {
-	case WelcomeStatus::UnsupportedVersion:
 	case WelcomeStatus::Unauthorized:
 	case WelcomeStatus::Busy:
 	case WelcomeStatus::InvalidCapabilities:
@@ -80,7 +79,7 @@ bool validate_cached_welcome(const EndpointKey& endpoint,
 	context.active_session_id = 0;
 	context.accepted_minors = decoded.status == WelcomeStatus::Accepted
 								 ? ProtocolMinorRange{decoded.selected_minor, decoded.selected_minor}
-								 : FrozenV1_0MinorRange;
+								 : SupportedMinorRange;
 	return validate_welcome_logical_context(header, decoded, context) == ValidationError::None;
 }
 
@@ -328,7 +327,6 @@ SessionModelResult ClientSessionModel::begin_negotiation(const EndpointKey& prod
 	m_pending_nonce = hello.client_nonce;
 	m_pending_t0_us = hello.client_send_t0_us;
 	m_pending_client_capabilities = hello.advertised_capabilities;
-	m_pending_minor_range = {hello.min_minor, hello.max_minor};
 	m_negotiation_started_ms = now_ms;
 	m_state = ClientSessionState::Negotiating;
 	return SessionModelResult::Applied;
@@ -358,7 +356,7 @@ ClientWelcomeResult ClientSessionModel::receive_welcome(const TelemetryDatagramH
 	pending_context.local_role = LocalEndpointRole::Client;
 	pending_context.peer_endpoint = m_producer_endpoint;
 	pending_context.active_session_id = 0;
-	pending_context.accepted_minors = {VersionMinorV1_0, m_pending_minor_range.maximum};
+	pending_context.accepted_minors = SupportedMinorRange;
 	if (validate_welcome_logical_context(header, welcome, pending_context) != ValidationError::None) {
 		return ClientWelcomeResult::SessionMismatch;
 	}
@@ -372,8 +370,7 @@ ClientWelcomeResult ClientSessionModel::receive_welcome(const TelemetryDatagramH
 	if (welcome.status != WelcomeStatus::Accepted || header.session_id == 0) {
 		return ClientWelcomeResult::InvalidPayload;
 	}
-	if (welcome.selected_minor < m_pending_minor_range.minimum ||
-		welcome.selected_minor > m_pending_minor_range.maximum) {
+	if (welcome.selected_minor != VersionMinor) {
 		return ClientWelcomeResult::InvalidPayload;
 	}
 
@@ -576,7 +573,7 @@ TelemetrySessionContext ClientSessionModel::context() const noexcept
 	if (active()) {
 		result.accepted_minors = {m_selected_minor, m_selected_minor};
 	} else if (m_state == ClientSessionState::Negotiating) {
-		result.accepted_minors = {VersionMinorV1_0, m_pending_minor_range.maximum};
+		result.accepted_minors = SupportedMinorRange;
 	}
 	return result;
 }
@@ -622,7 +619,6 @@ void ClientSessionModel::clear_pending_negotiation() noexcept
 	m_pending_nonce = 0;
 	m_pending_t0_us = 0;
 	m_pending_client_capabilities = 0;
-	m_pending_minor_range = FrozenV1_0MinorRange;
 	m_negotiation_started_ms = 0;
 }
 
@@ -644,9 +640,6 @@ ProducerHandshakeBeginResult ProducerSessionModel::begin_handshake(const Endpoin
 	}
 	if (!structurally_valid_received_hello(hello)) {
 		return ProducerHandshakeBeginResult::InvalidHello;
-	}
-	if (validate_protocol_minor_range(m_supported_minors) != ValidationError::None) {
-		return ProducerHandshakeBeginResult::InvalidState;
 	}
 	if (m_state == ProducerSessionState::Closing) {
 		return ProducerHandshakeBeginResult::InvalidState;
@@ -680,9 +673,6 @@ ProducerHandshakeBeginResult ProducerSessionModel::begin_handshake(const Endpoin
 	m_pending_nonce = hello.client_nonce;
 	m_pending_t0_us = hello.client_send_t0_us;
 	m_pending_client_capabilities = hello.advertised_capabilities;
-	m_pending_minor_negotiation = select_highest_common_minor(m_supported_minors,
-		{hello.min_minor, hello.max_minor},
-		m_pending_selected_minor);
 	m_preproof_bytes_received = 0;
 	m_preproof_bytes_sent = 0;
 	saturating_add(m_preproof_bytes_received, received_datagram_bytes);
@@ -708,27 +698,10 @@ ProducerHandshakeCompleteResult ProducerSessionModel::complete_handshake(const T
 		welcome.client_send_t0_us != m_pending_t0_us) {
 		return ProducerHandshakeCompleteResult::InvalidWelcome;
 	}
-	if (m_pending_minor_negotiation == ProtocolMinorNegotiationResult::InvalidRange) {
+	if (welcome.status == WelcomeStatus::Accepted &&
+		(welcome.selected_minor != VersionMinor || welcome_header.version_minor != VersionMinor)) {
 		return ProducerHandshakeCompleteResult::InvalidWelcome;
 	}
-	if (m_pending_minor_negotiation == ProtocolMinorNegotiationResult::NoIntersection) {
-		if (welcome.status != WelcomeStatus::UnsupportedVersion) {
-			return ProducerHandshakeCompleteResult::InvalidWelcome;
-		}
-	} else if (welcome.status == WelcomeStatus::UnsupportedVersion) {
-		return ProducerHandshakeCompleteResult::InvalidWelcome;
-	} else if (welcome.status == WelcomeStatus::Accepted &&
-		(welcome.selected_minor != m_pending_selected_minor ||
-		 welcome_header.version_minor != m_pending_selected_minor)) {
-		return ProducerHandshakeCompleteResult::InvalidWelcome;
-	}
-	if (m_supported_minors.minimum == VersionMinorV1_1 &&
-		m_supported_minors.maximum == VersionMinorV1_1 && welcome.status == WelcomeStatus::Accepted &&
-		(welcome.producer_capabilities != 0 || welcome.active_capabilities != 0 ||
-		 welcome.extension_count != 0 || !welcome.extensions.empty())) {
-		return ProducerHandshakeCompleteResult::InvalidWelcome;
-	}
-
 	CapabilitySessionState capabilities;
 	std::uint32_t stale_timeout_ms = 0;
 	std::uint32_t disconnect_timeout_ms = 0;
@@ -1069,8 +1042,6 @@ void ProducerSessionModel::clear_pending_handshake() noexcept
 	m_pending_nonce = 0;
 	m_pending_t0_us = 0;
 	m_pending_client_capabilities = 0;
-	m_pending_minor_negotiation = ProtocolMinorNegotiationResult::InvalidRange;
-	m_pending_selected_minor = VersionMinor;
 }
 
 void ProducerSessionModel::promote_if_synchronized() noexcept

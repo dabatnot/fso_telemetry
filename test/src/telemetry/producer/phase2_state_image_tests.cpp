@@ -124,7 +124,7 @@ BusinessStateValidationContext validation_context(std::uint32_t class_id,
 	static BusinessClassCatalogEntry catalog;
 	catalog = {class_id, subsystem_ids, subsystem_count};
 	BusinessStateValidationContext context{};
-	context.protocol_minor = VersionMinorV1_1;
+	context.protocol_minor = VersionMinor;
 	context.required_manifest_id = 1U;
 	context.class_manifest_installed = true;
 	context.weapon_manifest_installed = true;

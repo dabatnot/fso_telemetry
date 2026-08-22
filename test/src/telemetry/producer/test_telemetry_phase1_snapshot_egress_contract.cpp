@@ -91,7 +91,7 @@ protocol::DatagramView decode(const detail::Phase1SnapshotDatagram& output)
 	protocol::DatagramView result;
 	EXPECT_EQ(protocol::ValidationError::None,
 		protocol::decode_and_validate_datagram({output.bytes.data(), output.size},
-			protocol::ProtocolMinorRange{protocol::VersionMinorV1_1, protocol::VersionMinorV1_1},
+			protocol::SupportedMinorRange,
 			result));
 	return result;
 }

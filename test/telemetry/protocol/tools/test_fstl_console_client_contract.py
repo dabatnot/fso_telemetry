@@ -1634,16 +1634,16 @@ class FstlConsoleClientContractTest(unittest.TestCase):
             "D1-013: console must not import producer C++ parser/DTO bindings",
         )
 
-    def test_reference_decoder_cross_checks_frozen_and_amendment_corpora(self) -> None:
+    def test_reference_decoder_cross_checks_current_corpus(self) -> None:
         result = subprocess.run(
             [sys.executable, "-B", str(TOOLS / "fstl_reference_decoder.py"), "--check", "--repo", str(REPO)],
             cwd=REPO, text=True, capture_output=True, check=False,
         )
         self.assertEqual(0, result.returncode, result.stderr + result.stdout)
-        self.assertIn("24 FSTL 1.1 corpus cases cross-decoded", result.stdout)
+        self.assertIn("21 FSTL 1.1 corpus cases cross-decoded", result.stdout)
         self.assertIn("CRC and simulated cross-endian checks passed", result.stdout)
 
-    def test_phase1_independent_reader_keeps_decoding_known_v1_phase2_records(self) -> None:
+    def test_current_independent_reader_decodes_cockpit_records(self) -> None:
         payload = v11_payload("phase2-promotion", ".bin")
         decoded = reference.decode_message(6, 0, payload, {})
         records = decoded["fields"]["records"]
@@ -1663,7 +1663,7 @@ class FstlConsoleClientContractTest(unittest.TestCase):
             [record["recordName"] for record in records],
         )
         self.assertTrue(all(1 <= int(record["recordType"]) <= 24 for record in records))
-        self.assertEqual("None", reference.fstl11_snapshot_result(decoded, 1))
+        self.assertEqual("None", reference.fstl11_snapshot_result(decoded))
 
     def test_replay_never_publishes_snapshot_before_handshake(self) -> None:
         snapshot = packet(6, v11_payload("minimal-with-player", ".bin"),

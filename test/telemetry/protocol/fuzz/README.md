@@ -1,4 +1,4 @@
-# FSTL 1.0 protocol fuzzing
+# FSTL 1.1 protocol fuzzing
 
 These engine-independent targets exercise the Phase 0 trust boundaries:
 

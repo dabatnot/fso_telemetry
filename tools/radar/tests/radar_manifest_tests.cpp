@@ -47,7 +47,7 @@ std::vector<std::uint8_t> classRecord(
     std::size_t written = 0;
     if (protocol::encode_business_record(
             envelope, protocol::BusinessRecordContainer::Manifest,
-            protocol::VersionMinorV1_1, {encoded.data(), encoded.size()}, written) !=
+            protocol::VersionMinor, {encoded.data(), encoded.size()}, written) !=
         protocol::ValidationError::None) {
         return {};
     }
@@ -85,7 +85,7 @@ std::vector<std::uint8_t> weaponRecord(
     std::size_t written = 0;
     if (protocol::encode_business_record(
             envelope, protocol::BusinessRecordContainer::Manifest,
-            protocol::VersionMinorV1_1, {encoded.data(), encoded.size()}, written) !=
+            protocol::VersionMinor, {encoded.data(), encoded.size()}, written) !=
         protocol::ValidationError::None) {
         return {};
     }
@@ -188,7 +188,7 @@ private slots:
             if (iterator.next(record, hasValue) == protocol::ValidationError::None && hasValue) {
                 protocol::ClassManifestRadarMetadata metadata;
                 if (protocol::decode_class_manifest_radar_metadata(
-                        record, protocol::VersionMinorV1_1, metadata) ==
+                        record, protocol::VersionMinor, metadata) ==
                     protocol::ValidationError::None) {
                     result.hasWireIcon = metadata.has_radar_icon;
                 }

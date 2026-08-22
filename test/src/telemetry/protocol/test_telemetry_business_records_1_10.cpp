@@ -109,7 +109,7 @@ Bytes session_state(std::uint64_t presence = 0U,
 	std::uint8_t authority = static_cast<std::uint8_t>(AuthorityMode::Solo),
 	std::uint8_t visibility = static_cast<std::uint8_t>(VisibilityMode::Cockpit),
 	std::uint64_t capabilities = 0U,
-	std::uint64_t state_coverage = StateDomainCoverageBitCoreShip,
+	std::uint64_t state_coverage = StateDomainCoverageBitCoreShip | StateDomainCoverageBitPlayerKinematics,
 	std::uint64_t derived_coverage = 0U,
 	std::uint64_t exact_coverage = 0U)
 {
@@ -677,21 +677,21 @@ TEST(TelemetryProtocolBusinessRecords1To10, SessionEnforcesCapabilityPairsCovera
 		static_cast<std::uint8_t>(AuthorityMode::Solo),
 		static_cast<std::uint8_t>(VisibilityMode::Cockpit),
 		0U,
-		StateDomainCoverageBitCoreShip,
+		StateDomainCoverageBitCoreShip | StateDomainCoverageBitPlayerKinematics,
 		0U,
 		EventFamilyBitCommunication);
 	EXPECT_EQ(ValidationError::CapabilityNotNegotiated, validate(RecordType::SessionState, payload));
 }
 
-TEST(TelemetryProtocolBusinessRecords1To10, PlayerKinematicsBitIsVersionGated)
+TEST(TelemetryProtocolBusinessRecords1To10, PlayerKinematicsBitRequiresTheCurrentVersion)
 {
 	const auto payload = session_state(0U, static_cast<std::uint8_t>(AuthorityMode::Solo),
 		static_cast<std::uint8_t>(VisibilityMode::Cockpit), 0U, StateDomainCoverageBitPlayerKinematics);
 	BusinessRecordMetadata metadata;
-	EXPECT_EQ(ValidationError::ReservedFlag, validate_business_record(record(RecordType::SessionState, payload),
-		BusinessRecordContainer::FullSnapshot, VersionMinorV1_0, metadata));
+	EXPECT_EQ(ValidationError::UnsupportedMinor, validate_business_record(record(RecordType::SessionState, payload),
+		BusinessRecordContainer::FullSnapshot, 0U, metadata));
 	EXPECT_EQ(ValidationError::None, validate_business_record(record(RecordType::SessionState, payload),
-		BusinessRecordContainer::FullSnapshot, VersionMinorV1_1, metadata));
+		BusinessRecordContainer::FullSnapshot, VersionMinor, metadata));
 }
 
 TEST(TelemetryProtocolBusinessRecords1To10, MissionEnforcesEnumsBoolReservedBytesNameAndFloat)

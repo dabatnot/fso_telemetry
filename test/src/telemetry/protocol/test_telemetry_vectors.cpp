@@ -296,7 +296,7 @@ const char* stable_error_name(ValidationError error) {
 	}
 }
 
-ValidationError validate_v11_snapshot_asset(const std::string& name, std::uint8_t minor = VersionMinorV1_1) {
+ValidationError validate_v11_snapshot_asset(const std::string& name, std::uint8_t minor = VersionMinor) {
 	const auto input = read_binary(asset_root() / "vectors-v1.1" / name / (name + ".bin"));
 	FullSnapshotPartPayload payload;
 	if (const auto error = decode_full_snapshot_part_payload(byte_view(input), payload);
@@ -763,309 +763,15 @@ struct ValidVectorCase {
 	std::uint16_t fragment_count;
 };
 
-TEST(TelemetryProtocolVectors, EveryExternalMessagePayloadDecodesAndReencodesCanonically) {
-	const auto root = asset_root() / "vectors" / "valid" / "messages";
-	std::vector<std::filesystem::path> directories;
-	for (const auto& entry : std::filesystem::directory_iterator(root)) {
-		if (entry.is_directory()) {
-			directories.push_back(entry.path());
-		}
-	}
-	std::sort(directories.begin(), directories.end());
-	ASSERT_EQ(20U, directories.size());
 
-	for (const auto& directory : directories) {
-		const auto name = directory.filename().string();
-		SCOPED_TRACE(name);
-		const auto input = read_binary(directory / (name + ".bin"));
-		ASSERT_FALSE(input.empty());
-		std::vector<std::uint8_t> encoded;
-		EXPECT_EQ(ValidationError::None, roundtrip_message_fixture(name, input, encoded));
-		EXPECT_EQ(input, encoded);
-	}
-}
 
-TEST(TelemetryProtocolVectors, EveryExternalBusinessRecordDecodesAndReencodesCanonically) {
-	const auto root = asset_root() / "vectors" / "valid" / "records";
-	std::vector<std::filesystem::path> directories;
-	for (const auto& entry : std::filesystem::directory_iterator(root)) {
-		if (entry.is_directory()) {
-			directories.push_back(entry.path());
-		}
-	}
-	std::sort(directories.begin(), directories.end());
-	ASSERT_EQ(28U, directories.size());
 
-	for (const auto& directory : directories) {
-		const auto name = directory.filename().string();
-		SCOPED_TRACE(name);
-		const auto input = read_binary(directory / (name + ".bin"));
-		ASSERT_FALSE(input.empty());
 
-		RecordEnvelopeIterator iterator(byte_view(input), 1U, RecordFlagPolicy::AllowV1Mutations);
-		RecordEnvelopeView record;
-		bool has_value = false;
-		ASSERT_EQ(ValidationError::None, iterator.next(record, has_value));
-		ASSERT_TRUE(has_value);
-		bool trailing = true;
-		RecordEnvelopeView ignored;
-		ASSERT_EQ(ValidationError::None, iterator.next(ignored, trailing));
-		ASSERT_FALSE(trailing);
 
-		BusinessRecordMetadata metadata;
-		ASSERT_EQ(ValidationError::None,
-			validate_business_record(record,
-				fixture_container(static_cast<RecordType>(record.raw_record_type)),
-				metadata));
-		ASSERT_EQ(record.raw_record_type, static_cast<std::uint16_t>(metadata.type));
 
-		std::vector<std::uint8_t> encoded(input.size(), 0xa5U);
-		std::size_t written = 0;
-		ASSERT_EQ(ValidationError::None,
-			encode_business_record(record,
-				fixture_container(metadata.type),
-				MutableByteView{encoded.data(), encoded.size()},
-				written));
-		EXPECT_EQ(input.size(), written);
-		EXPECT_EQ(input, encoded);
-	}
-}
 
-struct InvalidProtocolFixtureCase {
-	const char* category;
-	const char* name;
-	ValidationError expected_error;
-};
 
-TEST(TelemetryProtocolVectors, ExternalInvalidPayloadOnlyMessagesMatchTheStableErrorTaxonomy) {
-	const std::array<InvalidProtocolFixtureCase, 6> cases{{
-		{"fixed_payload_truncated", "fixed_payload_truncated", ValidationError::TruncatedPayload},
-		{"fixed_payload_trailing", "fixed_payload_trailing_byte", ValidationError::TrailingBytes},
-		{"encoded_frame_size_mismatch", "video_encoded_frame_size_mismatch", ValidationError::TruncatedPayload},
-		{"nack_bitmap_incoherent", "nack_bitmap_tail_bits_set", ValidationError::ReservedFlag},
-		{"record_duplicate_singleton", "duplicate_singleton_record", ValidationError::DuplicateRecord},
-		{"record_count_truncated_region",
-			"event_batch_record_count_exceeds_region",
-			ValidationError::TruncatedPayload},
-	}};
-	const auto root = asset_root() / "vectors" / "invalid" / "messages";
-	for (const auto& test_case : cases) {
-		SCOPED_TRACE(test_case.name);
-		const auto input = read_binary(root / test_case.category / (std::string{test_case.name} + ".bin"));
-		ASSERT_FALSE(input.empty());
-		EXPECT_EQ(test_case.expected_error, validate_invalid_message_payload_fixture(test_case.name, input));
-	}
-}
 
-TEST(TelemetryProtocolVectors, ExternalInvalidContextualMessagesMatchTheStableErrorTaxonomy) {
-	const std::array<InvalidProtocolFixtureCase, 16> cases{{
-		{"ack_forged", "ack_forged_target", ValidationError::InvalidStateTransition},
-		{"ack_late", "ack_late_after_retention", ValidationError::InvalidStateTransition},
-		{"ack_wrong_crc", "ack_wrong_target_crc", ValidationError::InvalidStateTransition},
-		{"ack_wrong_endpoint", "ack_wrong_endpoint", ValidationError::EndpointMismatch},
-		{"client_simulated_command", "client_simulated_producer_command", ValidationError::WrongDirection},
-		{"client_undefined_command", "unknown_message_type", ValidationError::UnknownMessageType},
-		{"stale_video_target", "video_old_target_after_change", ValidationError::StaleGeneration},
-		{"unknown_baseline", "delta_unknown_baseline", ValidationError::StaleBaseline},
-		{"unknown_generation", "video_stale_generation", ValidationError::StaleGeneration},
-		{"unknown_manifest", "snapshot_missing_manifest", ValidationError::MissingManifest},
-		{"unknown_stream", "video_unknown_stream", ValidationError::InvalidStateTransition},
-		{"unknown_target", "video_unknown_target", ValidationError::UnknownEntity},
-		{"video_bitrate_not_negotiated", "video_bitrate_not_negotiated", ValidationError::CapabilityNotNegotiated},
-		{"video_codec_not_negotiated", "video_codec_not_negotiated", ValidationError::CapabilityNotNegotiated},
-		{"video_profile_not_negotiated", "video_profile_not_negotiated", ValidationError::CapabilityNotNegotiated},
-		{"video_resolution_not_negotiated",
-			"video_resolution_not_negotiated",
-			ValidationError::CapabilityNotNegotiated},
-	}};
-	const auto root = asset_root() / "vectors" / "invalid" / "messages";
-	for (const auto& test_case : cases) {
-		SCOPED_TRACE(test_case.name);
-		const auto input = read_binary(root / test_case.category / (std::string{test_case.name} + ".bin"));
-		if (std::string{test_case.name} != "unknown_message_type") {
-			ASSERT_FALSE(input.empty());
-		}
-		EXPECT_EQ(test_case.expected_error, validate_invalid_contextual_message_fixture(test_case.name, input));
-	}
-}
-
-TEST(TelemetryProtocolVectors, ExternalInvalidRecordFixturesMatchTheStableErrorTaxonomy) {
-	const std::array<InvalidProtocolFixtureCase, 18> cases{{
-		{"bool_outside_0_1", "bool_outside_closed_domain", ValidationError::OutOfRange},
-		{"closed_enum_unknown", "closed_enum_unknown", ValidationError::UnknownEnum},
-		{"comm_bundle_inconsistent", "comm_bundle_version_inconsistent", ValidationError::OutOfRange},
-		{"invalid_utf8", "invalid_utf8_string", ValidationError::InvalidUtf8},
-		{"non_finite_float", "nan_float", ValidationError::NonFiniteFloat},
-		{"non_finite_float", "positive_infinity_float", ValidationError::NonFiniteFloat},
-		{"non_finite_float", "negative_infinity_float", ValidationError::NonFiniteFloat},
-		{"quaternion_non_canonical", "quaternion_non_canonical_sign", ValidationError::OutOfRange},
-		{"quaternion_non_finite", "quaternion_non_finite", ValidationError::NonFiniteFloat},
-		{"quaternion_non_normalizable", "quaternion_zero_non_normalizable", ValidationError::OutOfRange},
-		{"quota_before_allocation", "comm_asset_count_over_quota", ValidationError::ResourceLimit},
-		{"record_duplicate_item_key", "duplicate_comm_asset_id", ValidationError::DuplicateItemKey},
-		{"record_length_excessive", "record_declared_length_exceeds_input", ValidationError::BadRecordLength},
-		{"record_reserved_flag", "reserved_record_flag", ValidationError::ReservedFlag},
-		{"record_truncated", "record_truncated_header", ValidationError::TruncatedPayload},
-		{"record_invalid_type", "invalid_record_type_zero", ValidationError::OutOfRange},
-		{"record_unsupported_version", "unsupported_record_version", ValidationError::UnsupportedRecordVersion},
-		{"string_too_long", "string_over_field_limit", ValidationError::StringTooLong},
-	}};
-	const auto root = asset_root() / "vectors" / "invalid" / "records";
-	for (const auto& test_case : cases) {
-		SCOPED_TRACE(test_case.name);
-		const auto input = read_binary(root / test_case.category / (std::string{test_case.name} + ".bin"));
-		ASSERT_FALSE(input.empty());
-		EXPECT_EQ(test_case.expected_error, validate_invalid_record_fixture(input));
-	}
-}
-
-TEST(TelemetryProtocolVectors, ExternalInvalidContextualRecordsMatchTheStableErrorTaxonomy) {
-	const std::array<InvalidProtocolFixtureCase, 2> cases{{
-		{"comm_bundle_hash_inconsistent", "comm_bundle_hash_mismatch", ValidationError::InvalidStateTransition},
-		{"comm_duration_inconsistent", "comm_duration_mismatch", ValidationError::InvalidStateTransition},
-	}};
-	const auto root = asset_root() / "vectors" / "invalid" / "records";
-	for (const auto& test_case : cases) {
-		SCOPED_TRACE(test_case.name);
-		const auto input = read_binary(root / test_case.category / (std::string{test_case.name} + ".bin"));
-		ASSERT_FALSE(input.empty());
-		EXPECT_EQ(test_case.expected_error, validate_invalid_contextual_record_fixture(test_case.name, input));
-	}
-}
-
-TEST(TelemetryProtocolVectors, ExternalCanonicalBoundaryFixturesDecodeAndReassembleExactly) {
-	const std::array<ValidVectorCase, 6> cases{{
-	    {0U, 1U}, {1U, 1U}, {1132U, 1U}, {1133U, 2U}, {2264U, 2U}, {2265U, 3U},
-	}};
-
-	for (const auto& test_case : cases) {
-		SCOPED_TRACE(testing::Message() << "external vector size " << test_case.message_size);
-		const auto directory = asset_root() / "vectors" / "valid" / "datagrams" / "transport" /
-		                       ("transport_" + std::to_string(test_case.message_size) + "_bytes");
-		const auto logical = expected_payload(test_case.message_size);
-		const auto expected_crc = crc32_iso_hdlc(byte_view(logical));
-		TelemetryReassembler reassembler;
-		auto completed = sentinel_message();
-
-		for (std::uint16_t index = 0; index < test_case.fragment_count; ++index) {
-			const auto filename = (index < 10U ? "00" : index < 100U ? "0" : "") + std::to_string(index) + ".bin";
-			const auto encoded = read_binary(directory / filename);
-			const auto expected_slice = test_case.message_size == 0U
-			                                ? 0U
-			                                : std::min<std::size_t>(MaxFragmentPayload,
-			                                                        test_case.message_size -
-			                                                            static_cast<std::size_t>(index) * MaxFragmentPayload);
-			ASSERT_EQ(HeaderSizeV1 + expected_slice, encoded.size());
-
-			DatagramView decoded;
-			ASSERT_EQ(ValidationError::None, decode_and_validate_datagram(byte_view(encoded), decoded));
-			EXPECT_EQ(test_case.message_size == 0U ? MessageType::Heartbeat : MessageType::Delta,
-			          decoded.header.message_type);
-			EXPECT_EQ(test_case.fragment_count > 1U ? MessageFlagFragmented : MessageFlagNone,
-			          decoded.header.flags);
-			EXPECT_EQ(test_case.message_size, decoded.header.message_size);
-			EXPECT_EQ(test_case.fragment_count, decoded.header.fragment_count);
-			EXPECT_EQ(index, decoded.header.fragment_index);
-			EXPECT_EQ(static_cast<std::size_t>(index) * MaxFragmentPayload, decoded.header.fragment_offset);
-			EXPECT_EQ(expected_slice, decoded.header.payload_size);
-			EXPECT_EQ(expected_slice, decoded.payload.size);
-			EXPECT_EQ(expected_crc, decoded.header.message_crc32);
-			if (expected_slice != 0U) {
-				EXPECT_TRUE(std::equal(decoded.payload.begin(),
-				                       decoded.payload.end(),
-				                       logical.begin() + static_cast<std::ptrdiff_t>(decoded.header.fragment_offset)));
-			}
-
-			const auto expected_result = index + 1U == test_case.fragment_count ? ReassemblyResult::Completed
-			                                                                    : ReassemblyResult::Accepted;
-			ASSERT_EQ(expected_result, reassembler.ingest(decoded, completed));
-			if (expected_result != ReassemblyResult::Completed) {
-				expect_sentinel(completed);
-			}
-		}
-		EXPECT_EQ(logical, completed.payload);
-		EXPECT_EQ(ValidationError::None, validate_message_crc(completed.header, completed.payload_view()));
-		EXPECT_EQ(0U, reassembler.active_reassemblies(MessageSizeClass::State));
-		EXPECT_EQ(0U, reassembler.reserved_bytes(MessageSizeClass::State));
-	}
-}
-
-TEST(TelemetryProtocolVectors, EveryExternalTruncatedHeaderFixtureReturnsDatagramTooShort) {
-	const auto root = asset_root() / "vectors" / "invalid" / "datagrams" / "transport";
-	for (std::size_t size = 0; size < HeaderSizeV1; ++size) {
-		SCOPED_TRACE(testing::Message() << "external truncated header size " << size);
-		const auto suffix = size < 10U ? "0" + std::to_string(size) : std::to_string(size);
-		const auto encoded = read_binary(root / ("truncated_header_" + suffix) / "000.bin");
-		ASSERT_EQ(size, encoded.size());
-		DatagramView decoded;
-		decoded.header.message_id = 0xfeedbeefU;
-		EXPECT_EQ(ValidationError::DatagramTooShort, decode_and_validate_datagram(byte_view(encoded), decoded));
-		EXPECT_EQ(0U, decoded.header.message_id);
-		EXPECT_EQ(nullptr, decoded.payload.data);
-		EXPECT_EQ(0U, decoded.payload.size);
-	}
-}
-
-struct InvalidDatagramCase {
-	const char* name;
-	ValidationError expected_error;
-};
-
-TEST(TelemetryProtocolVectors, ExternalSingleDatagramMutationsReturnTheirDeclaredErrors) {
-	const std::array<InvalidDatagramCase, 8> cases{{
-	    {"bad_datagram_crc", ValidationError::BadDatagramCrc},
-	    {"reserved_header_flag", ValidationError::ReservedHeaderFlag},
-	    {"zero_fragment_count", ValidationError::BadFragmentCount},
-	    {"fragment_index_out_of_range", ValidationError::BadFragmentIndex},
-	    {"fragment_offset_noncanonical", ValidationError::BadFragmentOffset},
-	    {"fragment_slice_noncanonical", ValidationError::BadFragmentSlice},
-	    {"trailing_datagram_byte", ValidationError::BadDatagramLength},
-	    // The datagram itself is valid; this one is checked after logical reassembly below.
-	    {"bad_message_crc", ValidationError::None},
-	}};
-	const auto root = asset_root() / "vectors" / "invalid" / "datagrams" / "transport";
-	for (const auto& test_case : cases) {
-		SCOPED_TRACE(test_case.name);
-		const auto encoded = read_binary(root / test_case.name / "000.bin");
-		DatagramView decoded;
-		const auto actual = decode_and_validate_datagram(byte_view(encoded), decoded);
-		EXPECT_EQ(test_case.expected_error, actual);
-		if (actual != ValidationError::None) {
-			EXPECT_EQ(nullptr, decoded.payload.data);
-			EXPECT_EQ(0U, decoded.payload.size);
-		}
-
-		if (std::string{test_case.name} == "bad_message_crc") {
-			TelemetryReassembler reassembler;
-			auto completed = sentinel_message();
-			ASSERT_EQ(ValidationError::None, actual);
-			EXPECT_EQ(ReassemblyResult::MessageCrcMismatch, reassembler.ingest(decoded, completed));
-			expect_sentinel(completed);
-			EXPECT_EQ(0U, reassembler.active_reassemblies(MessageSizeClass::State));
-		}
-	}
-}
-
-TEST(TelemetryProtocolVectors, ExternalMetadataAndDuplicateContradictionsPurgeReassembly) {
-	const std::array<const char*, 2> names{{"inconsistent_fragment_metadata", "contradictory_duplicate_fragment"}};
-	const auto root = asset_root() / "vectors" / "invalid" / "datagrams" / "transport";
-	for (const auto* name : names) {
-		SCOPED_TRACE(name);
-		TelemetryReassembler reassembler;
-		auto completed = sentinel_message();
-		for (std::size_t index = 0; index < 2U; ++index) {
-			const auto filename = index == 0U ? "000.bin" : "001.bin";
-			const auto encoded = read_binary(root / name / filename);
-			DatagramView decoded;
-			ASSERT_EQ(ValidationError::None, decode_and_validate_datagram(byte_view(encoded), decoded));
-			const auto expected = index == 0U ? ReassemblyResult::Accepted : ReassemblyResult::InconsistentFragment;
-			EXPECT_EQ(expected, reassembler.ingest(decoded, completed));
-			expect_sentinel(completed);
-		}
-		EXPECT_EQ(0U, reassembler.active_reassemblies(MessageSizeClass::State));
-		EXPECT_EQ(0U, reassembler.reserved_bytes(MessageSizeClass::State));
-	}
-}
 
 TEST(TelemetryProtocolVectors, Fstl11SnapshotsCrossTheProductionDecoder) {
 	EXPECT_EQ(ValidationError::None, validate_v11_snapshot_asset("minimal-no-player"));
@@ -1074,11 +780,10 @@ TEST(TelemetryProtocolVectors, Fstl11SnapshotsCrossTheProductionDecoder) {
 	EXPECT_EQ(ValidationError::MissingManifest, validate_v11_snapshot_asset("phase2-promotion-incomplete"));
 	EXPECT_EQ(ValidationError::None, validate_v11_snapshot_asset("phase2-promotion"));
 	EXPECT_EQ(ValidationError::None, validate_v11_snapshot_asset("phase2-complete-ship"));
-	const std::array<std::pair<const char*, ValidationError>, 12> invalid{{
+	const std::array<std::pair<const char*, ValidationError>, 11> invalid{{
 		{"missing-mission", ValidationError::InvalidAbsence},
 		{"missing-lifecycle", ValidationError::InvalidAbsence},
 		{"missing-flight", ValidationError::InvalidAbsence},
-		{"minor-zero-reserved-bit", ValidationError::ReservedFlag},
 		{"phase2-promotion-incomplete", ValidationError::MissingManifest},
 		{"duplicate-flight-record", ValidationError::DuplicateRecord},
 		{"observed-player-id-mismatch", ValidationError::InvalidAbsence},
@@ -1090,8 +795,7 @@ TEST(TelemetryProtocolVectors, Fstl11SnapshotsCrossTheProductionDecoder) {
 	}};
 	for (const auto& test_case : invalid) {
 		SCOPED_TRACE(test_case.first);
-		const auto actual = validate_v11_snapshot_asset(test_case.first,
-			std::string{test_case.first} == "minor-zero-reserved-bit" ? VersionMinorV1_0 : VersionMinorV1_1);
+		const auto actual = validate_v11_snapshot_asset(test_case.first);
 		EXPECT_EQ(test_case.second, actual);
 		const auto metadata = read_text(asset_root() / "vectors-v1.1" / test_case.first /
 			(std::string{test_case.first} + ".json"));
@@ -1103,26 +807,6 @@ TEST(TelemetryProtocolVectors, Fstl11SnapshotsCrossTheProductionDecoder) {
 	}
 }
 
-TEST(TelemetryProtocolVectors, MissingCascadeOwnerKeepsBadRecordLengthInFrozenFstl10) {
-	auto input = read_binary(asset_root() / "vectors-v1.1" / "missing-lifecycle" / "missing-lifecycle.bin");
-	ASSERT_GT(input.size(), 113U);
-	// SESSION_STATE is the first envelope: record region 60 + envelope 6 + coverage offset 40.
-	std::fill(input.begin() + 106, input.begin() + 114, 0U);
-	input[106] = static_cast<std::uint8_t>(StateDomainCoverageBitCoreShip);
-	Sha256Digest digest{};
-	ASSERT_TRUE(sha256(ByteView{input.data() + FullSnapshotPartPayloadPrefixSize,
-		input.size() - FullSnapshotPartPayloadPrefixSize}, digest));
-	std::copy(digest.begin(), digest.end(), input.begin() + 12);
-	FullSnapshotPartPayload payload;
-	ASSERT_EQ(ValidationError::None, decode_full_snapshot_part_payload(byte_view(input), payload));
-	BusinessStateValidationContext context;
-	context.protocol_minor = VersionMinorV1_0;
-	context.class_manifest_installed = true;
-	BusinessStateImageValidator validator(context);
-	StateImage image;
-	EXPECT_EQ(ValidationError::BadRecordLength,
-		decode_business_snapshot_region_validated(payload.records, payload.record_count, validator, image));
-}
 
 TEST(TelemetryProtocolVectors, Fstl11NegotiationAndDeltaCorpusCrossesTheProductionDecoder) {
 	const auto root = asset_root() / "vectors-v1.1";
@@ -1159,51 +843,34 @@ TEST(TelemetryProtocolVectors, Fstl11NegotiationAndDeltaCorpusCrossesTheProducti
 		return std::make_pair(view.header, context);
 	};
 
-	const auto hello11 = decode("hello-minor-one-only", FrozenV1_0MinorRange, MessageType::Hello);
+	const auto hello11 = decode("hello-minor-one-only", SupportedMinorRange, MessageType::Hello);
 	HelloPayload hello;
 	ASSERT_EQ(ValidationError::None, decode_hello_payload(hello11.payload, hello));
-	EXPECT_EQ(VersionMinorV1_1, hello.min_minor);
-	EXPECT_EQ(VersionMinorV1_1, hello.max_minor);
-	EXPECT_EQ(VersionMinorV1_0, hello11.header.version_minor);
-	ingress("hello-minor-one-only", LocalEndpointRole::Producer, FrozenV1_0MinorRange);
+	EXPECT_EQ(VersionMinor, hello.min_minor);
+	EXPECT_EQ(VersionMinor, hello.max_minor);
+	EXPECT_EQ(VersionMinor, hello11.header.version_minor);
+	ingress("hello-minor-one-only", LocalEndpointRole::Producer, SupportedMinorRange);
 
-	const auto welcome11 = decode("welcome-accepted-minor-one", Phase1ProducerMinorRange, MessageType::Welcome);
+	const auto welcome11 = decode("welcome-accepted-minor-one", SupportedMinorRange, MessageType::Welcome);
 	WelcomePayload accepted;
 	ASSERT_EQ(ValidationError::None, decode_welcome_payload(welcome11.payload, accepted));
 	EXPECT_EQ(WelcomeStatus::Accepted, accepted.status);
-	EXPECT_EQ(VersionMinorV1_1, accepted.selected_minor);
+	EXPECT_EQ(VersionMinor, accepted.selected_minor);
 	EXPECT_NE(0U, welcome11.header.session_id);
 	const auto accepted_ingress = ingress("welcome-accepted-minor-one", LocalEndpointRole::Client,
-		ProtocolMinorRange{VersionMinorV1_0, VersionMinorV1_1});
+		SupportedMinorRange);
 	EXPECT_EQ(ValidationError::None,
 		validate_welcome_logical_context(accepted_ingress.first, accepted, accepted_ingress.second));
 
-	const auto hello10 = decode("hello-minor-zero-only", FrozenV1_0MinorRange, MessageType::Hello);
-	ASSERT_EQ(ValidationError::None, decode_hello_payload(hello10.payload, hello));
-	EXPECT_EQ(VersionMinorV1_0, hello.min_minor);
-	EXPECT_EQ(VersionMinorV1_0, hello.max_minor);
-	ingress("hello-minor-zero-only", LocalEndpointRole::Producer, FrozenV1_0MinorRange);
-
-	const auto rejected = decode("welcome-unsupported-version", FrozenV1_0MinorRange, MessageType::Welcome);
-	WelcomePayload unsupported;
-	ASSERT_EQ(ValidationError::None, decode_welcome_payload(rejected.payload, unsupported));
-	EXPECT_EQ(WelcomeStatus::UnsupportedVersion, unsupported.status);
-	EXPECT_EQ(0U, rejected.header.session_id);
-	EXPECT_EQ(VersionMinorV1_0, rejected.header.version_minor);
-	const auto rejected_ingress = ingress(
-		"welcome-unsupported-version", LocalEndpointRole::Client, FrozenV1_0MinorRange);
-	EXPECT_EQ(ValidationError::None,
-		validate_welcome_logical_context(rejected_ingress.first, unsupported, rejected_ingress.second));
-
 	auto verify_delta = [&](const char* name, std::uint32_t sequence) {
-		const auto delta_view = decode(name, Phase1ProducerMinorRange, MessageType::Delta);
+		const auto delta_view = decode(name, SupportedMinorRange, MessageType::Delta);
 		DeltaPayload delta;
 		ASSERT_EQ(ValidationError::None, decode_delta_payload(delta_view.payload, delta));
 		EXPECT_EQ(1U, delta.baseline_snapshot_id);
 		EXPECT_EQ(sequence, delta.delta_sequence);
 		EXPECT_EQ(4U, delta.record_count);
 		CumulativeStateDelta business_delta;
-		EXPECT_EQ(ValidationError::None, decode_business_delta(delta, VersionMinorV1_1, business_delta));
+		EXPECT_EQ(ValidationError::None, decode_business_delta(delta, VersionMinor, business_delta));
 		std::vector<std::uint8_t> reencoded(delta_view.payload.size);
 		std::size_t written = 0U;
 		ASSERT_EQ(ValidationError::None,
@@ -1217,15 +884,13 @@ TEST(TelemetryProtocolVectors, Fstl11NegotiationAndDeltaCorpusCrossesTheProducti
 
 TEST(TelemetryProtocolVectors, EveryValidFstl11VectorMatchesTheFixedCanonicalJsonInCpp) {
 	struct Case { const char* name; MessageType type; bool datagram; };
-	const std::array<Case, 10> cases{{
+	const std::array<Case, 8> cases{{
 		{"minimal-no-player", MessageType::FullSnapshot, false},
 		{"minimal-with-player", MessageType::FullSnapshot, false},
 		{"phase2-promotion", MessageType::FullSnapshot, false},
 		{"phase2-complete-ship", MessageType::FullSnapshot, false},
 		{"hello-minor-one-only", MessageType::Hello, true},
-		{"hello-minor-zero-only", MessageType::Hello, true},
 		{"welcome-accepted-minor-one", MessageType::Welcome, true},
-		{"welcome-unsupported-version", MessageType::Welcome, true},
 		{"delta-player-kinematics-cumulative", MessageType::Delta, true},
 		{"delta-player-return-baseline", MessageType::Delta, true},
 	}};
@@ -1237,11 +902,8 @@ TEST(TelemetryProtocolVectors, EveryValidFstl11VectorMatchesTheFixedCanonicalJso
 		ByteView payload = byte_view(encoded); std::uint8_t flags = 0U;
 		DatagramView datagram;
 		if (test_case.datagram) {
-			const auto range = std::string{test_case.name} == "welcome-accepted-minor-one" ||
-				(std::string{test_case.name} == "delta-player-kinematics-cumulative" ||
-				 std::string{test_case.name} == "delta-player-return-baseline")
-				? Phase1ProducerMinorRange : FrozenV1_0MinorRange;
-			ASSERT_EQ(ValidationError::None, decode_and_validate_datagram(byte_view(encoded), range, datagram));
+			ASSERT_EQ(ValidationError::None,
+				decode_and_validate_datagram(byte_view(encoded), SupportedMinorRange, datagram));
 			ASSERT_EQ(test_case.type, datagram.header.message_type);
 			payload = datagram.payload; flags = datagram.header.flags;
 		}
@@ -1273,7 +935,7 @@ TEST(TelemetryProtocolVectors, HudAlertStateMatchesTheFstl11GoldenVector)
 	ASSERT_TRUE(has_value);
 	BusinessRecordMetadata metadata;
 	EXPECT_EQ(ValidationError::None, validate_business_record(record,
-		BusinessRecordContainer::FullSnapshot, VersionMinorV1_1, metadata));
+		BusinessRecordContainer::FullSnapshot, VersionMinor, metadata));
 	EXPECT_EQ(static_cast<std::uint16_t>(RecordType::HudAlertState),
 		record.raw_record_type);
 	EXPECT_EQ(8U, metadata.key_size);

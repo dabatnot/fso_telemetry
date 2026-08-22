@@ -134,8 +134,8 @@ EncodedDatagram encode_datagram(protocol::TelemetryDatagramHeader header, protoc
 }
 
 EncodedDatagram hello(std::uint64_t nonce,
-	std::uint8_t min_minor = protocol::VersionMinorV1_1,
-	std::uint8_t max_minor = protocol::VersionMinorV1_1,
+	std::uint8_t min_minor = protocol::VersionMinor,
+	std::uint8_t max_minor = protocol::VersionMinor,
 	std::uint32_t packet_sequence = 1U,
 	std::uint64_t client_send_t0_us = 1'000'000U)
 {
@@ -672,13 +672,13 @@ TEST(TelemetryWp06HandshakeContract, AcceptsOnlyExact11AndBuildsCanonicalWelcome
 	ASSERT_EQ(detail::SessionIngressDisposition::ResponseQueued, result.disposition);
 	const auto output = pop_output(controller);
 	ASSERT_EQ(protocol::MessageType::Welcome, output.datagram.header.message_type);
-	EXPECT_EQ(protocol::VersionMinorV1_1, output.datagram.header.version_minor);
+	EXPECT_EQ(protocol::VersionMinor, output.datagram.header.version_minor);
 	EXPECT_EQ(0x1111222233334444ULL, output.datagram.header.session_id);
 	EXPECT_EQ(protocol::MessageFlagAckRequired, output.datagram.header.flags);
 	const auto welcome = decode_welcome(output);
 	EXPECT_EQ(protocol::WelcomeStatus::Accepted, welcome.status);
 	EXPECT_EQ(protocol::VersionMajor, welcome.selected_major);
-	EXPECT_EQ(protocol::VersionMinorV1_1, welcome.selected_minor);
+	EXPECT_EQ(protocol::VersionMinor, welcome.selected_minor);
 	EXPECT_EQ(77U, welcome.client_nonce);
 	EXPECT_EQ(1'000'000U, welcome.client_send_t0_us);
 	EXPECT_EQ(1'010'000U, welcome.producer_receive_t1_us);
@@ -743,76 +743,8 @@ TEST(TelemetryWp06IngressContract, EachInvalidStageStopsWithOnePrimaryReasonAndZ
 	}
 }
 
-TEST(TelemetryWp06HandshakeContract, Rejects10WithA10PresessionWelcomeAndNoDurableSlot)
-{
-	IdentityHarness ids{{{true, 0x9999U}}};
-	auto controller = make_controller(ids.allocator);
-	const auto request = hello(78U, protocol::VersionMinorV1_0, protocol::VersionMinorV1_0);
-	ASSERT_EQ(detail::SessionIngressDisposition::ResponseQueued,
-		controller.ingest(endpoint(), view(request.bytes), 1'010'000U, 0U, false).disposition);
-	const auto output = pop_output(controller);
-	EXPECT_EQ(protocol::VersionMinorV1_0, output.datagram.header.version_minor);
-	EXPECT_EQ(0U, output.datagram.header.session_id);
-	EXPECT_EQ(protocol::MessageFlagNone, output.datagram.header.flags);
-	const auto welcome = decode_welcome(output);
-	EXPECT_EQ(protocol::WelcomeStatus::UnsupportedVersion, welcome.status);
-	EXPECT_EQ(78U, welcome.client_nonce);
-	EXPECT_EQ(1'000'000U, welcome.client_send_t0_us);
-	EXPECT_EQ(1'010'000U, welcome.producer_receive_t1_us);
-	EXPECT_GE(welcome.producer_send_t2_us, welcome.producer_receive_t1_us);
-	EXPECT_EQ(0U, welcome.selected_major);
-	EXPECT_EQ(0U, welcome.selected_minor);
-	EXPECT_EQ(protocol::VisibilityMode::Cockpit, welcome.selected_visibility_mode);
-	EXPECT_EQ(0U, welcome.producer_capabilities);
-	EXPECT_EQ(0U, welcome.active_capabilities);
-	EXPECT_EQ(0U, welcome.heartbeat_interval_ms);
-	EXPECT_EQ(0U, welcome.reliable_reassembly_timeout_ms);
-	EXPECT_EQ(0x1020304050607080ULL, welcome.producer_id);
-	EXPECT_TRUE(welcome.extensions.empty());
-	EXPECT_EQ(0U, controller.active_slots());
-	EXPECT_EQ(0U, ids.random.calls);
-}
 
-TEST(TelemetryWp06HandshakeContract, OfferedRange10Through11SelectsTheExactPhase1Minor11)
-{
-	IdentityHarness ids{{{true, 0x1234U}}};
-	auto controller = make_controller(ids.allocator);
-	const auto request = hello(781U, protocol::VersionMinorV1_0, protocol::VersionMinorV1_1);
-	ASSERT_EQ(detail::SessionIngressDisposition::ResponseQueued,
-		controller.ingest(endpoint(), view(request.bytes), 1'010'000U, 0U, false).disposition);
-	const auto output = pop_output(controller);
-	EXPECT_EQ(protocol::VersionMinorV1_1, output.datagram.header.version_minor);
-	EXPECT_EQ(protocol::VersionMinorV1_1, decode_welcome(output).selected_minor);
-	EXPECT_EQ(0x1234U, output.datagram.header.session_id);
-}
 
-TEST(TelemetryPhase3Session, CockpitSensorsRequiresAndSelectsMinor11)
-{
-	IdentityHarness rejected_ids{{{true, 0x7c01U}}};
-	auto rejected = make_controller(rejected_ids.allocator, nullptr, 1U, 2U,
-		telemetry::Phase2Profile::CockpitSensors);
-	const auto only_v10 = hello(0x7c01U,
-		protocol::VersionMinorV1_0, protocol::VersionMinorV1_0);
-	ASSERT_EQ(detail::SessionIngressDisposition::ResponseQueued,
-		rejected.ingest(endpoint(), view(only_v10.bytes), 10'000U, 0U, true).disposition);
-	const auto rejection = pop_output(rejected);
-	EXPECT_EQ(protocol::VersionMinorV1_0, rejection.datagram.header.version_minor);
-	EXPECT_EQ(protocol::WelcomeStatus::UnsupportedVersion,
-		decode_welcome(rejection).status);
-	EXPECT_EQ(0U, rejected.active_slots());
-
-	IdentityHarness accepted_ids{{{true, 0x7c02U}}};
-	auto accepted = make_controller(accepted_ids.allocator, nullptr, 1U, 2U,
-		telemetry::Phase2Profile::CockpitSensors);
-	const auto range_including_v11 = hello(0x7c02U,
-		protocol::VersionMinorV1_0, protocol::VersionMinorV1_1);
-	ASSERT_EQ(detail::SessionIngressDisposition::ResponseQueued,
-		accepted.ingest(endpoint(), view(range_including_v11.bytes), 10'001U, 0U, true).disposition);
-	const auto welcome = pop_output(accepted);
-	EXPECT_EQ(protocol::VersionMinorV1_1, welcome.datagram.header.version_minor);
-	EXPECT_EQ(protocol::VersionMinorV1_1, decode_welcome(welcome).selected_minor);
-	EXPECT_EQ(1U, accepted.active_slots());
-}
 
 TEST(TelemetryPhase3Session, CockpitSensorsCoverageIsImmutableForTheSession)
 {
@@ -877,6 +809,15 @@ TEST(TelemetryWp06HandshakeContract, DuplicateHelloWithinTenSecondsReplaysIdenti
 	EXPECT_EQ(1U, controller.active_slots());
 }
 
+EncodedDatagram invalid_hello(std::uint64_t nonce,
+	std::uint32_t packet_sequence = 1U)
+{
+	auto request = hello(nonce, protocol::VersionMinor, protocol::VersionMinor, packet_sequence);
+	request.bytes[protocol::HeaderSizeV1 + 21U] = 1U;
+	reseal_single_fragment(request.bytes);
+	return request;
+}
+
 TEST(TelemetryWp06HandshakeContract, NewNonceFromSameEndpointReplacesAwaitingSessionAtCapacity)
 {
 	IdentityHarness ids{{{true, 0x1111U}, {true, 0x2222U}}};
@@ -890,7 +831,7 @@ TEST(TelemetryWp06HandshakeContract, NewNonceFromSameEndpointReplacesAwaitingSes
 		controller.slot(0U).progress);
 
 	const auto replacement_request = hello(0x902U,
-		protocol::VersionMinorV1_1, protocol::VersionMinorV1_1, 1U, 2'000'000U);
+		protocol::VersionMinor, protocol::VersionMinor, 1U, 2'000'000U);
 	ASSERT_EQ(detail::SessionIngressDisposition::ResponseQueued,
 		controller.ingest(endpoint(), view(replacement_request.bytes), 2'000U, 0U, false).disposition);
 	const auto replacement_welcome = pop_output(controller);
@@ -907,13 +848,13 @@ TEST(TelemetryWp06HandshakeContract, DelayedOlderHelloCannotReplaceNewerSameEndp
 	IdentityHarness ids{{{true, 0x1111U}, {true, 0x2222U}, {true, 0x3333U}}};
 	auto controller = make_controller(ids.allocator, nullptr, 1U);
 	const auto older = hello(0xA01U,
-		protocol::VersionMinorV1_1, protocol::VersionMinorV1_1, 1U, 1'000'000U);
+		protocol::VersionMinor, protocol::VersionMinor, 1U, 1'000'000U);
 	ASSERT_EQ(detail::SessionIngressDisposition::ResponseQueued,
 		controller.ingest(endpoint(), view(older.bytes), 1'100'000U, 0U, false).disposition);
 	(void)pop_output(controller);
 
 	const auto newer = hello(0xB02U,
-		protocol::VersionMinorV1_1, protocol::VersionMinorV1_1, 2U, 2'000'000U);
+		protocol::VersionMinor, protocol::VersionMinor, 2U, 2'000'000U);
 	ASSERT_EQ(detail::SessionIngressDisposition::ResponseQueued,
 		controller.ingest(endpoint(), view(newer.bytes), 2'100'000U, 0U, false).disposition);
 	const auto newer_welcome = pop_output(controller);
@@ -942,7 +883,7 @@ TEST(TelemetryWp06HandshakeContract, NewNonceFromSameEndpointReplacesLiveAndStal
 		}
 
 		const auto delayed_older_request = hello(stale ? 0x915U : 0x914U,
-			protocol::VersionMinorV1_1, protocol::VersionMinorV1_1, 1U, 500'000U);
+			protocol::VersionMinor, protocol::VersionMinor, 1U, 500'000U);
 		const auto delayed_older = controller.ingest(
 			endpoint(), view(delayed_older_request.bytes), 19'000U, 7U, true);
 		EXPECT_EQ(detail::SessionIngressDisposition::Dropped, delayed_older.disposition);
@@ -951,7 +892,7 @@ TEST(TelemetryWp06HandshakeContract, NewNonceFromSameEndpointReplacesLiveAndStal
 		EXPECT_EQ(old_session_id, controller.slot(0U).session_id);
 
 		const auto replacement_request = hello(stale ? 0x905U : 0x904U,
-			protocol::VersionMinorV1_1, protocol::VersionMinorV1_1, 1U, 2'000'000U);
+			protocol::VersionMinor, protocol::VersionMinor, 1U, 2'000'000U);
 		ASSERT_EQ(detail::SessionIngressDisposition::ResponseQueued,
 			controller.ingest(endpoint(), view(replacement_request.bytes), 20'000U, 7U, true).disposition);
 		const auto replacement_welcome = pop_output(controller);
@@ -973,12 +914,13 @@ TEST(TelemetryWp06HandshakeContract, ReplacementDoesNotEvictForInvalidOrDifferen
 	const auto first_welcome = pop_output(controller);
 	const auto original_session_id = first_welcome.datagram.header.session_id;
 
-	const auto unsupported = hello(0x907U,
-		protocol::VersionMinorV1_0, protocol::VersionMinorV1_0);
-	ASSERT_EQ(detail::SessionIngressDisposition::ResponseQueued,
-		controller.ingest(endpoint(), view(unsupported.bytes), 2'000U, 0U, false).disposition);
-	EXPECT_EQ(protocol::WelcomeStatus::UnsupportedVersion,
-		decode_welcome(pop_output(controller)).status);
+	auto unsupported = hello(0x907U);
+	unsupported.bytes[5U] = 0U;
+	reseal_single_fragment(unsupported.bytes);
+	const auto invalid = controller.ingest(endpoint(), view(unsupported.bytes), 2'000U, 0U, false);
+	EXPECT_EQ(detail::SessionIngressDisposition::Dropped, invalid.disposition);
+	EXPECT_EQ(detail::SessionIngressDropReason::DatagramEnvelopeInvalid, invalid.drop_reason);
+	EXPECT_FALSE(controller.has_output());
 	EXPECT_EQ(original_session_id, controller.slot(0U).session_id);
 
 	const auto other_client = hello(0x908U);
@@ -991,69 +933,10 @@ TEST(TelemetryWp06HandshakeContract, ReplacementDoesNotEvictForInvalidOrDifferen
 	EXPECT_EQ(1U, controller.active_slots());
 }
 
-TEST(TelemetryWp06HandshakeContract, RejectedWelcomeIsCachedButExpiresExactlyAtTenSeconds)
-{
-	IdentityHarness ids{{{true, 1U}}};
-	auto controller = make_controller(ids.allocator);
-	const auto request = hello(790U, protocol::VersionMinorV1_0, protocol::VersionMinorV1_0);
-	ASSERT_EQ(detail::SessionIngressDisposition::ResponseQueued,
-		controller.ingest(endpoint(), view(request.bytes), 0U, 0U, false).disposition);
-	const auto first = pop_output(controller).storage;
-	ASSERT_EQ(detail::SessionIngressDisposition::CachedResponseQueued,
-		controller.ingest(endpoint(), view(request.bytes), 9'999'999U, 0U, false).disposition);
-	EXPECT_EQ(first, pop_output(controller).storage);
-	ASSERT_EQ(detail::SessionIngressDisposition::ResponseQueued,
-		controller.ingest(endpoint(), view(request.bytes), 10'000'000U, 0U, false).disposition);
-	EXPECT_NE(first, pop_output(controller).storage) << "expiry requires a freshly timestamped rejection";
-	EXPECT_EQ(0U, ids.random.calls);
-}
 
-TEST(TelemetryWp06HandshakeContract, CacheKeyRequiresBothCanonicalEndpointAndNonceAndNeverEvictsLiveEntries)
-{
-	IdentityHarness ids{{{true, 1U}}};
-	auto controller = make_controller(ids.allocator);
-	const auto original = hello(791U, protocol::VersionMinorV1_0, protocol::VersionMinorV1_0);
-	ASSERT_EQ(detail::SessionIngressDisposition::ResponseQueued,
-		controller.ingest(endpoint(2U), view(original.bytes), 0U, 0U, false).disposition);
-	(void)pop_output(controller);
-	const auto other_nonce = hello(792U, protocol::VersionMinorV1_0, protocol::VersionMinorV1_0);
-	EXPECT_EQ(detail::SessionIngressDisposition::ResponseQueued,
-		controller.ingest(endpoint(2U), view(other_nonce.bytes), 1U, 0U, false).disposition);
-	(void)pop_output(controller);
-	EXPECT_EQ(detail::SessionIngressDisposition::ResponseQueued,
-		controller.ingest(endpoint(3U), view(original.bytes), 2U, 0U, false).disposition);
-	(void)pop_output(controller);
-
-	for (std::uint64_t nonce = 793U; nonce < 798U; ++nonce) {
-		const auto request = hello(nonce, protocol::VersionMinorV1_0, protocol::VersionMinorV1_0);
-		ASSERT_EQ(detail::SessionIngressDisposition::ResponseQueued,
-			controller.ingest(endpoint(static_cast<std::uint8_t>(nonce - 789U)),
-				view(request.bytes), nonce, 0U, false).disposition);
-		(void)pop_output(controller);
-	}
-	EXPECT_EQ(protocol::HandshakeCacheCapacity, controller.handshake_cache_entries());
-	const auto overflow = hello(999U, protocol::VersionMinorV1_0, protocol::VersionMinorV1_0);
-	const auto result = controller.ingest(endpoint(20U), view(overflow.bytes), 999U, 0U, false);
-	EXPECT_EQ(detail::SessionIngressDisposition::Dropped, result.disposition);
-	EXPECT_EQ(detail::SessionIngressDropReason::HandshakeCacheFull, result.drop_reason);
-	EXPECT_EQ(protocol::HandshakeCacheCapacity, controller.handshake_cache_entries());
-}
 
 TEST(TelemetryWp06HandshakeContract, CacheAndPreproofLedgerStorageRecycleOnlyAfterExpiryCloseOrProof)
 {
-	{
-		IdentityHarness ids{{{true, 1U}}};
-		auto controller = make_controller(ids.allocator);
-		const auto rejected = hello(798U, protocol::VersionMinorV1_0, protocol::VersionMinorV1_0);
-		ASSERT_EQ(detail::SessionIngressDisposition::ResponseQueued,
-			controller.ingest(endpoint(), view(rejected.bytes), 0U, 0U, false).disposition);
-		(void)pop_output(controller);
-		EXPECT_EQ(1U, controller.handshake_cache_entries());
-		EXPECT_EQ(1U, controller.preproof_account_count());
-		controller.expire_housekeeping(protocol::HandshakeCacheLifetimeMs * 1000U);
-		EXPECT_EQ(0U, controller.handshake_cache_entries());
-		EXPECT_EQ(0U, controller.preproof_account_count());
-	}
 	{
 		IdentityHarness ids{{{true, 2U}}};
 		auto controller = make_controller(ids.allocator);
@@ -1185,14 +1068,12 @@ TEST(TelemetryWp06SecurityContract, HelloAndSessionCreationTokenBucketsPrecedeSe
 	IdentityHarness ids(std::move(draws));
 	auto controller = make_controller(ids.allocator, nullptr, 4U);
 	for (std::uint64_t nonce = 1U; nonce <= protocol::HelloRateLimit.burst_tokens; ++nonce) {
-		const auto request = hello(nonce, protocol::VersionMinorV1_0, protocol::VersionMinorV1_0,
-			static_cast<std::uint32_t>(nonce));
-		EXPECT_EQ(detail::SessionIngressDisposition::ResponseQueued,
+		const auto request = invalid_hello(nonce, static_cast<std::uint32_t>(nonce));
+		EXPECT_EQ(detail::SessionIngressDisposition::Dropped,
 			controller.ingest(endpoint(2U, static_cast<std::uint16_t>(43000U + nonce)),
 				view(request.bytes), 0U, 0U, false).disposition);
-		(void)pop_output(controller);
 	}
-	const auto ninth = hello(99U, protocol::VersionMinorV1_0, protocol::VersionMinorV1_0, 99U);
+	const auto ninth = invalid_hello(99U, 99U);
 	const auto limited = controller.ingest(endpoint(2U, 44000U), view(ninth.bytes), 0U, 0U, false);
 	EXPECT_EQ(detail::SessionIngressDisposition::Dropped, limited.disposition);
 	EXPECT_EQ(detail::SessionIngressDropReason::HelloRateLimited, limited.drop_reason);
@@ -1205,7 +1086,7 @@ TEST(TelemetryWp06SecurityContract, SessionCreationBurstIsFourAndFifthRequestIsR
 	IdentityHarness ids{{{true, 1U}, {true, 2U}, {true, 3U}, {true, 4U}, {true, 5U}}};
 	auto controller = make_controller(ids.allocator, nullptr, 4U);
 	for (std::uint64_t nonce = 1U; nonce <= protocol::SessionCreationRateLimit.burst_tokens; ++nonce) {
-		const auto request = hello(100U + nonce, protocol::VersionMinorV1_1, protocol::VersionMinorV1_1,
+		const auto request = hello(100U + nonce, protocol::VersionMinor, protocol::VersionMinor,
 			static_cast<std::uint32_t>(nonce));
 		ASSERT_EQ(detail::SessionIngressDisposition::ResponseQueued,
 			controller.ingest(endpoint(2U, static_cast<std::uint16_t>(45000U + nonce)),
@@ -1214,7 +1095,7 @@ TEST(TelemetryWp06SecurityContract, SessionCreationBurstIsFourAndFifthRequestIsR
 	}
 	ASSERT_EQ(4U, controller.active_slots());
 	ASSERT_EQ(4U, ids.random.calls);
-	const auto fifth = hello(199U, protocol::VersionMinorV1_1, protocol::VersionMinorV1_1, 99U);
+	const auto fifth = hello(199U, protocol::VersionMinor, protocol::VersionMinor, 99U);
 	const auto limited = controller.ingest(endpoint(2U, 46000U), view(fifth.bytes), 0U, 0U, false);
 	EXPECT_EQ(detail::SessionIngressDisposition::Dropped, limited.disposition);
 	EXPECT_EQ(detail::SessionIngressDropReason::SessionCreationRateLimited, limited.drop_reason);
@@ -1227,12 +1108,6 @@ TEST(TelemetryWp06SecurityContract, HelloBucketUsesSourceIpNotPortHasExactRefill
 {
 	IdentityHarness ids{{{true, 1U}}};
 	auto controller = make_controller(ids.allocator);
-	auto invalid_hello = [](std::uint64_t nonce) {
-		auto request = hello(nonce);
-		request.bytes[protocol::HeaderSizeV1 + 21U] = 1U;
-		reseal_single_fragment(request.bytes);
-		return request;
-	};
 	for (std::uint64_t nonce = 1U; nonce <= protocol::HelloRateLimit.burst_tokens; ++nonce) {
 		const auto request = invalid_hello(nonce);
 		EXPECT_EQ(detail::SessionIngressDropReason::PayloadInvalid,
@@ -1290,23 +1165,6 @@ TEST(TelemetryWp06SecurityContract, AntiAmplificationLedgerIsCumulativePerEndpoi
 		ledger.try_account_send(first, std::numeric_limits<std::uint64_t>::max()));
 }
 
-TEST(TelemetryWp06SecurityContract, RejectionsAndCachedRepliesUseTheSameEndpointLedger)
-{
-	IdentityHarness ids{{{true, 1U}}};
-	auto controller = make_controller(ids.allocator);
-	const auto request = hello(820U, protocol::VersionMinorV1_0, protocol::VersionMinorV1_0);
-	ASSERT_EQ(detail::SessionIngressDisposition::ResponseQueued,
-		controller.ingest(endpoint(), view(request.bytes), 0U, 0U, false).disposition);
-	const auto first = pop_output(controller).storage;
-	ASSERT_EQ(detail::SessionIngressDisposition::CachedResponseQueued,
-		controller.ingest(endpoint(), view(request.bytes), 1U, 0U, false).disposition);
-	(void)pop_output(controller);
-	const auto account = controller.preproof_account(endpoint());
-	EXPECT_EQ(request.bytes.size() * 2U, account.validated_bytes_received);
-	EXPECT_EQ(first.size() * 2U, account.bytes_sent);
-	EXPECT_LE(account.bytes_sent, account.validated_bytes_received * 3U);
-}
-
 protocol::AckPayload welcome_ack_payload(const DecodedOutput& welcome)
 {
 	protocol::AckPayload payload;
@@ -1336,7 +1194,7 @@ EncodedDatagram encode_welcome_ack(const DecodedOutput& welcome,
 	bytes[7U] = static_cast<std::uint8_t>(payload.target_fragment_count >> 8U);
 	put_u32(8U, payload.target_message_crc32);
 	protocol::TelemetryDatagramHeader header;
-	header.version_minor = protocol::VersionMinorV1_1;
+	header.version_minor = protocol::VersionMinor;
 	header.message_type = protocol::MessageType::Ack;
 	header.session_id = session_id == 0U ? welcome.datagram.header.session_id : session_id;
 	header.packet_sequence = 2U;
@@ -1463,7 +1321,7 @@ EncodedDatagram missing_fragment_nack(const DecodedOutput& target, std::uint32_t
 		protocol::encode_nack_payload(nack, mutable_view(payload), written));
 	payload.resize(written);
 	protocol::TelemetryDatagramHeader header;
-	header.version_minor = protocol::VersionMinorV1_1;
+	header.version_minor = protocol::VersionMinor;
 	header.message_type = protocol::MessageType::Nack;
 	header.session_id = target.datagram.header.session_id;
 	header.packet_sequence = packet_sequence;
@@ -1536,7 +1394,7 @@ TEST(TelemetryPhase1SnapshotSessionIntegration, SnapshotNackPreemptsQueuedDeltaT
 		protocol::ResyncRequestFlagRequireFullSnapshot, 1U, 0U, 5'000U};
 	std::array<std::uint8_t, protocol::ResyncRequestPayloadSize> payload{}; std::size_t written = 0U;
 	ASSERT_EQ(protocol::ValidationError::None, protocol::encode_resync_request_payload(request, mutable_view(payload), written));
-	protocol::TelemetryDatagramHeader header{}; header.version_minor = protocol::VersionMinorV1_1;
+	protocol::TelemetryDatagramHeader header{}; header.version_minor = protocol::VersionMinor;
 	header.message_type = protocol::MessageType::ResyncRequest; header.flags = protocol::MessageFlagAckRequired;
 	header.session_id = controller.slot(0U).session_id; header.packet_sequence = 981U; header.sent_time_us = 5'000U;
 	header.message_id = 981U; header.fragment_count = 1U; header.message_size = static_cast<std::uint32_t>(written);
@@ -1559,7 +1417,7 @@ TEST(TelemetryPhase1SnapshotSessionIntegration, SnapshotNackPreemptsQueuedDeltaT
 		protocol::DatagramView pending_view;
 		ASSERT_EQ(protocol::ValidationError::None,
 			protocol::decode_and_validate_datagram({pending.bytes.data(), pending.size},
-				protocol::ProtocolMinorRange{protocol::VersionMinorV1_1, protocol::VersionMinorV1_1}, pending_view));
+				protocol::SupportedMinorRange, pending_view));
 		EXPECT_EQ(protocol::MessageType::Delta, pending_view.header.message_type);
 	};
 	const auto foreign_nack = missing_fragment_nack(first_fragment, 982U);
@@ -1732,7 +1590,7 @@ TEST(TelemetryPhase1KeyframeContract, ResyncRequestIsValidatedAndStartsOneReplac
 		protocol::ResyncRequestFlagRequireFullSnapshot, 1U, 0U, 5'000U};
 	std::array<std::uint8_t, protocol::ResyncRequestPayloadSize> payload{}; std::size_t written = 0U;
 	ASSERT_EQ(protocol::ValidationError::None, protocol::encode_resync_request_payload(request, mutable_view(payload), written));
-	protocol::TelemetryDatagramHeader header; header.version_minor = protocol::VersionMinorV1_1;
+	protocol::TelemetryDatagramHeader header; header.version_minor = protocol::VersionMinor;
 	header.message_type = protocol::MessageType::ResyncRequest; header.flags = protocol::MessageFlagAckRequired;
 	header.session_id = controller.slot(0U).session_id;
 	header.packet_sequence = 99U; header.sent_time_us = 5'000U; header.message_id = 99U;
@@ -1764,7 +1622,7 @@ TEST(TelemetryPhase1KeyframeContract, ResyncRateLimitAllowsBurstTwoThenRejectsTh
 			protocol::ResyncRequestFlagRequireFullSnapshot, 1U, 0U, 5'000U};
 		std::array<std::uint8_t, protocol::ResyncRequestPayloadSize> payload{}; std::size_t written = 0U;
 		EXPECT_EQ(protocol::ValidationError::None, protocol::encode_resync_request_payload(request, mutable_view(payload), written));
-		protocol::TelemetryDatagramHeader header; header.version_minor = protocol::VersionMinorV1_1;
+		protocol::TelemetryDatagramHeader header; header.version_minor = protocol::VersionMinor;
 		header.message_type = protocol::MessageType::ResyncRequest; header.flags = protocol::MessageFlagAckRequired;
 		header.session_id = controller.slot(0U).session_id; header.packet_sequence = message_id;
 		header.sent_time_us = 5'000U; header.message_id = message_id; header.fragment_count = 1U;
@@ -1818,7 +1676,7 @@ TEST(TelemetryPhase1DeltaEgressContract, SaturatedHeartbeatProbesCannotPreemptOr
 	protocol::DatagramView before_datagram;
 	ASSERT_EQ(protocol::ValidationError::None,
 		protocol::decode_and_validate_datagram({before.bytes.data(), before.size},
-			protocol::ProtocolMinorRange{protocol::VersionMinorV1_1, protocol::VersionMinorV1_1}, before_datagram));
+			protocol::SupportedMinorRange, before_datagram));
 	ASSERT_EQ(protocol::MessageType::Delta, before_datagram.header.message_type);
 	const auto probes_before = controller.slot(0U).heartbeat.probes.in_flight_count();
 	const auto sequence_before = controller.slot(0U).next_packet_sequence;
@@ -1920,7 +1778,7 @@ TEST(TelemetryPhase1DeltaEgressContract, LiveDeltaIsDecodableV11UnreliableAndRef
 	ASSERT_EQ(1U, controller.service_delta_egress(1U, 5'002U));
 	const auto output = pop_output(controller);
 
-	EXPECT_EQ(protocol::VersionMinorV1_1, output.datagram.header.version_minor);
+	EXPECT_EQ(protocol::VersionMinor, output.datagram.header.version_minor);
 	EXPECT_EQ(protocol::MessageType::Delta, output.datagram.header.message_type);
 	EXPECT_EQ(0U, static_cast<std::uint8_t>(output.datagram.header.flags & protocol::MessageFlagAckRequired));
 	EXPECT_EQ(0U, static_cast<std::uint8_t>(output.datagram.header.flags & protocol::MessageFlagRetransmission));
@@ -1974,7 +1832,7 @@ TEST(TelemetryPhase1DeltaEgressContract, WouldBlockDropsNonReliableDeltaAndDelta
 	protocol::DatagramView pending_view;
 	ASSERT_EQ(protocol::ValidationError::None,
 		protocol::decode_and_validate_datagram({pending.bytes.data(), pending.size},
-			protocol::ProtocolMinorRange{protocol::VersionMinorV1_1, protocol::VersionMinorV1_1}, pending_view));
+			protocol::SupportedMinorRange, pending_view));
 	ASSERT_EQ(protocol::MessageType::Delta, pending_view.header.message_type);
 
 	// ACK(DELTA) is neither a reliable completion nor a baseline transition.
@@ -2018,7 +1876,7 @@ TEST(TelemetryWp06HandshakeContract, WelcomeProofPrewarmsOutsideMissionAndActiva
 		}
 		const auto begin = pop_output(controller);
 		ASSERT_EQ(protocol::MessageType::SessionBegin, begin.datagram.header.message_type);
-		EXPECT_EQ(protocol::VersionMinorV1_1, begin.datagram.header.version_minor);
+		EXPECT_EQ(protocol::VersionMinor, begin.datagram.header.version_minor);
 		EXPECT_EQ(welcome.datagram.header.session_id, begin.datagram.header.session_id);
 		EXPECT_EQ(protocol::MessageFlagAckRequired, begin.datagram.header.flags);
 		EXPECT_EQ(0U, begin.datagram.header.frame_id);
@@ -2223,15 +2081,16 @@ TEST(TelemetryWp06HandshakeContract, BusyOutputRejectsBeforeIdSlotCacheLedgerAnd
 	{
 		IdentityHarness ids{{{true, 0x1111U}}};
 		auto controller = make_controller(ids.allocator, nullptr, 2U);
-		const auto rejected = hello(9020U, protocol::VersionMinorV1_0, protocol::VersionMinorV1_0);
+		const auto pending = hello(9020U);
 		ASSERT_EQ(detail::SessionIngressDisposition::ResponseQueued,
-			controller.ingest(endpoint(), view(rejected.bytes), 1'000U, 0U, false).disposition);
+			controller.ingest(endpoint(), view(pending.bytes), 1'000U, 0U, false).disposition);
 		const auto before = controller.owned_usage();
 		const auto before_account = controller.preproof_account(endpoint());
+		const auto ids_before = ids.random.calls;
 		const auto accepted = hello(9021U);
 		const auto result = controller.ingest(endpoint(), view(accepted.bytes), 1'001U, 0U, false);
 		EXPECT_EQ(detail::SessionIngressDropReason::OutputBusy, result.drop_reason);
-		EXPECT_EQ(0U, ids.random.calls) << "Busy output must be rejected before session-ID allocation.";
+		EXPECT_EQ(ids_before, ids.random.calls) << "Busy output must be rejected before session-ID allocation.";
 		EXPECT_EQ(before, controller.owned_usage());
 		EXPECT_EQ(before_account.validated_bytes_received,
 			controller.preproof_account(endpoint()).validated_bytes_received);
@@ -2289,7 +2148,7 @@ TEST(TelemetryWp06HandshakeContract, SameEndpointReplacementPreemptsQueuedDeltaA
 	ASSERT_EQ(1U, controller.service_delta_egress(1U, 5'002U));
 
 	const auto replacement = hello(9024U,
-		protocol::VersionMinorV1_1, protocol::VersionMinorV1_1, 1U, 2'000'000U);
+		protocol::VersionMinor, protocol::VersionMinor, 1U, 2'000'000U);
 	const auto result = controller.ingest(endpoint(), view(replacement.bytes), 5'003U, 7U, true);
 	ASSERT_EQ(detail::SessionIngressDisposition::ResponseQueued, result.disposition);
 	const auto welcome = pop_output(controller);
@@ -2306,9 +2165,9 @@ TEST(TelemetryWp06HandshakeContract, SameEndpointReplacementRetainsOnlyNewNonceP
 	auto controller = make_controller(ids.allocator, nullptr, 2U);
 	const auto shared = endpoint();
 	const auto first = hello(9030U,
-		protocol::VersionMinorV1_1, protocol::VersionMinorV1_1, 1U, 1'000'000U);
+		protocol::VersionMinor, protocol::VersionMinor, 1U, 1'000'000U);
 	const auto second = hello(9031U,
-		protocol::VersionMinorV1_1, protocol::VersionMinorV1_1, 2U, 2'000'000U);
+		protocol::VersionMinor, protocol::VersionMinor, 2U, 2'000'000U);
 	ASSERT_EQ(detail::SessionIngressDisposition::ResponseQueued,
 		controller.ingest(shared, view(first.bytes), 0U, 0U, false).disposition);
 	(void)pop_output(controller);
@@ -2332,9 +2191,9 @@ TEST(TelemetryWp06HandshakeContract, ClosingReplacementClearsRemainingEndpointPr
 	auto controller = make_controller(ids.allocator, nullptr, 2U);
 	const auto shared = endpoint();
 	const auto first = hello(9040U,
-		protocol::VersionMinorV1_1, protocol::VersionMinorV1_1, 1U, 1'000'000U);
+		protocol::VersionMinor, protocol::VersionMinor, 1U, 1'000'000U);
 	const auto second = hello(9041U,
-		protocol::VersionMinorV1_1, protocol::VersionMinorV1_1, 2U, 2'000'000U);
+		protocol::VersionMinor, protocol::VersionMinor, 2U, 2'000'000U);
 	ASSERT_EQ(detail::SessionIngressDisposition::ResponseQueued,
 		controller.ingest(shared, view(first.bytes), 0U, 0U, false).disposition);
 	(void)pop_output(controller);
@@ -2357,20 +2216,15 @@ void expect_packet_sequence_source_controls_presession_and_session_initializatio
 	Controller controller;
 	ASSERT_EQ(detail::SessionControllerConfigureResult::Ready,
 		Controller::configure(config(), ids.allocator, packet_sequences, 0U, nullptr, controller));
-	const auto rejected = hello(9050U, protocol::VersionMinorV1_0, protocol::VersionMinorV1_0);
-	ASSERT_EQ(detail::SessionIngressDisposition::ResponseQueued,
-		controller.ingest(endpoint(), view(rejected.bytes), 0U, 0U, false).disposition);
-	EXPECT_EQ(0x12345678U, pop_output(controller).datagram.header.packet_sequence);
-
-	const auto accepted = hello(9051U);
+	const auto accepted = hello(9050U);
 	ASSERT_EQ(detail::SessionIngressDisposition::ResponseQueued,
 		controller.ingest(endpoint(), view(accepted.bytes), 1U, 1U, true).disposition);
 	const auto welcome = pop_output(controller);
-	EXPECT_EQ(0xABCDEF00U, welcome.datagram.header.packet_sequence);
+	EXPECT_EQ(0x12345678U, welcome.datagram.header.packet_sequence);
 	const auto proof = applied_welcome_ack(welcome);
 	ASSERT_EQ(detail::SessionIngressDisposition::WelcomeProofApplied,
 		controller.ingest(endpoint(), view(proof.bytes), 2U, 1U, true).disposition);
-	EXPECT_EQ(0xABCDEF01U, pop_output(controller).datagram.header.packet_sequence);
+	EXPECT_EQ(0x12345679U, pop_output(controller).datagram.header.packet_sequence);
 }
 
 template <typename Controller,
@@ -2379,7 +2233,7 @@ void expect_packet_sequence_source_controls_presession_and_session_initializatio
 {
 }
 
-TEST(TelemetryWp06HandshakeContract, PacketSequencesUseTheInjectedPhase0SourceForPresessionAndSessionChannels)
+TEST(TelemetryWp06HandshakeContract, PacketSequencesUseTheInjectedSourceForTheSessionChannel)
 {
 	EXPECT_TRUE(accepts_phase0_packet_sequence_source<detail::SessionController>::value)
 		<< "SessionController has no Phase 0 random source for packet_sequence initialization.";
@@ -2443,7 +2297,7 @@ EncodedDatagram nack_for_target(const DecodedOutput& target,
 		payload[4U] = static_cast<std::uint8_t>(target.datagram.header.message_type);
 	}
 	protocol::TelemetryDatagramHeader header;
-	header.version_minor = protocol::VersionMinorV1_1;
+	header.version_minor = protocol::VersionMinor;
 	header.message_type = protocol::MessageType::Nack;
 	header.session_id = target.datagram.header.session_id;
 	header.packet_sequence = packet_sequence;
@@ -2516,8 +2370,8 @@ TEST(TelemetryAckOutputArbitrationContract,
 	ASSERT_EQ(protocol::ValidationError::None,
 		protocol::decode_and_validate_datagram(
 			{heartbeat_before.bytes.data(), heartbeat_before.size},
-			{protocol::VersionMinorV1_1,
-				protocol::VersionMinorV1_1}, heartbeat_view));
+			{protocol::VersionMinor,
+				protocol::VersionMinor}, heartbeat_view));
 	ASSERT_EQ(protocol::MessageType::Heartbeat,
 		heartbeat_view.header.message_type);
 
@@ -2700,8 +2554,8 @@ TEST(TelemetryAckOutputArbitrationContract,
 	const auto second_peer = endpoint(3U);
 	activate_phase1_live_baseline(controller, 0xA401U);
 
-	const auto request = hello(0xA402U, protocol::VersionMinorV1_1,
-		protocol::VersionMinorV1_1, 11U);
+	const auto request = hello(0xA402U, protocol::VersionMinor,
+		protocol::VersionMinor, 11U);
 	ASSERT_EQ(detail::SessionIngressDisposition::ResponseQueued,
 		controller.ingest(second_peer, view(request.bytes),
 			5'000U, 7U, true).disposition);
@@ -3249,7 +3103,7 @@ TEST(TelemetryWp06ReliabilityContract, SessionBeginRetryWouldBlockAtDeadlinePurg
 	protocol::DatagramView retry_view;
 	ASSERT_EQ(protocol::ValidationError::None,
 		protocol::decode_and_validate_datagram({retry.bytes.data(), retry.size},
-			protocol::ProtocolMinorRange{protocol::VersionMinorV1_1, protocol::VersionMinorV1_1},
+			protocol::SupportedMinorRange,
 			retry_view));
 	const auto sequence_before_deadline = controller.slot(0U).next_packet_sequence;
 	ASSERT_EQ(sequence_before_deadline, retry_view.header.packet_sequence);
@@ -3382,7 +3236,7 @@ void expect_wp06_reliability_service_boundaries_and_egress()
 		protocol::DatagramView welcome;
 		ASSERT_EQ(protocol::ValidationError::None,
 			protocol::decode_and_validate_datagram({original.bytes.data(), original.size},
-				protocol::ProtocolMinorRange{protocol::VersionMinorV1_1, protocol::VersionMinorV1_1},
+				protocol::SupportedMinorRange,
 				welcome));
 		const auto due = 1'000U + protocol::reliable_retry_delay_us(protocol::ReliableDefaultRtoUs,
 			0x4653544c5f52544fULL,

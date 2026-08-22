@@ -483,8 +483,7 @@ ValidationError validate_session_state(ByteView payload, std::uint8_t protocol_m
 									 static_cast<std::uint64_t>(CapabilityCommViewAuthoritativeSource);
 	const auto video_pair = static_cast<std::uint64_t>(CapabilityTargetVideoH264) |
 							 static_cast<std::uint64_t>(CapabilityTargetVideoRemoteRender);
-	const auto required_domain = protocol_minor == VersionMinorV1_0 ? StateDomainCoverageBitCoreShip
-															 : StateDomainCoverageBitPlayerKinematics;
+	const auto required_domain = StateDomainCoverageBitPlayerKinematics;
 	if (!cursor.require((state_coverage & required_domain) != 0U, ValidationError::InvalidAbsence) ||
 		!cursor.require((capabilities & communication_pair) == 0U || (capabilities & communication_pair) == communication_pair,
 			ValidationError::InvalidStateTransition) ||

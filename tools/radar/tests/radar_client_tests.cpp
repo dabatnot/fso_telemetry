@@ -47,7 +47,7 @@ bool receiveMessage(QUdpSocket& socket, MessageType wanted, int timeoutMs,
         const ByteView bytes{reinterpret_cast<const std::uint8_t*>(wire.constData()),
                              static_cast<std::size_t>(wire.size())};
         if (decode_and_validate_datagram(
-                bytes, {VersionMinorV1_0, VersionMinorV1_1}, decoded) != ValidationError::None ||
+                bytes, SupportedMinorRange, decoded) != ValidationError::None ||
             decoded.header.message_type != wanted) {
             continue;
         }
@@ -82,7 +82,7 @@ bool sendMessage(QUdpSocket& socket, const CapturedDatagram& destination,
 class RadarClientTests final : public QObject {
     Q_OBJECT
 private slots:
-    void snapshotUsesNegotiatedFstl11RecordCatalogue()
+    void snapshotUsesCurrentFstl11RecordCatalogue()
     {
         std::vector<std::uint8_t> records;
         const auto u8 = [&records](std::uint8_t value) { records.push_back(value); };
@@ -106,15 +106,10 @@ private slots:
         u64(1); u64(0); u64(1); u8(1); u8(1); u32(0);
 
         // Minimal TARGET_STATE v6: observer 1, no optional fields and no
-        // selected target. Version 6 is legal only after FSTL 1.1 negotiation.
+        // selected target. Version 6 belongs to the current FSTL 1.1 contract.
         u16(static_cast<std::uint16_t>(RecordType::TargetState));
         u8(6); u8(RecordFlagNone); u16(32);
         u64(1); u64(0); u64(1); u64(0);
-
-        StateImage legacy;
-        QCOMPARE(decode_business_snapshot_region(
-                     {records.data(), records.size()}, 2, legacy),
-                 ValidationError::UnsupportedRecordVersion);
 
         StateImage fstl11;
         QVERIFY(decodeFstl11SnapshotRegion(
@@ -127,8 +122,8 @@ private slots:
         HelloPayload hello;
         hello.client_nonce = 42;
         hello.client_send_t0_us = 100;
-        hello.min_minor = VersionMinorV1_1;
-        hello.max_minor = VersionMinorV1_1;
+        hello.min_minor = VersionMinor;
+        hello.max_minor = VersionMinor;
         hello.requested_visibility_mode = VisibilityMode::Cockpit;
         hello.requested_heartbeat_ms = 1000;
         std::array<std::uint8_t, HelloPayloadPrefixSize> encoded{};
@@ -136,8 +131,8 @@ private slots:
         QCOMPARE(encode_hello_payload(hello, {encoded.data(), encoded.size()}, written), ValidationError::None);
         HelloPayload decoded;
         QCOMPARE(decode_hello_payload({encoded.data(), written}, decoded), ValidationError::None);
-        QCOMPARE(decoded.min_minor, VersionMinorV1_1);
-        QCOMPARE(decoded.max_minor, VersionMinorV1_1);
+        QCOMPARE(decoded.min_minor, VersionMinor);
+        QCOMPARE(decoded.max_minor, VersionMinor);
         QCOMPARE(decoded.requested_visibility_mode, VisibilityMode::Cockpit);
     }
 
@@ -165,7 +160,7 @@ private slots:
         welcome.producer_send_t2_us = hello.client_send_t0_us + 2;
         welcome.status = WelcomeStatus::Accepted;
         welcome.selected_major = VersionMajor;
-        welcome.selected_minor = VersionMinorV1_1;
+        welcome.selected_minor = VersionMinor;
         welcome.selected_visibility_mode = VisibilityMode::Cockpit;
         welcome.heartbeat_interval_ms = 1000;
         welcome.reliable_reassembly_timeout_ms = ReliableReassemblyTimeoutV1Ms;
@@ -176,7 +171,7 @@ private slots:
                      {welcomeBytes.data(), welcomeBytes.size()}, welcomeWritten),
                  ValidationError::None);
         TelemetryDatagramHeader welcomeHeader;
-        welcomeHeader.version_minor = VersionMinorV1_1;
+        welcomeHeader.version_minor = VersionMinor;
         welcomeHeader.message_type = MessageType::Welcome;
         welcomeHeader.flags = MessageFlagAckRequired;
         welcomeHeader.session_id = 42;
@@ -198,7 +193,7 @@ private slots:
         QCOMPARE(encode_session_end_payload(end, {endBytes.data(), endBytes.size()}, endWritten),
                  ValidationError::None);
         TelemetryDatagramHeader endHeader;
-        endHeader.version_minor = VersionMinorV1_1;
+        endHeader.version_minor = VersionMinor;
         endHeader.message_type = MessageType::SessionEnd;
         endHeader.flags = MessageFlagAckRequired;
         endHeader.session_id = 42;
@@ -245,7 +240,7 @@ private slots:
                 reinterpret_cast<const std::uint8_t*>(wire.constData()),
                 static_cast<std::size_t>(wire.size())};
             if (decode_and_validate_datagram(
-                    bytes, {VersionMinorV1_0, VersionMinorV1_1}, decoded) != ValidationError::None ||
+                    bytes, SupportedMinorRange, decoded) != ValidationError::None ||
                 decoded.header.message_type != MessageType::Hello) {
                 continue;
             }
@@ -285,7 +280,7 @@ private slots:
         welcome.producer_send_t2_us = hello.client_send_t0_us + 2;
         welcome.status = WelcomeStatus::Accepted;
         welcome.selected_major = VersionMajor;
-        welcome.selected_minor = VersionMinorV1_1;
+        welcome.selected_minor = VersionMinor;
         welcome.selected_visibility_mode = VisibilityMode::Cockpit;
         welcome.heartbeat_interval_ms = 1000;
         welcome.reliable_reassembly_timeout_ms = ReliableReassemblyTimeoutV1Ms;
@@ -297,7 +292,7 @@ private slots:
                  ValidationError::None);
 
         TelemetryDatagramHeader welcomeHeader;
-        welcomeHeader.version_minor = VersionMinorV1_1;
+        welcomeHeader.version_minor = VersionMinor;
         welcomeHeader.message_type = MessageType::Welcome;
         welcomeHeader.flags = MessageFlagAckRequired;
         welcomeHeader.session_id = 42;
@@ -325,7 +320,7 @@ private slots:
                      {beginBytes.data(), beginBytes.size()}, beginWritten),
                  ValidationError::None);
         TelemetryDatagramHeader beginHeader;
-        beginHeader.version_minor = VersionMinorV1_1;
+        beginHeader.version_minor = VersionMinor;
         beginHeader.message_type = MessageType::SessionBegin;
         beginHeader.flags = MessageFlagAckRequired;
         beginHeader.session_id = 42;
@@ -377,7 +372,7 @@ private slots:
             FragmentSlice slice;
             QVERIFY(fragmenter.fragment(static_cast<std::size_t>(raw), slice));
             DatagramView fragment;
-            fragment.header.version_minor = VersionMinorV1_1;
+            fragment.header.version_minor = VersionMinor;
             fragment.header.message_type = MessageType::FullSnapshot;
             fragment.header.flags = MessageFlagFragmented | MessageFlagAckRequired | MessageFlagKeyframe;
             fragment.header.session_id = 1;
@@ -399,7 +394,7 @@ private slots:
     {
         const std::array<std::uint8_t, 3> payload{1, 2, 3};
         TelemetryDatagramHeader header;
-        header.version_minor = VersionMinorV1_1;
+        header.version_minor = VersionMinor;
         header.message_type = MessageType::Heartbeat;
         header.packet_sequence = 1;
         header.message_id = 1;
@@ -407,13 +402,13 @@ private slots:
         header.message_crc32 = crc32_iso_hdlc({payload.data(), payload.size()});
         std::array<std::uint8_t, MaxDatagramSize> wire{};
         std::size_t written = 0;
-        QCOMPARE(encode_datagram(header, {VersionMinorV1_1, VersionMinorV1_1},
+        QCOMPARE(encode_datagram(header, SupportedMinorRange,
                                   {payload.data(), payload.size()}, {wire.data(), wire.size()}, written),
                  ValidationError::None);
         wire[written - 1] ^= 0xffU;
         DatagramView decoded;
         QVERIFY(decode_and_validate_datagram({wire.data(), written},
-                    {VersionMinorV1_1, VersionMinorV1_1}, decoded) != ValidationError::None);
+                    SupportedMinorRange, decoded) != ValidationError::None);
     }
 
     void staleAndReconnectThresholds()

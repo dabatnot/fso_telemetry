@@ -69,21 +69,6 @@
       }
     ]
   },
-  "base_artifact_manifest": {
-    "bytes": 131635,
-    "file_count": 438,
-    "path": "test/telemetry/protocol/fstl-1.0-artifacts.manifest.json",
-    "schema": "FSTL-1.0-FROZEN-ARTIFACTS",
-    "sha256": "800bc258719b7992b1ae38a30d8dc1f8a7373a5dd0415a618a0d4e62a47dbc92",
-    "tree_sha256": "9baac6a20db33bcf350066ed533c5581b7117410899d7bc4a6dc24406e47856d",
-    "wire_version": "1.0"
-  },
-  "base_schema": {
-    "bytes": 499494,
-    "path": "test/telemetry/protocol/schema/fstl-v1.yaml",
-    "sha256": "a870d85fdb0070d61a57e40d7d2b1183a9a83458cedf446708511fcaac5134cc",
-    "wire_version": "1.0"
-  },
   "capabilities": [
     {
       "bit": 0,
@@ -131,7 +116,7 @@
       "max_datagram_size": 1200,
       "max_fragment_payload": 1132,
       "version_major": 1,
-      "version_minor": 0
+      "version_minor": 1
     },
     "crc32_iso_hdlc": [
       {
@@ -411,7 +396,7 @@
       {
         "name": "version_minor",
         "offset": 5,
-        "rule": "0 en FSTL 1.0 ; 1 en FSTL 1.1 accepté",
+        "rule": "1 uniquement",
         "wire": "u8"
       },
       {
@@ -441,7 +426,7 @@
       {
         "name": "session_id",
         "offset": 12,
-        "rule": "0 seulement avant session ou rejet de négociation",
+        "rule": "0 seulement avant session ou pour une réponse de rejet",
         "wire": "u64"
       },
       {
@@ -513,7 +498,7 @@
     ],
     "size": 68
   },
-  "generated_by": "test/telemetry/protocol/tools/fstl_schema.py",
+  "maintained_as": "current FSTL 1.1 protocol contract",
   "message_type_invalid": {
     "direction": "aucune",
     "id": 0,
@@ -552,13 +537,13 @@
         {
           "name": "min_minor",
           "offset": 12,
-          "rule": "mineure minimale supportée, 0 ou 1",
+          "rule": "1 exactement",
           "wire": "u8"
         },
         {
           "name": "max_minor",
           "offset": 13,
-          "rule": "mineure maximale supportée, min_minor..1",
+          "rule": "1 exactement",
           "wire": "u8"
         },
         {
@@ -648,13 +633,13 @@
         {
           "name": "min_minor",
           "offset": 18,
-          "rule": "mineure minimale supportée, 0 ou 1",
+          "rule": "1 exactement",
           "wire": "u8"
         },
         {
           "name": "max_minor",
           "offset": 19,
-          "rule": "mineure maximale supportée, min_minor..1",
+          "rule": "1 exactement",
           "wire": "u8"
         },
         {
@@ -773,7 +758,7 @@
         {
           "name": "selected_minor",
           "offset": 34,
-          "rule": "0 ou 1 si accepté, plus haute mineure commune",
+          "rule": "1 exactement si accepté",
           "wire": "u8"
         },
         {
@@ -803,7 +788,7 @@
         {
           "name": "reliable_reassembly_timeout_ms",
           "offset": 54,
-          "rule": "2000 en v1.0",
+          "rule": "2000",
           "wire": "u16"
         },
         {
@@ -7625,9 +7610,9 @@
     "StateDomainCoverage": {
       "cpp": {
         "enum": "StateDomainCoverageBit",
-        "known_mask_constant": "KnownStateDomainCoverageBitsV1_1",
+        "known_mask_constant": "KnownStateDomainCoverageBits",
         "member_prefix": "StateDomainCoverageBit",
-        "reserved_mask_constant": "ReservedStateDomainCoverageBitsV1_1"
+        "reserved_mask_constant": "ReservedStateDomainCoverageBits"
       },
       "kind": "bitmask",
       "reserved": {
@@ -9438,7 +9423,12 @@
       "kind": "enum",
       "reserved": {
         "policy": "reject",
-        "ranges": []
+        "ranges": [
+          [
+            1,
+            1
+          ]
+        ]
       },
       "source": {
         "document": "documentation/analysis/specs/0-Contrat-de-protocole/02-format-filaire-et-registres.md",
@@ -9449,10 +9439,6 @@
         {
           "name": "ACCEPTED",
           "value": 0
-        },
-        {
-          "name": "UNSUPPORTED_VERSION",
-          "value": 1
         },
         {
           "name": "UNAUTHORIZED",
@@ -12155,7 +12141,7 @@
           "name": "state_domain_coverage",
           "nature": "A",
           "position": "10",
-          "semantics": "domaines garantis complets par rapport au mode ; CORE_SHIP obligatoire en FSTL 1.0 ; PLAYER_KINEMATICS obligatoire en FSTL 1.1 et peut être le seul domaine du profil Phase 1",
+          "semantics": "domaines garantis complets par rapport au mode ; PLAYER_KINEMATICS obligatoire",
           "wire": "u64"
         },
         {
@@ -18223,7 +18209,7 @@
       "version": 1,
       "versions": [
         {
-          "compatibility": "frozen FSTL 1.0 layout",
+          "compatibility": "record version 1 layout",
           "fields": [
             {
               "constraint": "observateur",
@@ -20445,11 +20431,6 @@
   ],
   "schema_format": "FSTL-machine-readable-registry-v1",
   "supported_wire_versions": {
-    "1.0": {
-      "minor": 0,
-      "player_kinematics": "reserved_and_rejected",
-      "state_domain_known_mask": 1007
-    },
     "1.1": {
       "minor": 1,
       "player_kinematics": 1024,
@@ -20458,7 +20439,7 @@
   },
   "unknown_value_policy": [
     "message_type inconnu sous une majeure compatible : abandon du message ; NACK UnsupportedMessage uniquement si la session, l'endpoint et ACK_REQUIRED sont validés ;",
-    "record_type inconnu : saut borné par record_length ; en v1.0, les exigences de présence viennent uniquement de la matrice statique de 04 ;",
+    "record_type inconnu : saut borné par record_length ;",
     "record_version autre que 1 : même traitement borné qu'un record inconnu ; si le type connu était requis dans un snapshot, l'absence d'une instance v1 valide fait échouer ce snapshot ;",
     "enum fermée inconnue : rejet du message logique ;",
     "bitmap explicitement extensible : bits inconnus ignorés à la lecture et jamais réémis par un relais v1 ;",
@@ -20884,7 +20865,7 @@
         "L'ID d'entité 0 signifie toujours « aucune entité » et n'est jamais attribué.",
         "Un champ optionnel DOIT utiliser soit une sentinelle explicitement définie, soit un bitmap de présence défini par le schéma de son record.",
         "Une chaîne vide, une liste vide, zéro et un champ absent sont des états distincts, sauf règle métier explicite.",
-        "Un champ réservé DOIT être émis à zéro et DOIT être rejeté s'il est non nul en v1.0."
+        "Un champ réservé DOIT être émis à zéro et DOIT être rejeté s'il est non nul."
       ]
     },
     "bool8": {
@@ -21140,5 +21121,5 @@
     }
   },
   "wire_version": "1.1",
-  "wire_version_scope": "additive FSTL 1.1 amendment view"
+  "wire_version_scope": "unique current wire format"
 }

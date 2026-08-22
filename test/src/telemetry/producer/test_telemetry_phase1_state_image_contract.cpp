@@ -111,12 +111,12 @@ detail::Phase1StateImageInput valid_input()
 void expect_fstl11_valid(const protocol::StateImage& image)
 {
 	protocol::BusinessStateValidationContext context{};
-	context.protocol_minor = protocol::VersionMinorV1_1;
+	context.protocol_minor = protocol::VersionMinor;
 	context.required_manifest_id = 0U;
 	protocol::BusinessStateImageValidator validator(context);
 	EXPECT_EQ(protocol::ValidationError::None, validator.validate(image));
 
-	context.protocol_minor = protocol::VersionMinorV1_0;
+	context.protocol_minor = 0U;
 	protocol::BusinessStateImageValidator fstl10_validator(context);
 	EXPECT_NE(protocol::ValidationError::None, fstl10_validator.validate(image))
 		<< "PLAYER_KINEMATICS is an FSTL 1.1-only image.";

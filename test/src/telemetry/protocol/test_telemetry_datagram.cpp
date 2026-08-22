@@ -71,12 +71,12 @@ TEST(TelemetryProtocolDatagram, GoldenEmptyHeaderFreezesAllSixtyEightWireBytesAn
 	// 4.2. The final four bytes are CRC-32/ISO-HDLC over the header with those
 	// bytes zeroed. Keeping the whole vector literal freezes every field offset.
 	const std::array<std::uint8_t, HeaderSizeV1> golden{
-		0x46, 0x53, 0x54, 0x4c, 0x01, 0x00, 0x09, 0x00, 0x44, 0x00, 0x00, 0x00,
+		0x46, 0x53, 0x54, 0x4c, 0x01, 0x01, 0x09, 0x00, 0x44, 0x00, 0x00, 0x00,
 		0x08, 0x07, 0x06, 0x05, 0x04, 0x03, 0x02, 0x01, 0x44, 0x33, 0x22, 0x11,
 		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 		0x18, 0x17, 0x16, 0x15, 0x14, 0x13, 0x12, 0x11, 0xd4, 0xc3, 0xb2, 0xa1,
 		0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-		0x00, 0x00, 0x00, 0x00, 0x76, 0xd6, 0x18, 0x52,
+		0x00, 0x00, 0x00, 0x00, 0xaa, 0xbc, 0xab, 0x02,
 	};
 
 	ASSERT_EQ(golden.size(), encoded.size());
@@ -103,7 +103,7 @@ TEST(TelemetryProtocolDatagram, GoldenEmptyHeaderFreezesAllSixtyEightWireBytesAn
 	EXPECT_EQ(0U, decoded.header.message_size);
 	EXPECT_EQ(0U, decoded.header.fragment_offset);
 	EXPECT_EQ(0U, decoded.header.message_crc32);
-	EXPECT_EQ(0x5218d676U, decoded.header.crc32);
+	EXPECT_EQ(0x02abbcaaU, decoded.header.crc32);
 	EXPECT_TRUE(decoded.payload.empty());
 }
 
@@ -112,7 +112,7 @@ TEST(TelemetryProtocolDatagram, DatagramCrcAlwaysTreatsTheWireCrcFieldAsZero) {
 	header.crc32 = 0xffffffffU;
 	std::uint32_t calculated = 0;
 	ASSERT_EQ(ValidationError::None, calculate_datagram_crc(header, ByteView{}, calculated));
-	EXPECT_EQ(0x5218d676U, calculated);
+	EXPECT_EQ(0x02abbcaaU, calculated);
 
 	header.crc32 = calculated;
 	std::array<std::uint8_t, HeaderSizeV1> raw{};
@@ -234,7 +234,7 @@ TEST(TelemetryProtocolDatagram, RejectsSizeMagicVersionHeaderFlagsTypeAndMessage
 	const std::array<Mutation, 7> mutations{{
 		{"magic", 0U, 0x00U, ValidationError::BadMagic},
 		{"major", 4U, 0x02U, ValidationError::UnsupportedMajor},
-		{"minor", 5U, 0x01U, ValidationError::UnsupportedMinor},
+		{"minor", 5U, 0x00U, ValidationError::UnsupportedMinor},
 		{"header size", 8U, 0x43U, ValidationError::BadHeaderSize},
 		{"reserved flags", 7U, 0x80U, ValidationError::ReservedHeaderFlag},
 		{"unknown type", 6U, 0xffU, ValidationError::UnknownMessageType},
@@ -452,20 +452,20 @@ TEST(TelemetryProtocolDatagram, MessageCrcRequiresExactLogicalLengthAndPublishes
 	EXPECT_EQ(ValidationError::None, validate_message_crc(header, ByteView{}));
 }
 
-TEST(TelemetryProtocolDatagram, MinorOneRequiresExplicitVersionRangeAndBadMinorIsRejected) {
+TEST(TelemetryProtocolDatagram, MinorOneIsTheDefaultAndBadMinorIsRejected) {
 	auto header = base_header(MessageType::Heartbeat, ByteView{});
-	header.version_minor = VersionMinorV1_1;
+	header.version_minor = VersionMinor;
 	std::vector<std::uint8_t> wire(HeaderSizeV1);
 	std::size_t written = 0U;
 	ASSERT_EQ(ValidationError::None,
-		encode_datagram(header, Phase1ProducerMinorRange, ByteView{}, mutable_byte_view(wire), written));
+		encode_datagram(header, SupportedMinorRange, ByteView{}, mutable_byte_view(wire), written));
 	DatagramView decoded;
-	EXPECT_EQ(ValidationError::UnsupportedMinor, decode_and_validate_datagram(byte_view(wire), decoded));
+	EXPECT_EQ(ValidationError::None, decode_and_validate_datagram(byte_view(wire), decoded));
 	EXPECT_EQ(ValidationError::None,
-		decode_and_validate_datagram(byte_view(wire), Phase1ProducerMinorRange, decoded));
+		decode_and_validate_datagram(byte_view(wire), SupportedMinorRange, decoded));
 	wire[5] = 2U; reseal_datagram(wire);
 	EXPECT_EQ(ValidationError::UnsupportedMinor,
-		decode_and_validate_datagram(byte_view(wire), {VersionMinorV1_0, VersionMinorV1_1}, decoded));
+		decode_and_validate_datagram(byte_view(wire), SupportedMinorRange, decoded));
 }
 
 } // namespace

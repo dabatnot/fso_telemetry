@@ -328,11 +328,7 @@ class ReplayUdpProducer:
             decoder.decode_transport_sequence(
                 [datagram],
                 "replay-client-ingress",
-                {
-                    "acceptedMinorRange": [0, 1]
-                    if message_type == 2
-                    else [1, 1]
-                },
+                {"acceptedMinorRange": [1, 1]},
             )
             payload = datagram[fstl.HEADER_SIZE :]
             decoded = decoder.decode_message(
@@ -346,14 +342,12 @@ class ReplayUdpProducer:
         now = fstl.now_us()
         with self._lock:
             if message_type == 2:
-                supports_v11 = (
-                    int(decoded["min_major"]) <= 1 <= int(decoded["max_major"])
-                    and int(decoded["min_minor"]) <= 1 <= int(decoded["max_minor"])
-                )
-                if not supports_v11:
-                    self._refused_clients += 1
-                    self._send_rejected_welcome(endpoint, decoded, now, status=1)
-                    self._notify()
+                if (
+                    int(decoded["min_major"]) != 1
+                    or int(decoded["max_major"]) != 1
+                    or int(decoded["min_minor"]) != 1
+                    or int(decoded["max_minor"]) != 1
+                ):
                     return
                 peer = self._peers.get(endpoint)
                 if peer is None and len(self._peers) >= MAX_CLIENTS:
@@ -426,7 +420,6 @@ class ReplayUdpProducer:
             1,
             payload,
             now,
-            version_minor=0 if status == 1 else 1,
         )
 
     def _send_welcome(self, peer: ReplayPeer, hello: dict[str, Any], now: int) -> None:
@@ -586,7 +579,6 @@ class ReplayUdpProducer:
         sent_us: int,
         peer: ReplayPeer | None = None,
         mission_time_us: int = 0,
-        version_minor: int = 1,
     ) -> None:
         sock = self._socket
         if sock is None:
@@ -605,7 +597,7 @@ class ReplayUdpProducer:
                 "<IBBBBHHQIIqQIHHIII",
                 fstl.MAGIC,
                 1,
-                version_minor,
+                1,
                 message_type,
                 base_flags,
                 fstl.HEADER_SIZE,

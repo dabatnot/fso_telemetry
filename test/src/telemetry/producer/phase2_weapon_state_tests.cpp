@@ -190,7 +190,7 @@ ValidationError validate_atom(const StateAtom& atom)
 		atom.key.record_type, atom.record_version, RecordFlagNone,
 		{atom.value.data(), atom.value.size()}};
 	return validate_business_record(
-		envelope, BusinessRecordContainer::FullSnapshot, VersionMinorV1_1, metadata);
+		envelope, BusinessRecordContainer::FullSnapshot, VersionMinor, metadata);
 }
 
 struct Fixture {

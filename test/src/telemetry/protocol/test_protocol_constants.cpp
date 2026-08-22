@@ -27,7 +27,7 @@ static_assert(std::is_same<std::underlying_type<ValidationError>::type, std::uin
 TEST(TelemetryProtocolConstants, FreezesWireIdentityAndResourceBounds) {
 	EXPECT_EQ(0x4c545346U, Magic);
 	EXPECT_EQ(1U, VersionMajor);
-	EXPECT_EQ(0U, VersionMinor);
+	EXPECT_EQ(1U, VersionMinor);
 	EXPECT_EQ(68U, HeaderSizeV1);
 	EXPECT_EQ(1200U, MaxDatagramSize);
 	EXPECT_EQ(1132U, MaxFragmentPayload);
@@ -47,15 +47,13 @@ TEST(TelemetryProtocolConstants, FreezesWireIdentityAndResourceBounds) {
 	EXPECT_EQ(10'000U, TransactionAssemblyTimeoutMs);
 }
 
-TEST(TelemetryProtocolConstants, SupportsOnlyPublishedWireMinors) {
-	EXPECT_EQ(VersionMinorV1_1, LatestSupportedVersionMinor);
-	EXPECT_TRUE(is_supported_version_minor(VersionMinorV1_0));
-	EXPECT_TRUE(is_supported_version_minor(VersionMinorV1_1));
+TEST(TelemetryProtocolConstants, SupportsOnlyTheCurrentWireMinor) {
+	EXPECT_FALSE(is_supported_version_minor(0U));
+	EXPECT_TRUE(is_supported_version_minor(VersionMinor));
 	EXPECT_FALSE(is_supported_version_minor(2U));
-	EXPECT_EQ(KnownStateDomainCoverageBitsV1_0,
-		known_state_domain_coverage_bits(VersionMinorV1_0));
-	EXPECT_EQ(KnownStateDomainCoverageBitsV1_1,
-		known_state_domain_coverage_bits(VersionMinorV1_1));
+	EXPECT_EQ(0U, known_state_domain_coverage_bits(0U));
+	EXPECT_EQ(KnownStateDomainCoverageBits,
+		known_state_domain_coverage_bits(VersionMinor));
 	EXPECT_EQ(0U, known_state_domain_coverage_bits(2U));
 }
 

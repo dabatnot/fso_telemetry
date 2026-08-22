@@ -1,125 +1,36 @@
-# FSTL versioned protocol conformance assets
+# FSTL 1.1 protocol assets
 
-This directory contains the byte-frozen FSTL 1.0 contract and its separately
-versioned, additive FSTL 1.1 amendment. FSTL 1.0 remains the immutable base;
-no 1.1 generator or verifier is allowed to rewrite its artifact set.
+FSTL 1.1 is the only wire format emitted or accepted before the first public
+release. The major and minor fields remain in the datagram and handshake
+layouts, but both endpoints must advertise and use exactly `1.1`. There is no
+version negotiation, fallback, or compatibility path.
 
-## Layout
+## Active assets
 
-- `schema/fstl-v1.yaml`: the byte-frozen FSTL 1.0 registry and schema;
-- `schema/fstl-v1.1.yaml`: the generated additive FSTL 1.1 wire contract,
-  tied to the frozen base and carrying informative product provenance;
-- `fstl-1.0-artifacts.manifest.json`: the byte-frozen historical 438-file
-  ledger;
-- `tools/verify_fstl_1_0_freeze.py`: verifier for the frozen ledger identity
-  and the independent 431-file machine-readable contract oracle;
-- `tools/fstl_schema.py`: immutable 1.0 validation plus deterministic 1.1
-  generation and C++ registry cross-checks;
-- `tools/verify_schema_vectors.py`: schema-driven reconstruction of all 20
-  message payloads and all 28 record envelopes from canonical fields, checked
-  byte-for-byte against the golden `.bin` files;
-- `tools/generate_transport_vectors.py`: independent Phase 0 transport vector
-  generator using only Python's standard library;
-- `tools/generate_protocol_vectors.py`: independent generator for one
-  canonical payload for every v1 `MessageType` and one canonical envelope for
-  every v1 `RecordType`;
-- `tools/fstl_reference_decoder.py`: independent decoder/checker which does
-  not import either generator or the production C++ implementation;
-- `vectors/valid/datagrams`: transport-valid datagram sequences;
-- `vectors/invalid/datagrams`: transport-invalid datagram sequences;
-- `vectors/valid/messages`: the 20 byte-authoritative message payloads;
-- `vectors/valid/records`: the 28 byte-authoritative record envelopes;
-- `vectors/invalid/messages` and `vectors/invalid/records`: generated negative
-  payload/envelope fixtures with stable `ValidationError` names and numbers;
-- `protocol-coverage.json`: machine-checked evidence for every item in document
-  06 sections 10.4 and 10.5;
-- `expected`: canonical descriptions for valid fixtures.
+- `schema/fstl-v1.1.yaml` describes the current wire contract;
+- `vectors-v1.1` contains current valid and invalid protocol cases;
+- `expected-v1.1` contains canonical decoded representations;
+- `tools/fstl_reference_decoder.py` is the shared standard-library decoder and
+  checks the current corpus independently from the C++ implementation;
+- `tools/fstl_client_core.py` implements the common live client used by AV Core
+  and the Dashboard;
+- `tools/fstl_console_client.py` and the scenario client exercise the same
+  decoder and client core.
 
-The `.bin` files are authoritative. JSON files beside each fixture describe
-the expected validation result; they do not replace the wire bytes.
+The older `vectors` and `expected` trees remain test payload inputs for record
+and message layouts. They are not accepted as FSTL 1.0 datagrams: every
+transport decoder validates an exact 1.1 header.
 
-## Isolated FSTL 1.1 amendment corpus
-
-`vectors-v1.1`, `expected-v1.1` and `fstl-1.1-vectors.manifest.json` form a
-separate additive corpus for `PLAYER_KINEMATICS`. The amendment generator
-`tools/verify_fstl_1_1_amendment.py` uses only the Python standard library and
-fixed canonical JSON fixtures; it neither imports nor invokes
-`fstl_reference_decoder.py`. Conversely, the reference decoder independently
-parses the generated wire bytes and compares its output with those fixed
-goldens. The production C++ tests consume the same `.bin` files and independently
-project every valid 1.1 message to JSON for structural equality with the fixed
-oracle. Metadata uses one normative truth: `valid`, numeric
-`expectedValidationError`, diagnostic name and `notes`; only valid fixtures
-carry `expectedCanonicalJson`.
-
-The amendment manifest references the complete FSTL 1.0 ledger, its 438-file
-count and its frozen tree SHA-256. `schema/fstl-v1.1.yaml` likewise pins the
-base schema and ledger identities. Its Phase 1 document references are
-informative provenance only: product-document edits do not change or validate
-the wire contract.
-
-The 21-case corpus covers minor negotiation, accepted and rejected WELCOME, two
-cumulative DELTAs (real change then return to baseline), minimal snapshots,
-Phase 2 promotion, all three required-record absences, authority/visibility,
-and negative player-profile cases
-for duplicate records, owner mismatch, non-ship lifecycle, unexpected
-SHIP_IDENTITY and uncovered FLIGHT_STATE presence flags. Pre-session HELLO and
-WELCOME capture fields are checked through the normative ingress/context path.
-
-Regenerate the Phase 0 transport vectors from the repository root with:
+Run the current independent contract check from the repository root with:
 
 ```text
-python test/telemetry/protocol/tools/generate_transport_vectors.py --write
-python test/telemetry/protocol/tools/generate_transport_vectors.py --check
-python test/telemetry/protocol/tools/generate_protocol_vectors.py --write
-python test/telemetry/protocol/tools/generate_protocol_vectors.py --check
-python test/telemetry/protocol/tools/verify_fstl_1_0_freeze.py --check --repo .
-python test/telemetry/protocol/tools/fstl_schema.py --check
-python test/telemetry/protocol/tools/verify_fstl_1_1_amendment.py --check --repo .
-python test/telemetry/protocol/tools/fstl_reference_decoder.py --check --repo .
-python test/telemetry/protocol/tools/verify_schema_vectors.py --check
-python test/telemetry/protocol/tools/verify_schema_vectors.py --check --schema test/telemetry/protocol/schema/fstl-v1.1.yaml
+python -B test/telemetry/protocol/tools/fstl_reference_decoder.py --check --repo .
 ```
 
-The generator deliberately does not import or execute the C++ protocol
-implementation. CRC-32/ISO-HDLC is calculated with the Python standard
-library and checked against `123456789 == 0xcbf43926` before any fixture is
-written.
+Production C++ tests consume the same current `.bin` files and verify strict
+1.1 ingress, handshake fields, snapshot rules, CRC handling, and canonical
+decoding. The fuzz corpus is seeded only from `vectors-v1.1`.
 
-`protocol-vectors.manifest.json` records a SHA-256 for every generated
-message/record binary, metadata file, and canonical JSON file. The reference
-decoder verifies those hashes, exact MessageType coverage `1..20`, exact
-RecordType coverage `1..28`, canonical JSON equality, every negative fixture's
-stable error code/name pair and category, the transport fixtures, the ISO-HDLC
-check value with a separate bitwise implementation, and an explicit
-little-/big-endian interpretation probe.
-
-The schema includes the complete field/offset layout, QoS variants, and size
-limits of every `MessageType`, plus the top-level fields of every `RecordType`
-and all 25 referenced `*V1` nested structures (including `EventItemV1`). The
-schema/vector checker also verifies implicit string lengths, list envelopes,
-record envelopes, and the nested `AssetEntryV1` and `EventItemV1` bytes present
-in the minimal golden fixtures. Separate deterministic layout probes exercise
-all 192 message fields, 422 record fields, 25 nested types and 241 nested-field
-occurrences (`EventItemV1` 30/30). Frozen projection and encoded-probe hashes,
-plus targeted wire-drift self-tests, make unexercised optional-field drift fail
-the schema check without misrepresenting the minimal golden coverage.
-
-## Negative-catalogue status
-
-The generated catalogue covers all 20 bullets in document 06 section 10.5.
-Transport vectors include every one of the 68 header truncation lengths,
-magic/version/header-size/flag mutations, both CRC layers, class-size and
-reassembly-quota failures, canonical fragment-layout failures, overlap,
-inconsistent metadata and a contradictory duplicate. Message and record
-vectors cover fixed framing, record framing and duplicate keys, UTF-8 and field
-domains, quaternion rules, replication context, ACK/NACK context,
-communication consistency, video negotiation/size/lifecycle and the
-read-only/no-command boundary.
-
-Every invalid message/record metadata file also has a `cxxReplay` disposition.
-`exact` identifies the production C++ API that can reproduce the declared
-`ValidationError`; `divergence` names a real Phase 0 gap where the production
-lifecycle currently returns a domain result (or a different validation code)
-instead. These entries are deliberately visible to the C++ replay and freeze
-audit rather than being silently treated as passing byte-only decoder cases.
+The version number remains 1.1 until a stable MVP is publicly released. A
+future protocol change will define its compatibility policy when that need is
+concrete.

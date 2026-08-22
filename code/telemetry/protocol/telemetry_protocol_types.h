@@ -7,12 +7,12 @@
 namespace telemetry::protocol {
 
 static_assert(sizeof(float) == 4 && std::numeric_limits<float>::is_iec559,
-              "FSTL 1.0 requires IEEE-754 binary32 floats");
+              "FSTL 1.1 requires IEEE-754 binary32 floats");
 static_assert(std::numeric_limits<std::int8_t>::min() == -128 &&
                   std::numeric_limits<std::int16_t>::min() == -32768 &&
                   std::numeric_limits<std::int32_t>::min() == (-2147483647 - 1) &&
                   std::numeric_limits<std::int64_t>::min() == (-9223372036854775807LL - 1),
-              "FSTL 1.0 requires two's-complement signed integers");
+              "FSTL 1.1 requires two's-complement signed integers");
 
 struct ByteView {
 	const std::uint8_t* data = nullptr;

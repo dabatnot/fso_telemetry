@@ -232,8 +232,8 @@ bool make_hello(Packet& packet,
 	hello.client_send_t0_us = sent_us;
 	hello.min_major = protocol::VersionMajor;
 	hello.max_major = protocol::VersionMajor;
-	hello.min_minor = protocol::VersionMinorV1_1;
-	hello.max_minor = protocol::VersionMinorV1_1;
+	hello.min_minor = protocol::VersionMinor;
+	hello.max_minor = protocol::VersionMinor;
 	hello.requested_visibility_mode = protocol::VisibilityMode::Cockpit;
 	hello.requested_heartbeat_ms = 1000U;
 	std::array<std::uint8_t, protocol::HelloPayloadPrefixSize> payload{};
@@ -243,7 +243,7 @@ bool make_hello(Packet& packet,
 		return false;
 	}
 	protocol::TelemetryDatagramHeader header;
-	header.version_minor = protocol::VersionMinorV1_1;
+	header.version_minor = protocol::VersionMinor;
 	header.message_type = protocol::MessageType::Hello;
 	header.packet_sequence = 1U;
 	header.sent_time_us = sent_us;
@@ -254,7 +254,7 @@ bool make_hello(Packet& packet,
 bool decode_packet(const Packet& packet, protocol::DatagramView& decoded) noexcept
 {
 	return protocol::decode_and_validate_datagram({packet.bytes.data(), packet.size},
-			protocol::ProtocolMinorRange{protocol::VersionMinorV1_0, protocol::VersionMinorV1_1},
+			protocol::SupportedMinorRange,
 			decoded) == protocol::ValidationError::None;
 }
 
@@ -332,7 +332,7 @@ bool make_heartbeat_response(const protocol::DatagramView& request,
 		return false;
 	}
 	protocol::TelemetryDatagramHeader header;
-	header.version_minor = protocol::VersionMinorV1_1;
+	header.version_minor = protocol::VersionMinor;
 	header.message_type = protocol::MessageType::Heartbeat;
 	header.session_id = request.header.session_id;
 	header.packet_sequence = 40U;
@@ -679,11 +679,11 @@ testing::AssertionResult exercise_native_runtime_loopback(protocol::IpAddressFam
 	}
 	protocol::DatagramView welcome_view;
 	protocol::WelcomePayload welcome_payload;
-	if (!decode_packet(welcome, welcome_view) || welcome_view.header.version_minor != protocol::VersionMinorV1_1 ||
+	if (!decode_packet(welcome, welcome_view) || welcome_view.header.version_minor != protocol::VersionMinor ||
 		welcome_view.header.session_id == 0U ||
 		protocol::decode_welcome_payload(welcome_view.payload, welcome_payload) != protocol::ValidationError::None ||
 		welcome_payload.status != protocol::WelcomeStatus::Accepted ||
-		welcome_payload.selected_minor != protocol::VersionMinorV1_1) {
+		welcome_payload.selected_minor != protocol::VersionMinor) {
 		return testing::AssertionFailure() << "WELCOME was not an accepted FSTL 1.1 negotiation";
 	}
 
@@ -781,8 +781,8 @@ testing::AssertionResult exercise_native_runtime_loopback(protocol::IpAddressFam
 	protocol::DatagramView exposed_view;
 	if (protocol::decode_and_validate_datagram(
 			{heartbeat_before.bytes.data(), heartbeat_before.size},
-			{protocol::VersionMinorV1_1,
-				protocol::VersionMinorV1_1},
+			{protocol::VersionMinor,
+				protocol::VersionMinor},
 			exposed_view) != protocol::ValidationError::None ||
 		exposed_view.header.message_type != protocol::MessageType::Heartbeat) {
 		return testing::AssertionFailure()

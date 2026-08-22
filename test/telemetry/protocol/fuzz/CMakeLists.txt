@@ -143,7 +143,6 @@ set(FSTL_FUZZ_CORPUS_DIR "${CMAKE_BINARY_DIR}/telemetry-fuzz-corpus")
 add_custom_target(telemetry_fuzz_corpus
 	COMMAND "${Python3_EXECUTABLE}"
 		"${CMAKE_CURRENT_SOURCE_DIR}/prepare_fuzz_corpus.py"
-		--vectors "${CMAKE_SOURCE_DIR}/test/telemetry/protocol/vectors"
 		--vectors "${CMAKE_SOURCE_DIR}/test/telemetry/protocol/vectors-v1.1"
 		--output "${FSTL_FUZZ_CORPUS_DIR}"
 	BYPRODUCTS "${FSTL_FUZZ_CORPUS_DIR}/manifest.json"

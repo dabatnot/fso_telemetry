@@ -13,7 +13,7 @@ extern "C" int LLVMFuzzerTestOneInput(
 		return 0;
 
 	BusinessStateValidationContext context;
-	context.protocol_minor = VersionMinorV1_1;
+	context.protocol_minor = VersionMinor;
 	context.required_manifest_id =
 		static_cast<std::uint32_t>(data[0]);
 	context.class_manifest_installed = (data[1] & 1U) != 0U;
@@ -33,7 +33,7 @@ extern "C" int LLVMFuzzerTestOneInput(
 	if (decode_delta_payload(records, delta) == ValidationError::None) {
 		CumulativeStateDelta mutations;
 		static_cast<void>(decode_business_delta(
-			delta, VersionMinorV1_1, mutations));
+			delta, VersionMinor, mutations));
 	}
 
 	RecordEnvelopeIterator iterator(
@@ -47,11 +47,11 @@ extern "C" int LLVMFuzzerTestOneInput(
 		BusinessRecordMetadata metadata;
 		static_cast<void>(validate_business_record(record,
 			BusinessRecordContainer::FullSnapshot,
-			VersionMinorV1_1, metadata));
+			VersionMinor, metadata));
 		StateAtom atom;
 		static_cast<void>(decode_business_state_atom(record,
 			BusinessRecordContainer::FullSnapshot,
-			VersionMinorV1_1, atom));
+			VersionMinor, atom));
 	}
 	return 0;
 }

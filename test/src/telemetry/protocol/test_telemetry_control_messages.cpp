@@ -122,7 +122,7 @@ TEST(TelemetryProtocolControlMessages, DiscoveryGoldenRoundTripIsBoundedUtf8AndA
 	EXPECT_EQ(encoded.size(), written);
 	const std::array<std::uint8_t, DiscoveryPayloadPrefixSize + name.size()> golden{{
 		0x08U, 0x07U, 0x06U, 0x05U, 0x04U, 0x03U, 0x02U, 0x01U,
-		0x80U, 0x1eU, 0x01U, 0x01U, 0x00U, 0x00U,
+		0x80U, 0x1eU, 0x01U, 0x01U, 0x01U, 0x01U,
 		0x1aU, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U,
 		0x44U, 0x33U, 0x22U, 0x11U, 0x04U, 0x00U,
 		'F', 'S', 'T', 'L',
@@ -564,34 +564,15 @@ TEST(TelemetryProtocolControlMessages, CapabilityUpdateDecodeIsExtensibleButEnco
 	EXPECT_EQ(ValidationError::TrailingBytes, decode_capability_update_payload(byte_view(bytes), decoded));
 }
 
-TEST(TelemetryProtocolControlMessages, Phase1ProfileSelectsMinorOneAndNeverDowngrades)
+TEST(TelemetryProtocolControlMessages, AcceptsOnlyTheExactCurrentMinor)
 {
-	std::uint8_t selected = 0xffU;
-	EXPECT_EQ(ProtocolMinorNegotiationResult::Selected,
-		select_highest_common_minor(Phase1ProducerMinorRange, Phase1ProducerMinorRange, selected));
-	EXPECT_EQ(VersionMinorV1_1, selected);
-	selected = 0xffU;
-	EXPECT_EQ(ProtocolMinorNegotiationResult::Selected,
-		select_highest_common_minor(Phase1ProducerMinorRange, {VersionMinorV1_0, VersionMinorV1_1}, selected));
-	EXPECT_EQ(VersionMinorV1_1, selected);
-	selected = 0xffU;
-	EXPECT_EQ(ProtocolMinorNegotiationResult::NoIntersection,
-		select_highest_common_minor(Phase1ProducerMinorRange, FrozenV1_0MinorRange, selected));
-	EXPECT_EQ(0U, selected);
-}
-
-TEST(TelemetryProtocolControlMessages, UnpublishedMinorTwoInvalidatesTheWholeRange)
-{
+	EXPECT_EQ(ValidationError::None, validate_protocol_minor_range(SupportedMinorRange));
+	EXPECT_EQ(ValidationError::UnsupportedMinor, validate_protocol_minor_range({0U, 0U}));
+	EXPECT_EQ(ValidationError::UnsupportedMinor, validate_protocol_minor_range({0U, VersionMinor}));
 	EXPECT_EQ(ValidationError::UnsupportedMinor,
-		validate_protocol_minor_range({VersionMinorV1_1, 2U}));
+		validate_protocol_minor_range({VersionMinor, 2U}));
 	EXPECT_EQ(ValidationError::UnsupportedMinor,
 		validate_protocol_minor_range({2U, 2U}));
-
-	std::uint8_t selected = 0xffU;
-	EXPECT_EQ(ProtocolMinorNegotiationResult::InvalidRange,
-		select_highest_common_minor(
-			{VersionMinorV1_1, 2U}, Phase1ProducerMinorRange, selected));
-	EXPECT_EQ(VersionMinorV1_0, selected);
 }
 
 } // namespace

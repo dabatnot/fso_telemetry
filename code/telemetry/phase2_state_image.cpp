@@ -1066,7 +1066,7 @@ Phase2StateImageBuildStatus publish(const Phase2CoreGateStateImageInput& input,
 		ship_class != nullptr ? ship_class->subsystem_count : 0U};
 	const std::array<std::uint64_t, 1U> allowlist{{input.player_entity_id}};
 	protocol::BusinessStateValidationContext context{};
-	context.protocol_minor = protocol::VersionMinorV1_1;
+	context.protocol_minor = protocol::VersionMinor;
 	context.required_manifest_id = input.required_manifest_id;
 	context.class_manifest_installed = true;
 	context.weapon_manifest_installed = true;
@@ -3593,7 +3593,7 @@ Phase2StateImageBuildStatus fill_flight_controls_patch(
 		const auto business_error =
 			protocol::validate_business_record(envelope,
 				protocol::BusinessRecordContainer::FullSnapshot,
-				protocol::VersionMinorV1_1, metadata);
+				protocol::VersionMinor, metadata);
 		if (business_error != protocol::ValidationError::None) {
 			if (diagnostic != nullptr) {
 				diagnostic->stage =
@@ -3857,7 +3857,7 @@ Phase2StateImageBuildStatus fill_complete_domain(
 		const auto business_error =
 			protocol::validate_business_record(envelope,
 				protocol::BusinessRecordContainer::FullSnapshot,
-				protocol::VersionMinorV1_1,
+				protocol::VersionMinor,
 				metadata);
 		if (business_error != protocol::ValidationError::None) {
 			if (diagnostic != nullptr) {
@@ -3944,7 +3944,7 @@ Phase2StateImageBuildStatus publish_complete(
 		++catalog_count;
 	}
 	protocol::BusinessStateValidationContext context{};
-	context.protocol_minor = protocol::VersionMinorV1_1;
+	context.protocol_minor = protocol::VersionMinor;
 	context.required_manifest_id =
 		input.installed_manifest->manifest_id;
 	context.class_manifest_installed = true;

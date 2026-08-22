@@ -197,7 +197,7 @@ ValidationError validate_received_datagram_context(const TelemetryDatagramHeader
 		return error;
 	}
 	if ((header.message_type == MessageType::Discovery || header.message_type == MessageType::Hello) &&
-		header.version_minor != VersionMinorV1_0) {
+		header.version_minor != VersionMinor) {
 		return ValidationError::UnsupportedMinor;
 	}
 	if (context.active_session_id != 0 && context.accepted_minors.minimum != context.accepted_minors.maximum) {
@@ -250,7 +250,6 @@ ValidationError validate_welcome_logical_context(const TelemetryDatagramHeader& 
 			static_cast<std::uint8_t>(ack_required | retransmission));
 	}
 	switch (status) {
-	case WelcomeStatus::UnsupportedVersion:
 	case WelcomeStatus::Unauthorized:
 	case WelcomeStatus::Busy:
 	case WelcomeStatus::InvalidCapabilities:
@@ -258,7 +257,7 @@ ValidationError validate_welcome_logical_context(const TelemetryDatagramHeader& 
 	default:
 		return ValidationError::UnknownEnum;
 	}
-	if (const auto error = validate_datagram_header_version(header, FrozenV1_0MinorRange);
+	if (const auto error = validate_datagram_header_version(header, SupportedMinorRange);
 		error != ValidationError::None) {
 		return error;
 	}

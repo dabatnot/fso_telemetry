@@ -134,7 +134,7 @@ class ReplayUdpProducerTest(unittest.TestCase):
                 sock.close()
             producer.stop()
 
-    def test_hello_without_fstl_1_1_is_rejected_before_allocating_peer(self) -> None:
+    def test_hello_without_fstl_1_1_is_dropped_before_allocating_peer(self) -> None:
         source = populated_client()
         producer = ReplayUdpProducer(lambda: source.state, lambda: 0, lambda _: None)
         producer.configure(bind_host="127.0.0.1", port=0, lan_enabled=False)
@@ -169,20 +169,9 @@ class ReplayUdpProducerTest(unittest.TestCase):
                     minor=0,
                 )
             )
-            response = sock.recv(1200)
+            with self.assertRaises(TimeoutError):
+                sock.recv(1200)
 
-        header = decoder.read_header(response)
-        fields = decoder.decode_message(
-            3,
-            int(header["flags"]),
-            response[fstl.HEADER_SIZE :],
-            {"senderRole": "producer", "allowedSenderRoles": ["producer"]},
-        )["fields"]
-        self.assertEqual(0, header["version_minor"])
-        self.assertEqual(1, fields["status"])
-        self.assertEqual(0, fields["selected_major"])
-        self.assertEqual(0, fields["selected_minor"])
-        self.assertEqual(0, fields["heartbeat_interval_ms"])
         self.assertEqual(0, producer.snapshot()["clientCount"])
         producer.stop()
 

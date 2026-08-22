@@ -61,7 +61,7 @@ struct CompletedTransaction {
 
 	// Ordered by part_index. Keeping the independently bounded part buffers
 	// avoids allocating a second transaction-sized copy at publication time;
-	// records never cross a part boundary in FSTL 1.0.
+	// Records never cross a part boundary in FSTL 1.1.
 	std::vector<CompletedTransactionPart> parts;
 };
 

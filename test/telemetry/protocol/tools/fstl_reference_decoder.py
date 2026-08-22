@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Independent standard-library decoder for the FSTL 1.0 golden fixtures.
+"""Independent standard-library decoder for the current FSTL 1.1 wire format.
 
 The decoder intentionally imports neither the C++ implementation nor the
 fixture generator.  It uses a second, bitwise CRC-32/ISO-HDLC calculation and
@@ -10,15 +10,13 @@ endianness.
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import math
-import re
 from pathlib import Path
 from typing import Any
 
 
-SCHEMA = "FSTL-1.0"
+SCHEMA = "FSTL-1.1"
 HEADER_SIZE = 68
 MAX_FRAGMENT_PAYLOAD = 1132
 
@@ -2553,8 +2551,8 @@ def decode_transport_sequence(
         header = read_header(datagram)
         require(header["magic"] == 0x4C545346, 4, "bad magic")
         require(header["version_major"] == 1, 5, "unsupported major")
-        accepted_minor_range = context.get("acceptedMinorRange", [0, 0])
-        require(accepted_minor_range[0] <= header["version_minor"] <= accepted_minor_range[1],
+        accepted_minor_range = context.get("acceptedMinorRange", [1, 1])
+        require(accepted_minor_range == [1, 1] and header["version_minor"] == 1,
                 6, "unsupported minor")
         require(header["header_size"] == HEADER_SIZE, 7, "bad header size")
         require(header["flags"] & 0xE0 == 0, 8, "reserved header flag")
@@ -2612,223 +2610,6 @@ def decode_transport_sequence(
     }
 
 
-def load_json(path: Path) -> Any:
-    return json.loads(path.read_text(encoding="utf-8"))
-
-
-def verify_protocol_manifest(root: Path) -> None:
-    manifest = load_json(root / "protocol-vectors.manifest.json")
-    require(manifest.get("schema") == SCHEMA, 44, "manifest schema")
-    for entry in manifest.get("files", []):
-        path = root / entry["path"]
-        require(path.is_file(), 44, f"missing manifested file {entry['path']}")
-        require(hashlib.sha256(path.read_bytes()).hexdigest() == entry["sha256"], 44, f"hash mismatch {entry['path']}")
-
-
-def verify_protocol_coverage(root: Path) -> None:
-    coverage = load_json(root / "protocol-coverage.json")
-    require(coverage.get("schema") == f"{SCHEMA}-catalogue-coverage", 44, "coverage schema")
-    valid_catalogue = coverage.get("validCatalogue", [])
-    invalid_catalogue = coverage.get("invalidCatalogue", [])
-    require(len(valid_catalogue) == 14, 44, "§10.4 coverage item count")
-    require(len(invalid_catalogue) == 20, 44, "§10.5 coverage item count")
-    item_ids = [entry["id"] for entry in valid_catalogue + invalid_catalogue]
-    require(len(item_ids) == len(set(item_ids)), 44, "duplicate catalogue coverage id")
-    repo_root = root.parents[2]
-    for entry in valid_catalogue + invalid_catalogue:
-        evidence = entry.get("evidence", [])
-        require(evidence, 44, f"catalogue item has no evidence: {entry['id']}")
-        for item in evidence:
-            if item["kind"] == "fixture":
-                require((root / item["path"]).is_file(), 44, f"missing catalogue fixture {item['path']}")
-            elif item["kind"] == "cpp-test":
-                source_path = repo_root / item["path"]
-                require(source_path.is_file(), 44, f"missing catalogue test source {item['path']}")
-                source = source_path.read_text(encoding="utf-8")
-                pattern = re.compile(
-                    rf"\bTEST\s*\(\s*{re.escape(item['suite'])}\s*,\s*{re.escape(item['name'])}\s*\)"
-                )
-                require(pattern.search(source) is not None, 44, f"missing exact catalogue test {item['suite']}.{item['name']}")
-            else:
-                fail(44, f"unknown catalogue evidence kind {item['kind']}")
-
-    category_map = coverage.get("invalidCategoryFixtureMap", {})
-    metadata_paths = sorted((root / "vectors/invalid/messages").rglob("*.json"))
-    metadata_paths += sorted((root / "vectors/invalid/records").rglob("*.json"))
-    categories = {load_json(path)["invalidCategory"] for path in metadata_paths}
-    require(set(category_map) == categories, 44, "invalid category coverage map drift")
-    for paths in category_map.values():
-        require(paths and all((root / path).is_file() for path in paths), 44, "invalid category fixture path drift")
-
-
-def verify_schema_coverage(root: Path, protocol_metadata: list[Path]) -> None:
-    schema = load_json(root / "schema/fstl-v1.yaml")
-    schema_messages = {entry["id"] for entry in schema["message_types"]}
-    schema_records = {entry["id"] for entry in schema["record_types"]}
-    metadata = [load_json(path) for path in protocol_metadata]
-    fixture_messages = {entry["messageType"] for entry in metadata if entry["kind"] == "message-payload"}
-    fixture_records = {entry["recordType"] for entry in metadata if entry["kind"] == "record"}
-    require(schema_messages == fixture_messages == set(range(1, 21)), 44, "MessageType coverage")
-    require(schema_records == fixture_records == set(range(1, 29)), 44, "RecordType coverage")
-
-
-def verify_protocol_fixtures(root: Path) -> tuple[int, int]:
-    metadata_paths = sorted((root / "vectors/valid/messages").rglob("*.json"))
-    metadata_paths += sorted((root / "vectors/valid/records").rglob("*.json"))
-    verify_schema_coverage(root, metadata_paths)
-    messages = 0
-    records = 0
-    for metadata_path in metadata_paths:
-        metadata = load_json(metadata_path)
-        require(metadata["valid"] is True and metadata["expectedValidationError"] == 0, 44, "valid metadata")
-        require(len(metadata["inputFiles"]) == 1, 44, "single payload input")
-        encoded = (metadata_path.parent / metadata["inputFiles"][0]).read_bytes()
-        expected = load_json(root / "expected" / metadata["expectedCanonicalJson"])
-        try:
-            if metadata["kind"] == "message-payload":
-                actual = decode_message(
-                    metadata["messageType"],
-                    metadata.get("messageFlags", 0),
-                    encoded,
-                    metadata.get("context", {}),
-                )
-                messages += 1
-            elif metadata["kind"] == "record":
-                actual = decode_record(encoded)
-                records += 1
-            else:
-                fail(44, f"unexpected protocol fixture kind {metadata['kind']}")
-        except DecodeFailure as exc:
-            fail(exc.code, f"{metadata_path}: {exc.detail}")
-        require(actual == expected, 44, f"canonical JSON mismatch for {metadata_path}")
-    return messages, records
-
-
-REQUIRED_INVALID_PROTOCOL_CATEGORIES = {
-    "ack_forged",
-    "ack_late",
-    "ack_wrong_crc",
-    "ack_wrong_endpoint",
-    "bool_outside_0_1",
-    "client_simulated_command",
-    "client_undefined_command",
-    "closed_enum_unknown",
-    "comm_bundle_inconsistent",
-    "comm_bundle_hash_inconsistent",
-    "comm_duration_inconsistent",
-    "encoded_frame_size_mismatch",
-    "fixed_payload_trailing",
-    "fixed_payload_truncated",
-    "invalid_utf8",
-    "nack_bitmap_incoherent",
-    "non_finite_float",
-    "quota_before_allocation",
-    "quaternion_non_canonical",
-    "quaternion_non_finite",
-    "quaternion_non_normalizable",
-    "record_duplicate_item_key",
-    "record_duplicate_singleton",
-    "record_length_excessive",
-    "record_truncated",
-    "stale_video_target",
-    "string_too_long",
-    "unknown_baseline",
-    "unknown_generation",
-    "unknown_manifest",
-    "unknown_stream",
-    "unknown_target",
-    "video_bitrate_not_negotiated",
-    "video_codec_not_negotiated",
-    "video_profile_not_negotiated",
-    "video_resolution_not_negotiated",
-}
-
-
-def verify_invalid_protocol_fixtures(root: Path) -> tuple[int, int, int]:
-    paths = sorted((root / "vectors/invalid/messages").rglob("*.json"))
-    paths += sorted((root / "vectors/invalid/records").rglob("*.json"))
-    schema = load_json(root / "schema/fstl-v1.yaml")
-    validation_names = {entry["id"]: entry["name"] for entry in schema["validation_errors"]}
-    messages = 0
-    records = 0
-    categories: set[str] = set()
-    names: set[str] = set()
-    for metadata_path in paths:
-        metadata = load_json(metadata_path)
-        require(metadata["valid"] is False, 44, f"invalid fixture marked valid: {metadata_path}")
-        require("expectedCanonicalJson" not in metadata, 44, f"invalid fixture has canonical JSON: {metadata_path}")
-        error_expected = metadata["expectedValidationError"]
-        require(error_expected in validation_names and error_expected != 0, 44, f"unstable validation code: {metadata_path}")
-        require(
-            metadata.get("expectedValidationErrorName") == validation_names[error_expected],
-            44,
-            f"validation code/name drift: {metadata_path}",
-        )
-        require(len(metadata["inputFiles"]) == 1, 44, f"invalid protocol fixture must have one input: {metadata_path}")
-        require(metadata["name"] not in names, 44, f"duplicate invalid fixture name: {metadata['name']}")
-        names.add(metadata["name"])
-        categories.add(metadata["invalidCategory"])
-        encoded = (metadata_path.parent / metadata["inputFiles"][0]).read_bytes()
-        try:
-            if metadata["kind"] == "message-payload":
-                messages += 1
-                decode_message(
-                    metadata["messageType"],
-                    metadata.get("messageFlags", 0),
-                    encoded,
-                    metadata.get("context", {}),
-                )
-            elif metadata["kind"] == "record":
-                records += 1
-                decode_record(encoded, metadata.get("context", {}))
-            else:
-                fail(44, f"unexpected invalid protocol fixture kind {metadata['kind']}")
-            error_actual = 0
-        except DecodeFailure as exc:
-            error_actual = exc.code
-        require(
-            error_actual == error_expected,
-            44,
-            f"invalid protocol error mismatch for {metadata_path}: expected {error_expected}, got {error_actual}",
-        )
-    missing = REQUIRED_INVALID_PROTOCOL_CATEGORIES - categories
-    require(not missing, 44, f"invalid protocol category coverage missing: {sorted(missing)}")
-    return messages, records, len(categories)
-
-
-def verify_transport_fixtures(root: Path) -> tuple[int, int]:
-    valid = 0
-    invalid = 0
-    paths = sorted((root / "vectors/valid/datagrams/transport").rglob("*.json"))
-    paths += sorted((root / "vectors/invalid/datagrams/transport").rglob("*.json"))
-    schema = load_json(root / "schema/fstl-v1.yaml")
-    validation_names = {entry["id"]: entry["name"] for entry in schema["validation_errors"]}
-    for metadata_path in paths:
-        metadata = load_json(metadata_path)
-        require(
-            metadata.get("expectedValidationErrorName") == validation_names[metadata["expectedValidationError"]],
-            44,
-            f"transport validation code/name drift: {metadata_path}",
-        )
-        datagrams = [(metadata_path.parent / name).read_bytes() for name in metadata["inputFiles"]]
-        try:
-            actual = decode_transport_sequence(datagrams, metadata["name"], metadata.get("context", {}))
-            error = 0
-        except DecodeFailure as exc:
-            actual = None
-            error = exc.code
-        require(error == metadata["expectedValidationError"], 44, f"transport error mismatch for {metadata_path}: got {error}")
-        if metadata["valid"]:
-            require(actual is not None, 44, f"valid transport fixture rejected: {metadata_path}")
-            expected = load_json(root / "expected" / metadata["expectedCanonicalJson"])
-            require(actual == expected, 44, f"transport canonical JSON mismatch: {metadata_path}")
-            valid += 1
-        else:
-            require(actual is None and error != 0, 44, f"invalid transport fixture accepted: {metadata_path}")
-            invalid += 1
-    return valid, invalid
-
-
 def verify_cross_endian_and_crc() -> None:
     probe = bytes.fromhex("12345678")
     require(int.from_bytes(probe, "little") == 0x78563412, 44, "little-endian simulation")
@@ -2836,7 +2617,7 @@ def verify_cross_endian_and_crc() -> None:
     require(crc32_iso_hdlc(b"123456789") == 0xCBF43926, 44, "CRC-32/ISO-HDLC check value")
 
 
-def fstl11_snapshot_result(decoded: dict[str, Any], minor: int) -> str:
+def fstl11_snapshot_result(decoded: dict[str, Any]) -> str:
     records = decoded["fields"]["records"]
     names = [record["recordName"] for record in records]
     if len(set(names)) != len(names):
@@ -2846,10 +2627,8 @@ def fstl11_snapshot_result(decoded: dict[str, Any], minor: int) -> str:
     if session is None or "MISSION_STATE" not in by_name:
         return "InvalidAbsence"
     coverage = int(session["state_domain_coverage"])
-    if minor == 0 and coverage & 0x400:
-        return "ReservedFlag"
-    if minor != 1 or not coverage & 0x400:
-        return "UNSUPPORTED_VERSION"
+    if not coverage & 0x400:
+        return "INVALID_COVERAGE"
     player = session.get("observed_player_entity_id")
     if coverage == 0x400:
         if session["authority_mode"] != 0:
@@ -2890,25 +2669,12 @@ def verify_fstl11_corpus(root: Path) -> int:
                      if item.get("name") == "PLAYER_KINEMATICS"]
     require(player_values == [0x400], 44,
             "schema/fstl-v1.1.yaml PLAYER_KINEMATICS drift")
-    base_schema_path = root / "schema" / "fstl-v1.yaml"
-    base_schema = schema.get("base_schema", {})
-    require(base_schema.get("path") == "test/telemetry/protocol/schema/fstl-v1.yaml" and
-            base_schema.get("sha256") == hashlib.sha256(base_schema_path.read_bytes()).hexdigest(),
-            44, "schema/fstl-v1.1.yaml base_schema identity drift")
-    ledger_path = root / "fstl-1.0-artifacts.manifest.json"
-    ledger = json.loads(ledger_path.read_text(encoding="utf-8"))
-    base_manifest = schema.get("base_artifact_manifest", {})
-    require(base_manifest.get("path") == "test/telemetry/protocol/fstl-1.0-artifacts.manifest.json" and
-            base_manifest.get("sha256") == hashlib.sha256(ledger_path.read_bytes()).hexdigest() and
-            base_manifest.get("file_count") == ledger.get("fileCount") and
-            base_manifest.get("tree_sha256") == ledger.get("treeSha256"),
-            44, "schema/fstl-v1.1.yaml base_artifact_manifest identity drift")
     provenance = schema.get("amendment_provenance", {})
     require(provenance.get("normative") is False, 44,
             "schema/fstl-v1.1.yaml provenance must be informative")
 
     verified = 0
-    error_ids = {"None": 0, "DuplicateRecord": 29, "ReservedFlag": 36,
+    error_ids = {"None": 0, "DuplicateRecord": 29,
                  "InvalidAbsence": 37, "MissingManifest": 41, "VisibilityViolation": 43,
                  "InvalidStateTransition": 44}
     for metadata_path in sorted((root / "vectors-v1.1").glob("*/*.json")):
@@ -2917,6 +2683,8 @@ def verify_fstl11_corpus(root: Path) -> int:
         if kind == "datagram":
             encoded = (metadata_path.parent / metadata["inputFiles"][0]).read_bytes()
             header_minor = int(metadata["headerVersion"].split(".")[1])
+            require(header_minor == 1, 44,
+                    f"non-current FSTL transport case {metadata['name']}")
             transport = decode_transport_sequence([encoded], metadata["name"],
                                       {"acceptedMinorRange": [header_minor, header_minor]})
             payload = (metadata_path.parent / metadata["payloadFile"]).read_bytes()
@@ -2934,7 +2702,9 @@ def verify_fstl11_corpus(root: Path) -> int:
                         44, f"FSTL 1.1 decode result drift for {metadata['name']}: {exc.code}")
                 decoded = None
             if decoded is not None:
-                actual = fstl11_snapshot_result(decoded, int(metadata["versionMinor"]))
+                require(metadata["versionMinor"] == 1, 44,
+                        f"non-current FSTL payload case {metadata['name']}")
+                actual = fstl11_snapshot_result(decoded)
                 require(error_ids[actual] == metadata["expectedValidationError"] and
                         actual == metadata["expectedValidationErrorName"], 44,
                         f"FSTL 1.1 expected result drift for {metadata['name']}: {actual}")
@@ -2966,11 +2736,6 @@ def main() -> int:
     root = args.repo.resolve() / "test" / "telemetry" / "protocol"
     try:
         verify_cross_endian_and_crc()
-        verify_protocol_manifest(root)
-        verify_protocol_coverage(root)
-        messages, records = verify_protocol_fixtures(root)
-        invalid_messages, invalid_records, invalid_categories = verify_invalid_protocol_fixtures(root)
-        valid_transport, invalid_transport = verify_transport_fixtures(root)
         fstl11_corpus = verify_fstl11_corpus(root)
     except (DecodeFailure, KeyError, OSError, ValueError, TypeError) as exc:
         if isinstance(exc, DecodeFailure):
@@ -2979,11 +2744,8 @@ def main() -> int:
             print(f"fixture verification failed: {exc}")
         return 1
     print(
-        f"independent decode passed: {messages} messages, {records} records, "
-        f"{invalid_messages} invalid messages and {invalid_records} invalid records "
-        f"covering {invalid_categories} negative categories, "
-        f"{valid_transport} valid and {invalid_transport} invalid transport fixtures; "
-        f"{fstl11_corpus} FSTL 1.1 corpus cases cross-decoded; CRC and simulated cross-endian checks passed"
+        f"independent decode passed: {fstl11_corpus} FSTL 1.1 corpus cases "
+        "cross-decoded; CRC and simulated cross-endian checks passed"
     )
     return 0
 

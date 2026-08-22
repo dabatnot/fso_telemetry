@@ -28,9 +28,6 @@ constexpr std::uint16_t MaxHeartbeatIntervalMs = 5000;
 constexpr std::uint16_t ReliableReassemblyTimeoutV1Ms = 2000;
 
 ValidationError validate_protocol_minor_range(ProtocolMinorRange range) noexcept;
-ProtocolMinorNegotiationResult select_highest_common_minor(ProtocolMinorRange local,
-	ProtocolMinorRange remote,
-	std::uint8_t& selected_minor) noexcept;
 
 // Logical view of one common capability-extension envelope. Unknown non-zero
 // types and versions are structurally valid here; their optional semantics are
@@ -77,15 +74,14 @@ class CapabilityExtensionIterator {
 };
 
 ValidationError validate_capability_extensions(ByteView extensions, std::uint16_t extension_count) noexcept;
-// Encoding is intentionally stricter than decoding: only extension types
-// emittable by FSTL 1.0 are accepted.
+// Encoding accepts only extension types defined by the current wire contract.
 ValidationError encode_capability_extension(const CapabilityExtensionView& extension,
 	MutableByteView output,
 	std::size_t& written) noexcept;
 
 // Capability bitmaps are explicitly extensible. Decoders retain the received
 // raw bitmap for diagnostics/deduplication; consumers use this helper before
-// interpreting it. v1.0 encoders reject unknown bits so they are never relayed.
+// interpreting it. Encoders reject unknown bits so they are never relayed.
 constexpr std::uint64_t known_capabilities(std::uint64_t capabilities) noexcept
 {
 	return capabilities & KnownCapabilities;

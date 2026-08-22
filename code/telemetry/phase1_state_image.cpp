@@ -227,7 +227,7 @@ Phase1StateImageBuildStatus validate_and_publish(const std::shared_ptr<const std
 	}
 
 	protocol::BusinessStateValidationContext context{};
-	context.protocol_minor = protocol::VersionMinorV1_1;
+	context.protocol_minor = protocol::VersionMinor;
 	context.required_manifest_id = 0U;
 	protocol::BusinessStateImageValidator validator(context);
 	const auto semantic_started = timing != nullptr ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
@@ -366,7 +366,7 @@ Phase1StateImageBuildStatus build_phase1_state_image(const Phase1StateImageInput
 		}
 
 		protocol::BusinessStateValidationContext context{};
-		context.protocol_minor = protocol::VersionMinorV1_1;
+		context.protocol_minor = protocol::VersionMinor;
 		context.required_manifest_id = 0U;
 		protocol::BusinessStateImageValidator validator(context);
 		if (validator.validate(candidate) != protocol::ValidationError::None) {

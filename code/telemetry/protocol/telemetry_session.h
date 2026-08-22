@@ -385,7 +385,6 @@ class ClientSessionModel final {
 	std::uint64_t m_pending_nonce = 0;
 	std::uint64_t m_pending_t0_us = 0;
 	std::uint64_t m_pending_client_capabilities = 0;
-	ProtocolMinorRange m_pending_minor_range = FrozenV1_0MinorRange;
 	std::uint64_t m_negotiation_started_ms = 0;
 	std::uint16_t m_heartbeat_interval_ms = 0;
 	std::uint32_t m_stale_timeout_ms = 0;
@@ -420,9 +419,8 @@ enum class ProducerHandshakeCompleteResult : std::uint8_t {
 
 class ProducerSessionModel final {
   public:
-	explicit ProducerSessionModel(SessionResourcePurger& purger,
-		ProtocolMinorRange supported_minors = FrozenV1_0MinorRange) noexcept
-		: m_purger(&purger), m_supported_minors(supported_minors)
+	explicit ProducerSessionModel(SessionResourcePurger& purger) noexcept
+		: m_purger(&purger)
 	{
 	}
 
@@ -436,17 +434,9 @@ class ProducerSessionModel final {
 		std::uint64_t now_ms,
 		CachedWelcomeResponseView& cached_response) noexcept;
 
-	ProtocolMinorRange supported_minors() const noexcept
-	{
-		return m_supported_minors;
-	}
-	ProtocolMinorNegotiationResult pending_minor_negotiation() const noexcept
-	{
-		return m_pending_minor_negotiation;
-	}
 	std::uint8_t pending_selected_minor() const noexcept
 	{
-		return m_pending_selected_minor;
+		return VersionMinor;
 	}
 
 	bool note_preproof_bytes_received(const EndpointKey& endpoint, std::uint64_t bytes) noexcept;
@@ -570,7 +560,6 @@ class ProducerSessionModel final {
 	}
 
 	SessionResourcePurger* m_purger = nullptr;
-	ProtocolMinorRange m_supported_minors = FrozenV1_0MinorRange;
 	ProducerSessionState m_state = ProducerSessionState::Listening;
 	EndpointKey m_client_endpoint;
 	std::uint64_t m_session_id = 0;
@@ -583,8 +572,6 @@ class ProducerSessionModel final {
 	std::uint64_t m_pending_nonce = 0;
 	std::uint64_t m_pending_t0_us = 0;
 	std::uint64_t m_pending_client_capabilities = 0;
-	ProtocolMinorNegotiationResult m_pending_minor_negotiation = ProtocolMinorNegotiationResult::InvalidRange;
-	std::uint8_t m_pending_selected_minor = VersionMinor;
 	std::uint64_t m_preproof_bytes_received = 0;
 	std::uint64_t m_preproof_bytes_sent = 0;
 	std::uint16_t m_heartbeat_interval_ms = 0;

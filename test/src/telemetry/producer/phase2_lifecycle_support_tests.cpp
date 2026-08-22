@@ -43,7 +43,7 @@ ValidationError validate_atom(const StateAtom& value)
 		value.key.record_type, value.record_version, RecordFlagNone,
 		{value.value.data(), value.value.size()}};
 	return validate_business_record(
-		envelope, BusinessRecordContainer::FullSnapshot, VersionMinorV1_1, metadata);
+		envelope, BusinessRecordContainer::FullSnapshot, VersionMinor, metadata);
 }
 
 struct CargoDecoded {
@@ -188,7 +188,7 @@ BusinessStateValidationContext complete_validation_context(
 	catalog = {ship_class.class_id, subsystem_ids.data(),
 		ship_class.subsystem_count};
 	BusinessStateValidationContext context{};
-	context.protocol_minor = VersionMinorV1_1;
+	context.protocol_minor = VersionMinor;
 	context.required_manifest_id = manifest.manifest_id;
 	context.class_manifest_installed = true;
 	context.weapon_manifest_installed = true;
@@ -264,7 +264,7 @@ void expect_complete_schema_round_trip(
 			encode_business_record(
 				envelope,
 				BusinessRecordContainer::FullSnapshot,
-				VersionMinorV1_1,
+				VersionMinor,
 				{encoded.data() + offset,
 				 encoded.size() - offset},
 				written));

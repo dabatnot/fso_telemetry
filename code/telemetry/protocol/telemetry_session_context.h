@@ -75,10 +75,8 @@ struct TelemetrySessionContext {
 	LocalEndpointRole local_role = LocalEndpointRole::Invalid;
 	EndpointKey peer_endpoint;
 	std::uint64_t active_session_id = 0;
-	// A live session uses an exact one-element range. While a client is waiting
-	// for WELCOME, the range may additionally include minor 0 so a rejection
-	// header remains decodable before its payload status is known.
-	ProtocolMinorRange accepted_minors = FrozenV1_0MinorRange;
+	// The range-shaped wire fields remain, but the only valid range is 1..1.
+	ProtocolMinorRange accepted_minors = SupportedMinorRange;
 };
 
 // Contextual validation is the stage between

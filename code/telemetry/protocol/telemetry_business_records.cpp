@@ -203,10 +203,6 @@ ValidationError validate_business_record(const RecordEnvelopeView& record,
 	if (!business_record_metadata(record.raw_record_type, candidate)) {
 		return record.raw_record_type == 0 ? ValidationError::OutOfRange : ValidationError::None;
 	}
-	if (candidate.type == RecordType::HudAlertState &&
-		protocol_minor < VersionMinorV1_1) {
-		return ValidationError::UnsupportedRecordVersion;
-	}
 	const auto phase3_extended_version =
 		(((candidate.type == RecordType::RadarContacts) &&
 		  (record.record_version == 2U || record.record_version == 3U ||
@@ -214,8 +210,7 @@ ValidationError validate_business_record(const RecordEnvelopeView& record,
 		 ((candidate.type == RecordType::TargetState) &&
 		  (record.record_version == 2U || record.record_version == 3U ||
 		   record.record_version == 4U || record.record_version == 5U ||
-		   record.record_version == 6U))) &&
-		protocol_minor >= VersionMinorV1_1;
+		   record.record_version == 6U)));
 	if (record.record_version != 1U && !phase3_extended_version) {
 		return ValidationError::UnsupportedRecordVersion;
 	}
@@ -395,7 +390,7 @@ ValidationError decode_business_snapshot_region_impl(ByteView records,
 		case StateImageResult::AllocationFailed:
 			return ValidationError::ResourceLimit;
 		case StateImageResult::InvalidRecord:
-			if (validator != nullptr && protocol_minor == VersionMinorV1_1 &&
+			if (validator != nullptr &&
 				invalid_record_reason == StateImageInvalidRecordReason::MissingCascadeOwner) {
 				return ValidationError::InvalidAbsence;
 			}

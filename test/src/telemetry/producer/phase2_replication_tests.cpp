@@ -457,8 +457,8 @@ TEST(Phase2Replication, TST054ListAndScalarChangesReplaceWholeAtomsWithoutPartia
 	ASSERT_EQ(protocol::ValidationError::None,
 		protocol::decode_and_validate_datagram(
 			{datagram.bytes.data(), datagram.size},
-			{protocol::VersionMinorV1_1,
-				protocol::VersionMinorV1_1}, decoded));
+			{protocol::VersionMinor,
+				protocol::VersionMinor}, decoded));
 	protocol::DeltaPayload payload;
 	ASSERT_EQ(protocol::ValidationError::None,
 		protocol::decode_delta_payload(decoded.payload, payload));

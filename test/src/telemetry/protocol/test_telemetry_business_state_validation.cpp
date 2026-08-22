@@ -36,7 +36,7 @@ ByteView byte_view(const Container& bytes)
 
 std::vector<std::uint8_t> session_payload(VisibilityMode visibility = VisibilityMode::Cockpit,
 	std::uint64_t producer_id = 1,
-	std::uint64_t coverage = StateDomainCoverageBitCoreShip,
+	std::uint64_t coverage = StateDomainCoverageBitCoreShip | StateDomainCoverageBitPlayerKinematics,
 	std::uint64_t observed_entity_id = 0)
 {
 	std::vector<std::uint8_t> bytes(observed_entity_id == 0U ? 64U : 72U);
@@ -728,6 +728,7 @@ BusinessStateValidationContext valid_context()
 {
 	BusinessStateValidationContext context;
 	context.class_manifest_installed = true;
+	context.required_manifest_id = 1U;
 	return context;
 }
 
@@ -781,7 +782,7 @@ StateImage make_phase2_complete_image(std::size_t ship_count = 1U,
 	RecordType omitted = RecordType::Invalid)
 {
 	constexpr std::uint64_t coverage = StateDomainCoverageBitPlayerKinematics |
-		StateDomainCoverageBitCoreShip | StateDomainCoverageBitControlInputs |
+		StateDomainCoverageBitCoreShip | StateDomainCoverageBitPlayerKinematics | StateDomainCoverageBitControlInputs |
 		StateDomainCoverageBitWeapons | StateDomainCoverageBitCargoDockSupport;
 	std::vector<StateAtom> atoms;
 	auto add = [&](RecordType type, std::vector<std::uint8_t> payload, std::size_t key_size,
@@ -838,7 +839,7 @@ BusinessStateValidationContext phase2_complete_context()
 	static constexpr std::uint32_t SubsystemIds[]{7U};
 	static constexpr BusinessClassCatalogEntry ClassCatalog[]{{1U, SubsystemIds, 1U}};
 	auto context = valid_context();
-	context.protocol_minor = VersionMinorV1_1;
+	context.protocol_minor = VersionMinor;
 	context.required_manifest_id = 1U;
 	context.weapon_manifest_installed = true;
 	context.class_catalog = ClassCatalog;
@@ -944,7 +945,7 @@ TEST(TelemetryProtocolBusinessStateValidation, CompleteShipWaitsForAtomicClassAn
 		BusinessRecordMetadata metadata;
 		EXPECT_EQ(ValidationError::None,
 			validate_business_record(
-				envelope, BusinessRecordContainer::Manifest, VersionMinorV1_1, metadata));
+				envelope, BusinessRecordContainer::Manifest, VersionMinor, metadata));
 		EXPECT_EQ(ValidationError::None, iterator.next(envelope, has_value));
 		EXPECT_FALSE(has_value);
 	}
@@ -969,7 +970,7 @@ TEST(TelemetryProtocolBusinessStateValidation, CoreGateRejectsEveryMandatoryCore
 	const std::uint32_t subsystem_ids[] = {7U};
 	const BusinessClassCatalogEntry classes[] = {{1U, subsystem_ids, 1U}};
 	auto context = valid_context();
-	context.protocol_minor = VersionMinorV1_1;
+	context.protocol_minor = VersionMinor;
 	context.required_manifest_id = 1U;
 	context.class_catalog = classes;
 	context.class_catalog_count = 1U;
@@ -993,7 +994,7 @@ TEST(TelemetryProtocolBusinessStateValidation, Phase2RecordsCannotAppearWithoutT
 	const std::uint32_t subsystem_ids[] = {7U};
 	const BusinessClassCatalogEntry classes[] = {{1U, subsystem_ids, 1U}};
 	auto context = valid_context();
-	context.protocol_minor = VersionMinorV1_1;
+	context.protocol_minor = VersionMinor;
 	context.required_manifest_id = 1U;
 	context.weapon_manifest_installed = true;
 	context.class_catalog = classes;
@@ -1119,7 +1120,7 @@ TEST(TelemetryProtocolBusinessStateValidation, CompleteShipCoverageCannotChangeB
 	const auto baseline = make_phase1_image(StateDomainCoverageBitPlayerKinematics);
 	const auto promoted = make_phase2_complete_image();
 	auto baseline_context = valid_context();
-	baseline_context.protocol_minor = VersionMinorV1_1;
+	baseline_context.protocol_minor = VersionMinor;
 	baseline_context.required_manifest_id = 0U;
 	BusinessStateImageValidator baseline_validator(baseline_context);
 	ASSERT_EQ(ValidationError::None, baseline_validator.validate(baseline));
@@ -1134,7 +1135,7 @@ TEST(TelemetryProtocolBusinessStateValidation, CompleteShipCoverageCannotChangeB
 TEST(TelemetryProtocolBusinessStateValidation, GenericCargoDomainDoesNotRequirePerShipDockingOrSupport)
 {
 	constexpr std::uint64_t generic_coverage =
-		StateDomainCoverageBitCoreShip | StateDomainCoverageBitCargoDockSupport;
+		StateDomainCoverageBitCoreShip | StateDomainCoverageBitPlayerKinematics | StateDomainCoverageBitCargoDockSupport;
 	std::vector<StateAtom> atoms;
 	atoms.push_back(atom(RecordType::SessionState,
 		session_payload(VisibilityMode::Cockpit, 1U, generic_coverage, 1U),
@@ -1155,14 +1156,14 @@ TEST(TelemetryProtocolBusinessStateValidation, GenericCargoDomainDoesNotRequireP
 TEST(TelemetryProtocolBusinessStateValidation, Fstl11PlayerKinematicsProfileAndDeltaInvariants)
 {
 	auto context = valid_context();
-	context.protocol_minor = VersionMinorV1_1;
+	context.protocol_minor = VersionMinor;
 	context.required_manifest_id = 0U;
 	BusinessStateImageValidator validator(context);
 	const auto baseline = make_phase1_image();
 	EXPECT_EQ(ValidationError::None, validator.validate(baseline));
 	EXPECT_EQ(ValidationError::None, validator.validate_delta_transition(baseline, baseline));
 	const auto changed_coverage = make_phase1_image(StateDomainCoverageBitPlayerKinematics |
-		StateDomainCoverageBitCoreShip);
+		StateDomainCoverageBitCoreShip | StateDomainCoverageBitPlayerKinematics);
 	EXPECT_EQ(ValidationError::MissingManifest,
 		validator.validate_delta_transition(baseline, changed_coverage));
 	const auto changed_player = make_phase1_image(StateDomainCoverageBitPlayerKinematics, 2U);
@@ -1172,7 +1173,7 @@ TEST(TelemetryProtocolBusinessStateValidation, Fstl11PlayerKinematicsProfileAndD
 
 TEST(TelemetryProtocolBusinessStateValidation, Fstl11PlayerKinematicsConvergesAfterLossDuplicationAndReorder)
 {
-	auto context = valid_context(); context.protocol_minor = VersionMinorV1_1; context.required_manifest_id = 0U;
+	auto context = valid_context(); context.protocol_minor = VersionMinor; context.required_manifest_id = 0U;
 	BusinessStateImageValidator validator(context);
 	const auto baseline = make_phase1_image();
 	ClientReplicationModel client;
@@ -1240,7 +1241,7 @@ TEST(TelemetryProtocolBusinessStateValidation, ImmutableSessionFactsCannotChange
 	context.previous_session.producer_id = 1;
 	context.previous_session.authority_mode = AuthorityMode::Solo;
 	context.previous_session.visibility_mode = VisibilityMode::Cockpit;
-	context.previous_session.state_domain_coverage = StateDomainCoverageBitCoreShip;
+	context.previous_session.state_domain_coverage = StateDomainCoverageBitCoreShip | StateDomainCoverageBitPlayerKinematics;
 	context.previous_session.minimum_producer_sample_time_us = 100;
 	context.previous_session.capability_generation = 1;
 	context.previous_session.negotiated_capabilities = 0;
@@ -1320,7 +1321,7 @@ TEST(TelemetryProtocolBusinessStateValidation, WeaponBombFlagMatchesTheInstalled
 
 TEST(TelemetryProtocolBusinessStateValidation, TargetAndLockReferencesMustResolveInsideTheVisibleImage)
 {
-	const auto coverage = StateDomainCoverageBitCoreShip | StateDomainCoverageBitTargeting;
+	const auto coverage = StateDomainCoverageBitCoreShip | StateDomainCoverageBitPlayerKinematics | StateDomainCoverageBitTargeting;
 	std::vector<StateAtom> atoms;
 	atoms.push_back(atom(RecordType::SessionState,
 		session_payload(VisibilityMode::Cockpit, 1U, coverage, 1U),
@@ -1359,7 +1360,7 @@ TEST(TelemetryProtocolBusinessStateValidation,
 {
 	constexpr auto coverage =
 		StateDomainCoverageBitPlayerKinematics |
-		StateDomainCoverageBitCoreShip |
+		StateDomainCoverageBitCoreShip | StateDomainCoverageBitPlayerKinematics |
 		StateDomainCoverageBitControlInputs |
 		StateDomainCoverageBitRadarSensors |
 		StateDomainCoverageBitTargeting |
@@ -1431,7 +1432,7 @@ TEST(TelemetryProtocolBusinessStateValidation,
 {
 	constexpr auto coverage =
 		StateDomainCoverageBitPlayerKinematics |
-		StateDomainCoverageBitCoreShip |
+		StateDomainCoverageBitCoreShip | StateDomainCoverageBitPlayerKinematics |
 		StateDomainCoverageBitControlInputs |
 		StateDomainCoverageBitRadarSensors |
 		StateDomainCoverageBitTargeting |
@@ -1504,7 +1505,7 @@ TEST(TelemetryProtocolBusinessStateValidation,
 
 TEST(TelemetryProtocolBusinessStateValidation, TargetSubsystemMustBelongToTheInstalledClassCatalog)
 {
-	const auto coverage = StateDomainCoverageBitCoreShip | StateDomainCoverageBitTargeting;
+	const auto coverage = StateDomainCoverageBitCoreShip | StateDomainCoverageBitPlayerKinematics | StateDomainCoverageBitTargeting;
 	std::vector<StateAtom> atoms;
 	atoms.push_back(atom(RecordType::SessionState,
 		session_payload(VisibilityMode::Cockpit, 1U, coverage, 1U),
@@ -1533,7 +1534,7 @@ TEST(TelemetryProtocolBusinessStateValidation, TargetSubsystemMustBelongToTheIns
 
 TEST(TelemetryProtocolBusinessStateValidation, RadarContactMatchesLifecycleCatalogBombAndCurrentTarget)
 {
-	const auto coverage = StateDomainCoverageBitCoreShip | StateDomainCoverageBitRadarSensors |
+	const auto coverage = StateDomainCoverageBitCoreShip | StateDomainCoverageBitPlayerKinematics | StateDomainCoverageBitRadarSensors |
 		StateDomainCoverageBitTargeting;
 	std::vector<StateAtom> base;
 	base.push_back(atom(RecordType::SessionState,
@@ -1629,7 +1630,7 @@ TEST(TelemetryProtocolBusinessStateValidation,
 {
 	constexpr auto coverage =
 		StateDomainCoverageBitPlayerKinematics |
-		StateDomainCoverageBitCoreShip |
+		StateDomainCoverageBitCoreShip | StateDomainCoverageBitPlayerKinematics |
 		StateDomainCoverageBitControlInputs |
 		StateDomainCoverageBitRadarSensors |
 		StateDomainCoverageBitTargeting |
@@ -1653,7 +1654,7 @@ TEST(TelemetryProtocolBusinessStateValidation,
 		navigation_none_payload(1U), 8U));
 
 	auto context = phase2_complete_context();
-	context.protocol_minor = VersionMinorV1_1;
+	context.protocol_minor = VersionMinor;
 	BusinessStateImageValidator validator(context);
 
 	auto with_contact = [&](std::uint32_t flags, RadarBlipType type) {
@@ -1680,7 +1681,7 @@ TEST(TelemetryProtocolBusinessStateValidation,
 
 TEST(TelemetryProtocolBusinessStateValidation, ThreatMissilesResolveAndMatchTheirWeaponCatalogClass)
 {
-	const auto coverage = StateDomainCoverageBitCoreShip | StateDomainCoverageBitRadarSensors;
+	const auto coverage = StateDomainCoverageBitCoreShip | StateDomainCoverageBitPlayerKinematics | StateDomainCoverageBitRadarSensors;
 	std::vector<StateAtom> base;
 	base.push_back(atom(RecordType::SessionState,
 		session_payload(VisibilityMode::Cockpit, 1U, coverage, 1U),
@@ -1729,7 +1730,7 @@ TEST(TelemetryProtocolBusinessStateValidation, ThreatMissilesResolveAndMatchThei
 
 TEST(TelemetryProtocolBusinessStateValidation, CargoAndSupportReferencesCannotNameUnknownOrWrongTypeEntities)
 {
-	const auto coverage = StateDomainCoverageBitCoreShip | StateDomainCoverageBitCargoDockSupport;
+	const auto coverage = StateDomainCoverageBitCoreShip | StateDomainCoverageBitPlayerKinematics | StateDomainCoverageBitCargoDockSupport;
 	std::vector<StateAtom> cargo_atoms;
 	cargo_atoms.push_back(atom(RecordType::SessionState,
 		session_payload(VisibilityMode::Cockpit, 1U, coverage, 1U),
@@ -1766,7 +1767,7 @@ TEST(TelemetryProtocolBusinessStateValidation, CargoAndSupportReferencesCannotNa
 
 TEST(TelemetryProtocolBusinessStateValidation, PublishedDockingRelationsMustHaveAnExactInverse)
 {
-	const auto coverage = StateDomainCoverageBitCoreShip | StateDomainCoverageBitCargoDockSupport;
+	const auto coverage = StateDomainCoverageBitCoreShip | StateDomainCoverageBitPlayerKinematics | StateDomainCoverageBitCargoDockSupport;
 	std::vector<StateAtom> base;
 	base.push_back(atom(RecordType::SessionState,
 		session_payload(VisibilityMode::Cockpit, 1U, coverage),

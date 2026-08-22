@@ -307,7 +307,7 @@ ValidationError encode_datagram(TelemetryDatagramHeader header,
 	                             MutableByteView output,
 	                             std::size_t& written) noexcept
 {
-	return encode_datagram(header, FrozenV1_0MinorRange, payload, output, written);
+	return encode_datagram(header, SupportedMinorRange, payload, output, written);
 }
 
 ValidationError encode_datagram(TelemetryDatagramHeader header,
@@ -351,7 +351,7 @@ ValidationError encode_datagram(TelemetryDatagramHeader header,
 }
 
 ValidationError decode_and_validate_datagram_envelope(ByteView datagram, DatagramView& decoded) noexcept {
-	return decode_and_validate_datagram_envelope(datagram, FrozenV1_0MinorRange, decoded);
+	return decode_and_validate_datagram_envelope(datagram, SupportedMinorRange, decoded);
 }
 
 ValidationError decode_and_validate_datagram_envelope(ByteView datagram,
@@ -408,7 +408,7 @@ ValidationError decode_and_validate_datagram_envelope(ByteView datagram,
 }
 
 ValidationError decode_and_validate_datagram(ByteView datagram, DatagramView& decoded) noexcept {
-	return decode_and_validate_datagram(datagram, FrozenV1_0MinorRange, decoded);
+	return decode_and_validate_datagram(datagram, SupportedMinorRange, decoded);
 }
 
 ValidationError decode_and_validate_datagram(ByteView datagram,
