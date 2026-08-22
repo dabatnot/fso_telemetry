@@ -1090,6 +1090,17 @@ std::uint32_t map_player_physics_mode_flags(const EnginePhysicsFlagInput& input)
 	return output & protocol::KnownPhysicsModeFlags;
 }
 
+bool normalize_engine_weapon_bank_selection(
+	int selection, int bank_count, int& output) noexcept
+{
+	output = -1;
+	if (bank_count < 0) return false;
+	if (bank_count == 0) return selection == -1 || selection == 0;
+	if (selection < -1 || selection >= bank_count) return false;
+	output = selection;
+	return true;
+}
+
 bool has_raw_dock_leader_flag(const ship& source) noexcept
 {
 	return source.flags[Ship::Ship_Flags::Dock_leader];
@@ -1744,18 +1755,28 @@ SourceReadResult FsoEngineReadView::read_ship_for_projection(
 		static_cast<std::uint8_t>(source_weapons.num_primary_banks);
 	output.weapons.secondary_bank_count =
 		static_cast<std::uint8_t>(source_weapons.num_secondary_banks);
-	if (source_weapons.current_primary_bank < -1 ||
-		source_weapons.current_primary_bank >= source_weapons.num_primary_banks ||
-		source_weapons.current_secondary_bank < -1 ||
-		source_weapons.current_secondary_bank >= source_weapons.num_secondary_banks ||
-		source_weapons.current_tertiary_bank < -1 ||
-		source_weapons.current_tertiary_bank >= source_weapons.num_tertiary_banks) {
+	if (!normalize_engine_weapon_bank_selection(
+			source_weapons.current_primary_bank,
+			source_weapons.num_primary_banks,
+			output.weapons.current_primary_bank) ||
+		!normalize_engine_weapon_bank_selection(
+			source_weapons.current_secondary_bank,
+			source_weapons.num_secondary_banks,
+			output.weapons.current_secondary_bank) ||
+		!normalize_engine_weapon_bank_selection(
+			source_weapons.previous_primary_bank,
+			source_weapons.num_primary_banks,
+			output.weapons.previous_primary_bank) ||
+		!normalize_engine_weapon_bank_selection(
+			source_weapons.previous_secondary_bank,
+			source_weapons.num_secondary_banks,
+			output.weapons.previous_secondary_bank) ||
+		!normalize_engine_weapon_bank_selection(
+			source_weapons.current_tertiary_bank,
+			source_weapons.num_tertiary_banks,
+			output.weapons.current_tertiary_bank)) {
 		return {Phase2SourceReadStatus::UnsupportedEngineState};
 	}
-	output.weapons.current_primary_bank = source_weapons.current_primary_bank;
-	output.weapons.current_secondary_bank = source_weapons.current_secondary_bank;
-	output.weapons.previous_primary_bank = source_weapons.previous_primary_bank;
-	output.weapons.previous_secondary_bank = source_weapons.previous_secondary_bank;
 	output.weapons.targeting_laser_bank = Player_ship->targeting_laser_bank;
 	output.weapons.targeting_laser_active =
 		Player_ship->targeting_laser_bank >= 0 &&
@@ -1805,9 +1826,7 @@ SourceReadResult FsoEngineReadView::read_ship_for_projection(
 			 ? protocol::WeaponGlobalFlagBeamLocked : 0U);
 	output.weapons.tertiary_bank_count =
 		static_cast<std::uint8_t>(source_weapons.num_tertiary_banks);
-	output.weapons.current_tertiary_bank =
-		source_weapons.current_tertiary_bank;
-	output.weapons.tertiary_bank = source_weapons.current_tertiary_bank;
+	output.weapons.tertiary_bank = output.weapons.current_tertiary_bank;
 	output.weapons.tertiary_ammunition_current = source_weapons.tertiary_bank_ammo;
 	output.weapons.tertiary_ammunition_initial =
 		source_weapons.tertiary_bank_start_ammo;

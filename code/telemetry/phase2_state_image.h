@@ -15,6 +15,10 @@
 
 namespace telemetry {
 
+struct Phase3Projection;
+class CockpitSensorsStateImagePool;
+enum class Phase3StateImageBuildStatus : std::uint8_t;
+
 constexpr std::uint64_t Phase2CoreGateCoverage =
 	protocol::StateDomainCoverageBitPlayerKinematics | protocol::StateDomainCoverageBitCoreShip;
 
@@ -249,6 +253,14 @@ struct Phase2CompleteDomainInput {
 	std::uint64_t canonical_hash(const protocol::StateImage& image) const noexcept;
 
   private:
+	friend Phase3StateImageBuildStatus
+	build_cockpit_sensors_state_image_preallocated(
+		const Phase2CompleteDomainInput&,
+		CockpitSensorsStateImagePool&,
+		const Phase3Projection&,
+		protocol::StateImage&,
+		Phase2StateImageBuildDiagnostic*,
+		struct Phase2StateImageRebuildSet*) noexcept;
 	friend Phase2StateImageBuildStatus build_phase2_complete_domain(
 		const Phase2CompleteDomainInput&, protocol::StateImage&) noexcept;
 	friend Phase2StateImageBuildStatus build_phase2_complete_domain_preallocated(

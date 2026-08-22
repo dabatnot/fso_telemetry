@@ -5,7 +5,6 @@
 #include "telemetry/datagram_scheduler.h"
 #include "telemetry/metrics.h"
 #include "telemetry/phase2_observation.h"
-#include "telemetry/phase2_profile_gate.h"
 #include "telemetry/phase2_state_image.h"
 #include "telemetry/phase3_engine_collector.h"
 #include "telemetry/phase3_identity_registry.h"

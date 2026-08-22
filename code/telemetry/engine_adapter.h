@@ -120,6 +120,9 @@ QuaternionConversionStatus convert_fso_orientation_to_local_to_world(
 	const CaptureOrientationBasis& input, CaptureQuaternionf& output) noexcept;
 std::uint32_t map_player_physics_mode_flags(const EnginePhysicsFlagInput& input) noexcept;
 
+bool normalize_engine_weapon_bank_selection(
+	int selection, int bank_count, int& output) noexcept;
+
 class EngineReadView {
   public:
 	virtual ~EngineReadView() noexcept = default;

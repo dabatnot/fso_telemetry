@@ -7,6 +7,8 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <memory>
+#include <vector>
 
 namespace telemetry {
 
@@ -266,15 +268,14 @@ enum class Phase3StateImageBuildStatus : std::uint8_t {
 
 class CockpitSensorsStateImagePool final {
   public:
+	static constexpr std::size_t SlotCount = 4U;
 	bool provision(std::size_t maximum_subjects,
 		std::size_t maximum_subsystems,
 		std::size_t maximum_dock_relations,
 		std::size_t maximum_support_latches) noexcept;
 	void reset() noexcept;
-	bool ready() const noexcept { return m_complete.ready(); }
-	std::size_t owned_backing_bytes() const noexcept {
-		return m_complete.owned_backing_bytes();
-	}
+	bool ready() const noexcept { return m_ready; }
+	std::size_t owned_backing_bytes() const noexcept;
 
   private:
 	friend Phase3StateImageBuildStatus
@@ -283,10 +284,36 @@ class CockpitSensorsStateImagePool final {
 		const Phase3Projection&, protocol::StateImage&,
 		Phase2StateImageBuildDiagnostic*,
 		Phase2StateImageRebuildSet*) noexcept;
-	bool append_preallocated_records(protocol::StateImage& image,
-		std::size_t count) noexcept;
-	Phase2CompleteDomainPool m_complete;
+	struct Slot {
+		std::shared_ptr<std::vector<protocol::StateAtom>> records;
+		std::vector<protocol::StateAtom> spares;
+		std::size_t spare_count = 0U;
+	};
+	std::array<Slot, SlotCount> m_slots{};
+	std::size_t m_maximum_subjects = 0U;
+	std::size_t m_maximum_subsystems = 0U;
+	std::size_t m_maximum_dock_relations = 0U;
+	std::size_t m_maximum_support_latches = 0U;
+	std::size_t m_owned_backing_bytes = 0U;
+	bool m_ready = false;
 };
+
+namespace detail {
+void reserve_cockpit_sensor_payload_inventory(
+	std::vector<protocol::StateAtom>& records,
+	std::size_t start);
+bool normalize_cockpit_sensor_payload_backings(
+	std::vector<protocol::StateAtom>& records,
+	std::vector<protocol::StateAtom>& spares,
+	std::size_t spare_count,
+	std::size_t start,
+	std::size_t contact_count) noexcept;
+bool fill_cockpit_sensor_records(
+	const Phase2CompleteDomainInput& input,
+	const Phase3Projection& projection,
+	std::vector<protocol::StateAtom>& records,
+	std::size_t common_record_count) noexcept;
+} // namespace detail
 
 Phase3StateImageBuildStatus build_cockpit_sensors_state_image_preallocated(
 	const Phase2CompleteDomainInput& input,

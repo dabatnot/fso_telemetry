@@ -300,6 +300,7 @@ add_executable(telemetry_phase2_core_state_tests
 	${CMAKE_SOURCE_DIR}/code/telemetry/phase2_manifest_builder.cpp
 	${CMAKE_SOURCE_DIR}/code/telemetry/phase2_observation.cpp
 	${CMAKE_SOURCE_DIR}/code/telemetry/phase2_state_image.cpp
+	${CMAKE_SOURCE_DIR}/code/telemetry/phase3_state_image.cpp
 )
 target_compile_features(telemetry_phase2_core_state_tests PRIVATE cxx_std_17)
 target_compile_definitions(telemetry_phase2_core_state_tests PRIVATE
@@ -327,6 +328,7 @@ add_executable(telemetry_phase2_control_turret_tests
 	${CMAKE_SOURCE_DIR}/code/telemetry/phase2_manifest_builder.cpp
 	${CMAKE_SOURCE_DIR}/code/telemetry/phase2_observation.cpp
 	${CMAKE_SOURCE_DIR}/code/telemetry/phase2_state_image.cpp
+	${CMAKE_SOURCE_DIR}/code/telemetry/phase3_state_image.cpp
 )
 target_compile_features(telemetry_phase2_control_turret_tests PRIVATE cxx_std_17)
 target_include_directories(telemetry_phase2_control_turret_tests PRIVATE
@@ -352,6 +354,7 @@ add_executable(telemetry_phase2_weapon_state_tests
 	${CMAKE_SOURCE_DIR}/code/telemetry/phase2_manifest_builder.cpp
 	${CMAKE_SOURCE_DIR}/code/telemetry/phase2_observation.cpp
 	${CMAKE_SOURCE_DIR}/code/telemetry/phase2_state_image.cpp
+	${CMAKE_SOURCE_DIR}/code/telemetry/phase3_state_image.cpp
 )
 target_compile_features(telemetry_phase2_weapon_state_tests PRIVATE cxx_std_17)
 target_include_directories(telemetry_phase2_weapon_state_tests PRIVATE
@@ -381,6 +384,7 @@ add_executable(telemetry_phase2_lifecycle_support_tests
 	${CMAKE_SOURCE_DIR}/code/telemetry/phase2_manifest_builder.cpp
 	${CMAKE_SOURCE_DIR}/code/telemetry/phase2_observation.cpp
 	${CMAKE_SOURCE_DIR}/code/telemetry/phase2_state_image.cpp
+	${CMAKE_SOURCE_DIR}/code/telemetry/phase3_state_image.cpp
 )
 target_compile_features(telemetry_phase2_lifecycle_support_tests PRIVATE cxx_std_17)
 target_include_directories(telemetry_phase2_lifecycle_support_tests PRIVATE

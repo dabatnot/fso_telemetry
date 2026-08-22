@@ -1133,6 +1133,35 @@ TEST(TelemetryEngineCollectorContract, InvalidAndNoPlayerResetAReusedOutput)
 	run_engine_collector_contract<CollectorScenario::Reset>();
 }
 
+TEST(TelemetryEngineAdapterContract,
+	ZeroWeaponBankSelectionIsNormalizedToAbsent)
+{
+	int normalized = 99;
+	EXPECT_TRUE(detail::normalize_engine_weapon_bank_selection(
+		0, 0, normalized));
+	EXPECT_EQ(-1, normalized);
+	EXPECT_TRUE(detail::normalize_engine_weapon_bank_selection(
+		-1, 0, normalized));
+	EXPECT_EQ(-1, normalized);
+
+	EXPECT_TRUE(detail::normalize_engine_weapon_bank_selection(
+		0, 1, normalized));
+	EXPECT_EQ(0, normalized);
+	EXPECT_TRUE(detail::normalize_engine_weapon_bank_selection(
+		-1, 1, normalized));
+	EXPECT_EQ(-1, normalized);
+
+	EXPECT_FALSE(detail::normalize_engine_weapon_bank_selection(
+		1, 0, normalized));
+	EXPECT_EQ(-1, normalized);
+	EXPECT_FALSE(detail::normalize_engine_weapon_bank_selection(
+		-2, 1, normalized));
+	EXPECT_EQ(-1, normalized);
+	EXPECT_FALSE(detail::normalize_engine_weapon_bank_selection(
+		1, 1, normalized));
+	EXPECT_EQ(-1, normalized);
+}
+
 #endif
 
 } // namespace

@@ -144,6 +144,41 @@ bool replace_session(StateAtom& atom,
 	return assign_payload(writer, atom) && validate_encoded(atom);
 }
 
+bool make_cockpit_session(const Phase2CompleteDomainInput& input,
+	const Phase3Projection& projection, StateAtom& atom)
+{
+	reset_atom(atom);
+	std::array<std::uint8_t, 72U> bytes{};
+	PacketWriter writer({bytes.data(), bytes.size()});
+	const auto sample = input.observation->capture.status ==
+			detail::Phase2CaptureStatus::NoPlayer
+		? input.mission.producer_sample_time_us
+		: input.observation->producer_sample_time_us;
+	const auto presence = projection.player_entity_id == 0U
+		? protocol::SessionStatePresenceFlagNone
+		: protocol::SessionStatePresenceFlagObservedPlayer;
+	if (!writer.write_u64(presence) ||
+		!writer.write_u64(input.producer_id) ||
+		!writer.write_u64(sample) ||
+		!writer.write_u8(static_cast<std::uint8_t>(
+			protocol::AuthorityMode::Solo)) ||
+		!writer.write_u8(static_cast<std::uint8_t>(
+			protocol::VisibilityMode::Cockpit)) ||
+		!writer.write_u8(static_cast<std::uint8_t>(input.session_phase)) ||
+		!writer.write_u8(0U) ||
+		!writer.write_u32(input.negotiated_capability_generation) ||
+		!writer.write_u64(protocol::CapabilityNone) ||
+		!writer.write_u64(Phase3CockpitSensorsCoverage) ||
+		!writer.write_u64(Phase3StateDerivedEventCoverage) ||
+		!writer.write_u64(0U) ||
+		(projection.player_entity_id != 0U &&
+			!writer.write_u64(projection.player_entity_id)))
+		return false;
+	atom.key.record_type =
+		static_cast<std::uint16_t>(RecordType::SessionState);
+	return assign_payload(writer, atom) && validate_encoded(atom);
+}
+
 bool make_locks(const Phase3Projection& source, StateAtom& atom)
 {
 	reset_atom(atom);
@@ -571,164 +606,126 @@ bool make_navigation(const Phase3Projection& source, StateAtom& atom)
 
 } // namespace
 
-bool CockpitSensorsStateImagePool::provision(
-	std::size_t maximum_subjects,
-	std::size_t maximum_subsystems,
-	std::size_t maximum_dock_relations,
-	std::size_t maximum_support_latches) noexcept
+namespace detail {
+
+void reserve_cockpit_sensor_payload_inventory(
+	std::vector<StateAtom>& records, std::size_t start)
 {
-	constexpr std::size_t AdditionalRecords =
-		6U + MaximumPhase3Contacts;
-	if (!m_complete.provision(maximum_subjects, maximum_subsystems,
-			maximum_dock_relations, maximum_support_latches,
-			AdditionalRecords))
-		return false;
-	const auto base_records =
-		4U + 10U * maximum_subjects + maximum_subsystems;
-	constexpr std::array<std::size_t, 6U> FixedPayloadCapacities{{
+	constexpr std::array<RecordType, 6U> FixedTypes{{
+		RecordType::LockState, RecordType::TargetState,
+		RecordType::RadarState, RecordType::ThreatState,
+		RecordType::HudAlertState, RecordType::NavigationState}};
+	constexpr std::array<std::size_t, 6U> FixedCapacities{{
 		LockPayloadCapacity, TargetPayloadCapacity,
 		RadarPayloadCapacity, ThreatPayloadCapacity,
 		HudAlertPayloadCapacity, NavigationPayloadCapacity}};
-	try {
-		for (auto& slot : m_complete.m_slots) {
-			if (!slot.records || slot.records->size() <
-					base_records + AdditionalRecords) {
-				reset();
-				return false;
-			}
-			// The complete-domain cargo slot is overwritten by the filtered
-			// cockpit cargo record and therefore needs the final payload capacity.
-			(*slot.records)[3U].value.reserve(CargoPayloadCapacity);
-			for (std::size_t index = 0U;
-				 index < AdditionalRecords; ++index) {
-				auto& atom = (*slot.records)[base_records + index];
-				atom.key.identity.reserve(index < 6U ? 8U : 16U);
-				atom.cascade_owner.identity.reserve(8U);
-				atom.value.reserve(index < FixedPayloadCapacities.size()
-					? FixedPayloadCapacities[index]
-					: ContactPayloadCapacity);
-			}
-		}
-		return true;
-	} catch (const std::bad_alloc&) {
-		reset();
+	if (start + FixedTypes.size() + MaximumPhase3Contacts > records.size())
+		throw std::bad_alloc();
+	for (std::size_t index = 0U; index < FixedTypes.size(); ++index) {
+		auto& atom = records[start + index];
+		atom.key.record_type = static_cast<std::uint16_t>(FixedTypes[index]);
+		atom.key.identity.reserve(8U);
+		atom.cascade_owner.identity.reserve(8U);
+		atom.value.reserve(FixedCapacities[index]);
+	}
+	for (std::size_t index = 0U; index < MaximumPhase3Contacts; ++index) {
+		auto& atom = records[start + FixedTypes.size() + index];
+		atom.key.record_type =
+			static_cast<std::uint16_t>(RecordType::RadarContacts);
+		atom.key.identity.reserve(16U);
+		atom.cascade_owner.identity.reserve(8U);
+		atom.value.reserve(ContactPayloadCapacity);
+	}
+}
+
+bool normalize_cockpit_sensor_payload_backings(
+	std::vector<StateAtom>& records,
+	std::vector<StateAtom>& spares,
+	std::size_t spare_count,
+	std::size_t start,
+	std::size_t contact_count) noexcept
+{
+	constexpr std::array<RecordType, 6U> FixedTypes{{
+		RecordType::LockState, RecordType::TargetState,
+		RecordType::RadarState, RecordType::ThreatState,
+		RecordType::HudAlertState, RecordType::NavigationState}};
+	constexpr std::array<std::size_t, 6U> FixedCapacities{{
+		LockPayloadCapacity, TargetPayloadCapacity,
+		RadarPayloadCapacity, ThreatPayloadCapacity,
+		HudAlertPayloadCapacity, NavigationPayloadCapacity}};
+	if (spare_count > spares.size() ||
+		start + FixedTypes.size() + contact_count > records.size())
 		return false;
-	}
-}
-
-void CockpitSensorsStateImagePool::reset() noexcept
-{
-	m_complete.reset();
-}
-
-bool CockpitSensorsStateImagePool::append_preallocated_records(
-	protocol::StateImage& image, std::size_t count) noexcept
-{
-	auto* records = image.mutable_preallocated_records_if_unique();
-	if (records == nullptr) return false;
-	for (auto& slot : m_complete.m_slots) {
-		if (!slot.records || slot.records.get() != records ||
-			slot.spare_count < count ||
-			records->size() + count > records->capacity())
-			continue;
-		for (std::size_t index = 0U; index < count; ++index) {
-			records->emplace_back();
-			std::swap(records->back(),
-				slot.spares[--slot.spare_count]);
+	const auto normalize = [&](std::size_t target, RecordType type,
+							 std::size_t capacity) noexcept {
+		const auto raw_type = static_cast<std::uint16_t>(type);
+		std::size_t source = records.size();
+		for (std::size_t candidate = target;
+			 candidate < records.size(); ++candidate)
+			if (records[candidate].key.record_type == raw_type &&
+				records[candidate].value.capacity() >= capacity) {
+				source = candidate;
+				break;
+			}
+		if (source < records.size()) {
+			if (source != target)
+				std::swap(records[target], records[source]);
+			return true;
 		}
-		return true;
-	}
-	return false;
+		for (std::size_t candidate = 0U; candidate < spare_count;
+			 ++candidate)
+			if (spares[candidate].key.record_type == raw_type &&
+				spares[candidate].value.capacity() >= capacity) {
+				std::swap(records[target], spares[candidate]);
+				return true;
+			}
+		return false;
+	};
+	for (std::size_t index = 0U; index < FixedTypes.size(); ++index)
+		if (!normalize(start + index, FixedTypes[index],
+				FixedCapacities[index]))
+			return false;
+	for (std::size_t index = 0U; index < contact_count; ++index)
+		if (!normalize(start + FixedTypes.size() + index,
+				RecordType::RadarContacts, ContactPayloadCapacity))
+			return false;
+	return true;
 }
 
-Phase3StateImageBuildStatus build_cockpit_sensors_state_image_preallocated(
+bool fill_cockpit_sensor_records(
 	const Phase2CompleteDomainInput& input,
-	CockpitSensorsStateImagePool& pool,
 	const Phase3Projection& projection,
-	protocol::StateImage& output,
-	Phase2StateImageBuildDiagnostic* diagnostic,
-	Phase2StateImageRebuildSet* rebuilt) noexcept
+	std::vector<StateAtom>& records,
+	std::size_t common_record_count) noexcept
 {
-	if (!pool.ready() ||
-		projection.lock_count > MaximumPhase3Locks ||
-		projection.contact_count > MaximumPhase3Contacts ||
-		projection.threat.incoming_missile_count >
-			MaximumPhase3IncomingMissiles ||
-		projection.navigation.navpoint_count > MaximumPhase3Navpoints ||
-		projection.navigation.route_waypoint_count >
-			MaximumPhase3RouteWaypoints)
-		return Phase3StateImageBuildStatus::InvalidInput;
-	Phase2StateImageRebuildSet base_rebuilt{};
-	const auto base_status = build_phase2_complete_domain_preallocated(
-		input, pool.m_complete, output, diagnostic, &base_rebuilt);
-	if (base_status == Phase2StateImageBuildStatus::AllocationFailed)
-		return Phase3StateImageBuildStatus::AllocationFailed;
-	if (base_status == Phase2StateImageBuildStatus::CapacityExceeded)
-		return Phase3StateImageBuildStatus::CapacityExceeded;
-	if (base_status != Phase2StateImageBuildStatus::Created)
-		return Phase3StateImageBuildStatus::InvalidInput;
-	auto* records = output.mutable_preallocated_records_if_unique();
-	if (records == nullptr || records->empty())
-		return Phase3StateImageBuildStatus::CapacityExceeded;
-	auto session = std::find_if(records->begin(), records->end(),
-		[](const StateAtom& atom) {
-			return atom.key.record_type ==
-				static_cast<std::uint16_t>(RecordType::SessionState);
-		});
-	if (session == records->end() || !replace_session(*session, projection))
-		return Phase3StateImageBuildStatus::EncodingFailed;
-	if (projection.player_entity_id != 0U) {
-		auto cargo = std::find_if(records->begin(), records->end(),
-			[](const StateAtom& atom) {
-				return atom.key.record_type ==
-					static_cast<std::uint16_t>(RecordType::CargoScanState);
-			});
-		const auto extra = 6U + projection.contact_count;
-		if (cargo == records->end() ||
-			!pool.append_preallocated_records(output, extra))
-			return Phase3StateImageBuildStatus::CapacityExceeded;
-		records = output.mutable_preallocated_records_if_unique();
-		if (records == nullptr) return Phase3StateImageBuildStatus::CapacityExceeded;
-		cargo = std::find_if(records->begin(), records->end(),
-			[](const StateAtom& atom) {
-				return atom.key.record_type ==
-					static_cast<std::uint16_t>(RecordType::CargoScanState);
-			});
-		const auto start = records->size() - extra;
-		if (cargo == records->end() || !make_cargo(projection, *cargo) ||
-			!make_locks(projection, (*records)[start]) ||
-			!make_target(projection, (*records)[start + 1U]) ||
-			!make_radar(projection, (*records)[start + 2U]) ||
-			!make_threat(projection, (*records)[start + 3U]) ||
-			!make_hud_alert(projection, (*records)[start + 4U]) ||
-			!make_navigation(projection, (*records)[start + 5U]))
-			return Phase3StateImageBuildStatus::EncodingFailed;
-		for (std::size_t index = 0U;
-			 index < projection.contact_count; ++index)
-			if (!make_contact(projection, projection.contacts[index],
-					(*records)[start + 6U + index]))
-				return Phase3StateImageBuildStatus::EncodingFailed;
-	}
-	std::sort(records->begin(), records->end(),
-		[](const StateAtom& left, const StateAtom& right) noexcept {
-			return left.key < right.key;
-		});
-	protocol::StateImageInvalidRecordReason reason{};
-	if (output.refresh_preallocated_metadata(reason) !=
-		protocol::StateImageResult::Created)
-		return Phase3StateImageBuildStatus::EncodingFailed;
-	if (rebuilt != nullptr) {
-		if (output.records().size() > rebuilt->canonical_indices.size())
-			return Phase3StateImageBuildStatus::CapacityExceeded;
-		rebuilt->count = output.records().size();
-		for (std::size_t index = 0U; index < rebuilt->count; ++index)
-			rebuilt->canonical_indices[index] =
-				static_cast<std::uint16_t>(index);
-		rebuilt->patch_applied = false;
-		rebuilt->exhaustive = true;
-	}
-	return Phase3StateImageBuildStatus::Created;
+	if (records.size() != common_record_count +
+			(projection.player_entity_id == 0U
+				? 0U
+				: 6U + projection.contact_count) ||
+		common_record_count < 2U ||
+		!make_cockpit_session(input, projection, records[0]))
+		return false;
+	if (projection.player_entity_id == 0U)
+		return common_record_count == 2U;
+	if (common_record_count < 4U ||
+		!make_cargo(projection, records[3]))
+		return false;
+	const auto start = common_record_count;
+	if (!make_locks(projection, records[start]) ||
+		!make_target(projection, records[start + 1U]) ||
+		!make_radar(projection, records[start + 2U]) ||
+		!make_threat(projection, records[start + 3U]) ||
+		!make_hud_alert(projection, records[start + 4U]) ||
+		!make_navigation(projection, records[start + 5U]))
+		return false;
+	for (std::size_t index = 0U; index < projection.contact_count; ++index)
+		if (!make_contact(projection, projection.contacts[index],
+				records[start + 6U + index]))
+			return false;
+	return true;
 }
+
+} // namespace detail
 
 bool patch_cockpit_sensors_state_image_preallocated(
 	protocol::StateImage& current,
