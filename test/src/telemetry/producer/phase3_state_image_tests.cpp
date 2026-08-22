@@ -146,6 +146,92 @@ void set_sample_times(telemetry::Phase3Projection& projection)
 	projection.navigation.producer_sample_time_us = 64U;
 }
 
+TEST(TelemetryPhase3StateImage, DirectCockpitBuilderKeepsNoPlayerImageCanonical)
+{
+	auto observation =
+		std::make_unique<telemetry::detail::Phase2ObservationDto>();
+	observation->capture.status =
+		telemetry::detail::Phase2CaptureStatus::NoPlayer;
+	observation->capture.reason =
+		telemetry::detail::Phase2CaptureReason::None;
+	auto manifest = std::make_unique<telemetry::Phase2ManifestCandidate>();
+	manifest->manifest_id = 1U;
+	telemetry::Phase2CompleteDomainInput input{};
+	input.producer_id = 7U;
+	input.session_phase = telemetry::protocol::SessionPhase::Live;
+	input.mission.mission_generation = 1U;
+	input.mission.phase = telemetry::protocol::MissionPhase::Active;
+	input.observation = observation.get();
+	input.installed_manifest = manifest.get();
+
+	auto projection = std::make_unique<telemetry::Phase3Projection>();
+	auto pool = std::make_unique<telemetry::CockpitSensorsStateImagePool>();
+	ASSERT_TRUE(pool->provision(1U, 1U, 1U, 1U));
+	telemetry::protocol::StateImage image;
+	telemetry::Phase2StateImageRebuildSet rebuilt{};
+	ASSERT_EQ(telemetry::Phase3StateImageBuildStatus::Created,
+		telemetry::build_cockpit_sensors_state_image_preallocated(
+			input, *pool, *projection, image, nullptr, &rebuilt));
+	ASSERT_EQ(2U, image.records().size());
+	EXPECT_EQ(static_cast<std::uint16_t>(RecordType::SessionState),
+		image.records()[0].key.record_type);
+	EXPECT_EQ(static_cast<std::uint16_t>(RecordType::MissionState),
+		image.records()[1].key.record_type);
+	EXPECT_EQ(telemetry::Phase3CockpitSensorsCoverage,
+		read_u64(image.records()[0].value, 40U));
+	EXPECT_TRUE(rebuilt.exhaustive);
+	EXPECT_EQ(2U, rebuilt.count);
+}
+
+TEST(TelemetryPhase3StateImage,
+	DirectCockpitPatchKeepsBackingAndCanRollback)
+{
+	auto observation =
+		std::make_unique<telemetry::detail::Phase2ObservationDto>();
+	observation->capture.status =
+		telemetry::detail::Phase2CaptureStatus::NoPlayer;
+	auto manifest = std::make_unique<telemetry::Phase2ManifestCandidate>();
+	manifest->manifest_id = 1U;
+	telemetry::Phase2CompleteDomainInput input{};
+	input.producer_id = 7U;
+	input.session_phase = telemetry::protocol::SessionPhase::Live;
+	input.mission.mission_generation = 1U;
+	input.mission.phase = telemetry::protocol::MissionPhase::Active;
+	input.mission.producer_sample_time_us = 64U;
+	input.observation = observation.get();
+	input.installed_manifest = manifest.get();
+	auto projection = std::make_unique<telemetry::Phase3Projection>();
+	auto pool = std::make_unique<telemetry::CockpitSensorsStateImagePool>();
+	ASSERT_TRUE(pool->provision(1U, 1U, 1U, 1U));
+
+	telemetry::protocol::StateImage current;
+	ASSERT_EQ(telemetry::Phase3StateImageBuildStatus::Created,
+		telemetry::build_cockpit_sensors_state_image_preallocated(
+			input, *pool, *projection, current));
+	const auto previous_records = current.records();
+	const auto* const backing = current.records().data();
+	input.mission.producer_sample_time_us = 128U;
+	telemetry::protocol::StateImage candidate;
+	ASSERT_EQ(telemetry::Phase3StateImageBuildStatus::Created,
+		telemetry::build_cockpit_sensors_state_image_preallocated(
+			input, *pool, *projection, candidate));
+	const auto candidate_records = candidate.records();
+
+	telemetry::Phase2StateImageRebuildSet rebuilt{};
+	ASSERT_TRUE(telemetry::patch_cockpit_sensors_state_image_preallocated(
+		current, candidate, rebuilt));
+	EXPECT_TRUE(rebuilt.patch_applied);
+	EXPECT_FALSE(rebuilt.exhaustive);
+	EXPECT_GT(rebuilt.count, 0U);
+	EXPECT_EQ(backing, current.records().data());
+	EXPECT_EQ(candidate_records, current.records());
+
+	ASSERT_TRUE(telemetry::rollback_cockpit_sensors_state_image_preallocated(
+		current, candidate, rebuilt));
+	EXPECT_EQ(backing, current.records().data());
+	EXPECT_EQ(previous_records, current.records());
+}
+
 TEST(TelemetryPhase3StateImage, FrozenCoverageAndEmptySensorMatrix)
 {
 	constexpr std::uint64_t Player = 42U;

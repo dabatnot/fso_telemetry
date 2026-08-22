@@ -3184,7 +3184,9 @@ void reserve_complete_payload_inventory(
 		SupportPayloadCapacity);
 	reserve(RecordType::SubsystemState, maximum_subsystems,
 		SubsystemPayloadCapacity);
-	if (cursor != records.size()) throw std::bad_alloc();
+	// A specialized final-image pool may reserve additional records after the
+	// complete-domain inventory. Those records are initialized by its owner.
+	if (cursor > records.size()) throw std::bad_alloc();
 }
 
 void reserve_complete_payload_layout(
@@ -3985,7 +3987,8 @@ bool Phase2CompleteDomainPool::provision(
 	std::size_t maximum_subjects,
 	std::size_t maximum_subsystems,
 	std::size_t maximum_dock_relations,
-	std::size_t maximum_support_latches) noexcept
+	std::size_t maximum_support_latches,
+	std::size_t additional_records) noexcept
 {
 	if (maximum_subjects == 0U ||
 		maximum_subjects > detail::MaximumPhase2ObservationShips ||
@@ -3997,8 +4000,12 @@ bool Phase2CompleteDomainPool::provision(
 			detail::Phase2Wp07EpisodeLatches::Capacity)
 		return false;
 	reset();
-	const auto maximum_records =
+	const auto base_records =
 		4U + 10U * maximum_subjects + maximum_subsystems;
+	if (additional_records >
+		static_cast<std::size_t>(-1) - base_records)
+		return false;
+	const auto maximum_records = base_records + additional_records;
 	try {
 		for (auto& slot : m_slots) {
 			slot.records =

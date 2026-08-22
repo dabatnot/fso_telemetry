@@ -2,17 +2,17 @@
 
 namespace telemetry {
 
-Phase2ProfileMutationResult reject_phase2_profile_mutation(Phase2Profile current_profile,
+CockpitCoverageMutationResult reject_cockpit_coverage_mutation(
 	std::uint64_t requested_coverage,
-	Phase2ProfileMutationSource source) noexcept
+	CockpitCoverageMutationSource source) noexcept
 {
 	(void)source;
 
-	if (requested_coverage == phase2_profile_coverage(current_profile)) {
+	if (requested_coverage == Phase3CockpitSensorsCoverage) {
 		return {};
 	}
 
-	Phase2ProfileMutationResult result;
+	CockpitCoverageMutationResult result;
 	result.error = protocol::ValidationError::InvalidStateTransition;
 	result.session_end_reason = protocol::SessionEndReason::ProtocolError;
 	result.session_end_flags = protocol::SessionEndFlagReconnectAllowed;

@@ -367,7 +367,7 @@ struct NativeFixture {
 
 	detail::NativeSessionStartStatus start_with_eligibility(
 		telemetry::TelemetryConfig& config,
-		const telemetry::Phase2ProfileEligibility& eligibility)
+		const telemetry::CockpitProducerEligibility& eligibility)
 	{
 		detail::NativeSessionStartRequest request{
 			&config,
@@ -376,7 +376,7 @@ struct NativeFixture {
 			&packet_random,
 			nullptr,
 			&log};
-		request.phase2_eligibility = eligibility;
+		request.cockpit_eligibility = eligibility;
 		return runtime.start(request);
 	}
 };
@@ -1267,17 +1267,17 @@ TEST(TelemetryNativeRuntimeIntegrationContract,
 	ReviewerFinalTst008EligibilityMatrixRejectsBeforeOpenOrBind)
 {
 	auto config = enabled_config(1U);
-	std::vector<telemetry::Phase2ProfileEligibility> rejected;
-	auto multiplayer_client = telemetry::Phase2ProfileEligibility{};
+	std::vector<telemetry::CockpitProducerEligibility> rejected;
+	auto multiplayer_client = telemetry::CockpitProducerEligibility{};
 	multiplayer_client.authority_mode = protocol::AuthorityMode::MultiplayerClient;
 	rejected.push_back(multiplayer_client);
-	auto multiplayer_master = telemetry::Phase2ProfileEligibility{};
+	auto multiplayer_master = telemetry::CockpitProducerEligibility{};
 	multiplayer_master.authority_mode = protocol::AuthorityMode::MultiplayerMaster;
 	rejected.push_back(multiplayer_master);
-	auto dedicated = telemetry::Phase2ProfileEligibility{};
+	auto dedicated = telemetry::CockpitProducerEligibility{};
 	dedicated.dedicated = true;
 	rejected.push_back(dedicated);
-	auto headless = telemetry::Phase2ProfileEligibility{};
+	auto headless = telemetry::CockpitProducerEligibility{};
 	headless.headless = true;
 	rejected.push_back(headless);
 

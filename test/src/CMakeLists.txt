@@ -538,11 +538,17 @@ add_test(NAME telemetry_phase3_identity_tests COMMAND telemetry_phase3_identity_
 
 add_executable(telemetry_phase3_state_image_tests
 	telemetry/producer/phase3_state_image_tests.cpp
+	${CMAKE_SOURCE_DIR}/code/telemetry/phase2_manifest_builder.cpp
+	${CMAKE_SOURCE_DIR}/code/telemetry/phase2_observation.cpp
+	${CMAKE_SOURCE_DIR}/code/telemetry/phase2_state_image.cpp
 	${CMAKE_SOURCE_DIR}/code/telemetry/phase3_state_image.cpp)
 target_compile_features(telemetry_phase3_state_image_tests PRIVATE cxx_std_17)
 target_include_directories(telemetry_phase3_state_image_tests PRIVATE
-	${CMAKE_SOURCE_DIR}/code
-	${CMAKE_SOURCE_DIR}/test/src)
+	${CMAKE_CURRENT_SOURCE_DIR}
+	${CODE_HEADERS}
+	${FREESPACE_HEADERS}
+	${GENERATED_SOURCE_DIR}
+	${GENERATED_SOURCE_DIR}/code)
 target_link_libraries(telemetry_phase3_state_image_tests PRIVATE
 	gtest_main fstl_protocol)
 set_target_properties(telemetry_phase3_state_image_tests PROPERTIES FOLDER "tests")

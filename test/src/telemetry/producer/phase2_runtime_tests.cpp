@@ -25,31 +25,20 @@ namespace {
 namespace detail = telemetry::detail;
 namespace protocol = telemetry::protocol;
 
-TEST(TelemetryPhase2Runtime, DeliveredLogsExposeProfileManifestAndCaptureCause)
+TEST(TelemetryPhase2Runtime, DeliveredLogsExposeManifestAndCaptureCause)
 {
 	detail::TelemetryStructuredLog log;
 	std::array<char, detail::TelemetryLogLineCapacity> line{};
 
-	log.phase2_profile_selected(
-		0U, detail::TelemetryPhase2Profile::CompleteShip, 0x0583U);
+	log.phase2_manifest(0U,
+		detail::TelemetryLogEvent::Phase2ManifestInstalled,
+		7U, 33U, 2U, 2048U, 123U);
 	auto snapshot = log.snapshot();
 	ASSERT_EQ(1U, snapshot.count);
 	ASSERT_TRUE(detail::format_telemetry_log_record(
 		snapshot.records[0], line));
-	const std::string_view profile{line.data()};
-	EXPECT_NE(std::string_view::npos, profile.find("event=12"));
-	EXPECT_NE(std::string_view::npos, profile.find("p2_profile=2"));
-	EXPECT_NE(std::string_view::npos, profile.find("value=1411"));
-
-	log.phase2_manifest(0U,
-		detail::TelemetryLogEvent::Phase2ManifestInstalled,
-		7U, 33U, 2U, 2048U, 123U);
-	snapshot = log.snapshot();
-	ASSERT_EQ(2U, snapshot.count);
-	ASSERT_TRUE(detail::format_telemetry_log_record(
-		snapshot.records[1], line));
 	const std::string_view manifest{line.data()};
-	EXPECT_NE(std::string_view::npos, manifest.find("event=15"));
+	EXPECT_NE(std::string_view::npos, manifest.find("event=14"));
 	EXPECT_NE(std::string_view::npos, manifest.find("generation=7"));
 	EXPECT_NE(std::string_view::npos, manifest.find("records=33"));
 	EXPECT_NE(std::string_view::npos, manifest.find("parts=2"));
@@ -61,11 +50,11 @@ TEST(TelemetryPhase2Runtime, DeliveredLogsExposeProfileManifestAndCaptureCause)
 		detail::TelemetryPhase2CaptureFailure::NonFinite,
 		1'000'000U);
 	snapshot = log.snapshot();
-	ASSERT_EQ(3U, snapshot.count);
+	ASSERT_EQ(2U, snapshot.count);
 	ASSERT_TRUE(detail::format_telemetry_log_record(
-		snapshot.records[2], line));
+		snapshot.records[1], line));
 	const std::string_view rejection{line.data()};
-	EXPECT_NE(std::string_view::npos, rejection.find("event=20"));
+	EXPECT_NE(std::string_view::npos, rejection.find("event=19"));
 	EXPECT_NE(std::string_view::npos, rejection.find("p2_block=3"));
 	EXPECT_NE(std::string_view::npos,
 		rejection.find("p2_capture_failure=1"));
@@ -202,16 +191,11 @@ std::vector<std::uint8_t> hello(std::uint64_t nonce)
 }
 
 detail::SessionController make_controller(
-	ControllerIdentity& identity,
-	telemetry::Phase2Profile profile =
-		telemetry::Phase2Profile::CompleteShip)
+	ControllerIdentity& identity)
 {
 	detail::SessionControllerConfig config;
 	config.max_clients = 2U;
 	config.producer_id = 0x1020304050607080ULL;
-	config.phase2_profile = profile;
-	config.delta_payload_capacity =
-		detail::Phase2CompleteShipDeltaBytes;
 	config.security.enabled = true;
 	config.security.port = 42042U;
 	config.security.bind_mode =
@@ -560,11 +544,10 @@ TEST(Phase2Runtime,
 }
 
 TEST(Phase2Runtime,
-	CoreGateManifestAppliedProofOrdersAndUnlocksTheDependentSnapshot)
+	CockpitManifestAppliedProofOrdersAndUnlocksTheDependentSnapshot)
 {
 	ControllerIdentity identity;
-	auto controller = make_controller(
-		identity, telemetry::Phase2Profile::CoreGate);
+	auto controller = make_controller(identity);
 	const auto peer = endpoint(2U, 42043U);
 	establish_ready(controller, peer, 0x268U, 1'000U, 0U);
 	const auto session_id = controller.slot(0U).session_id;
@@ -765,6 +748,7 @@ TEST(Phase2Runtime,
 	ASSERT_EQ(detail::SessionIngressDisposition::ResponseQueued,
 		controller.ingest(peer, view(encoded_request),
 			3'000U, 1U, true).disposition);
+	ASSERT_TRUE(controller.queue_cumulative_delta(0U, 3'001U, 3'001U));
 	ASSERT_EQ(detail::Phase2RuntimeSnapshotCause::Resync,
 		controller.slot(0U).phase2_runtime.last_started_snapshot_cause());
 	detail::SessionControllerOutput resync_ack_output;
@@ -970,6 +954,8 @@ TEST(Phase2Runtime,
 	EXPECT_EQ(0U, result.phase2_resync_slot);
 	EXPECT_EQ(detail::ProducerSessionProgress::ReadyForState,
 		controller.slot(0U).progress);
+	ASSERT_TRUE(controller.queue_cumulative_delta(
+		0U, stale_at + 2U, stale_at + 2U));
 	EXPECT_EQ(detail::Phase2RuntimeSnapshotCause::Resync,
 		controller.slot(0U).phase2_runtime.last_started_snapshot_cause());
 
@@ -1122,26 +1108,24 @@ TEST(Phase2Runtime,
 	run_case(200U, false);
 }
 
-TEST(Phase2Runtime, TST060BeforeDuringAndAfterLoadMaterializesOnlyASelectedProfile)
+TEST(Phase2Runtime, TST060BeforeDuringAndAfterLoadMaterializesOnlyCockpitState)
 {
 	detail::Phase2RuntimeSlot slot;
 	std::array<detail::Phase2CaptureLocalKey, 1U> keys{{{41U}}};
 	std::array<telemetry::Phase2Wp05SubjectBinding, 1U> bindings{};
 
 	EXPECT_FALSE(slot.configure(
-		telemetry::Phase2Profile::None, 0U));
+		telemetry::detail::Phase2Wp07EpisodeLatches::SessionCapacity));
 	EXPECT_EQ(detail::Phase2RuntimeResult::InvalidInput,
 		slot.reconcile_closure(
 			keys.data(), keys.size(), bindings.data(), bindings.size()));
 	EXPECT_FALSE(slot.configure(
-		telemetry::Phase2Profile::None, 0U))
-		<< "A loading transition without a materializable profile remains closed.";
+		telemetry::detail::Phase2Wp07EpisodeLatches::SessionCapacity));
 
-	telemetry::Phase2ProfileEligibility eligibility{};
-	ASSERT_EQ(telemetry::Phase2ProfileError::None,
+	telemetry::CockpitProducerEligibility eligibility{};
+	ASSERT_EQ(telemetry::CockpitProducerEligibilityError::None,
 		telemetry::validate_cockpit_sensor_producer(eligibility));
-	ASSERT_TRUE(slot.configure(
-		telemetry::Phase2Profile::CockpitSensors, 0U));
+	ASSERT_TRUE(slot.configure(0U));
 	EXPECT_EQ(detail::Phase2RuntimeResult::SnapshotRequired,
 		slot.reconcile_closure(
 			keys.data(), keys.size(), bindings.data(), bindings.size()));
@@ -1152,8 +1136,7 @@ TEST(Phase2Runtime, TST058SlotsOwnIndependentIdsCandidatesAndResyncLatches)
 {
 	std::array<detail::Phase2RuntimeSlot, 2U> slots;
 	for (std::size_t index = 0U; index < slots.size(); ++index)
-		ASSERT_TRUE(slots[index].configure(
-			telemetry::Phase2Profile::CompleteShip, index));
+		ASSERT_TRUE(slots[index].configure(index));
 	const std::array<detail::Phase2CaptureLocalKey, 2U> keys{{
 		{41U}, {42U}}};
 	std::array<telemetry::Phase2Wp05SubjectBinding, 2U> left{};
@@ -1274,8 +1257,7 @@ TEST(Phase2Runtime,
 	auto slots = std::make_unique<
 		std::array<detail::Phase2RuntimeSlot, 2U>>();
 	for (std::size_t slot = 0U; slot < slots->size(); ++slot) {
-		ASSERT_TRUE((*slots)[slot].configure(
-			telemetry::Phase2Profile::CompleteShip, slot));
+		ASSERT_TRUE((*slots)[slot].configure(slot));
 		std::array<telemetry::Phase2Wp05SubjectBinding, 2U> bindings{};
 		ASSERT_EQ(detail::Phase2RuntimeResult::SnapshotRequired,
 			(*slots)[slot].reconcile_closure(
@@ -1389,8 +1371,7 @@ TEST(Phase2Runtime,
 TEST(Phase2Runtime, TST059KeepsNAndNPlusOneAndCoalescesNPlusTwo)
 {
 	detail::Phase2RuntimeSlot slot;
-	ASSERT_TRUE(slot.configure(
-		telemetry::Phase2Profile::CompleteShip, 0U));
+	ASSERT_TRUE(slot.configure(0U));
 	ASSERT_EQ(detail::Phase2RuntimeResult::ManifestRequired,
 		slot.stage_manifest(1U, digest(1U)));
 	ASSERT_EQ(detail::Phase2RuntimeResult::SnapshotRequired,
@@ -1489,8 +1470,7 @@ TEST(Phase2Runtime,
 	TST059RebuildIntentHasOneFalseToTrueEdgeUntilItIsConsumed)
 {
 	detail::Phase2RuntimeSlot slot;
-	ASSERT_TRUE(slot.configure(
-		telemetry::Phase2Profile::CompleteShip, 0U));
+	ASSERT_TRUE(slot.configure(0U));
 	ASSERT_EQ(detail::Phase2RuntimeResult::ManifestRequired,
 		slot.stage_manifest(1U, digest(1U)));
 	EXPECT_FALSE(slot.manifest_state().rebuild_intent);
@@ -1506,11 +1486,10 @@ TEST(Phase2Runtime,
 }
 
 TEST(Phase2Runtime,
-	CompleteShipNoPlayerClosureKeepsSessionAllocatorHighWaterAcrossRespawn)
+	CockpitNoPlayerClosureKeepsSessionAllocatorHighWaterAcrossRespawn)
 {
 	detail::Phase2RuntimeSlot slot;
-	ASSERT_TRUE(slot.configure(
-		telemetry::Phase2Profile::CompleteShip, 0U));
+	ASSERT_TRUE(slot.configure(0U));
 	const std::array<detail::Phase2CaptureLocalKey, 1U>
 		initial_keys{{{41U}}};
 	std::array<telemetry::Phase2Wp05SubjectBinding, 1U>
@@ -1549,8 +1528,7 @@ TEST(Phase2Runtime,
 	TST046LifecycleQueueIsDurableBoundedFencedAndAckScopedThroughRespawn)
 {
 	auto slot = std::make_unique<detail::Phase2RuntimeSlot>();
-	ASSERT_TRUE(slot->configure(
-		telemetry::Phase2Profile::CompleteShip, 0U));
+	ASSERT_TRUE(slot->configure(0U));
 	std::array<detail::Phase2CaptureLocalKey,
 		detail::MaximumPhase2ObservationShips> keys{};
 	std::array<telemetry::Phase2Wp05SubjectBinding,
@@ -1710,8 +1688,7 @@ TEST(Phase2Runtime,
 	TST051ForcedReasonsIncrementOnlyAtCandidateStartAndSamplesOnlyAtApplied)
 {
 	detail::Phase2RuntimeSlot slot;
-	ASSERT_TRUE(slot.configure(
-		telemetry::Phase2Profile::CompleteShip, 0U));
+	ASSERT_TRUE(slot.configure(0U));
 	const std::array<detail::Phase2CaptureLocalKey, 1U> keys{{{41U}}};
 	std::array<telemetry::Phase2Wp05SubjectBinding, 1U> bindings{};
 	ASSERT_EQ(detail::Phase2RuntimeResult::SnapshotRequired,
@@ -1785,8 +1762,7 @@ TEST(Phase2Runtime,
 TEST(Phase2Runtime, TST067MissionExitPurgesAnInFlightSnapshotAndRejectsEveryLateCompletion)
 {
 	detail::Phase2RuntimeSlot slot;
-	ASSERT_TRUE(slot.configure(
-		telemetry::Phase2Profile::CompleteShip, 0U));
+	ASSERT_TRUE(slot.configure(0U));
 	ASSERT_EQ(detail::Phase2RuntimeResult::ManifestRequired,
 		slot.stage_manifest(1U, digest(1U)));
 	ASSERT_EQ(detail::Phase2RuntimeResult::SnapshotRequired,
@@ -1844,8 +1820,7 @@ TEST(Phase2Runtime, TST068MissionRelaunchCreatesFreshSessionAndEntityNamespacesW
 TEST(Phase2Runtime, TST069SupportOrDockedSignatureReentryNeverReactivatesTheOldEntity)
 {
 	detail::Phase2RuntimeSlot slot;
-	ASSERT_TRUE(slot.configure(
-		telemetry::Phase2Profile::CompleteShip, 0U));
+	ASSERT_TRUE(slot.configure(0U));
 	const std::array<detail::Phase2CaptureLocalKey, 2U> initial{{
 		{41U}, {77U}}};
 	std::array<telemetry::Phase2Wp05SubjectBinding, 2U> bindings{};
@@ -1870,8 +1845,7 @@ TEST(Phase2Runtime, TST069SupportOrDockedSignatureReentryNeverReactivatesTheOldE
 TEST(Phase2Runtime, CockpitClosureAdoptsSensorIdentityAcrossRemovalAndReentry)
 {
 	detail::Phase2RuntimeSlot slot;
-	ASSERT_TRUE(slot.configure(
-		telemetry::Phase2Profile::CockpitSensors, 0U));
+	ASSERT_TRUE(slot.configure(0U));
 	const std::array<detail::Phase2CaptureLocalKey, 2U> first_signatures{{
 		{4101U}, {7701U}}};
 	const std::array<detail::Phase2CaptureLocalKey, 2U> first_binding_keys{{
@@ -1892,7 +1866,7 @@ TEST(Phase2Runtime, CockpitClosureAdoptsSensorIdentityAcrossRemovalAndReentry)
 			bindings.data(), bindings.size()));
 
 	// The replacement already existed as a sensor-only radar identity before
-	// it joined the CompleteShip closure. Its authoritative public ID must be
+	// it joined the cockpit closure. Its authoritative public ID must be
 	// adopted instead of allocating the closure-local key "2" again.
 	const std::array<detail::Phase2CaptureLocalKey, 2U> replacement_signatures{{
 		{4101U}, {8801U}}};
@@ -1945,9 +1919,9 @@ TEST(Phase2Runtime, TST018FaultsOnlyTargetAndPreservesOtherExposedOutput)
 	const auto other_size = exposed_other.size;
 
 	const auto result =
-		controller.reject_phase2_profile_mutation_for_slot(
+		controller.reject_cockpit_coverage_mutation_for_slot(
 			0U,
-		telemetry::Phase2ProfileMutationSource::CapabilityUpdate);
+			telemetry::CockpitCoverageMutationSource::CapabilityUpdate);
 	EXPECT_EQ(protocol::ValidationError::InvalidStateTransition,
 		result.error);
 	ASSERT_EQ(protocol::SessionEndReason::ProtocolError,
@@ -2039,60 +2013,6 @@ TEST(Phase2Runtime, TST018FaultsOnlyTargetAndPreservesOtherExposedOutput)
 		<< "The fault SESSION_END must make progress behind other due work.";
 }
 
-TEST(Phase2Runtime, StateDeltaEgressRotatesBetweenContinuouslyReadyClients)
-{
-	ControllerIdentity identity;
-	auto controller = make_controller(
-		identity, telemetry::Phase2Profile::None);
-	const auto first_endpoint = endpoint(2U, 42043U);
-	const auto second_endpoint = endpoint(3U, 42044U);
-	establish_ready(controller, first_endpoint,
-		0x701U, 1'000'000U, 0U);
-	establish_ready(controller, second_endpoint,
-		0x702U, 2'000'000U, 1U);
-
-	for (std::size_t slot = 0U; slot < 2U; ++slot) {
-		ASSERT_TRUE(controller.begin_initial_snapshot(
-			slot, delta_compatible_image(1.0F, 3'000'000U), 3'000'000U));
-	}
-	for (std::size_t slot = 0U; slot < 2U; ++slot) {
-		ASSERT_EQ(1U, controller.service_initial_snapshot_egress(
-			1U, 3'001'000U + slot));
-		detail::SessionControllerOutput output;
-		ASSERT_TRUE(controller.pop_output(output));
-		const auto decoded = decode_output(output);
-		ASSERT_EQ(slot == 0U ? first_endpoint : second_endpoint,
-			output.endpoint);
-		const auto ack = applied_ack(decoded,
-			static_cast<std::uint32_t>(0x710U + slot));
-		ASSERT_EQ(detail::SessionIngressDisposition::ResponseQueued,
-			controller.ingest(output.endpoint, view(ack),
-				3'100'000U + slot, 1U, true).disposition);
-	}
-
-	for (std::size_t slot = 0U; slot < 2U; ++slot) {
-		ASSERT_EQ(protocol::ProducerBaselineResult::Applied,
-			controller.replace_current_state(slot,
-				delta_compatible_image(2.0F, 4'000'000U)));
-		ASSERT_TRUE(controller.queue_cumulative_delta(slot, 4'000'000U));
-	}
-	ASSERT_EQ(1U, controller.service_delta_egress(1U, 4'001'000U));
-	detail::SessionControllerOutput first_delta;
-	ASSERT_TRUE(controller.pop_output(first_delta));
-	ASSERT_EQ(first_endpoint, first_delta.endpoint);
-
-	// Slot zero is ready again before slot one has emitted its older delta.
-	// A fixed-index scan would select slot zero forever under this workload.
-	ASSERT_EQ(protocol::ProducerBaselineResult::Applied,
-		controller.replace_current_state(0U,
-			delta_compatible_image(3.0F, 4'002'000U)));
-	ASSERT_TRUE(controller.queue_cumulative_delta(0U, 4'002'000U));
-	ASSERT_EQ(1U, controller.service_delta_egress(1U, 4'003'000U));
-	detail::SessionControllerOutput second_delta;
-	ASSERT_TRUE(controller.pop_output(second_delta));
-	EXPECT_EQ(second_endpoint, second_delta.endpoint);
-}
-
 TEST(Phase2Runtime, TST018SameSlotExposedOutputIsReplacedBySessionEnd)
 {
 	ControllerIdentity identity;
@@ -2110,8 +2030,8 @@ TEST(Phase2Runtime, TST018SameSlotExposedOutputIsReplacedBySessionEnd)
 		decode_output(welcome).header.message_type);
 
 	const auto result =
-		controller.reject_phase2_profile_mutation_for_slot(
-			0U, telemetry::Phase2ProfileMutationSource::Delta);
+		controller.reject_cockpit_coverage_mutation_for_slot(
+			0U, telemetry::CockpitCoverageMutationSource::Delta);
 	ASSERT_EQ(protocol::ValidationError::InvalidStateTransition,
 		result.error);
 	ASSERT_EQ(detail::ProducerSessionProgress::FaultedSession,

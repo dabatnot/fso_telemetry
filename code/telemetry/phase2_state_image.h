@@ -286,12 +286,14 @@ class Phase2CompleteDomainPool final {
 	bool provision(std::size_t maximum_subjects,
 		std::size_t maximum_subsystems,
 		std::size_t maximum_dock_relations,
-		std::size_t maximum_support_latches) noexcept;
+		std::size_t maximum_support_latches,
+		std::size_t additional_records = 0U) noexcept;
 	void reset() noexcept;
 	bool ready() const noexcept { return m_ready; }
 	std::size_t owned_backing_bytes() const noexcept;
 
   private:
+	friend class CockpitSensorsStateImagePool;
 	friend Phase2StateImageBuildStatus build_phase2_complete_domain_preallocated(
 		const Phase2CompleteDomainInput&, Phase2CompleteDomainPool&,
 		protocol::StateImage&, Phase2StateImageBuildDiagnostic*,

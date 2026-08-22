@@ -35,7 +35,7 @@ constexpr std::size_t index(detail::TelemetryPhase2MemoryScope value)
 	return static_cast<std::size_t>(value);
 }
 
-constexpr std::size_t index(detail::TelemetryPhase2ProfileRejection value)
+constexpr std::size_t index(detail::TelemetryCockpitProducerRejection value)
 {
 	return static_cast<std::size_t>(value);
 }
@@ -257,7 +257,7 @@ TEST(Phase3SecurityBounds, ExactOwnedCapsAndReplicationScratchCoverFourThousandN
 	static_assert(detail::Phase3CockpitSensorsDeltaBytes ==
 		telemetry::protocol::MaxStateMessageSize);
 	static_assert(telemetry::protocol::MaxIncrementalDirtyStateAtomCount >=
-		9U + 10U * 64U + 4096U + 4096U);
+		10U + 10U * 64U + 4096U + 4096U);
 
 	const detail::Phase2OwnedBudgetRequest exact{
 		detail::Phase3SharedOwnedCapBytes,
@@ -306,12 +306,6 @@ TEST(Phase2SecurityBounds, P2AC012Phase2MetricsAreClosedBoundedResettableAndHigh
 	metrics.activate_session(0U, 7U);
 	metrics.activate_session(1U, 8U);
 	metrics.activate_session(2U, 9U);
-	metrics.set_phase2_profile(
-		0U, detail::TelemetryPhase2Profile::CompleteShip);
-	metrics.set_phase2_profile(
-		1U, detail::TelemetryPhase2Profile::CoreGate);
-	metrics.set_phase2_profile(
-		2U, detail::TelemetryPhase2Profile::CockpitSensors);
 	for (std::size_t block = 0U;
 		 block < static_cast<std::size_t>(detail::TelemetryPhase2Block::Count);
 		 ++block) {
@@ -322,8 +316,8 @@ TEST(Phase2SecurityBounds, P2AC012Phase2MetricsAreClosedBoundedResettableAndHigh
 			static_cast<detail::TelemetryPhase2Block>(block),
 			100U + block);
 	}
-	metrics.record_phase2_profile_rejection(
-		detail::TelemetryPhase2ProfileRejection::UnsupportedVisibility);
+	metrics.record_cockpit_producer_rejection(
+		detail::TelemetryCockpitProducerRejection::UnsupportedVisibility);
 	metrics.record_phase2_capture_failure(
 		detail::TelemetryPhase2Block::Identity,
 		detail::TelemetryPhase2CaptureFailure::Guard);
@@ -435,8 +429,8 @@ TEST(Phase2SecurityBounds, P2AC012Phase2MetricsAreClosedBoundedResettableAndHigh
 		EXPECT_EQ(block + 1U,
 			snapshot.phase2_capture_duration[block].sum_us);
 	}
-	EXPECT_EQ(1U, snapshot.phase2_profile_rejections[
-		index(detail::TelemetryPhase2ProfileRejection::
+	EXPECT_EQ(1U, snapshot.cockpit_producer_rejections[
+		index(detail::TelemetryCockpitProducerRejection::
 			UnsupportedVisibility)]);
 	EXPECT_EQ(1U, snapshot.phase2_capture_failures[
 		index(detail::TelemetryPhase2Block::Identity)]
@@ -469,8 +463,6 @@ TEST(Phase2SecurityBounds, P2AC012Phase2MetricsAreClosedBoundedResettableAndHigh
 		snapshot.mission_phase2_closure_results);
 	EXPECT_EQ(240U, snapshot.phase2_memory_bytes[
 		index(detail::TelemetryPhase2MemoryScope::ProcessTotal)]);
-	EXPECT_EQ(detail::TelemetryPhase2Profile::CockpitSensors,
-		snapshot.sessions[2].phase2_profile);
 
 	metrics.reset_session(0U);
 	metrics.reset_mission();
@@ -496,15 +488,13 @@ TEST(Phase2SecurityBounds, P2AC011DiagnosticsContainOnlyClosedNumericLabels)
 	static_assert(std::is_trivially_copyable_v<detail::TelemetryMetricsSnapshot>);
 	static_assert(std::is_standard_layout_v<detail::TelemetryMetricsSnapshot>);
 	EXPECT_EQ(9U,
-		static_cast<std::size_t>(detail::TelemetryPhase2ProfileRejection::Count));
+		static_cast<std::size_t>(detail::TelemetryCockpitProducerRejection::Count));
 	EXPECT_EQ(7U,
 		static_cast<std::size_t>(detail::TelemetryPhase2CaptureFailure::Count));
 	EXPECT_EQ(5U,
 		static_cast<std::size_t>(detail::TelemetryPhase2ClosureResult::Count));
 	EXPECT_EQ(3U,
 		static_cast<std::size_t>(detail::TelemetryPhase2ManifestResult::Count));
-	EXPECT_EQ(4U,
-		static_cast<std::size_t>(detail::TelemetryPhase2Profile::Count));
 	EXPECT_EQ(5U,
 		static_cast<std::size_t>(
 			detail::TelemetryPhase2AllocationKind::Count));
@@ -529,12 +519,8 @@ TEST(Phase2SecurityBounds, P2AC011DiagnosticsContainOnlyClosedNumericLabels)
 		static_cast<std::size_t>(detail::TelemetryPhase2MemoryScope::Count));
 
 	detail::TelemetryStructuredLog log;
-	log.phase2_profile_selected(0U,
-		detail::TelemetryPhase2Profile::CompleteShip, 0x0583U);
-	log.phase2_profile_selected(1U,
-		detail::TelemetryPhase2Profile::CockpitSensors, 0x07CBU);
-	log.phase2_profile_rejected(
-		detail::TelemetryPhase2ProfileRejection::InvalidSource,
+	log.cockpit_producer_rejected(
+		detail::TelemetryCockpitProducerRejection::InvalidSource,
 		0x0401U);
 	log.phase2_manifest(0U,
 		detail::TelemetryLogEvent::Phase2ManifestBuilt,
@@ -559,11 +545,10 @@ TEST(Phase2SecurityBounds, P2AC011DiagnosticsContainOnlyClosedNumericLabels)
 		1'000'000U);
 	log.phase2_summary(0U, 8U, 4'096U);
 	const auto logs = log.snapshot();
-	ASSERT_GE(logs.count, 9U)
+	ASSERT_GE(logs.count, 8U)
 		<< "Forbidden-data scanning is meaningful only after normative events were emitted.";
 	for (const auto event : {
-			 detail::TelemetryLogEvent::Phase2ProfileSelected,
-			 detail::TelemetryLogEvent::Phase2ProfileRejected,
+			 detail::TelemetryLogEvent::CockpitProducerRejected,
 			 detail::TelemetryLogEvent::Phase2ManifestBuilt,
 			 detail::TelemetryLogEvent::Phase2ManifestInstalled,
 			 detail::TelemetryLogEvent::Phase2ManifestRejected,
@@ -579,15 +564,6 @@ TEST(Phase2SecurityBounds, P2AC011DiagnosticsContainOnlyClosedNumericLabels)
 					return record.event == event;
 				}));
 	}
-	const auto cockpit_profile = std::find_if(logs.records.begin(),
-		logs.records.begin() + logs.count, [](const auto& record) {
-			return record.event ==
-					detail::TelemetryLogEvent::Phase2ProfileSelected &&
-				record.phase2_profile ==
-					detail::TelemetryPhase2Profile::CockpitSensors;
-		});
-	ASSERT_NE(logs.records.begin() + logs.count, cockpit_profile);
-	EXPECT_EQ(0x07CBU, cockpit_profile->value);
 	const auto first_resync = std::find_if(logs.records.begin(),
 		logs.records.begin() + logs.count, [](const auto& record) {
 			return record.event ==

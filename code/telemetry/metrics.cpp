@@ -155,23 +155,13 @@ void TelemetryMetrics::record_runtime_fault(TelemetryRuntimeFaultReason reason) 
 	if (index < m_snapshot.runtime_faults.size()) saturating_add(m_snapshot.runtime_faults[index], 1U);
 }
 
-void TelemetryMetrics::record_phase2_profile_rejection(
-	TelemetryPhase2ProfileRejection reason) noexcept
+void TelemetryMetrics::record_cockpit_producer_rejection(
+	TelemetryCockpitProducerRejection reason) noexcept
 {
 	if (!m_snapshot.provisioned) return;
 	const auto index = static_cast<std::size_t>(reason);
-	if (index < m_snapshot.phase2_profile_rejections.size())
-		saturating_add(m_snapshot.phase2_profile_rejections[index], 1U);
-}
-
-void TelemetryMetrics::set_phase2_profile(
-	std::size_t slot, TelemetryPhase2Profile profile) noexcept
-{
-	if (!m_snapshot.provisioned || !valid_slot(slot) ||
-		static_cast<std::size_t>(profile) >=
-			static_cast<std::size_t>(TelemetryPhase2Profile::Count))
-		return;
-	m_snapshot.sessions[slot].phase2_profile = profile;
+	if (index < m_snapshot.cockpit_producer_rejections.size())
+		saturating_add(m_snapshot.cockpit_producer_rejections[index], 1U);
 }
 
 void TelemetryMetrics::observe_phase2_capture(

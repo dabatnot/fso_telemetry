@@ -12,10 +12,11 @@ using namespace telemetry::protocol;
 TEST(TelemetryPhase2SessionTransition, CoverageMutationFaultsOnlyTheAffectedSession)
 {
 	for (const auto source :
-		{Phase2ProfileMutationSource::Delta, Phase2ProfileMutationSource::CapabilityUpdate}) {
+		{CockpitCoverageMutationSource::Delta,
+		 CockpitCoverageMutationSource::CapabilityUpdate}) {
 		SCOPED_TRACE(static_cast<unsigned>(source));
-		const auto result = reject_phase2_profile_mutation(
-			Phase2Profile::CoreGate, 0x0583ULL, source);
+		const auto result = reject_cockpit_coverage_mutation(
+			0x0583ULL, source);
 		EXPECT_EQ(ValidationError::InvalidStateTransition, result.error);
 		EXPECT_EQ(SessionEndReason::ProtocolError, result.session_end_reason);
 		EXPECT_EQ(SessionEndFlagReconnectAllowed, result.session_end_flags);

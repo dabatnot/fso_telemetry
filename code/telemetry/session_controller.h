@@ -29,7 +29,9 @@ class SessionControllerTestAccess;
 constexpr std::size_t phase2_complete_delta_identity_capacity(
 	protocol::RecordType type) noexcept
 {
-	return type == protocol::RecordType::SubsystemState
+	return type == protocol::RecordType::RadarContacts
+		? sizeof(std::uint64_t) * 2U
+		: type == protocol::RecordType::SubsystemState
 		? sizeof(std::uint64_t) + sizeof(std::uint32_t)
 		: sizeof(std::uint64_t);
 }
@@ -100,9 +102,6 @@ struct SessionControllerConfig {
 	std::uint16_t mission_heartbeat_ms = 500U;
 	std::uint16_t idle_heartbeat_ms = 1000U;
 	std::uint8_t keyframe_seconds = 2U;
-	std::size_t delta_payload_capacity =
-		Phase1DeltaScratchBytes;
-	Phase2Profile phase2_profile = Phase2Profile::None;
 	protocol::TelemetryOperationalConfig security;
 };
 
@@ -329,10 +328,10 @@ class SessionController final {
 		std::uint64_t now_us) noexcept;
 	std::size_t service_next_phase2_manifest_egress(
 		std::uint64_t now_us) noexcept;
-	Phase2ProfileMutationResult
-	reject_phase2_profile_mutation_for_slot(
+	CockpitCoverageMutationResult
+	reject_cockpit_coverage_mutation_for_slot(
 		std::size_t slot_index,
-		Phase2ProfileMutationSource source) noexcept;
+		CockpitCoverageMutationSource source) noexcept;
 	Phase2Wp07EpisodeLatches* phase2_support_latches(
 		std::size_t slot_index) noexcept;
 	Phase2RuntimeResult apply_phase2_global_events_transaction(

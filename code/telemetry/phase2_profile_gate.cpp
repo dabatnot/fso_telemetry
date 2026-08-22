@@ -22,8 +22,8 @@ static_assert((CompleteShipCoverage & ~protocol::KnownStateDomainCoverageBits) =
 	"Phase 2 profiles must use only existing FSTL 1.1 state domains");
 static_assert((CockpitSensorsCoverage & ~protocol::KnownStateDomainCoverageBits) == 0U,
 	"The Phase 3 profile must use only existing FSTL 1.1 state domains");
-static_assert(static_cast<std::uint8_t>(Phase2ProfileError::Count) >
-		static_cast<std::uint8_t>(Phase2ProfileError::None),
+static_assert(static_cast<std::uint8_t>(CockpitProducerEligibilityError::Count) >
+		static_cast<std::uint8_t>(CockpitProducerEligibilityError::None),
 	"The private Phase 2 profile error registry must not be empty");
 
 } // namespace
@@ -57,25 +57,28 @@ Phase2Profile phase2_profile_from_coverage(std::uint64_t coverage) noexcept
 	}
 }
 
-Phase2ProfileError validate_phase2_profile_coverage(std::uint64_t coverage, Phase2Profile& profile) noexcept
+CockpitProducerEligibilityError validate_phase2_profile_coverage(
+	std::uint64_t coverage, Phase2Profile& profile) noexcept
 {
 	profile = phase2_profile_from_coverage(coverage);
-	return profile == Phase2Profile::None ? Phase2ProfileError::UnsupportedCoverage : Phase2ProfileError::None;
+	return profile == Phase2Profile::None
+		? CockpitProducerEligibilityError::UnsupportedCoverage
+		: CockpitProducerEligibilityError::None;
 }
 
-Phase2ProfileError validate_cockpit_sensor_producer(
-	const Phase2ProfileEligibility& eligibility) noexcept
+CockpitProducerEligibilityError validate_cockpit_sensor_producer(
+	const CockpitProducerEligibility& eligibility) noexcept
 {
 	if (eligibility.authority_mode != protocol::AuthorityMode::Solo) {
-		return Phase2ProfileError::UnsupportedAuthority;
+		return CockpitProducerEligibilityError::UnsupportedAuthority;
 	}
 	if (eligibility.dedicated) {
-		return Phase2ProfileError::DedicatedNotAllowed;
+		return CockpitProducerEligibilityError::DedicatedNotAllowed;
 	}
 	if (eligibility.headless) {
-		return Phase2ProfileError::HeadlessNotAllowed;
+		return CockpitProducerEligibilityError::HeadlessNotAllowed;
 	}
-	return Phase2ProfileError::None;
+	return CockpitProducerEligibilityError::None;
 }
 
 } // namespace telemetry

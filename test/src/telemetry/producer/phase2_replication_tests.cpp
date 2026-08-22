@@ -126,8 +126,7 @@ void apply_plan(detail::Phase2RuntimeSlot& slot,
 TEST(Phase2Replication, TST050SnapshotReasonsUseExactFlagsAndAppliedIsAtomic)
 {
 	detail::Phase2RuntimeSlot runtime;
-	ASSERT_TRUE(runtime.configure(
-		telemetry::Phase2Profile::CompleteShip, 0U));
+	ASSERT_TRUE(runtime.configure(0U));
 	install_manifest(runtime, 7U, 0x71U);
 
 	auto initial = start_plan(runtime);
@@ -653,8 +652,7 @@ TEST(Phase2Replication, TST056UnknownAndStaleBaselinesNeverPublish)
 TEST(Phase2Replication, TST057CapacityFallbackKeepsTheActiveBaseline)
 {
 	detail::Phase2RuntimeSlot runtime;
-	ASSERT_TRUE(runtime.configure(
-		telemetry::Phase2Profile::CompleteShip, 0U));
+	ASSERT_TRUE(runtime.configure(0U));
 	install_manifest(runtime, 1U, 0x11U);
 	auto initial = start_plan(runtime);
 	apply_plan(runtime, initial);

@@ -1,6 +1,5 @@
 #include "telemetry/native_session_runtime.h"
 
-#include "telemetry/phase1_state_image.h"
 #include "telemetry/native_session_runtime_test_seam.h"
 #include "telemetry/logging.h"
 #include "telemetry/phase2_catalog_projection.h"
@@ -33,22 +32,6 @@ void reset_phase3_projection(Phase3Projection& projection) noexcept
 	// engine update stack even when this reset branch is not taken.
 	projection.~Phase3Projection();
 	new (&projection) Phase3Projection();
-}
-
-TelemetryPhase2Profile telemetry_profile(
-	Phase2Profile profile) noexcept
-{
-	switch (profile) {
-	case Phase2Profile::CoreGate:
-		return TelemetryPhase2Profile::CoreGate;
-	case Phase2Profile::CompleteShip:
-		return TelemetryPhase2Profile::CompleteShip;
-	case Phase2Profile::CockpitSensors:
-		return TelemetryPhase2Profile::CockpitSensors;
-	case Phase2Profile::None:
-	default:
-		return TelemetryPhase2Profile::None;
-	}
 }
 
 TelemetryPhase3Block telemetry_phase3_block(
@@ -128,17 +111,17 @@ void record_phase3_failure(TelemetryMetrics* metrics,
 		log->phase3_source_rejected(slot, block, reason);
 }
 
-TelemetryPhase2ProfileRejection telemetry_profile_rejection(
-	Phase2ProfileError error) noexcept
+TelemetryCockpitProducerRejection telemetry_cockpit_rejection(
+	CockpitProducerEligibilityError error) noexcept
 {
 	switch (error) {
-	case Phase2ProfileError::UnsupportedAuthority:
-	case Phase2ProfileError::DedicatedNotAllowed:
-	case Phase2ProfileError::HeadlessNotAllowed:
-		return TelemetryPhase2ProfileRejection::UnsupportedAuthority;
-	case Phase2ProfileError::UnsupportedCoverage:
+	case CockpitProducerEligibilityError::UnsupportedAuthority:
+	case CockpitProducerEligibilityError::DedicatedNotAllowed:
+	case CockpitProducerEligibilityError::HeadlessNotAllowed:
+		return TelemetryCockpitProducerRejection::UnsupportedAuthority;
+	case CockpitProducerEligibilityError::UnsupportedCoverage:
 	default:
-		return TelemetryPhase2ProfileRejection::IncompleteCoverage;
+		return TelemetryCockpitProducerRejection::IncompleteCoverage;
 	}
 }
 
@@ -930,17 +913,16 @@ NativeSessionStartStatus NativeSessionRuntime::start(const NativeSessionStartReq
 		request.packet_sequences == nullptr) {
 		return NativeSessionStartStatus::InvalidConfiguration;
 	}
-	constexpr auto selected_phase2_profile = Phase2Profile::CockpitSensors;
-	const auto profile_error =
-		validate_cockpit_sensor_producer(request.phase2_eligibility);
-	if (profile_error != Phase2ProfileError::None) {
+	const auto eligibility_error =
+		validate_cockpit_sensor_producer(request.cockpit_eligibility);
+	if (eligibility_error != CockpitProducerEligibilityError::None) {
 		const auto reason =
-			telemetry_profile_rejection(profile_error);
+			telemetry_cockpit_rejection(eligibility_error);
 		if (request.metrics != nullptr)
-			request.metrics->record_phase2_profile_rejection(reason);
+			request.metrics->record_cockpit_producer_rejection(reason);
 		if (request.log != nullptr)
-			request.log->phase2_profile_rejected(reason,
-				phase2_profile_coverage(selected_phase2_profile));
+			request.log->cockpit_producer_rejected(reason,
+				Phase3CockpitSensorsCoverage);
 		// This rejection precedes controller/DTO allocation, bind and WELCOME.
 		return NativeSessionStartStatus::InvalidConfiguration;
 	}
@@ -959,9 +941,6 @@ NativeSessionStartStatus NativeSessionRuntime::start(const NativeSessionStartReq
 	if (!make_controller_config(*request.config, request.producer_id, controller_config)) {
 		return NativeSessionStartStatus::InvalidConfiguration;
 	}
-	controller_config.delta_payload_capacity =
-		Phase2CompleteShipDeltaBytes;
-	controller_config.phase2_profile = selected_phase2_profile;
 	if (m_fail_session_controller_provision) {
 		// No controller has been published and no transport operation has begun.
 		// Keep State::Cold so clearing the test-only failpoint permits a retry.
@@ -998,9 +977,6 @@ NativeSessionStartStatus NativeSessionRuntime::start(const NativeSessionStartReq
 	const auto phase2_owned_bytes = phase2_observation->owned_bytes();
 	// Construct every mutable image backing before bind/Ready. A failure is
 	// retryable because no transport operation has started yet.
-	if (!provision_state_image_pools(request.config->max_clients)) {
-		return NativeSessionStartStatus::AllocationFailure;
-	}
 	if (!provision_phase2_image_pools(request.config->max_clients)) {
 		release_state_image_pools();
 		return NativeSessionStartStatus::AllocationFailure;
@@ -1080,10 +1056,7 @@ NativeSessionStartStatus NativeSessionRuntime::start(const NativeSessionStartReq
 			owned.snapshot_egress_heap_bytes % clients == 0U &&
 			owned.delta_egress_heap_bytes % clients == 0U &&
 			owned.delta_scratch_heap_bytes % clients == 0U &&
-			m_state_image_pool_backing_bytes % clients == 0U &&
-			m_phase2_core_gate_image_pool_backing_bytes %
-				clients == 0U &&
-			m_phase2_image_pool_backing_bytes % clients == 0U &&
+			m_cockpit_sensor_image_pool_backing_bytes % clients == 0U &&
 			checked_add_size(owned.rate_limiter_bytes,
 				owned.handshake_cache_bytes, shared_controller) &&
 			checked_add_size(shared_controller,
@@ -1118,14 +1091,7 @@ NativeSessionStartStatus NativeSessionRuntime::start(const NativeSessionStartReq
 				owned.delta_scratch_heap_bytes / clients,
 				per_client_owned) &&
 			checked_add_size(per_client_owned,
-				m_state_image_pool_backing_bytes / clients,
-				per_client_owned) &&
-			checked_add_size(per_client_owned,
-				m_phase2_core_gate_image_pool_backing_bytes /
-					clients,
-				per_client_owned) &&
-			checked_add_size(per_client_owned,
-				m_phase2_image_pool_backing_bytes / clients,
+				m_cockpit_sensor_image_pool_backing_bytes / clients,
 				per_client_owned);
 		if (!valid_owned) {
 			release_state_image_pools();
@@ -1177,8 +1143,6 @@ NativeSessionStartStatus NativeSessionRuntime::start(const NativeSessionStartReq
 	m_phase2_owned_budget = phase2_budget;
 	m_phase2_capture_plan = {};
 	m_last_phase2_capture_result = {};
-	m_selected_phase2_profile = selected_phase2_profile;
-	m_phase2_enabled = true;
 	m_phase3_projections = std::move(phase3_projections);
 	m_phase3_projection_scratch =
 		std::move(phase3_projection_scratch);
@@ -1192,8 +1156,9 @@ NativeSessionStartStatus NativeSessionRuntime::start(const NativeSessionStartReq
 	if (m_log != nullptr) {
 		// State-image backings are fully provisioned before Ready; this is the
 		// first real high-water observation, not a configured estimate.
-		m_log->budget_high_water(TelemetryLogBudget::StateImage, m_state_image_pool_backing_bytes,
-			m_state_image_pool_backing_bytes);
+		m_log->budget_high_water(TelemetryLogBudget::StateImage,
+			m_cockpit_sensor_image_pool_backing_bytes,
+			m_cockpit_sensor_image_pool_backing_bytes);
 	}
 	return NativeSessionStartStatus::Started;
 }
@@ -1204,7 +1169,7 @@ NativeSessionTickStatus NativeSessionRuntime::service_tick(const NativeSessionTi
 {
 	m_last_phase2_failure_diagnostic = {};
 	m_last_phase2_failure_diagnostic.tick_now_us = context.now_us;
-	if (m_phase2_enabled && phase2_view != nullptr &&
+	if (phase2_view != nullptr &&
 		!phase2_view->current_thread_is_main()) {
 		if (m_metrics != nullptr)
 			m_metrics->record_phase2_capture_failure(
@@ -1221,7 +1186,7 @@ NativeSessionTickStatus NativeSessionRuntime::service_tick(const NativeSessionTi
 	if (r2_status != NativeSessionTickStatus::Complete) {
 		return r2_status;
 	}
-	if (m_phase2_enabled) {
+	{
 		auto& event_batch = m_phase2_event_batch_scratch;
 		const auto prepared = prepare_phase2_global_events(
 			m_phase2_observation.accepted_capture_map(), event_batch);
@@ -1338,10 +1303,8 @@ NativeSessionTickStatus NativeSessionRuntime::service_tick(const NativeSessionTi
 		m_controller.phase3_complete_capture_required();
 	const auto cadence =
 		m_capture_cadence.poll(context.now_us, context.mission_active);
-	const auto systems_cadence = m_phase2_enabled
-		? m_systems_capture_cadence.poll(
-			context.now_us, context.mission_active)
-		: CaptureCadenceResult{CaptureCadenceStatus::NotDue, 0U};
+	const auto systems_cadence = m_systems_capture_cadence.poll(
+		context.now_us, context.mission_active);
 	switch (cadence.status) {
 	case CaptureCadenceStatus::Inactive:
 		m_phase2_capture_plan = {};
@@ -1407,36 +1370,28 @@ NativeSessionTickStatus NativeSessionRuntime::service_tick(const NativeSessionTi
 		}
 		return NativeSessionTickStatus::Complete;
 	}
-	m_phase2_capture_plan.capture_flight_controls =
-		m_phase2_enabled && flight_controls_cadence;
-	m_phase2_capture_plan.capture_systems =
-		m_phase2_enabled && systems_capture_due;
+	m_phase2_capture_plan.capture_flight_controls = flight_controls_cadence;
+	m_phase2_capture_plan.capture_systems = systems_capture_due;
 	m_phase2_capture_plan.force_complete_keyframe =
 		m_capture_after_ready_transition ||
 		m_capture_for_phase3_keyframe;
-	m_phase2_capture_plan.phase3_refresh_targeting =
-		m_phase2_enabled && flight_controls_cadence;
-	m_phase2_capture_plan.phase3_refresh_systems =
-		m_phase2_enabled && systems_capture_due;
+	m_phase2_capture_plan.phase3_refresh_targeting = flight_controls_cadence;
+	m_phase2_capture_plan.phase3_refresh_systems = systems_capture_due;
 	m_phase2_capture_plan.producer_sample_time_us = context.now_us;
 	if (m_phase2_capture_plan.force_complete_keyframe) {
 		prepare_phase2_keyframe(m_phase2_capture_plan);
 	}
-	if (m_phase2_enabled && phase2_view != nullptr &&
+	if (phase2_view != nullptr &&
 		(m_phase2_capture_plan.capture_flight_controls ||
 		 m_phase2_capture_plan.capture_systems)) {
 		const auto phase2_capture_started = measure_performance
 			? std::chrono::steady_clock::now()
 			: std::chrono::steady_clock::time_point{};
-		const auto projection =
-			m_selected_phase2_profile == Phase2Profile::CoreGate
-			? Phase2ObservationProjection::CoreGate
-			: Phase2ObservationProjection::CompleteShip;
 		const auto phase2_capture = collect_phase2_observation(
 			m_phase2_observation,
 			*phase2_view,
 			m_phase2_capture_plan.producer_sample_time_us,
-			projection,
+			Phase2ObservationProjection::CompleteShip,
 			m_phase2_capture_plan.capture_systems ||
 					m_phase2_capture_plan.force_complete_keyframe
 				? Phase2ObservationRefresh::All
@@ -1746,9 +1701,7 @@ bool NativeSessionRuntime::refresh_owned_phase2_manifest(
 	Phase2ManifestError& result) noexcept
 {
 	result = Phase2ManifestError::InvalidSource;
-	if (m_phase2_manifest_source == nullptr ||
-		(m_selected_phase2_profile != Phase2Profile::CockpitSensors &&
-		 m_phase2_manifest_slot == nullptr))
+	if (m_phase2_manifest_source == nullptr)
 		return m_phase2_manifest != nullptr;
 	const auto projection = project_phase2_catalog(
 		observation, *m_phase2_manifest_source);
@@ -1764,47 +1717,8 @@ bool NativeSessionRuntime::refresh_owned_phase2_manifest(
 	}
 	if (projection != Phase2CatalogProjectionStatus::Success)
 		return false;
-	if (m_selected_phase2_profile == Phase2Profile::CockpitSensors) {
-		result = Phase2ManifestError::NoCatalogChange;
-		return true;
-	}
-	release_unreferenced_phase2_manifest_generation();
-	result = m_phase2_manifest_slot->rebuild(
-		*m_phase2_manifest_source);
-	if (result == Phase2ManifestError::None) {
-		const auto id =
-			m_phase2_manifest_slot->staged_manifest_id();
-		if (id == 0U ||
-			m_phase2_manifest_slot->on_manifest_applied(id) !=
-				Phase2ManifestError::None ||
-			m_phase2_manifest_slot
-					->on_dependent_snapshot_applied(1U, id) !=
-				Phase2ManifestError::None)
-			return false;
-		m_phase2_manifest =
-			&m_phase2_manifest_slot->active_candidate();
-		m_phase2_catalog_projection_pending = false;
-		return true;
-	}
-	if (result == Phase2ManifestError::NoCatalogChange ||
-		result == Phase2ManifestError::TopologyOnly) {
-		m_phase2_manifest =
-			&m_phase2_manifest_slot->active_candidate();
-		m_phase2_catalog_projection_pending = false;
-		return m_phase2_manifest->manifest_id != 0U;
-	}
-	if (result == Phase2ManifestError::RebuildCoalesced) {
-		m_phase2_manifest =
-			&m_phase2_manifest_slot->active_candidate();
-		m_phase2_catalog_projection_pending =
-			!m_phase2_manifest_slot->source_catalog_matches_active(
-				*m_phase2_manifest_source) ||
-			m_phase2_manifest->topology_fingerprint !=
-				m_phase2_manifest_source
-					->topology_fingerprint;
-		return m_phase2_manifest->manifest_id != 0U;
-	}
-	return false;
+	result = Phase2ManifestError::NoCatalogChange;
+	return true;
 }
 
 bool NativeSessionRuntime::refresh_phase3_manifest(
@@ -1939,9 +1853,6 @@ void NativeSessionRuntime::release_phase3_manifest_states() noexcept
 
 void NativeSessionRuntime::prepare_phase2_keyframe(Phase2CapturePlan& plan) noexcept
 {
-	if (!m_phase2_enabled) {
-		return;
-	}
 	plan.force_complete_keyframe = true;
 	plan.capture_flight_controls = true;
 	plan.capture_systems = true;
@@ -2038,8 +1949,6 @@ void NativeSessionRuntime::shutdown() noexcept
 	m_capture_cadence.reset();
 	m_phase2_capture_plan = {};
 	reset_phase2_observation_buffer_in_place(m_phase2_observation);
-	m_selected_phase2_profile = Phase2Profile::None;
-	m_phase2_enabled = false;
 	m_systems_capture_cadence.reset();
 	m_phase2_owned_budget = {};
 	m_phase2_event_batch_scratch = {};
@@ -2099,7 +2008,7 @@ IoStatus NativeSessionRuntime::try_receive() noexcept
 			ingress.disposition ==
 				SessionIngressDisposition::WelcomeProofApplied ||
 			ingress.has_phase2_manifest_applied;
-		if (m_log != nullptr && m_phase2_enabled &&
+		if (m_log != nullptr &&
 			ingress.has_phase2_resync) {
 			const auto result = ingress.phase2_resync_result ==
 					protocol::ProducerResyncResult::AcceptedNewCandidate
@@ -2295,19 +2204,10 @@ void NativeSessionRuntime::refresh_metrics_session_scope() noexcept
 			if (m_metrics != nullptr) {
 				m_metrics->activate_session(index, static_cast<std::uint64_t>(slot.progress));
 				m_metrics->increment_session(index, TelemetryMetricCounter::SessionsStarted);
-				m_metrics->set_phase2_profile(index,
-					telemetry_profile(m_selected_phase2_profile));
 			}
 			m_session_started_at_us[index] = slot.session_start_us;
 			if (m_log != nullptr) {
 				m_log->session_opened(index);
-				if (m_selected_phase2_profile !=
-					Phase2Profile::None)
-					m_log->phase2_profile_selected(index,
-						telemetry_profile(
-							m_selected_phase2_profile),
-						phase2_profile_coverage(
-							m_selected_phase2_profile));
 			}
 		} else if (!active && m_metrics_session_active[index]) {
 			if (m_phase3_projections[index] != nullptr)
@@ -2326,13 +2226,11 @@ void NativeSessionRuntime::refresh_metrics_session_scope() noexcept
 				const auto total = m_metrics != nullptr
 					? m_metrics->process_counter(TelemetryMetricCounter::SessionsEnded)
 					: 0U;
-				if (m_selected_phase2_profile !=
-					Phase2Profile::None)
-					m_log->phase2_summary(index, total,
-						m_metrics != nullptr
-							? m_metrics->phase2_memory_high_water(
-								TelemetryPhase2MemoryScope::ProcessTotal)
-							: 0U);
+				m_log->phase2_summary(index, total,
+					m_metrics != nullptr
+						? m_metrics->phase2_memory_high_water(
+							TelemetryPhase2MemoryScope::ProcessTotal)
+						: 0U);
 				m_log->session_closed(index, TelemetryLogReason::PeerClosed, duration, total);
 			}
 			m_session_started_at_us[index] = 0U;
@@ -2344,8 +2242,7 @@ void NativeSessionRuntime::refresh_metrics_session_scope() noexcept
 				0U, 0U, 0U,
 				slot.snapshot.has_candidate() ? 1U : 0U,
 				slot.snapshot.has_active_baseline() ? 1U : 0U);
-			if (m_selected_phase2_profile !=
-					Phase2Profile::None) {
+			{
 				const auto started_sequence =
 					slot.phase2_runtime.started_snapshot_sequence();
 				if (started_sequence !=
@@ -2458,7 +2355,7 @@ NativeSessionTickStatus NativeSessionRuntime::apply_collected_player_capture(con
 	if (!m_applying_engine_capture || !m_tick_context.mission_active) {
 		return NativeSessionTickStatus::Complete;
 	}
-	if (m_selected_phase2_profile != Phase2Profile::None) {
+	{
 		const auto& phase2 = m_phase2_observation.observation();
 		const auto phase2_valid =
 			phase2.capture.status == Phase2CaptureStatus::Valid;
@@ -2481,9 +2378,6 @@ NativeSessionTickStatus NativeSessionRuntime::apply_collected_player_capture(con
 				return NativeSessionTickStatus::Complete;
 			}
 		}
-		if (m_selected_phase2_profile != Phase2Profile::CockpitSensors &&
-			m_phase2_manifest == nullptr)
-			return NativeSessionTickStatus::Complete;
 	}
 	const auto mission_generation = m_tick_context.mission_generation == 0U ? 1U : m_tick_context.mission_generation;
 	for (std::size_t index = 0U; index < m_controller.owned_capacity().client_slots; ++index) {
@@ -2491,10 +2385,7 @@ NativeSessionTickStatus NativeSessionRuntime::apply_collected_player_capture(con
 		if (slot.progress != ProducerSessionProgress::ReadyForState) {
 			continue;
 		}
-		if (m_selected_phase2_profile ==
-				Phase2Profile::CompleteShip ||
-			m_selected_phase2_profile ==
-				Phase2Profile::CockpitSensors) {
+		{
 			const auto& phase2 =
 				m_phase2_observation.observation();
 			const auto complete_ship_capture_valid =
@@ -2576,9 +2467,7 @@ NativeSessionTickStatus NativeSessionRuntime::apply_collected_player_capture(con
 				 subject < phase2.ships.size(); ++subject)
 				binding_keys[subject] =
 					phase2.ships[subject].capture_key;
-			const auto cockpit_sensors = m_selected_phase2_profile ==
-				Phase2Profile::CockpitSensors;
-			if (cockpit_sensors) {
+			{
 				// Flight-only refreshes deliberately clear the diagnostics for the
 				// current attempt while retaining the CompleteShip observation. Use
 				// the accepted full-capture map that owns those ship rows.
@@ -2628,13 +2517,10 @@ NativeSessionTickStatus NativeSessionRuntime::apply_collected_player_capture(con
 			}
 			const auto manifest_started =
 				std::chrono::steady_clock::now();
-			const auto closure = cockpit_sensors
-				? m_controller.reconcile_phase2_closure_with_public_ids(
+			const auto closure =
+				m_controller.reconcile_phase2_closure_with_public_ids(
 					index, identity_signatures.data(), binding_keys.data(),
 					public_entity_ids.data(), phase2.ships.size(),
-					bindings.data(), bindings.size())
-				: m_controller.reconcile_phase2_closure(
-					index, binding_keys.data(), phase2.ships.size(),
 					bindings.data(), bindings.size());
 			if (m_metrics != nullptr)
 				m_metrics->record_phase2_closure(
@@ -2676,8 +2562,7 @@ NativeSessionTickStatus NativeSessionRuntime::apply_collected_player_capture(con
 				m_phase2_manifest;
 			const Phase2ManifestSlot* manifest_slot =
 				m_phase2_manifest_slot.get();
-			if (m_selected_phase2_profile ==
-				Phase2Profile::CockpitSensors) {
+			{
 				Phase2ManifestError manifest_error{};
 				Phase3EngineCollectDiagnostic manifest_diagnostic;
 				if (!refresh_phase3_manifest(index, phase2, bindings.data(),
@@ -2754,9 +2639,7 @@ NativeSessionTickStatus NativeSessionRuntime::apply_collected_player_capture(con
 				m_controller.stage_phase2_manifest(index,
 					*phase2_manifest,
 					m_tick_context.now_us);
-			if (m_selected_phase2_profile ==
-					Phase2Profile::CockpitSensors &&
-				manifest_state != Phase2RuntimeResult::CandidateBusy)
+			if (manifest_state != Phase2RuntimeResult::CandidateBusy)
 				m_phase3_manifest_workspace_owner =
 					m_phase3_manifest_states.size();
 			if (manifest_state == Phase2RuntimeResult::CandidateBusy &&
@@ -2981,102 +2864,9 @@ NativeSessionTickStatus NativeSessionRuntime::apply_collected_player_capture(con
 			protocol::StateImage image;
 			Phase2StateImageBuildDiagnostic image_diagnostic{};
 			Phase2StateImageRebuildSet rebuilt_atoms;
-			const auto incremental_tick =
-				phase2_input.retained_state != nullptr &&
-				!m_phase2_capture_plan.force_complete_keyframe;
-			auto used_in_place_patch = false;
-			// CockpitSensors currently projects its additional records into a
-			// separate immutable image. Do not loan the controller's mutable
-			// Phase 2 backing in that profile: replacing it before commit would
-			// otherwise make the rollback/commit path operate on the wrong
-			// storage.
-			if (incremental_tick &&
-				m_selected_phase2_profile !=
-					Phase2Profile::CockpitSensors &&
-				m_controller
-						.take_current_state_for_incremental_patch(
-							index, image) ==
-					protocol::ProducerBaselineResult::Applied) {
-				phase2_input.retained_state = &image;
-				used_in_place_patch = true;
-			}
 			const auto image_started =
 				std::chrono::steady_clock::now();
-			auto image_status = used_in_place_patch
-				? build_phase2_complete_domain_patch_preallocated(
-					  phase2_input,
-					  m_phase2_image_pools[index], image,
-					  rebuilt_atoms, &image_diagnostic)
-				: build_phase2_complete_domain_preallocated(
-					  phase2_input,
-					  m_phase2_image_pools[index], image,
-					  &image_diagnostic, &rebuilt_atoms);
-			if (used_in_place_patch &&
-				(image_status ==
-					 Phase2StateImageBuildStatus::
-						 AllocationFailed ||
-				 image_status ==
-					 Phase2StateImageBuildStatus::
-						 CapacityExceeded ||
-				 image_status ==
-					 Phase2StateImageBuildStatus::
-						 SourceMappingMissing)) {
-				(void)m_controller
-					.restore_current_state_after_incremental_patch(
-						index, std::move(image));
-				used_in_place_patch = false;
-				phase2_input.retained_state =
-					&slot.snapshot.current_state();
-				image_diagnostic = {};
-				image_status =
-					build_phase2_complete_domain_preallocated(
-						phase2_input,
-						m_phase2_image_pools[index], image,
-						&image_diagnostic, &rebuilt_atoms);
-			}
-			if (m_performance_observation_active)
-				m_last_performance_sample.state_image_fill_duration_ns +=
-					elapsed_nanoseconds(
-						image_started,
-						std::chrono::steady_clock::now());
-			if (image_status ==
-				Phase2StateImageBuildStatus::
-					AllocationFailed) {
-				if (used_in_place_patch)
-					(void)m_controller
-						.restore_current_state_after_incremental_patch(
-							index, std::move(image));
-				continue;
-			}
-			if (image_status !=
-				Phase2StateImageBuildStatus::Created) {
-				if (used_in_place_patch)
-					(void)m_controller
-						.restore_current_state_after_incremental_patch(
-							index, std::move(image));
-				if (auto* diagnostic =
-						begin_phase2_failure_diagnostic(
-							NativePhase2FailureStage::
-								StateImage);
-					diagnostic != nullptr) {
-					diagnostic->image_status = image_status;
-					diagnostic->image_diagnostic =
-						image_diagnostic;
-					diagnostic->ship_count =
-						phase2.ships.size();
-					diagnostic->player_key =
-						phase2.player_key.value;
-					diagnostic->player_entity_id =
-						player_entity_id;
-				}
-				fail_capture(
-					NativePlayerCaptureStatus::
-						CaptureInvariantFailure);
-				return NativeSessionTickStatus::
-					PermanentCaptureFailure;
-			}
-			if (m_selected_phase2_profile ==
-				Phase2Profile::CockpitSensors) {
+			{
 				auto* phase3_projection =
 					m_phase3_projections[index].get();
 				auto* phase3_projection_scratch =
@@ -3139,11 +2929,12 @@ NativeSessionTickStatus NativeSessionRuntime::apply_collected_player_capture(con
 							PermanentCaptureFailure;
 					}
 				}
-				protocol::StateImage phase3_image;
 				const auto phase3_image_status =
-					build_phase3_cockpit_sensor_state_image(
-						image, *phase3_projection,
-						phase3_image);
+					build_cockpit_sensors_state_image_preallocated(
+						phase2_input,
+						m_cockpit_sensor_image_pools[index],
+						*phase3_projection, image,
+						&image_diagnostic, &rebuilt_atoms);
 				if (phase3_image_status !=
 					Phase3StateImageBuildStatus::Created) {
 					m_last_phase2_failure_diagnostic.phase3_diagnostic = {
@@ -3160,32 +2951,6 @@ NativeSessionTickStatus NativeSessionRuntime::apply_collected_player_capture(con
 					return NativeSessionTickStatus::
 						PermanentCaptureFailure;
 				}
-				image = std::move(phase3_image);
-				// The Phase 3 projection replaces and appends records after the
-				// Phase 2 builder has returned its rebuild set.  Include the final
-				// canonical image in the incremental dirty set so systems ticks emit
-				// RADAR_CONTACTS and the other cockpit sensor records immediately,
-				// rather than waiting for the periodic keyframe.
-				if (image.records().size() >
-					rebuilt_atoms.canonical_indices.size()) {
-					m_last_phase2_failure_diagnostic.phase3_diagnostic = {
-						Phase3EngineCollectBlock::StateImage,
-						Phase3EngineCollectStatus::SourceLimitExceeded};
-					m_last_phase2_failure_diagnostic.phase3_image_status =
-						Phase3StateImageBuildStatus::CapacityExceeded;
-					record_phase3_failure(m_metrics, m_log, index,
-						TelemetryPhase3Block::StateImage,
-						TelemetryPhase3CaptureFailure::CapacityExceeded);
-					fail_capture(NativePlayerCaptureStatus::
-						CaptureInvariantFailure);
-					return NativeSessionTickStatus::PermanentCaptureFailure;
-				}
-				rebuilt_atoms.count = image.records().size();
-				for (std::size_t record_index = 0U;
-					 record_index < rebuilt_atoms.count; ++record_index)
-					rebuilt_atoms.canonical_indices[record_index] =
-						static_cast<std::uint16_t>(record_index);
-				rebuilt_atoms.exhaustive = true;
 			}
 			if (m_metrics != nullptr)
 				m_metrics->observe_phase2_image(
@@ -3214,31 +2979,52 @@ NativeSessionTickStatus NativeSessionRuntime::apply_collected_player_capture(con
 			const auto delta_started = m_performance_observation_active
 				? std::chrono::steady_clock::now()
 				: std::chrono::steady_clock::time_point{};
-			auto baseline_result = used_in_place_patch
-				? m_controller.commit_current_state_incremental_patch(
-					  index, std::move(image),
-					  rebuilt_atoms.canonical_indices.data(), rebuilt_atoms.count)
-				: m_controller.replace_current_state_incremental(
-					  index, image, rebuilt_atoms.canonical_indices.data(),
-					  rebuilt_atoms.count);
-			if (!used_in_place_patch &&
-				rebuilt_atoms.exhaustive &&
-				baseline_result ==
-					protocol::ProducerBaselineResult::
-						InvalidArgument)
+			protocol::StateImage current_image;
+			auto baseline_result =
+				m_controller.take_current_state_for_incremental_patch(
+					index, current_image);
+			if (baseline_result ==
+				protocol::ProducerBaselineResult::Applied) {
+				Phase2StateImageRebuildSet patched_atoms{};
+				if (patch_cockpit_sensors_state_image_preallocated(
+						current_image, image, patched_atoms)) {
+					baseline_result =
+						m_controller.commit_current_state_incremental_patch(
+							index, std::move(current_image),
+							patched_atoms.canonical_indices.data(),
+							patched_atoms.count);
+					if (baseline_result !=
+						protocol::ProducerBaselineResult::Applied) {
+						(void)rollback_cockpit_sensors_state_image_preallocated(
+							current_image, image, patched_atoms);
+						(void)m_controller
+							.restore_current_state_after_incremental_patch(
+								index, std::move(current_image));
+					}
+				} else {
+					baseline_result = m_controller
+						.restore_current_state_after_incremental_patch(
+							index, std::move(current_image));
+					if (baseline_result ==
+						protocol::ProducerBaselineResult::Applied)
+						baseline_result =
+							m_controller.replace_current_state(
+								index, image);
+				}
+			} else {
 				baseline_result =
-					m_controller.replace_current_state(
-						index, image);
+					m_controller.replace_current_state_incremental(
+						index, image,
+						rebuilt_atoms.canonical_indices.data(),
+						rebuilt_atoms.count);
+				if (rebuilt_atoms.exhaustive &&
+					baseline_result ==
+						protocol::ProducerBaselineResult::InvalidArgument)
+					baseline_result =
+						m_controller.replace_current_state(index, image);
+			}
 			if (baseline_result !=
 				protocol::ProducerBaselineResult::Applied) {
-				if (used_in_place_patch && !image.empty()) {
-					(void)rollback_phase2_complete_domain_patch_preallocated(
-						m_phase2_image_pools[index],
-						image, rebuilt_atoms);
-					(void)m_controller
-						.restore_current_state_after_incremental_patch(
-							index, std::move(image));
-				}
 				if (auto* diagnostic =
 						begin_phase2_failure_diagnostic(
 							NativePhase2FailureStage::
@@ -3273,307 +3059,6 @@ NativeSessionTickStatus NativeSessionRuntime::apply_collected_player_capture(con
 						std::chrono::steady_clock::now());
 			continue;
 		}
-		if (m_selected_phase2_profile ==
-			Phase2Profile::CoreGate) {
-			const auto& phase2 =
-				m_phase2_observation.observation();
-			const auto core_gate_capture_valid =
-				status == NativePlayerCaptureStatus::CapturedValid &&
-				phase2.capture.status == Phase2CaptureStatus::Valid &&
-				phase2.player_key.value != 0U &&
-				phase2.ships.size() == 1U &&
-				phase2.ships.front().capture_key.value ==
-					phase2.player_key.value;
-			const auto core_gate_no_player =
-				status ==
-					NativePlayerCaptureStatus::CapturedNoPlayer &&
-				phase2.capture.status ==
-					Phase2CaptureStatus::NoPlayer &&
-				phase2.capture.reason == Phase2CaptureReason::None &&
-				phase2.player_key.value == 0U &&
-				phase2.ships.empty();
-			if (m_phase2_manifest == nullptr ||
-				(!core_gate_capture_valid &&
-				 !core_gate_no_player)) {
-				if (auto* diagnostic =
-						begin_phase2_failure_diagnostic(
-							NativePhase2FailureStage::
-								Phase2Precondition);
-					diagnostic != nullptr) {
-					diagnostic->ship_count =
-						phase2.ships.size();
-					diagnostic->player_key =
-						phase2.player_key.value;
-				}
-				fail_capture(
-					NativePlayerCaptureStatus::
-						CaptureInvariantFailure);
-				return NativeSessionTickStatus::
-					PermanentCaptureFailure;
-			}
-			Phase2CaptureLocalKey player_key{};
-			if (core_gate_capture_valid)
-				player_key = phase2.player_key;
-			Phase2Wp05SubjectBinding binding{};
-			const auto closure =
-				m_controller.reconcile_phase2_closure(
-					index,
-					core_gate_capture_valid ? &player_key
-						: nullptr,
-					core_gate_capture_valid ? 1U : 0U,
-					core_gate_capture_valid ? &binding
-						: nullptr,
-					core_gate_capture_valid ? 1U : 0U);
-			if (closure == Phase2RuntimeResult::InvalidInput ||
-				closure ==
-					Phase2RuntimeResult::CapacityExceeded ||
-				closure ==
-					Phase2RuntimeResult::CounterExhausted) {
-				if (auto* diagnostic =
-						begin_phase2_failure_diagnostic(
-							NativePhase2FailureStage::
-								Closure);
-					diagnostic != nullptr) {
-					diagnostic->runtime_result = closure;
-					diagnostic->ship_count =
-						phase2.ships.size();
-					diagnostic->player_key =
-						phase2.player_key.value;
-				}
-				fail_capture(
-					NativePlayerCaptureStatus::
-						CaptureInvariantFailure);
-				return NativeSessionTickStatus::
-					PermanentCaptureFailure;
-			}
-			const auto player_entity_id =
-				core_gate_capture_valid ? binding.entity_id : 0U;
-			if (core_gate_capture_valid &&
-				(binding.capture_key.value !=
-					 phase2.player_key.value ||
-				 player_entity_id == 0U)) {
-				if (auto* diagnostic =
-						begin_phase2_failure_diagnostic(
-							NativePhase2FailureStage::
-								PlayerBinding);
-					diagnostic != nullptr) {
-					diagnostic->ship_count =
-						phase2.ships.size();
-					diagnostic->player_key =
-						phase2.player_key.value;
-					diagnostic->player_entity_id =
-						player_entity_id;
-				}
-				fail_capture(
-					NativePlayerCaptureStatus::
-						CaptureInvariantFailure);
-				return NativeSessionTickStatus::
-					PermanentCaptureFailure;
-			}
-			const auto manifest_state =
-				m_controller.stage_phase2_manifest(index,
-					*m_phase2_manifest,
-					m_tick_context.now_us);
-			if (manifest_state ==
-					Phase2RuntimeResult::InvalidInput ||
-				manifest_state ==
-					Phase2RuntimeResult::Stale ||
-				manifest_state ==
-					Phase2RuntimeResult::CounterExhausted) {
-				if (auto* diagnostic =
-						begin_phase2_failure_diagnostic(
-							NativePhase2FailureStage::
-								Manifest);
-					diagnostic != nullptr)
-					diagnostic->runtime_result =
-						manifest_state;
-				fail_capture(
-					NativePlayerCaptureStatus::
-						CaptureInvariantFailure);
-				return NativeSessionTickStatus::
-					PermanentCaptureFailure;
-			}
-			// A staged manifest is deliberately not treated as installed.
-			// The CoreGate snapshot references the FullRequired generation
-			// and therefore waits for its reliable APPLIED transition.
-			if (!slot.required_manifest_applied)
-				continue;
-			const auto* installed_manifest =
-				m_phase2_manifest_slot->candidate_for_id(
-					slot.required_manifest_id);
-			if (installed_manifest == nullptr ||
-				installed_manifest->manifest_id !=
-					slot.required_manifest_id) {
-				if (auto* diagnostic =
-						begin_phase2_failure_diagnostic(
-							NativePhase2FailureStage::
-								Manifest);
-					diagnostic != nullptr)
-					diagnostic->runtime_result =
-						Phase2RuntimeResult::InvalidInput;
-				fail_capture(
-					NativePlayerCaptureStatus::
-						CaptureInvariantFailure);
-				return NativeSessionTickStatus::
-					PermanentCaptureFailure;
-			}
-			Phase2CoreGateStateImageInput phase2_input;
-			phase2_input.producer_id = m_producer_id;
-			phase2_input.negotiated_capability_generation = 1U;
-			phase2_input.session_phase =
-				slot.snapshot.progress() ==
-					Phase1SnapshotProgress::Live
-				? protocol::SessionPhase::Live
-				: protocol::SessionPhase::Synchronizing;
-			phase2_input.mission.producer_sample_time_us =
-				m_tick_context.now_us;
-			phase2_input.mission.mission_generation =
-				mission_generation;
-			phase2_input.mission.phase =
-				protocol::MissionPhase::Active;
-			phase2_input.mission.paused = m_tick_context.mission_paused;
-			phase2_input.mission.time_compression = m_tick_context.time_compression;
-			phase2_input.player_entity_id = player_entity_id;
-			phase2_input.observation = &phase2;
-			phase2_input.installed_manifest = installed_manifest;
-			phase2_input.required_manifest_id =
-				slot.required_manifest_id;
-			phase2_input.manifest_applied =
-				slot.required_manifest_applied;
-			protocol::StateImage image;
-			const auto image_status =
-				build_phase2_core_gate_state_image_preallocated(
-					phase2_input,
-					m_phase2_core_gate_image_pools[index],
-					image);
-			if (image_status ==
-				Phase2StateImageBuildStatus::AllocationFailed)
-				continue;
-			if (image_status !=
-				Phase2StateImageBuildStatus::Created) {
-				if (auto* diagnostic =
-						begin_phase2_failure_diagnostic(
-							NativePhase2FailureStage::
-								StateImage);
-					diagnostic != nullptr) {
-					diagnostic->image_status = image_status;
-					diagnostic->ship_count =
-						phase2.ships.size();
-					diagnostic->player_key =
-						phase2.player_key.value;
-					diagnostic->player_entity_id =
-						player_entity_id;
-				}
-				fail_capture(
-					NativePlayerCaptureStatus::
-						CaptureInvariantFailure);
-				return NativeSessionTickStatus::
-					PermanentCaptureFailure;
-			}
-			if (m_metrics != nullptr)
-				m_metrics->set_phase2_session_state(index,
-					image.records().size(),
-					image.encoded_snapshot_records_size(),
-					0U,
-					(slot.phase2_runtime.manifest_state()
-							 .active_id != 0U
-						? 1U : 0U) +
-						(slot.phase2_runtime.manifest_state()
-								 .staged_id != 0U
-							? 1U : 0U));
-			if (!slot.snapshot.has_candidate() &&
-				!slot.snapshot.has_active_baseline()) {
-				(void)m_controller.begin_phase2_snapshot(
-					index, image,
-					Phase2RuntimeSnapshotCause::Initial,
-					m_tick_context.now_us);
-				continue;
-			}
-			const auto baseline_result =
-				m_controller.replace_current_state(index, image);
-			if (baseline_result !=
-				protocol::ProducerBaselineResult::Applied) {
-				if (auto* diagnostic =
-						begin_phase2_failure_diagnostic(
-							NativePhase2FailureStage::
-								BaselineReplace);
-					diagnostic != nullptr) {
-					diagnostic->baseline_result =
-						baseline_result;
-					diagnostic->ship_count =
-						phase2.ships.size();
-					diagnostic->player_key =
-						phase2.player_key.value;
-					diagnostic->player_entity_id =
-						player_entity_id;
-				}
-				fail_capture(
-					NativePlayerCaptureStatus::
-						CaptureInvariantFailure);
-				return NativeSessionTickStatus::
-					PermanentCaptureFailure;
-			}
-			if (slot.snapshot.has_active_baseline())
-				(void)m_controller.queue_cumulative_delta(
-					index, m_tick_context.now_us);
-			continue;
-		}
-		Phase1StateImageInput input;
-		input.producer_id = m_producer_id;
-		input.negotiated_capability_generation = 1U;
-		input.session_phase = slot.snapshot.progress() == Phase1SnapshotProgress::Live ? protocol::SessionPhase::Live
-																													 : protocol::SessionPhase::Synchronizing;
-		input.mission.producer_sample_time_us = m_tick_context.now_us;
-		input.mission.mission_generation = mission_generation;
-		input.mission.phase = m_tick_context.mission_active ? protocol::MissionPhase::Active : protocol::MissionPhase::None;
-		input.mission.paused = m_tick_context.mission_paused;
-		input.mission.time_compression = m_tick_context.time_compression;
-		input.player_capture = result;
-		input.player = slot.latest_player_sample;
-		protocol::StateImage image;
-		Phase1StateImageBuildTiming image_timing{};
-		const auto image_build_started = m_performance_observation_active ? std::chrono::steady_clock::now()
-			: std::chrono::steady_clock::time_point{};
-		const auto image_status =
-			build_phase1_state_image_preallocated(input, m_state_image_pools[index], image,
-				m_performance_observation_active ? &image_timing : nullptr);
-		if (m_performance_observation_active) {
-			m_last_performance_sample.state_image_build_duration_ns +=
-				elapsed_nanoseconds(image_build_started, std::chrono::steady_clock::now());
-			m_last_performance_sample.state_image_fill_duration_ns += image_timing.fill_records_ns;
-			m_last_performance_sample.state_image_publish_validate_duration_ns += image_timing.publish_validate_ns;
-			m_last_performance_sample.state_image_adopt_duration_ns += image_timing.adopt_preallocated_ns;
-			m_last_performance_sample.state_image_semantic_validate_duration_ns += image_timing.semantic_validate_ns;
-		}
-		if (image_status == Phase1StateImageBuildStatus::AllocationFailed) {
-			// All immutable backings are still retained by current/active/candidate
-			// state. Preserve them and drop this replaceable capture; the next tick
-			// retries once a baseline/candidate releases an owned backing.
-			continue;
-		}
-		if (image_status != Phase1StateImageBuildStatus::Created) {
-			fail_capture(NativePlayerCaptureStatus::CaptureInvariantFailure);
-			return NativeSessionTickStatus::PermanentCaptureFailure;
-		}
-		if (!slot.snapshot.has_candidate() && !slot.snapshot.has_active_baseline()) {
-			(void)m_controller.begin_initial_snapshot(
-				index, image, m_tick_context.now_us);
-			continue;
-		}
-		const auto delta_build_started = m_performance_observation_active ? std::chrono::steady_clock::now()
-			: std::chrono::steady_clock::time_point{};
-		if (m_controller.replace_current_state(index, image) != protocol::ProducerBaselineResult::Applied) {
-			fail_capture(NativePlayerCaptureStatus::CaptureInvariantFailure);
-			return NativeSessionTickStatus::PermanentCaptureFailure;
-		}
-		if (slot.snapshot.has_active_baseline()) {
-			(void)m_controller.queue_cumulative_delta(
-				index, m_tick_context.now_us);
-		}
-		if (m_performance_observation_active) {
-			m_last_performance_sample.delta_build_duration_ns +=
-				elapsed_nanoseconds(delta_build_started, std::chrono::steady_clock::now());
-		}
 	}
 	return NativeSessionTickStatus::Complete;
 }
@@ -3585,140 +3070,45 @@ void NativeSessionRuntime::clear_player_capture() noexcept
 	m_last_player_capture_status = NativePlayerCaptureStatus::Unavailable;
 }
 
-bool NativeSessionRuntime::provision_state_image_pools(std::size_t client_count) noexcept
-{
-	if (client_count == 0U || client_count > m_state_image_pools.size()) {
-		return false;
-	}
-	std::size_t expected_backing_bytes = 0U;
-	if (!checked_multiply_size(client_count, Phase1StateImagePool::BackingBytesPerClient, expected_backing_bytes) ||
-		expected_backing_bytes > WP03ProvisionalKnownBudgetCapBytes) {
-		return false;
-	}
-	release_state_image_pools();
-	for (std::size_t index = 0U; index < client_count; ++index) {
-		if (!m_state_image_pools[index].provision()) {
-			release_state_image_pools();
-			return false;
-		}
-	}
-	std::size_t backing_bytes = 0U;
-	for (std::size_t index = 0U; index < client_count; ++index) {
-		const auto owned = m_state_image_pools[index].owned_backing_bytes();
-		if (owned == 0U || !checked_add_size(backing_bytes, owned, backing_bytes)) {
-			release_state_image_pools();
-			return false;
-		}
-	}
-	if (backing_bytes != expected_backing_bytes) {
-		release_state_image_pools();
-		return false;
-	}
-	m_state_image_pool_backing_bytes = backing_bytes;
-	const auto budget = calculate_wp06_startup_budget(
-		calculate_wp04_startup_budget(make_wp03_known_budget_request(client_count)), client_count);
-	if (!wp06_budget_matches_state_image_pool(budget, client_count, m_state_image_pool_backing_bytes)) {
-		release_state_image_pools();
-		return false;
-	}
-	return true;
-}
-
 bool NativeSessionRuntime::provision_phase2_image_pools(
 	std::size_t client_count) noexcept
 {
 	if (client_count == 0U ||
-		client_count > m_phase2_image_pools.size())
+		client_count > m_cockpit_sensor_image_pools.size())
 		return false;
 	for (std::size_t index = 0U; index < client_count; ++index)
-		if (!m_phase2_image_pools[index].provision(
+		if (!m_cockpit_sensor_image_pools[index].provision(
 				MaximumPhase2ObservationShips,
 				Phase2ManifestLimits::MaxAggregateSubsystems,
 				MaximumPhase2DockRelationsPerShip,
 				Phase2Wp07EpisodeLatches::Capacity)) {
-			for (auto& pool : m_phase2_image_pools)
+			for (auto& pool : m_cockpit_sensor_image_pools)
 				pool.reset();
 			return false;
 		}
 	std::size_t backing_bytes = 0U;
 	for (std::size_t index = 0U; index < client_count; ++index) {
 		const auto owned =
-			m_phase2_image_pools[index].owned_backing_bytes();
+				m_cockpit_sensor_image_pools[index].owned_backing_bytes();
 		if (owned == 0U ||
 			!checked_add_size(backing_bytes, owned,
 				backing_bytes)) {
-			for (auto& pool : m_phase2_image_pools)
+			for (auto& pool : m_cockpit_sensor_image_pools)
 				pool.reset();
 			return false;
 		}
 	}
-	m_phase2_image_pool_backing_bytes = backing_bytes;
-	return true;
-}
-
-bool NativeSessionRuntime::provision_phase2_core_gate_image_pools(
-	std::size_t client_count) noexcept
-{
-	if (client_count == 0U ||
-		client_count > m_phase2_core_gate_image_pools.size())
-		return false;
-	for (std::size_t index = 0U; index < client_count; ++index)
-		if (!m_phase2_core_gate_image_pools[index].provision(
-				Phase2ManifestLimits::MaxSubsystemsPerShip)) {
-			for (auto& pool : m_phase2_core_gate_image_pools)
-				pool.reset();
-			return false;
-		}
-	std::size_t backing_bytes = 0U;
-	for (std::size_t index = 0U; index < client_count; ++index) {
-		const auto owned =
-			m_phase2_core_gate_image_pools[index]
-				.owned_backing_bytes();
-		if (owned == 0U ||
-			!checked_add_size(backing_bytes, owned,
-				backing_bytes)) {
-			for (auto& pool :
-				 m_phase2_core_gate_image_pools)
-				pool.reset();
-			return false;
-		}
-	}
-	m_phase2_core_gate_image_pool_backing_bytes = backing_bytes;
+	m_cockpit_sensor_image_pool_backing_bytes = backing_bytes;
 	return true;
 }
 
 void NativeSessionRuntime::release_state_image_pools() noexcept
 {
-	for (auto& pool : m_state_image_pools) {
+	for (auto& pool : m_cockpit_sensor_image_pools)
 		pool.reset();
-	}
-	for (auto& pool : m_phase2_core_gate_image_pools)
-		pool.reset();
-	for (auto& pool : m_phase2_image_pools)
-		pool.reset();
-	m_state_image_pool_backing_bytes = 0U;
-	m_phase2_core_gate_image_pool_backing_bytes = 0U;
-	m_phase2_image_pool_backing_bytes = 0U;
+	m_cockpit_sensor_image_pool_backing_bytes = 0U;
 	release_phase3_manifest_states();
 	release_phase2_manifest_state();
-}
-
-std::uint64_t NativeSessionRuntime::state_image_pool_allocation_count() const noexcept
-{
-	std::uint64_t total = 0U;
-	for (const auto& pool : m_state_image_pools) {
-		const auto count = pool.successful_allocation_count();
-		if (std::numeric_limits<std::uint64_t>::max() - total < count) {
-			return std::numeric_limits<std::uint64_t>::max();
-		}
-		total += count;
-	}
-	return total;
-}
-
-std::size_t NativeSessionRuntime::state_image_pool_backing_bytes() const noexcept
-{
-	return m_state_image_pool_backing_bytes;
 }
 
 void NativeSessionRuntime::fail_transport() noexcept
@@ -3732,8 +3122,6 @@ void NativeSessionRuntime::fail_transport() noexcept
 	m_capture_cadence.stop();
 	m_phase2_capture_plan = {};
 	reset_phase2_observation_buffer_in_place(m_phase2_observation);
-	m_selected_phase2_profile = Phase2Profile::None;
-	m_phase2_enabled = false;
 	clear_player_capture();
 	release_state_image_pools();
 	m_producer_id = 0U;
@@ -3765,8 +3153,6 @@ void NativeSessionRuntime::fail_capture(NativePlayerCaptureStatus status) noexce
 	m_capture_cadence.stop();
 	m_phase2_capture_plan = {};
 	reset_phase2_observation_buffer_in_place(m_phase2_observation);
-	m_selected_phase2_profile = Phase2Profile::None;
-	m_phase2_enabled = false;
 	clear_player_capture();
 	release_state_image_pools();
 	m_last_player_capture_status = status;
@@ -3821,10 +3207,7 @@ Phase2CapturePlan NativeSessionRuntimeTestAccess::prepare_phase2_keyframe_plan(
 	NativeSessionRuntime& runtime) noexcept
 {
 	Phase2CapturePlan plan;
-	const auto was_enabled = runtime.m_phase2_enabled;
-	runtime.m_phase2_enabled = true;
 	runtime.prepare_phase2_keyframe(plan);
-	runtime.m_phase2_enabled = was_enabled;
 	return plan;
 }
 

@@ -20,9 +20,9 @@
 namespace telemetry::detail {
 namespace {
 
-Phase2ProfileEligibility current_phase2_profile_eligibility() noexcept
+CockpitProducerEligibility current_cockpit_producer_eligibility() noexcept
 {
-	Phase2ProfileEligibility eligibility;
+	CockpitProducerEligibility eligibility;
 	if ((Game_mode & GM_MULTIPLAYER) == 0) {
 		eligibility.authority_mode = protocol::AuthorityMode::Solo;
 	} else if (Net_player != nullptr &&
@@ -275,7 +275,7 @@ class NativeRuntimeStartupServices final : public RuntimeStartupServices {
 			&m_random,
 			&m_metrics,
 			&m_log,
-			current_phase2_profile_eligibility()};
+			current_cockpit_producer_eligibility()};
 		if (native->start(request) != NativeSessionStartStatus::Started) {
 			return RuntimeTransportStatus::Unavailable;
 		}

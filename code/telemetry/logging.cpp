@@ -19,7 +19,7 @@ bool format_telemetry_log_record(
 	const auto written = std::snprintf(output.data(), output.size(),
 		"telemetry event=%u level=%u reason=%u family=%u budget=%u fault=%u "
 		"slot=%u port=%u version=%u.%u code=%u "
-		"p2_profile=%u p2_profile_rejection=%u p2_block=%u "
+		"cockpit_producer_rejection=%u p2_block=%u "
 		"p2_capture_failure=%u p3_block=%u p3_capture_failure=%u "
 		"p2_lifecycle=%u p2_support=%u p2_resync=%u "
 		"generation=%u records=%u parts=%u bytes=%llu duration_us=%llu "
@@ -36,8 +36,7 @@ bool format_telemetry_log_record(
 		static_cast<unsigned>(record.protocol_major),
 		static_cast<unsigned>(record.protocol_minor),
 		static_cast<unsigned>(record.platform_code),
-		static_cast<unsigned>(record.phase2_profile),
-		static_cast<unsigned>(record.phase2_profile_rejection),
+		static_cast<unsigned>(record.cockpit_producer_rejection),
 		static_cast<unsigned>(record.phase2_block),
 		static_cast<unsigned>(record.phase2_capture_failure),
 		static_cast<unsigned>(record.phase3_block),
@@ -214,35 +213,17 @@ void TelemetryStructuredLog::budget_high_water(TelemetryLogBudget budget, std::u
 	append(record);
 }
 
-void TelemetryStructuredLog::phase2_profile_selected(std::size_t slot,
-	TelemetryPhase2Profile profile,
-	std::uint64_t capability_mask) noexcept
-{
-	if (slot >= m_phase2_profile_logged.size() ||
-		m_phase2_profile_logged[slot] ||
-		static_cast<std::size_t>(profile) >=
-			static_cast<std::size_t>(TelemetryPhase2Profile::Count))
-		return;
-	m_phase2_profile_logged[slot] = true;
-	TelemetryLogRecord record{TelemetryLogEvent::Phase2ProfileSelected,
-		TelemetryLogLevel::Info};
-	record.correlation_slot = static_cast<std::uint8_t>(slot + 1U);
-	record.phase2_profile = profile;
-	record.value = capability_mask;
-	append(record);
-}
-
-void TelemetryStructuredLog::phase2_profile_rejected(
-	TelemetryPhase2ProfileRejection reason,
+void TelemetryStructuredLog::cockpit_producer_rejected(
+	TelemetryCockpitProducerRejection reason,
 	std::uint64_t capability_mask) noexcept
 {
 	if (static_cast<std::size_t>(reason) >=
 		static_cast<std::size_t>(
-			TelemetryPhase2ProfileRejection::Count))
+			TelemetryCockpitProducerRejection::Count))
 		return;
-	TelemetryLogRecord record{TelemetryLogEvent::Phase2ProfileRejected,
+	TelemetryLogRecord record{TelemetryLogEvent::CockpitProducerRejected,
 		TelemetryLogLevel::Warning};
-	record.phase2_profile_rejection = reason;
+	record.cockpit_producer_rejection = reason;
 	record.value = capability_mask;
 	append(record);
 }

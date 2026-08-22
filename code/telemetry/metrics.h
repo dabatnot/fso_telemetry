@@ -45,7 +45,7 @@ enum class TelemetryPhase2Block : std::uint8_t {
 	SupportCargoDocking,
 	Count,
 };
-enum class TelemetryPhase2ProfileRejection : std::uint8_t {
+enum class TelemetryCockpitProducerRejection : std::uint8_t {
 	UnsupportedAuthority = 0,
 	UnsupportedVisibility,
 	IncompleteCoverage,
@@ -72,9 +72,6 @@ enum class TelemetryPhase2ClosureResult : std::uint8_t {
 };
 enum class TelemetryPhase2ManifestResult : std::uint8_t {
 	Built = 0, Reused, Rejected, Count
-};
-enum class TelemetryPhase2Profile : std::uint8_t {
-	None = 0, CoreGate, CompleteShip, CockpitSensors, Count
 };
 enum class TelemetryPhase2LifecycleKind : std::uint8_t {
 	Appeared = 0, Disabled, DyingStarted, Destroyed, Disappeared, Count
@@ -204,7 +201,6 @@ struct TelemetrySessionMetricsSnapshot {
 	std::uint64_t baselines_active = 0U;
 	std::array<std::uint64_t, static_cast<std::size_t>(TelemetryPendingKind::Count)> pending_items{};
 	std::array<std::uint64_t, static_cast<std::size_t>(TelemetryPendingKind::Count)> pending_items_high_water{};
-	TelemetryPhase2Profile phase2_profile = TelemetryPhase2Profile::None;
 	std::array<std::uint64_t, static_cast<std::size_t>(TelemetryPhase2ManifestResult::Count)>
 		phase2_manifest_builds{};
 	TelemetryHistogramSnapshot phase2_manifest_duration{};
@@ -239,8 +235,8 @@ struct TelemetryMetricsSnapshot {
 	std::array<std::uint64_t, static_cast<std::size_t>(TelemetryDeltaDropReason::Count)> delta_drops{};
 	std::array<std::uint64_t, static_cast<std::size_t>(TelemetrySessionEndReason::Count)> session_ends{};
 	std::array<std::uint64_t, static_cast<std::size_t>(TelemetryRuntimeFaultReason::Count)> runtime_faults{};
-	std::array<std::uint64_t, static_cast<std::size_t>(TelemetryPhase2ProfileRejection::Count)>
-		phase2_profile_rejections{};
+	std::array<std::uint64_t, static_cast<std::size_t>(TelemetryCockpitProducerRejection::Count)>
+		cockpit_producer_rejections{};
 	std::array<TelemetryHistogramSnapshot, static_cast<std::size_t>(TelemetryPhase2Block::Count)>
 		phase2_capture_duration{};
 	std::array<std::array<std::uint64_t,
@@ -345,8 +341,8 @@ class TelemetryMetrics final {
 	void record_capture_result(TelemetryCaptureResult result) noexcept;
 	void record_session_end(TelemetrySessionEndReason reason) noexcept;
 	void record_runtime_fault(TelemetryRuntimeFaultReason reason) noexcept;
-	void record_phase2_profile_rejection(TelemetryPhase2ProfileRejection reason) noexcept;
-	void set_phase2_profile(std::size_t slot, TelemetryPhase2Profile profile) noexcept;
+	void record_cockpit_producer_rejection(
+		TelemetryCockpitProducerRejection reason) noexcept;
 	void observe_phase2_capture(TelemetryPhase2Block block,
 		std::uint64_t duration_us) noexcept;
 	void record_phase2_capture_failure(TelemetryPhase2Block block,

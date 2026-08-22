@@ -1,5 +1,6 @@
 #pragma once
 
+#include "telemetry/phase2_state_image.h"
 #include "telemetry/protocol/telemetry_protocol_constants.h"
 #include "telemetry/protocol/telemetry_replication.h"
 
@@ -27,6 +28,14 @@ constexpr std::size_t MaximumPhase3Locks = 64U;
 constexpr std::size_t MaximumPhase3IncomingMissiles = 256U;
 constexpr std::size_t MaximumPhase3Navpoints = 1024U;
 constexpr std::size_t MaximumPhase3RouteWaypoints = 2048U;
+constexpr std::size_t CockpitSensorsLockPayloadCapacity = 4096U;
+constexpr std::size_t CockpitSensorsTargetPayloadCapacity = 1280U;
+constexpr std::size_t CockpitSensorsRadarPayloadCapacity = 128U;
+constexpr std::size_t CockpitSensorsContactPayloadCapacity = 704U;
+constexpr std::size_t CockpitSensorsThreatPayloadCapacity = 32768U;
+constexpr std::size_t CockpitSensorsHudAlertPayloadCapacity = 640U;
+constexpr std::size_t CockpitSensorsCargoPayloadCapacity = 608U;
+constexpr std::size_t CockpitSensorsNavigationPayloadCapacity = 512U * 1024U;
 
 template <std::size_t Capacity>
 struct Phase3OwnedString {
@@ -254,6 +263,54 @@ enum class Phase3StateImageBuildStatus : std::uint8_t {
 	AllocationFailed,
 	Count,
 };
+
+class CockpitSensorsStateImagePool final {
+  public:
+	bool provision(std::size_t maximum_subjects,
+		std::size_t maximum_subsystems,
+		std::size_t maximum_dock_relations,
+		std::size_t maximum_support_latches) noexcept;
+	void reset() noexcept;
+	bool ready() const noexcept { return m_complete.ready(); }
+	std::size_t owned_backing_bytes() const noexcept {
+		return m_complete.owned_backing_bytes();
+	}
+
+  private:
+	friend Phase3StateImageBuildStatus
+	build_cockpit_sensors_state_image_preallocated(
+		const Phase2CompleteDomainInput&, CockpitSensorsStateImagePool&,
+		const Phase3Projection&, protocol::StateImage&,
+		Phase2StateImageBuildDiagnostic*,
+		Phase2StateImageRebuildSet*) noexcept;
+	bool append_preallocated_records(protocol::StateImage& image,
+		std::size_t count) noexcept;
+	Phase2CompleteDomainPool m_complete;
+};
+
+Phase3StateImageBuildStatus build_cockpit_sensors_state_image_preallocated(
+	const Phase2CompleteDomainInput& input,
+	CockpitSensorsStateImagePool& pool,
+	const Phase3Projection& projection,
+	protocol::StateImage& output,
+	Phase2StateImageBuildDiagnostic* diagnostic = nullptr,
+	Phase2StateImageRebuildSet* rebuilt = nullptr) noexcept;
+
+// Applies a canonical candidate to an existing CockpitSensors backing without
+// allocating or replacing that backing. A topology change is reported as
+// false and leaves both images unchanged so the caller can publish the
+// preallocated candidate as a full replacement.
+bool patch_cockpit_sensors_state_image_preallocated(
+	protocol::StateImage& current,
+	protocol::StateImage& candidate,
+	Phase2StateImageRebuildSet& rebuilt) noexcept;
+
+// Reverses a successful patch using the candidate that participated in it.
+// This is used when the baseline tracker rejects the subsequent commit.
+bool rollback_cockpit_sensors_state_image_preallocated(
+	protocol::StateImage& current,
+	protocol::StateImage& candidate,
+	const Phase2StateImageRebuildSet& rebuilt) noexcept;
 
 Phase3StateImageBuildStatus build_phase3_cockpit_sensor_state_image(
 	const protocol::StateImage& complete_ship,

@@ -70,12 +70,12 @@ struct StateAtom {
 constexpr std::size_t MaxReplicationStateAtomCount = MaxTransactionSize / RecordEnvelopeHeaderSize;
 constexpr std::size_t MaxReplicationStateImageRetainedBytes =
 	MaxTransactionSize * 3U + MaxReplicationStateAtomCount * sizeof(StateAtom);
-// CockpitSensors has at most 9 + 10*64 + 4096 + 4096 = 8841 records:
-// inherited CompleteShip atoms, five new player singletons and 4096 contacts.
+// CockpitSensors has at most 10 + 10*64 + 4096 + 4096 = 8842 records:
+// inherited CompleteShip atoms, six new player singletons and 4096 contacts.
 // Size the fixed union exactly to the closed profile maximum; extra headroom
 // here multiplies across three per-client index arrays and the Windows main
 // thread stack without increasing any legal product cardinality.
-constexpr std::size_t MaxIncrementalDirtyStateAtomCount = 8841U;
+constexpr std::size_t MaxIncrementalDirtyStateAtomCount = 8842U;
 
 enum class StateImageResult : std::uint8_t {
 	Created = 0,

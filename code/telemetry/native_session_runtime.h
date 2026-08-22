@@ -4,7 +4,6 @@
 #include "telemetry/config.h"
 #include "telemetry/datagram_scheduler.h"
 #include "telemetry/metrics.h"
-#include "telemetry/phase1_state_image.h"
 #include "telemetry/phase2_observation.h"
 #include "telemetry/phase2_profile_gate.h"
 #include "telemetry/phase2_state_image.h"
@@ -65,7 +64,7 @@ struct NativeSessionStartRequest {
 	RandomSource* packet_sequences = nullptr;
 	TelemetryMetrics* metrics = nullptr;
 	TelemetryStructuredLog* log = nullptr;
-	Phase2ProfileEligibility phase2_eligibility{};
+	CockpitProducerEligibility cockpit_eligibility{};
 };
 
 struct NativeSessionTickContext {
@@ -215,9 +214,6 @@ class NativeSessionRuntime final : private DatagramIoWork {
 	NativePhase2FailureDiagnostic* begin_phase2_failure_diagnostic(
 		NativePhase2FailureStage stage) noexcept;
 	void prepare_phase2_keyframe(Phase2CapturePlan& plan) noexcept;
-	bool provision_state_image_pools(std::size_t client_count) noexcept;
-	bool provision_phase2_core_gate_image_pools(
-		std::size_t client_count) noexcept;
 	bool provision_phase2_image_pools(std::size_t client_count) noexcept;
 	void release_state_image_pools() noexcept;
 	void refresh_metrics_session_scope() noexcept;
@@ -243,8 +239,6 @@ class NativeSessionRuntime final : private DatagramIoWork {
 	void release_unreferenced_phase2_manifest_generation() noexcept;
 	void release_phase2_manifest_state() noexcept;
 	void release_phase3_manifest_states() noexcept;
-	std::uint64_t state_image_pool_allocation_count() const noexcept;
-	std::size_t state_image_pool_backing_bytes() const noexcept;
 
 	DedicatedUdpTransport m_transport;
 	NativeOutputCompletionPort& m_output_completion;
@@ -255,8 +249,6 @@ class NativeSessionRuntime final : private DatagramIoWork {
 	Phase2ObservationBuffer m_phase2_observation;
 	Phase2CapturePlan m_phase2_capture_plan{};
 	Phase2CaptureResult m_last_phase2_capture_result{};
-	Phase2Profile m_selected_phase2_profile = Phase2Profile::None;
-	bool m_phase2_enabled = false;
 	std::array<std::unique_ptr<Phase3Projection>, 4U>
 		m_phase3_projections{};
 	std::array<std::unique_ptr<Phase3Projection>, 4U>
@@ -278,9 +270,7 @@ class NativeSessionRuntime final : private DatagramIoWork {
 	std::size_t m_startup_owned_budget_test_adjustment = 0U;
 	std::size_t m_startup_owned_bytes = 0U;
 	std::uint64_t m_startup_allocation_count = 0U;
-	std::size_t m_state_image_pool_backing_bytes = 0U;
-	std::size_t m_phase2_core_gate_image_pool_backing_bytes = 0U;
-	std::size_t m_phase2_image_pool_backing_bytes = 0U;
+	std::size_t m_cockpit_sensor_image_pool_backing_bytes = 0U;
 	Phase2OwnedBudget m_phase2_owned_budget{};
 	Phase2Wp07GlobalEventBatch m_phase2_event_batch_scratch{};
 	Phase2GlobalFanoutResult m_phase2_fanout_scratch{};
@@ -297,10 +287,8 @@ class NativeSessionRuntime final : private DatagramIoWork {
 	// Retained only by the production-owned friend seam to prove that the
 	// scoped observer sees a real runtime allocation event.
 	std::unique_ptr<std::uint8_t[]> m_test_allocation_probe;
-	std::array<Phase1StateImagePool, 4U> m_state_image_pools{};
-	std::array<Phase2StateImagePool, 4U>
-		m_phase2_core_gate_image_pools{};
-	std::array<Phase2CompleteDomainPool, 4U> m_phase2_image_pools{};
+	std::array<CockpitSensorsStateImagePool, 4U>
+		m_cockpit_sensor_image_pools{};
 	struct Phase3ManifestState {
 		std::unique_ptr<Phase2ManifestStorage> storage;
 		std::unique_ptr<Phase2ManifestSlot> slot;

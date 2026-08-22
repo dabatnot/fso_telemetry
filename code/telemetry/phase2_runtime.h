@@ -1,7 +1,6 @@
 #pragma once
 
 #include "telemetry/phase2_observation.h"
-#include "telemetry/phase2_profile_gate.h"
 #include "telemetry/phase2_state_image.h"
 #include "telemetry/protocol/telemetry_sha256.h"
 
@@ -80,8 +79,7 @@ class Phase2RuntimeSlot final {
 		ClosureCapacity * 5U;
 	static constexpr std::size_t BlockCount = 8U;
 
-	bool configure(Phase2Profile profile,
-		std::size_t session_slot) noexcept;
+	bool configure(std::size_t session_slot) noexcept;
 	void reset() noexcept;
 
 	Phase2RuntimeResult reconcile_closure(
@@ -227,7 +225,6 @@ class Phase2RuntimeSlot final {
 	std::array<std::uint64_t, BlockCount> m_current_block_samples{};
 	std::array<std::uint64_t, BlockCount> m_candidate_block_samples{};
 	std::array<std::uint64_t, BlockCount> m_active_block_samples{};
-	Phase2Profile m_profile = Phase2Profile::None;
 	std::size_t m_session_slot = 0U;
 	bool m_configured = false;
 };

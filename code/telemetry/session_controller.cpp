@@ -4,6 +4,7 @@
 #include "telemetry/protocol/telemetry_crc32.h"
 #include "telemetry/protocol/telemetry_datagram.h"
 #include "telemetry/protocol/telemetry_reliability_messages.h"
+#include "telemetry/phase3_state_image.h"
 #include "telemetry/transport.h"
 
 #include <algorithm>
@@ -12,6 +13,43 @@
 #include <new>
 
 namespace telemetry::detail {
+namespace {
+constexpr std::size_t cockpit_delta_inventory_bytes(
+	std::size_t count, std::size_t identity_capacity,
+	std::size_t value_capacity) noexcept
+{
+	return count * (sizeof(protocol::StateMutation) + identity_capacity +
+		value_capacity + sizeof(std::uint64_t));
+}
+
+constexpr std::size_t cockpit_delta_scratch_heap_bytes() noexcept
+{
+	return
+		cockpit_delta_inventory_bytes(1U, 8U, 72U) +
+		cockpit_delta_inventory_bytes(1U, 8U, 28U) +
+		cockpit_delta_inventory_bytes(MaximumPhase2ObservationShips, 8U, 40U) +
+		cockpit_delta_inventory_bytes(MaximumPhase2ObservationShips, 8U, 704U) +
+		cockpit_delta_inventory_bytes(MaximumPhase2ObservationShips, 8U, 84U) +
+		cockpit_delta_inventory_bytes(1U, 8U, 96U) +
+		cockpit_delta_inventory_bytes(MaximumPhase2ObservationShips, 8U, 48U) +
+		cockpit_delta_inventory_bytes(MaximumPhase2ObservationShips, 8U, 560U) +
+		cockpit_delta_inventory_bytes(Phase2ManifestLimits::MaxAggregateSubsystems, 12U, 512U) +
+		cockpit_delta_inventory_bytes(MaximumPhase2ObservationShips, 8U, 96U) +
+		cockpit_delta_inventory_bytes(MaximumPhase2ObservationShips, 8U, 112U) +
+		cockpit_delta_inventory_bytes(MaximumPhase2ObservationShips, 8U, 9'216U) +
+		cockpit_delta_inventory_bytes(1U, 8U, CockpitSensorsLockPayloadCapacity) +
+		cockpit_delta_inventory_bytes(1U, 8U, CockpitSensorsTargetPayloadCapacity) +
+		cockpit_delta_inventory_bytes(1U, 8U, CockpitSensorsRadarPayloadCapacity) +
+		cockpit_delta_inventory_bytes(MaximumPhase3Contacts, 16U, CockpitSensorsContactPayloadCapacity) +
+		cockpit_delta_inventory_bytes(1U, 8U, CockpitSensorsThreatPayloadCapacity) +
+		cockpit_delta_inventory_bytes(1U, 8U, CockpitSensorsCargoPayloadCapacity) +
+		cockpit_delta_inventory_bytes(MaximumPhase2ObservationShips, 8U, 18'000U) +
+		cockpit_delta_inventory_bytes(MaximumPhase2ObservationShips, 8U, 40U) +
+		cockpit_delta_inventory_bytes(1U, 8U, CockpitSensorsNavigationPayloadCapacity) +
+		cockpit_delta_inventory_bytes(1U, 8U, CockpitSensorsHudAlertPayloadCapacity);
+}
+} // namespace
+
 const std::size_t Wp06ClientSlotStorageBytes =
 	sizeof(SessionControllerSlot) +
 	protocol::ProducerBaselineTracker::dirty_index_backing_bytes();
@@ -20,26 +58,30 @@ const std::size_t Wp06HandshakeCacheStorageBytes = SessionController::handshake_
 const std::size_t Wp06PreproofLedgerStorageBytes = sizeof(PreproofAmplificationLedger);
 const std::size_t Wp06OutputQueueStorageBytes = sizeof(SessionControllerOutput);
 const std::size_t Wp06SnapshotEgressHeapBytesPerClient =
-	Phase1SnapshotEgress::startup_heap_bytes({1U, 1U});
-const std::size_t Wp06DeltaEgressHeapBytesPerClient = Phase1DeltaEgress::StartupHeapBytes;
+	Phase1SnapshotEgress::startup_heap_bytes({Phase2SnapshotMaximumParts,
+		Phase2SnapshotMaximumParts, protocol::MaxTransactionSize,
+		Phase2ReplicationPartBytes});
+const std::size_t Wp06DeltaEgressHeapBytesPerClient =
+	Phase3CockpitSensorsDeltaBytes * 2U;
 const std::size_t Wp06DeltaScratchHeapBytesPerClient =
-	4U * (sizeof(protocol::StateMutation) + 84U + sizeof(std::uint64_t) * 2U);
+	cockpit_delta_scratch_heap_bytes();
 namespace {
 
 constexpr std::size_t InvalidIndex = std::numeric_limits<std::size_t>::max();
 constexpr std::uint64_t HandshakeCacheLifetimeUs = protocol::HandshakeCacheLifetimeMs * 1000U;
-constexpr std::size_t Phase2CompleteDeltaMaximumMutations =
+constexpr std::size_t CockpitSensorsDeltaMaximumMutations =
 	4U + 10U * MaximumPhase2ObservationShips +
-	Phase2ManifestLimits::MaxAggregateSubsystems;
+	Phase2ManifestLimits::MaxAggregateSubsystems + 6U +
+	MaximumPhase3Contacts;
 
-bool provision_phase2_complete_delta_scratch(
+bool provision_cockpit_sensors_delta_scratch(
 	protocol::CumulativeStateDelta& scratch) noexcept
 {
 	try {
 		scratch.mutations.reserve(
-			Phase2CompleteDeltaMaximumMutations);
+			CockpitSensorsDeltaMaximumMutations);
 		scratch.mutations.resize(
-			Phase2CompleteDeltaMaximumMutations);
+			CockpitSensorsDeltaMaximumMutations);
 		std::size_t cursor = 0U;
 		const auto provision =
 			[&](protocol::RecordType type, std::size_t count,
@@ -82,11 +124,27 @@ bool provision_phase2_complete_delta_scratch(
 			MaximumPhase2ObservationShips, 112U);
 		provision(protocol::RecordType::WeaponState,
 			MaximumPhase2ObservationShips, 9'216U);
-		provision(protocol::RecordType::CargoScanState, 1U, 608U);
+		provision(protocol::RecordType::LockState, 1U,
+			CockpitSensorsLockPayloadCapacity);
+		provision(protocol::RecordType::TargetState, 1U,
+			CockpitSensorsTargetPayloadCapacity);
+		provision(protocol::RecordType::RadarState, 1U,
+			CockpitSensorsRadarPayloadCapacity);
+		provision(protocol::RecordType::RadarContacts,
+			MaximumPhase3Contacts,
+			CockpitSensorsContactPayloadCapacity);
+		provision(protocol::RecordType::ThreatState, 1U,
+			CockpitSensorsThreatPayloadCapacity);
+		provision(protocol::RecordType::CargoScanState, 1U,
+			CockpitSensorsCargoPayloadCapacity);
 		provision(protocol::RecordType::DockingState,
 			MaximumPhase2ObservationShips, 18'000U);
 		provision(protocol::RecordType::SupportState,
 			MaximumPhase2ObservationShips, 40U);
+		provision(protocol::RecordType::NavigationState, 1U,
+			CockpitSensorsNavigationPayloadCapacity);
+		provision(protocol::RecordType::HudAlertState, 1U,
+			CockpitSensorsHudAlertPayloadCapacity);
 		if (cursor != scratch.mutations.size())
 			return false;
 		scratch.active_mutation_count = 0U;
@@ -257,17 +315,6 @@ SessionControllerConfigureResult SessionController::configure(const SessionContr
 		config.idle_heartbeat_ms < protocol::MinHeartbeatIntervalMs ||
 		config.idle_heartbeat_ms > protocol::MaxHeartbeatIntervalMs ||
 		config.keyframe_seconds < 1U || config.keyframe_seconds > 5U ||
-		(config.delta_payload_capacity !=
-				Phase1DeltaScratchBytes &&
-		 config.delta_payload_capacity !=
-				Phase2CompleteShipDeltaBytes) ||
-		(config.phase2_profile != Phase2Profile::None &&
-		 config.delta_payload_capacity !=
-			Phase2CompleteShipDeltaBytes) ||
-		(config.phase2_profile != Phase2Profile::None &&
-		 config.phase2_profile != Phase2Profile::CoreGate &&
-		 config.phase2_profile != Phase2Profile::CompleteShip &&
-		 config.phase2_profile != Phase2Profile::CockpitSensors) ||
 		config.security.resources.max_clients != config.max_clients ||
 		protocol::validate_security_configuration(config.security, totals) !=
 			protocol::SecurityConfigurationError::None) {
@@ -319,18 +366,12 @@ SessionControllerConfigureResult SessionController::configure(const SessionContr
 			return SessionControllerConfigureResult::AllocationFailure;
 		}
 	}
-	const auto budget = calculate_wp06_startup_budget(
-		calculate_wp04_startup_budget(make_wp03_known_budget_request(config.max_clients)), config.max_clients);
 	// Do not publish Ready unless every startup-priced P8 capacity corresponds
 	// to a physically retained buffer. This catches a changed reserve policy,
 	// an overflow, or a partial provisioning failure before bind.
 	if (Wp06SnapshotEgressHeapBytesPerClient == 0U ||
 		Wp06DeltaEgressHeapBytesPerClient == 0U ||
-		Wp06DeltaScratchHeapBytesPerClient == 0U ||
-		(config.phase2_profile == Phase2Profile::None &&
-		 config.delta_payload_capacity == Phase1DeltaScratchBytes &&
-		 !wp06_budget_matches_owned_storage(
-			budget, candidate.owned_capacity()))) {
+		Wp06DeltaScratchHeapBytesPerClient == 0U) {
 		return SessionControllerConfigureResult::AllocationFailure;
 	}
 	candidate.m_ready = true;
@@ -434,9 +475,7 @@ bool SessionController::initialize_slot(std::size_t index) noexcept
 	m_slots[index].snapshot.set_allocation_observer(&m_phase1_allocation_observer);
 	m_slots[index].snapshot_egress.set_allocation_observer(&m_phase1_allocation_observer);
 	m_slots[index].delta_egress.set_allocation_observer(&m_phase1_allocation_observer);
-	if (m_config.phase2_profile != Phase2Profile::None &&
-		!m_slots[index].phase2_runtime.configure(
-			m_config.phase2_profile, index))
+	if (!m_slots[index].phase2_runtime.configure(index))
 		return false;
 	// Delta egress owns its bounded byte buffers for the lifetime of the
 	// controller slot. Reconnect/reset only clears logical session state; it
@@ -444,41 +483,23 @@ bool SessionController::initialize_slot(std::size_t index) noexcept
 	m_slots[index].delta_egress.discard();
 	if (!m_slots[index].delta_egress.provisioned() &&
 		!m_slots[index].delta_egress.provision(
-			m_config.delta_payload_capacity)) {
+			Phase3CockpitSensorsDeltaBytes)) {
 		return false;
 	}
 	try {
 		auto& scratch = m_slots[index].delta_scratch;
-		if (m_config.phase2_profile != Phase2Profile::None) {
-			if (!provision_phase2_complete_delta_scratch(scratch))
-				return false;
-		} else {
-			if (scratch.mutations.capacity() < 4U)
-				scratch.mutations.reserve(4U);
-			scratch.mutations.resize(4U);
-			for (auto& mutation : scratch.mutations) {
-				mutation.atom.key.identity.reserve(sizeof(std::uint64_t));
-				mutation.atom.value.reserve(84U);
-				mutation.atom.cascade_owner.identity.reserve(
-					sizeof(std::uint64_t));
-			}
-		}
+		if (!provision_cockpit_sensors_delta_scratch(scratch))
+			return false;
 	} catch (const std::bad_alloc&) {
 		return false;
 	}
 	m_reliable_windows[index].configure();
 	if (needs_snapshot_egress_configuration) {
-		return m_config.phase2_profile !=
-				Phase2Profile::None
-			? m_slots[index].snapshot_egress.configure(
-				{Phase2SnapshotMaximumParts,
-				 Phase2SnapshotMaximumParts,
-				 protocol::MaxTransactionSize,
-				 Phase2ReplicationPartBytes})
-			: m_slots[index].snapshot_egress.configure(
-				{1U, 1U,
-				 Phase1SnapshotRecordScratchBytes,
-				 Phase1ReplicationScratchBytes});
+		return m_slots[index].snapshot_egress.configure(
+			{Phase2SnapshotMaximumParts,
+			 Phase2SnapshotMaximumParts,
+			 protocol::MaxTransactionSize,
+			 Phase2ReplicationPartBytes});
 	}
 	m_slots[index].snapshot_egress.rollback_candidate();
 	return true;
@@ -1027,7 +1048,7 @@ SessionIngressResult SessionController::ingest_ack(const protocol::EndpointKey& 
 				slot.snapshot.active_snapshot_id() ==
 					candidate_snapshot_id;
 			if (baseline_promoted &&
-				m_config.phase2_profile != Phase2Profile::None &&
+				slot.phase2_runtime.started_snapshot_sequence() != 0U &&
 				slot.phase2_runtime.on_snapshot_applied(
 					candidate_snapshot_id, candidate_manifest_id) !=
 					Phase2RuntimeResult::Applied) {
@@ -1263,9 +1284,8 @@ void SessionController::request_all_keyframes() noexcept
 		if (slot.progress != ProducerSessionProgress::ReadyForState)
 			continue;
 		slot.keyframe_due = true;
-		if (m_config.phase2_profile != Phase2Profile::None)
-			(void)slot.phase2_runtime.request_snapshot(
-				Phase2RuntimeSnapshotCause::Periodic);
+		(void)slot.phase2_runtime.request_snapshot(
+			Phase2RuntimeSnapshotCause::Periodic);
 	}
 }
 
@@ -1543,11 +1563,6 @@ SessionIngressResult SessionController::ingest_resync_request(const protocol::En
 				slot.snapshot.has_active_baseline()) {
 				rollback_snapshot_candidate(index);
 			}
-		}
-		if (m_config.phase2_profile != Phase2Profile::CockpitSensors &&
-			!slot.snapshot.has_candidate() && !slot.snapshot_egress.has_candidate() &&
-			begin_scheduled_snapshot(index, protocol::SnapshotFlagResync, now_us)) {
-			(void)slot.resync.complete();
 		}
 	}
 	note_network_activity(index, now_us);
@@ -1870,11 +1885,6 @@ void SessionController::service_reliability(std::uint64_t now_us) noexcept
 				if (action.terminal_policy == protocol::ReliableTerminalPolicy::RequestResync &&
 					slot.snapshot.has_active_baseline()) {
 					rollback_snapshot_candidate(index);
-					if (!slot.snapshot.has_candidate() &&
-						m_config.phase2_profile !=
-							Phase2Profile::CockpitSensors) {
-						(void)begin_scheduled_snapshot(index, protocol::SnapshotFlagResync, now_us);
-					}
 					return;
 				}
 				(void)close_slot(index, SessionCloseReason::Timeout);
@@ -2074,28 +2084,12 @@ void SessionController::service_periodic(std::uint64_t now_us) noexcept
 		if (slot.progress != ProducerSessionProgress::ReadyForState || !slot.snapshot.has_active_baseline()) {
 			continue;
 		}
-		if (slot.resync.has_candidate() &&
-			m_config.phase2_profile != Phase2Profile::CockpitSensors &&
-			!slot.snapshot.has_candidate() &&
-			!slot.snapshot_egress.has_candidate()) {
-			if (begin_scheduled_snapshot(index, protocol::SnapshotFlagResync, now_us)) {
-				preempt_queued_delta();
-				(void)slot.resync.complete();
-				continue;
-			}
-		}
 		if (now_us >= slot.next_keyframe_due_us) {
 			const auto interval_us = static_cast<std::uint64_t>(m_config.keyframe_seconds) * 1'000'000U;
 			slot.next_keyframe_due_us = add_would_overflow(now_us, interval_us)
 				? std::numeric_limits<std::uint64_t>::max()
 				: now_us + interval_us;
 			slot.keyframe_due = true;
-		}
-		if (slot.keyframe_due &&
-			m_config.phase2_profile != Phase2Profile::CockpitSensors &&
-			!slot.snapshot.has_candidate() && !slot.snapshot_egress.has_candidate() &&
-			begin_scheduled_snapshot(index, protocol::SnapshotFlagPeriodicKeyframe, now_us)) {
-			preempt_queued_delta();
 		}
 	}
 	if (m_has_output && !m_output_delta_egress_pending) {
@@ -2321,10 +2315,6 @@ bool SessionController::begin_scheduled_snapshot(
 {
 	if (slot_index >= m_config.max_clients)
 		return false;
-	if (m_config.phase2_profile ==
-		Phase2Profile::None)
-		return begin_replacement_snapshot(
-			slot_index, snapshot_flags, now_us);
 	auto& slot = m_slots[slot_index];
 	auto cause = slot.phase2_runtime.pending_snapshot_cause();
 	if (snapshot_flags == protocol::SnapshotFlagResync)
@@ -2352,9 +2342,7 @@ void SessionController::rollback_snapshot_candidate(
 	slot.snapshot_egress.rollback_candidate();
 	if (!slot.snapshot.abandon_replacement_candidate())
 		slot.snapshot.rollback_candidate();
-	if (m_config.phase2_profile !=
-			Phase2Profile::None &&
-		candidate_id != 0U)
+	if (candidate_id != 0U)
 		(void)slot.phase2_runtime.on_snapshot_abandoned(
 			candidate_id);
 }
@@ -2442,8 +2430,7 @@ Phase2RuntimeResult SessionController::reconcile_phase2_closure(
 	std::size_t binding_capacity) noexcept
 {
 	if (!m_ready || m_faulted ||
-		slot_index >= m_config.max_clients ||
-		m_config.phase2_profile == Phase2Profile::None)
+		slot_index >= m_config.max_clients)
 		return Phase2RuntimeResult::InvalidInput;
 	return m_slots[slot_index].phase2_runtime.reconcile_closure(
 		signatures, count, bindings, binding_capacity);
@@ -2459,8 +2446,7 @@ Phase2RuntimeResult SessionController::reconcile_phase2_closure_with_public_ids(
 	std::size_t binding_capacity) noexcept
 {
 	if (!m_ready || m_faulted ||
-		slot_index >= m_config.max_clients ||
-		m_config.phase2_profile != Phase2Profile::CockpitSensors)
+		slot_index >= m_config.max_clients)
 		return Phase2RuntimeResult::InvalidInput;
 	return m_slots[slot_index].phase2_runtime
 		.reconcile_closure_with_public_ids(identity_signatures,
@@ -2474,8 +2460,7 @@ Phase2RuntimeResult SessionController::observe_phase2_lifecycle(
 	std::size_t binding_count) noexcept
 {
 	if (!m_ready || m_faulted ||
-		slot_index >= m_config.max_clients ||
-		m_config.phase2_profile == Phase2Profile::None)
+		slot_index >= m_config.max_clients)
 		return Phase2RuntimeResult::InvalidInput;
 	return m_slots[slot_index].phase2_runtime.observe_lifecycle(
 		observation, bindings, binding_count);
@@ -2498,8 +2483,7 @@ Phase2RuntimeResult SessionController::stage_phase2_manifest(
 	const protocol::Sha256Digest& topology_fingerprint) noexcept
 {
 	if (!m_ready || m_faulted ||
-		slot_index >= m_config.max_clients ||
-		m_config.phase2_profile == Phase2Profile::None)
+		slot_index >= m_config.max_clients)
 		return Phase2RuntimeResult::InvalidInput;
 	auto& slot = m_slots[slot_index];
 	const auto topology =
@@ -2523,8 +2507,7 @@ Phase2RuntimeResult SessionController::stage_phase2_manifest(
 	std::uint64_t now_us) noexcept
 {
 	if (!m_ready || m_faulted ||
-		slot_index >= m_config.max_clients ||
-		m_config.phase2_profile == Phase2Profile::None)
+		slot_index >= m_config.max_clients)
 		return Phase2RuntimeResult::InvalidInput;
 	auto& slot = m_slots[slot_index];
 	const auto preview = slot.phase2_runtime.preview_stage_manifest(
@@ -2556,8 +2539,7 @@ Phase2RuntimeResult SessionController::apply_phase2_manifest(
 	std::size_t slot_index, std::uint32_t manifest_id) noexcept
 {
 	if (!m_ready || m_faulted ||
-		slot_index >= m_config.max_clients ||
-		m_config.phase2_profile == Phase2Profile::None)
+		slot_index >= m_config.max_clients)
 		return Phase2RuntimeResult::InvalidInput;
 	auto& slot = m_slots[slot_index];
 	const auto result =
@@ -2575,8 +2557,7 @@ SessionController::phase2_support_latches(
 	std::size_t slot_index) noexcept
 {
 	if (!m_ready || m_faulted ||
-		slot_index >= m_config.max_clients ||
-		m_config.phase2_profile == Phase2Profile::None)
+		slot_index >= m_config.max_clients)
 		return nullptr;
 	return &m_slots[slot_index].phase2_runtime.support_latches();
 }
@@ -2691,19 +2672,17 @@ std::size_t SessionController::service_next_phase2_manifest_egress(
 	return 0U;
 }
 
-Phase2ProfileMutationResult
-SessionController::reject_phase2_profile_mutation_for_slot(
+CockpitCoverageMutationResult
+SessionController::reject_cockpit_coverage_mutation_for_slot(
 	std::size_t slot_index,
-	Phase2ProfileMutationSource source) noexcept
+	CockpitCoverageMutationSource source) noexcept
 {
-	Phase2ProfileMutationResult result;
+	CockpitCoverageMutationResult result;
 	if (!m_ready || m_faulted ||
-		slot_index >= m_config.max_clients ||
-		m_config.phase2_profile == Phase2Profile::None)
+		slot_index >= m_config.max_clients)
 		return result;
 	auto& slot = m_slots[slot_index];
-	result = reject_phase2_profile_mutation(
-		m_config.phase2_profile,
+	result = reject_cockpit_coverage_mutation(
 		protocol::StateDomainCoverageBitNone, source);
 	if (result.error == protocol::ValidationError::None)
 		return result;
@@ -2783,8 +2762,7 @@ bool SessionController::begin_phase2_snapshot(
 	Phase2RuntimeSnapshotCause cause, std::uint64_t now_us) noexcept
 {
 	if (!m_ready || m_faulted ||
-		slot_index >= m_config.max_clients ||
-		m_config.phase2_profile == Phase2Profile::None)
+		slot_index >= m_config.max_clients)
 		return false;
 	auto& slot = m_slots[slot_index];
 	if (slot.phase2_runtime.request_snapshot(cause) !=
@@ -2819,7 +2797,6 @@ bool SessionController::queue_cumulative_delta(std::size_t slot_index,
 	}
 	auto& slot = m_slots[slot_index];
 	const auto phase3_complete_capture =
-		m_config.phase2_profile != Phase2Profile::CockpitSensors ||
 		(complete_capture_sample_time_us != 0U &&
 		 complete_capture_sample_time_us == now_us);
 	if (slot.resync.has_candidate()) {
@@ -2849,8 +2826,7 @@ bool SessionController::queue_cumulative_delta(std::size_t slot_index,
 		}
 		return false;
 	}
-	if (m_config.phase2_profile == Phase2Profile::CockpitSensors &&
-		slot.phase2_runtime.pending_snapshot_cause() !=
+	if (slot.phase2_runtime.pending_snapshot_cause() !=
 			Phase2RuntimeSnapshotCause::None) {
 		if (!phase3_complete_capture)
 			return false;
@@ -2861,8 +2837,7 @@ bool SessionController::queue_cumulative_delta(std::size_t slot_index,
 				: protocol::SnapshotFlagPeriodicKeyframe;
 		return begin_scheduled_snapshot(slot_index, flags, now_us);
 	}
-	if (m_config.phase2_profile != Phase2Profile::None &&
-		!slot.phase2_runtime.can_emit_delta())
+	if (!slot.phase2_runtime.can_emit_delta())
 		return false;
 	if (slot.progress != ProducerSessionProgress::ReadyForState || !slot.snapshot.has_active_baseline() ||
 		slot.next_message_id == 0U || !slot.delta_egress.can_replace()) {
@@ -2888,10 +2863,8 @@ bool SessionController::queue_cumulative_delta(std::size_t slot_index,
 		slot.session_id, slot.endpoint, slot.next_message_id,
 		delta, delta_changes);
 	if (replaced == Phase1DeltaReplaceResult::CapacityExceeded) {
-		if (m_config.phase2_profile !=
-			Phase2Profile::None)
-			(void)slot.phase2_runtime.request_snapshot(
-				Phase2RuntimeSnapshotCause::DeltaCapacity);
+		(void)slot.phase2_runtime.request_snapshot(
+			Phase2RuntimeSnapshotCause::DeltaCapacity);
 		if (!phase3_complete_capture)
 			return false;
 		if (begin_scheduled_snapshot(slot_index,
@@ -2910,8 +2883,7 @@ bool SessionController::queue_cumulative_delta(std::size_t slot_index,
 
 bool SessionController::phase3_complete_capture_required() const noexcept
 {
-	if (!m_ready || m_faulted ||
-		m_config.phase2_profile != Phase2Profile::CockpitSensors)
+	if (!m_ready || m_faulted)
 		return false;
 	for (std::size_t index = 0U; index < m_config.max_clients; ++index) {
 		const auto& slot = m_slots[index];

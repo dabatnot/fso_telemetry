@@ -236,9 +236,7 @@ detail::SessionControllerConfig config(std::size_t max_clients = 1U)
 detail::SessionController make_controller(detail::SessionIdAllocator& ids,
 	StageRecorder* observer = nullptr,
 	std::size_t max_clients = 1U,
-	std::uint8_t keyframe_seconds = 2U,
-	telemetry::Phase2Profile phase2_profile =
-		telemetry::Phase2Profile::None)
+	std::uint8_t keyframe_seconds = 2U)
 {
 	struct PacketSequences final : detail::RandomSource {
 		std::uint64_t next = 0x10203040U;
@@ -252,10 +250,6 @@ detail::SessionController make_controller(detail::SessionIdAllocator& ids,
 	detail::SessionController controller;
 	auto controller_config = config(max_clients);
 	controller_config.keyframe_seconds = keyframe_seconds;
-	controller_config.phase2_profile = phase2_profile;
-	if (phase2_profile != telemetry::Phase2Profile::None)
-		controller_config.delta_payload_capacity =
-			detail::Phase2CompleteShipDeltaBytes;
 	EXPECT_EQ(detail::SessionControllerConfigureResult::Ready,
 		detail::SessionController::configure(
 			controller_config, ids, packet_sequences, 0U, observer, controller));
@@ -748,35 +742,33 @@ TEST(TelemetryWp06IngressContract, EachInvalidStageStopsWithOnePrimaryReasonAndZ
 
 TEST(TelemetryPhase3Session, CockpitSensorsCoverageIsImmutableForTheSession)
 {
-	constexpr auto profile = telemetry::Phase2Profile::CockpitSensors;
-	const auto coverage = telemetry::phase2_profile_coverage(profile);
+	constexpr auto coverage = telemetry::Phase3CockpitSensorsCoverage;
 	ASSERT_NE(protocol::StateDomainCoverageBitNone, coverage);
 
 	// The transition rule rejects both a wider and a narrower coverage.  A
 	// session controller must turn such an attempted valid-ingress update into
 	// a terminal SESSION_END instead of changing the established session.
-	const auto promotion = telemetry::reject_phase2_profile_mutation(
-		profile,
-		telemetry::phase2_profile_coverage(telemetry::Phase2Profile::CompleteShip),
-		telemetry::Phase2ProfileMutationSource::CapabilityUpdate);
+	const auto promotion = telemetry::reject_cockpit_coverage_mutation(
+		0x0583ULL,
+		telemetry::CockpitCoverageMutationSource::CapabilityUpdate);
 	EXPECT_EQ(protocol::ValidationError::InvalidStateTransition, promotion.error);
 	EXPECT_EQ(telemetry::Phase2SessionSlotState::FaultedSession, promotion.slot_state);
-	const auto degradation = telemetry::reject_phase2_profile_mutation(
-		profile, protocol::StateDomainCoverageBitNone,
-		telemetry::Phase2ProfileMutationSource::Delta);
+	const auto degradation = telemetry::reject_cockpit_coverage_mutation(
+		protocol::StateDomainCoverageBitNone,
+		telemetry::CockpitCoverageMutationSource::Delta);
 	EXPECT_EQ(protocol::ValidationError::InvalidStateTransition, degradation.error);
 	EXPECT_EQ(telemetry::Phase2SessionSlotState::FaultedSession, degradation.slot_state);
 
 	IdentityHarness ids{{{true, 0x7c03U}}};
-	auto controller = make_controller(ids.allocator, nullptr, 1U, 2U, profile);
+	auto controller = make_controller(ids.allocator, nullptr, 1U, 2U);
 	activate_phase3_live_baseline(controller, 0x7c03U);
 	const auto session_id = controller.slot(0U).session_id;
 	ASSERT_NE(0U, session_id);
 	ASSERT_EQ(detail::ProducerSessionProgress::ReadyForState, controller.slot(0U).progress);
 	EXPECT_EQ(session_id, controller.slot(0U).session_id);
 
-	const auto result = controller.reject_phase2_profile_mutation_for_slot(
-		0U, telemetry::Phase2ProfileMutationSource::CapabilityUpdate);
+	const auto result = controller.reject_cockpit_coverage_mutation_for_slot(
+		0U, telemetry::CockpitCoverageMutationSource::CapabilityUpdate);
 	EXPECT_EQ(protocol::ValidationError::InvalidStateTransition, result.error);
 	EXPECT_EQ(telemetry::Phase2SessionSlotState::FaultedSession, result.slot_state);
 	EXPECT_EQ(detail::ProducerSessionProgress::FaultedSession, controller.slot(0U).progress);
@@ -1559,8 +1551,7 @@ TEST(TelemetryPhase3CaptureSchedule,
 	PeriodicKeyframeWaitsForCompleteCaptureSample)
 {
 	IdentityHarness ids{{{true, 0x7506U}}};
-	auto controller = make_controller(ids.allocator, nullptr, 1U, 1U,
-		telemetry::Phase2Profile::CockpitSensors);
+	auto controller = make_controller(ids.allocator, nullptr, 1U, 1U);
 	activate_phase3_live_baseline(controller, 0x7506U);
 	const auto due = controller.slot(0U).next_keyframe_due_us;
 

@@ -25,8 +25,7 @@ enum class TelemetryLogEvent : std::uint8_t {
 	DropSummary,
 	BudgetHighWater,
 	BudgetSessionSummary,
-	Phase2ProfileSelected,
-	Phase2ProfileRejected,
+	CockpitProducerRejected,
 	Phase2ManifestBuilt,
 	Phase2ManifestInstalled,
 	Phase2ManifestRejected,
@@ -100,9 +99,8 @@ struct TelemetryLogRecord {
 	std::uint64_t value = 0U;
 	std::uint64_t limit = 0U;
 	std::uint64_t high_water = 0U;
-	TelemetryPhase2Profile phase2_profile = TelemetryPhase2Profile::None;
-	TelemetryPhase2ProfileRejection phase2_profile_rejection =
-		TelemetryPhase2ProfileRejection::UnsupportedAuthority;
+	TelemetryCockpitProducerRejection cockpit_producer_rejection =
+		TelemetryCockpitProducerRejection::UnsupportedAuthority;
 	TelemetryPhase2Block phase2_block = TelemetryPhase2Block::Identity;
 	TelemetryPhase2CaptureFailure phase2_capture_failure =
 		TelemetryPhase2CaptureFailure::Guard;
@@ -163,10 +161,8 @@ class TelemetryStructuredLog final {
 	void record_drop(TelemetryLogDrop reason) noexcept;
 	void flush_drop_summary(std::uint64_t now_us) noexcept;
 	void budget_high_water(TelemetryLogBudget budget, std::uint64_t limit, std::uint64_t high_water) noexcept;
-	void phase2_profile_selected(std::size_t slot,
-		TelemetryPhase2Profile profile, std::uint64_t capability_mask) noexcept;
-	void phase2_profile_rejected(
-		TelemetryPhase2ProfileRejection reason,
+	void cockpit_producer_rejected(
+		TelemetryCockpitProducerRejection reason,
 		std::uint64_t capability_mask) noexcept;
 	void phase2_manifest(std::size_t slot, TelemetryLogEvent event,
 		std::uint32_t local_generation, std::uint32_t records,
@@ -201,7 +197,6 @@ class TelemetryStructuredLog final {
 	std::array<std::uint64_t, static_cast<std::size_t>(TelemetryLogDrop::Count)> m_pending_drops{};
 	std::uint64_t m_last_drop_summary_us = 0U;
 	bool m_drop_summary_emitted = false;
-	std::array<bool, 4U> m_phase2_profile_logged{};
 	std::array<std::uint32_t, 4U> m_phase2_manifest_logged{};
 	std::uint64_t m_phase2_last_source_log_us = 0U;
 	std::uint64_t m_phase2_source_rejections = 0U;

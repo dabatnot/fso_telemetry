@@ -1,13 +1,13 @@
 #pragma once
 
-#include "telemetry/phase2_profile_gate.h"
+#include "telemetry/phase3_state_image.h"
 #include "telemetry/protocol/telemetry_protocol_constants.h"
 
 #include <cstdint>
 
 namespace telemetry {
 
-enum class Phase2ProfileMutationSource : std::uint8_t {
+enum class CockpitCoverageMutationSource : std::uint8_t {
 	Delta = 0,
 	CapabilityUpdate,
 	Count,
@@ -19,15 +19,15 @@ enum class Phase2SessionSlotState : std::uint8_t {
 	Count,
 };
 
-struct Phase2ProfileMutationResult {
+struct CockpitCoverageMutationResult {
 	protocol::ValidationError error = protocol::ValidationError::None;
 	protocol::SessionEndReason session_end_reason = protocol::SessionEndReason::Normal;
 	std::uint8_t session_end_flags = protocol::SessionEndFlagNone;
 	Phase2SessionSlotState slot_state = Phase2SessionSlotState::ActiveSession;
 };
 
-Phase2ProfileMutationResult reject_phase2_profile_mutation(Phase2Profile current_profile,
+CockpitCoverageMutationResult reject_cockpit_coverage_mutation(
 	std::uint64_t requested_coverage,
-	Phase2ProfileMutationSource source) noexcept;
+	CockpitCoverageMutationSource source) noexcept;
 
 } // namespace telemetry

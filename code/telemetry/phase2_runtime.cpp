@@ -39,16 +39,11 @@ int cause_priority(Phase2RuntimeSnapshotCause cause) noexcept
 
 } // namespace
 
-bool Phase2RuntimeSlot::configure(
-	Phase2Profile profile, std::size_t session_slot) noexcept
+bool Phase2RuntimeSlot::configure(std::size_t session_slot) noexcept
 {
-	if ((profile != Phase2Profile::CoreGate &&
-		 profile != Phase2Profile::CompleteShip &&
-		 profile != Phase2Profile::CockpitSensors) ||
-		session_slot >= Phase2Wp07EpisodeLatches::SessionCapacity)
+	if (session_slot >= Phase2Wp07EpisodeLatches::SessionCapacity)
 		return false;
 	reset();
-	m_profile = profile;
 	m_session_slot = session_slot;
 	m_configured =
 		m_support_latches.activate_session(session_slot);
@@ -89,7 +84,6 @@ void Phase2RuntimeSlot::reset() noexcept
 	m_current_block_samples = {};
 	m_candidate_block_samples = {};
 	m_active_block_samples = {};
-	m_profile = Phase2Profile::None;
 	m_session_slot = 0U;
 	m_configured = false;
 }
@@ -114,7 +108,6 @@ Phase2RuntimeResult Phase2RuntimeSlot::reconcile_closure_with_public_ids(
 	std::size_t binding_capacity) noexcept
 {
 	if (!m_configured || count > ClosureCapacity ||
-		(m_profile == Phase2Profile::CoreGate && count > 1U) ||
 		(count != 0U &&
 		 (identity_signatures == nullptr || binding_keys == nullptr ||
 		  bindings == nullptr)) ||
