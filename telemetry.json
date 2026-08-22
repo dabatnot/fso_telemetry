@@ -1,6 +1,5 @@
 {
-  "schemaVersion": 2,
-  "phase2Profile": "CompleteShip",
+  "schemaVersion": 4,
   "enabled": false,
   "bindAddresses": ["127.0.0.1", "::1"],
   "bindPort": 42042,

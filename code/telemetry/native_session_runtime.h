@@ -66,7 +66,6 @@ struct NativeSessionStartRequest {
 	TelemetryMetrics* metrics = nullptr;
 	TelemetryStructuredLog* log = nullptr;
 	Phase2ProfileEligibility phase2_eligibility{};
-	Phase2Profile requested_phase2_profile = Phase2Profile::None;
 };
 
 struct NativeSessionTickContext {

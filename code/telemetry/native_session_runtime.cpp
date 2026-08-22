@@ -137,7 +137,6 @@ TelemetryPhase2ProfileRejection telemetry_profile_rejection(
 	case Phase2ProfileError::HeadlessNotAllowed:
 		return TelemetryPhase2ProfileRejection::UnsupportedAuthority;
 	case Phase2ProfileError::UnsupportedCoverage:
-	case Phase2ProfileError::UnsupportedProfile:
 	default:
 		return TelemetryPhase2ProfileRejection::IncompleteCoverage;
 	}
@@ -931,13 +930,9 @@ NativeSessionStartStatus NativeSessionRuntime::start(const NativeSessionStartReq
 		request.packet_sequences == nullptr) {
 		return NativeSessionStartStatus::InvalidConfiguration;
 	}
-	Phase2Profile selected_phase2_profile = Phase2Profile::None;
+	constexpr auto selected_phase2_profile = Phase2Profile::CockpitSensors;
 	const auto profile_error =
-		request.requested_phase2_profile != Phase2Profile::None
-		? select_phase2_profile(request.phase2_eligibility,
-			request.requested_phase2_profile,
-			selected_phase2_profile)
-		: Phase2ProfileError::None;
+		validate_cockpit_sensor_producer(request.phase2_eligibility);
 	if (profile_error != Phase2ProfileError::None) {
 		const auto reason =
 			telemetry_profile_rejection(profile_error);
@@ -945,8 +940,7 @@ NativeSessionStartStatus NativeSessionRuntime::start(const NativeSessionStartReq
 			request.metrics->record_phase2_profile_rejection(reason);
 		if (request.log != nullptr)
 			request.log->phase2_profile_rejected(reason,
-				phase2_profile_coverage(
-					request.requested_phase2_profile));
+				phase2_profile_coverage(selected_phase2_profile));
 		// This rejection precedes controller/DTO allocation, bind and WELCOME.
 		return NativeSessionStartStatus::InvalidConfiguration;
 	}
@@ -965,9 +959,8 @@ NativeSessionStartStatus NativeSessionRuntime::start(const NativeSessionStartReq
 	if (!make_controller_config(*request.config, request.producer_id, controller_config)) {
 		return NativeSessionStartStatus::InvalidConfiguration;
 	}
-	if (selected_phase2_profile != Phase2Profile::None)
-		controller_config.delta_payload_capacity =
-			Phase2CompleteShipDeltaBytes;
+	controller_config.delta_payload_capacity =
+		Phase2CompleteShipDeltaBytes;
 	controller_config.phase2_profile = selected_phase2_profile;
 	if (m_fail_session_controller_provision) {
 		// No controller has been published and no transport operation has begun.
@@ -988,23 +981,18 @@ NativeSessionStartStatus NativeSessionRuntime::start(const NativeSessionStartReq
 	if (configured == SessionControllerConfigureResult::AllocationFailure) {
 		return NativeSessionStartStatus::AllocationFailure;
 	}
-	const auto phase2_mode = selected_phase2_profile == Phase2Profile::None
-		? Phase2ProvisioningMode::ValidDisabled
-		: Phase2ProvisioningMode::ValidEnabled;
+	constexpr auto phase2_mode = Phase2ProvisioningMode::ValidEnabled;
 	auto phase2_observation = std::unique_ptr<Phase2ObservationBuffer>(
 		new (std::nothrow) Phase2ObservationBuffer());
 	if (phase2_observation == nullptr) {
 		return NativeSessionStartStatus::AllocationFailure;
 	}
 	++m_startup_allocation_count;
-	if (phase2_mode == Phase2ProvisioningMode::ValidEnabled) {
-		++m_startup_allocation_count;
-	}
+	++m_startup_allocation_count;
 	if (!phase2_observation->provision(phase2_mode)) {
 		return NativeSessionStartStatus::AllocationFailure;
 	}
-	if (phase2_mode == Phase2ProvisioningMode::ValidEnabled &&
-		!phase2_observation->enter_ready()) {
+	if (!phase2_observation->enter_ready()) {
 		return NativeSessionStartStatus::AllocationFailure;
 	}
 	const auto phase2_owned_bytes = phase2_observation->owned_bytes();
@@ -1013,15 +1001,7 @@ NativeSessionStartStatus NativeSessionRuntime::start(const NativeSessionStartReq
 	if (!provision_state_image_pools(request.config->max_clients)) {
 		return NativeSessionStartStatus::AllocationFailure;
 	}
-	if (selected_phase2_profile == Phase2Profile::CoreGate &&
-		!provision_phase2_core_gate_image_pools(
-			request.config->max_clients)) {
-		release_state_image_pools();
-		return NativeSessionStartStatus::AllocationFailure;
-	}
-	if ((selected_phase2_profile == Phase2Profile::CompleteShip ||
-		 selected_phase2_profile == Phase2Profile::CockpitSensors) &&
-		!provision_phase2_image_pools(request.config->max_clients)) {
+	if (!provision_phase2_image_pools(request.config->max_clients)) {
 		release_state_image_pools();
 		return NativeSessionStartStatus::AllocationFailure;
 	}
@@ -1031,55 +1011,35 @@ NativeSessionStartStatus NativeSessionRuntime::start(const NativeSessionStartReq
 		phase3_projection_scratch{};
 	std::array<std::unique_ptr<Phase3IdentityRegistry>, 4U>
 		phase3_identity_registries{};
-	if (selected_phase2_profile == Phase2Profile::CockpitSensors) {
-		for (std::size_t index = 0U;
-			 index < request.config->max_clients; ++index) {
-			phase3_projections[index].reset(
-				new (std::nothrow) Phase3Projection());
-			phase3_projection_scratch[index].reset(
-				new (std::nothrow) Phase3Projection());
-			phase3_identity_registries[index].reset(
-				new (std::nothrow) Phase3IdentityRegistry());
-			if (phase3_projections[index] == nullptr ||
-				phase3_projection_scratch[index] == nullptr ||
-				phase3_identity_registries[index] == nullptr ||
-				phase3_identity_registries[index]->provision() !=
-					Phase3IdentityProvisionStatus::Ready) {
-				release_state_image_pools();
-				return NativeSessionStartStatus::AllocationFailure;
-			}
+	for (std::size_t index = 0U;
+		 index < request.config->max_clients; ++index) {
+		phase3_projections[index].reset(
+			new (std::nothrow) Phase3Projection());
+		phase3_projection_scratch[index].reset(
+			new (std::nothrow) Phase3Projection());
+		phase3_identity_registries[index].reset(
+			new (std::nothrow) Phase3IdentityRegistry());
+		if (phase3_projections[index] == nullptr ||
+			phase3_projection_scratch[index] == nullptr ||
+			phase3_identity_registries[index] == nullptr ||
+			phase3_identity_registries[index]->provision() !=
+				Phase3IdentityProvisionStatus::Ready) {
+			release_state_image_pools();
+			return NativeSessionStartStatus::AllocationFailure;
 		}
 	}
-	if (selected_phase2_profile != Phase2Profile::None &&
-		!(selected_phase2_profile == Phase2Profile::CockpitSensors
-			? provision_phase2_catalog_source()
-			: provision_phase2_manifest_state())) {
+	if (!provision_phase2_catalog_source()) {
 		release_state_image_pools();
 		return NativeSessionStartStatus::AllocationFailure;
 	}
-	if (selected_phase2_profile == Phase2Profile::CockpitSensors &&
-		!provision_phase3_manifest_states(request.config->max_clients)) {
+	if (!provision_phase3_manifest_states(request.config->max_clients)) {
 		release_state_image_pools();
 		return NativeSessionStartStatus::AllocationFailure;
 	}
 	++m_startup_allocation_count;
 	std::size_t startup_owned_bytes = 0U;
 	Phase2OwnedBudget phase2_budget{};
-	if (selected_phase2_profile == Phase2Profile::None) {
-		if (phase2_owned_bytes > Phase2SharedOwnedCapBytes ||
-			m_state_image_pool_backing_bytes >
-				Phase2SharedOwnedCapBytes - phase2_owned_bytes) {
-			release_state_image_pools();
-			return NativeSessionStartStatus::AllocationFailure;
-		}
-		startup_owned_bytes =
-			phase2_owned_bytes + m_state_image_pool_backing_bytes;
-		if (m_startup_owned_budget_test_adjustment >
-			Phase2SharedOwnedCapBytes - startup_owned_bytes) {
-			release_state_image_pools();
-			return NativeSessionStartStatus::AllocationFailure;
-		}
-	} else {
+	{
 		const auto owned = controller.owned_capacity();
 		const auto clients = static_cast<std::size_t>(
 			request.config->max_clients);
@@ -1099,21 +1059,19 @@ NativeSessionStartStatus NativeSessionRuntime::start(const NativeSessionStartReq
 			checked_add_size(shared_owned,
 				m_phase3_manifest_backing_bytes,
 				shared_owned) &&
-			(selected_phase2_profile !=
-					Phase2Profile::CockpitSensors ||
-				(phase3_projections[0] != nullptr &&
-				 phase3_projection_scratch[0] != nullptr &&
-				 phase3_identity_registries[0] != nullptr &&
-				 checked_add_size(per_client_owned,
-					 2U * sizeof(Phase3Projection),
-					 per_client_owned) &&
-				 checked_add_size(per_client_owned,
-					 sizeof(Phase3IdentityRegistry),
-					 per_client_owned) &&
-					checked_add_size(per_client_owned,
-						phase3_identity_registries[0]->
-							provisioned_bytes(),
-						per_client_owned))) &&
+			(phase3_projections[0] != nullptr &&
+				phase3_projection_scratch[0] != nullptr &&
+				phase3_identity_registries[0] != nullptr &&
+				checked_add_size(per_client_owned,
+					2U * sizeof(Phase3Projection),
+					per_client_owned) &&
+				checked_add_size(per_client_owned,
+					sizeof(Phase3IdentityRegistry),
+					per_client_owned) &&
+				checked_add_size(per_client_owned,
+					phase3_identity_registries[0]->
+						provisioned_bytes(),
+					per_client_owned)) &&
 			clients != 0U &&
 			owned.client_slots == clients &&
 			owned.client_slot_bytes % clients == 0U &&
@@ -1173,13 +1131,8 @@ NativeSessionStartStatus NativeSessionRuntime::start(const NativeSessionStartReq
 			release_state_image_pools();
 			return NativeSessionStartStatus::AllocationFailure;
 		}
-		phase2_budget =
-			selected_phase2_profile ==
-					Phase2Profile::CockpitSensors
-			? calculate_phase3_owned_budget(
-				{shared_owned, per_client_owned, clients})
-			: calculate_phase2_owned_budget(
-				{shared_owned, per_client_owned, clients});
+		phase2_budget = calculate_phase3_owned_budget(
+			{shared_owned, per_client_owned, clients});
 		if (phase2_budget.error != StartupBudgetError::None) {
 			release_state_image_pools();
 			return NativeSessionStartStatus::AllocationFailure;
@@ -1203,17 +1156,15 @@ NativeSessionStartStatus NativeSessionRuntime::start(const NativeSessionStartReq
 	if (m_metrics != nullptr) {
 		m_metrics->set_udp_sockets_open(m_transport.socket_count());
 		m_metrics->set_runtime_state(4U); // RuntimeState::Ready, kept local to avoid a dependency cycle.
-		if (selected_phase2_profile != Phase2Profile::None) {
-			m_metrics->set_phase2_memory(
-				TelemetryPhase2MemoryScope::Shared,
-				phase2_budget.shared_owned_bytes);
-			m_metrics->set_phase2_memory(
-				TelemetryPhase2MemoryScope::ClientTotal,
-				phase2_budget.clients_owned_bytes);
-			m_metrics->set_phase2_memory(
-				TelemetryPhase2MemoryScope::ProcessTotal,
-				phase2_budget.process_owned_bytes);
-		}
+		m_metrics->set_phase2_memory(
+			TelemetryPhase2MemoryScope::Shared,
+			phase2_budget.shared_owned_bytes);
+		m_metrics->set_phase2_memory(
+			TelemetryPhase2MemoryScope::ClientTotal,
+			phase2_budget.clients_owned_bytes);
+		m_metrics->set_phase2_memory(
+			TelemetryPhase2MemoryScope::ProcessTotal,
+			phase2_budget.process_owned_bytes);
 	}
 	m_controller_ready = true;
 	m_maximum_attempts = request.config->max_datagrams_per_tick;
@@ -1227,7 +1178,7 @@ NativeSessionStartStatus NativeSessionRuntime::start(const NativeSessionStartReq
 	m_phase2_capture_plan = {};
 	m_last_phase2_capture_result = {};
 	m_selected_phase2_profile = selected_phase2_profile;
-	m_phase2_enabled = selected_phase2_profile != Phase2Profile::None;
+	m_phase2_enabled = true;
 	m_phase3_projections = std::move(phase3_projections);
 	m_phase3_projection_scratch =
 		std::move(phase3_projection_scratch);

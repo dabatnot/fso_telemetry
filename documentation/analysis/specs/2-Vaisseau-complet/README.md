@@ -18,14 +18,14 @@ Pendant une mission solo en mode `Cockpit` :
 - une perturbation réseau prise en charge ne corrompt pas l'état et une keyframe permet la convergence ;
 - la télémétrie reste en lecture seule et n'expose aucune information appartenant aux phases de ciblage et de capteurs.
 
-## 3. Profils livrés
+## 3. Formes wire historiques
 
-| Profil | Couverture | Usage produit |
+| Forme | Couverture | Contenu historique |
 |---|---:|---|
 | cœur (`CoreGate` dans les identifiants techniques existants) | `0x0401` | cinématique et état structurel du joueur |
 | `CompleteShip` | `0x0583` | tableau de bord complet et relations nécessaires |
 
-Le profil final est `PLAYER_KINEMATICS | CORE_SHIP | CONTROL_INPUTS | WEAPONS | CARGO_DOCK_SUPPORT`. La couverture est négociée avant la session et reste stable pendant celle-ci.
+La forme complète est `PLAYER_KINEMATICS | CORE_SHIP | CONTROL_INPUTS | WEAPONS | CARGO_DOCK_SUPPORT`. Ces deux couvertures restent décodables et testées, mais le producteur courant ne les sélectionne plus : il émet uniquement `CockpitSensors` (`0x07CB`).
 
 ## 4. Documents actifs
 

@@ -204,6 +204,7 @@ class FstlService:
                             sock,
                             config.stale_after_ms * 1000,
                             ignore_previous_session_datagrams=session_generation != 0,
+                            required_state_domain_coverage=fstl.COCKPIT_SENSORS_COVERAGE,
                         )
                         session_generation += 1
                         client.begin()

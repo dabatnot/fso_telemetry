@@ -47,7 +47,7 @@ def populated_client() -> fstl.ConsoleClient:
         "1970-01-01T00:00:00.000101Z",
     )
     client.receive(
-        contract.packet(6, contract.v11_payload("minimal-with-player", ".bin"), session_id=session, sequence=3, sent_us=102, flags=6),
+        contract.packet(6, contract.cockpit_snapshot_payload(), session_id=session, sequence=3, sent_us=102, flags=6),
         102,
         "1970-01-01T00:00:00.000102Z",
     )

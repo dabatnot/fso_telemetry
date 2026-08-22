@@ -16,7 +16,7 @@ Les seams courants à réutiliser sont :
 | `code/telemetry/entity_id_registry.h/.cpp` | signature moteur vers `entity_id` monotone | lifecycle du joueur et de chaque ship de fermeture autorisé |
 | `code/telemetry/phase1_state_image.h/.cpp` | image de deux ou quatre records | nouvelle image variable et bornée ; l’image Phase 1 reste disponible |
 | `code/telemetry/phase1_snapshot_slot.*` | baseline, candidate et delta cumulatif | généralisation sans modifier les règles d’ACK |
-| `code/telemetry/session_controller.*` | slots, handshake, publication par client | sélection du profil, manifeste, closure et lifecycle Phase 2 |
+| `code/telemetry/session_controller.*` | slots, handshake, publication par client | profil producteur fixe, manifeste, closure et lifecycle Phase 2 |
 | `code/telemetry/native_session_runtime.cpp` | tick principal, capture, priorité egress | cadence systèmes et capture keyframe forcée |
 | `code/playerman/playercontrol.cpp` + autorité cargo extraite | calcul cargo actuellement mêlé au HUD | `CargoScanAuthorityState` persistant, calculé avant reset et lu par HUD + télémétrie |
 | `code/telemetry/runtime.cpp` | mission, purge et shutdown | invalidation manifeste et transition de session |

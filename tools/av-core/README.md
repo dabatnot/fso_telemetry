@@ -6,6 +6,9 @@ warnings, cautions, secteurs de missiles et états de verrouillage. SocketCAN et
 les calculateurs ESP32 restent explicitement indisponibles jusqu'aux lots
 suivants.
 
+Le client accepte exclusivement une session `CockpitSensors` avec la couverture
+`0x07CB`. Toute autre couverture est rejetée avant publication d'un état `LIVE`.
+
 ## Développement sous Windows
 
 Prérequis : Python 3.11+, Node.js 20+ et npm.

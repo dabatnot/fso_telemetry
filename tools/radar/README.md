@@ -27,7 +27,7 @@ réglages. Hôte, port et géométrie de fenêtre sont mémorisés par `QSetting
 L'interface distribuée est exclusivement en anglais, comme celle du jeu.
 
 Le fichier [`examples/fs2open.telemetry.json`](examples/fs2open.telemetry.json)
-active le profil requis et autorise quatre slots afin d'utiliser simultanément
+active le producteur `CockpitSensors` et autorise quatre slots afin d'utiliser simultanément
 AV CORE, le dashboard et ce radar tout en gardant une marge de redémarrage.
 
 Au menu et au briefing, le handshake reste préchauffé et le radar affiche

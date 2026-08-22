@@ -1,5 +1,10 @@
 # 05 — Intégration, configuration et observabilité
 
+> **Statut actuel :** les descriptions v1/v2 ci-dessous documentent le contrat
+> historique de cette phase. Le producteur courant accepte uniquement
+> `schemaVersion=4`, sans clé de profil, et émet `CockpitSensors` (`0x07CB`),
+> conformément à la spécification Phase 3.
+
 ## 1. Objet
 
 Ce document fixe l’intégration build, l’évolution du schéma JSON, les quotas, les métriques, les logs et les budgets Phase 2. Tout comportement Phase 1 non explicitement modifié reste normatif.

@@ -365,21 +365,6 @@ struct NativeFixture {
 		return runtime.start(request);
 	}
 
-	detail::NativeSessionStartStatus start_requested(telemetry::TelemetryConfig& config,
-		telemetry::Phase2Profile requested_phase2_profile)
-	{
-		detail::NativeSessionStartRequest request{
-			&config,
-			0x1020304050607080ULL,
-			&ids,
-			&packet_random,
-			nullptr,
-			&log};
-		request.phase2_eligibility = {};
-		request.requested_phase2_profile = requested_phase2_profile;
-		return runtime.start(request);
-	}
-
 	detail::NativeSessionStartStatus start_with_eligibility(
 		telemetry::TelemetryConfig& config,
 		const telemetry::Phase2ProfileEligibility& eligibility)
@@ -392,7 +377,6 @@ struct NativeFixture {
 			nullptr,
 			&log};
 		request.phase2_eligibility = eligibility;
-		request.requested_phase2_profile = telemetry::Phase2Profile::CoreGate;
 		return runtime.start(request);
 	}
 };
@@ -1331,69 +1315,6 @@ TEST(TelemetryP85PreallocationContract, ProvisionFailurePreventsBindAndAColdRunt
 	EXPECT_EQ(0U, fixture->runtime.active_sessions());
 }
 
-TEST(TelemetryNativeRuntimeIntegrationContract, S8V4OwnedBudgetPlusOneFailsBeforeTransportBind)
-{
-	auto config = enabled_config(1U);
-	auto baseline = std::make_unique<NativeFixture>();
-	ASSERT_EQ(detail::NativeSessionStartStatus::Started,
-		baseline->start_requested(config,
-			telemetry::Phase2Profile::CoreGate));
-	const auto startup_owned_bytes =
-		NativePlayerAccess::startup_owned_bytes(baseline->runtime);
-	const auto owned_budget =
-		NativePlayerAccess::phase2_owned_budget(baseline->runtime);
-	ASSERT_GT(startup_owned_bytes, 0U);
-	ASSERT_EQ(detail::StartupBudgetError::None, owned_budget.error);
-	ASSERT_EQ(startup_owned_bytes, owned_budget.process_owned_bytes);
-	ASSERT_LE(owned_budget.shared_owned_bytes,
-		detail::Phase2SharedOwnedCapBytes);
-	ASSERT_LE(owned_budget.client_owned_bytes,
-		detail::Phase2ClientOwnedCapBytes);
-	ASSERT_LE(owned_budget.process_owned_bytes,
-		detail::Phase2ProcessOwnedCapBytes);
-	std::cout << "[ PHASE2 STARTUP OWNED BYTES ] " << startup_owned_bytes << '\n';
-
-	auto fixture = std::make_unique<NativeFixture>();
-	NativePlayerAccess::set_startup_owned_budget_adjustment(
-		fixture->runtime,
-		detail::Phase2SharedOwnedCapBytes -
-			owned_budget.shared_owned_bytes + 1U);
-
-	EXPECT_EQ(detail::NativeSessionStartStatus::AllocationFailure,
-		fixture->start_requested(config,
-			telemetry::Phase2Profile::CoreGate));
-	EXPECT_EQ(0U, fixture->backend.open_calls);
-	EXPECT_EQ(0U, fixture->runtime.socket_count());
-	EXPECT_EQ(0U, fixture->runtime.active_sessions());
-}
-
-TEST(TelemetryNativeRuntimeIntegrationContract,
-	CompleteShipStartsWithOwnedProjectionStateBeforeTheFirstCapture)
-{
-	auto fixture = std::make_unique<NativeFixture>();
-	auto config = enabled_config();
-	config.max_clients = detail::TelemetryMetricsMaxClients;
-
-	ASSERT_EQ(detail::NativeSessionStartStatus::Started,
-		fixture->start_requested(config, telemetry::Phase2Profile::CompleteShip));
-	const auto owned_budget =
-		NativePlayerAccess::phase2_owned_budget(fixture->runtime);
-	EXPECT_EQ(detail::StartupBudgetError::None, owned_budget.error);
-	EXPECT_LE(owned_budget.shared_owned_bytes,
-		detail::Phase2SharedOwnedCapBytes);
-	EXPECT_LE(owned_budget.client_owned_bytes,
-		detail::Phase2ClientOwnedCapBytes);
-	EXPECT_LE(owned_budget.process_owned_bytes,
-		detail::Phase2ProcessOwnedCapBytes);
-	std::cout << "[ PHASE2 COMPLETE SHIP 4-CLIENT OWNED BYTES ] "
-			  << owned_budget.shared_owned_bytes << ' '
-			  << owned_budget.client_owned_bytes << ' '
-			  << owned_budget.process_owned_bytes << '\n';
-	EXPECT_GT(fixture->backend.open_calls, 0U);
-	EXPECT_EQ(1U, fixture->runtime.socket_count());
-	EXPECT_EQ(0U, fixture->runtime.active_sessions());
-}
-
 TEST(TelemetryPhase3ResourceContract,
 	CockpitSensorsPreallocatesWithinAllThreeCapsAndPlusOneFailsBeforeBind)
 {
@@ -1401,8 +1322,7 @@ TEST(TelemetryPhase3ResourceContract,
 	config.max_clients = detail::TelemetryMetricsMaxClients;
 	auto baseline = std::make_unique<NativeFixture>();
 	ASSERT_EQ(detail::NativeSessionStartStatus::Started,
-		baseline->start_requested(config,
-			telemetry::Phase2Profile::CockpitSensors));
+		baseline->start(config));
 	const auto owned =
 		NativePlayerAccess::phase2_owned_budget(baseline->runtime);
 	ASSERT_EQ(detail::StartupBudgetError::None, owned.error);
@@ -1422,8 +1342,7 @@ TEST(TelemetryPhase3ResourceContract,
 		detail::Phase3SharedOwnedCapBytes -
 			owned.shared_owned_bytes + 1U);
 	EXPECT_EQ(detail::NativeSessionStartStatus::AllocationFailure,
-		plus_one->start_requested(config,
-			telemetry::Phase2Profile::CockpitSensors));
+		plus_one->start(config));
 	EXPECT_EQ(0U, plus_one->backend.open_calls);
 	EXPECT_EQ(0U, plus_one->runtime.socket_count());
 }
@@ -1466,13 +1385,12 @@ TEST(TelemetryNativeRuntimeIntegrationContract,
 }
 
 TEST(TelemetryNativeRuntimeIntegrationContract,
-	CoreGateStartsWithOwnedProjectionAndNoExternalManifestInput)
+	CockpitSensorsStartsWithOwnedProjectionAndNoProfileInput)
 {
 	auto config = enabled_config();
 	auto accepted = std::make_unique<NativeFixture>();
 	EXPECT_EQ(detail::NativeSessionStartStatus::Started,
-		accepted->start_requested(config,
-			telemetry::Phase2Profile::CoreGate));
+		accepted->start(config));
 	EXPECT_GT(accepted->backend.open_calls, 0U);
 	EXPECT_EQ(1U, accepted->runtime.socket_count());
 	EXPECT_GT(NativePlayerAccess::startup_owned_bytes(
@@ -1483,10 +1401,10 @@ TEST(TelemetryNativeRuntimeIntegrationContract,
 	const auto owned = controller->owned_capacity();
 	EXPECT_EQ(2U * protocol::MaxStateMessageSize,
 		owned.delta_egress_heap_bytes)
-		<< "CoreGate deltas must not retain the 512-byte Phase 1 egress capacity.";
+		<< "CockpitSensors deltas must not retain the 512-byte Phase 1 egress capacity.";
 	EXPECT_GT(owned.delta_scratch_heap_bytes,
 		4U * sizeof(protocol::StateMutation))
-		<< "CoreGate needs the Phase 2 mutation scratch or a normal systems tick degenerates into a keyframe.";
+		<< "CockpitSensors needs the mutation scratch or a normal systems tick degenerates into a keyframe.";
 }
 
 TEST(TelemetryNativeRuntimeIntegrationContract, KeyframePreparationForcesBothCaptureFamilies)
@@ -2749,7 +2667,7 @@ TEST(TelemetryPhase3CaptureContract,
 	config.systems_hz = 20U;
 	config.keyframe_seconds = 1U;
 	ASSERT_EQ(detail::NativeSessionStartStatus::Started,
-		fixture.start_requested(config, telemetry::Phase2Profile::CockpitSensors));
+		fixture.start(config));
 	const auto endpoint = peer(92U);
 	ASSERT_NE(0U, establish_ready(fixture, endpoint, 92U, 100U, 920U, 1U, true));
 	CountingEngineReadView player_view;
@@ -2916,7 +2834,7 @@ TEST(TelemetryPhase3CaptureSchedule,
 	config.systems_hz = 20U;
 	config.keyframe_seconds = 1U;
 	ASSERT_EQ(detail::NativeSessionStartStatus::Started,
-		fixture.start_requested(config, telemetry::Phase2Profile::CockpitSensors));
+		fixture.start(config));
 	const auto endpoint = peer(91U);
 	ASSERT_NE(0U, establish_ready(fixture, endpoint, 91U, 100U, 910U, 1U, true));
 	CountingEngineReadView player_view;

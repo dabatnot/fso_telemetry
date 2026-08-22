@@ -155,7 +155,7 @@ class FstlServiceRecoveryTest(unittest.TestCase):
         for message_type, payload, sequence in (
             (3, contract.welcome_for(hello), 1),
             (4, contract.session_begin_payload(), 2),
-            (6, contract.v11_payload("minimal-with-player", ".bin"), 3),
+            (6, contract.cockpit_snapshot_payload(), 3),
         ):
             server.sendto(
                 contract.packet(
@@ -168,6 +168,46 @@ class FstlServiceRecoveryTest(unittest.TestCase):
                 ),
                 client_address,
             )
+
+    def test_live_client_rejects_legacy_profile_coverage(self) -> None:
+        frames: list[FstlFrame] = []
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as server:
+            server.bind(("127.0.0.1", 0))
+            server.settimeout(2.0)
+            service = FstlService(
+                TelemetryConfig(host="127.0.0.1", port=server.getsockname()[1]),
+                frames.append,
+            )
+            service.start()
+            try:
+                hello, client_address = server.recvfrom(1200)
+                session = 0x1122334455667788
+                for message_type, payload, sequence in (
+                    (3, contract.welcome_for(hello), 1),
+                    (4, contract.session_begin_payload(), 2),
+                    (6, contract.v11_payload("minimal-with-player", ".bin"), 3),
+                ):
+                    server.sendto(
+                        contract.packet(
+                            message_type,
+                            payload,
+                            session_id=session,
+                            sequence=sequence,
+                            sent_us=1_000_000 + sequence,
+                            flags=2,
+                        ),
+                        client_address,
+                    )
+                rejected = self.wait_for(
+                    lambda: next(
+                        (frame for frame in frames if frame.error and "0x07CB" in frame.error),
+                        None,
+                    )
+                )
+                self.assertIsNotNone(rejected)
+                self.assertFalse(any(frame.state == "LIVE" for frame in frames))
+            finally:
+                service.stop()
 
     def test_stale_session_resumes_during_the_grace_period(self) -> None:
         frames: list[FstlFrame] = []
@@ -334,7 +374,7 @@ class FstlServiceRecoveryTest(unittest.TestCase):
 
                 server.sendto(
                     contract.packet(
-                        6, contract.v11_payload("minimal-with-player", ".bin"),
+                        6, contract.cockpit_snapshot_payload(),
                         session_id=replacement_session, sequence=22,
                         sent_us=2_000_022, flags=2,
                     ),

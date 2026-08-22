@@ -72,6 +72,7 @@ pas être restaurées.
 16. La vidéo contient uniquement la couche 3D ; les textes, brackets et jauges sont redessinés localement en haute résolution.
 17. Le format filaire définit explicitement ordre des octets, représentation des chaînes, repère, unités, quaternions, horloges, limites, CRC et règles de fragmentation ; aucune convention C++ implicite ne traverse le réseau.
 18. FSTL 1.0 reste gelé. Le premier flux de la Phase 1 négocie l'amendement additif FSTL 1.1 et annonce uniquement `StateDomainCoverage.PLAYER_KINEMATICS` au bit 10 (`0x0000000000000400`) : temps/session/mission et, si un joueur observé existe, identité stable, position, quaternion, vitesses linéaire et angulaire via les records v1 existants. Il n'annonce ni `CORE_SHIP`, ni manifeste, ni domaine système de Phase 2.
+19. Le producteur courant expose uniquement `CockpitSensors` (`0x07CB`). La configuration v4 ne contient aucune clé de profil et les configurations v1 à v3 sont refusées avant bind. `CoreGate` (`0x0401`) et `CompleteShip` (`0x0583`) restent uniquement des formes wire historiques décodables.
 
 Le contrat normatif correspondant se trouve dans [`specs/0-Contrat-de-protocole`](specs/0-Contrat-de-protocole/README.md). En cas d'ambiguïté, ses règles versionnées FSTL 1.0/1.1 prévalent sur ce résumé.
 

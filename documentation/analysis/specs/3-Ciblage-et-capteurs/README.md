@@ -64,9 +64,10 @@ PLAYER_KINEMATICS
 | NAVIGATION
 ```
 
-Les profils `CoreGate` (`0x0401`) et `CompleteShip` (`0x0583`) restent
-disponibles selon leur contrat d’origine. Ils ne deviennent pas implicitement
-Phase 3 et aucune promotion n’est permise dans une session existante.
+Les formes wire historiques `CoreGate` (`0x0401`) et `CompleteShip` (`0x0583`)
+restent décodables selon leur contrat d’origine, mais aucun chemin producteur
+ne peut les sélectionner. Aucune promotion de couverture n’est permise dans
+une session existante.
 
 ## 4. Documents actifs
 

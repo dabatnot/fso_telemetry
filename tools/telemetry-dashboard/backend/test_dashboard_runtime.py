@@ -148,7 +148,7 @@ class DashboardRuntimeTest(unittest.TestCase):
             path = writer.start({"name": "dynamic replay"})
             writer.packet(contract.packet(3, contract.welcome_for(hello), session_id=session, sequence=1, sent_us=100, flags=2), 100, "1970-01-01T00:00:00.000100Z")
             writer.packet(contract.packet(4, contract.session_begin_payload(), session_id=session, sequence=2, sent_us=101, flags=2), 101, "1970-01-01T00:00:00.000101Z")
-            writer.packet(contract.packet(6, contract.v11_payload("minimal-with-player", ".bin"), session_id=session, sequence=3, sent_us=102, flags=6), 102, "1970-01-01T00:00:00.000102Z")
+            writer.packet(contract.packet(6, contract.cockpit_snapshot_payload(), session_id=session, sequence=3, sent_us=102, flags=6), 102, "1970-01-01T00:00:00.000102Z")
             writer.stop()
             runtime = TelemetryRuntime(
                 host="127.0.0.1", port=42042, flight_hz=30, systems_hz=10,
@@ -224,7 +224,7 @@ class DashboardRuntimeTest(unittest.TestCase):
             writer.packet(
                 contract.packet(
                     6,
-                    contract.v11_payload("minimal-with-player", ".bin"),
+                    contract.cockpit_snapshot_payload(),
                     session_id=session,
                     sequence=3,
                     sent_us=102,
@@ -302,7 +302,7 @@ class DashboardRuntimeTest(unittest.TestCase):
                 ),
                 contract.packet(
                     6,
-                    contract.v11_payload("minimal-with-player", ".bin"),
+                    contract.cockpit_snapshot_payload(),
                     session_id=session,
                     sequence=3,
                     sent_us=102,
@@ -418,7 +418,7 @@ class DashboardRuntimeTest(unittest.TestCase):
             writer.packet(
                 contract.packet(
                     6,
-                    contract.v11_payload("minimal-with-player", ".bin"),
+                    contract.cockpit_snapshot_payload(),
                     session_id=session,
                     sequence=3,
                     sent_us=1_000_100,
@@ -479,7 +479,7 @@ class DashboardRuntimeTest(unittest.TestCase):
             writer.start({"name": "recoverable seek"})
             writer.packet(contract.packet(3, contract.welcome_for(hello), session_id=session, sequence=1, sent_us=100, flags=2), 100, "1970-01-01T00:00:00.000100Z")
             writer.packet(contract.packet(4, contract.session_begin_payload(), session_id=session, sequence=2, sent_us=101, flags=2), 101, "1970-01-01T00:00:00.000101Z")
-            writer.packet(contract.packet(6, contract.v11_payload("minimal-with-player", ".bin"), session_id=session, sequence=3, sent_us=102, flags=6), 102, "1970-01-01T00:00:00.000102Z")
+            writer.packet(contract.packet(6, contract.cockpit_snapshot_payload(), session_id=session, sequence=3, sent_us=102, flags=6), 102, "1970-01-01T00:00:00.000102Z")
             writer.stop()
 
             runtime = TelemetryRuntime(
@@ -537,7 +537,7 @@ class DashboardRuntimeTest(unittest.TestCase):
             packets = [
                 contract.packet(3, contract.welcome_for(hello), session_id=session, sequence=1, sent_us=100, flags=2),
                 contract.packet(4, contract.session_begin_payload(), session_id=session, sequence=2, sent_us=101, flags=2),
-                contract.packet(6, contract.v11_payload("minimal-with-player", ".bin"), session_id=session, sequence=3, sent_us=102, flags=6),
+                contract.packet(6, contract.cockpit_snapshot_payload(), session_id=session, sequence=3, sent_us=102, flags=6),
                 *(contract.incomplete_fragment(message_id) for message_id in range(10, 14)),
                 contract.packet(
                     9,
@@ -657,7 +657,7 @@ class DashboardRuntimeTest(unittest.TestCase):
                 writer.packet(
                     contract.packet(
                         6,
-                        contract.v11_payload("minimal-with-player", ".bin"),
+                        contract.cockpit_snapshot_payload(),
                         session_id=session,
                         sequence=3,
                         sent_us=received_us + 2,
@@ -758,7 +758,7 @@ class DashboardRuntimeTest(unittest.TestCase):
                 server.sendto(
                     contract.packet(
                         6,
-                        contract.v11_payload("minimal-with-player", ".bin"),
+                        contract.cockpit_snapshot_payload(),
                         session_id=first_session,
                         sequence=3,
                         sent_us=1_000_002,
@@ -866,7 +866,7 @@ class DashboardRuntimeTest(unittest.TestCase):
                 server.sendto(
                     contract.packet(
                         6,
-                        contract.v11_payload("minimal-with-player", ".bin"),
+                        contract.cockpit_snapshot_payload(),
                         session_id=first_session,
                         sequence=3,
                         sent_us=1_000_002,
@@ -931,7 +931,7 @@ class DashboardRuntimeTest(unittest.TestCase):
                 server.sendto(
                     contract.packet(
                         6,
-                        contract.v11_payload("minimal-with-player", ".bin"),
+                        contract.cockpit_snapshot_payload(),
                         session_id=second_session,
                         sequence=12,
                         sent_us=2_000_002,
@@ -949,6 +949,38 @@ class DashboardRuntimeTest(unittest.TestCase):
                 )
                 self.assertIsNotNone(recovered)
                 self.assertEqual("idle", recovered["connection"]["recoveryState"])
+            finally:
+                runtime.stop()
+
+    def test_replay_rejects_legacy_profile_coverage(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            nonce, t0 = 77, 88
+            hello = fstl.pack_header(
+                message_type=2, flags=0, session_id=0, sequence=1,
+                sent_us=t0, message_id=1, payload=fstl.hello_payload(nonce, t0),
+            )
+            session = 0xAABBCCDD
+            writer = CaptureWriter(root)
+            writer.start({"name": "legacy profile replay"})
+            writer.packet(contract.packet(3, contract.welcome_for(hello), session_id=session, sequence=1, sent_us=100, flags=2), 100, "1970-01-01T00:00:00.000100Z")
+            writer.packet(contract.packet(4, contract.session_begin_payload(), session_id=session, sequence=2, sent_us=101, flags=2), 101, "1970-01-01T00:00:00.000101Z")
+            writer.packet(contract.packet(6, contract.v11_payload("minimal-with-player", ".bin"), session_id=session, sequence=3, sent_us=102, flags=6), 102, "1970-01-01T00:00:00.000102Z")
+            writer.stop()
+
+            runtime = TelemetryRuntime(
+                host="127.0.0.1", port=42042, flight_hz=30, systems_hz=10,
+                mission_heartbeat_ms=500, capture_dir=root,
+            )
+            runtime.start()
+            try:
+                runtime.load_replay(runtime.captures()[0]["id"])
+                runtime.replay_control(playing=True)
+                rejected = self.wait_for(
+                    lambda: runtime.latest()["connection"].get("error")
+                )
+                self.assertIn("CockpitSensors 0x07CB required", rejected)
+                self.assertNotEqual("Live", runtime.latest()["connection"]["status"])
             finally:
                 runtime.stop()
 
@@ -975,7 +1007,7 @@ class DashboardRuntimeTest(unittest.TestCase):
                 for message_type, payload, sequence in (
                     (3, contract.welcome_for(first_hello), 1),
                     (4, contract.session_begin_payload(), 2),
-                    (6, contract.v11_payload("minimal-with-player", ".bin"), 3),
+                    (6, contract.cockpit_snapshot_payload(), 3),
                 ):
                     server.sendto(
                         contract.packet(message_type, payload, session_id=first_session,
@@ -1023,7 +1055,7 @@ class DashboardRuntimeTest(unittest.TestCase):
 
                 server.sendto(
                     contract.packet(
-                        6, contract.v11_payload("minimal-with-player", ".bin"),
+                        6, contract.cockpit_snapshot_payload(),
                         session_id=replacement_session, sequence=22,
                         sent_us=2_000_022, flags=2,
                     ),
@@ -1142,7 +1174,7 @@ class DashboardRuntimeTest(unittest.TestCase):
                     late_address,
                 )
                 server.sendto(
-                    contract.packet(6, contract.v11_payload("minimal-with-player", ".bin"),
+                    contract.packet(6, contract.cockpit_snapshot_payload(),
                                     session_id=session, sequence=3, sent_us=1_000_002, flags=2),
                     late_address,
                 )

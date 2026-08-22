@@ -641,6 +641,7 @@ class TelemetryRuntime:
                         sock,
                         self.stale_us,
                         ignore_previous_session_datagrams=session_generation != 0,
+                        required_state_domain_coverage=fstl.COCKPIT_SENSORS_COVERAGE,
                     )
                     session_generation += 1
                     self.quality = QualityTracker(self.flight_hz, self.systems_hz, self.mission_heartbeat_ms)
@@ -808,7 +809,11 @@ class TelemetryRuntime:
                 continue
 
     def _new_replay_client(self) -> fstl.ConsoleClient:
-        client = fstl.ConsoleClient(None, 3_000_000)
+        client = fstl.ConsoleClient(
+            None,
+            3_000_000,
+            required_state_domain_coverage=fstl.COCKPIT_SENSORS_COVERAGE,
+        )
         return client
 
     def _restore_replay_checkpoint(
@@ -836,6 +841,7 @@ class TelemetryRuntime:
         for identity in sorted(state.baseline_record_instances):
             record = state.baseline_record_instances[identity]
             state.baseline_records[record["recordName"]] = copy.deepcopy(record["fields"])
+        state.validate_required_profile()
         state.welcomed = True
         state.session_begun = True
         state.manifest_applied = state.required_manifest_id in (0, state.manifest_id)

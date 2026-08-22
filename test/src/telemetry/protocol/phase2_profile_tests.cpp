@@ -89,41 +89,13 @@ TEST(TelemetryPhase2ProfileGate, ProfileErrorRegistryIsClosed)
 		static_cast<std::uint8_t>(Phase2ProfileError::None));
 }
 
-TEST(TelemetryPhase2ProfileGate, CompleteShipEligibilityIsSoloGraphicalOnly)
-{
-	using telemetry::protocol::AuthorityMode;
-
-	Phase2Profile selected = Phase2Profile::None;
-	const Phase2ProfileEligibility eligible{AuthorityMode::Solo, false, false};
-	EXPECT_EQ(Phase2ProfileError::None,
-		select_phase2_profile(eligible, Phase2Profile::CompleteShip, selected));
-	EXPECT_EQ(Phase2Profile::CompleteShip, selected);
-
-	const std::array<Phase2ProfileEligibility, 4> ineligible{{
-		{AuthorityMode::MultiplayerClient, false, false},
-		{AuthorityMode::MultiplayerMaster, false, false},
-		{AuthorityMode::Solo, true, false},
-		{AuthorityMode::Solo, false, true},
-	}};
-	for (const auto& input : ineligible) {
-		selected = Phase2Profile::CompleteShip;
-		SCOPED_TRACE(static_cast<std::uint8_t>(input.authority_mode));
-		EXPECT_NE(Phase2ProfileError::None,
-			select_phase2_profile(input, Phase2Profile::CompleteShip, selected));
-		EXPECT_EQ(Phase2Profile::None, selected);
-	}
-}
-
 TEST(TelemetryPhase3ProfileGate, CockpitSensorsEligibilityIsSoloGraphicalOnly)
 {
 	using telemetry::protocol::AuthorityMode;
 
 	const Phase2ProfileEligibility eligible{AuthorityMode::Solo, false, false};
-	Phase2Profile selected = Phase2Profile::None;
 	EXPECT_EQ(Phase2ProfileError::None,
-		select_phase2_profile(
-			eligible, Phase2Profile::CockpitSensors, selected));
-	EXPECT_EQ(Phase2Profile::CockpitSensors, selected);
+		validate_cockpit_sensor_producer(eligible));
 
 	const std::array<Phase2ProfileEligibility, 4> ineligible{{
 		{AuthorityMode::MultiplayerClient, false, false},
@@ -132,12 +104,9 @@ TEST(TelemetryPhase3ProfileGate, CockpitSensorsEligibilityIsSoloGraphicalOnly)
 		{AuthorityMode::Solo, false, true},
 	}};
 	for (const auto& input : ineligible) {
-		selected = Phase2Profile::CockpitSensors;
 		SCOPED_TRACE(static_cast<std::uint8_t>(input.authority_mode));
 		EXPECT_NE(Phase2ProfileError::None,
-			select_phase2_profile(
-				input, Phase2Profile::CockpitSensors, selected));
-		EXPECT_EQ(Phase2Profile::None, selected);
+			validate_cockpit_sensor_producer(input));
 	}
 }
 
@@ -147,67 +116,31 @@ TEST(TelemetryPhase2ProfileGate, EveryEligibilityRejectionHasItsClosedObservable
 
 	struct Rejection {
 		Phase2ProfileEligibility eligibility;
-		Phase2Profile requested;
 		Phase2ProfileError expected;
 	};
-	constexpr std::array<Rejection, 5> rejections{{
-		{{AuthorityMode::Solo, false, false},
-			Phase2Profile::None, Phase2ProfileError::UnsupportedProfile},
+	constexpr std::array<Rejection, 4> rejections{{
 		{{AuthorityMode::MultiplayerClient, false, false},
-			Phase2Profile::CompleteShip, Phase2ProfileError::UnsupportedAuthority},
+			Phase2ProfileError::UnsupportedAuthority},
 		{{AuthorityMode::MultiplayerMaster, false, false},
-			Phase2Profile::CompleteShip, Phase2ProfileError::UnsupportedAuthority},
+			Phase2ProfileError::UnsupportedAuthority},
 		{{AuthorityMode::Solo, true, false},
-			Phase2Profile::CompleteShip, Phase2ProfileError::DedicatedNotAllowed},
+			Phase2ProfileError::DedicatedNotAllowed},
 		{{AuthorityMode::Solo, false, true},
-			Phase2Profile::CompleteShip, Phase2ProfileError::HeadlessNotAllowed},
+			Phase2ProfileError::HeadlessNotAllowed},
 	}};
 
 	for (const auto& rejection : rejections) {
-		Phase2Profile selected = Phase2Profile::CompleteShip;
 		SCOPED_TRACE(static_cast<std::uint8_t>(rejection.expected));
 		EXPECT_EQ(rejection.expected,
-			select_phase2_profile(rejection.eligibility, rejection.requested, selected));
-		EXPECT_EQ(Phase2Profile::None, selected);
+			validate_cockpit_sensor_producer(rejection.eligibility));
 	}
 }
 
-TEST(TelemetryPhase2ProfileGate, S11TST008EligibilityMatrixSelectsOnlySoloGraphical)
+TEST(TelemetryPhase3ProfileGate, EligibilityApiIsNoexceptAndHasNoProfileInput)
 {
-	using telemetry::protocol::AuthorityMode;
-
-	struct Case {
-		Phase2ProfileEligibility eligibility;
-		Phase2ProfileError expected_error;
-		Phase2Profile expected_profile;
-	};
-	constexpr std::array<Case, 5> cases{{
-		{{AuthorityMode::Solo, false, false},
-			Phase2ProfileError::None, Phase2Profile::CompleteShip},
-		{{AuthorityMode::MultiplayerClient, false, false},
-			Phase2ProfileError::UnsupportedAuthority, Phase2Profile::None},
-		{{AuthorityMode::MultiplayerMaster, false, false},
-			Phase2ProfileError::UnsupportedAuthority, Phase2Profile::None},
-		{{AuthorityMode::Solo, true, false},
-			Phase2ProfileError::DedicatedNotAllowed, Phase2Profile::None},
-		{{AuthorityMode::Solo, false, true},
-			Phase2ProfileError::HeadlessNotAllowed, Phase2Profile::None},
-	}};
-
-	static_assert(noexcept(select_phase2_profile(
-		std::declval<const Phase2ProfileEligibility&>(),
-		Phase2Profile::CompleteShip,
-		std::declval<Phase2Profile&>())));
+	static_assert(noexcept(validate_cockpit_sensor_producer(
+		std::declval<const Phase2ProfileEligibility&>())));
 	static_assert(std::is_trivially_destructible_v<Phase2ProfileEligibility>);
-
-	for (const auto& test_case : cases) {
-		Phase2Profile selected = Phase2Profile::CompleteShip;
-		SCOPED_TRACE(static_cast<std::uint8_t>(test_case.expected_error));
-		EXPECT_EQ(test_case.expected_error,
-			select_phase2_profile(
-				test_case.eligibility, Phase2Profile::CompleteShip, selected));
-		EXPECT_EQ(test_case.expected_profile, selected);
-	}
 }
 
 TEST(TelemetryPhase2CatalogProjection,

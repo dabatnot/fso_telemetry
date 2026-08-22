@@ -2,29 +2,24 @@
 
 ## 1. Objet
 
-Ce document fixe la sélection du profil Phase 3, ses ressources, ses métriques
+Ce document fixe le profil producteur Phase 3, ses ressources, ses métriques
 et ses logs. Les règles réseau, allowlist, dual-stack, socket non bloquant et
 anti-amplification restent celles des phases précédentes.
 
 ## 2. Configuration
 
-### 2.1 Version 3
+### 2.1 Version 4
 
-Une configuration `version=3` utilise la clé obligatoire `profile` avec une
-valeur fermée :
+Une configuration `schemaVersion=4` ne contient aucune clé de profil. Un
+producteur activé et éligible utilise toujours :
 
-| Valeur | Couverture |
+| Profil | Couverture |
 |---|---:|
-| `CoreGate` | `0x0401` |
-| `CompleteShip` | `0x0583` |
 | `CockpitSensors` | `0x07CB` |
 
-La clé historique `phase2Profile` est interdite en version 3. Les versions 1 et
-2 conservent exactement leur parsing, migration et résultat Phase 2 ; elles
-n’annoncent jamais implicitement `CockpitSensors`.
-
-Une valeur absente, inconnue, mal typée ou une combinaison des deux clés rend le
-fichier entier invalide avant bind.
+Les clés historiques `profile` et `phase2Profile` sont inconnues. Les versions
+1 à 3 sont refusées avant bind ; il n’existe ni migration automatique ni
+fallback vers une couverture plus petite.
 
 ### 2.2 Cadences
 
@@ -47,9 +42,9 @@ La Phase 3 n’ajoute aucune fréquence :
 - catalogues requis constructibles ;
 - budget mémoire accepté.
 
-Un refus du profil n’empêche pas le process de proposer un profil antérieur
-explicitement configuré lors d’une nouvelle session. Il n’existe aucun fallback
-silencieux dans le même handshake.
+Un refus d’éligibilité empêche le démarrage du producteur avant bind. Il
+n’existe aucun fallback vers un profil historique dans le même process ou le
+même handshake.
 
 ## 3. Bornes produit
 
@@ -203,13 +198,9 @@ Les logs ne contiennent jamais :
 
 | Cas | Résultat |
 |---|---|
-| v1 valide | comportement hérité Phase 2 |
-| v2 valide | `phase2Profile` hérité, aucun domaine Phase 3 |
-| v3 sans `profile` | invalide, zéro bind |
-| v3 avec `phase2Profile` | invalide, zéro bind |
-| v3 `CoreGate` | `0x0401` |
-| v3 `CompleteShip` | `0x0583` |
-| v3 `CockpitSensors` éligible | `0x07CB` |
+| v1, v2 ou v3 | invalide, zéro bind |
+| v4 avec `profile` ou `phase2Profile` | invalide, zéro bind |
+| v4 éligible | `CockpitSensors`, `0x07CB` |
 | profil source incomplet | session refusée, aucune couverture partielle |
 | limite atteinte après démarrage | `SESSION_END(Restart,RECONNECT_ALLOWED)` |
 | budget exact | accepté |

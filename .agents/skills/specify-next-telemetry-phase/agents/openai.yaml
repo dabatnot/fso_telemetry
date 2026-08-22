@@ -1,4 +1,0 @@
-interface:
-  display_name: "Spécifier la prochaine phase télémétrie"
-  short_description: "Définir simplement la prochaine évolution"
-  default_prompt: "Utilise $specify-next-telemetry-phase pour définir l'évolution demandée, sans gate ni validation de phase précédente."

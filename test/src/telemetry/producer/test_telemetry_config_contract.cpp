@@ -38,7 +38,7 @@ std::string object_with(std::string_view key, std::string_view value)
 		return std::string{"{\"schemaVersion\":"} + std::string{value} + "}";
 	}
 
-	return std::string{"{\"schemaVersion\":1,\""} + std::string{key} + "\":" + std::string{value} + "}";
+	return std::string{"{\"schemaVersion\":4,\""} + std::string{key} + "\":" + std::string{value} + "}";
 }
 
 std::string quoted_array(const std::vector<std::string>& values)
@@ -65,9 +65,7 @@ void expect_safe_defaults(const ConfigLoadResult& result)
 	ipv6_loopback[15] = 1U;
 
 	EXPECT_FALSE(result.effective.enabled);
-	EXPECT_EQ(1U, result.effective.schema_version);
-	EXPECT_EQ(telemetry::Phase2Profile::CompleteShip,
-		result.effective.phase2_profile);
+	EXPECT_EQ(4U, result.effective.schema_version);
 	EXPECT_EQ(2U, result.effective.bind_addresses.size());
 	EXPECT_EQ(telemetry::protocol::IpAddressFamily::Ipv4, result.effective.bind_addresses[0].family());
 	EXPECT_EQ(ipv4_loopback, result.effective.bind_addresses[0].bytes());
@@ -122,117 +120,39 @@ class TelemetryConfigCFileIntegrationTest : public test::FSTestFixture {
 
 TEST(TelemetryConfigContract, MinimalObjectAppliesEveryFailClosedDefault)
 {
-	const auto result = parse(R"({"schemaVersion":1})");
+	const auto result = parse(R"({"schemaVersion":4})");
 	ASSERT_EQ(ConfigStatus::ValidDisabled, result.status);
 	EXPECT_EQ(0, enum_value(result.error));
 	expect_safe_defaults(result);
 }
 
-TEST(TelemetryConfigContract, VersionOneMigratesExplicitlyToCompleteShipAndRejectsProfileField)
+TEST(TelemetryConfigContract, VersionFourHasNoProducerProfileSelection)
 {
-	const auto migrated = parse(R"({"schemaVersion":1})");
-	ASSERT_EQ(ConfigStatus::ValidDisabled, migrated.status);
-	EXPECT_EQ(1U, migrated.effective.schema_version);
-	EXPECT_EQ(telemetry::Phase2Profile::CompleteShip,
-		migrated.effective.phase2_profile);
-
-	const auto forbidden =
-		parse(R"({"schemaVersion":1,"phase2Profile":"CoreGate"})");
-	EXPECT_EQ(ConfigStatus::Invalid, forbidden.status);
-	EXPECT_EQ(telemetry::ConfigError::Phase2ProfileNotAllowed,
-		forbidden.error);
-
-	const auto phase3_forbidden =
-		parse(R"({"schemaVersion":1,"profile":"CockpitSensors"})");
-	EXPECT_EQ(ConfigStatus::Invalid, phase3_forbidden.status);
-	EXPECT_EQ(telemetry::ConfigError::UnknownKey,
-		phase3_forbidden.error);
-}
-
-TEST(TelemetryConfigContract, VersionTwoRequiresOneClosedPhase2Profile)
-{
-	const auto core =
-		parse(R"({"schemaVersion":2,"phase2Profile":"CoreGate"})");
-	ASSERT_EQ(ConfigStatus::ValidDisabled, core.status);
-	EXPECT_EQ(2U, core.effective.schema_version);
-	EXPECT_EQ(telemetry::Phase2Profile::CoreGate,
-		core.effective.phase2_profile);
-
-	const auto complete =
-		parse(R"({"schemaVersion":2,"phase2Profile":"CompleteShip"})");
-	ASSERT_EQ(ConfigStatus::ValidDisabled, complete.status);
-	EXPECT_EQ(telemetry::Phase2Profile::CompleteShip,
-		complete.effective.phase2_profile);
-
-	const auto missing = parse(R"({"schemaVersion":2})");
-	EXPECT_EQ(ConfigStatus::Invalid, missing.status);
-	EXPECT_EQ(telemetry::ConfigError::MissingPhase2Profile, missing.error);
 	for (const auto input : {
-			 R"({"schemaVersion":2,"phase2Profile":"coregate"})",
-			 R"({"schemaVersion":2,"phase2Profile":"Complete"})",
-			 R"({"schemaVersion":2,"phase2Profile":null})",
-			 R"({"schemaVersion":2,"phase2Profile":2})"}) {
-		SCOPED_TRACE(input);
-		expect_invalid(input);
-	}
-
-	const auto phase3_key =
-		parse(R"({"schemaVersion":2,"phase2Profile":"CoreGate","profile":"CockpitSensors"})");
-	EXPECT_EQ(ConfigStatus::Invalid, phase3_key.status);
-	EXPECT_EQ(telemetry::ConfigError::UnknownKey, phase3_key.error);
-}
-
-TEST(TelemetryConfigContract, VersionThreeRequiresOneClosedProfile)
-{
-	struct ValidCase {
-		const char* name;
-		telemetry::Phase2Profile expected;
-	};
-	constexpr std::array<ValidCase, 3> valid_cases{{
-		{"CoreGate", telemetry::Phase2Profile::CoreGate},
-		{"CompleteShip", telemetry::Phase2Profile::CompleteShip},
-		{"CockpitSensors", telemetry::Phase2Profile::CockpitSensors},
-	}};
-	for (const auto& test_case : valid_cases) {
-		const auto input = std::string{R"({"schemaVersion":3,"profile":")"} +
-			test_case.name + R"("})";
-		const auto result = parse(input);
-		SCOPED_TRACE(test_case.name);
-		ASSERT_EQ(ConfigStatus::ValidDisabled, result.status);
-		EXPECT_EQ(3U, result.effective.schema_version);
-		EXPECT_EQ(test_case.expected, result.effective.phase2_profile);
-	}
-
-	const auto missing = parse(R"({"schemaVersion":3})");
-	EXPECT_EQ(ConfigStatus::Invalid, missing.status);
-	EXPECT_EQ(telemetry::ConfigError::MissingProfile, missing.error);
-
-	const auto legacy = parse(
-		R"({"schemaVersion":3,"phase2Profile":"CompleteShip","profile":"CockpitSensors"})");
-	EXPECT_EQ(ConfigStatus::Invalid, legacy.status);
-	EXPECT_EQ(telemetry::ConfigError::Phase2ProfileNotAllowed, legacy.error);
-
-	for (const auto input : {
-			 R"({"schemaVersion":3,"profile":"cockpitsensors"})",
-			 R"({"schemaVersion":3,"profile":"Complete"})"}) {
+			 R"({"schemaVersion":4,"profile":"CockpitSensors"})",
+			 R"({"schemaVersion":4,"phase2Profile":"CompleteShip"})"}) {
 		SCOPED_TRACE(input);
 		const auto result = parse(input);
 		EXPECT_EQ(ConfigStatus::Invalid, result.status);
-		EXPECT_EQ(telemetry::ConfigError::InvalidProfile, result.error);
+		EXPECT_EQ(telemetry::ConfigError::UnknownKey, result.error);
 	}
-	for (const auto input : {
-			 R"({"schemaVersion":3,"profile":null})",
-			 R"({"schemaVersion":3,"profile":3})"}) {
+}
+
+TEST(TelemetryConfigContract, VersionsOneThroughThreeAreRejected)
+{
+	for (const auto version : {1, 2, 3}) {
+		const auto input = std::string{"{\"schemaVersion\":"} +
+			std::to_string(version) + "}";
 		SCOPED_TRACE(input);
 		const auto result = parse(input);
 		EXPECT_EQ(ConfigStatus::Invalid, result.status);
-		EXPECT_EQ(telemetry::ConfigError::InvalidType, result.error);
+		EXPECT_EQ(telemetry::ConfigError::OutOfRange, result.error);
 	}
 }
 
 TEST(TelemetryConfigContract, EnabledMinimalObjectUsesTheLoopbackOnlyProfile)
 {
-	const auto result = parse(R"({"schemaVersion":1,"enabled":true})");
+	const auto result = parse(R"({"schemaVersion":4,"enabled":true})");
 	ASSERT_EQ(ConfigStatus::ValidEnabled, result.status);
 	EXPECT_TRUE(result.effective.enabled);
 	EXPECT_EQ(2U, result.effective.bind_addresses.size());
@@ -252,10 +172,10 @@ TEST(TelemetryConfigContract, StrictJsonRejectsMissingSchemaSyntaxAndNonObjectRo
 		R"({})",
 		R"({"enabled":false})",
 		R"({"schemaVersion":)",
-		R"({"schemaVersion":1)",
-		R"({"schemaVersion":1,})",
-		R"(/*comment*/{"schemaVersion":1})",
-		R"({"schemaVersion":1//comment
+		R"({"schemaVersion":4)",
+		R"({"schemaVersion":4,})",
+		R"(/*comment*/{"schemaVersion":4})",
+		R"({"schemaVersion":4//comment
 })",
 	};
 
@@ -267,25 +187,25 @@ TEST(TelemetryConfigContract, StrictJsonRejectsMissingSchemaSyntaxAndNonObjectRo
 
 TEST(TelemetryConfigContract, StrictJsonRejectsDuplicateKeysAtRoot)
 {
-	expect_invalid(R"({"schemaVersion":1,"enabled":false,"enabled":true})");
-	expect_invalid(R"({"schemaVersion":1,"schemaVersion":1})");
+	expect_invalid(R"({"schemaVersion":4,"enabled":false,"enabled":true})");
+	expect_invalid(R"({"schemaVersion":4,"schemaVersion":4})");
 }
 
 TEST(TelemetryConfigContract, StrictJsonRequiresEofButAllowsTrailingJsonWhitespace)
 {
-	expect_valid_disabled("{\"schemaVersion\":1}\r\n\t ");
-	expect_invalid(R"({"schemaVersion":1}{"schemaVersion":1})");
-	expect_invalid(R"({"schemaVersion":1}null)");
-	expect_invalid(R"({"schemaVersion":1}x)");
+	expect_valid_disabled("{\"schemaVersion\":4}\r\n\t ");
+	expect_invalid(R"({"schemaVersion":4}{"schemaVersion":4})");
+	expect_invalid(R"({"schemaVersion":4}null)");
+	expect_invalid(R"({"schemaVersion":4}x)");
 
-	std::string trailing_nul{R"({"schemaVersion":1})"};
+	std::string trailing_nul{R"({"schemaVersion":4})"};
 	trailing_nul.push_back('\0');
 	expect_invalid(std::string_view{trailing_nul.data(), trailing_nul.size()});
 }
 
 TEST(TelemetryConfigContract, StrictJsonEnforcesTheSixteenKibibyteLimitBeforeParsing)
 {
-	std::string exact_limit{R"({"schemaVersion":1})"};
+	std::string exact_limit{R"({"schemaVersion":4})"};
 	exact_limit.append(MaxConfigBytes - exact_limit.size(), ' ');
 	ASSERT_EQ(MaxConfigBytes, exact_limit.size());
 	expect_valid_disabled(exact_limit);
@@ -298,7 +218,7 @@ TEST(TelemetryConfigContract, StrictJsonEnforcesTheSixteenKibibyteLimitBeforePar
 
 TEST(TelemetryConfigContract, DepthPreflightRejectsTruncatedDepthFiveBeforeCallingJansson)
 {
-	const auto result = parse(R"({"schemaVersion":1,"bindAddresses":[[[[)");
+	const auto result = parse(R"({"schemaVersion":4,"bindAddresses":[[[[)");
 
 	ASSERT_EQ(ConfigStatus::Invalid, result.status);
 	EXPECT_EQ(telemetry::ConfigError::MaximumDepthExceeded, result.error)
@@ -309,12 +229,12 @@ TEST(TelemetryConfigContract, DepthPreflightRejectsTruncatedDepthFiveBeforeCalli
 TEST(TelemetryConfigContract, DepthPreflightIgnoresStructuralCharactersAndEscapesInsideStrings)
 {
 	const auto structural_string =
-		parse(R"json({"schemaVersion":1,"bindAddresses":["[[[[{}]]]]\"\\"]})json");
+		parse(R"json({"schemaVersion":4,"bindAddresses":["[[[[{}]]]]\"\\"]})json");
 	ASSERT_EQ(ConfigStatus::Invalid, structural_string.status);
 	EXPECT_EQ(telemetry::ConfigError::InvalidAddress, structural_string.error)
 		<< "Braces, brackets, an escaped quote and an escaped backslash inside a JSON string are not containers.";
 
-	const auto structural_key = parse(R"json({"schemaVersion":1,"[[[[{\"}]]]]":0})json");
+	const auto structural_key = parse(R"json({"schemaVersion":4,"[[[[{\"}]]]]":0})json");
 	ASSERT_EQ(ConfigStatus::Invalid, structural_key.status);
 	EXPECT_EQ(telemetry::ConfigError::UnknownKey, structural_key.error)
 		<< "The lexical preflight must also ignore structural characters in object keys.";
@@ -325,7 +245,7 @@ TEST(TelemetryConfigContract, DepthPreflightIgnoresStructuralCharactersAndEscape
 // down the normal unit-test run with a stack overflow.
 TEST(TelemetryConfigDepthIsolationContract, DISABLED_DeepTruncatedContainerBombIsRejectedByPreflight)
 {
-	std::string bomb{R"({"schemaVersion":1,"bindAddresses":)"};
+	std::string bomb{R"({"schemaVersion":4,"bindAddresses":)"};
 	bomb.append(8000U, '[');
 	ASSERT_LT(bomb.size(), MaxConfigBytes);
 
@@ -336,8 +256,8 @@ TEST(TelemetryConfigDepthIsolationContract, DISABLED_DeepTruncatedContainerBombI
 
 TEST(TelemetryConfigContract, StrictJsonDistinguishesDepthFiveFromAValidlyParsedShallowTypeError)
 {
-	const auto depth_four = parse(R"({"schemaVersion":1,"bindAddresses":[[["127.0.0.1"]]]})");
-	const auto depth_five = parse(R"({"schemaVersion":1,"bindAddresses":[[[["127.0.0.1"]]]]})");
+	const auto depth_four = parse(R"({"schemaVersion":4,"bindAddresses":[[["127.0.0.1"]]]})");
+	const auto depth_five = parse(R"({"schemaVersion":4,"bindAddresses":[[[["127.0.0.1"]]]]})");
 
 	ASSERT_EQ(ConfigStatus::Invalid, depth_four.status);
 	ASSERT_EQ(ConfigStatus::Invalid, depth_five.status);
@@ -349,7 +269,7 @@ TEST(TelemetryConfigContract, StrictJsonDistinguishesDepthFiveFromAValidlyParsed
 
 TEST(TelemetryConfigContract, ClosedSchemaRejectsEveryUnknownKeyWithoutPartialApplication)
 {
-	const auto result = parse(R"({"schemaVersion":1,"enabled":true,"futureOption":1})");
+	const auto result = parse(R"({"schemaVersion":4,"enabled":true,"futureOption":1})");
 	ASSERT_EQ(ConfigStatus::Invalid, result.status);
 	EXPECT_NE(0, enum_value(result.error));
 	expect_safe_defaults(result);
@@ -428,7 +348,7 @@ TEST(TelemetryConfigContract, ConfigurationValuesAreClosed)
 	expect_valid_disabled(object_with("visibilityMode", R"("Cockpit")"));
 	expect_invalid(object_with("visibilityMode", R"("cockpit")"));
 	expect_invalid(object_with("schemaVersion", "0"));
-	expect_invalid(object_with("schemaVersion", "4"));
+	expect_invalid(object_with("schemaVersion", "5"));
 }
 
 TEST(TelemetryConfigContract, BindAddressArrayIsBoundedNumericAndUniqueAfterBinaryCanonicalization)
@@ -535,20 +455,20 @@ TEST(TelemetryConfigContract, AllowedClientArrayIsBoundedCanonicalAndUnique)
 TEST(TelemetryConfigContract, NonLoopbackExposureRequiresAnExplicitNonemptyAllowlist)
 {
 	expect_invalid(
-		R"({"schemaVersion":1,"enabled":false,"bindAddresses":["192.0.2.10"],"allowedClients":["192.0.2.0/24"]})");
-	expect_invalid(R"({"schemaVersion":1,"enabled":true,"bindAddresses":["192.0.2.10"]})");
+		R"({"schemaVersion":4,"enabled":false,"bindAddresses":["192.0.2.10"],"allowedClients":["192.0.2.0/24"]})");
+	expect_invalid(R"({"schemaVersion":4,"enabled":true,"bindAddresses":["192.0.2.10"]})");
 	expect_invalid(
-		R"({"schemaVersion":1,"enabled":true,"bindAddresses":["192.0.2.10"],"allowedClients":[]})");
+		R"({"schemaVersion":4,"enabled":true,"bindAddresses":["192.0.2.10"],"allowedClients":[]})");
 	expect_valid_enabled(
-		R"({"schemaVersion":1,"enabled":true,"bindAddresses":["192.0.2.10"],"allowedClients":["192.0.2.0/24"]})");
+		R"({"schemaVersion":4,"enabled":true,"bindAddresses":["192.0.2.10"],"allowedClients":["192.0.2.0/24"]})");
 
 	// A wildcard bind is explicit and valid only with a narrowed allowlist.
 	expect_valid_enabled(
-		R"({"schemaVersion":1,"enabled":true,"bindAddresses":["0.0.0.0"],"allowedClients":["192.0.2.0/24"]})");
+		R"({"schemaVersion":4,"enabled":true,"bindAddresses":["0.0.0.0"],"allowedClients":["192.0.2.0/24"]})");
 	expect_invalid(
-		R"({"schemaVersion":1,"enabled":true,"bindAddresses":["0.0.0.0"],"allowedClients":["0.0.0.0/0"]})");
+		R"({"schemaVersion":4,"enabled":true,"bindAddresses":["0.0.0.0"],"allowedClients":["0.0.0.0/0"]})");
 	expect_invalid(
-		R"({"schemaVersion":1,"enabled":true,"bindAddresses":["::"],"allowedClients":["::/0"]})");
+		R"({"schemaVersion":4,"enabled":true,"bindAddresses":["::"],"allowedClients":["::/0"]})");
 }
 
 TEST(TelemetryConfigLocationContract, AbsentAndVpOnlyAreBothFailClosedAbsentResults)
@@ -563,7 +483,7 @@ TEST(TelemetryConfigLocationContract, AbsentAndVpOnlyAreBothFailClosedAbsentResu
 	expect_safe_defaults(absent);
 
 	const auto vp_only = telemetry::detail::load_telemetry_config_from_observation(ConfigLocationObservation{
-		ConfigLocationKind::VpOnly, 4096U, R"({"schemaVersion":1,"enabled":true})"});
+		ConfigLocationKind::VpOnly, 4096U, R"({"schemaVersion":4,"enabled":true})"});
 	ASSERT_EQ(ConfigStatus::Absent, vp_only.status);
 	EXPECT_EQ(0, enum_value(vp_only.error));
 	expect_safe_defaults(vp_only);
@@ -581,7 +501,7 @@ TEST(TelemetryConfigLocationContract, LooseUserGameAndActiveModLocationsAreAccep
 	for (const auto location : loose_locations) {
 		SCOPED_TRACE(enum_value(location));
 		const auto result = telemetry::detail::load_telemetry_config_from_observation(
-			ConfigLocationObservation{location, 0U, R"({"schemaVersion":1,"enabled":true})"});
+			ConfigLocationObservation{location, 0U, R"({"schemaVersion":4,"enabled":true})"});
 		EXPECT_EQ(ConfigStatus::ValidEnabled, result.status);
 	}
 }
@@ -592,7 +512,7 @@ TEST(TelemetryConfigLocationContract, AFoundLocationWithNonzeroArchiveOffsetIsNo
 	using telemetry::detail::ConfigLocationObservation;
 
 	const auto result = telemetry::detail::load_telemetry_config_from_observation(ConfigLocationObservation{
-		ConfigLocationKind::LooseActiveMod, 1U, R"({"schemaVersion":1,"enabled":true})"});
+		ConfigLocationKind::LooseActiveMod, 1U, R"({"schemaVersion":4,"enabled":true})"});
 	EXPECT_EQ(ConfigStatus::Absent, result.status);
 	expect_safe_defaults(result);
 }
@@ -603,7 +523,7 @@ TEST(TelemetryConfigLocationContract, ALooseFileStillUsesTheSameStrictParser)
 	using telemetry::detail::ConfigLocationObservation;
 
 	const auto result = telemetry::detail::load_telemetry_config_from_observation(ConfigLocationObservation{
-		ConfigLocationKind::LooseUserRoot, 0U, R"({"schemaVersion":1,"unknown":true})"});
+		ConfigLocationKind::LooseUserRoot, 0U, R"({"schemaVersion":4,"unknown":true})"});
 	EXPECT_EQ(ConfigStatus::Invalid, result.status);
 	EXPECT_NE(0, enum_value(result.error));
 	expect_safe_defaults(result);

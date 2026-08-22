@@ -1137,13 +1137,11 @@ TEST(Phase2Runtime, TST060BeforeDuringAndAfterLoadMaterializesOnlyASelectedProfi
 		telemetry::Phase2Profile::None, 0U))
 		<< "A loading transition without a materializable profile remains closed.";
 
-	telemetry::Phase2Profile selected = telemetry::Phase2Profile::None;
 	telemetry::Phase2ProfileEligibility eligibility{};
 	ASSERT_EQ(telemetry::Phase2ProfileError::None,
-		telemetry::select_phase2_profile(eligibility,
-			telemetry::Phase2Profile::CompleteShip, selected));
-	ASSERT_EQ(telemetry::Phase2Profile::CompleteShip, selected);
-	ASSERT_TRUE(slot.configure(selected, 0U));
+		telemetry::validate_cockpit_sensor_producer(eligibility));
+	ASSERT_TRUE(slot.configure(
+		telemetry::Phase2Profile::CockpitSensors, 0U));
 	EXPECT_EQ(detail::Phase2RuntimeResult::SnapshotRequired,
 		slot.reconcile_closure(
 			keys.data(), keys.size(), bindings.data(), bindings.size()));

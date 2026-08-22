@@ -4,6 +4,10 @@ Dashboard local de validation des données FSTL destinées à un futur simpit.
 L’interface ne modifie ni FS2Open ni le protocole : un bridge Python joue le
 rôle d’un client FSTL normal et sert l’application web sur loopback.
 
+Le direct, la lecture de capture et le producteur de replay acceptent
+exclusivement le profil `CockpitSensors` avec la couverture `0x07CB`. Une
+capture portant une autre couverture est refusée.
+
 ## Lancement live
 
 Activez la télémétrie dans la configuration chargée par FS2Open, démarrez le

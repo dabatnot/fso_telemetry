@@ -149,7 +149,7 @@ Le profil final DOIT annoncer `event_coverage_state_derived = ENTITY | DAMAGE (0
 
 | ID | Exigence normative |
 |---|---|
-| `P2-REQ-041` | Le schéma fermé conserve `systemsHz` entier `1..20`, défaut `10`, et `flightHz` entier `1..60`, défaut `30`. `schemaVersion=2` exige `phase2Profile` exactement `CoreGate` ou `CompleteShip`; la v1 interdit ce champ et migre explicitement vers `CompleteShip`. Le profil est choisi une fois avant bind et ne change qu’après redémarrage. |
+| `P2-REQ-041` | Les formes wire historiques conservent leurs couvertures exactes. Leur ancienne sélection par les configurations v1/v2 n’appartient plus au producteur courant, qui accepte uniquement la configuration v4 et émet `CockpitSensors`; `systemsHz` reste entier `1..20`, défaut `10`, et `flightHz` entier `1..60`, défaut `30`. |
 | `P2-REQ-042` | Les limites héritées de 1200 octets/datagramme, 1 Mio/message delta, 16 Mio/transaction fiable, 64 parts, 1024 fragments, 65 535 records par message/part et 32 Mio de candidates/client DOIVENT être appliquées avant allocation et avant cast. L’image contient au plus `9+N=1033` records en `CoreGate` et `4+10K+N=4740` en `CompleteShip`; aucune image artificielle de 65 535 entrées n’est exigée. |
 | `P2-REQ-043` | Les métriques DOIVENT distinguer collecte par bloc, construction manifeste, image, diff, sérialisation, baseline, événements, rejets, tailles, retransmissions et âge des données. |
 | `P2-REQ-044` | Les logs DOIVENT identifier profil, manifeste, cause de refus, transition lifecycle et resync sans exposer de secret, adresse non nécessaire ou contenu caché. |

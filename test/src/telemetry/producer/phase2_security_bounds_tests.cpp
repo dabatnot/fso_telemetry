@@ -76,7 +76,7 @@ struct Phase2SupportTrackerAbiEntry {
 TEST(Phase2SecurityBounds, P2TST001LegacyConfigurationDefaultsSystemsToTenWithoutChangingOtherCadences)
 {
 	const auto result = detail::parse_telemetry_config_json(
-		R"({"schemaVersion":1,"enabled":true,"flightHz":17,"keyframeSeconds":4})");
+		R"({"schemaVersion":4,"enabled":true,"flightHz":17,"keyframeSeconds":4})");
 	ASSERT_EQ(telemetry::ConfigStatus::ValidEnabled, result.status);
 	EXPECT_EQ(10U, result.effective.systems_hz);
 	EXPECT_EQ(17U, result.effective.flight_hz);
@@ -89,18 +89,18 @@ TEST(Phase2SecurityBounds, P2TST002SystemsBoundsTypesAndIndependentSchedulersAre
 {
 	for (const auto rate : {1U, 20U}) {
 		const auto json = std::string{
-			R"({"schemaVersion":1,"systemsHz":)"} +
+			R"({"schemaVersion":4,"systemsHz":)"} +
 			std::to_string(rate) + "}";
 		const auto result = detail::parse_telemetry_config_json(json);
 		ASSERT_NE(telemetry::ConfigStatus::Invalid, result.status);
 		EXPECT_EQ(rate, result.effective.systems_hz);
 	}
 	for (const auto* json : {
-			 R"({"schemaVersion":1,"systemsHz":0})",
-			 R"({"schemaVersion":1,"systemsHz":21})",
-			 R"({"schemaVersion":1,"systemsHz":10.0})",
-			 R"({"schemaVersion":1,"systemsHz":"10"})",
-			 R"({"schemaVersion":1,"enabled":true,"flightHz":11,"systemsHz":21})"}) {
+			 R"({"schemaVersion":4,"systemsHz":0})",
+			 R"({"schemaVersion":4,"systemsHz":21})",
+			 R"({"schemaVersion":4,"systemsHz":10.0})",
+			 R"({"schemaVersion":4,"systemsHz":"10"})",
+			 R"({"schemaVersion":4,"enabled":true,"flightHz":11,"systemsHz":21})"}) {
 		const auto result = detail::parse_telemetry_config_json(json);
 		ASSERT_EQ(telemetry::ConfigStatus::Invalid, result.status);
 		EXPECT_FALSE(result.effective.enabled);
@@ -122,9 +122,9 @@ TEST(Phase2SecurityBounds, P2TST002SystemsBoundsTypesAndIndependentSchedulersAre
 TEST(Phase2SecurityBounds, P2TST003UnknownDuplicateAndDeepInputsNeverPartiallyApply)
 {
 	for (const auto* json : {
-			 R"({"schemaVersion":1,"enabled":true,"futureSystemsHz":10})",
-			 R"({"schemaVersion":1,"enabled":true,"systemsHz":10,"systemsHz":11})",
-			 R"({"schemaVersion":1,"enabled":true,"bindAddresses":[[[["127.0.0.1"]]]]})"}) {
+			 R"({"schemaVersion":4,"enabled":true,"futureSystemsHz":10})",
+			 R"({"schemaVersion":4,"enabled":true,"systemsHz":10,"systemsHz":11})",
+			 R"({"schemaVersion":4,"enabled":true,"bindAddresses":[[[["127.0.0.1"]]]]})"}) {
 		const auto result = detail::parse_telemetry_config_json(json);
 		ASSERT_EQ(telemetry::ConfigStatus::Invalid, result.status);
 		EXPECT_FALSE(result.effective.enabled);
@@ -145,45 +145,30 @@ TEST(Phase2SecurityBounds, P2TST004DisabledConfigurationRetainsThePhase1FastPath
 	EXPECT_EQ(10U, absent.effective.systems_hz);
 
 	const auto disabled =
-		detail::parse_telemetry_config_json(R"({"schemaVersion":1,"enabled":false})");
+		detail::parse_telemetry_config_json(R"({"schemaVersion":4,"enabled":false})");
 	ASSERT_EQ(telemetry::ConfigStatus::ValidDisabled, disabled.status);
 	EXPECT_FALSE(disabled.effective.enabled);
 	EXPECT_EQ(30U, disabled.effective.flight_hz);
 	EXPECT_EQ(10U, disabled.effective.systems_hz);
 }
 
-TEST(TelemetryConfigContract, VersionThreeProfileIsClosed)
+TEST(TelemetryConfigContract, VersionFourHasNoProfileAndRejectsLegacySchemas)
 {
 	const auto cockpit = detail::parse_telemetry_config_json(
-		R"({"schemaVersion":3,"profile":"CockpitSensors"})");
+		R"({"schemaVersion":4})");
 	ASSERT_EQ(telemetry::ConfigStatus::ValidDisabled, cockpit.status);
-	EXPECT_EQ(3U, cockpit.effective.schema_version);
-	EXPECT_EQ(telemetry::Phase2Profile::CockpitSensors,
-		cockpit.effective.phase2_profile);
-	EXPECT_EQ(0x07CBU,
-		telemetry::phase2_profile_coverage(
-			cockpit.effective.phase2_profile));
+	EXPECT_EQ(4U, cockpit.effective.schema_version);
 
 	for (const auto* invalid : {
-			 R"({"schemaVersion":3})",
-			 R"({"schemaVersion":3,"profile":"cockpitsensors"})",
-			 R"({"schemaVersion":3,"profile":"Complete"})",
-			 R"({"schemaVersion":3,"phase2Profile":"CompleteShip","profile":"CockpitSensors"})"}) {
+			 R"({"schemaVersion":1})",
+			 R"({"schemaVersion":2,"phase2Profile":"CoreGate"})",
+			 R"({"schemaVersion":3,"profile":"CockpitSensors"})",
+			 R"({"schemaVersion":4,"profile":"CockpitSensors"})",
+			 R"({"schemaVersion":4,"phase2Profile":"CompleteShip"})"}) {
 		SCOPED_TRACE(invalid);
 		EXPECT_EQ(telemetry::ConfigStatus::Invalid,
 			detail::parse_telemetry_config_json(invalid).status);
 	}
-
-	const auto legacy_v1 = detail::parse_telemetry_config_json(
-		R"({"schemaVersion":1})");
-	ASSERT_EQ(telemetry::ConfigStatus::ValidDisabled, legacy_v1.status);
-	EXPECT_EQ(telemetry::Phase2Profile::CompleteShip,
-		legacy_v1.effective.phase2_profile);
-	const auto legacy_v2 = detail::parse_telemetry_config_json(
-		R"({"schemaVersion":2,"phase2Profile":"CoreGate"})");
-	ASSERT_EQ(telemetry::ConfigStatus::ValidDisabled, legacy_v2.status);
-	EXPECT_EQ(telemetry::Phase2Profile::CoreGate,
-		legacy_v2.effective.phase2_profile);
 }
 
 TEST(Phase2SecurityBounds, P2TST005And006BuildSurfaceAndCMakeInventoryAreExplicit)

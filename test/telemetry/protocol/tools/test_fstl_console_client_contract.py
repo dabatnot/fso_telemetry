@@ -29,7 +29,6 @@ CONSOLE = TOOLS / "fstl_console_client.py"
 SCENARIO = TOOLS / "fstl_phase2_scenario_client.py"
 REPO = TOOLS.parents[3]
 V11 = REPO / "test" / "telemetry" / "protocol" / "vectors-v1.1"
-OBSERVATIONS = REPO / "test" / "telemetry" / "producer" / "observations"
 
 sys.path.insert(0, str(TOOLS))
 import fstl_reference_decoder as reference
@@ -68,9 +67,29 @@ def v11_payload(name: str, suffix: str) -> bytes:
     return (V11 / name / f"{name}{suffix}").read_bytes()
 
 
+def cockpit_snapshot_payload(name: str = "minimal-with-player") -> bytes:
+    """Adapt a layout fixture to the sole client profile and reseal it."""
+    payload = bytearray(v11_payload(name, ".bin"))
+    region = payload[60:]
+    offset = 0
+    session_count = 0
+    while offset < len(region):
+        record_type = int.from_bytes(region[offset:offset + 2], "little")
+        record_length = int.from_bytes(region[offset + 4:offset + 6], "little")
+        if record_type == 1:
+            coverage_offset = 60 + offset + 6 + 40
+            payload[coverage_offset:coverage_offset + 8] = (0x07CB).to_bytes(8, "little")
+            session_count += 1
+        offset += 6 + record_length
+    if offset != len(region) or session_count != 1:
+        raise AssertionError("snapshot fixture must contain exactly one SESSION_STATE")
+    payload[12:44] = hashlib.sha256(payload[60:]).digest()
+    return bytes(payload)
+
+
 def snapshot_parts(snapshot_id: int = 1) -> tuple[bytes, bytes]:
     """Split the Phase-1 snapshot's two record regions without console code."""
-    payload = v11_payload("minimal-with-player", ".bin")
+    payload = cockpit_snapshot_payload()
     region = payload[60:]
     first_length = 6 + int.from_bytes(region[4:6], "little")
     first_length += 6 + int.from_bytes(region[first_length + 4:first_length + 6], "little")
@@ -153,6 +172,57 @@ def receive_message_type(server: socket.socket, message_type: int) -> tuple[byte
 
 
 class FstlConsoleClientContractTest(unittest.TestCase):
+    @staticmethod
+    def session_record(coverage: int, visibility: int = 0) -> dict[str, object]:
+        return {
+            "recordName": "SESSION_STATE",
+            "recordFlags": 0,
+            "fields": {
+                "state_domain_coverage": str(coverage),
+                "visibility_mode": visibility,
+            },
+        }
+
+    def test_cockpit_client_accepts_only_the_cockpit_sensors_profile(self) -> None:
+        state = console.ConsoleState(
+            required_state_domain_coverage=console.COCKPIT_SENSORS_COVERAGE
+        )
+        state._apply_records(
+            [self.session_record(console.COCKPIT_SENSORS_COVERAGE)], True
+        )
+        self.assertEqual(
+            str(console.COCKPIT_SENSORS_COVERAGE),
+            state.records["SESSION_STATE"]["state_domain_coverage"],
+        )
+
+        for coverage in (0x0401, 0x0583):
+            with self.subTest(coverage=coverage):
+                with self.assertRaisesRegex(ValueError, "CockpitSensors 0x07CB required"):
+                    state._apply_records([self.session_record(coverage)], True)
+
+        with self.assertRaisesRegex(ValueError, "CockpitSensors 0x07CB required"):
+            state._apply_records(
+                [self.session_record(console.COCKPIT_SENSORS_COVERAGE, visibility=1)],
+                True,
+            )
+
+    def test_cockpit_client_rejects_profile_changes_in_cumulative_deltas(self) -> None:
+        state = console.ConsoleState(
+            required_state_domain_coverage=console.COCKPIT_SENSORS_COVERAGE
+        )
+        state._apply_records(
+            [self.session_record(console.COCKPIT_SENSORS_COVERAGE)], True
+        )
+        state.baseline_record_instances = dict(state.record_instances)
+
+        with self.assertRaisesRegex(ValueError, "CockpitSensors 0x07CB required"):
+            state._apply_cumulative_delta_records([self.session_record(0x0583)])
+
+        self.assertEqual(
+            str(console.COCKPIT_SENSORS_COVERAGE),
+            state.records["SESSION_STATE"]["state_domain_coverage"],
+        )
+
     def test_reference_decoder_reads_single_u32_radar_icon_id(self) -> None:
         name = b"Ulysses"
         payload = (
@@ -736,29 +806,6 @@ class FstlConsoleClientContractTest(unittest.TestCase):
         self.assertNotEqual(summary["fast"]["sessionId"], summary["slow"]["sessionId"])
         self.assertEqual("Live", summary["fast"]["finalStatus"])
         self.assertEqual("Live", summary["slow"]["finalStatus"])
-
-    def test_complete_ship_fixture_is_neutral_and_spawns_external_cargo(self) -> None:
-        mission_path = OBSERVATIONS / "telemetry_p2_complete.fs2"
-        mission = mission_path.read_text(encoding="utf-8")
-        config = json.loads(
-            (OBSERVATIONS / "complete-ship.telemetry.json").read_text(encoding="utf-8")
-        )
-        self.assertLess(len(mission_path.stem), 28)
-        self.assertEqual(1, config["maxClients"])
-        cargo = mission.split("$Name: External Cargo 1", 1)[1].split("#Wings", 1)[0]
-        self.assertIn("$Class: TC 2", cargo)
-        self.assertNotIn("$Class: Cargo Container", cargo)
-        self.assertIn("$Arrival Cue: ( true )", cargo)
-        self.assertNotIn("( change-ship-class ", mission)
-
-    def test_core_gate_fixture_is_listable_and_spawns_external_cargo(self) -> None:
-        mission_path = OBSERVATIONS / "telemetry_p2_core.fs2"
-        mission = mission_path.read_text(encoding="utf-8")
-        self.assertLess(len(mission_path.stem), 28)
-        cargo = mission.split("$Name: External Cargo 1", 1)[1].split("#Wings", 1)[0]
-        self.assertIn("$Class: TC 2", cargo)
-        self.assertNotIn("$Class: Cargo Container", cargo)
-        self.assertIn("$Arrival Cue: ( true )", cargo)
 
     def test_phase2_dashboard_formulas_are_explicit_and_fail_closed(self) -> None:
         decoded = reference.decode_message(
@@ -2008,7 +2055,7 @@ class FstlConsoleClientContractTest(unittest.TestCase):
         self.assertEqual(first.stdout, second.stdout, "nominal replay transcript must be byte-for-byte deterministic")
         transcript = [json.loads(line) for line in first.stdout.splitlines()]
         states = [line["status"] for line in transcript]
-        self.assertEqual(["Synchronizing", "Synchronizing", "Live", "Stale", "Disconnected"], states)
+        self.assertEqual(["Ready", "Ready", "Live", "Stale", "Disconnected"], states)
         for line in transcript:
             self.assertEqual("replay-simulated", line["observation_clock"])
             self.assertRegex(line["observed_at_utc"], r"^1970-01-01T00:00:\d\d\.\d{6}Z$")

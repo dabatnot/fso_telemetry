@@ -17,6 +17,10 @@ dans la projection `CockpitSensors`, après filtrage producteur. Les besoins du
 dashboard, du replay, des tests ou du diagnostic ne peuvent pas élargir ce
 périmètre.
 
+`CockpitSensors` (`0x07CB`) est l'unique profil du producteur courant. Les
+formes `CoreGate` et `CompleteShip` restent décodables pour préserver le
+contrat wire publié, mais aucune configuration ne peut les produire.
+
 ## Processus de développement
 
 Les documents historiques `01..07` décrivent les comportements existants, mais

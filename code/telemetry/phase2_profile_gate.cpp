@@ -63,16 +63,9 @@ Phase2ProfileError validate_phase2_profile_coverage(std::uint64_t coverage, Phas
 	return profile == Phase2Profile::None ? Phase2ProfileError::UnsupportedCoverage : Phase2ProfileError::None;
 }
 
-Phase2ProfileError select_phase2_profile(const Phase2ProfileEligibility& eligibility,
-	Phase2Profile requested,
-	Phase2Profile& selected) noexcept
+Phase2ProfileError validate_cockpit_sensor_producer(
+	const Phase2ProfileEligibility& eligibility) noexcept
 {
-	selected = Phase2Profile::None;
-	if (requested != Phase2Profile::CoreGate &&
-		requested != Phase2Profile::CompleteShip &&
-		requested != Phase2Profile::CockpitSensors) {
-		return Phase2ProfileError::UnsupportedProfile;
-	}
 	if (eligibility.authority_mode != protocol::AuthorityMode::Solo) {
 		return Phase2ProfileError::UnsupportedAuthority;
 	}
@@ -82,7 +75,6 @@ Phase2ProfileError select_phase2_profile(const Phase2ProfileEligibility& eligibi
 	if (eligibility.headless) {
 		return Phase2ProfileError::HeadlessNotAllowed;
 	}
-	selected = requested;
 	return Phase2ProfileError::None;
 }
 

@@ -51,6 +51,8 @@ DEFAULT_RTO_US = 250_000
 MAX_RTO_US = 1_000_000
 RETRANSMISSION = 0x10
 RECORD_FLAG_DELETE = 0x02
+COCKPIT_SENSORS_COVERAGE = 0x07CB
+COCKPIT_VISIBILITY_MODE = 0
 
 
 def now_us() -> int:
@@ -2001,6 +2003,33 @@ class ConsoleState:
     reliable_dependency_pending: bool = False
     reliable_reassembly_timeout_us: int = 5_000_000
     last_network_activity_us: int | None = None
+    required_state_domain_coverage: int | None = None
+
+    def validate_required_profile(
+        self, instances: dict[str, dict[str, Any]] | None = None
+    ) -> None:
+        if self.required_state_domain_coverage is None:
+            return
+        source = self.record_instances if instances is None else instances
+        sessions = [
+            record for record in source.values()
+            if record.get("recordName") == "SESSION_STATE"
+        ]
+        if len(sessions) != 1:
+            raise ValueError("CockpitSensors snapshot requires exactly one SESSION_STATE")
+        fields = sessions[0].get("fields")
+        if not isinstance(fields, dict):
+            raise ValueError("CockpitSensors SESSION_STATE fields are invalid")
+        try:
+            coverage = int(fields.get("state_domain_coverage", -1))
+            visibility = int(fields.get("visibility_mode", -1))
+        except (TypeError, ValueError) as exc:
+            raise ValueError("CockpitSensors SESSION_STATE fields are invalid") from exc
+        if (
+            coverage != self.required_state_domain_coverage
+            or visibility != COCKPIT_VISIBILITY_MODE
+        ):
+            raise ValueError("CockpitSensors 0x07CB required")
 
     def invalidate_clock_filter(self, reason: str) -> None:
         self.clock_samples.clear()
@@ -2043,6 +2072,7 @@ class ConsoleState:
         _apply_state_mutations(
             candidate, records, allow_delete=not replace
         )
+        self.validate_required_profile(candidate)
         self.record_instances = candidate
         self.records = _legacy_record_view(self.record_instances)
 
@@ -2052,6 +2082,7 @@ class ConsoleState:
         """Rebuild one cumulative delta from the immutable ACKed baseline."""
         replica_instances = copy.deepcopy(self.baseline_record_instances)
         _apply_state_mutations(replica_instances, records, allow_delete=True)
+        self.validate_required_profile(replica_instances)
         self.record_instances = replica_instances
         self.records = _legacy_record_view(replica_instances)
 
@@ -2327,9 +2358,12 @@ class ConsoleState:
 class ConsoleClient:
     def __init__(self, sender: socket.socket | None, stale_us: int,
                  drop_once_delta: bool = False,
-                 ignore_previous_session_datagrams: bool = False) -> None:
+                 ignore_previous_session_datagrams: bool = False,
+                 required_state_domain_coverage: int | None = None) -> None:
         self.sender, self.stale_us = sender, stale_us
-        self.state = ConsoleState()
+        self.state = ConsoleState(
+            required_state_domain_coverage=required_state_domain_coverage
+        )
         self.fragments: dict[tuple[int, int], FragmentSet] = {}
         self.sequence = 1
         self.request_id = 1

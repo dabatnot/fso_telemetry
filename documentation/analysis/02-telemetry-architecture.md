@@ -367,8 +367,7 @@ Exemple :
 
 ```json
 {
-	"schemaVersion": 3,
-	"profile": "CockpitSensors",
+	"schemaVersion": 4,
   "enabled": true,
 	"visibilityMode": "Cockpit",
 	"bindAddresses": ["127.0.0.1", "::1"],
