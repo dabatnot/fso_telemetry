@@ -25,10 +25,11 @@ class FakeMessage:
 
 
 class FakeBus:
-    def __init__(self) -> None:
+    def __init__(self, *, fail_send: bool = False) -> None:
         self.received: list[FakeMessage] = []
         self.sent: list[FakeMessage] = []
         self.closed = False
+        self.fail_send = fail_send
 
     def recv(self, timeout: float):
         if self.received:
@@ -37,6 +38,8 @@ class FakeBus:
         return None
 
     def send(self, message, timeout: float):
+        if self.fail_send:
+            raise OSError("simulated bus-off")
         self.sent.append(message)
 
     def shutdown(self):
@@ -79,6 +82,26 @@ class CanServiceTest(unittest.TestCase):
         service.stop()
         self.assertTrue(bus.closed)
         self.assertGreater(len(changes), 0)
+
+    def test_bus_failure_closes_socket_and_reconnects_publication(self) -> None:
+        failed = FakeBus(fail_send=True)
+        recovered = FakeBus()
+        buses = iter((failed, recovered))
+        service = CanService(AvCoreConfig(), lambda: None, bus_factory=lambda: next(buses))
+        fake_module = types.SimpleNamespace(Message=FakeMessage)
+        with patch.dict(sys.modules, {"can": fake_module}):
+            service.start()
+            self.addCleanup(service.stop)
+            deadline = time.monotonic() + 3
+            while (service.status().state != "OK" or not recovered.sent) and time.monotonic() < deadline:
+                time.sleep(0.01)
+            self.assertTrue(failed.closed)
+            self.assertEqual("OK", service.status().state)
+            self.assertGreater(len(recovered.sent), 0)
+            recovered.received.append(FakeMessage(0x700, bytes((1, 0, 0, 4, 0, 1, 2, 3))))
+            while service.modules()[0].state != "ONLINE" and time.monotonic() < deadline:
+                time.sleep(0.01)
+            self.assertEqual("ONLINE", service.modules()[0].state)
 
 
 if __name__ == "__main__":

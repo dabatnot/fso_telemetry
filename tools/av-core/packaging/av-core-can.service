@@ -1,0 +1,13 @@
+[Unit]
+Description=FSO SimPit AV CORE CAN interface
+After=systemd-modules-load.service
+Before=av-core.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/libexec/av-core-can-up
+ExecStop=-/usr/sbin/ip link set dev can0 down
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

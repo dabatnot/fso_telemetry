@@ -195,6 +195,13 @@ dépend d'aucun service cloud. Cette première version ne comporte ni compte
 utilisateur, ni authentification, ni certificat TLS et ne doit pas être exposée
 directement à Internet.
 
+La livraison Raspberry utilise un bundle versionné avec frontend précompilé.
+Node.js, npm, les tests et les sources frontend ne sont pas installés sur le
+Raspberry. Un service `systemd` indépendant configure l'interface existante
+`can0` à 1 Mbit/s sans empêcher AV CORE de démarrer lorsque le HAT est absent.
+L'installateur active mDNS et ne change le hostname qu'avec l'option explicite
+`--set-hostname av-core`.
+
 ### Page Modules
 
 La page présente une carte pour chaque rôle fixe connu. Une carte indique :

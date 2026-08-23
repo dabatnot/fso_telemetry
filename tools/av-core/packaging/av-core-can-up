@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if ! /usr/sbin/ip link show dev can0 >/dev/null 2>&1; then
+    echo "can0 est absent : configurez d'abord l'overlay du HAT CAN." >&2
+    exit 1
+fi
+
+/usr/sbin/ip link set dev can0 down 2>/dev/null || true
+/usr/sbin/ip link set dev can0 type can bitrate 1000000 restart-ms 100
+/usr/sbin/ip link set dev can0 up

@@ -180,6 +180,12 @@ La vérification manuelle couvre :
 - la modification d'un seuil depuis un téléphone ;
 - la persistance de la configuration après reboot.
 
+La livraison logicielle utilise une archive versionnée avec frontend
+précompilé et services `systemd` séparés pour AV CORE et `can0`. La validation
+électrique du HAT, du bus et des deux ESP32 reste différée jusqu'à disponibilité
+du matériel ; elle ne bloque pas la préparation du bundle ni les tests sans
+matériel.
+
 ## Ordre de départ recommandé
 
 Les lots 1 puis 2 constituent le chemin de départ recommandé. Ils fournissent

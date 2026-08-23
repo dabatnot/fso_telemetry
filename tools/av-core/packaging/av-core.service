@@ -1,20 +1,27 @@
 [Unit]
 Description=FSO SimPit AV CORE
-Wants=network-online.target
-After=network-online.target
+Wants=network-online.target av-core-can.service
+After=network-online.target av-core-can.service
 
 [Service]
 Type=simple
 User=fsotelemetry
 Group=fsotelemetry
-WorkingDirectory=/opt/fsotelemetry/av-core
+WorkingDirectory=/opt/fsotelemetry/av-core/current
 StateDirectory=fsotelemetry
+StateDirectoryMode=0750
 Environment=PYTHONUNBUFFERED=1
-Environment=PYTHONPATH=/opt/fsotelemetry/av-core/backend
-Environment=AV_CORE_FSTL_CLIENT_DIR=/opt/fsotelemetry/av-core/fstl-client
-ExecStart=/opt/fsotelemetry/av-core/.venv/bin/python -m av_core --host 0.0.0.0 --config /var/lib/fsotelemetry/av-core.json --frontend-dir /opt/fsotelemetry/av-core/frontend
+Environment=PYTHONPATH=/opt/fsotelemetry/av-core/current/backend
+Environment=AV_CORE_FSTL_CLIENT_DIR=/opt/fsotelemetry/av-core/current/fstl-client
+ExecStart=/opt/fsotelemetry/av-core/current/.venv/bin/python -m av_core --host 0.0.0.0 --config /var/lib/fsotelemetry/av-core.json --frontend-dir /opt/fsotelemetry/av-core/current/frontend
 Restart=on-failure
 RestartSec=2
+UMask=0027
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=yes
+ProtectSystem=strict
+ReadWritePaths=/var/lib/fsotelemetry
 
 [Install]
 WantedBy=multi-user.target

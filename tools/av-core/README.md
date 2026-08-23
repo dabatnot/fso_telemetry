@@ -56,28 +56,42 @@ pio run -e threat_proc
 
 ## Installation sur Raspberry Pi OS Bookworm 64 bits
 
-Depuis une copie du dépôt sur le Raspberry :
+Construire et vérifier l'archive sur le poste de développement :
 
-```bash
-sudo bash tools/av-core/packaging/install.sh
+```powershell
+python tools\av-core\packaging\build_release.py
 ```
 
-L'installateur construit le frontend, installe le service dans
-`/opt/fsotelemetry/av-core`, crée l'utilisateur système `fsotelemetry` et
-active `av-core.service`. Il installe également les deux sources communes du
-client FSTL dans `/opt/fsotelemetry/av-core/fstl-client`. La configuration
-persistante se trouve dans `/var/lib/fsotelemetry/av-core.json`.
+Copier `build/av-core/av-core-<version>.tar.gz` sur le Raspberry, puis :
+
+```bash
+tar -xzf av-core-<version>.tar.gz
+cd av-core-<version>
+sudo ./install.sh
+```
+
+L'archive contient le frontend précompilé. Le Raspberry n'installe ni Node.js,
+ni npm, ni les sources ou tests de développement. L'installateur crée
+l'utilisateur `fsotelemetry`, installe une release versionnée sous
+`/opt/fsotelemetry/av-core`, puis active `av-core.service` et
+`av-core-can.service`. La configuration persistante reste dans
+`/var/lib/fsotelemetry/av-core.json` lors des mises à jour.
 
 Commandes utiles :
 
 ```bash
-systemctl status av-core.service
+systemctl status av-core.service av-core-can.service
 journalctl -u av-core.service -f
+ip -details -statistics link show can0
 sudo systemctl restart av-core.service
+sudo systemctl restart av-core-can.service
 ```
 
 AV CORE est accessible par `http://<ip-du-raspberry>:8080`. L'alias mDNS
-`av-core.local` sera finalisé avec le packaging du lot 6.
+reprend le hostname existant. Pour obtenir explicitement `av-core.local`, lancer
+`sudo ./install.sh --set-hostname av-core`. L'overlay propre au HAT doit créer
+`can0`; l'installateur ne modifie pas `/boot/firmware/config.txt` sans matériel
+validé. Le guide complet se trouve dans `OPERATIONS.md` à la racine du bundle.
 
 L'interface est disponible en français, anglais, espagnol, portugais, italien
 et allemand. La liste déroulante de la barre supérieure mémorise le choix dans
@@ -135,8 +149,8 @@ un client afin de ne pas préallouer quatre slots sur toutes les installations.
 
 ## Limites actuelles
 
-- la configuration automatique de `can0` reste au lot 6 ;
 - la validation électrique et matérielle nécessite le prototype raccordé ;
+- la référence exacte de l'overlay du HAT CAN reste à confirmer sur le matériel ;
 - aucun profil de luminosité nocturne ;
 - aucune authentification ou exposition à Internet.
 
