@@ -18,12 +18,56 @@
 
 #include <algorithm>
 #include <cmath>
+#include <initializer_list>
 
 using namespace simpit::radar;
 namespace protocol = telemetry::protocol;
 
 class RadarWidgetTests final : public QObject {
     Q_OBJECT
+private:
+    static qint64 firstPresentationTime(
+        std::uint64_t contactId, DistortedContactPresentation presentation)
+    {
+        RadarContact contact;
+        contact.id = contactId;
+        contact.visibility = static_cast<std::uint8_t>(protocol::RadarVisibility::Distorted);
+        for (qint64 interval = 0; interval < 10'000; ++interval) {
+            const qint64 milliseconds = interval * 120;
+            if (RadarWidget::contactAnimation(684.0, contact, milliseconds).presentation ==
+                presentation) return milliseconds;
+        }
+        return -1;
+    }
+
+    static QImage renderDistortedContact(qint64 milliseconds,
+                                         std::initializer_list<RadarIconAsset> overlays,
+                                         bool includeContact = true)
+    {
+        RadarWidget widget;
+        widget.resize(480, 480);
+        widget.setAnimationTimeForTesting(milliseconds);
+        auto image = std::make_shared<RadarImage>();
+        if (includeContact) {
+            RadarContact contact;
+            contact.id = 0x1234U;
+            contact.scopePosition = QPointF(0.28, -0.18);
+            contact.color = QColor(255, 92, 72, 255);
+            contact.visibility =
+                static_cast<std::uint8_t>(protocol::RadarVisibility::Distorted);
+            contact.visual.base = RadarIconAsset::ShipFighter;
+            for (const auto overlay : overlays)
+                contact.visual.overlays[contact.visual.overlayCount++] = overlay;
+            image->contacts.push_back(contact);
+        }
+        widget.setImage(image);
+        widget.setStatus(ClientStatus::Live);
+        QImage capture(widget.size(), QImage::Format_ARGB32_Premultiplied);
+        capture.fill(Qt::transparent);
+        widget.render(&capture);
+        return capture;
+    }
+
 private slots:
     void squareIsCenteredAndNeverStretched_data()
     {
@@ -596,12 +640,97 @@ private slots:
         const auto first = RadarWidget::contactAnimation(684.0, contact, 250);
         const auto repeat = RadarWidget::contactAnimation(684.0, contact, 250);
         QCOMPARE(first.jitter, repeat.jitter);
-        QCOMPARE(first.opacity, repeat.opacity);
         QCOMPARE(first.sizeMultiplier, repeat.sizeMultiplier);
+        QCOMPARE(first.presentation, repeat.presentation);
         QVERIFY(std::abs(first.jitter.x()) <= 1.25);
         QVERIFY(std::abs(first.jitter.y()) <= 1.25);
-        QVERIFY(first.opacity >= 0.70 && first.opacity <= 1.0);
         QVERIFY(first.sizeMultiplier >= 1.0 && first.sizeMultiplier <= 1.12);
+    }
+
+    void distortedPresentationIsReadableIrregularAndIndependent()
+    {
+        RadarContact normal;
+        normal.id = 1234;
+        normal.visibility = static_cast<std::uint8_t>(protocol::RadarVisibility::Visible);
+        for (qint64 interval = 0; interval < 100; ++interval)
+            QCOMPARE(RadarWidget::contactAnimation(684.0, normal, interval * 120).presentation,
+                     DistortedContactPresentation::ContactAndOverlay);
+
+        RadarContact first;
+        first.id = 1234;
+        first.visibility = static_cast<std::uint8_t>(protocol::RadarVisibility::Distorted);
+        RadarContact second = first;
+        second.id = 5678;
+        int contactAndOverlay = 0;
+        int contactOnly = 0;
+        int overlayOnly = 0;
+        int hidden = 0;
+        int independent = 0;
+        for (qint64 interval = 0; interval < 10'000; ++interval) {
+            const qint64 milliseconds = interval * 120;
+            const auto state = RadarWidget::contactAnimation(684.0, first, milliseconds);
+            QCOMPARE(state.presentation,
+                     RadarWidget::contactAnimation(684.0, first, milliseconds).presentation);
+            switch (state.presentation) {
+            case DistortedContactPresentation::ContactAndOverlay:
+                ++contactAndOverlay;
+                break;
+            case DistortedContactPresentation::ContactOnly: ++contactOnly; break;
+            case DistortedContactPresentation::OverlayOnly: ++overlayOnly; break;
+            case DistortedContactPresentation::Hidden: ++hidden; break;
+            }
+            if (state.presentation !=
+                RadarWidget::contactAnimation(684.0, second, milliseconds).presentation)
+                ++independent;
+        }
+        QVERIFY(contactAndOverlay >= 5'000 && contactAndOverlay <= 5'400);
+        QVERIFY(contactOnly >= 2'200 && contactOnly <= 2'600);
+        QVERIFY(overlayOnly >= 1'400 && overlayOnly <= 1'800);
+        QVERIFY(hidden >= 650 && hidden <= 950);
+        QVERIFY(independent > 1'000);
+    }
+
+    void distortedPresentationControlsMarkerRendering()
+    {
+        const qint64 fullTime = firstPresentationTime(
+            0x1234U, DistortedContactPresentation::ContactAndOverlay);
+        const qint64 contactOnlyTime = firstPresentationTime(
+            0x1234U, DistortedContactPresentation::ContactOnly);
+        const qint64 overlayOnlyTime = firstPresentationTime(
+            0x1234U, DistortedContactPresentation::OverlayOnly);
+        const qint64 hiddenTime = firstPresentationTime(
+            0x1234U, DistortedContactPresentation::Hidden);
+        QVERIFY(fullTime >= 0);
+        QVERIFY(contactOnlyTime >= 0);
+        QVERIFY(overlayOnlyTime >= 0);
+        QVERIFY(hiddenTime >= 0);
+
+        const auto full = renderDistortedContact(fullTime,
+            {RadarIconAsset::OverlayTagged, RadarIconAsset::OverlayDistorted});
+        const auto fullWithoutDistortion = renderDistortedContact(fullTime,
+            {RadarIconAsset::OverlayTagged});
+        QVERIFY(full != fullWithoutDistortion);
+
+        const auto contactOnly = renderDistortedContact(contactOnlyTime,
+            {RadarIconAsset::OverlayTagged, RadarIconAsset::OverlayDistorted});
+        const auto taggedOnly = renderDistortedContact(contactOnlyTime,
+            {RadarIconAsset::OverlayTagged});
+        const auto noOverlay = renderDistortedContact(contactOnlyTime, {});
+        QCOMPARE(contactOnly, taggedOnly);
+        QVERIFY(contactOnly != noOverlay);
+
+        const auto overlayOnly = renderDistortedContact(overlayOnlyTime,
+            {RadarIconAsset::OverlayTagged, RadarIconAsset::OverlayDistorted});
+        const auto distortionOnly = renderDistortedContact(overlayOnlyTime,
+            {RadarIconAsset::OverlayDistorted});
+        const auto overlayOnlyEmpty = renderDistortedContact(overlayOnlyTime, {}, false);
+        QCOMPARE(overlayOnly, distortionOnly);
+        QVERIFY(overlayOnly != overlayOnlyEmpty);
+
+        const auto hidden = renderDistortedContact(hiddenTime,
+            {RadarIconAsset::OverlayTagged, RadarIconAsset::OverlayDistorted});
+        const auto empty = renderDistortedContact(hiddenTime, {}, false);
+        QCOMPARE(hidden, empty);
     }
 
     void dprTwoRendersColorizedSvg()

@@ -30,6 +30,17 @@ constexpr double CalloutDeadZone = 0.20;
 constexpr qint64 CalloutSwitchDelayMs = 600;
 constexpr double ChevronActivateRadians = 0.05;
 constexpr double ChevronReleaseRadians = 0.03;
+constexpr qint64 DistortedPresentationIntervalMs = 120;
+
+std::uint64_t mixDistortedPresentation(std::uint64_t value) noexcept
+{
+    value ^= value >> 30U;
+    value *= 0xbf58476d1ce4e5b9ULL;
+    value ^= value >> 27U;
+    value *= 0x94d049bb133111ebULL;
+    value ^= value >> 31U;
+    return value;
+}
 
 int hystereticDirection(double angle, int current) noexcept
 {
@@ -227,7 +238,17 @@ ContactAnimationState RadarWidget::contactAnimation(
         constexpr double amplitude = 1.25;
         state.jitter.setX(std::sin(seconds * 2.0 * Pi * 6.0 + phase) * amplitude);
         state.jitter.setY(std::cos(seconds * 2.0 * Pi * 7.0 + phase * 1.7) * amplitude);
-        state.opacity = 0.85 + 0.15 * std::sin(seconds * 2.0 * Pi * 4.0 + phase);
+        const auto interval = static_cast<std::uint64_t>(
+            std::max<qint64>(0, milliseconds) / DistortedPresentationIntervalMs);
+        const auto sample = mixDistortedPresentation(
+            contact.id ^ (interval * 0x9e3779b97f4a7c15ULL)) % 100U;
+        state.presentation = sample < 8U
+            ? DistortedContactPresentation::Hidden
+            : sample < 24U
+            ? DistortedContactPresentation::OverlayOnly
+            : sample < 48U
+            ? DistortedContactPresentation::ContactOnly
+            : DistortedContactPresentation::ContactAndOverlay;
     }
     if ((contact.flags & telemetry::protocol::ContactFlagThreat) != 0U)
         state.sizeMultiplier = 1.06 + 0.06 * std::sin(seconds * 2.0 * Pi * 2.0 + phase);
@@ -327,11 +348,12 @@ void RadarWidget::drawContact(QPainter& painter, const RadarContact& contact,
     double iconSize = contactIconSize(radarDiameter, contact);
     const ContactAnimationState animation = contactAnimation(
         radarDiameter, contact, animationMilliseconds());
+    if (animation.presentation == DistortedContactPresentation::Hidden) return;
     iconSize *= animation.sizeMultiplier;
 
     painter.save();
     painter.translate(position + animation.jitter);
-    painter.setOpacity(contact.alpha() * animation.opacity);
+    painter.setOpacity(contact.alpha());
     QPen pen(contact.color);
     pen.setWidthF(contact.currentTarget ? 2.6 : 1.5);
     pen.setCapStyle(Qt::SquareCap);
@@ -339,6 +361,12 @@ void RadarWidget::drawContact(QPainter& painter, const RadarContact& contact,
     if (contact.visibility == 2U) pen.setDashPattern({3.0, 3.0});
     painter.setPen(pen);
     painter.setBrush(Qt::NoBrush);
+    const bool drawContact =
+        animation.presentation == DistortedContactPresentation::ContactAndOverlay ||
+        animation.presentation == DistortedContactPresentation::ContactOnly;
+    const bool drawDistortion =
+        animation.presentation == DistortedContactPresentation::ContactAndOverlay ||
+        animation.presentation == DistortedContactPresentation::OverlayOnly;
     const auto fallbackGlyph = [&]() {
         const double size = iconSize * 0.42;
         QPainterPath path;
@@ -375,15 +403,25 @@ void RadarWidget::drawContact(QPainter& painter, const RadarContact& contact,
     };
 
     const double dpr = devicePixelRatioF();
-    if (contact.visual.behind != RadarIconAsset::None)
+    if (drawContact && contact.visual.behind != RadarIconAsset::None)
         m_iconCache.draw(painter, contact.visual.behind, QPointF{}, iconSize,
                          contact.color, dpr);
-    const bool svgBase = m_iconCache.draw(
-        painter, contact.visual.base, QPointF{}, iconSize, contact.color, dpr);
-    if (!svgBase) fallbackGlyph();
-    for (std::uint8_t index = 0; index < contact.visual.overlayCount; ++index)
+    if (drawContact) {
+        const bool svgBase = m_iconCache.draw(
+            painter, contact.visual.base, QPointF{}, iconSize, contact.color, dpr);
+        if (!svgBase) fallbackGlyph();
+    }
+    for (std::uint8_t index = 0; index < contact.visual.overlayCount; ++index) {
+        const bool distortion =
+            contact.visual.overlays[index] == RadarIconAsset::OverlayDistorted;
+        if ((distortion && !drawDistortion) || (!distortion && !drawContact)) continue;
         m_iconCache.draw(painter, contact.visual.overlays[index], QPointF{}, iconSize,
-                         contact.color, dpr);
+                          contact.color, dpr);
+    }
+    if (!drawContact) {
+        painter.restore();
+        return;
+    }
 
     if (contact.currentTarget) {
         RadarIconAsset bracket = RadarIconAsset::BracketsSelected;

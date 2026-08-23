@@ -18,10 +18,18 @@
 
 namespace simpit::radar {
 
+enum class DistortedContactPresentation : std::uint8_t {
+    ContactAndOverlay,
+    ContactOnly,
+    OverlayOnly,
+    Hidden,
+};
+
 struct ContactAnimationState final {
     QPointF jitter;
-    double opacity = 1.0;
     double sizeMultiplier = 1.0;
+    DistortedContactPresentation presentation =
+        DistortedContactPresentation::ContactAndOverlay;
 };
 
 struct CalloutLayout final {
