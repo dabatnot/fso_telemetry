@@ -1,13 +1,15 @@
-# Guide de câblage WARN CTRL — ESP32 DevKit V1
+# Guide de câblage WARN CTRL et THREAT PROC — ESP32 DevKit V1
 
-Ce guide décrit le câblage du prototype `WARN CTRL` avec :
+Ce guide décrit le câblage des deux modules ESP32 du panneau :
 
-- un ESP32 DevKit V1 ;
-- un module CAN MCP2515/TJA1050 à quartz 8 MHz ;
-- un convertisseur de niveau EPLZON TXS0108E ;
-- une chaîne de 23 mini-PCB BTF-LIGHTING WS2812B ECO ;
-- un potentiomètre linéaire de 10 kΩ pour `BRT` ;
-- un poussoir momentané pour `LAMP TEST`.
+- `WARN CTRL`, avec 23 mini-PCB WS2812B ECO, un potentiomètre `BRT` de
+  10 kΩ et un poussoir `LAMP TEST` ;
+- `THREAT PROC`, avec neuf mini-PCB WS2812B ECO et aucune commande locale.
+
+Chaque module possède son propre ESP32 DevKit V1, son MCP2515/TJA1050 à
+quartz 8 MHz et son convertisseur de niveau EPLZON TXS0108E. Les deux modules
+partagent le bus CAN avec le Raspberry Pi, mais leurs alimentations de pixels
+et leurs chaînes WS2812 restent indépendantes.
 
 Effectuer tout le câblage hors tension.
 
@@ -17,10 +19,10 @@ Effectuer tout le câblage hors tension.
 
 | Qté | Composant | Caractéristiques requises | Remarque |
 |---:|---|---|---|
-| 1 | ESP32 DevKit V1 | ESP32-WROOM-32, logique 3,3 V | Cible PlatformIO `esp32dev` |
-| 1 | Module MCP2515/TJA1050 | alimentation 5 V, quartz 8 MHz, CAN 1 Mbit/s | Choisir une terminaison 120 Ω désactivable par cavalier |
-| 1 | Module EPLZON TXS0108E | 8 canaux, broches `VA`, `VB`, `OE`, `A1..A8`, `B1..B8` | Conversion SPI, INT et données WS2812 |
-| 23 utilisés | [Mini-PCB BTF-LIGHTING WS2812B ECO](https://www.amazon.fr/dp/B088K6C7TJ) | 5 V, 800 kHz, ordre GRB, conditionnement de 100 pièces | Un mini-PCB par voyant ; `C1` et `R1=75 Ω` intégrés |
+| 2 | ESP32 DevKit V1 | ESP32-WROOM-32, logique 3,3 V | Un pour `WARN CTRL`, un pour `THREAT PROC` |
+| 2 | Module MCP2515/TJA1050 | alimentation 5 V, quartz 8 MHz, CAN 1 Mbit/s | Un par module ; terminaison 120 Ω désactivable par cavalier |
+| 2 | Module EPLZON TXS0108E | 8 canaux, broches `VA`, `VB`, `OE`, `A1..A8`, `B1..B8` | Un par module pour SPI, INT et données WS2812 |
+| 32 utilisés | [Mini-PCB BTF-LIGHTING WS2812B ECO](https://www.amazon.fr/dp/B088K6C7TJ) | 5 V, 800 kHz, ordre GRB, conditionnement de 100 pièces | 23 pour `WARN CTRL`, 9 pour `THREAT PROC` ; `C1` et `R1=75 Ω` intégrés |
 | 1 | Potentiomètre linéaire | 10 kΩ | Commande `BRT` |
 | 1 | Poussoir momentané normalement ouvert | contact sec | Commande `LAMP TEST` active bas |
 
@@ -28,60 +30,62 @@ Effectuer tout le câblage hors tension.
 
 | Qté | Composant | Caractéristiques requises |
 |---:|---|---|
-| 1 | Alimentation régulée | 5 V, 2 A minimum ; 3 A conseillé pour garder de la marge |
-| 1 | Condensateur électrolytique | environ 1000 µF, tension nominale 10 V ou plus |
-| 1 | Résistance de données | 330 à 470 Ω, 1/4 W |
-| 1 | Connecteur d'alimentation | adapté à l'alimentation 5 V choisie et à au moins 2 A |
+| 2 | Alimentation régulée | une 5 V / 2 A minimum pour `WARN CTRL` (3 A conseillé) ; une 5 V / 1 A minimum pour `THREAT PROC` |
+| 2 | Condensateur électrolytique | environ 1000 µF, tension nominale 10 V ou plus ; un par chaîne |
+| 2 | Résistance de données | 330 à 470 Ω, 1/4 W ; une avant le premier pixel de chaque chaîne |
+| 2 | Connecteur d'alimentation | adapté à chaque alimentation 5 V et à son courant maximal |
 
 ### Câblage et assemblage
 
 | Qté | Élément | Usage |
 |---:|---|---|
-| 1 | Paire torsadée | `CANH/CANL` entre WARN CTRL et le bus CAN |
+| selon implantation | Paire torsadée | tronc `CANH/CANL` entre Raspberry Pi, `WARN CTRL` et `THREAT PROC` |
 | selon besoin | Fil 20 à 22 AWG | distribution `+5V/GND` des pixels |
 | selon besoin | Fil 24 à 28 AWG | SPI, INT, bouton, potentiomètre et données LED |
 | selon besoin | Barrettes mâles/femelles au pas de 2,54 mm | modules ESP32, TXS0108E et MCP2515 |
-| 1 | Plaque de prototypage ou circuit de distribution | maintien mécanique et distribution des signaux |
-| 1 | Câble USB de données | alimentation et programmation de l'ESP32 |
+| 2 | Plaque de prototypage ou circuit de distribution | une par module pour maintien mécanique et distribution des signaux |
+| 2 | Câble USB de données | alimentation et programmation des deux ESP32 |
 
 Le Raspberry Pi et son Waveshare 2-CH CAN HAT+ constituent l'autre extrémité
 du bus et ne sont pas comptés dans cette BOM côté ESP32. Les résistances de
-terminaison CAN séparées ne sont pas nécessaires si le Waveshare et le module
-MCP2515 possèdent chacun leur terminaison 120 Ω activable.
+terminaison CAN séparées ne sont pas nécessaires si le Waveshare et le
+MCP2515 placé à l'autre extrémité possèdent chacun leur terminaison 120 Ω
+activable. Le MCP2515 intermédiaire doit avoir sa terminaison désactivée.
 
-Ne pas faire passer le courant d'alimentation des 23 pixels dans des fils
+Ne pas faire passer le courant d'alimentation des pixels dans des fils
 Dupont ou dans les rails d'une breadboard sans soudure. Ils restent adaptés aux
 signaux et au montage logique basse puissance.
 
-## Broches utilisées par le firmware
+## Broches utilisées par les firmwares
 
-| Fonction | ESP32 |
-|---|---:|
-| SPI SCK | GPIO18 |
-| SPI MISO | GPIO19 |
-| SPI MOSI | GPIO23 |
-| MCP2515 CS | GPIO5 |
-| MCP2515 INT | GPIO4 |
-| Données WS2812 | GPIO13 |
-| Potentiomètre BRT | GPIO34 |
-| Poussoir LAMP TEST | GPIO27 |
+| Fonction | WARN CTRL | THREAT PROC |
+|---|---:|---:|
+| SPI SCK | GPIO18 | GPIO18 |
+| SPI MISO | GPIO19 | GPIO19 |
+| SPI MOSI | GPIO23 | GPIO23 |
+| MCP2515 CS | GPIO5 | GPIO5 |
+| MCP2515 INT | GPIO4 | GPIO4 |
+| Données WS2812 | GPIO13 | GPIO13 |
+| Potentiomètre BRT | GPIO34 | — |
+| Poussoir LAMP TEST | GPIO27 | — |
 
 ## 1. Alimentations et masse commune
 
-Pour le premier montage :
+Pour chaque module :
 
 - alimenter l'ESP32 par son connecteur USB ;
 - alimenter le MCP2515 et le côté 5 V du TXS0108E depuis la broche `5V/VIN`
   de l'ESP32 ;
-- alimenter les 23 WS2812 avec une alimentation régulée 5 V séparée, capable
-  de fournir au moins 2 A ;
+- alimenter sa chaîne WS2812 avec une alimentation régulée 5 V séparée : au
+  moins 2 A pour les 23 pixels de `WARN CTRL` et 1 A pour les neuf pixels de
+  `THREAT PROC` ;
 - relier ensemble les masses de l'ESP32, du TXS0108E, du MCP2515, des WS2812
   et du Waveshare/Raspberry Pi.
 
-Ne pas alimenter la chaîne de 23 WS2812 depuis la broche `3V3` ou la sortie
-USB de l'ESP32. Ne pas relier la sortie positive de l'alimentation LED à la
-broche `5V/VIN` de l'ESP32 lorsqu'il est également alimenté par USB : seule la
-masse est commune.
+Ne pas alimenter une chaîne WS2812 depuis la broche `3V3` ou la sortie USB de
+l'ESP32. Ne pas relier la sortie positive de l'alimentation LED à la broche
+`5V/VIN` de l'ESP32 lorsqu'il est également alimenté par USB : seule la masse
+est commune.
 
 ## 2. Alimentation du TXS0108E
 
@@ -115,7 +119,7 @@ Alimenter directement le MCP2515 :
 Le courant d'alimentation du MCP2515 ne traverse pas le TXS0108E. Garder les
 liaisons SPI aussi courtes que possible, idéalement sous 10 à 15 cm.
 
-## 4. Chaîne de mini-PCB WS2812B
+## 4. Chaîne WS2812 de WARN CTRL
 
 Utiliser le sixième canal du TXS0108E pour porter le signal de données à 5 V :
 
@@ -147,7 +151,7 @@ DOUT LED 1 ------------------ DIN LED 2
 DOUT LED 21 ----------------- DIN LED 22
 ```
 
-Respecter l'ordre physique des 23 voyants défini par le firmware, de
+Sur l'ESP32 `WARN CTRL`, respecter l'ordre physique des 23 voyants défini par le firmware, de
 `MASTER WARNING` à `WARN CTRL`.
 
 ### Alimentation et réinjection
@@ -180,7 +184,31 @@ déjà son condensateur de découplage `C1` et une résistance de données `R1` 
 75 Ω ; aucun condensateur de 100 nF séparé n'est nécessaire. Conserver malgré
 tout la résistance externe de 330 à 470 Ω avant le premier `DIN`.
 
-## 5. Potentiomètre BRT
+## 5. Chaîne WS2812 de THREAT PROC
+
+Le signal suit le même trajet électrique que pour `WARN CTRL` : GPIO13 vers
+`A6/B6` du TXS0108E, puis résistance série de 330 à 470 Ω et `DIN` du premier
+pixel. La chaîne contient exactement neuf pixels :
+
+| Pixel | Direction / fonction | Bit du masque CAN |
+|---:|---|---:|
+| 0 | Avant | 0 |
+| 1 | Avant-droite | 1 |
+| 2 | Droite | 2 |
+| 3 | Arrière-droite | 3 |
+| 4 | Arrière | 4 |
+| 5 | Arrière-gauche | 5 |
+| 6 | Gauche | 6 |
+| 7 | Avant-gauche | 7 |
+| 8 | `LOCK` central | — |
+
+Chaîner `DOUT` vers `DIN` dans cet ordre, du pixel avant jusqu'au voyant
+central `LOCK`. Alimenter la chaîne avec sa propre alimentation régulée
+5 V / 1 A minimum et placer son condensateur d'environ 1000 µF près du
+premier pixel. Les neuf pixels partagent `+5V` et `GND`; leur masse est reliée
+à celle de l'ESP32 et au bus CAN.
+
+## 6. Potentiomètre BRT de WARN CTRL
 
 Utiliser un potentiomètre linéaire de 10 kΩ :
 
@@ -190,43 +218,45 @@ Utiliser un potentiomètre linéaire de 10 kΩ :
 | curseur central | ESP32 GPIO34 |
 | borne extérieure 2 | masse commune |
 
-Si le sens de rotation est inversé, permuter uniquement les deux bornes
+Ce potentiomètre n'existe que sur `WARN CTRL`. Si le sens de rotation est inversé, permuter uniquement les deux bornes
 extérieures. Ne jamais appliquer 5 V à GPIO34.
 
-## 6. Poussoir LAMP TEST
+## 7. Poussoir LAMP TEST de WARN CTRL
 
 | Poussoir | Connexion |
 |---|---|
 | borne 1 | ESP32 GPIO27 |
 | borne 2 | masse commune |
 
-Le firmware active la résistance de rappel interne. Le bouton est actif bas :
+Ce poussoir n'existe que sur `WARN CTRL`. Le firmware active la résistance de rappel interne. Le bouton est actif bas :
 les lampes de test sont allumées tant que le bouton relie GPIO27 à la masse.
 
 Pour un poussoir à quatre pattes, les deux pattes d'un même côté sont déjà
 reliées entre elles. Utiliser une patte de chaque côté du contact.
 
-## 7. Bus CAN vers le Waveshare
+## 8. Bus CAN vers le Waveshare
 
-| MCP2515 | Waveshare Raspberry Pi |
+| MCP2515 des deux modules | Waveshare Raspberry Pi |
 |---|---|
 | `CANH` | `CAN0-H` |
 | `CANL` | `CAN0-L` |
 | `GND` | masse commune |
 
-Utiliser une paire torsadée pour `CANH/CANL`. Le bus doit former une ligne et
-porter exactement deux terminaisons de 120 Ω, une à chaque extrémité :
+Utiliser une paire torsadée pour `CANH/CANL`. Les trois nœuds doivent former
+un tronc aussi linéaire que possible, avec des dérivations courtes, et porter
+exactement deux terminaisons de 120 Ω, une à chaque extrémité :
 
 ```text
-Waveshare [120 Ω] ---- nœuds intermédiaires ---- WARN CTRL [120 Ω]
+Waveshare [120 Ω] ---- module intermédiaire [sans terminaison] ---- module terminal [120 Ω]
 ```
 
-Pour le premier essai à deux nœuds, activer la terminaison du canal CAN0 du
-Waveshare et celle du MCP2515. Sur un bus étendu, retirer le cavalier de
-terminaison de tous les modules intermédiaires et le conserver uniquement sur
-le dernier nœud.
+Le module terminal peut être `WARN CTRL` ou `THREAT PROC` selon l'implantation
+physique. Activer la terminaison du canal CAN0 du Waveshare et celle de ce
+module terminal. Retirer le cavalier de terminaison du MCP2515 intermédiaire.
+Hors tension, la résistance mesurée entre `CANH` et `CANL` doit rester proche
+de 60 Ω.
 
-## 8. Contrôles avant mise sous tension
+## 9. Contrôles avant mise sous tension
 
 1. Vérifier qu'aucun fil 5 V n'arrive sur une broche GPIO ou sur `VA`.
 2. Vérifier `VA = 3,3 V`, `VB = 5 V` et `OE = 3,3 V` dans le schéma de câblage.
@@ -234,9 +264,11 @@ le dernier nœud.
 4. Vérifier que `CANH` ne va qu'à `CANH` et `CANL` qu'à `CANL`.
 5. Hors tension, mesurer environ 60 Ω entre `CANH` et `CANL`.
 6. Vérifier la polarité de l'alimentation WS2812 et du condensateur.
-7. Pour le premier démarrage, laisser éventuellement la chaîne WS2812
-   débranchée et valider d'abord la communication CAN.
+7. Vérifier que `WARN CTRL` possède 23 pixels et `THREAT PROC` neuf pixels,
+   dans les ordres définis ci-dessus.
+8. Pour le premier démarrage, laisser éventuellement les chaînes WS2812
+   débranchées et valider d'abord la communication CAN.
 
-Après mise sous tension et démarrage des deux nœuds, `can0` doit revenir à
+Après mise sous tension et démarrage des trois nœuds, `can0` doit revenir à
 `ERROR-ACTIVE`, ses compteurs RX/TX doivent progresser et AV CORE doit afficher
-`WARN CTRL` en ligne.
+`WARN CTRL` et `THREAT PROC` en ligne.
