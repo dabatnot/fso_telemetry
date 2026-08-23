@@ -7,10 +7,9 @@
 #include "telemetry/phase2_catalog_projection.h"
 #include "telemetry/phase3_engine_collector.h"
 #include "telemetry/phase3_identity_registry.h"
-#include "telemetry/phase3_state_image.h"
+#include "telemetry/cockpit_sensors_state_image.h"
 #include "telemetry/runtime_adapter.h"
 #include "telemetry/runtime_adapter_test_seam.h"
-#include "telemetry/phase1_state_image.h"
 #include "telemetry/protocol/telemetry_control_messages.h"
 #include "telemetry/protocol/telemetry_business_records.h"
 #include "telemetry/protocol/telemetry_crc32.h"
@@ -3258,44 +3257,6 @@ TEST(TelemetryP91MetricsLifecycleContract, AcceptedCallbackPublishesNonZeroDurat
 	}
 	EXPECT_EQ(histogram.count, bucket_total)
 		<< "Every accepted callback duration must be represented by exactly one fixed bucket.";
-}
-
-TEST(TelemetryP85StateImagePoolContract, ExhaustionFailsClosedAndReleasedBackingIsReusable)
-{
-	detail::Phase1StateImagePool pool;
-	ASSERT_TRUE(pool.provision());
-	detail::Phase1StateImageInput input{};
-	input.producer_id = 0x1020304050607080ULL;
-	input.negotiated_capability_generation = 1U;
-	input.mission.mission_generation = 7U;
-	input.mission.phase = protocol::MissionPhase::Active;
-	input.mission.time_compression = 1.0F;
-	input.player_capture = {detail::CaptureStatus::Valid, detail::CaptureReason::None};
-	input.player.entity_id = 42U;
-	input.player.value.orientation_local_to_world = {1.0F, 0.0F, 0.0F, 0.0F};
-	input.player.value.radius = 1.0F;
-
-	std::array<protocol::StateImage, detail::Phase1StateImagePool::SlotsPerRecordSet> retained{};
-	for (std::size_t index = 0U; index < retained.size(); ++index) {
-		input.mission.producer_sample_time_us = 100U + index;
-		input.player.value.producer_sample_time_us = 100U + index;
-		input.player.value.position_world = {static_cast<float>(index), 2.0F, 3.0F};
-		ASSERT_EQ(detail::Phase1StateImageBuildStatus::Created,
-			detail::build_phase1_state_image_preallocated(input, pool, retained[index]));
-		ASSERT_FALSE(retained[index].records().empty());
-	}
-	const auto first_record_count = retained[0U].records().size();
-	protocol::StateImage rejected;
-	EXPECT_EQ(detail::Phase1StateImageBuildStatus::AllocationFailed,
-		detail::build_phase1_state_image_preallocated(input, pool, rejected));
-	EXPECT_TRUE(rejected.records().empty());
-	EXPECT_EQ(first_record_count, retained[0U].records().size())
-		<< "Pool exhaustion must not mutate any image already retained by a baseline/candidate.";
-
-	retained[2U] = {};
-	EXPECT_EQ(detail::Phase1StateImageBuildStatus::Created,
-		detail::build_phase1_state_image_preallocated(input, pool, rejected));
-	EXPECT_FALSE(rejected.records().empty());
 }
 
 TEST(TelemetryNativeRuntimeIntegrationContract, RuntimeCompositionMapsCaptureSeparatelyFromTransportExhaustively)

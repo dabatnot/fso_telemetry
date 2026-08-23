@@ -16,7 +16,7 @@ TEST(TelemetryPhase2SessionTransition, CoverageMutationFaultsOnlyTheAffectedSess
 		 CockpitCoverageMutationSource::CapabilityUpdate}) {
 		SCOPED_TRACE(static_cast<unsigned>(source));
 		const auto result = reject_cockpit_coverage_mutation(
-			0x0583ULL, source);
+			StateDomainCoverageBitNone, source);
 		EXPECT_EQ(ValidationError::InvalidStateTransition, result.error);
 		EXPECT_EQ(SessionEndReason::ProtocolError, result.session_end_reason);
 		EXPECT_EQ(SessionEndFlagReconnectAllowed, result.session_end_flags);

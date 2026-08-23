@@ -119,9 +119,8 @@ TelemetryCockpitProducerRejection telemetry_cockpit_rejection(
 	case CockpitProducerEligibilityError::DedicatedNotAllowed:
 	case CockpitProducerEligibilityError::HeadlessNotAllowed:
 		return TelemetryCockpitProducerRejection::UnsupportedAuthority;
-	case CockpitProducerEligibilityError::UnsupportedCoverage:
 	default:
-		return TelemetryCockpitProducerRejection::IncompleteCoverage;
+		return TelemetryCockpitProducerRejection::UnsupportedAuthority;
 	}
 }
 
@@ -2793,7 +2792,7 @@ NativeSessionTickStatus NativeSessionRuntime::apply_collected_player_capture(con
 				return NativeSessionTickStatus::
 					PermanentCaptureFailure;
 			}
-			Phase2CompleteDomainInput phase2_input;
+			CockpitSensorsStateImageInput phase2_input;
 			phase2_input.producer_id = m_producer_id;
 			phase2_input.negotiated_capability_generation =
 				1U;
@@ -2878,8 +2877,8 @@ NativeSessionTickStatus NativeSessionRuntime::apply_collected_player_capture(con
 				}
 			}
 			protocol::StateImage image;
-			Phase2StateImageBuildDiagnostic image_diagnostic{};
-			Phase2StateImageRebuildSet rebuilt_atoms;
+			CockpitSensorsStateImageBuildDiagnostic image_diagnostic{};
+			CockpitSensorsStateImageRebuildSet rebuilt_atoms;
 			const auto image_started =
 				std::chrono::steady_clock::now();
 			{
@@ -3001,7 +3000,7 @@ NativeSessionTickStatus NativeSessionRuntime::apply_collected_player_capture(con
 					index, current_image);
 			if (baseline_result ==
 				protocol::ProducerBaselineResult::Applied) {
-				Phase2StateImageRebuildSet patched_atoms{};
+				CockpitSensorsStateImageRebuildSet patched_atoms{};
 				if (patch_cockpit_sensors_state_image_preallocated(
 						current_image, image, patched_atoms)) {
 					baseline_result =

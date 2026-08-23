@@ -142,7 +142,6 @@ add_file_folder("Telemetry\\\\Producer"
 	telemetry/producer/test_support_work_contract.cpp
 	telemetry/producer/test_telemetry_runtime_adapter_player_contract.cpp
 	telemetry/producer/test_telemetry_player_observation_slot_contract.cpp
-	telemetry/producer/test_telemetry_phase1_state_image_contract.cpp
 	telemetry/producer/test_telemetry_phase1_snapshot_slot_contract.cpp
 	telemetry/producer/test_telemetry_phase1_snapshot_egress_contract.cpp
 	telemetry/producer/test_telemetry_runtime_lifecycle_contract.cpp

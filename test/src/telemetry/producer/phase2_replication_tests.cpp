@@ -1,6 +1,6 @@
 #include "telemetry/phase1_delta_egress.h"
 #include "telemetry/phase1_snapshot_slot.h"
-#include "telemetry/phase1_state_image.h"
+#include "telemetry/cockpit_sensors_state_image.h"
 #include "telemetry/phase2_runtime.h"
 #include "telemetry/protocol/telemetry_datagram.h"
 #include "telemetry/protocol/telemetry_records.h"
@@ -8,6 +8,8 @@
 #include "telemetry/protocol/telemetry_state_messages.h"
 
 #include <gtest/gtest.h>
+
+#include <cstring>
 
 #include <algorithm>
 #include <array>
@@ -53,24 +55,27 @@ protocol::StateImage image(std::initializer_list<protocol::StateAtom> atoms)
 
 protocol::StateImage canonical_image(float radius)
 {
-	detail::Phase1StateImageInput input{};
+	std::uint32_t bits = 0U;
+	std::memcpy(&bits, &radius, sizeof(bits));
+	auto observation = std::make_unique<detail::Phase2ObservationDto>();
+	observation->capture.status = detail::Phase2CaptureStatus::NoPlayer;
+	observation->capture.reason = detail::Phase2CaptureReason::None;
+	auto manifest = std::make_unique<telemetry::Phase2ManifestCandidate>();
+	manifest->manifest_id = 1U;
+	telemetry::CockpitSensorsStateImageInput input{};
 	input.producer_id = 1U;
-	input.negotiated_capability_generation = 1U;
-	input.mission.producer_sample_time_us = 100U;
+	input.mission.producer_sample_time_us = bits;
 	input.mission.mission_generation = 1U;
 	input.mission.phase = protocol::MissionPhase::Active;
-	input.mission.time_compression = 1.0F;
-	input.player_capture = {
-		detail::CaptureStatus::Valid,
-		detail::CaptureReason::None};
-	input.player.entity_id = 1U;
-	input.player.value.producer_sample_time_us = 100U;
-	input.player.value.orientation_local_to_world =
-		{1.0F, 0.0F, 0.0F, 0.0F};
-	input.player.value.radius = radius;
+	input.observation = observation.get();
+	input.installed_manifest = manifest.get();
+	auto projection = std::make_unique<telemetry::Phase3Projection>();
+	auto pool = std::make_unique<telemetry::CockpitSensorsStateImagePool>();
+	EXPECT_TRUE(pool->provision(1U, 1U, 1U, 1U));
 	protocol::StateImage result;
-	EXPECT_EQ(detail::Phase1StateImageBuildStatus::Created,
-		detail::build_phase1_state_image(input, result));
+	EXPECT_EQ(telemetry::Phase3StateImageBuildStatus::Created,
+		telemetry::build_cockpit_sensors_state_image_preallocated(
+			input, *pool, *projection, result));
 	return result;
 }
 

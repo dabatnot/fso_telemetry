@@ -143,23 +143,21 @@ endif()
 add_test(NAME telemetry_native_runtime_loopback_contract_tests
 	COMMAND telemetry_native_runtime_loopback_contract_tests)
 
-add_executable(telemetry_phase2_profile_tests
-	telemetry/protocol/phase2_profile_tests.cpp
-	test_stubs.cpp
+add_executable(telemetry_cockpit_producer_eligibility_tests
+	telemetry/protocol/cockpit_producer_eligibility_tests.cpp
+	${CMAKE_SOURCE_DIR}/code/telemetry/cockpit_producer_eligibility.cpp
 )
-
-target_compile_features(telemetry_phase2_profile_tests PRIVATE cxx_std_17)
-target_include_directories(telemetry_phase2_profile_tests PRIVATE
+target_compile_features(telemetry_cockpit_producer_eligibility_tests PRIVATE cxx_std_17)
+target_include_directories(telemetry_cockpit_producer_eligibility_tests PRIVATE
 	${CODE_HEADERS}
 	${FREESPACE_HEADERS}
 	${GENERATED_SOURCE_DIR}
 	${GENERATED_SOURCE_DIR}/code
 )
-target_link_libraries(telemetry_phase2_profile_tests PRIVATE gtest_main code)
-
-set_target_properties(telemetry_phase2_profile_tests PROPERTIES FOLDER "tests")
-
-add_test(NAME telemetry_phase2_profile_tests COMMAND telemetry_phase2_profile_tests)
+target_link_libraries(telemetry_cockpit_producer_eligibility_tests PRIVATE gtest_main)
+set_target_properties(telemetry_cockpit_producer_eligibility_tests PROPERTIES FOLDER "tests")
+add_test(NAME telemetry_cockpit_producer_eligibility_tests
+	COMMAND telemetry_cockpit_producer_eligibility_tests)
 
 add_executable(telemetry_phase2_session_transition_tests
 	telemetry/protocol/phase2_session_transition_tests.cpp
@@ -220,32 +218,6 @@ add_test(NAME telemetry_phase2_observation_contract_tests
 	COMMAND telemetry_phase2_observation_contract_tests
 )
 
-add_executable(telemetry_phase2_closure_tests
-	telemetry/producer/phase2_closure_tests.cpp
-	telemetry/phase2_allocation_tracker.cpp
-	${CMAKE_SOURCE_DIR}/code/telemetry/phase2_closure.cpp
-)
-target_compile_features(telemetry_phase2_closure_tests PRIVATE cxx_std_17)
-target_compile_definitions(telemetry_phase2_closure_tests PRIVATE
-	FSO_PHASE2_SOURCE_ROOT="${CMAKE_SOURCE_DIR}"
-)
-target_include_directories(telemetry_phase2_closure_tests PRIVATE
-	${CMAKE_CURRENT_SOURCE_DIR}
-	${CODE_HEADERS}
-	${FREESPACE_HEADERS}
-	${GENERATED_SOURCE_DIR}
-	${GENERATED_SOURCE_DIR}/code
-)
-target_link_libraries(telemetry_phase2_closure_tests PRIVATE gtest_main fstl_protocol)
-set_target_properties(telemetry_phase2_closure_tests PROPERTIES FOLDER "tests")
-source_group("Telemetry\\\\Producer" FILES
-	telemetry/producer/phase2_closure_tests.cpp
-	telemetry/phase2_allocation_tracker.cpp
-	telemetry/phase2_allocation_tracker.h
-	telemetry/phase2_manifest_test_support.h
-)
-add_test(NAME telemetry_phase2_closure_tests COMMAND telemetry_phase2_closure_tests)
-
 add_executable(telemetry_phase2_manifest_tests
 	telemetry/producer/phase2_manifest_tests.cpp
 	telemetry/phase2_allocation_tracker.cpp
@@ -294,123 +266,12 @@ source_group("Telemetry\\\\Protocol" FILES
 )
 add_test(NAME telemetry_phase2_manifest_codec_tests COMMAND telemetry_phase2_manifest_codec_tests)
 
-add_executable(telemetry_phase2_core_state_tests
-	telemetry/producer/phase2_state_image_tests.cpp
-	telemetry/phase2_allocation_tracker.cpp
-	${CMAKE_SOURCE_DIR}/code/telemetry/phase2_manifest_builder.cpp
-	${CMAKE_SOURCE_DIR}/code/telemetry/phase2_observation.cpp
-	${CMAKE_SOURCE_DIR}/code/telemetry/phase2_state_image.cpp
-	${CMAKE_SOURCE_DIR}/code/telemetry/phase3_state_image.cpp
-)
-target_compile_features(telemetry_phase2_core_state_tests PRIVATE cxx_std_17)
-target_compile_definitions(telemetry_phase2_core_state_tests PRIVATE
-	FSTL_PROTOCOL_TEST_ASSET_PATH="${FSTL_PROTOCOL_TEST_ASSET_PATH}"
-)
-target_include_directories(telemetry_phase2_core_state_tests PRIVATE
-	${CMAKE_CURRENT_SOURCE_DIR}
-	${CODE_HEADERS}
-	${FREESPACE_HEADERS}
-	${GENERATED_SOURCE_DIR}
-	${GENERATED_SOURCE_DIR}/code
-)
-target_link_libraries(telemetry_phase2_core_state_tests PRIVATE gtest_main fstl_protocol)
-set_target_properties(telemetry_phase2_core_state_tests PROPERTIES FOLDER "tests")
-source_group("Telemetry\\\\Producer" FILES
-	telemetry/producer/phase2_state_image_tests.cpp
-	telemetry/phase2_allocation_tracker.cpp
-	telemetry/phase2_allocation_tracker.h
-)
-add_test(NAME telemetry_phase2_core_state_tests COMMAND telemetry_phase2_core_state_tests)
-
-add_executable(telemetry_phase2_control_turret_tests
-	telemetry/producer/phase2_control_turret_tests.cpp
-	telemetry/phase2_allocation_tracker.cpp
-	${CMAKE_SOURCE_DIR}/code/telemetry/phase2_manifest_builder.cpp
-	${CMAKE_SOURCE_DIR}/code/telemetry/phase2_observation.cpp
-	${CMAKE_SOURCE_DIR}/code/telemetry/phase2_state_image.cpp
-	${CMAKE_SOURCE_DIR}/code/telemetry/phase3_state_image.cpp
-)
-target_compile_features(telemetry_phase2_control_turret_tests PRIVATE cxx_std_17)
-target_include_directories(telemetry_phase2_control_turret_tests PRIVATE
-	${CMAKE_CURRENT_SOURCE_DIR}
-	${CODE_HEADERS}
-	${FREESPACE_HEADERS}
-	${GENERATED_SOURCE_DIR}
-	${GENERATED_SOURCE_DIR}/code
-)
-target_link_libraries(telemetry_phase2_control_turret_tests PRIVATE gtest_main fstl_protocol)
-set_target_properties(telemetry_phase2_control_turret_tests PROPERTIES FOLDER "tests")
-source_group("Telemetry\\\\Producer" FILES
-	telemetry/producer/phase2_control_turret_tests.cpp
-	telemetry/phase2_allocation_tracker.cpp
-	telemetry/phase2_allocation_tracker.h
-)
-add_test(NAME telemetry_phase2_control_turret_tests
-	COMMAND telemetry_phase2_control_turret_tests)
-
-add_executable(telemetry_phase2_weapon_state_tests
-	telemetry/producer/phase2_weapon_state_tests.cpp
-	telemetry/phase2_allocation_tracker.cpp
-	${CMAKE_SOURCE_DIR}/code/telemetry/phase2_manifest_builder.cpp
-	${CMAKE_SOURCE_DIR}/code/telemetry/phase2_observation.cpp
-	${CMAKE_SOURCE_DIR}/code/telemetry/phase2_state_image.cpp
-	${CMAKE_SOURCE_DIR}/code/telemetry/phase3_state_image.cpp
-)
-target_compile_features(telemetry_phase2_weapon_state_tests PRIVATE cxx_std_17)
-target_include_directories(telemetry_phase2_weapon_state_tests PRIVATE
-	${CMAKE_CURRENT_SOURCE_DIR}
-	${CODE_HEADERS}
-	${FREESPACE_HEADERS}
-	${GENERATED_SOURCE_DIR}
-	${GENERATED_SOURCE_DIR}/code
-)
-target_link_libraries(telemetry_phase2_weapon_state_tests PRIVATE
-	gtest_main
-	fstl_protocol
-)
-set_target_properties(telemetry_phase2_weapon_state_tests PROPERTIES FOLDER "tests")
-source_group("Telemetry\\Producer" FILES
-	telemetry/producer/phase2_weapon_state_tests.cpp
-	telemetry/phase2_allocation_tracker.cpp
-	telemetry/phase2_allocation_tracker.h
-)
-add_test(NAME telemetry_phase2_weapon_state_tests
-	COMMAND telemetry_phase2_weapon_state_tests)
-
-add_executable(telemetry_phase2_lifecycle_support_tests
-	telemetry/producer/phase2_lifecycle_support_tests.cpp
-	telemetry/phase2_allocation_tracker.cpp
-	${CMAKE_SOURCE_DIR}/code/telemetry/phase2_closure.cpp
-	${CMAKE_SOURCE_DIR}/code/telemetry/phase2_manifest_builder.cpp
-	${CMAKE_SOURCE_DIR}/code/telemetry/phase2_observation.cpp
-	${CMAKE_SOURCE_DIR}/code/telemetry/phase2_state_image.cpp
-	${CMAKE_SOURCE_DIR}/code/telemetry/phase3_state_image.cpp
-)
-target_compile_features(telemetry_phase2_lifecycle_support_tests PRIVATE cxx_std_17)
-target_include_directories(telemetry_phase2_lifecycle_support_tests PRIVATE
-	${CMAKE_CURRENT_SOURCE_DIR}
-	${CODE_HEADERS}
-	${FREESPACE_HEADERS}
-	${GENERATED_SOURCE_DIR}
-	${GENERATED_SOURCE_DIR}/code
-)
-target_link_libraries(telemetry_phase2_lifecycle_support_tests PRIVATE
-	gtest_main
-	fstl_protocol
-)
-set_target_properties(telemetry_phase2_lifecycle_support_tests PROPERTIES FOLDER "tests")
-source_group("Telemetry\\Producer" FILES
-	telemetry/producer/phase2_lifecycle_support_tests.cpp
-	telemetry/phase2_allocation_tracker.cpp
-	telemetry/phase2_allocation_tracker.h
-)
-add_test(NAME telemetry_phase2_lifecycle_support_tests
-	COMMAND telemetry_phase2_lifecycle_support_tests)
-
 add_executable(telemetry_phase2_replication_tests
 	telemetry/producer/phase2_replication_tests.cpp
+	${CMAKE_SOURCE_DIR}/code/telemetry/cockpit_sensors_records.cpp
+	${CMAKE_SOURCE_DIR}/code/telemetry/cockpit_sensors_state_image.cpp
 	${CMAKE_SOURCE_DIR}/code/telemetry/phase1_snapshot_slot.cpp
-	${CMAKE_SOURCE_DIR}/code/telemetry/phase1_state_image.cpp
+	${CMAKE_SOURCE_DIR}/code/telemetry/phase2_manifest_builder.cpp
 	${CMAKE_SOURCE_DIR}/code/telemetry/phase2_observation.cpp
 	${CMAKE_SOURCE_DIR}/code/telemetry/phase2_runtime.cpp
 )
@@ -436,14 +297,15 @@ add_test(NAME telemetry_phase2_replication_tests
 add_executable(telemetry_phase2_runtime_tests
 	telemetry/producer/phase2_runtime_tests.cpp
 	telemetry/producer/phase2_session_identity_test_support.cpp
+	${CMAKE_SOURCE_DIR}/code/telemetry/cockpit_producer_eligibility.cpp
+	${CMAKE_SOURCE_DIR}/code/telemetry/cockpit_sensors_records.cpp
+	${CMAKE_SOURCE_DIR}/code/telemetry/cockpit_sensors_state_image.cpp
 	${CMAKE_SOURCE_DIR}/code/telemetry/entity_id_registry.cpp
 	${CMAKE_SOURCE_DIR}/code/telemetry/logging.cpp
 	${CMAKE_SOURCE_DIR}/code/telemetry/phase1_snapshot_egress.cpp
 	${CMAKE_SOURCE_DIR}/code/telemetry/phase1_snapshot_slot.cpp
-	${CMAKE_SOURCE_DIR}/code/telemetry/phase1_state_image.cpp
 	${CMAKE_SOURCE_DIR}/code/telemetry/phase2_observation.cpp
 	${CMAKE_SOURCE_DIR}/code/telemetry/phase2_manifest_builder.cpp
-	${CMAKE_SOURCE_DIR}/code/telemetry/phase2_profile_gate.cpp
 	${CMAKE_SOURCE_DIR}/code/telemetry/phase2_runtime.cpp
 	${CMAKE_SOURCE_DIR}/code/telemetry/phase2_session_transition.cpp
 	${CMAKE_SOURCE_DIR}/code/telemetry/session_controller.cpp
@@ -484,7 +346,6 @@ add_executable(telemetry_phase2_security_bounds_tests
 	${CMAKE_SOURCE_DIR}/code/telemetry/phase1_snapshot_egress.cpp
 	${CMAKE_SOURCE_DIR}/code/telemetry/phase1_snapshot_slot.cpp
 	${CMAKE_SOURCE_DIR}/code/telemetry/phase2_observation.cpp
-	${CMAKE_SOURCE_DIR}/code/telemetry/phase2_profile_gate.cpp
 	${CMAKE_SOURCE_DIR}/code/telemetry/phase2_runtime.cpp
 	${CMAKE_SOURCE_DIR}/code/telemetry/phase2_session_transition.cpp
 	${CMAKE_SOURCE_DIR}/code/telemetry/session_controller.cpp
@@ -544,8 +405,8 @@ add_executable(telemetry_phase3_state_image_tests
 	telemetry/producer/phase3_state_image_tests.cpp
 	${CMAKE_SOURCE_DIR}/code/telemetry/phase2_manifest_builder.cpp
 	${CMAKE_SOURCE_DIR}/code/telemetry/phase2_observation.cpp
-	${CMAKE_SOURCE_DIR}/code/telemetry/phase2_state_image.cpp
-	${CMAKE_SOURCE_DIR}/code/telemetry/phase3_state_image.cpp)
+	${CMAKE_SOURCE_DIR}/code/telemetry/cockpit_sensors_state_image.cpp
+	${CMAKE_SOURCE_DIR}/code/telemetry/cockpit_sensors_records.cpp)
 target_compile_features(telemetry_phase3_state_image_tests PRIVATE cxx_std_17)
 target_include_directories(telemetry_phase3_state_image_tests PRIVATE
 	${CMAKE_CURRENT_SOURCE_DIR}
@@ -601,15 +462,10 @@ endif()
 # Contract-level Phase 2 build entry points. Keep the dependencies explicit so
 # the portable Clang job and the MSVC matrix build the same bounded test surface.
 add_custom_target(telemetry_phase2_unit_tests DEPENDS
-	telemetry_phase2_profile_tests
+	telemetry_cockpit_producer_eligibility_tests
 	telemetry_phase2_session_transition_tests
 	telemetry_phase2_business_state_tests
-	telemetry_phase2_closure_tests
 	telemetry_phase2_manifest_tests
-	telemetry_phase2_core_state_tests
-	telemetry_phase2_control_turret_tests
-	telemetry_phase2_weapon_state_tests
-	telemetry_phase2_lifecycle_support_tests
 	telemetry_phase2_security_bounds_tests
 )
 set_target_properties(telemetry_phase2_unit_tests PROPERTIES FOLDER "tests")
@@ -628,17 +484,12 @@ set_target_properties(telemetry_phase2_integration_tests PROPERTIES FOLDER "test
 
 set(TELEMETRY_SHORT_TESTS
 	telemetry_native_runtime_loopback_contract_tests
-	telemetry_phase2_profile_tests
+	telemetry_cockpit_producer_eligibility_tests
 	telemetry_phase2_session_transition_tests
 	telemetry_phase2_business_state_tests
 	telemetry_phase2_observation_contract_tests
-	telemetry_phase2_closure_tests
 	telemetry_phase2_manifest_tests
 	telemetry_phase2_manifest_codec_tests
-	telemetry_phase2_core_state_tests
-	telemetry_phase2_control_turret_tests
-	telemetry_phase2_weapon_state_tests
-	telemetry_phase2_lifecycle_support_tests
 	telemetry_phase2_replication_tests
 	telemetry_phase2_runtime_tests
 	telemetry_phase2_security_bounds_tests

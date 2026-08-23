@@ -1,14 +1,14 @@
 #pragma once
 
 #include "telemetry/capture_scheduler.h"
+#include "telemetry/cockpit_producer_eligibility.h"
 #include "telemetry/config.h"
 #include "telemetry/datagram_scheduler.h"
 #include "telemetry/metrics.h"
 #include "telemetry/phase2_observation.h"
-#include "telemetry/phase2_state_image.h"
 #include "telemetry/phase3_engine_collector.h"
 #include "telemetry/phase3_identity_registry.h"
-#include "telemetry/phase3_state_image.h"
+#include "telemetry/cockpit_sensors_state_image.h"
 #include "telemetry/session_controller.h"
 #include "telemetry/startup_budget.h"
 #include "telemetry/transport.h"
@@ -137,9 +137,7 @@ struct NativePhase2FailureDiagnostic {
 	CaptureStatus player_capture_status = CaptureStatus::Count;
 	CaptureReason player_capture_reason = CaptureReason::Count;
 	Phase2RuntimeResult runtime_result = Phase2RuntimeResult::Count;
-	Phase2StateImageBuildStatus image_status =
-		Phase2StateImageBuildStatus::Count;
-	Phase2StateImageBuildDiagnostic image_diagnostic{};
+	CockpitSensorsStateImageBuildDiagnostic image_diagnostic{};
 	Phase3EngineCollectDiagnostic phase3_diagnostic{};
 	Phase3StateImageBuildStatus phase3_image_status =
 		Phase3StateImageBuildStatus::Count;

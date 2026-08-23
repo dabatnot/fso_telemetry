@@ -1,6 +1,6 @@
 #pragma once
 
-#include "telemetry/phase3_state_image.h"
+#include "telemetry/cockpit_sensors_state_image.h"
 #include "telemetry/protocol/telemetry_protocol_constants.h"
 
 #include <cstdint>

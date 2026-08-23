@@ -1783,6 +1783,11 @@ add_file_folder("TgaUtils"
 add_file_folder("Telemetry"
 	telemetry/capture_scheduler.cpp
 	telemetry/capture_scheduler.h
+	telemetry/cockpit_producer_eligibility.cpp
+	telemetry/cockpit_producer_eligibility.h
+	telemetry/cockpit_sensors_records.cpp
+	telemetry/cockpit_sensors_state_image.cpp
+	telemetry/cockpit_sensors_state_image.h
 	telemetry/config.cpp
 	telemetry/config.h
 	telemetry/datagram_scheduler.cpp
@@ -1804,29 +1809,19 @@ add_file_folder("Telemetry"
 	telemetry/phase1_snapshot_slot.h
 	telemetry/phase1_snapshot_egress.cpp
 	telemetry/phase1_snapshot_egress.h
-	telemetry/phase1_state_image.cpp
-	telemetry/phase1_state_image.h
-	telemetry/phase2_closure.cpp
-	telemetry/phase2_closure.h
 	telemetry/phase2_catalog_projection.h
 	telemetry/phase2_manifest_builder.cpp
 	telemetry/phase2_manifest_builder.h
 	telemetry/phase2_observation.cpp
 	telemetry/phase2_observation.h
-	telemetry/phase2_profile_gate.cpp
-	telemetry/phase2_profile_gate.h
 	telemetry/phase2_runtime.cpp
 	telemetry/phase2_runtime.h
-	telemetry/phase2_state_image.cpp
-	telemetry/phase2_state_image.h
 	telemetry/phase2_session_transition.cpp
 	telemetry/phase2_session_transition.h
 	telemetry/phase3_engine_collector.cpp
 	telemetry/phase3_engine_collector.h
 	telemetry/phase3_identity_registry.cpp
 	telemetry/phase3_identity_registry.h
-	telemetry/phase3_state_image.cpp
-	telemetry/phase3_state_image.h
 	telemetry/runtime.cpp
 	telemetry/runtime.h
 	telemetry/runtime_adapter.cpp

@@ -3,12 +3,15 @@
 #include "radar_display_settings.h"
 
 #include "telemetry/protocol/telemetry_protocol_constants.h"
+#include "telemetry/protocol/telemetry_replication.h"
 
 #include <QTest>
 
 #include <array>
 #include <cmath>
+#include <cstring>
 #include <utility>
+#include <vector>
 
 using namespace simpit::radar;
 namespace protocol = telemetry::protocol;
@@ -40,6 +43,48 @@ private slots:
         QVERIFY(settings.sensorEffects);
         QVERIFY(!settings.motionVectors);
         QVERIFY(!settings.trails);
+    }
+
+    void profileCoverageIsStrict()
+    {
+        auto imageForCoverage = [](std::uint64_t coverage) {
+            auto putU32 = [](std::vector<std::uint8_t>& bytes,
+                             std::size_t offset, std::uint32_t value) {
+                for (std::size_t index = 0; index < 4; ++index)
+                    bytes[offset + index] = static_cast<std::uint8_t>(value >> (index * 8));
+            };
+            auto putU64 = [](std::vector<std::uint8_t>& bytes,
+                             std::size_t offset, std::uint64_t value) {
+                for (std::size_t index = 0; index < 8; ++index)
+                    bytes[offset + index] = static_cast<std::uint8_t>(value >> (index * 8));
+            };
+            telemetry::protocol::StateAtom session;
+            session.key.record_type = static_cast<std::uint16_t>(protocol::RecordType::SessionState);
+            session.value.resize(64);
+            session.value[24] = static_cast<std::uint8_t>(protocol::AuthorityMode::Solo);
+            session.value[25] = static_cast<std::uint8_t>(protocol::VisibilityMode::Cockpit);
+            session.value[26] = static_cast<std::uint8_t>(protocol::SessionPhase::Live);
+            putU32(session.value, 28, 1);
+            putU64(session.value, 40, coverage);
+            telemetry::protocol::StateAtom mission;
+            mission.key.record_type = static_cast<std::uint16_t>(protocol::RecordType::MissionState);
+            mission.value.resize(28);
+            putU32(mission.value, 8, 1);
+            mission.value[12] = static_cast<std::uint8_t>(protocol::MissionPhase::Active);
+            const float compression = 1.0F;
+            std::memcpy(mission.value.data() + 16, &compression, sizeof(compression));
+            telemetry::protocol::StateImage image;
+            if (telemetry::protocol::StateImage::create(
+                    {std::move(session), std::move(mission)}, image) !=
+                telemetry::protocol::StateImageResult::Created)
+                return telemetry::protocol::StateImage{};
+            return image;
+        };
+        QString error;
+        QVERIFY(makeRadarImage(imageForCoverage(0x07cbULL), &error) != nullptr);
+        QVERIFY(makeRadarImage(imageForCoverage(
+                   protocol::StateDomainCoverageBitCoreShip), &error) == nullptr);
+        QVERIFY(error.contains(QStringLiteral("0x07CB")));
     }
 
     void projectionCentersUndefinedTransverseDirection()

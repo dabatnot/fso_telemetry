@@ -1,7 +1,6 @@
 #pragma once
 
 #include "telemetry/phase2_observation.h"
-#include "telemetry/phase2_state_image.h"
 #include "telemetry/protocol/telemetry_sha256.h"
 
 #include <array>

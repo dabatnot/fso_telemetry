@@ -15,7 +15,7 @@ TEST(TelemetryP92LoggingContract, FixedSchemaUsesOnlyClosedEventLevelAndReasonFi
 {
 	static_assert(std::is_trivially_copyable_v<detail::TelemetryLogRecord>);
 	static_assert(std::is_trivially_copyable_v<detail::TelemetryLogSnapshot>);
-	EXPECT_EQ(24U, static_cast<std::size_t>(detail::TelemetryLogEvent::Count));
+	EXPECT_EQ(23U, static_cast<std::size_t>(detail::TelemetryLogEvent::Count));
 	EXPECT_EQ(14U, static_cast<std::size_t>(detail::TelemetryLogReason::Count));
 	EXPECT_EQ(3U, static_cast<std::size_t>(detail::TelemetryLogFamily::DualStack));
 	EXPECT_EQ(6U, static_cast<std::size_t>(detail::TelemetryLogBudget::Count));

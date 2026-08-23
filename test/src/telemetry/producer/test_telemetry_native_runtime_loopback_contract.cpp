@@ -10,7 +10,6 @@
 
 #include "telemetry/native_session_runtime.h"
 #include "telemetry/native_session_runtime_test_seam.h"
-#include "telemetry/phase1_state_image.h"
 #include "telemetry/protocol/telemetry_control_messages.h"
 #include "telemetry/protocol/telemetry_crc32.h"
 #include "telemetry/protocol/telemetry_datagram.h"
@@ -296,25 +295,57 @@ bool make_ack(const Packet& target, std::uint32_t packet_sequence, Packet& packe
 protocol::StateImage loopback_state_image(float player_x,
 	std::uint64_t sample_time_us)
 {
-	detail::Phase1StateImageInput input{};
+	auto observation = std::make_unique<detail::Phase2ObservationDto>();
+	observation->capture.status = detail::Phase2CaptureStatus::NoPlayer;
+	observation->capture.reason = detail::Phase2CaptureReason::None;
+	auto manifest = std::make_unique<telemetry::Phase2ManifestCandidate>();
+	manifest->manifest_id = 1U;
+	telemetry::CockpitSensorsStateImageInput input{};
 	input.producer_id = 0x1020304050607080ULL;
-	input.negotiated_capability_generation = 1U;
 	input.mission.producer_sample_time_us = sample_time_us;
-	input.mission.mission_generation = 7U;
+	input.mission.mission_generation = 1U;
 	input.mission.phase = protocol::MissionPhase::Active;
-	input.mission.time_compression = 1.0F;
-	input.player_capture = {detail::CaptureStatus::Valid,
-		detail::CaptureReason::None};
-	input.player.entity_id = 42U;
-	input.player.value.producer_sample_time_us = sample_time_us;
-	input.player.value.position_world = {player_x, 2.0F, 3.0F};
-	input.player.value.orientation_local_to_world =
-		{1.0F, 0.0F, 0.0F, 0.0F};
-	input.player.value.radius = 1.0F;
+	input.mission.time_compression = player_x;
+	input.observation = observation.get();
+	input.installed_manifest = manifest.get();
+	auto projection = std::make_unique<telemetry::Phase3Projection>();
+	auto pool = std::make_unique<telemetry::CockpitSensorsStateImagePool>();
+	EXPECT_TRUE(pool->provision(1U, 1U, 1U, 1U));
 	protocol::StateImage image;
-	EXPECT_EQ(detail::Phase1StateImageBuildStatus::Created,
-		detail::build_phase1_state_image(input, image));
+	EXPECT_EQ(telemetry::Phase3StateImageBuildStatus::Created,
+		telemetry::build_cockpit_sensors_state_image_preallocated(
+			input, *pool, *projection, image));
 	return image;
+}
+
+protocol::StateImage loopback_state_image_with_mission_sample(
+	const protocol::StateImage& source,
+	float time_compression,
+	std::uint64_t sample_time_us)
+{
+	auto records = source.records();
+	for (auto& record : records) {
+		if (record.key.record_type != static_cast<std::uint16_t>(
+				protocol::RecordType::MissionState)) {
+			continue;
+		}
+		if (record.value.size() < 28U) {
+			ADD_FAILURE() << "active loopback mission record is truncated";
+			return source;
+		}
+		std::memcpy(record.value.data() + 16U,
+			&time_compression, sizeof(time_compression));
+		for (std::size_t index = 0U; index < sizeof(sample_time_us); ++index) {
+			record.value[20U + index] = static_cast<std::uint8_t>(
+				sample_time_us >> (index * 8U));
+		}
+		protocol::StateImage image;
+		EXPECT_EQ(protocol::StateImageResult::Created,
+			protocol::StateImage::create(std::move(records), image));
+		return image;
+	}
+	ADD_FAILURE() << "active loopback image has no mission record";
+	return source;
 }
 
 bool make_heartbeat_response(const protocol::DatagramView& request,
@@ -732,11 +763,22 @@ testing::AssertionResult exercise_native_runtime_loopback(protocol::IpAddressFam
 	}
 	const auto& initial_slot = controller->slot(0U);
 	if (!initial_slot.snapshot.has_candidate() &&
-		!initial_slot.snapshot.has_active_baseline() &&
-		!controller->begin_initial_snapshot(
-			0U, loopback_state_image(1.0F, 40'000U), 40'000U)) {
-		return testing::AssertionFailure()
-			<< "native controller could not stage the loopback snapshot";
+		!initial_slot.snapshot.has_active_baseline()) {
+		protocol::Sha256Digest catalog_fingerprint{};
+		protocol::Sha256Digest topology_fingerprint{};
+		catalog_fingerprint[0U] = 1U;
+		topology_fingerprint[0U] = 2U;
+		if (controller->stage_phase2_manifest(0U, 1U,
+				catalog_fingerprint, topology_fingerprint) !=
+				detail::Phase2RuntimeResult::ManifestRequired ||
+			controller->apply_phase2_manifest(0U, 1U) !=
+				detail::Phase2RuntimeResult::SnapshotRequired ||
+			!controller->begin_phase2_snapshot(0U,
+				loopback_state_image(1.0F, 40'000U),
+				detail::Phase2RuntimeSnapshotCause::Initial, 40'000U)) {
+			return testing::AssertionFailure()
+				<< "native controller could not stage the loopback cockpit snapshot";
+		}
 	}
 	Packet snapshot;
 	if (!pump_until_packet(*server,
@@ -842,8 +884,9 @@ testing::AssertionResult exercise_native_runtime_loopback(protocol::IpAddressFam
 		return testing::AssertionFailure()
 			<< "preserved heartbeat did not complete on loopback";
 	}
-	if (controller->replace_current_state(
-			0U, loopback_state_image(9.0F, 40'100U)) !=
+	const auto changed_state = loopback_state_image_with_mission_sample(
+		controller->slot(0U).snapshot.current_state(), 9.0F, 40'100U);
+	if (controller->replace_current_state(0U, changed_state) !=
 		protocol::ProducerBaselineResult::Applied ||
 		!controller->queue_cumulative_delta(0U, 40'101U) ||
 		controller->service_delta_egress(1U, 40'101U) != 1U) {

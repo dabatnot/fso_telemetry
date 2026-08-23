@@ -48,7 +48,6 @@ enum class TelemetryPhase2Block : std::uint8_t {
 enum class TelemetryCockpitProducerRejection : std::uint8_t {
 	UnsupportedAuthority = 0,
 	UnsupportedVisibility,
-	IncompleteCoverage,
 	InvalidSource,
 	SourceLimit,
 	RecordTooLarge,

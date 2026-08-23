@@ -1,9 +1,8 @@
 #pragma once
 
 #include "telemetry/phase2_observation.h"
-#include "telemetry/phase2_state_image.h"
+#include "telemetry/cockpit_sensors_state_image.h"
 #include "telemetry/phase3_identity_registry.h"
-#include "telemetry/phase3_state_image.h"
 
 #include <cstddef>
 #include <cstdint>

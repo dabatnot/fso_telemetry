@@ -1,6 +1,7 @@
 #pragma once
 
-#include "telemetry/phase2_state_image.h"
+#include "telemetry/phase2_manifest_builder.h"
+#include "telemetry/phase2_observation.h"
 #include "telemetry/protocol/telemetry_protocol_constants.h"
 #include "telemetry/protocol/telemetry_replication.h"
 
@@ -8,9 +9,93 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <vector>
 
 namespace telemetry {
+
+struct Phase3Projection;
+class CockpitSensorsStateImagePool;
+
+enum class Phase3StateImageBuildStatus : std::uint8_t {
+	Created = 0,
+	InvalidInput,
+	CapacityExceeded,
+	EncodingFailed,
+	AllocationFailed,
+	Count,
+};
+
+enum class CockpitSensorsStateImageBuildStage : std::uint8_t {
+	None = 0,
+	Prepare,
+	Resolve,
+	FillBusiness,
+	Adopt,
+	Count,
+};
+
+struct CockpitSensorsStateImageBuildDiagnostic {
+	CockpitSensorsStateImageBuildStage stage =
+		CockpitSensorsStateImageBuildStage::None;
+	protocol::ValidationError business_error =
+		protocol::ValidationError::None;
+	protocol::StateImageInvalidRecordReason structural_reason =
+		protocol::StateImageInvalidRecordReason::None;
+	std::uint16_t record_type = 0U;
+	std::size_t record_index = static_cast<std::size_t>(-1);
+};
+
+struct CockpitSensorsStateImageRebuildSet {
+	std::array<std::uint16_t,
+		protocol::MaxIncrementalDirtyStateAtomCount> canonical_indices{};
+	std::size_t count = 0U;
+	bool patch_applied = false;
+	bool exhaustive = false;
+};
+
+struct CockpitSensorsStateImageInput {
+	std::uint64_t producer_id = 1U;
+	std::uint32_t negotiated_capability_generation = 1U;
+	protocol::SessionPhase session_phase =
+		protocol::SessionPhase::Synchronizing;
+	detail::MissionObservationDto mission{};
+	const detail::Phase2ObservationDto* observation = nullptr;
+	const protocol::StateImage* retained_state = nullptr;
+	bool refresh_flight_controls = true;
+	bool refresh_systems = true;
+	const Phase2ManifestCandidate* installed_manifest = nullptr;
+	const Phase2Wp05SubjectBinding* subjects = nullptr;
+	std::size_t subject_count = 0U;
+	std::uint64_t player_entity_id = 0U;
+	detail::Phase2Wp07CleanupRing* cleanup_ring = nullptr;
+	detail::Phase2Wp07SupportTerminalRing* support_terminal_ring = nullptr;
+	detail::Phase2Wp07EpisodeLatches* episode_latches = nullptr;
+	const detail::Phase2Wp07CleanupBatch* cleanup_batch = nullptr;
+	std::size_t session_slot = 0U;
+	std::uint32_t cargo_authority_generation = 0U;
+	std::uint32_t expected_cargo_authority_generation = 0U;
+	protocol::DockingPhase docking_phase_override =
+		protocol::DockingPhase::None;
+	std::optional<protocol::RecordType> omit_record_for_test;
+
+	std::uint32_t cargo_authority_consume_count() const noexcept
+	{
+		return m_cargo_authority_consume_count;
+	}
+
+  private:
+	friend Phase3StateImageBuildStatus
+	build_cockpit_sensors_state_image_preallocated(
+		const CockpitSensorsStateImageInput&,
+		CockpitSensorsStateImagePool&,
+		const Phase3Projection&,
+		protocol::StateImage&,
+		CockpitSensorsStateImageBuildDiagnostic*,
+		CockpitSensorsStateImageRebuildSet*) noexcept;
+	mutable std::uint32_t m_last_consumed_cargo_generation = 0U;
+	mutable std::uint32_t m_cargo_authority_consume_count = 0U;
+};
 
 constexpr std::uint64_t Phase3CockpitSensorsCoverage =
 	protocol::StateDomainCoverageBitPlayerKinematics |
@@ -258,15 +343,6 @@ struct Phase3Projection {
 		nav_identities{};
 };
 
-enum class Phase3StateImageBuildStatus : std::uint8_t {
-	Created = 0,
-	InvalidInput,
-	CapacityExceeded,
-	EncodingFailed,
-	AllocationFailed,
-	Count,
-};
-
 class CockpitSensorsStateImagePool final {
   public:
 	static constexpr std::size_t SlotCount = 4U;
@@ -281,10 +357,10 @@ class CockpitSensorsStateImagePool final {
   private:
 	friend Phase3StateImageBuildStatus
 	build_cockpit_sensors_state_image_preallocated(
-		const Phase2CompleteDomainInput&, CockpitSensorsStateImagePool&,
+		const CockpitSensorsStateImageInput&, CockpitSensorsStateImagePool&,
 		const Phase3Projection&, protocol::StateImage&,
-		Phase2StateImageBuildDiagnostic*,
-		Phase2StateImageRebuildSet*) noexcept;
+		CockpitSensorsStateImageBuildDiagnostic*,
+		CockpitSensorsStateImageRebuildSet*) noexcept;
 	struct Slot {
 		std::shared_ptr<std::vector<protocol::StateAtom>> records;
 		std::vector<protocol::StateAtom> spares;
@@ -310,19 +386,19 @@ bool normalize_cockpit_sensor_payload_backings(
 	std::size_t start,
 	std::size_t contact_count) noexcept;
 bool fill_cockpit_sensor_records(
-	const Phase2CompleteDomainInput& input,
+	const CockpitSensorsStateImageInput& input,
 	const Phase3Projection& projection,
 	std::vector<protocol::StateAtom>& records,
 	std::size_t common_record_count) noexcept;
 } // namespace detail
 
 Phase3StateImageBuildStatus build_cockpit_sensors_state_image_preallocated(
-	const Phase2CompleteDomainInput& input,
+	const CockpitSensorsStateImageInput& input,
 	CockpitSensorsStateImagePool& pool,
 	const Phase3Projection& projection,
 	protocol::StateImage& output,
-	Phase2StateImageBuildDiagnostic* diagnostic = nullptr,
-	Phase2StateImageRebuildSet* rebuilt = nullptr) noexcept;
+	CockpitSensorsStateImageBuildDiagnostic* diagnostic = nullptr,
+	CockpitSensorsStateImageRebuildSet* rebuilt = nullptr) noexcept;
 
 // Applies a canonical candidate to an existing CockpitSensors backing without
 // allocating or replacing that backing. A topology change is reported as
@@ -331,18 +407,13 @@ Phase3StateImageBuildStatus build_cockpit_sensors_state_image_preallocated(
 bool patch_cockpit_sensors_state_image_preallocated(
 	protocol::StateImage& current,
 	protocol::StateImage& candidate,
-	Phase2StateImageRebuildSet& rebuilt) noexcept;
+	CockpitSensorsStateImageRebuildSet& rebuilt) noexcept;
 
 // Reverses a successful patch using the candidate that participated in it.
 // This is used when the baseline tracker rejects the subsequent commit.
 bool rollback_cockpit_sensors_state_image_preallocated(
 	protocol::StateImage& current,
 	protocol::StateImage& candidate,
-	const Phase2StateImageRebuildSet& rebuilt) noexcept;
-
-Phase3StateImageBuildStatus build_phase3_cockpit_sensor_state_image(
-	const protocol::StateImage& complete_ship,
-	const Phase3Projection& projection,
-	protocol::StateImage& output) noexcept;
+	const CockpitSensorsStateImageRebuildSet& rebuilt) noexcept;
 
 } // namespace telemetry

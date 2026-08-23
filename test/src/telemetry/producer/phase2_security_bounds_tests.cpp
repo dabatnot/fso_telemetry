@@ -487,7 +487,7 @@ TEST(Phase2SecurityBounds, P2AC011DiagnosticsContainOnlyClosedNumericLabels)
 {
 	static_assert(std::is_trivially_copyable_v<detail::TelemetryMetricsSnapshot>);
 	static_assert(std::is_standard_layout_v<detail::TelemetryMetricsSnapshot>);
-	EXPECT_EQ(9U,
+	EXPECT_EQ(8U,
 		static_cast<std::size_t>(detail::TelemetryCockpitProducerRejection::Count));
 	EXPECT_EQ(7U,
 		static_cast<std::size_t>(detail::TelemetryPhase2CaptureFailure::Count));
@@ -521,7 +521,7 @@ TEST(Phase2SecurityBounds, P2AC011DiagnosticsContainOnlyClosedNumericLabels)
 	detail::TelemetryStructuredLog log;
 	log.cockpit_producer_rejected(
 		detail::TelemetryCockpitProducerRejection::InvalidSource,
-		0x0401U);
+		0x07CBU);
 	log.phase2_manifest(0U,
 		detail::TelemetryLogEvent::Phase2ManifestBuilt,
 		1U, 3U, 1U, 99U, 7U);
@@ -986,33 +986,23 @@ TEST(Phase2SecurityBounds,
 	const auto slot_header =
 		read_source_file("code/telemetry/phase2_runtime.h");
 	const auto cockpit_header =
-		read_source_file("code/telemetry/phase3_state_image.h");
+		read_source_file("code/telemetry/cockpit_sensors_state_image.h");
 	const auto state_image =
-		read_source_file("code/telemetry/phase2_state_image.cpp");
+		read_source_file("code/telemetry/cockpit_sensors_state_image.cpp");
 	for (const auto* source : {&runtime, &runtime_header,
-			 &controller, &controller_header, &slot, &slot_header}) {
+			 &controller, &controller_header, &slot, &slot_header,
+			 &cockpit_header, &state_image}) {
 		ASSERT_FALSE(source->empty());
-		EXPECT_EQ(std::string::npos, source->find("Phase2Profile"));
+		EXPECT_EQ(std::string::npos, source->find("Phase2" "Profile"));
+		EXPECT_EQ(std::string::npos,
+			source->find("Phase2" "CompleteDomainPool"));
+		EXPECT_EQ(std::string::npos,
+			source->find("build_phase2_" "complete_domain"));
 	}
 	EXPECT_EQ(std::string::npos,
-		runtime_header.find("phase2_profile_gate.h"));
-	ASSERT_FALSE(cockpit_header.empty());
-	EXPECT_EQ(std::string::npos,
-		cockpit_header.find("Phase2CompleteDomainPool m_complete"));
-	const auto direct_begin = state_image.find(
-		"Phase3StateImageBuildStatus "
-		"build_cockpit_sensors_state_image_preallocated(");
-	const auto direct_end = state_image.find(
-		"Phase2StateImageBuildStatus build_phase2_complete_domain(",
-		direct_begin);
-	ASSERT_NE(std::string::npos, direct_begin);
-	ASSERT_NE(std::string::npos, direct_end);
-	const auto direct =
-		state_image.substr(direct_begin, direct_end - direct_begin);
-	EXPECT_EQ(std::string::npos,
-		direct.find("build_phase2_complete_domain_preallocated"));
-	EXPECT_EQ(std::string::npos,
-		direct.find("Phase2CompleteDomainPool"));
+		runtime_header.find("phase2_" "profile_gate.h"));
+	EXPECT_NE(std::string::npos, state_image.find(
+		"build_cockpit_sensors_state_image_preallocated("));
 }
 
 } // namespace

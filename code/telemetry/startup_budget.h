@@ -2,7 +2,6 @@
 
 #include "telemetry/identity.h"
 #include "telemetry/metrics.h"
-#include "telemetry/phase1_state_image.h"
 #include "telemetry/protocol/telemetry_protocol_constants.h"
 #include "telemetry/protocol/telemetry_reliable_window.h"
 
@@ -139,9 +138,6 @@ Wp03KnownBudgetSubtotal calculate_wp06_startup_budget(const Wp03KnownBudgetSubto
 	std::size_t max_clients) noexcept;
 bool wp06_budget_matches_owned_storage(const Wp03KnownBudgetSubtotal& budget,
 	const Wp06OwnedCapacity& owned) noexcept;
-bool wp06_budget_matches_state_image_pool(const Wp03KnownBudgetSubtotal& budget,
-	std::size_t client_count,
-	std::size_t state_image_pool_bytes) noexcept;
 Wp03KnownBudgetSubtotal apply_wp09_metrics_budget(const Wp03KnownBudgetSubtotal& wp08_subtotal,
 	std::size_t metrics_bytes,
 	bool metrics_provisioned) noexcept;

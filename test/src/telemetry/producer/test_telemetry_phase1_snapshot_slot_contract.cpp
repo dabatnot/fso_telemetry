@@ -1,6 +1,5 @@
 #include "telemetry/protocol/telemetry_replication.h"
 #include "telemetry/protocol/telemetry_reliable_window.h"
-#include "telemetry/phase1_state_image.h"
 
 #if __has_include("telemetry/phase1_snapshot_slot.h")
 #include "telemetry/phase1_snapshot_slot.h"
@@ -130,39 +129,6 @@ protocol::StateImage image_pair(std::uint8_t first, std::uint8_t second)
 	return result;
 }
 
-protocol::StateImage canonical_player_image(std::uint64_t entity_id)
-{
-	detail::Phase1StateImageInput input{};
-	input.producer_id = 1U;
-	input.negotiated_capability_generation = 1U;
-	input.mission.producer_sample_time_us = 1'000U;
-	input.mission.mission_generation = 1U;
-	input.mission.phase = protocol::MissionPhase::Active;
-	input.mission.time_compression = 1.0F;
-	input.player_capture = {detail::CaptureStatus::Valid, detail::CaptureReason::None};
-	input.player.entity_id = entity_id;
-	input.player.value.producer_sample_time_us = 1'000U;
-	input.player.value.orientation_local_to_world = {1.0F, 0.0F, 0.0F, 0.0F};
-	input.player.value.radius = 1.0F;
-	protocol::StateImage result;
-	EXPECT_EQ(detail::Phase1StateImageBuildStatus::Created, detail::build_phase1_state_image(input, result));
-	return result;
-}
-
-protocol::StateImage canonical_invalid_player_image()
-{
-	detail::Phase1StateImageInput input{};
-	input.producer_id = 1U;
-	input.negotiated_capability_generation = 1U;
-	input.mission.producer_sample_time_us = 1'000U;
-	input.mission.mission_generation = 1U;
-	input.mission.phase = protocol::MissionPhase::Active;
-	input.mission.time_compression = 1.0F;
-	input.player_capture = {detail::CaptureStatus::InvalidSource, detail::CaptureReason::WrongObjectType};
-	protocol::StateImage result;
-	EXPECT_EQ(detail::Phase1StateImageBuildStatus::Created, detail::build_phase1_state_image(input, result));
-	return result;
-}
 
 TEST(TelemetryPhase1SnapshotSlotContract, InitialCandidateIsASeparateReliableFullSnapshotTransaction)
 {
@@ -338,11 +304,11 @@ TEST(TelemetryPhase1DeltaContract, RecordSetDiscontinuityCoalescesWithoutCandida
 TEST(TelemetryPhase1DeltaContract, ChangedPlayerIdentityRequestsOneDiscontinuityIntentWithoutDeltaOrCandidate)
 {
 	detail::Phase1SnapshotSlot slot;
-	const auto baseline = canonical_player_image(1U);
+	const auto baseline = image_pair(0x11U, 0x22U);
 	const std::vector<protocol::SnapshotCandidatePart> parts{part(102U, 0xa2a2a2a2U)};
 	ASSERT_EQ(protocol::ProducerBaselineResult::Applied, slot.start_initial_candidate(1U, baseline, parts, 1'000U));
 	ASSERT_EQ(protocol::ProducerBaselineResult::Applied, slot.acknowledge_candidate_part(ack(parts[0]), 1'001U));
-	ASSERT_EQ(protocol::ProducerBaselineResult::Applied, slot.replace_current(canonical_player_image(2U)));
+	ASSERT_EQ(protocol::ProducerBaselineResult::Applied, slot.replace_current(image(0x33U)));
 	EXPECT_FALSE(slot.current_record_set_compatible_with_active_baseline());
 	EXPECT_EQ(detail::Phase1KeyframeIntent::RecordSetDiscontinuity, slot.keyframe_intent());
 	protocol::CumulativeStateDelta delta;
@@ -358,9 +324,9 @@ TEST(TelemetryPhase1DeltaContract, InvalidPlayerSourceAfterValidPlayerCoalescesD
 	detail::Phase1SnapshotSlot slot;
 	const std::vector<protocol::SnapshotCandidatePart> parts{part(103U, 0xa3a3a3a3U)};
 	ASSERT_EQ(protocol::ProducerBaselineResult::Applied,
-		slot.start_initial_candidate(1U, canonical_player_image(1U), parts, 1'000U));
+		slot.start_initial_candidate(1U, image_pair(0x11U, 0x22U), parts, 1'000U));
 	ASSERT_EQ(protocol::ProducerBaselineResult::Applied, slot.acknowledge_candidate_part(ack(parts[0]), 1'001U));
-	ASSERT_EQ(protocol::ProducerBaselineResult::Applied, slot.replace_current(canonical_invalid_player_image()));
+	ASSERT_EQ(protocol::ProducerBaselineResult::Applied, slot.replace_current(image(0x55U)));
 	EXPECT_FALSE(slot.current_record_set_compatible_with_active_baseline());
 	protocol::CumulativeStateDelta delta;
 	EXPECT_EQ(protocol::ProducerBaselineResult::KeyframeRequired, slot.emit_cumulative_delta(1'002U, delta));

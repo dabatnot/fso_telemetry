@@ -1,6 +1,7 @@
 #include "telemetry/phase2_runtime.h"
+#include "telemetry/cockpit_producer_eligibility.h"
+#include "telemetry/cockpit_sensors_state_image.h"
 #include "telemetry/phase2_session_transition.h"
-#include "telemetry/phase1_state_image.h"
 #include "telemetry/logging.h"
 #include "telemetry/protocol/telemetry_control_messages.h"
 #include "telemetry/protocol/telemetry_crc32.h"
@@ -10,6 +11,8 @@
 #include "telemetry/session_controller.h"
 
 #include <gtest/gtest.h>
+
+#include <cstring>
 
 #include <array>
 #include <cstddef>
@@ -305,26 +308,53 @@ protocol::StateImage one_atom_image(std::uint8_t value)
 protocol::StateImage delta_compatible_image(
 	float player_x, std::uint64_t sample_time_us)
 {
-	detail::Phase1StateImageInput input{};
+	auto observation = std::make_unique<detail::Phase2ObservationDto>();
+	observation->capture.status = detail::Phase2CaptureStatus::Valid;
+	observation->capture.reason = detail::Phase2CaptureReason::None;
+	observation->producer_sample_time_us = sample_time_us;
+	observation->player_key.value = 11U;
+	observation->ships.resize(1U);
+	auto& ship = observation->ships[0];
+	ship.capture_key.value = 11U;
+	ship.identity.class_source_key.value = 101U;
+	ship.lifecycle.sample_time_us = sample_time_us;
+	ship.flight.sample_time_us = sample_time_us;
+	ship.flight.position_world = {player_x, 2.0F, 3.0F};
+	ship.flight.radius = 1.0F;
+	ship.docking.sample_time_us = sample_time_us;
+	ship.support.sample_time_us = sample_time_us;
+	auto manifest = std::make_unique<telemetry::Phase2ManifestCandidate>();
+	manifest->manifest_id = 1U;
+	manifest->class_record_count = 1U;
+	manifest->class_records[0].source_key = 101U;
+	manifest->class_records[0].class_id = 501U;
+	std::array<telemetry::Phase2Wp05SubjectBinding, 1U> subjects{{
+		{{11U}, 42U}}};
+	detail::Phase2Wp07CleanupRing cleanup;
+	detail::Phase2Wp07SupportTerminalRing support;
+	detail::Phase2Wp07EpisodeLatches latches;
+	telemetry::CockpitSensorsStateImageInput input{};
 	input.producer_id = 0x1020304050607080ULL;
-	input.negotiated_capability_generation = 3U;
 	input.mission.producer_sample_time_us = sample_time_us;
 	input.mission.mission_generation = 1U;
 	input.mission.phase = protocol::MissionPhase::Active;
 	input.mission.time_compression = 1.0F;
-	input.player_capture = {
-		detail::CaptureStatus::Valid,
-		detail::CaptureReason::None};
-	input.player.entity_id = 42U;
-	input.player.value.producer_sample_time_us = sample_time_us;
-	input.player.value.position_world =
-		{player_x, 2.0F, 3.0F};
-	input.player.value.orientation_local_to_world =
-		{1.0F, 0.0F, 0.0F, 0.0F};
-	input.player.value.radius = 1.0F;
+	input.observation = observation.get();
+	input.installed_manifest = manifest.get();
+	input.subjects = subjects.data();
+	input.subject_count = subjects.size();
+	input.player_entity_id = 42U;
+	input.cleanup_ring = &cleanup;
+	input.support_terminal_ring = &support;
+	input.episode_latches = &latches;
+	auto projection = std::make_unique<telemetry::Phase3Projection>();
+	projection->player_entity_id = 42U;
+	auto pool = std::make_unique<telemetry::CockpitSensorsStateImagePool>();
+	EXPECT_TRUE(pool->provision(1U, 1U, 1U, 1U));
 	protocol::StateImage image;
-	EXPECT_EQ(detail::Phase1StateImageBuildStatus::Created,
-		detail::build_phase1_state_image(input, image));
+	EXPECT_EQ(telemetry::Phase3StateImageBuildStatus::Created,
+		telemetry::build_cockpit_sensors_state_image_preallocated(
+			input, *pool, *projection, image));
 	return image;
 }
 

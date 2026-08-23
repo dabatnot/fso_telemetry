@@ -4,7 +4,7 @@
 #include "telemetry/protocol/telemetry_crc32.h"
 #include "telemetry/protocol/telemetry_datagram.h"
 #include "telemetry/protocol/telemetry_reliability_messages.h"
-#include "telemetry/phase3_state_image.h"
+#include "telemetry/cockpit_sensors_state_image.h"
 #include "telemetry/transport.h"
 
 #include <algorithm>

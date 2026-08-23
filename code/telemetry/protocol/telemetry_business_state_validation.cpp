@@ -201,21 +201,7 @@ ValidationError parse_mission_generation(const StateAtom& atom, std::uint32_t& g
 	return generation != 0U ? ValidationError::None : ValidationError::OutOfRange;
 }
 
-bool is_phase1_player_kinematics_profile(std::uint8_t protocol_minor, std::uint64_t coverage) noexcept
-{
-	return protocol_minor == VersionMinor && coverage == StateDomainCoverageBitPlayerKinematics;
-}
-
-bool is_phase2_complete_ship_profile(std::uint8_t protocol_minor, std::uint64_t coverage) noexcept
-{
-	constexpr auto complete_ship_coverage = StateDomainCoverageBitPlayerKinematics |
-		StateDomainCoverageBitCoreShip | StateDomainCoverageBitControlInputs | StateDomainCoverageBitWeapons |
-		StateDomainCoverageBitCargoDockSupport;
-	static_assert(complete_ship_coverage == 0x0583ULL, "The Phase 2 complete ship coverage is frozen");
-	return protocol_minor == VersionMinor && coverage == complete_ship_coverage;
-}
-
-bool is_phase3_cockpit_sensors_profile(std::uint8_t protocol_minor,
+bool is_cockpit_sensors_image(std::uint8_t protocol_minor,
 	std::uint64_t coverage) noexcept
 {
 	constexpr auto cockpit_sensors_coverage =
@@ -233,7 +219,7 @@ bool is_phase3_cockpit_sensors_profile(std::uint8_t protocol_minor,
 		coverage == cockpit_sensors_coverage;
 }
 
-constexpr std::size_t MaximumPhase2CompleteShipCount = 64U;
+constexpr std::size_t MaximumCockpitShipCount = 64U;
 
 ValidationError parse_lifecycle(const StateAtom& atom, LifecycleFacts& facts) noexcept
 {
@@ -1360,34 +1346,16 @@ ValidationError BusinessStateImageValidator::validate(const StateImage& image) c
 	if (const auto error = parse_session(*session_atom, session); error != ValidationError::None) {
 		return error;
 	}
-	const bool phase1_player_kinematics =
-		is_phase1_player_kinematics_profile(m_context.protocol_minor, session.coverage);
-	const bool phase2_complete_ship =
-		is_phase2_complete_ship_profile(m_context.protocol_minor, session.coverage);
-	const bool phase3_cockpit_sensors =
-		is_phase3_cockpit_sensors_profile(m_context.protocol_minor, session.coverage);
-	if (phase1_player_kinematics) {
-		if (m_context.required_manifest_id != 0U) {
-			return ValidationError::InvalidStateTransition;
-		}
-		if (session.capabilities != 0U) {
-			return ValidationError::CapabilityNotNegotiated;
-		}
-		if (session.derived_events != 0U || session.exact_events != 0U) {
-			return ValidationError::InvalidStateTransition;
-		}
-		const auto expected_record_count = session.observed_entity_id == 0U ? 2U : 4U;
-		if (atoms.size() != expected_record_count) {
-			return ValidationError::InvalidAbsence;
-		}
-		if (session.observed_entity_id != 0U) {
-			const auto* flight = find_owner(atoms, RecordType::FlightState, session.observed_entity_id);
-			if (flight == nullptr || flight->value.size() < 16U || read_u64(flight->value.data() + 8U) != 0U) {
-				return ValidationError::InvalidAbsence;
-			}
-		}
-	} else if ((session.coverage & StateDomainCoverageBitCoreShip) != 0U &&
-		m_context.required_manifest_id == 0U) {
+	if (!is_cockpit_sensors_image(m_context.protocol_minor, session.coverage)) {
+		return ValidationError::InvalidStateTransition;
+	}
+	if (session.authority_mode != AuthorityMode::Solo) {
+		return ValidationError::InvalidStateTransition;
+	}
+	if (session.visibility_mode != VisibilityMode::Cockpit) {
+		return ValidationError::VisibilityViolation;
+	}
+	if (m_context.required_manifest_id == 0U) {
 		return ValidationError::MissingManifest;
 	}
 	constexpr std::uint64_t SpecializedCommVideoCapabilities =
@@ -1395,10 +1363,7 @@ ValidationError BusinessStateImageValidator::validate(const StateImage& image) c
 		static_cast<std::uint64_t>(CapabilityCommViewAuthoritativeSource) |
 		static_cast<std::uint64_t>(CapabilityTargetVideoH264) |
 		static_cast<std::uint64_t>(CapabilityTargetVideoRemoteRender);
-	if (phase2_complete_ship &&
-		(session.capabilities & SpecializedCommVideoCapabilities) != 0U) {
-		// 0x0583 never negotiates COMM-view or target-video specialization.
-		// Reject isolated bits with the same oracle as a complete pair.
+	if ((session.capabilities & SpecializedCommVideoCapabilities) != 0U) {
 		return ValidationError::CapabilityNotNegotiated;
 	}
 	if (validate_emittable_active_capabilities(session.capabilities) != ValidationError::None) {
@@ -1406,12 +1371,6 @@ ValidationError BusinessStateImageValidator::validate(const StateImage& image) c
 	}
 	if (m_context.enforce_negotiated_capabilities && session.capabilities != m_context.negotiated_capabilities) {
 		return ValidationError::CapabilityNotNegotiated;
-	}
-	if (phase1_player_kinematics && session.visibility_mode != VisibilityMode::Cockpit) {
-		return ValidationError::VisibilityViolation;
-	}
-	if (phase1_player_kinematics && session.authority_mode != AuthorityMode::Solo) {
-		return ValidationError::InvalidStateTransition;
 	}
 	const auto exact_without_derived = session.exact_events & ~session.derived_events;
 	if ((exact_without_derived & ~m_context.exact_event_hook_families) != 0U ||
@@ -1451,18 +1410,13 @@ ValidationError BusinessStateImageValidator::validate(const StateImage& image) c
 	if (session.observed_entity_id != 0) {
 		const auto* observed = find_owner(atoms, RecordType::EntityLifecycle, session.observed_entity_id);
 		if (observed == nullptr) {
-			return phase2_complete_ship
-				? ValidationError::InvalidAbsence
-				: ValidationError::UnknownEntity;
+			return ValidationError::InvalidAbsence;
 		}
 		if (const auto error = parse_lifecycle(*observed, observed_lifecycle); error != ValidationError::None) {
 			return error;
 		}
 		if (observed_lifecycle.object_type != ObjectType::Ship) {
 			return ValidationError::InvalidStateTransition;
-		}
-		if (phase1_player_kinematics && observed_lifecycle.presence != 0U) {
-			return ValidationError::InvalidAbsence;
 		}
 	}
 
@@ -1478,9 +1432,7 @@ ValidationError BusinessStateImageValidator::validate(const StateImage& image) c
 		const auto owner_id = read_u64(atom.key.identity.data());
 		const auto* lifecycle_atom = find_owner(atoms, RecordType::EntityLifecycle, owner_id);
 		if (lifecycle_atom == nullptr) {
-			return phase2_complete_ship
-				? ValidationError::InvalidAbsence
-				: ValidationError::UnknownEntity;
+			return ValidationError::InvalidAbsence;
 		}
 		LifecycleFacts lifecycle;
 		if (const auto error = parse_lifecycle(*lifecycle_atom, lifecycle); error != ValidationError::None) {
@@ -1535,15 +1487,15 @@ ValidationError BusinessStateImageValidator::validate(const StateImage& image) c
 		static_cast<std::size_t>(std::distance(atoms.begin(), lifecycle_begin));
 	const auto lifecycle_count = static_cast<std::size_t>(std::distance(lifecycle_begin, lifecycle_end));
 	std::vector<ParentChainVisit> parent_chain_visits;
-	std::size_t phase2_ship_count = 0U;
+	std::size_t cockpit_ship_count = 0U;
 	for (auto iterator = lifecycle_begin; iterator != lifecycle_end; ++iterator) {
 		const auto& atom = *iterator;
 		LifecycleFacts lifecycle;
 		if (const auto error = parse_lifecycle(atom, lifecycle); error != ValidationError::None) {
 			return error;
 		}
-		if (phase2_complete_ship && lifecycle.object_type == ObjectType::Ship &&
-			++phase2_ship_count > MaximumPhase2CompleteShipCount) {
+		if (lifecycle.object_type == ObjectType::Ship &&
+			++cockpit_ship_count > MaximumCockpitShipCount) {
 			return ValidationError::ResourceLimit;
 		}
 		if (session.visibility_mode == VisibilityMode::Cockpit && m_context.enforce_cockpit_entity_allowlist &&
@@ -1551,7 +1503,7 @@ ValidationError BusinessStateImageValidator::validate(const StateImage& image) c
 			return ValidationError::VisibilityViolation;
 		}
 		const BusinessClassCatalogEntry* class_entry = nullptr;
-		if (lifecycle.object_type == ObjectType::Ship && !phase1_player_kinematics) {
+		if (lifecycle.object_type == ObjectType::Ship) {
 			if (!m_context.class_manifest_installed || !lifecycle.has_class ||
 				(class_entry = find_class(m_context, lifecycle.class_id)) == nullptr) {
 				return ValidationError::MissingManifest;
@@ -1580,14 +1532,8 @@ ValidationError BusinessStateImageValidator::validate(const StateImage& image) c
 				find_owner(atoms, RecordType::WeaponState, lifecycle.entity_id) == nullptr) {
 				return ValidationError::InvalidAbsence;
 			}
-			if (phase2_complete_ship &&
-				(find_owner(atoms, RecordType::DockingState, lifecycle.entity_id) == nullptr ||
-					find_owner(atoms, RecordType::SupportState, lifecycle.entity_id) == nullptr)) {
-				return ValidationError::InvalidAbsence;
-			}
-		} else if (lifecycle.object_type == ObjectType::Ship) {
-			if (lifecycle.entity_id != session.observed_entity_id || lifecycle.presence != 0U ||
-				lifecycle.has_class || find_owner(atoms, RecordType::FlightState, lifecycle.entity_id) == nullptr) {
+			if (find_owner(atoms, RecordType::DockingState, lifecycle.entity_id) == nullptr ||
+				find_owner(atoms, RecordType::SupportState, lifecycle.entity_id) == nullptr) {
 				return ValidationError::InvalidAbsence;
 			}
 		} else if (lifecycle.object_type == ObjectType::Weapon) {
@@ -1637,23 +1583,23 @@ ValidationError BusinessStateImageValidator::validate(const StateImage& image) c
 		switch (static_cast<RecordType>(atom.key.record_type)) {
 		case RecordType::LockState:
 			error = validate_lock_references(atom, atoms, m_context,
-				session.visibility_mode, phase3_cockpit_sensors);
+				session.visibility_mode, true);
 			break;
 		case RecordType::TargetState:
 			error = validate_target_references(atom, atoms, m_context,
-				session.visibility_mode, phase3_cockpit_sensors);
+				session.visibility_mode, true);
 			break;
 		case RecordType::RadarContacts:
 			error = validate_radar_contact_references(atom, atoms, m_context,
-				session.visibility_mode, phase3_cockpit_sensors);
+				session.visibility_mode, true);
 			break;
 		case RecordType::ThreatState:
 			error = validate_threat_references(atom, atoms, m_context,
-				session.visibility_mode, phase3_cockpit_sensors);
+				session.visibility_mode, true);
 			break;
 		case RecordType::CargoScanState:
 			error = validate_cargo_references(atom, atoms, m_context,
-				session.visibility_mode, phase3_cockpit_sensors);
+				session.visibility_mode, true);
 			break;
 		case RecordType::DockingState:
 			error = validate_docking_references(atom, atoms, m_context, session.visibility_mode);
@@ -1676,7 +1622,7 @@ ValidationError BusinessStateImageValidator::validate(const StateImage& image) c
 	if (!require_observed(RecordType::ControlState, StateDomainCoverageBitControlInputs) ||
 		!require_observed(RecordType::RadarState, StateDomainCoverageBitRadarSensors) ||
 		!require_observed(RecordType::ThreatState, StateDomainCoverageBitRadarSensors) ||
-		(phase3_cockpit_sensors && m_context.require_hud_alert_state &&
+		(m_context.require_hud_alert_state &&
 		 !require_observed(RecordType::HudAlertState,
 			 StateDomainCoverageBitRadarSensors)) ||
 		!require_observed(RecordType::LockState, StateDomainCoverageBitTargeting) ||

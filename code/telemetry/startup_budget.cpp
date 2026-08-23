@@ -232,7 +232,6 @@ Wp03KnownBudgetSubtotal calculate_wp06_startup_budget(const Wp03KnownBudgetSubto
 	std::size_t snapshot_egress_heap_bytes = 0U;
 	std::size_t delta_egress_heap_bytes = 0U;
 	std::size_t delta_scratch_heap_bytes = 0U;
-	std::size_t state_image_pool_bytes = 0U;
 	std::size_t known_bytes = 0U;
 	if (!checked_add_size(wp04_subtotal.reassembly_bytes,
 			wp04_subtotal.reliable_retention_projection_bytes,
@@ -247,7 +246,6 @@ Wp03KnownBudgetSubtotal calculate_wp06_startup_budget(const Wp03KnownBudgetSubto
 		!checked_multiply_size(max_clients, Wp06SnapshotEgressHeapBytesPerClient, snapshot_egress_heap_bytes) ||
 		!checked_multiply_size(max_clients, Wp06DeltaEgressHeapBytesPerClient, delta_egress_heap_bytes) ||
 		!checked_multiply_size(max_clients, Wp06DeltaScratchHeapBytesPerClient, delta_scratch_heap_bytes) ||
-		!checked_multiply_size(max_clients, Phase1StateImagePool::BackingBytesPerClient, state_image_pool_bytes) ||
 		!checked_add_size(retained_known, client_slot_bytes, subtotal) ||
 		!checked_add_size(subtotal, reassembly_bytes, subtotal2) ||
 		!checked_add_size(subtotal2, reliable_bytes, subtotal3) ||
@@ -257,8 +255,7 @@ Wp03KnownBudgetSubtotal calculate_wp06_startup_budget(const Wp03KnownBudgetSubto
 		!checked_add_size(subtotal6, Wp06OutputQueueStorageBytes, subtotal7) ||
 		!checked_add_size(subtotal7, snapshot_egress_heap_bytes, subtotal8) ||
 		!checked_add_size(subtotal8, delta_egress_heap_bytes, subtotal9) ||
-		!checked_add_size(subtotal9, delta_scratch_heap_bytes, subtotal7) ||
-		!checked_add_size(subtotal7, state_image_pool_bytes, known_bytes)) {
+		!checked_add_size(subtotal9, delta_scratch_heap_bytes, known_bytes)) {
 		return failed_result(StartupBudgetError::ArithmeticOverflow);
 	}
 	if (known_bytes > WP03ProvisionalKnownBudgetCapBytes) {
@@ -273,7 +270,10 @@ Wp03KnownBudgetSubtotal calculate_wp06_startup_budget(const Wp03KnownBudgetSubto
 	result.handshake_cache_bytes = Wp06HandshakeCacheStorageBytes;
 	result.preproof_ledger_bytes = Wp06PreproofLedgerStorageBytes;
 	result.output_queue_bytes = Wp06OutputQueueStorageBytes;
-	result.state_image_pool_bytes = state_image_pool_bytes;
+	// The legacy WP06 subtotal no longer estimates a removed Phase 1 pool.
+	// NativeSessionRuntime accounts the actual CockpitSensors pool backing in
+	// its owned-memory budget after provisioning.
+	result.state_image_pool_bytes = 0U;
 	result.snapshot_egress_heap_bytes = snapshot_egress_heap_bytes;
 	result.delta_egress_heap_bytes = delta_egress_heap_bytes;
 	result.delta_scratch_heap_bytes = delta_scratch_heap_bytes;
@@ -323,16 +323,6 @@ bool wp06_budget_matches_owned_storage(const Wp03KnownBudgetSubtotal& budget,
 		budget.delta_egress_heap_bytes == owned.delta_egress_heap_bytes &&
 		budget.delta_scratch_heap_bytes == owned.delta_scratch_heap_bytes &&
 		owned.dynamic_allocations_after_ready == 0U;
-}
-
-bool wp06_budget_matches_state_image_pool(const Wp03KnownBudgetSubtotal& budget,
-	std::size_t client_count,
-	std::size_t state_image_pool_bytes) noexcept
-{
-	std::size_t expected = 0U;
-	return budget.error == StartupBudgetError::None &&
-		checked_multiply_size(client_count, Phase1StateImagePool::BackingBytesPerClient, expected) &&
-		budget.state_image_pool_bytes == expected && state_image_pool_bytes == expected;
 }
 
 Wp03KnownBudgetSubtotal apply_wp09_metrics_budget(const Wp03KnownBudgetSubtotal& wp08_subtotal,

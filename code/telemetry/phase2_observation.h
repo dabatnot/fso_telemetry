@@ -13,6 +13,14 @@
 
 namespace telemetry::detail {
 
+struct MissionObservationDto {
+	std::uint64_t producer_sample_time_us = 0U;
+	std::uint32_t mission_generation = 0U;
+	protocol::MissionPhase phase = protocol::MissionPhase::None;
+	bool paused = false;
+	float time_compression = 0.0F;
+};
+
 constexpr std::size_t MaximumPhase2ObservationShips = 64U;
 constexpr std::size_t MaximumPhase2InternalNameBytes = 511U;
 constexpr std::size_t MaximumPhase2ShieldSegments = 64U;
@@ -298,6 +306,14 @@ struct Phase2RawAuxiliaryEntry {
 	std::uint32_t capture_key = 0U;
 	OwnedPhase2CatalogString name;
 	std::uint8_t firing_pattern_source_code = 0U;
+};
+
+// Binds one captured cockpit-visible ship to its stable public telemetry ID.
+// This remains part of the active observation/runtime pipeline; it is not a
+// selectable projection profile.
+struct Phase2Wp05SubjectBinding {
+	Phase2CaptureLocalKey capture_key;
+	std::uint64_t entity_id = 0U;
 };
 
 // Private capture metadata. Engine weapon indices never cross the Phase 2
@@ -1174,6 +1190,7 @@ namespace telemetry {
 
 using detail::CargoAuthorityFact;
 using detail::ControlTargetAuthority;
+using detail::Phase2Wp05SubjectBinding;
 using detail::ShipCleanupMode;
 using detail::SupportTransitionReason;
 
