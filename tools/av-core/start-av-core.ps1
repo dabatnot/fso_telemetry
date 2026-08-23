@@ -37,7 +37,9 @@ if ($CurrentRequirementsHash -ne $InstalledRequirementsHash) {
 Push-Location $FrontendRoot
 try {
     npm ci
+    if ($LASTEXITCODE -ne 0) { throw "npm ci a échoué avec le code $LASTEXITCODE" }
     npm run build
+    if ($LASTEXITCODE -ne 0) { throw "npm run build a échoué avec le code $LASTEXITCODE" }
 }
 finally {
     Pop-Location

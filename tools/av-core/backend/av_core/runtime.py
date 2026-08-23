@@ -6,18 +6,18 @@ from typing import Callable
 
 from . import __version__
 from .alerts import AlertEngine
+from .can_service import CanService
 from .config import ConfigStore
 from .fstl_service import FstlFrame, FstlService
 from .models import (
     AvCoreConfig,
     AvCoreStatus,
-    CanStatus,
     CockpitStatus,
     ConfigUpdateResponse,
     ConfigurationStatus,
-    ModuleStatus,
     MissionStatus,
     TelemetryStatus,
+    LampTestRequest,
 )
 
 
@@ -28,6 +28,7 @@ class AvCoreRuntime:
         *,
         actual_http_port: int | None = None,
         fstl_factory: Callable[..., FstlService] = FstlService,
+        can_factory: Callable[..., CanService] = CanService,
     ):
         self.store = store
         loaded = store.load()
@@ -42,11 +43,14 @@ class AvCoreRuntime:
         self._cockpit = CockpitStatus()
         self._last_session_id: str | None = None
         self._fstl = fstl_factory(self._config.telemetry, self._on_fstl_frame)
+        self._can = can_factory(self._config, self._on_can_change)
 
     def start(self) -> None:
         self._fstl.start()
+        self._can.start()
 
     def stop(self) -> None:
+        self._can.stop()
         self._fstl.stop()
 
     @property
@@ -71,8 +75,12 @@ class AvCoreRuntime:
                 config=self._config,
                 restart_required=self._restart_required_locked(),
             )
+            cockpit = self._cockpit.model_copy(deep=True)
+            telemetry_state = self._fstl_frame.state
         if telemetry_changed:
             self._fstl.reconfigure(config.telemetry)
+        self._can.reconfigure(config)
+        self._can.update_cockpit(cockpit, telemetry_state)
         return response
 
     def _on_fstl_frame(self, frame: FstlFrame) -> None:
@@ -82,6 +90,16 @@ class AvCoreRuntime:
             self._last_session_id = frame.session_id
             self._recalculate_cockpit_locked(reset_hysteresis=session_changed)
             self._revision += 1
+            cockpit = self._cockpit.model_copy(deep=True)
+            telemetry_state = frame.state
+        self._can.update_cockpit(cockpit, telemetry_state)
+
+    def _on_can_change(self) -> None:
+        with self._lock:
+            self._revision += 1
+
+    def start_lamp_test(self, request: LampTestRequest) -> bool:
+        return self._can.start_lamp_test(request)
 
     def _recalculate_cockpit_locked(self, *, reset_hysteresis: bool) -> None:
         frame = self._fstl_frame
@@ -99,12 +117,7 @@ class AvCoreRuntime:
     def status(self) -> AvCoreStatus:
         with self._lock:
             config = self._config
-            modules = [
-                ModuleStatus(role="WARN_CTRL", installed=config.modules.warn_ctrl.installed),
-                ModuleStatus(role="THREAT_PROC", installed=config.modules.threat_proc.installed),
-                ModuleStatus(role="SENS_PROC", installed=config.modules.sens_proc.installed),
-                ModuleStatus(role="INST_PROC", installed=config.modules.inst_proc.installed),
-            ]
+            modules = self._can.modules()
             return AvCoreStatus(
                 version=__version__,
                 uptime_ms=max(0, int((time.monotonic() - self._started_at) * 1000)),
@@ -128,7 +141,7 @@ class AvCoreRuntime:
                     time_compression=self._fstl_frame.time_compression,
                 ),
                 cockpit=self._cockpit,
-                can=CanStatus(),
+                can=self._can.status(),
                 modules=modules,
             )
 

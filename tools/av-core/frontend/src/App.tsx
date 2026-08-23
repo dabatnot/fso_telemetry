@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { loadConfig, loadStatus, saveConfig } from "./api";
+import { loadConfig, loadStatus, saveConfig, startLampTest } from "./api";
 import { initialLanguage, LANGUAGE_OPTIONS, translate, type Language, type TranslationKey } from "./i18n";
 import type {
   AvCoreConfig,
@@ -8,7 +8,8 @@ import type {
   ModuleKey,
   ModuleRole,
   RgbColor,
-  ThresholdKey
+  ThresholdKey,
+  WarnCtrlLamp
 } from "./types";
 import { validateConfig } from "./validation";
 
@@ -37,6 +38,13 @@ const THRESHOLDS: Array<[ThresholdKey, string]> = [
   ["afterburnerFuel", "AB FUEL"],
   ["ammo", "AMMO"],
   ["subsystem", "SUBSYS"]
+];
+
+const WARN_CTRL_LAMPS: WarnCtrlLamp[] = [
+  "MASTER_WARNING", "FIRE", "MISSILE", "BLAST", "COLLISION", "EMP",
+  "MASTER_CAUTION", "ENG", "SENS", "SHIELD", "HULL", "WEP_EN", "AB_FUEL",
+  "AMMO", "CM_LOW", "SUBSYS", "AV_CORE", "FLT_DATA", "AV_BUS", "SENS_PROC",
+  "THREAT_PROC", "INST_PROC", "WARN_CTRL"
 ];
 
 function currentPage(): Page {
@@ -97,7 +105,7 @@ function ModulesPage({ draft, status, setDraft, onSave, saving, errors, t }: Pag
               <div className="card-heading"><div><span>{t("calculator")}</span><h2>{label}</h2></div><i className="state-dot" /></div>
               <dl>
                 <div><dt>{t("state")}</dt><dd>{displayState(live?.state ?? "UNAVAILABLE", t)}</dd></div>
-                <div><dt>{t("identifier")}</dt><dd>{t("defineLot3")}</dd></div>
+                <div><dt>{t("identifier")}</dt><dd>{live?.protocolId == null ? "—" : `0x${live.protocolId.toString(16).toUpperCase()}`}</dd></div>
                 <div><dt>UID ESP32</dt><dd>{live?.uid ?? "—"}</dd></div>
                 <div><dt>{t("firmware")}</dt><dd>{live?.firmwareVersion ?? "—"}</dd></div>
                 <div><dt>{t("heartbeat")}</dt><dd>{live?.lastHeartbeatMs == null ? "—" : `${live.lastHeartbeatMs} ms`}</dd></div>
@@ -186,7 +194,21 @@ function AlertsPage({ draft, status, setDraft, onSave, saving, errors, t }: Page
   );
 }
 
-function LightingPage({ draft, setDraft, onSave, saving, errors, t }: PageProps) {
+function LightingPage({ draft, status, setDraft, onSave, saving, errors, t }: PageProps) {
+  const [selectedLamp, setSelectedLamp] = useState<WarnCtrlLamp>("MASTER_WARNING");
+  const [testState, setTestState] = useState<"IDLE" | "SENDING" | "ACTIVE" | "ERROR">("IDLE");
+  const warnCtrl = status?.modules.find((module) => module.role === "WARN_CTRL");
+  const testAvailable = status?.can.state === "OK" && warnCtrl?.state === "ONLINE";
+  const runTest = async (target: "ALL" | "WARN_CTRL" | "LAMP", lamp?: WarnCtrlLamp) => {
+    setTestState("SENDING");
+    try {
+      await startLampTest(target, lamp);
+      setTestState("ACTIVE");
+      window.setTimeout(() => setTestState("IDLE"), 2000);
+    } catch {
+      setTestState("ERROR");
+    }
+  };
   return (
     <>
       <section className="settings-grid">
@@ -202,9 +224,11 @@ function LightingPage({ draft, setDraft, onSave, saving, errors, t }: PageProps)
           <label className="field"><span>{t("fast")}</span><div><input aria-label={t("fast")} type="number" min="0.25" max="10" step="0.25" value={draft.lighting.fastFlashHz} onChange={(event) => setDraft((previous) => ({ ...previous, lighting: { ...previous.lighting, fastFlashHz: numberValue(event) } }))} /><em>Hz</em></div></label>
         </article>
         <article className="panel test-panel">
-          <div className="panel-heading"><div><span>{t("diagnostic")}</span><h2>{t("lampTest")}</h2></div><span className="unavailable">{t("canUnavailable")}</span></div>
-          <div className="test-actions"><button disabled>{t("testAll")}</button><button disabled>{t("testWarn")}</button><button disabled>{t("testThreat")}</button></div>
-          <p>{t("lampTestLot3")}</p>
+          <div className="panel-heading"><div><span>{t("diagnostic")}</span><h2>{t("lampTest")}</h2></div><span className={testAvailable ? "version" : "unavailable"}>{testAvailable ? t("online") : t("canUnavailable")}</span></div>
+          <div className="test-actions"><button disabled={!testAvailable || testState === "SENDING"} onClick={() => void runTest("ALL")}>{t("testAll")}</button><button disabled={!testAvailable || testState === "SENDING"} onClick={() => void runTest("WARN_CTRL")}>{t("testWarn")}</button><button disabled>{t("testThreat")}</button></div>
+          <label className="field"><span>{t("selectedLamp")}</span><select aria-label={t("selectedLamp")} value={selectedLamp} onChange={(event) => setSelectedLamp(event.target.value as WarnCtrlLamp)}>{WARN_CTRL_LAMPS.map((lamp) => <option key={lamp} value={lamp}>{lamp.replaceAll("_", " ")}</option>)}</select></label>
+          <button disabled={!testAvailable || testState === "SENDING"} onClick={() => void runTest("LAMP", selectedLamp)}>{t("testSelected")}</button>
+          <p>{testState === "ACTIVE" ? t("lampTestActive") : testState === "ERROR" ? t("lampTestFailed") : t("lampTestDuration")}</p>
         </article>
       </section>
       <SaveBar saving={saving} errors={errors} onSave={onSave} t={t} />
@@ -229,7 +253,7 @@ function SystemPage({ draft, status, setDraft, onSave, saving, errors, t }: Page
           <label className="field"><span>{t("stale")}</span><div><input aria-label={t("stale")} type="number" min="1" max="60000" value={draft.telemetry.staleAfterMs} onChange={(event) => setDraft((previous) => ({ ...previous, telemetry: { ...previous.telemetry, staleAfterMs: numberValue(event) } }))} /><em>ms</em></div></label>
         </article>
         <article className="panel">
-          <div className="panel-heading"><div><span>{t("avionicsBus")}</span><h2>SocketCAN</h2></div><span className="unavailable">{t("unavailable")}</span></div>
+          <div className="panel-heading"><div><span>{t("avionicsBus")}</span><h2>SocketCAN</h2></div><span className={status?.can.state === "OK" ? "version" : "unavailable"}>{displayState(status?.can.state ?? "UNAVAILABLE", t)}</span></div>
           <dl className="system-list"><div><dt>{t("interface")}</dt><dd>{status?.can.interface ?? "can0"}</dd></div><div><dt>{t("fixedBitrate")}</dt><dd>1 Mbit/s</dd></div><div><dt>{t("state")}</dt><dd>{displayState(status?.can.state ?? "UNAVAILABLE", t)}</dd></div></dl>
           <label className="field"><span>{t("moduleAbsence")}</span><div><input aria-label={t("moduleAbsence")} type="number" min="1" max="60000" value={draft.can.nodeTimeoutMs} onChange={(event) => setDraft((previous) => ({ ...previous, can: { ...previous.can, nodeTimeoutMs: numberValue(event) } }))} /><em>ms</em></div></label>
         </article>

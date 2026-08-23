@@ -14,8 +14,29 @@ from fastapi.testclient import TestClient  # noqa: E402
 
 from av_core.app import create_app, status_event_stream  # noqa: E402
 from av_core.config import ConfigStore  # noqa: E402
-from av_core.models import AvCoreConfig  # noqa: E402
+from av_core.models import AvCoreConfig, CanStatus, ModuleStatus  # noqa: E402
 from av_core.runtime import AvCoreRuntime  # noqa: E402
+
+
+class FakeCanService:
+    def __init__(self, config, on_change):
+        self.config = config
+        self.on_change = on_change
+        self.online = False
+        self.requests = []
+
+    def start(self): pass
+    def stop(self): pass
+    def reconfigure(self, config): self.config = config
+    def update_cockpit(self, cockpit, telemetry_state): pass
+    def start_lamp_test(self, request):
+        if self.online:
+            self.requests.append(request)
+        return self.online
+    def status(self): return CanStatus(state="OK" if self.online else "UNAVAILABLE")
+    def modules(self):
+        roles = ("WARN_CTRL", "THREAT_PROC", "SENS_PROC", "INST_PROC")
+        return [ModuleStatus(role=role, installed=True, state="ONLINE" if self.online and role == "WARN_CTRL" else "UNAVAILABLE", protocol_id=0x700 + index) for index, role in enumerate(roles)]
 
 
 class AvCoreApiTest(unittest.TestCase):
@@ -28,7 +49,8 @@ class AvCoreApiTest(unittest.TestCase):
         self.frontend.mkdir()
         (self.frontend / "index.html").write_text("<html>AV CORE</html>", encoding="utf-8")
         (self.frontend / "visible.txt").write_text("visible", encoding="utf-8")
-        self.runtime = AvCoreRuntime(ConfigStore(self.config_path), actual_http_port=8080)
+        self.runtime = AvCoreRuntime(ConfigStore(self.config_path), actual_http_port=8080, can_factory=FakeCanService)
+        self.can = self.runtime._can
         self.app = create_app(self.runtime, self.frontend)
         self.client = TestClient(self.app)
 
@@ -63,7 +85,7 @@ class AvCoreApiTest(unittest.TestCase):
         self.assertEqual("can0", status["can"]["interface"])
         self.assertEqual(1000000, status["can"]["bitrate"])
         self.assertTrue(all(module["state"] == "UNAVAILABLE" for module in status["modules"]))
-        self.assertTrue(all(module["protocolId"] is None for module in status["modules"]))
+        self.assertEqual([0x700, 0x701, 0x702, 0x703], [module["protocolId"] for module in status["modules"]])
 
     def test_corrupt_startup_config_is_reported_until_valid_save(self) -> None:
         self.config_path.write_text("broken", encoding="utf-8")
@@ -78,10 +100,18 @@ class AvCoreApiTest(unittest.TestCase):
         self.assertEqual(200, response.status_code)
         self.assertEqual("OK", client.get("/api/status").json()["configuration"]["state"])
 
-    def test_lamp_test_remains_unavailable_in_lot_two(self) -> None:
-        response = self.client.post("/api/lamp-test", json={"target": "ALL", "active": True})
+    def test_lamp_test_requires_can_and_warn_ctrl(self) -> None:
+        response = self.client.post("/api/lamp-test", json={"target": "ALL"})
         self.assertEqual(503, response.status_code)
-        self.assertEqual("CAN_UNAVAILABLE", response.json()["detail"])
+        self.assertEqual("WARN_CTRL_UNAVAILABLE", response.json()["detail"])
+
+    def test_lamp_test_accepts_all_warn_ctrl_and_one_known_lamp(self) -> None:
+        self.can.online = True
+        for payload in ({"target": "ALL"}, {"target": "WARN_CTRL"}, {"target": "LAMP", "lamp": "MISSILE"}):
+            self.assertEqual(200, self.client.post("/api/lamp-test", json=payload).status_code)
+        self.assertEqual(["ALL", "WARN_CTRL", "LAMP"], [request.target for request in self.can.requests])
+        self.assertEqual(422, self.client.post("/api/lamp-test", json={"target": "LAMP"}).status_code)
+        self.assertEqual(422, self.client.post("/api/lamp-test", json={"target": "ALL", "lamp": "FIRE"}).status_code)
 
     def test_static_files_are_served_without_directory_escape(self) -> None:
         index = self.client.get("/")

@@ -78,7 +78,7 @@ reprise du flux FSTL.
 Ce lot livre :
 
 - l'attribution définitive des identifiants CAN standards sur 11 bits ;
-- la disposition octet par octet des cinq trames initiales ;
+- la disposition octet par octet des six trames fonctionnelles initiales ;
 - les encodeurs et décodeurs Python ;
 - le backend SocketCAN ;
 - la publication des états à 10–20 Hz ;
@@ -119,6 +119,10 @@ Ce lot livre :
 
 Le résultat visible est le premier panneau prototype en carton ou polystyrène
 fonctionnant réellement en jeu.
+
+L'implémentation logicielle utilise un ESP32 DevKit V1, 23 WS2812, un
+potentiomètre et un poussoir momentané. La validation matérielle reste à faire
+sur le prototype raccordé.
 
 La vérification manuelle active plusieurs alertes, coupe la télémétrie,
 débranche CAN, redémarre l'ESP32 et vérifie le retour automatique à l'état

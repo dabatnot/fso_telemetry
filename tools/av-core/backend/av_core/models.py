@@ -42,7 +42,7 @@ class ModuleInstallation(PublicModel):
 
 class ModulesConfig(PublicModel):
     warn_ctrl: ModuleInstallation = Field(default_factory=lambda: ModuleInstallation(installed=True))
-    threat_proc: ModuleInstallation = Field(default_factory=lambda: ModuleInstallation(installed=True))
+    threat_proc: ModuleInstallation = Field(default_factory=lambda: ModuleInstallation(installed=False))
     sens_proc: ModuleInstallation = Field(default_factory=lambda: ModuleInstallation(installed=False))
     inst_proc: ModuleInstallation = Field(default_factory=lambda: ModuleInstallation(installed=False))
 
@@ -119,8 +119,19 @@ class AvCoreConfig(PublicModel):
 
 
 class LampTestRequest(PublicModel):
-    target: Literal["ALL"]
-    active: bool
+    target: Literal["ALL", "WARN_CTRL", "LAMP"]
+    lamp: Literal[
+        "MASTER_WARNING", "FIRE", "MISSILE", "BLAST", "COLLISION", "EMP",
+        "MASTER_CAUTION", "ENG", "SENS", "SHIELD", "HULL", "WEP_EN",
+        "AB_FUEL", "AMMO", "CM_LOW", "SUBSYS", "AV_CORE", "FLT_DATA",
+        "AV_BUS", "SENS_PROC", "THREAT_PROC", "INST_PROC", "WARN_CTRL",
+    ] | None = None
+
+    @model_validator(mode="after")
+    def validate_lamp_target(self) -> "LampTestRequest":
+        if (self.target == "LAMP") != (self.lamp is not None):
+            raise ValueError("lamp is required only when target is LAMP")
+        return self
 
 
 class ConfigurationStatus(PublicModel):
@@ -198,15 +209,18 @@ class CockpitStatus(PublicModel):
 
 
 class CanStatus(PublicModel):
-    state: Literal["UNAVAILABLE"] = "UNAVAILABLE"
+    state: Literal["OK", "ERROR", "BUS_OFF", "UNAVAILABLE"] = "UNAVAILABLE"
     interface: Literal["can0"] = "can0"
     bitrate: Literal[1000000] = 1000000
+    receive_errors: int = Field(default=0, ge=0)
+    transmit_errors: int = Field(default=0, ge=0)
+    error: str | None = None
 
 
 class ModuleStatus(PublicModel):
     role: Literal["WARN_CTRL", "THREAT_PROC", "SENS_PROC", "INST_PROC"]
     installed: bool
-    state: Literal["UNAVAILABLE"] = "UNAVAILABLE"
+    state: Literal["ONLINE", "DEGRADED", "ABSENT", "CAN_ERROR", "UNAVAILABLE"] = "UNAVAILABLE"
     protocol_id: int | None = None
     uid: str | None = None
     firmware_version: str | None = None

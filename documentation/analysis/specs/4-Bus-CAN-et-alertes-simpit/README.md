@@ -105,10 +105,11 @@ ne sont pas codés dans les ESP32.
 quand le lock est acquis. La cadence visuelle est produite localement par
 `THREAT PROC` depuis l'état discret reçu.
 
-Tous les missiles entrants sont affichés :
+Tous les missiles entrants sont affichés. Le HUD principal arrondit chaque
+triangle de missile au secteur de 45 degrés le plus proche et publie directement
+le bitmask `missile_direction_sector_mask`. AV CORE transmet ce masque sans
+recalcul géométrique afin que l'instrument physique corresponde au HUD :
 
-- le Raspberry transforme leur position monde en direction locale au joueur ;
-- la direction est projetée dans le plan droite/avant du vaisseau ;
 - chacun des huit secteurs couvre 45 degrés ;
 - chaque secteur contenant au moins un missile clignote ;
 - plusieurs secteurs peuvent être actifs simultanément ;
@@ -371,12 +372,15 @@ Le vocabulaire initial est limité à :
 - `WARNING_STATE` : bitmask des cinq warnings et état master ;
 - `CAUTION_STATE` : bitmask des cautions du vaisseau ;
 - `THREAT_STATE` : huit secteurs et état de lock ;
+- `LIGHTING_COMMAND` : configuration et tests ponctuels émis par AV CORE ;
 - `LIGHTING_STATE` : luminosité globale et état momentané de `LAMP TEST` ;
 - `NODE_STATUS` : rôle fixe, identité matérielle, état et heartbeat d'un
   calculateur.
 
-Les identifiants CAN exacts et l'encodage octet par octet seront fixés avec le
-code commun Raspberry/ESP32. Ils ne modifient pas le registre FSTL.
+Les identifiants et l'encodage sont fixés dans
+`tools/av-core/CAN_PROTOCOL.md`. `WARN CTRL` est l'unique producteur de
+`LIGHTING_STATE`; AV CORE lui adresse `LIGHTING_COMMAND`, ce qui évite deux
+producteurs sous un même identifiant. Ces trames ne modifient pas FSTL.
 
 ## Éclairage et alimentation
 
@@ -401,6 +405,11 @@ LED 3,3 V de l'ESP32 est adapté au niveau logique attendu par la première LED
 `BRT` règle la luminosité globale et `LAMP TEST` allume temporairement tous les
 voyants. `WARN CTRL` applique ces commandes localement et publie
 `LIGHTING_STATE` pour les autres nœuds.
+
+Le prototype utilise un ESP32 DevKit V1, un pixel WS2812 par légende et le
+pinout documenté dans `tools/av-core/firmware/README.md`. Le potentiomètre règle
+entre zéro et la limite Web ; le poussoir momentané a priorité sur les impulsions
+Web de deux secondes, elles-mêmes prioritaires sur l'état cockpit.
 
 ## Périmètre et exclusions
 
@@ -450,7 +459,5 @@ avec et sans télémétrie active.
 ## Décisions encore ouvertes
 
 - référence exacte des convertisseurs de niveau SPI ;
-- identifiants CAN et disposition précise des huit octets de chaque message ;
 - modèle de connecteur verrouillable et pinout du faisceau ;
-- valeurs RGB, luminosité maximale et cadences visuelles ;
 - dimensions et disposition finales après les prototypes physiques.

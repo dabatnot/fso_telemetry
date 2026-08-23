@@ -1,10 +1,10 @@
 # FSO SimPit AV CORE
 
-`AV CORE` est le service local du Raspberry Pi du simpit. Le lot 2 relie
-l'application Web au profil cockpit FSTL de FS2Open et calcule en direct les
-warnings, cautions, secteurs de missiles et états de verrouillage. SocketCAN et
-les calculateurs ESP32 restent explicitement indisponibles jusqu'aux lots
-suivants.
+`AV CORE` est le service local du Raspberry Pi du simpit. Il relie l'application
+Web au profil cockpit FSTL de FS2Open, calcule les warnings et cautions, puis
+publie les états du panneau sur SocketCAN. Le firmware `WARN CTRL` pilote un
+prototype de 23 voyants WS2812 et publie son heartbeat ainsi que l'éclairage
+effectif.
 
 Le client accepte exclusivement une session `CockpitSensors` avec la couverture
 `0x07CB`. Toute autre couverture est rejetée avant publication d'un état `LIVE`.
@@ -43,6 +43,14 @@ Set-Location tools\av-core\frontend
 npm ci
 npm test
 npm run build
+```
+
+Le firmware se vérifie et se construit séparément avec PlatformIO :
+
+```powershell
+Set-Location tools\av-core\firmware
+pio test -e native
+pio run -e warn_ctrl
 ```
 
 ## Installation sur Raspberry Pi OS Bookworm 64 bits
@@ -106,21 +114,29 @@ Pour utiliser simultanément AV CORE, le dashboard et le radar, configurer le
 producteur FS2Open avec `maxClients: 4`. Le défaut moteur reste volontairement à
 un client afin de ne pas préallouer quatre slots sur toutes les installations.
 
-## Vérification manuelle du lot 2
+## Vérification manuelle
 
 1. Démarrer AV CORE avant FS2Open et vérifier que le Web reste disponible avec
-   FSTL déconnecté et CAN indisponible.
+   FSTL déconnecté et que l'état de `can0` est explicite.
 2. Démarrer une mission et vérifier le passage à `LIVE`, les warnings,
    cautions, secteurs de missiles et états de lock disponibles.
 3. Modifier un seuil dans la page Alertes et vérifier son application immédiate.
 4. Mettre le jeu en pause, reprendre avant puis après deux secondes, changer de
    mission et redémarrer le jeu : AV CORE doit revenir seul à `LIVE`.
 5. Redémarrer `av-core.service` et vérifier la conservation de la configuration.
+6. Avec `WARN CTRL` raccordé, vérifier son passage à `ONLINE`, les 23 voyants,
+   le potentiomètre `BRT`, le poussoir `LAMP TEST` et les impulsions Web de deux
+   secondes.
+7. Débrancher le bus : les états distants doivent s'éteindre et `AV BUS`
+   clignoter. Le panneau doit reprendre l'état courant après reconnexion.
 
-## Limites du lot 2
+## Limites actuelles
 
-- aucun accès SocketCAN ;
-- aucun firmware ESP32 ;
-- aucun test physique de voyant ;
+- la configuration automatique de `can0` reste au lot 6 ;
+- `THREAT PROC` reste au lot 5 ;
+- la validation électrique et matérielle nécessite le prototype raccordé ;
 - aucun profil de luminosité nocturne ;
 - aucune authentification ou exposition à Internet.
+
+Le contrat CAN est décrit dans [CAN_PROTOCOL.md](CAN_PROTOCOL.md) et le câblage
+du prototype dans [firmware/README.md](firmware/README.md).

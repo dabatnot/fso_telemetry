@@ -25,6 +25,7 @@ class ConfigModelTest(unittest.TestCase):
         self.assertEqual(42042, payload["telemetry"]["port"])
         self.assertEqual(8080, payload["web"]["port"])
         self.assertTrue(payload["modules"]["warnCtrl"]["installed"])
+        self.assertFalse(payload["modules"]["threatProc"]["installed"])
         self.assertFalse(payload["modules"]["sensProc"]["installed"])
         self.assertEqual(30, payload["lighting"]["maxBrightnessPercent"])
         self.assertNotIn("nightBrightnessPercent", payload["lighting"])

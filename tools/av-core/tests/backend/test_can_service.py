@@ -1,0 +1,73 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+import sys
+import time
+import types
+import unittest
+from pathlib import Path
+from unittest.mock import patch
+
+
+BACKEND_ROOT = Path(__file__).resolve().parents[2] / "backend"
+sys.path.insert(0, str(BACKEND_ROOT))
+
+from av_core.can_protocol import LIGHTING_COMMAND_ID  # noqa: E402
+from av_core.can_service import CanService  # noqa: E402
+from av_core.models import AvCoreConfig, LampTestRequest  # noqa: E402
+
+
+@dataclass
+class FakeMessage:
+    arbitration_id: int
+    data: bytes
+    is_extended_id: bool = False
+
+
+class FakeBus:
+    def __init__(self) -> None:
+        self.received: list[FakeMessage] = []
+        self.sent: list[FakeMessage] = []
+        self.closed = False
+
+    def recv(self, timeout: float):
+        if self.received:
+            return self.received.pop(0)
+        time.sleep(min(timeout, 0.002))
+        return None
+
+    def send(self, message, timeout: float):
+        self.sent.append(message)
+
+    def shutdown(self):
+        self.closed = True
+
+
+class CanServiceTest(unittest.TestCase):
+    def test_fake_socketcan_publishes_state_tracks_heartbeat_and_tests_lamps(self) -> None:
+        bus = FakeBus()
+        changes: list[None] = []
+        service = CanService(AvCoreConfig(), lambda: changes.append(None), bus_factory=lambda: bus)
+        fake_module = types.SimpleNamespace(Message=FakeMessage)
+        with patch.dict(sys.modules, {"can": fake_module}):
+            service.start()
+            self.addCleanup(service.stop)
+            deadline = time.monotonic() + 1
+            while service.status().state != "OK" and time.monotonic() < deadline:
+                time.sleep(0.01)
+            self.assertEqual("OK", service.status().state)
+            bus.received.append(FakeMessage(0x700, bytes((1, 0, 0, 4, 0, 1, 2, 3))))
+            while service.modules()[0].state != "ONLINE" and time.monotonic() < deadline:
+                time.sleep(0.01)
+            self.assertEqual("ONLINE", service.modules()[0].state)
+            self.assertTrue(service.start_lamp_test(LampTestRequest(target="LAMP", lamp="FIRE")))
+            test_frames = [message for message in bus.sent if message.arbitration_id == LIGHTING_COMMAND_ID and message.data[1] == 4]
+            self.assertEqual(1, len(test_frames))
+            self.assertEqual(2000, int.from_bytes(test_frames[0].data[4:6], "little"))
+        service.stop()
+        self.assertTrue(bus.closed)
+        self.assertGreater(len(changes), 0)
+
+
+if __name__ == "__main__":
+    unittest.main()

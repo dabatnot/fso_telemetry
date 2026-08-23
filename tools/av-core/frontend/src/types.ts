@@ -1,5 +1,10 @@
 export type ModuleKey = "warnCtrl" | "threatProc" | "sensProc" | "instProc";
 export type ModuleRole = "WARN_CTRL" | "THREAT_PROC" | "SENS_PROC" | "INST_PROC";
+export type WarnCtrlLamp =
+  | "MASTER_WARNING" | "FIRE" | "MISSILE" | "BLAST" | "COLLISION" | "EMP"
+  | "MASTER_CAUTION" | "ENG" | "SENS" | "SHIELD" | "HULL" | "WEP_EN"
+  | "AB_FUEL" | "AMMO" | "CM_LOW" | "SUBSYS" | "AV_CORE" | "FLT_DATA"
+  | "AV_BUS" | "SENS_PROC" | "THREAT_PROC" | "INST_PROC" | "WARN_CTRL";
 export type ThresholdKey =
   | "engine"
   | "shield"
@@ -44,7 +49,7 @@ export interface AvCoreConfig {
 export interface ModuleStatus {
   role: ModuleRole;
   installed: boolean;
-  state: "UNAVAILABLE";
+  state: "ONLINE" | "DEGRADED" | "ABSENT" | "CAN_ERROR" | "UNAVAILABLE";
   protocolId: number | null;
   uid: string | null;
   firmwareVersion: string | null;
@@ -111,7 +116,14 @@ export interface AvCoreStatus {
     timeCompression: number | null;
   };
   cockpit: AvCoreCockpitStatus;
-  can: { state: "UNAVAILABLE"; interface: "can0"; bitrate: 1000000 };
+  can: {
+    state: "OK" | "ERROR" | "BUS_OFF" | "UNAVAILABLE";
+    interface: "can0";
+    bitrate: 1000000;
+    receiveErrors: number;
+    transmitErrors: number;
+    error: string | null;
+  };
   modules: ModuleStatus[];
 }
 

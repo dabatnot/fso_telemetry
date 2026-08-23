@@ -10,7 +10,7 @@ const config: AvCoreConfig = {
   telemetry: { host: "127.0.0.1", port: 42042, staleAfterMs: 1000 },
   can: { nodeTimeoutMs: 3000 },
   web: { port: 8080 },
-  modules: { warnCtrl: { installed: true }, threatProc: { installed: true }, sensProc: { installed: false }, instProc: { installed: false } },
+  modules: { warnCtrl: { installed: true }, threatProc: { installed: false }, sensProc: { installed: false }, instProc: { installed: false } },
   alerts: {
     engine: { activateBelowPercent: 50, clearAbovePercent: 55 }, shield: { activateBelowPercent: 30, clearAbovePercent: 35 }, hull: { activateBelowPercent: 40, clearAbovePercent: 45 }, weaponEnergy: { activateBelowPercent: 20, clearAbovePercent: 30 }, afterburnerFuel: { activateBelowPercent: 20, clearAbovePercent: 25 }, ammo: { activateBelowPercent: 20, clearAbovePercent: 25 }, countermeasures: { activateAtOrBelowCount: 3, activateAtOrBelowPercent: 20 }, subsystem: { activateBelowPercent: 40, clearAbovePercent: 45 }
   },
@@ -38,8 +38,8 @@ const status: AvCoreStatus = {
     },
     threat: { available: false, sectorMask: 0, incomingMissileCount: 0, lockState: "NONE" }
   },
-  can: { state: "UNAVAILABLE", interface: "can0", bitrate: 1000000 },
-  modules: ["WARN_CTRL", "THREAT_PROC", "SENS_PROC", "INST_PROC"].map((role) => ({ role, installed: role === "WARN_CTRL" || role === "THREAT_PROC", state: "UNAVAILABLE", protocolId: null, uid: null, firmwareVersion: null, lastHeartbeatMs: null })) as AvCoreStatus["modules"]
+  can: { state: "UNAVAILABLE", interface: "can0", bitrate: 1000000, receiveErrors: 0, transmitErrors: 0, error: null },
+  modules: ["WARN_CTRL", "THREAT_PROC", "SENS_PROC", "INST_PROC"].map((role) => ({ role, installed: role === "WARN_CTRL", state: "UNAVAILABLE", protocolId: null, uid: null, firmwareVersion: null, lastHeartbeatMs: null })) as AvCoreStatus["modules"]
 };
 
 class FakeEventSource {
@@ -97,6 +97,25 @@ describe("AV CORE application", () => {
     expect(screen.getByRole("button", { name: "Tester tous les voyants" })).toBeDisabled();
     fireEvent.click(screen.getByRole("button", { name: /Système/ }));
     expect(await screen.findByRole("heading", { name: "Système" })).toBeInTheDocument();
+  });
+
+  it("sends a two-second WARN CTRL lamp test when CAN and the node are online", async () => {
+    const online = structuredClone(status);
+    online.can.state = "OK";
+    online.modules[0].state = "ONLINE";
+    vi.mocked(fetch).mockImplementation(async (path: string | URL | Request, init?: RequestInit) => {
+      if (path === "/api/config") return jsonResponse(config);
+      if (path === "/api/lamp-test" && init?.method === "POST") return jsonResponse(null);
+      return jsonResponse(online);
+    });
+    render(<App />);
+    await screen.findByRole("heading", { name: "Modules" });
+    fireEvent.click(screen.getByRole("button", { name: /Éclairage/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "Tester WARN CTRL" }));
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith("/api/lamp-test", expect.objectContaining({ method: "POST" })));
+    const call = vi.mocked(fetch).mock.calls.find((entry) => entry[0] === "/api/lamp-test")!;
+    expect(JSON.parse(call[1]!.body as string)).toEqual({ target: "WARN_CTRL" });
+    expect(screen.getByText("Test actif pendant deux secondes.")).toBeInTheDocument();
   });
 
   it("saves the complete configuration after changing an installed role", async () => {
