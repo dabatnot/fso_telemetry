@@ -2339,6 +2339,10 @@ TEST(TelemetryPhase3Threat,
 	hud_start_text_flash(nullptr, 0);
 	hud_start_text_flash("Collision", 5'000, 200,
 		HudTextWarningKind::Collision);
+	hud_begin_missile_direction_capture();
+	hud_capture_missile_direction(PI / 2.0F);
+	hud_capture_missile_direction(0.0F);
+	hud_end_missile_direction_capture();
 
 	auto phase2 = std::make_unique<detail::Phase2ObservationDto>();
 	phase2->ships.resize(1U);
@@ -2364,6 +2368,7 @@ TEST(TelemetryPhase3Threat,
 	EXPECT_TRUE(output->hud_alert.primary_fire_threat_active);
 	EXPECT_EQ(protocol::HudAlertMissileLockState::Acquired,
 		output->hud_alert.missile_lock_state);
+	EXPECT_EQ(0x05U, output->hud_alert.missile_direction_sector_mask);
 	EXPECT_EQ(protocol::HudAlertStatePresenceFlagActiveWarning,
 		output->hud_alert.presence);
 	EXPECT_EQ(protocol::HudAlertWarningKind::Collision,
@@ -2420,10 +2425,47 @@ TEST(TelemetryPhase3Threat,
 }
 
 TEST(TelemetryPhase3Threat,
+	HudMissileDirectionsUseScreenSpaceSectorsAndPublishAtomically)
+{
+	auto engine_globals = std::make_unique<Phase3EngineGlobalsScope>();
+	EXPECT_EQ(0U, hud_missile_direction_sector_for_angle(PI / 2.0F));
+	EXPECT_EQ(1U, hud_missile_direction_sector_for_angle(PI / 4.0F));
+	EXPECT_EQ(2U, hud_missile_direction_sector_for_angle(0.0F));
+	EXPECT_EQ(3U, hud_missile_direction_sector_for_angle(-PI / 4.0F));
+	EXPECT_EQ(4U, hud_missile_direction_sector_for_angle(-PI / 2.0F));
+	EXPECT_EQ(5U, hud_missile_direction_sector_for_angle(-3.0F * PI / 4.0F));
+	EXPECT_EQ(6U, hud_missile_direction_sector_for_angle(PI));
+	EXPECT_EQ(7U, hud_missile_direction_sector_for_angle(3.0F * PI / 4.0F));
+	EXPECT_EQ(1U, hud_missile_direction_sector_for_angle(3.0F * PI / 8.0F));
+	EXPECT_EQ(0U, hud_missile_direction_sector_for_angle(
+		3.0F * PI / 8.0F + 0.001F));
+
+	hud_begin_missile_direction_capture();
+	hud_capture_missile_direction(PI / 2.0F);
+	hud_capture_missile_direction(0.0F);
+	hud_end_missile_direction_capture();
+	HudAlertSnapshot captured{};
+	ASSERT_TRUE(hud_get_alert_snapshot(captured));
+	EXPECT_EQ(0x05U, captured.missile_direction_sector_mask);
+
+	// Captures outside the main HUD pass cannot mutate the published mask.
+	hud_capture_missile_direction(-PI / 2.0F);
+	ASSERT_TRUE(hud_get_alert_snapshot(captured));
+	EXPECT_EQ(0x05U, captured.missile_direction_sector_mask);
+
+	// A completed pass with no rendered missile triangle clears the mask.
+	hud_begin_missile_direction_capture();
+	hud_end_missile_direction_capture();
+	ASSERT_TRUE(hud_get_alert_snapshot(captured));
+	EXPECT_EQ(0U, captured.missile_direction_sector_mask);
+}
+
+TEST(TelemetryPhase3Threat,
 	IncomingHomingMissileUsesTheInstalledManifestClassAndPublicIdentity)
 {
 	auto engine_globals = std::make_unique<Phase3EngineGlobalsScope>();
 	detail::capture_phase2_main_thread_authority();
+	detail::reset_cockpit_incoming_weapon_classes();
 	constexpr int MissileObjectIndex = MAX_OBJECTS - 4;
 	constexpr int MissileWeaponIndex = MAX_WEAPONS - 2;
 	const auto weapon_info_count = Weapon_info.size();
@@ -2445,6 +2487,28 @@ TEST(TelemetryPhase3Threat,
 	missile.homing_object = Player_obj;
 	missile_obj missile_list_entry{};
 	missile_list_entry.objnum = MissileObjectIndex;
+	list_append(&Missile_obj_list, &missile_list_entry);
+	std::array<int, telemetry::detail::MaximumPhase2StaticWeapons>
+		discovered_weapon_indices{};
+	std::uint32_t discovered_weapon_count = 0U;
+	ASSERT_EQ(detail::Phase2SourceReadStatus::Valid,
+		detail::collect_cockpit_incoming_weapon_classes(
+			discovered_weapon_indices, discovered_weapon_count).status);
+	ASSERT_EQ(1U, discovered_weapon_count);
+	EXPECT_EQ(static_cast<int>(weapon_info_count),
+		discovered_weapon_indices[0]);
+	list_remove(&Missile_obj_list, &missile_list_entry);
+	ASSERT_EQ(detail::Phase2SourceReadStatus::Valid,
+		detail::collect_cockpit_incoming_weapon_classes(
+			discovered_weapon_indices, discovered_weapon_count).status);
+	ASSERT_EQ(1U, discovered_weapon_count);
+	EXPECT_EQ(static_cast<int>(weapon_info_count),
+		discovered_weapon_indices[0]);
+	detail::reset_cockpit_incoming_weapon_classes();
+	ASSERT_EQ(detail::Phase2SourceReadStatus::Valid,
+		detail::collect_cockpit_incoming_weapon_classes(
+			discovered_weapon_indices, discovered_weapon_count).status);
+	EXPECT_EQ(0U, discovered_weapon_count);
 	list_append(&Missile_obj_list, &missile_list_entry);
 
 	auto phase2 = std::make_unique<detail::Phase2ObservationDto>();
@@ -2485,6 +2549,7 @@ TEST(TelemetryPhase3Threat,
 	EXPECT_EQ(protocol::RadarVisibility::NotVisible, incoming.radar_visibility);
 
 	list_remove(&Missile_obj_list, &missile_list_entry);
+	detail::reset_cockpit_incoming_weapon_classes();
 	list_remove(&obj_used_list, &missile_object);
 	missile = weapon{};
 	missile_object.clear();

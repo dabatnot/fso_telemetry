@@ -1,6 +1,7 @@
 {
   "fields": {
     "entity_id": "1",
+    "missile_direction_sector_mask": 133,
     "missile_lock_state": 2,
     "presence": "1",
     "primary_fire_threat_active": true,
@@ -12,7 +13,7 @@
   },
   "kind": "record",
   "recordFlags": 0,
-  "recordLength": 51,
+  "recordLength": 52,
   "recordName": "HUD_ALERT_STATE",
   "recordType": 29,
   "recordVersion": 1,

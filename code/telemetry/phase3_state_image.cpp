@@ -472,6 +472,7 @@ bool make_hud_alert(const Phase3Projection& source, StateAtom& atom)
 		!writer.write_u64(alert.producer_sample_time_us) ||
 		!writer.write_bool8(alert.primary_fire_threat_active) ||
 		!writer.write_u8(static_cast<std::uint8_t>(alert.missile_lock_state)) ||
+		!writer.write_u8(alert.missile_direction_sector_mask) ||
 		((alert.presence &
 			 protocol::HudAlertStatePresenceFlagActiveWarning) != 0U &&
 			(!writer.write_u8(static_cast<std::uint8_t>(alert.warning_kind)) ||

@@ -493,6 +493,7 @@ TEST(TelemetryPhase3StateImage, HudAlertCarriesSimultaneousThreatsAndAcceptedWar
 	alert.primary_fire_threat_active = true;
 	alert.missile_lock_state =
 		telemetry::protocol::HudAlertMissileLockState::Acquired;
+	alert.missile_direction_sector_mask = 0x85U;
 	alert.warning_kind = telemetry::protocol::HudAlertWarningKind::Launch;
 	alert.warning_instance_id = 9U;
 	alert.warning_remaining_us = 750'000U;
@@ -504,17 +505,18 @@ TEST(TelemetryPhase3StateImage, HudAlertCarriesSimultaneousThreatsAndAcceptedWar
 			base, *projection, image));
 	const auto* encoded = find(image, RecordType::HudAlertState);
 	ASSERT_NE(nullptr, encoded);
-	ASSERT_EQ(51U, encoded->value.size());
+	ASSERT_EQ(52U, encoded->value.size());
 	EXPECT_EQ(Player, read_u64(encoded->value, 0U));
 	EXPECT_EQ(1U, read_u64(encoded->value, 8U));
 	EXPECT_EQ(64U, read_u64(encoded->value, 16U));
 	EXPECT_EQ(1U, encoded->value[24U]);
 	EXPECT_EQ(2U, encoded->value[25U]);
-	EXPECT_EQ(1U, encoded->value[26U]);
-	EXPECT_EQ(9U, read_u64(encoded->value, 27U));
-	EXPECT_EQ(750'000U, read_u64(encoded->value, 35U));
-	EXPECT_EQ(6U, read_u16(encoded->value, 43U));
-	EXPECT_EQ("Launch", std::string(encoded->value.begin() + 45U,
+	EXPECT_EQ(0x85U, encoded->value[26U]);
+	EXPECT_EQ(1U, encoded->value[27U]);
+	EXPECT_EQ(9U, read_u64(encoded->value, 28U));
+	EXPECT_EQ(750'000U, read_u64(encoded->value, 36U));
+	EXPECT_EQ(6U, read_u16(encoded->value, 44U));
+	EXPECT_EQ("Launch", std::string(encoded->value.begin() + 46U,
 		encoded->value.end()));
 }
 

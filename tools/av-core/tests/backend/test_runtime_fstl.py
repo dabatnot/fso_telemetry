@@ -62,7 +62,7 @@ class RuntimeFstlTest(unittest.TestCase):
             "FLIGHT_STATE": [{"entity_id": "1"}],
             "HUD_ALERT_STATE": [{
                 "entity_id": "1", "presence": 0, "primary_fire_threat_active": True,
-                "missile_lock_state": 0,
+                "missile_lock_state": 0, "missile_direction_sector_mask": 0,
             }],
             "THREAT_STATE": [{"entity_id": "1", "incoming_missiles": []}],
         }

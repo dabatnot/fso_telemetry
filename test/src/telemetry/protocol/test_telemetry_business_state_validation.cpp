@@ -607,6 +607,7 @@ std::vector<std::uint8_t> hud_alert_payload(std::uint64_t entity_id)
 	append_u8(bytes, 0U);
 	append_u8(bytes,
 		static_cast<std::uint8_t>(HudAlertMissileLockState::None));
+	append_u8(bytes, 0U);
 	return bytes;
 }
 

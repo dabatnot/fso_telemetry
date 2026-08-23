@@ -20308,10 +20308,18 @@
           "wire": "HudAlertMissileLockState"
         },
         {
+          "constraint": "8-bit sector mask",
+          "name": "missile_direction_sector_mask",
+          "nature": "A",
+          "position": "6",
+          "semantics": "HUD-projected incoming missile directions; bits run clockwise from up in 45-degree sectors",
+          "wire": "u8"
+        },
+        {
           "constraint": "closed enum",
           "name": "warning_kind",
           "nature": "A",
-          "position": "6",
+          "position": "7",
           "presence_condition": {
             "bits": [
               0
@@ -20325,7 +20333,7 @@
           "constraint": "nonzero",
           "name": "warning_instance_id",
           "nature": "A",
-          "position": "7",
+          "position": "8",
           "presence_condition": {
             "bits": [
               0
@@ -20339,7 +20347,7 @@
           "constraint": "positive duration",
           "name": "warning_remaining_us",
           "nature": "A",
-          "position": "8",
+          "position": "9",
           "presence_condition": {
             "bits": [
               0
@@ -20353,7 +20361,7 @@
           "constraint": "UTF-8 1..511 bytes",
           "name": "warning_text",
           "nature": "A",
-          "position": "9",
+          "position": "10",
           "presence_condition": {
             "bits": [
               0

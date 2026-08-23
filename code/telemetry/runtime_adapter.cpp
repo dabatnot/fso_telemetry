@@ -460,6 +460,9 @@ NativeRuntimeStartupServices& native_runtime_startup_services() noexcept
 RuntimeTickStatus RuntimeAdapterPlayerTestAccess::service_tick(NativeSessionRuntime* runtime,
 	const RuntimeTickContext& context) noexcept
 {
+	if (!context.mission_active) {
+		reset_cockpit_incoming_weapon_classes();
+	}
 	if (runtime == nullptr) {
 		return RuntimeTickStatus::Unavailable;
 	}

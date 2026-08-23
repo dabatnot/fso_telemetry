@@ -18,9 +18,11 @@ ValidationError validate_business_record_29(ByteView payload) noexcept
 	std::uint64_t sample_time = 0U;
 	std::uint8_t primary_fire = 0U;
 	std::uint8_t lock_state = 0U;
+	std::uint8_t missile_direction_sector_mask = 0U;
 	if (!reader.read_u64(entity_id) || !reader.read_u64(presence) ||
 		!reader.read_u64(sample_time) || !reader.read_u8(primary_fire) ||
-		!reader.read_u8(lock_state)) {
+		!reader.read_u8(lock_state) ||
+		!reader.read_u8(missile_direction_sector_mask)) {
 		return ValidationError::TruncatedPayload;
 	}
 	if (entity_id == 0U) {
@@ -35,6 +37,7 @@ ValidationError validate_business_record_29(ByteView payload) noexcept
 	if (lock_state > static_cast<std::uint8_t>(HudAlertMissileLockState::Acquired)) {
 		return ValidationError::UnknownEnum;
 	}
+	(void)missile_direction_sector_mask; // Every bit names one of the eight HUD sectors.
 	if ((presence & HudAlertStatePresenceFlagActiveWarning) != 0U) {
 		std::uint8_t warning_kind = 0U;
 		std::uint64_t warning_instance_id = 0U;

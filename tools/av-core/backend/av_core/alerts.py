@@ -85,7 +85,7 @@ class AlertEngine:
         threat_record = _player_record(records, "THREAT_STATE", player)
         flight = _player_record(records, "FLIGHT_STATE", player)
         warning = self._warnings(hud, threat_record)
-        threat = self._threat(player, hud, threat_record, flight, derived)
+        threat = self._threat(hud, threat_record, flight)
         cautions = self._cautions(player, records, derived, config)
         return CockpitStatus(
             available=True,
@@ -264,26 +264,14 @@ class AlertEngine:
 
     @staticmethod
     def _threat(
-        player: str,
         hud: dict[str, Any] | None,
         threat: dict[str, Any] | None,
         flight: dict[str, Any] | None,
-        derived: dict[str, Any],
     ) -> ThreatStatus:
         incoming = threat.get("incoming_missiles", []) if threat else []
         incoming = incoming if isinstance(incoming, list) else []
-        mask = 0
-        for missile in incoming:
-            missile_id = str(missile.get("entity_id", ""))
-            item = derived.get(f"entities.{player}.missiles.{missile_id}.relative_position_local")
-            local = item.get("value") if isinstance(item, dict) and item.get("available") is True else None
-            if not isinstance(local, list) or len(local) != 3:
-                continue
-            right, _, forward = (_finite(component) for component in local)
-            if right is None or forward is None or math.hypot(right, forward) <= 1e-9:
-                continue
-            sector = math.floor((math.atan2(right, forward) + math.pi / 8.0) / (math.pi / 4.0)) % 8
-            mask |= 1 << sector
+        mask = _integer(hud.get("missile_direction_sector_mask")) if hud else None
+        mask = mask if mask is not None and 0 <= mask <= 0xFF else 0
         lock = _integer(hud.get("missile_lock_state")) if hud else None
         lock_state = "ATTEMPT" if lock == 1 else "ACQUIRED" if lock == 2 else "NONE"
         return ThreatStatus(

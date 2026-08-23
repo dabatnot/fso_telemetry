@@ -3052,7 +3052,12 @@ void HudGaugeReticleTriangle::renderTriangleMissileTail(float ang, float xpos, f
 //	Must be inside a g3_start_frame().
 //	If aspect_flag !0, then render filled, indicating aspect lock.
 // If show_interior !0, then point inwards to positions inside reticle
-void HudGaugeReticleTriangle::renderTriangle(vec3d *hostile_pos, int aspect_flag, int show_interior, int split_tri, bool config)
+void HudGaugeReticleTriangle::renderTriangle(vec3d *hostile_pos,
+	int aspect_flag,
+	int show_interior,
+	int split_tri,
+	bool config,
+	bool capture_missile_direction)
 {
 	int x = position[0];
 	int y = position[1];
@@ -3136,6 +3141,9 @@ void HudGaugeReticleTriangle::renderTriangle(vec3d *hostile_pos, int aspect_flag
 	}
 
 	float ang = atan2_safe(-(hostile_vertex.screen.xyw.y - tablePosY), hostile_vertex.screen.xyw.x - tablePosX);
+	if (capture_missile_direction && !config) {
+		hud_capture_missile_direction(ang);
+	}
 	float sin_ang=sinf(ang);
 	float cos_ang=cosf(ang);
 
@@ -3310,7 +3318,12 @@ void HudGaugeMissileTriangles::render(float /*frametime*/, bool config)
 		wp = &Weapons[A->instance];
 
 		if (wp->homing_object == Player_obj) {
-			renderTriangle(&A->pos, Weapon_info[wp->weapon_info_index].is_locked_homing(), 1, 1, config);
+			renderTriangle(&A->pos,
+				Weapon_info[wp->weapon_info_index].is_locked_homing(),
+				1,
+				1,
+				config,
+				true);
 		}
 	}
 

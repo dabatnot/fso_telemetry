@@ -5,6 +5,8 @@
 
 #include <cstdint>
 
+struct weapon;
+
 namespace telemetry::detail {
 
 SupportWorkStatus evaluate_support_work(
@@ -122,6 +124,13 @@ std::uint32_t map_player_physics_mode_flags(const EnginePhysicsFlagInput& input)
 
 bool normalize_engine_weapon_bank_selection(
 	int selection, int bank_count, int& output) noexcept;
+
+bool is_cockpit_incoming_missile(
+	const object& missile_object, const weapon& missile) noexcept;
+void reset_cockpit_incoming_weapon_classes() noexcept;
+SourceReadResult collect_cockpit_incoming_weapon_classes(
+	std::array<int, MaximumPhase2StaticWeapons>& engine_indices,
+	std::uint32_t& count) noexcept;
 
 class EngineReadView {
   public:

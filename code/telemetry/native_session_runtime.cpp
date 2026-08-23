@@ -842,10 +842,26 @@ bool select_phase3_manifest_references(const Phase2ManifestSource& raw,
 	output.referenced_weapon_keys.fill(0U);
 	for (std::size_t subject = 0U; subject < binding_count; ++subject) {
 		if (bindings[subject].entity_id == 0U) continue;
+		const auto& observed_ship = observation.ships[subject];
 		const auto class_key = static_cast<std::uint32_t>(
-			observation.ships[subject].identity.class_source_key.value);
+			observed_ship.identity.class_source_key.value);
 		if (!append_phase3_manifest_class(output, class_key))
 			return false;
+		// The producer has already restricted these references to the
+		// authorized cockpit closure. Keep them installed for the session so
+		// the disappearance of a disclosed missile cannot shrink the client
+		// manifest and close an otherwise healthy stream.
+		if (observed_ship.raw_static_references.weapon_count >
+				observed_ship.raw_static_references.weapon_capture_keys.size())
+			return false;
+		for (std::uint32_t weapon = 0U;
+			 weapon < observed_ship.raw_static_references.weapon_count;
+			 ++weapon) {
+			if (!append_phase3_manifest_weapon(output,
+					observed_ship.raw_static_references
+						.weapon_capture_keys[weapon]))
+				return false;
+		}
 	}
 	for (std::uint32_t index = 0U;
 		 index < dependencies.ship_class_count; ++index) {

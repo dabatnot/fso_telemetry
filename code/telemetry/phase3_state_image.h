@@ -180,6 +180,7 @@ struct Phase3HudAlertState {
 	bool primary_fire_threat_active = false;
 	protocol::HudAlertMissileLockState missile_lock_state =
 		protocol::HudAlertMissileLockState::None;
+	std::uint8_t missile_direction_sector_mask = 0U;
 	protocol::HudAlertWarningKind warning_kind =
 		protocol::HudAlertWarningKind::Other;
 	std::uint64_t warning_instance_id = 0U;

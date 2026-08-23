@@ -513,7 +513,12 @@ public:
 	void initRadius(int length);
 	void initTriBase(float length);
 	void initTriHeight(float h);
-	void renderTriangle(vec3d *hostile_pos, int aspect_flag, int show_interior, int split_tri, bool config);
+	void renderTriangle(vec3d *hostile_pos,
+		int aspect_flag,
+		int show_interior,
+		int split_tri,
+		bool config,
+		bool capture_missile_direction = false);
 	void renderTriangleMissileTail(float ang, float xpos, float ypos, float cur_dist, int draw_solid, int draw_inside, bool config);
 	void render(float frametime, bool config = false) override;
 };

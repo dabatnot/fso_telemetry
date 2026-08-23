@@ -1542,6 +1542,7 @@ def decode_record_payload(
         sample = reader.u64()
         primary_fire = reader.u8()
         lock_state = reader.u8()
+        missile_direction_sector_mask = reader.u8()
         require(entity != 0, 34, "HUD_ALERT_STATE entity")
         require(presence & ~0x0001 == 0, 36, "HUD_ALERT_STATE presence")
         require(primary_fire <= 1, 34, "HUD_ALERT_STATE primary fire bool")
@@ -1552,6 +1553,7 @@ def decode_record_payload(
             "producer_sample_time_us": u64s(sample),
             "primary_fire_threat_active": bool(primary_fire),
             "missile_lock_state": lock_state,
+            "missile_direction_sector_mask": missile_direction_sector_mask,
         }
         if presence & 0x0001:
             warning_kind = reader.u8()

@@ -31,6 +31,10 @@ extern int Game_skill_level;
 namespace telemetry::detail {
 namespace {
 
+std::array<int, MaximumPhase2StaticWeapons>
+	CockpitIncomingWeaponClasses{};
+std::uint32_t CockpitIncomingWeaponClassCount = 0U;
+
 constexpr double MinimumBasisSquaredNorm = 1.0e-24;
 constexpr double MinimumRelativeDeterminant = 1.0e-8;
 constexpr double MinimumQuaternionSquaredNorm = 1.0e-24;
@@ -503,6 +507,22 @@ SourceReadResult extract_production_static_authorities(const object& ship_object
 			 (!std::isfinite(countermeasure.cargo_size) ||
 				 countermeasure.cargo_size <= 0.0F))) {
 			return {Phase2SourceReadStatus::UnsupportedEngineState};
+		}
+	}
+	if (!core_gate && &ship_object == Player_obj) {
+		std::array<int, MaximumPhase2StaticWeapons> incoming_weapon_indices{};
+		std::uint32_t incoming_weapon_count = 0U;
+		const auto incoming_result = collect_cockpit_incoming_weapon_classes(
+			incoming_weapon_indices, incoming_weapon_count);
+		if (incoming_result.status != Phase2SourceReadStatus::Valid)
+			return incoming_result;
+		for (std::uint32_t index = 0U;
+			 index < incoming_weapon_count; ++index) {
+			std::uint32_t ignored_capture_key = 0U;
+			if (!capture_weapon(
+					incoming_weapon_indices[index], ignored_capture_key)) {
+				return {Phase2SourceReadStatus::SourceLimitExceeded};
+			}
 		}
 	}
 
@@ -1099,6 +1119,67 @@ bool normalize_engine_weapon_bank_selection(
 	if (selection < -1 || selection >= bank_count) return false;
 	output = selection;
 	return true;
+}
+
+bool is_cockpit_incoming_missile(
+	const object& missile_object, const weapon& missile) noexcept
+{
+	return Player_obj != nullptr &&
+		(missile.homing_object == Player_obj ||
+		 (Player_ai != nullptr &&
+		  Player_ai->danger_weapon_objnum == missile.objnum &&
+		  (Player_ai->danger_weapon_signature <= 0 ||
+		  Player_ai->danger_weapon_signature == missile_object.signature)));
+}
+
+void reset_cockpit_incoming_weapon_classes() noexcept
+{
+	CockpitIncomingWeaponClasses.fill(-1);
+	CockpitIncomingWeaponClassCount = 0U;
+}
+
+SourceReadResult collect_cockpit_incoming_weapon_classes(
+	std::array<int, MaximumPhase2StaticWeapons>& engine_indices,
+	std::uint32_t& count) noexcept
+{
+	for (auto* item = GET_FIRST(&Missile_obj_list);
+		 item != END_OF_LIST(&Missile_obj_list);
+		 item = GET_NEXT(item)) {
+		if (item->objnum < 0 || item->objnum >= MAX_OBJECTS) continue;
+		const auto& missile_object = Objects[item->objnum];
+		if (missile_object.type != OBJ_WEAPON ||
+			missile_object.flags[Object::Object_Flags::Should_be_dead] ||
+			missile_object.signature <= 0 ||
+			missile_object.instance < 0 ||
+			missile_object.instance >= MAX_WEAPONS)
+			continue;
+		const auto& missile = Weapons[missile_object.instance];
+		if (missile.objnum != item->objnum ||
+			!is_cockpit_incoming_missile(missile_object, missile))
+			continue;
+		if (missile.weapon_info_index < 0 ||
+			missile.weapon_info_index >= static_cast<int>(Weapon_info.size()))
+			continue;
+		bool known = false;
+		for (std::uint32_t index = 0U;
+			 index < CockpitIncomingWeaponClassCount; ++index) {
+			if (CockpitIncomingWeaponClasses[index] ==
+					missile.weapon_info_index) {
+				known = true;
+				break;
+			}
+		}
+		if (known) continue;
+		if (CockpitIncomingWeaponClassCount >=
+				CockpitIncomingWeaponClasses.size()) {
+			return {Phase2SourceReadStatus::SourceLimitExceeded};
+		}
+		CockpitIncomingWeaponClasses[
+			CockpitIncomingWeaponClassCount++] = missile.weapon_info_index;
+	}
+	engine_indices = CockpitIncomingWeaponClasses;
+	count = CockpitIncomingWeaponClassCount;
+	return {Phase2SourceReadStatus::Valid};
 }
 
 bool has_raw_dock_leader_flag(const ship& source) noexcept

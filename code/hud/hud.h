@@ -166,6 +166,7 @@ constexpr int HudThreatLockFlag = 1 << 2;
 struct HudAlertSnapshot {
 	bool primary_fire_threat_active = false;
 	HudMissileLockState missile_lock_state = HudMissileLockState::None;
+	std::uint8_t missile_direction_sector_mask = 0;
 	bool warning_active = false;
 	HudTextWarningKind warning_kind = HudTextWarningKind::Other;
 	std::uint64_t warning_instance_id = 0;
@@ -175,6 +176,12 @@ struct HudAlertSnapshot {
 
 // Observe the accepted HUD alert state without exposing gauge animation data.
 bool hud_get_alert_snapshot(HudAlertSnapshot& output) noexcept;
+
+// Capture the directions of the missile triangles rendered on the main HUD.
+std::uint8_t hud_missile_direction_sector_for_angle(float angle) noexcept;
+void hud_begin_missile_direction_capture() noexcept;
+void hud_capture_missile_direction(float angle) noexcept;
+void hud_end_missile_direction_capture() noexcept;
 
 // do flashing text gauge
 void hud_start_text_flash(const char *txt,

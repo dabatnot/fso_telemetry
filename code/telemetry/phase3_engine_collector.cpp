@@ -1162,6 +1162,8 @@ Phase3EngineCollectStatus collect_hud_alerts(
 	auto& alert = output.hud_alert;
 	alert.producer_sample_time_us = sample_time;
 	alert.primary_fire_threat_active = snapshot.primary_fire_threat_active;
+	alert.missile_direction_sector_mask =
+		snapshot.missile_direction_sector_mask;
 	switch (snapshot.missile_lock_state) {
 	case HudMissileLockState::None:
 		alert.missile_lock_state = protocol::HudAlertMissileLockState::None;
@@ -1299,15 +1301,6 @@ Phase3EngineCollectStatus collect_threat(
 	}
 
 	std::size_t incoming_count = 0U;
-	const auto is_incoming = [&](const object& missile_object,
-								 const weapon& missile) noexcept {
-		return missile.homing_object == Player_obj ||
-			(Player_ai->danger_weapon_objnum ==
-				 missile.objnum &&
-			 (Player_ai->danger_weapon_signature <= 0 ||
-			  Player_ai->danger_weapon_signature ==
-				  missile_object.signature));
-	};
 	for (auto* item = GET_FIRST(&Missile_obj_list);
 		 item != END_OF_LIST(&Missile_obj_list);
 		 item = GET_NEXT(item)) {
@@ -1325,7 +1318,7 @@ Phase3EngineCollectStatus collect_threat(
 			continue;
 		}
 		auto& missile = Weapons[missile_object.instance];
-		if (!is_incoming(missile_object, missile)) continue;
+		if (!is_cockpit_incoming_missile(missile_object, missile)) continue;
 		if (++incoming_count > MaximumPhase3IncomingMissiles) {
 			return Phase3EngineCollectStatus::SourceLimitExceeded;
 		}
@@ -1340,7 +1333,7 @@ Phase3EngineCollectStatus collect_threat(
 			missile_object.instance < 0 ||
 			missile_object.instance >= MAX_WEAPONS) continue;
 		auto& missile = Weapons[missile_object.instance];
-		if (!is_incoming(missile_object, missile)) continue;
+		if (!is_cockpit_incoming_missile(missile_object, missile)) continue;
 		if (missile.weapon_info_index < 0 ||
 			missile.weapon_info_index >= weapon_info_size()) {
 			continue;
@@ -1704,11 +1697,7 @@ Phase3EngineCollectStatus discover_phase3_catalog_dependencies(
 			missile_object.instance < 0 || missile_object.instance >= MAX_WEAPONS)
 			continue;
 		const auto& missile = Weapons[missile_object.instance];
-		const auto incoming = missile.homing_object == Player_obj ||
-			(Player_ai->danger_weapon_objnum == missile.objnum &&
-				(Player_ai->danger_weapon_signature <= 0 ||
-				 Player_ai->danger_weapon_signature == missile_object.signature));
-		if (!incoming) continue;
+		if (!is_cockpit_incoming_missile(missile_object, missile)) continue;
 		if (missile.weapon_info_index < 0 ||
 			missile.weapon_info_index >= weapon_info_size())
 			continue;

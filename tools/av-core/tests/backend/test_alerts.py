@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import math
 import sys
 import unittest
 from pathlib import Path
@@ -32,7 +31,7 @@ def base_records() -> dict[str, list[dict[str, object]]]:
         "FLIGHT_STATE": [{"entity_id": "1"}],
         "HUD_ALERT_STATE": [{
             "entity_id": "1", "presence": 0, "primary_fire_threat_active": False,
-            "missile_lock_state": 0,
+            "missile_lock_state": 0, "missile_direction_sector_mask": 0,
         }],
         "THREAT_STATE": [{"entity_id": "1", "incoming_missiles": []}],
         "RADAR_STATE": [{"entity_id": "1", "sensor_state": 2}],
@@ -152,40 +151,35 @@ class WarningAndCautionTest(unittest.TestCase):
 
 
 class ThreatSectorTest(unittest.TestCase):
-    def evaluate(self, vectors: list[tuple[float, float, float]], lock: int = 0):
+    def evaluate(self, mask: int, missile_count: int = 1, lock: int = 0):
         records = base_records()
         records["HUD_ALERT_STATE"][0]["missile_lock_state"] = lock
-        missiles = [{"entity_id": str(index + 10)} for index in range(len(vectors))]
+        records["HUD_ALERT_STATE"][0]["missile_direction_sector_mask"] = mask
+        missiles = [{"entity_id": str(index + 10)} for index in range(missile_count)]
         records["THREAT_STATE"][0]["incoming_missiles"] = missiles
         values = {
-            f"entities.1.missiles.{index + 10}.relative_position_local": {
-                "available": True, "reason": None, "value": list(vector)
+            "entities.1.missiles.10.relative_position_local": {
+                "available": True, "reason": None, "value": [999, 0, -999]
             }
-            for index, vector in enumerate(vectors)
         }
         return AlertEngine().evaluate(
             player_entity_id="1", records=records, derived=values, config=AlertsConfig()
         ).threat
 
-    def test_all_cardinal_and_diagonal_sectors(self) -> None:
-        vectors = [
-            (0, 0, 1), (1, 0, 1), (1, 0, 0), (1, 0, -1),
-            (0, 0, -1), (-1, 0, -1), (-1, 0, 0), (-1, 0, 1),
-        ]
-        self.assertEqual(0xFF, self.evaluate(vectors).sector_mask)
+    def test_uses_the_hud_sector_mask_verbatim(self) -> None:
+        self.assertEqual(0xFF, self.evaluate(0xFF, missile_count=8).sector_mask)
+        self.assertEqual(0x85, self.evaluate(0x85, missile_count=3).sector_mask)
 
-    def test_multiple_missiles_share_sectors_and_invalid_vectors_are_ignored(self) -> None:
-        result = self.evaluate([(0, 0, 2), (0, 1, 4), (0, 0, 0), (math.nan, 0, 1)])
+    def test_count_stays_independent_and_derived_geometry_is_ignored(self) -> None:
+        result = self.evaluate(0x01, missile_count=4)
         self.assertEqual(0x01, result.sector_mask)
         self.assertEqual(4, result.incoming_missile_count)
 
-    def test_boundaries_are_half_open_and_lock_states_are_closed(self) -> None:
-        angle = math.pi / 8
-        right, forward = math.sin(angle), math.cos(angle)
-        self.assertEqual(0x02, self.evaluate([(right, 0, forward)], lock=1).sector_mask)
-        self.assertEqual("ATTEMPT", self.evaluate([(1, 0, 0)], lock=1).lock_state)
-        self.assertEqual("ACQUIRED", self.evaluate([(1, 0, 0)], lock=2).lock_state)
-        self.assertEqual("NONE", self.evaluate([(1, 0, 0)], lock=99).lock_state)
+    def test_invalid_masks_clear_and_lock_states_are_closed(self) -> None:
+        self.assertEqual(0, self.evaluate(256, lock=1).sector_mask)
+        self.assertEqual("ATTEMPT", self.evaluate(1, lock=1).lock_state)
+        self.assertEqual("ACQUIRED", self.evaluate(1, lock=2).lock_state)
+        self.assertEqual("NONE", self.evaluate(1, lock=99).lock_state)
 
 
 if __name__ == "__main__":

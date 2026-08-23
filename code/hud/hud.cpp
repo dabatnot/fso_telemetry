@@ -109,6 +109,9 @@ int Hud_text_flash_timer = 0;
 int Hud_text_flash_interval = 0;
 static HudTextWarningKind Hud_text_warning_kind = HudTextWarningKind::Other;
 static std::uint64_t Hud_text_warning_instance_id = 0;
+static std::uint8_t Hud_missile_direction_sector_mask = 0;
+static std::uint8_t Hud_pending_missile_direction_sector_mask = 0;
+static bool Hud_capturing_missile_directions = false;
 
 void hud_init_text_flash_gauge();
 
@@ -1509,6 +1512,9 @@ void HudGauge::resetCockpitTarget()
  */
 void HUD_init()
 {
+	Hud_missile_direction_sector_mask = 0;
+	Hud_pending_missile_direction_sector_mask = 0;
+	Hud_capturing_missile_directions = false;
 	HUD_init_colors();
 	hud_init_msg_window();
 	hud_init_targeting();
@@ -1593,6 +1599,9 @@ void hud_scripting_close(lua_State*) {
  */
 void hud_level_close()
 {
+	Hud_missile_direction_sector_mask = 0;
+	Hud_pending_missile_direction_sector_mask = 0;
+	Hud_capturing_missile_directions = false;
 	size_t j, num_gauges;
 
 	for ( auto it = Ship_info.cbegin(); it != Ship_info.cend(); ++it ) {
@@ -2079,7 +2088,9 @@ void hud_render_all(float frametime)
 {
 	int i;
 
+	hud_begin_missile_direction_capture();
 	hud_render_gauges(-1, frametime);
+	hud_end_missile_direction_capture();
 
 	// start rendering cockpit dependent gauges if possible
 	for ( i = 0; i < (int)Player_displays.size(); ++i ) {
@@ -2811,6 +2822,8 @@ bool hud_get_alert_snapshot(HudAlertSnapshot& output) noexcept
 
 	output.primary_fire_threat_active =
 		(Player->threat_flags & HudThreatDumbfireFlag) != 0;
+	output.missile_direction_sector_mask =
+		Hud_missile_direction_sector_mask;
 	if ((Player->threat_flags & HudThreatLockFlag) != 0) {
 		output.missile_lock_state = HudMissileLockState::Acquired;
 	} else if ((Player->threat_flags & HudThreatAttemptLockFlag) != 0) {
@@ -2833,6 +2846,42 @@ bool hud_get_alert_snapshot(HudAlertSnapshot& output) noexcept
 		output.warning_text.size() - 1U);
 	output.warning_text.back() = '\0';
 	return true;
+}
+
+std::uint8_t hud_missile_direction_sector_for_angle(float angle) noexcept
+{
+	constexpr float SectorWidth = PI / 4.0f;
+	constexpr float HalfSectorWidth = SectorWidth / 2.0f;
+	float clockwise_from_up = fmodf((PI / 2.0f) - angle, PI2);
+	if (clockwise_from_up < 0.0f) {
+		clockwise_from_up += PI2;
+	}
+	return static_cast<std::uint8_t>(
+		static_cast<unsigned int>(
+			floorf((clockwise_from_up + HalfSectorWidth) / SectorWidth)) %
+		8U);
+}
+
+void hud_begin_missile_direction_capture() noexcept
+{
+	Hud_pending_missile_direction_sector_mask = 0;
+	Hud_capturing_missile_directions = true;
+}
+
+void hud_capture_missile_direction(float angle) noexcept
+{
+	if (!Hud_capturing_missile_directions) {
+		return;
+	}
+	Hud_pending_missile_direction_sector_mask |= static_cast<std::uint8_t>(
+		1U << hud_missile_direction_sector_for_angle(angle));
+}
+
+void hud_end_missile_direction_capture() noexcept
+{
+	Hud_missile_direction_sector_mask =
+		Hud_pending_missile_direction_sector_mask;
+	Hud_capturing_missile_directions = false;
 }
 
 HudGaugeTextWarnings::HudGaugeTextWarnings():

@@ -77,6 +77,7 @@ std::vector<std::uint8_t> hud_alert(bool primary = true,
 	u64(payload, 1'000'000U);
 	u8(payload, primary ? 1U : 0U);
 	u8(payload, static_cast<std::uint8_t>(lock));
+	u8(payload, 0x85U);
 	if (warning) {
 		u8(payload, static_cast<std::uint8_t>(HudAlertWarningKind::Launch));
 		u64(payload, 9U);
@@ -218,20 +219,20 @@ TEST(TelemetryProtocolBusinessRecords29, RejectsNonCanonicalEnumsAndIncompleteWa
 		validate_hud_alert(unknown_lock));
 
 	auto unknown_warning = hud_alert();
-	unknown_warning[26U] = 8U;
+	unknown_warning[27U] = 8U;
 	EXPECT_EQ(ValidationError::UnknownEnum,
 		validate_hud_alert(unknown_warning));
 
 	auto zero_instance = hud_alert();
-	for (std::size_t index = 27U; index < 35U; ++index)
+	for (std::size_t index = 28U; index < 36U; ++index)
 		zero_instance[index] = 0U;
 	EXPECT_EQ(ValidationError::OutOfRange,
 		validate_hud_alert(zero_instance));
 
 	auto empty_text = hud_alert();
-	empty_text.resize(45U);
-	empty_text[43U] = 0U;
+	empty_text.resize(46U);
 	empty_text[44U] = 0U;
+	empty_text[45U] = 0U;
 	EXPECT_EQ(ValidationError::OutOfRange,
 		validate_hud_alert(empty_text));
 

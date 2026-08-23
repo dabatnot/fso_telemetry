@@ -226,8 +226,10 @@ json_t* canonical_v11_record(CanonicalReader& region) {
 		put(fields,"support_flags",ji(support_flags));
 	} else if (type == 29U) {
 		name="HUD_ALERT_STATE"; const auto presence=entity_prefix(); const auto primary=reader.u8();
-		const auto lock=reader.u8(); put(fields,"primary_fire_threat_active",json_boolean(primary));
+		const auto lock=reader.u8(); const auto missile_direction_mask=reader.u8();
+		put(fields,"primary_fire_threat_active",json_boolean(primary));
 		put(fields,"missile_lock_state",ji(lock));
+		put(fields,"missile_direction_sector_mask",ji(missile_direction_mask));
 		if (presence&1U) {
 			const auto warning_kind=reader.u8(); const auto warning_instance=reader.u64();
 			const auto warning_remaining=reader.u64(); const auto warning_text=reader.utf8();
