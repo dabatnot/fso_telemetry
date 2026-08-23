@@ -36,16 +36,7 @@ enum class Lamp : uint8_t {
 };
 
 constexpr size_t LAMP_COUNT = static_cast<size_t>(Lamp::Count);
-static_assert(LAMP_COUNT == 23);
-
-struct Rgb {
-    constexpr Rgb(uint8_t red = 0, uint8_t green = 0, uint8_t blue = 0) : r(red), g(green), b(blue) {}
-
-    uint8_t r;
-    uint8_t g;
-    uint8_t b;
-
-};
+static_assert(LAMP_COUNT == WARN_CTRL_LAMP_COUNT, "WARN CTRL lamp map must match the CAN contract");
 
 struct RenderedPanel {
     std::array<Rgb, LAMP_COUNT> pixels{};
@@ -82,7 +73,7 @@ class WarnCtrlLogic {
     }
 
     void start_web_test(LampTestTarget target, uint8_t lamp, uint16_t duration_ms, uint32_t now_ms) {
-        if (target == LampTestTarget::Lamp && lamp >= LAMP_COUNT) {
+        if (target == LampTestTarget::Lamp && lamp >= GLOBAL_LAMP_COUNT) {
             return;
         }
         web_test_target_ = target;
@@ -104,9 +95,9 @@ class WarnCtrlLogic {
         if (deadline_active(now_ms, web_test_until_ms_)) {
             result.test_target = web_test_target_;
             result.test_lamp = web_test_lamp_;
-            if (web_test_target_ == LampTestTarget::Lamp) {
+            if (web_test_target_ == LampTestTarget::Lamp && web_test_lamp_ < LAMP_COUNT) {
                 set_test_pixel(result.pixels, web_test_lamp_);
-            } else {
+            } else if (web_test_target_ == LampTestTarget::All || web_test_target_ == LampTestTarget::WarnCtrl) {
                 fill_test(result.pixels);
             }
             return result;

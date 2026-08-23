@@ -12,9 +12,9 @@ from unittest.mock import patch
 BACKEND_ROOT = Path(__file__).resolve().parents[2] / "backend"
 sys.path.insert(0, str(BACKEND_ROOT))
 
-from av_core.can_protocol import LIGHTING_COMMAND_ID  # noqa: E402
+from av_core.can_protocol import LIGHTING_COMMAND_ID, THREAT_STATE_ID  # noqa: E402
 from av_core.can_service import CanService  # noqa: E402
-from av_core.models import AvCoreConfig, LampTestRequest  # noqa: E402
+from av_core.models import AvCoreConfig, CockpitStatus, LampTestRequest  # noqa: E402
 
 
 @dataclass
@@ -60,10 +60,22 @@ class CanServiceTest(unittest.TestCase):
             while service.modules()[0].state != "ONLINE" and time.monotonic() < deadline:
                 time.sleep(0.01)
             self.assertEqual("ONLINE", service.modules()[0].state)
-            self.assertTrue(service.start_lamp_test(LampTestRequest(target="LAMP", lamp="FIRE")))
+            self.assertIsNone(service.start_lamp_test(LampTestRequest(target="LAMP", lamp="FIRE")))
             test_frames = [message for message in bus.sent if message.arbitration_id == LIGHTING_COMMAND_ID and message.data[1] == 4]
             self.assertEqual(1, len(test_frames))
             self.assertEqual(2000, int.from_bytes(test_frames[0].data[4:6], "little"))
+            cockpit = CockpitStatus(available=True)
+            cockpit.threat.available = True
+            cockpit.threat.sector_mask = 0x81
+            cockpit.threat.lock_state = "ATTEMPT"
+            service.update_cockpit(cockpit, "LIVE")
+            while not any(message.arbitration_id == THREAT_STATE_ID and message.data[1:3] == bytes((0x81, 1)) for message in bus.sent) and time.monotonic() < deadline:
+                time.sleep(0.01)
+            self.assertTrue(any(message.arbitration_id == THREAT_STATE_ID and message.data[1:3] == bytes((0x81, 1)) for message in bus.sent))
+            bus.received.append(FakeMessage(0x701, bytes((1, 0, 0, 1, 0, 4, 5, 6))))
+            while service.modules()[1].state != "ONLINE" and time.monotonic() < deadline:
+                time.sleep(0.01)
+            self.assertIsNone(service.start_lamp_test(LampTestRequest(target="THREAT_PROC")))
         service.stop()
         self.assertTrue(bus.closed)
         self.assertGreater(len(changes), 0)

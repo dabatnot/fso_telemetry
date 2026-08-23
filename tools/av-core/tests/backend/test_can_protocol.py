@@ -14,10 +14,12 @@ from av_core.can_protocol import (  # noqa: E402
     decode_caution_state,
     decode_lighting_state,
     decode_node_status,
+    decode_threat_state,
     decode_warning_state,
     encode_caution_state,
     encode_lamp_test,
     encode_lighting_configuration,
+    encode_threat_state,
     encode_warning_state,
 )
 from av_core.models import AvCoreConfig, CockpitStatus, LampTestRequest  # noqa: E402
@@ -51,6 +53,20 @@ class CanProtocolTest(unittest.TestCase):
         self.assertEqual(LampTestTarget.LAMP, payload[2])
         self.assertEqual(LAMP_IDS["MISSILE"], payload[3])
         self.assertEqual(2000, int.from_bytes(payload[4:6], "little"))
+        threat_payload = encode_lamp_test(LampTestRequest(target="LAMP", lamp="THREAT_LOCK"))
+        self.assertEqual(31, threat_payload[3])
+
+    def test_threat_state_is_canonical_and_clears_when_not_live(self) -> None:
+        cockpit = CockpitStatus(available=True)
+        cockpit.threat.available = True
+        cockpit.threat.sector_mask = 0xA5
+        cockpit.threat.lock_state = "ACQUIRED"
+        self.assertEqual((0xA5, 2), decode_threat_state(encode_threat_state(cockpit, live=True)))
+        self.assertEqual((0, 0), decode_threat_state(encode_threat_state(cockpit, live=False)))
+        with self.assertRaises(ValueError):
+            decode_threat_state(bytes((1, 0, 3, 0, 0, 0, 0, 0)))
+        with self.assertRaises(ValueError):
+            decode_threat_state(bytes((1, 0, 0, 1, 0, 0, 0, 0)))
 
     def test_node_and_lighting_state_decoders_reject_invalid_frames(self) -> None:
         node = decode_node_status(0x700, bytes((1, 0, 0, 4, 0, 0x12, 0x34, 0x56)))

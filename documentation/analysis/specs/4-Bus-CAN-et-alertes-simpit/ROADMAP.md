@@ -144,6 +144,11 @@ Ce lot livre :
 Le résultat visible est le caution panel et l'indicateur de menace fonctionnant
 simultanément sur le même bus.
 
+L'implémentation logicielle utilise un second ESP32 DevKit V1, neuf WS2812 et
+le même couple MCP2515/TJA1050 que `WARN CTRL`. La luminosité et les tests sont
+reçus de `WARN CTRL`; la validation matérielle reste différée jusqu'au montage
+du prototype.
+
 La vérification manuelle couvre plusieurs directions de missile, plusieurs
 missiles dans un secteur, les changements rapides de secteur, le passage de la
 tentative de lock au lock acquis et la disparition des indications périmées.

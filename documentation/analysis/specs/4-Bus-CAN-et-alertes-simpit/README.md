@@ -379,8 +379,10 @@ Le vocabulaire initial est limité à :
 
 Les identifiants et l'encodage sont fixés dans
 `tools/av-core/CAN_PROTOCOL.md`. `WARN CTRL` est l'unique producteur de
-`LIGHTING_STATE`; AV CORE lui adresse `LIGHTING_COMMAND`, ce qui évite deux
-producteurs sous un même identifiant. Ces trames ne modifient pas FSTL.
+`LIGHTING_STATE`; AV CORE publie `LIGHTING_COMMAND` pour les deux calculateurs,
+puis `THREAT PROC` reçoit la luminosité et les tests effectifs de `WARN CTRL`.
+Il n'existe ainsi qu'un producteur sous chaque identifiant. Ces trames ne
+modifient pas FSTL.
 
 ## Éclairage et alimentation
 
@@ -410,6 +412,9 @@ Le prototype utilise un ESP32 DevKit V1, un pixel WS2812 par légende et le
 pinout documenté dans `tools/av-core/firmware/README.md`. Le potentiomètre règle
 entre zéro et la limite Web ; le poussoir momentané a priorité sur les impulsions
 Web de deux secondes, elles-mêmes prioritaires sur l'état cockpit.
+`THREAT PROC` utilise un second ESP32 DevKit V1 et neuf pixels, sans commande
+physique locale. Ses pixels suivent les huit secteurs dans le sens horaire à
+partir de l'avant, puis `LOCK`.
 
 ## Périmètre et exclusions
 

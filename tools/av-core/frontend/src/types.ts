@@ -5,6 +5,12 @@ export type WarnCtrlLamp =
   | "MASTER_CAUTION" | "ENG" | "SENS" | "SHIELD" | "HULL" | "WEP_EN"
   | "AB_FUEL" | "AMMO" | "CM_LOW" | "SUBSYS" | "AV_CORE" | "FLT_DATA"
   | "AV_BUS" | "SENS_PROC" | "THREAT_PROC" | "INST_PROC" | "WARN_CTRL";
+export type ThreatProcLamp =
+  | "THREAT_FORWARD" | "THREAT_FORWARD_RIGHT" | "THREAT_RIGHT"
+  | "THREAT_AFT_RIGHT" | "THREAT_AFT" | "THREAT_AFT_LEFT" | "THREAT_LEFT"
+  | "THREAT_FORWARD_LEFT" | "THREAT_LOCK";
+export type Lamp = WarnCtrlLamp | ThreatProcLamp;
+export type LampTestTarget = "ALL" | "WARN_CTRL" | "THREAT_PROC" | "LAMP";
 export type ThresholdKey =
   | "engine"
   | "shield"

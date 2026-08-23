@@ -2,9 +2,9 @@
 
 `AV CORE` est le service local du Raspberry Pi du simpit. Il relie l'application
 Web au profil cockpit FSTL de FS2Open, calcule les warnings et cautions, puis
-publie les états du panneau sur SocketCAN. Le firmware `WARN CTRL` pilote un
-prototype de 23 voyants WS2812 et publie son heartbeat ainsi que l'éclairage
-effectif.
+publie les états des panneaux sur SocketCAN. Le firmware `WARN CTRL` pilote un
+prototype de 23 voyants WS2812 et publie l'éclairage effectif ; `THREAT PROC`
+pilote huit secteurs de missile et le voyant central `LOCK`.
 
 Le client accepte exclusivement une session `CockpitSensors` avec la couverture
 `0x07CB`. Toute autre couverture est rejetée avant publication d'un état `LIVE`.
@@ -51,6 +51,7 @@ Le firmware se vérifie et se construit séparément avec PlatformIO :
 Set-Location tools\av-core\firmware
 pio test -e native
 pio run -e warn_ctrl
+pio run -e threat_proc
 ```
 
 ## Installation sur Raspberry Pi OS Bookworm 64 bits
@@ -127,13 +128,14 @@ un client afin de ne pas préallouer quatre slots sur toutes les installations.
 6. Avec `WARN CTRL` raccordé, vérifier son passage à `ONLINE`, les 23 voyants,
    le potentiomètre `BRT`, le poussoir `LAMP TEST` et les impulsions Web de deux
    secondes.
-7. Débrancher le bus : les états distants doivent s'éteindre et `AV BUS`
+7. Avec `THREAT PROC` raccordé, vérifier ses huit directions, `LOCK`, la
+   luminosité partagée, les tests Web et son heartbeat `0x701`.
+8. Débrancher le bus : les états distants doivent s'éteindre et `AV BUS`
    clignoter. Le panneau doit reprendre l'état courant après reconnexion.
 
 ## Limites actuelles
 
 - la configuration automatique de `can0` reste au lot 6 ;
-- `THREAT PROC` reste au lot 5 ;
 - la validation électrique et matérielle nécessite le prototype raccordé ;
 - aucun profil de luminosité nocturne ;
 - aucune authentification ou exposition à Internet.

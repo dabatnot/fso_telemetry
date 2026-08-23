@@ -23,6 +23,7 @@ class FakeCanService:
         self.config = config
         self.on_change = on_change
         self.online = False
+        self.threat_online = False
         self.requests = []
 
     def start(self): pass
@@ -30,13 +31,16 @@ class FakeCanService:
     def reconfigure(self, config): self.config = config
     def update_cockpit(self, cockpit, telemetry_state): pass
     def start_lamp_test(self, request):
-        if self.online:
-            self.requests.append(request)
-        return self.online
+        if not self.online:
+            return "WARN_CTRL_UNAVAILABLE"
+        if (request.target == "THREAT_PROC" or (request.lamp or "").startswith("THREAT_")) and not self.threat_online:
+            return "THREAT_PROC_UNAVAILABLE"
+        self.requests.append(request)
+        return None
     def status(self): return CanStatus(state="OK" if self.online else "UNAVAILABLE")
     def modules(self):
         roles = ("WARN_CTRL", "THREAT_PROC", "SENS_PROC", "INST_PROC")
-        return [ModuleStatus(role=role, installed=True, state="ONLINE" if self.online and role == "WARN_CTRL" else "UNAVAILABLE", protocol_id=0x700 + index) for index, role in enumerate(roles)]
+        return [ModuleStatus(role=role, installed=True, state="ONLINE" if (self.online and role == "WARN_CTRL") or (self.threat_online and role == "THREAT_PROC") else "UNAVAILABLE", protocol_id=0x700 + index) for index, role in enumerate(roles)]
 
 
 class AvCoreApiTest(unittest.TestCase):
@@ -112,6 +116,18 @@ class AvCoreApiTest(unittest.TestCase):
         self.assertEqual(["ALL", "WARN_CTRL", "LAMP"], [request.target for request in self.can.requests])
         self.assertEqual(422, self.client.post("/api/lamp-test", json={"target": "LAMP"}).status_code)
         self.assertEqual(422, self.client.post("/api/lamp-test", json={"target": "ALL", "lamp": "FIRE"}).status_code)
+
+    def test_threat_lamp_tests_require_threat_proc(self) -> None:
+        self.can.online = True
+        unavailable = self.client.post("/api/lamp-test", json={"target": "THREAT_PROC"})
+        self.assertEqual(503, unavailable.status_code)
+        self.assertEqual("THREAT_PROC_UNAVAILABLE", unavailable.json()["detail"])
+        self.can.threat_online = True
+        for payload in (
+            {"target": "THREAT_PROC"},
+            {"target": "LAMP", "lamp": "THREAT_LOCK"},
+        ):
+            self.assertEqual(200, self.client.post("/api/lamp-test", json=payload).status_code)
 
     def test_static_files_are_served_without_directory_escape(self) -> None:
         index = self.client.get("/")

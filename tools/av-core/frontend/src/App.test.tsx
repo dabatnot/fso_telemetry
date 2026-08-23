@@ -118,6 +118,31 @@ describe("AV CORE application", () => {
     expect(screen.getByText("Test actif pendant deux secondes.")).toBeInTheDocument();
   });
 
+  it("enables THREAT PROC and individual threat lamp tests only when both nodes are online", async () => {
+    const online = structuredClone(status);
+    online.can.state = "OK";
+    online.modules[0].state = "ONLINE";
+    online.modules[1].state = "ONLINE";
+    vi.mocked(fetch).mockImplementation(async (path: string | URL | Request, init?: RequestInit) => {
+      if (path === "/api/config") return jsonResponse(config);
+      if (path === "/api/lamp-test" && init?.method === "POST") return jsonResponse(null);
+      return jsonResponse(online);
+    });
+    render(<App />);
+    await screen.findByRole("heading", { name: "Modules" });
+    fireEvent.click(screen.getByRole("button", { name: /Éclairage/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "Tester THREAT PROC" }));
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith("/api/lamp-test", expect.objectContaining({ method: "POST" })));
+    let calls = vi.mocked(fetch).mock.calls.filter((entry) => entry[0] === "/api/lamp-test");
+    expect(JSON.parse(calls.at(-1)![1]!.body as string)).toEqual({ target: "THREAT_PROC" });
+
+    fireEvent.change(screen.getByRole("combobox", { name: "Voyant sélectionné" }), { target: { value: "THREAT_LOCK" } });
+    fireEvent.click(screen.getByRole("button", { name: "Tester le voyant" }));
+    await waitFor(() => expect(vi.mocked(fetch).mock.calls.filter((entry) => entry[0] === "/api/lamp-test")).toHaveLength(2));
+    calls = vi.mocked(fetch).mock.calls.filter((entry) => entry[0] === "/api/lamp-test");
+    expect(JSON.parse(calls.at(-1)![1]!.body as string)).toEqual({ target: "LAMP", lamp: "THREAT_LOCK" });
+  });
+
   it("saves the complete configuration after changing an installed role", async () => {
     render(<App />);
     const checkbox = (await screen.findAllByRole("checkbox", { name: /Installé dans le cockpit/i }))[0];

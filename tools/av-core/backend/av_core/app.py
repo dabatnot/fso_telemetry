@@ -85,8 +85,9 @@ def create_app(runtime: AvCoreRuntime, frontend_dir: Path) -> FastAPI:
 
     @app.post("/api/lamp-test")
     async def lamp_test(request: LampTestRequest) -> None:
-        if not runtime.start_lamp_test(request):
-            raise HTTPException(status_code=503, detail="WARN_CTRL_UNAVAILABLE")
+        unavailable = runtime.start_lamp_test(request)
+        if unavailable is not None:
+            raise HTTPException(status_code=503, detail=unavailable)
 
     root = frontend_dir.resolve()
     assets = root / "assets"

@@ -10,6 +10,8 @@ from .can_protocol import (
     LIGHTING_COMMAND_ID,
     LIGHTING_STATE_ID,
     NODE_STATUS_IDS,
+    THREAT_LAMP_NAMES,
+    THREAT_STATE_ID,
     WARNING_STATE_ID,
     NodeStatus,
     decode_lighting_state,
@@ -17,6 +19,7 @@ from .can_protocol import (
     encode_caution_state,
     encode_lamp_test,
     encode_lighting_configuration,
+    encode_threat_state,
     encode_warning_state,
 )
 from .models import AvCoreConfig, CanStatus, CockpitStatus, LampTestRequest, ModuleStatus
@@ -80,14 +83,22 @@ class CanService:
             self._cockpit = cockpit.model_copy(deep=True)
             self._telemetry_state = telemetry_state
 
-    def start_lamp_test(self, request: LampTestRequest) -> bool:
+    def start_lamp_test(self, request: LampTestRequest) -> str | None:
         with self._lock:
             bus = self._bus
             warn = self._node_state_locked("WARN_CTRL", time.monotonic())
             available = self._state == "OK" and bus is not None and warn.state == "ONLINE"
         if not available:
-            return False
-        return self._send(LIGHTING_COMMAND_ID, encode_lamp_test(request))
+            return "WARN_CTRL_UNAVAILABLE"
+        needs_threat = request.target == "THREAT_PROC" or (
+            request.target == "LAMP" and request.lamp in THREAT_LAMP_NAMES
+        )
+        if needs_threat:
+            with self._lock:
+                threat = self._node_state_locked("THREAT_PROC", time.monotonic())
+            if threat.state != "ONLINE":
+                return "THREAT_PROC_UNAVAILABLE"
+        return None if self._send(LIGHTING_COMMAND_ID, encode_lamp_test(request)) else "WARN_CTRL_UNAVAILABLE"
 
     def status(self) -> CanStatus:
         with self._lock:
@@ -175,6 +186,7 @@ class CanService:
             diagnostics = self._diagnostics_locked(time.monotonic())
         self._send(WARNING_STATE_ID, encode_warning_state(cockpit))
         self._send(CAUTION_STATE_ID, encode_caution_state(cockpit, diagnostics))
+        self._send(THREAT_STATE_ID, encode_threat_state(cockpit, live=self._telemetry_state == "LIVE"))
 
     def _diagnostics_locked(self, now: float) -> dict[str, int]:
         result = {name: 0 for name in ("AV_CORE", "FLT_DATA", "AV_BUS", "SENS_PROC", "THREAT_PROC", "INST_PROC", "WARN_CTRL")}

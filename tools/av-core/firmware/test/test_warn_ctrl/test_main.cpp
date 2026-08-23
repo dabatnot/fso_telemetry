@@ -55,11 +55,24 @@ void test_potentiometer_is_capped_by_web_limit() {
     TEST_ASSERT_EQUAL_UINT8(40, panel.render(0, 4095, true).brightness_percent);
 }
 
+void test_threat_tests_are_relayed_without_lighting_warn_ctrl() {
+    WarnCtrlLogic panel;
+    panel.receive_warning(0, 0);
+    panel.receive_caution(0, 0, 0);
+    panel.start_web_test(LampTestTarget::ThreatProc, 0xFF, 2000, 100);
+    const auto rendered = panel.render(101, 4095, false);
+    TEST_ASSERT_EQUAL_UINT8(static_cast<uint8_t>(LampTestTarget::ThreatProc), static_cast<uint8_t>(rendered.test_target));
+    for (const auto& pixel : rendered.pixels) {
+        TEST_ASSERT_EQUAL_UINT8(0, pixel.r);
+    }
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_mapping_and_active_states);
     RUN_TEST(test_web_and_physical_test_priority_and_expiration);
     RUN_TEST(test_stale_remote_state_clears_panel_and_flashes_av_bus);
     RUN_TEST(test_potentiometer_is_capped_by_web_limit);
+    RUN_TEST(test_threat_tests_are_relayed_without_lighting_warn_ctrl);
     return UNITY_END();
 }

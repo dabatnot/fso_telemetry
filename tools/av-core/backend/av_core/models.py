@@ -119,12 +119,15 @@ class AvCoreConfig(PublicModel):
 
 
 class LampTestRequest(PublicModel):
-    target: Literal["ALL", "WARN_CTRL", "LAMP"]
+    target: Literal["ALL", "WARN_CTRL", "THREAT_PROC", "LAMP"]
     lamp: Literal[
         "MASTER_WARNING", "FIRE", "MISSILE", "BLAST", "COLLISION", "EMP",
         "MASTER_CAUTION", "ENG", "SENS", "SHIELD", "HULL", "WEP_EN",
         "AB_FUEL", "AMMO", "CM_LOW", "SUBSYS", "AV_CORE", "FLT_DATA",
         "AV_BUS", "SENS_PROC", "THREAT_PROC", "INST_PROC", "WARN_CTRL",
+        "THREAT_FORWARD", "THREAT_FORWARD_RIGHT", "THREAT_RIGHT",
+        "THREAT_AFT_RIGHT", "THREAT_AFT", "THREAT_AFT_LEFT", "THREAT_LEFT",
+        "THREAT_FORWARD_LEFT", "THREAT_LOCK",
     ] | None = None
 
     @model_validator(mode="after")

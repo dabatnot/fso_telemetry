@@ -90,7 +90,7 @@ void receive_frame(const can_frame& frame, uint32_t now) {
             panel.set_caution_color({frame.data[2], frame.data[3], frame.data[4]});
         } else if (opcode == avcore::LightingOpcode::Limits) {
             panel.set_limits(frame.data[2], read_u16(&frame.data[3]), read_u16(&frame.data[5]));
-        } else if (opcode == avcore::LightingOpcode::StartTest && frame.data[2] <= 2) {
+        } else if (opcode == avcore::LightingOpcode::StartTest && frame.data[2] <= 3) {
             panel.start_web_test(
                 static_cast<avcore::LampTestTarget>(frame.data[2]),
                 frame.data[3],

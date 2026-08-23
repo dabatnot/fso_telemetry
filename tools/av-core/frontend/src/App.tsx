@@ -5,6 +5,8 @@ import type {
   AvCoreConfig,
   AvCoreStatus,
   CautionState,
+  Lamp,
+  LampTestTarget,
   ModuleKey,
   ModuleRole,
   RgbColor,
@@ -46,6 +48,13 @@ const WARN_CTRL_LAMPS: WarnCtrlLamp[] = [
   "AMMO", "CM_LOW", "SUBSYS", "AV_CORE", "FLT_DATA", "AV_BUS", "SENS_PROC",
   "THREAT_PROC", "INST_PROC", "WARN_CTRL"
 ];
+
+const THREAT_PROC_LAMPS: Lamp[] = [
+  "THREAT_FORWARD", "THREAT_FORWARD_RIGHT", "THREAT_RIGHT", "THREAT_AFT_RIGHT",
+  "THREAT_AFT", "THREAT_AFT_LEFT", "THREAT_LEFT", "THREAT_FORWARD_LEFT", "THREAT_LOCK"
+];
+
+const ALL_LAMPS: Lamp[] = [...WARN_CTRL_LAMPS, ...THREAT_PROC_LAMPS];
 
 function currentPage(): Page {
   const candidate = window.location.hash.replace(/^#\/?/, "") as Page;
@@ -195,11 +204,14 @@ function AlertsPage({ draft, status, setDraft, onSave, saving, errors, t }: Page
 }
 
 function LightingPage({ draft, status, setDraft, onSave, saving, errors, t }: PageProps) {
-  const [selectedLamp, setSelectedLamp] = useState<WarnCtrlLamp>("MASTER_WARNING");
+  const [selectedLamp, setSelectedLamp] = useState<Lamp>("MASTER_WARNING");
   const [testState, setTestState] = useState<"IDLE" | "SENDING" | "ACTIVE" | "ERROR">("IDLE");
   const warnCtrl = status?.modules.find((module) => module.role === "WARN_CTRL");
-  const testAvailable = status?.can.state === "OK" && warnCtrl?.state === "ONLINE";
-  const runTest = async (target: "ALL" | "WARN_CTRL" | "LAMP", lamp?: WarnCtrlLamp) => {
+  const threatProc = status?.modules.find((module) => module.role === "THREAT_PROC");
+  const warnAvailable = status?.can.state === "OK" && warnCtrl?.state === "ONLINE";
+  const threatAvailable = warnAvailable && threatProc?.state === "ONLINE";
+  const selectedAvailable = THREAT_PROC_LAMPS.includes(selectedLamp) ? threatAvailable : warnAvailable;
+  const runTest = async (target: LampTestTarget, lamp?: Lamp) => {
     setTestState("SENDING");
     try {
       await startLampTest(target, lamp);
@@ -224,10 +236,10 @@ function LightingPage({ draft, status, setDraft, onSave, saving, errors, t }: Pa
           <label className="field"><span>{t("fast")}</span><div><input aria-label={t("fast")} type="number" min="0.25" max="10" step="0.25" value={draft.lighting.fastFlashHz} onChange={(event) => setDraft((previous) => ({ ...previous, lighting: { ...previous.lighting, fastFlashHz: numberValue(event) } }))} /><em>Hz</em></div></label>
         </article>
         <article className="panel test-panel">
-          <div className="panel-heading"><div><span>{t("diagnostic")}</span><h2>{t("lampTest")}</h2></div><span className={testAvailable ? "version" : "unavailable"}>{testAvailable ? t("online") : t("canUnavailable")}</span></div>
-          <div className="test-actions"><button disabled={!testAvailable || testState === "SENDING"} onClick={() => void runTest("ALL")}>{t("testAll")}</button><button disabled={!testAvailable || testState === "SENDING"} onClick={() => void runTest("WARN_CTRL")}>{t("testWarn")}</button><button disabled>{t("testThreat")}</button></div>
-          <label className="field"><span>{t("selectedLamp")}</span><select aria-label={t("selectedLamp")} value={selectedLamp} onChange={(event) => setSelectedLamp(event.target.value as WarnCtrlLamp)}>{WARN_CTRL_LAMPS.map((lamp) => <option key={lamp} value={lamp}>{lamp.replaceAll("_", " ")}</option>)}</select></label>
-          <button disabled={!testAvailable || testState === "SENDING"} onClick={() => void runTest("LAMP", selectedLamp)}>{t("testSelected")}</button>
+          <div className="panel-heading"><div><span>{t("diagnostic")}</span><h2>{t("lampTest")}</h2></div><span className={warnAvailable ? "version" : "unavailable"}>{warnAvailable ? t("online") : t("canUnavailable")}</span></div>
+          <div className="test-actions"><button disabled={!warnAvailable || testState === "SENDING"} onClick={() => void runTest("ALL")}>{t("testAll")}</button><button disabled={!warnAvailable || testState === "SENDING"} onClick={() => void runTest("WARN_CTRL")}>{t("testWarn")}</button><button disabled={!threatAvailable || testState === "SENDING"} onClick={() => void runTest("THREAT_PROC")}>{t("testThreat")}</button></div>
+          <label className="field"><span>{t("selectedLamp")}</span><select aria-label={t("selectedLamp")} value={selectedLamp} onChange={(event) => setSelectedLamp(event.target.value as Lamp)}>{ALL_LAMPS.map((lamp) => <option key={lamp} value={lamp}>{lamp.replaceAll("_", " ")}</option>)}</select></label>
+          <button disabled={!selectedAvailable || testState === "SENDING"} onClick={() => void runTest("LAMP", selectedLamp)}>{t("testSelected")}</button>
           <p>{testState === "ACTIVE" ? t("lampTestActive") : testState === "ERROR" ? t("lampTestFailed") : t("lampTestDuration")}</p>
         </article>
       </section>

@@ -98,7 +98,7 @@ class AvCoreRuntime:
         with self._lock:
             self._revision += 1
 
-    def start_lamp_test(self, request: LampTestRequest) -> bool:
+    def start_lamp_test(self, request: LampTestRequest) -> str | None:
         return self._can.start_lamp_test(request)
 
     def _recalculate_cockpit_locked(self, *, reset_hysteresis: bool) -> None:

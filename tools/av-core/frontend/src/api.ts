@@ -1,4 +1,4 @@
-import type { AvCoreConfig, AvCoreStatus, ConfigUpdateResponse, WarnCtrlLamp } from "./types";
+import type { AvCoreConfig, AvCoreStatus, ConfigUpdateResponse, Lamp, LampTestTarget } from "./types";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, init);
@@ -31,7 +31,7 @@ export function saveConfig(config: AvCoreConfig): Promise<ConfigUpdateResponse> 
   });
 }
 
-export function startLampTest(target: "ALL" | "WARN_CTRL" | "LAMP", lamp?: WarnCtrlLamp): Promise<void> {
+export function startLampTest(target: LampTestTarget, lamp?: Lamp): Promise<void> {
   return request<void>("/api/lamp-test", {
     method: "POST",
     headers: { "Content-Type": "application/json" },

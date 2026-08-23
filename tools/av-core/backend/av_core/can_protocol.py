@@ -34,6 +34,7 @@ class LampTestTarget(IntEnum):
     ALL = 0
     WARN_CTRL = 1
     LAMP = 2
+    THREAT_PROC = 3
     NONE = 0xFF
 
 
@@ -45,9 +46,14 @@ LAMP_IDS = {
             "MASTER_CAUTION", "ENG", "SENS", "SHIELD", "HULL", "WEP_EN",
             "AB_FUEL", "AMMO", "CM_LOW", "SUBSYS", "AV_CORE", "FLT_DATA",
             "AV_BUS", "SENS_PROC", "THREAT_PROC", "INST_PROC", "WARN_CTRL",
+            "THREAT_FORWARD", "THREAT_FORWARD_RIGHT", "THREAT_RIGHT",
+            "THREAT_AFT_RIGHT", "THREAT_AFT", "THREAT_AFT_LEFT", "THREAT_LEFT",
+            "THREAT_FORWARD_LEFT", "THREAT_LOCK",
         )
     )
 }
+
+THREAT_LAMP_NAMES = frozenset(name for name in LAMP_IDS if name.startswith("THREAT_")) - {"THREAT_PROC"}
 
 COCKPIT_CAUTION_NAMES = (
     "engine", "sensor", "shield", "hull", "weapon_energy", "afterburner_fuel",
@@ -78,6 +84,21 @@ def decode_warning_state(payload: bytes) -> int:
     if payload[0] != PROTOCOL_VERSION or payload[1] & ~0x1F:
         raise ValueError("invalid WARNING_STATE")
     return payload[1]
+
+
+def encode_threat_state(cockpit: CockpitStatus, *, live: bool) -> bytes:
+    threat = cockpit.threat
+    if not live or not threat.available:
+        return _frame(PROTOCOL_VERSION, 0, 0)
+    lock = {"NONE": 0, "ATTEMPT": 1, "ACQUIRED": 2}[threat.lock_state]
+    return _frame(PROTOCOL_VERSION, threat.sector_mask & 0xFF, lock)
+
+
+def decode_threat_state(payload: bytes) -> tuple[int, int]:
+    _validate_payload(payload)
+    if payload[0] != PROTOCOL_VERSION or payload[2] not in (0, 1, 2) or any(payload[3:]):
+        raise ValueError("invalid THREAT_STATE")
+    return payload[1], payload[2]
 
 
 def encode_caution_state(cockpit: CockpitStatus, diagnostics: dict[str, int]) -> bytes:
