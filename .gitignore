@@ -266,6 +266,7 @@ CMakeCache.txt
 # Local telemetry campaign artifacts.  Raw measurements and build trees are
 # reproducible outputs; archive certification evidence outside the worktree or
 # add a deliberately reviewed final report with `git add -f`.
+/outputs/
 /build-*/
 /data/cache/
 /test/telemetry/producer/performance/raw-*/
