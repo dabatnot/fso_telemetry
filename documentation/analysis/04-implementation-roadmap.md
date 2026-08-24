@@ -104,50 +104,67 @@ Ajouter :
 
 Critère de sortie : le radar distant montre les mêmes contacts autorisés que le HUD du producteur, sans révéler un contact caché en mode `Cockpit`.
 
-## 6. Phase 4 — Vue de communication et client distant utilisable
+## 6. Phase 4 — Bus CAN et alertes du simpit
 
-Les livrables producteur de la vue de communication sont terminés avant son intégration au client :
+Cette phase livre le premier système de sortie physique du cockpit :
 
-- hook moteur minimal au point d'état autoritaire du `Talking Head`, couvrant début, remplacement, arrêt, `playback_rate` signé et offset initial choisi par le gauge ;
-- production de `COMM_VIEW_EVENT` et de l'état correctif `COMM_VIEW_STATE`, y compris dans les snapshots complets ;
-- packager qui utilise le résolveur CFile, ou reproduit exactement sa priorité entre pile de mods, types de chemins, fichiers libres, archives VP et extensions ANI/EFF/APNG ;
-- bundle local versionné contenant uniquement les assets effectivement résolus ;
-- `manifest.json`, hashes par asset, hash global, `bundle-info.json` et golden manifest ;
-- publication fiable et acquittée de `COMM_ASSET_MANIFEST`, sans transfert des images pendant la session ;
-- tests du hook et du packager avec assets masqués par plusieurs mods et VP.
+- AV CORE, client FSTL `CockpitSensors`, application Web et configuration persistante ;
+- calcul des warnings, cautions, secteurs de menace et états de lock à partir
+  des seules données visibles dans le cockpit ;
+- contrat CAN 11 bits, codecs Python, backend SocketCAN et surveillance des
+  modules ;
+- firmware spécialisé `WARN CTRL` pour les 23 voyants, la luminosité et le
+  test des lampes ;
+- firmware spécialisé `THREAT PROC` pour les huit secteurs et le voyant
+  central `LOCK` ;
+- partage de l'éclairage et des tests entre les deux modules ;
+- bundle Raspberry versionné, frontend précompilé, installation idempotente,
+  services `systemd`, configuration de `can0` et documentation d'exploitation ;
+- guide de câblage commun et BOM des deux modules ESP32.
 
-Le client maintient ensuite une base d'état indépendante du rendu :
+La [roadmap détaillée de la Phase 4](specs/4-Bus-CAN-et-alertes-simpit/ROADMAP.md)
+décompose cette livraison en six lots. Les tests sans matériel et les builds
+séparés des firmwares couvrent la livraison logicielle. La validation du HAT,
+des deux ESP32 et des 32 pixels sur le bus physique reste différée jusqu'à
+disponibilité des composants.
 
-```text
-UDP receiver
-  -> validation
-  -> réassemblage
-  -> session et ACK
-  -> ReplicaStore
-      -> interpolation
-      -> radar
-      -> jauges
-      -> vue de communication
-      -> export ESP32
-      -> enregistrement/replay
-```
+## 7. Phase 5 — Vue de communication et assets cockpit
 
-Fonctions :
+La [spécification détaillée de la Phase 5](specs/5-Vue-de-communication-et-assets-cockpit/README.md)
+et sa [roadmap de livraison](specs/5-Vue-de-communication-et-assets-cockpit/ROADMAP.md)
+fixent le périmètre produit et son découpage.
 
-- horloge locale alignée au producteur ;
-- buffer d'interpolation ;
-- état `Synchronizing`, `Live`, `Stale` ;
-- API de lecture thread-safe ;
-- métriques de perte, jitter, latence et âge des données ;
-- résolution d'un `head_asset_id` dans un bundle visuel versionné ;
-- lecture locale de la vue de communication avec seek et correction d'offset ;
-- prise en compte d'un `playback_rate` signé, nul pendant la pause et dérivé de la compression temporelle du moteur ;
-- placeholder non bloquant lorsqu'un asset manque ou est corrompu dans un bundle déclaré compatible ; capability de communication refusée si le hash de bundle diffère ;
-- adaptateur ESP32 utilisant le même transport UDP avec des messages de jauges compacts.
+Le producteur ajoute la source autoritaire de la vue `Talking Head` :
 
-Le client doit conserver la sémantique brute et calculer les valeurs d'affichage sans altérer l'état reçu.
+- hook moteur minimal couvrant début, remplacement, arrêt, pause,
+  `playback_rate` signé et offset choisi par le gauge ;
+- production de `COMM_VIEW_EVENT` et de l'état correctif `COMM_VIEW_STATE`, y
+  compris dans les snapshots complets ;
+- publication fiable et acquittée de `COMM_ASSET_MANIFEST`, sans transfert des
+  images pendant la session ;
+- packager utilisant le résolveur CFile, ou reproduisant exactement sa priorité
+  entre pile de mods, fichiers libres, archives VP et formats ANI/EFF/APNG ;
+- bundle local versionné contenant uniquement les assets effectivement résolus,
+  avec manifeste, hashes par asset, hash global et métadonnées de bundle.
 
-## 7. Phase 5 — Événements exacts et optimisation
+AV CORE consomme ensuite cette vue sans modifier la sémantique reçue :
+
+- négociation de la capability et vérification du hash de bundle ;
+- résolution de `head_asset_id` dans les assets locaux ;
+- lecture synchronisée avec seek, correction d'offset, pause et vitesse signée ;
+- reprise correcte après connexion tardive, perte de paquets, changement de
+  mission ou redémarrage du jeu ;
+- placeholder non bloquant pour un asset manquant ou corrompu dans un bundle
+  compatible ; refus de la seule capability de communication si le bundle est
+  incompatible ;
+- fonctionnement inchangé de la télémétrie, du Web et du bus CAN lorsque la vue
+  de communication est indisponible.
+
+Critère de sortie : AV CORE rejoue depuis un bundle local la même animation de
+communication que le cockpit, au même offset et au même rythme, sans transmettre
+de pixels, d'audio ou de fichier d'asset sur FSTL.
+
+## 8. Phase 6 — Événements exacts et optimisation
 
 Comparer les événements détectés par diff aux besoins réels. Ajouter un hook moteur explicite uniquement lorsqu'un événement peut être manqué entre deux captures :
 
@@ -156,7 +173,8 @@ Comparer les événements détectés par diff aux besoins réels. Ajouter un hoo
 - événement de script non représenté dans l'état final ;
 - transition apparaissant et disparaissant dans une seule frame.
 
-Le hook `Talking Head`, requis fonctionnellement et déjà livré en phase 4, sert de modèle pour ces hooks additionnels.
+Le hook `Talking Head`, livré en Phase 5, sert de modèle pour ces hooks
+additionnels.
 
 Chaque hook doit :
 
@@ -173,7 +191,7 @@ Optimisations possibles après mesure :
 - thread réseau et file SPSC ;
 - adaptation dynamique de fréquence.
 
-## 8. Phase 6 — Vue de cible 3D haute résolution
+## 9. Phase 7 — Vue de cible 3D haute résolution
 
 Livrables producteur :
 
@@ -223,13 +241,13 @@ Sous perte UDP, la vidéo ne doit jamais retarder la télémétrie numérique :
 | 5 % | session et télémétrie restent `Live`, le trafic d'état n'est jamais privé de bande passante et la vidéo récupère sur une IDR complète en 1 s au plus |
 | 20 % | session et télémétrie restent `Live`, mémoire et files restent bornées, et le flux retrouve une frame décodable en 2 s au plus ; aucune qualité, cadence ou continuité nominale n'est exigée à ce niveau de perte |
 
-## 9. Validation définie avec chaque phase
+## 10. Validation définie avec chaque phase
 
 Les specs racines ne définissent aucun harness, aucune matrice de tests et aucun seuil de campagne. Lors de la spécification d'une phase, ses livrables et critères produit sont établis d'abord. Un plan de validation séparé peut ensuite définir les quelques tests et outils nécessaires à ces seuls livrables.
 
 Ces idées de tests restent facultatives et remplaçables. Elles ne peuvent pas étendre le périmètre produit, imposer une architecture destinée uniquement aux tests ni bloquer un autre travail. Les campagnes longues restent soumises à une demande humaine explicite.
 
-## 10. Observabilité du module
+## 11. Observabilité du module
 
 Prévoir des compteurs consultables dans les logs :
 
@@ -256,7 +274,7 @@ Prévoir des compteurs consultables dans les logs :
 
 Les logs ne doivent pas imprimer les données complètes à chaque frame.
 
-## 11. Risques principaux
+## 12. Risques principaux
 
 | Risque | Réponse prévue |
 |---|---|
@@ -283,20 +301,24 @@ Les logs ne doivent pas imprimer les données complètes à chaque frame.
 | POF HUD insuffisant en 1024 | profil `MfdHigh` utilisant le modèle principal |
 | Dette de fork | seams isolés : socle, Talking Head, helper target box et readback générique |
 
-## 12. Ordre de développement recommandé
+## 13. Ordre de développement recommandé
 
 1. schéma wire v1 exhaustif, golden vectors et tests sans moteur ;
 2. squelette producteur `code/telemetry`, transport, session et observabilité ;
 3. heartbeat, premier snapshot producteur, baseline et deltas cumulatifs ;
 4. décodeur puis client console minimal pour valider ce premier flux ;
 5. collecteurs producteur du vaisseau et des systèmes, dont `CONTROL_STATE` et `SUPPORT_STATE` ;
-6. collecteurs producteur radar/ciblage, puis vues de communication ;
-7. hook producteur `Talking Head`, packager CFile, bundle et manifeste ;
-8. `ReplicaStore` et client distant, puis vue de communication locale ;
-9. vue cible côté producteur : rendu hors écran et readback OpenGL PBO/fences ;
-10. backend producteur `FfmpegTargetVideoEncoder`, sélection d'encodeur, politique IDR fiable jusqu'à deadline et packaging ;
-11. décodeur vidéo client, interfaces graphiques et overlays MFD ;
-12. flux compact pour ESP32 ;
-13. optimisation uniquement après profilage.
+6. collecteurs producteur radar/ciblage et capteurs cockpit ;
+7. AV CORE, bus CAN, firmwares `WARN CTRL` et `THREAT PROC`, puis livraison
+   Raspberry ;
+8. hook producteur `Talking Head`, packager CFile, bundle et manifeste ;
+9. consommation et lecture locale de la vue de communication dans AV CORE ;
+10. événements exacts supplémentaires uniquement pour les besoins cockpit qui
+    ne peuvent pas être observés par état ;
+11. optimisation uniquement après mesure ;
+12. vue cible côté producteur : rendu hors écran et readback OpenGL PBO/fences ;
+13. backend producteur `FfmpegTargetVideoEncoder`, sélection d'encodeur,
+    politique IDR fiable jusqu'à deadline et packaging ;
+14. décodeur vidéo client, interfaces graphiques et overlays MFD.
 
 À chaque étape, le producteur et ses tests de contrat précèdent le consommateur applicatif correspondant ; les outils de décodage minimaux ne servent qu'à valider le wire format.

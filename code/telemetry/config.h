@@ -12,6 +12,7 @@ namespace telemetry {
 constexpr std::size_t MaximumBindAddresses = 2;
 constexpr std::size_t MaximumAllowedClients = 32;
 constexpr std::size_t MaximumTelemetryConfigBytes = 16U * 1024U;
+constexpr std::size_t MaximumCommunicationBundlePathBytes = 1024U;
 
 enum class VisibilityMode : std::uint8_t {
 	Cockpit = 0,
@@ -89,6 +90,7 @@ struct TelemetryConfig {
 	std::uint16_t mission_heartbeat_ms = 500;
 	std::uint16_t idle_heartbeat_ms = 1000;
 	std::uint16_t max_datagrams_per_tick = 64;
+	std::array<char, MaximumCommunicationBundlePathBytes + 1U> communication_bundle_path{};
 };
 
 enum class ConfigStatus : std::uint8_t {

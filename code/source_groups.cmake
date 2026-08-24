@@ -904,6 +904,8 @@ add_file_folder("Mission"
 	mission/missionlog.h
 	mission/missionmessage.cpp
 	mission/missionmessage.h
+	mission/messageheadvariants.cpp
+	mission/messageheadvariants.h
 	mission/missionparse.cpp
 	mission/missionparse.h
 	mission/missiontraining.cpp
@@ -1788,6 +1790,12 @@ add_file_folder("Telemetry"
 	telemetry/cockpit_sensors_records.cpp
 	telemetry/cockpit_sensors_state_image.cpp
 	telemetry/cockpit_sensors_state_image.h
+	telemetry/communication_bundle.cpp
+	telemetry/communication_bundle.h
+	telemetry/communication_view.cpp
+	telemetry/communication_view.h
+	telemetry/communication_view_producer.cpp
+	telemetry/communication_view_producer.h
 	telemetry/config.cpp
 	telemetry/config.h
 	telemetry/datagram_scheduler.cpp

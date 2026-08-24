@@ -1,6 +1,7 @@
 #pragma once
 
 #include "telemetry/entity_id_registry.h"
+#include "telemetry/communication_bundle.h"
 #include "telemetry/phase1_allocation_observer.h"
 #include "telemetry/identity.h"
 #include "telemetry/phase1_delta_egress.h"
@@ -103,6 +104,7 @@ struct SessionControllerConfig {
 	std::uint16_t idle_heartbeat_ms = 1000U;
 	std::uint8_t keyframe_seconds = 2U;
 	protocol::TelemetryOperationalConfig security;
+	const CommunicationBundle* communication_bundle = nullptr;
 };
 
 struct SessionControllerOutput {
@@ -146,6 +148,7 @@ struct SessionControllerSlot {
 	PlayerSampleMaterializeStatus latest_player_sample_status = PlayerSampleMaterializeStatus::InvalidCapture;
 	bool has_latest_player_sample = false;
 	bool mission_session_begun = false;
+	bool communication_view_active = false;
 	Phase1SnapshotSlot snapshot;
 	Phase1SnapshotEgress snapshot_egress;
 	Phase1DeltaEgress delta_egress;
@@ -270,6 +273,9 @@ class SessionController final {
 	std::size_t activate_prewarmed_sessions(std::uint32_t mission_generation,
 		std::uint64_t now_us) noexcept;
 	void request_all_keyframes() noexcept;
+	bool queue_communication_event(std::size_t slot_index,
+		protocol::CommViewEventPayload event,
+		std::uint64_t now_us) noexcept;
 	// Benchmark/test instrumentation for the production-owned P8 hot path.
 	// Normal runtime code never enables this observer.
 	void begin_phase1_allocation_observation() noexcept { m_phase1_allocation_observer.begin(); }

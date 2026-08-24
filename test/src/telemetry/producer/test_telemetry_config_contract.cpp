@@ -88,6 +88,7 @@ void expect_safe_defaults(const ConfigLoadResult& result)
 	EXPECT_EQ(500U, result.effective.mission_heartbeat_ms);
 	EXPECT_EQ(1000U, result.effective.idle_heartbeat_ms);
 	EXPECT_EQ(64U, result.effective.max_datagrams_per_tick);
+	EXPECT_EQ('\0', result.effective.communication_bundle_path[0]);
 }
 
 void expect_invalid(std::string_view json)
@@ -158,6 +159,18 @@ TEST(TelemetryConfigContract, EnabledMinimalObjectUsesTheLoopbackOnlyProfile)
 	EXPECT_EQ(2U, result.effective.bind_addresses.size());
 	EXPECT_EQ(2U, result.effective.allowed_clients.size());
 	EXPECT_FALSE(result.effective.discovery_enabled);
+}
+
+TEST(TelemetryConfigContract, CommunicationBundlePathIsOptionalAndBounded)
+{
+	const auto configured = parse(
+		R"({"schemaVersion":4,"enabled":true,"communicationBundlePath":"D:/bundles/comm"})");
+	ASSERT_EQ(ConfigStatus::ValidEnabled, configured.status);
+	EXPECT_STREQ("D:/bundles/comm", configured.effective.communication_bundle_path.data());
+
+	expect_invalid(R"({"schemaVersion":4,"communicationBundlePath":7})");
+	std::string too_long(telemetry::MaximumCommunicationBundlePathBytes + 1U, 'a');
+	expect_invalid(object_with("communicationBundlePath", '"' + too_long + '"'));
 }
 
 TEST(TelemetryConfigContract, StrictJsonRejectsMissingSchemaSyntaxAndNonObjectRoots)

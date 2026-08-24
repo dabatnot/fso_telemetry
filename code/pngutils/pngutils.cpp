@@ -721,6 +721,8 @@ void apng_ani::_process_chunk()
 		if (_delay_num == 0) _delay_num = 1;   // arbitrary lower bound
 		float frame_delay = static_cast<float>(_delay_num)/static_cast<float>(_delay_den);
 		frame.delay = frame_delay;
+		frame.delay_num = _delay_num;
+		frame.delay_den = _delay_den;
 
 		if (_reading) {
 			anim_time+= frame_delay;

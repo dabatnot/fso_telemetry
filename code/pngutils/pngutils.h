@@ -36,6 +36,8 @@ public:
 		SCP_vector<ubyte>  data;
 		SCP_vector<ubyte*> rows;
 		float              delay;
+		ushort             delay_num = 1;
+		ushort             delay_den = 100;
 	};
 
 	apng_frame frame;

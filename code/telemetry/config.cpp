@@ -57,6 +57,7 @@ constexpr const char* KnownConfigKeys[]{
 	"missionHeartbeatMs",
 	"idleHeartbeatMs",
 	"maxDatagramsPerTick",
+	"communicationBundlePath",
 };
 
 ConfigLoadResult absent_result() noexcept
@@ -565,6 +566,23 @@ ConfigLoadResult parse_config_json(std::string_view input) noexcept
 		return invalid_result(error);
 	}
 	config.max_datagrams_per_tick = static_cast<std::uint16_t>(integer);
+
+	const auto* communication_bundle_path = json_object_get(root.get(), "communicationBundlePath");
+	if (communication_bundle_path != nullptr) {
+		if (!json_is_string(communication_bundle_path)) {
+			return invalid_result(ConfigError::InvalidType);
+		}
+		const auto length = json_string_length(communication_bundle_path);
+		const auto* text = json_string_value(communication_bundle_path);
+		if (length > MaximumCommunicationBundlePathBytes ||
+			std::memchr(text, '\0', length) != nullptr) {
+			return invalid_result(ConfigError::OutOfRange);
+		}
+		if (length != 0U) {
+			std::memcpy(config.communication_bundle_path.data(), text, length);
+		}
+		config.communication_bundle_path[length] = '\0';
+	}
 
 	bool has_non_loopback_bind = false;
 	bool has_wildcard_bind = false;

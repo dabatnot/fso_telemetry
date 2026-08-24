@@ -2,6 +2,7 @@
 
 #include "events/events.h"
 #include "telemetry/phase2_observation.h"
+#include "telemetry/communication_view.h"
 #include "telemetry/runtime_adapter.h"
 
 #if defined(FSO_TELEMETRY_TEST_SEAMS)
@@ -52,6 +53,7 @@ void on_engine_shutdown() noexcept
 	++callback_invocation_counts[EngineShutdownIndex];
 #endif
 
+	telemetry::communication_view_stopped(telemetry::protocol::CommStopReason::SessionStopped);
 	telemetry::detail::reset_phase2_mission_observation_state();
 	if (telemetry_callbacks_ready && telemetry_runtime != nullptr) {
 		telemetry_runtime->on_engine_shutdown();
@@ -64,6 +66,7 @@ void on_game_mission_load(const char*) noexcept
 	++callback_invocation_counts[GameMissionLoadIndex];
 #endif
 
+	telemetry::communication_view_stopped(telemetry::protocol::CommStopReason::MissionChanged);
 	telemetry::detail::reset_phase2_mission_observation_state();
 	if (telemetry_callbacks_ready && telemetry_runtime != nullptr) {
 		telemetry_runtime->on_game_mission_load();

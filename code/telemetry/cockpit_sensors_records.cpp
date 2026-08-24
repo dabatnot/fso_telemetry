@@ -2,6 +2,7 @@
 
 #include "telemetry/protocol/packet_writer.h"
 #include "telemetry/protocol/telemetry_business_records.h"
+#include "telemetry/protocol/telemetry_specialized_views.h"
 
 #include <algorithm>
 #include <array>
@@ -15,6 +16,9 @@ using protocol::MutableByteView;
 using protocol::PacketWriter;
 using protocol::RecordType;
 using protocol::StateAtom;
+using protocol::CommViewStatePayloadSize;
+using protocol::ValidationError;
+using protocol::encode_comm_view_state_payload;
 
 constexpr auto LockPayloadCapacity = CockpitSensorsLockPayloadCapacity;
 constexpr auto TargetPayloadCapacity = CockpitSensorsTargetPayloadCapacity;
@@ -602,7 +606,8 @@ bool normalize_cockpit_sensor_payload_backings(
 	std::vector<StateAtom>& spares,
 	std::size_t spare_count,
 	std::size_t start,
-	std::size_t contact_count) noexcept
+	std::size_t contact_count,
+	bool include_communication_view) noexcept
 {
 	constexpr std::array<RecordType, 6U> FixedTypes{{
 		RecordType::LockState, RecordType::TargetState,
@@ -648,6 +653,9 @@ bool normalize_cockpit_sensor_payload_backings(
 		if (!normalize(start + FixedTypes.size() + index,
 				RecordType::RadarContacts, ContactPayloadCapacity))
 			return false;
+	if (include_communication_view && !normalize(start + FixedTypes.size() + contact_count,
+			RecordType::CommViewState, CommViewStatePayloadSize))
+		return false;
 	return true;
 }
 
@@ -657,7 +665,23 @@ bool fill_cockpit_sensor_records(
 	std::vector<StateAtom>& records,
 	std::size_t common_record_count) noexcept
 {
-	if (records.size() != common_record_count +
+	const auto communication_count = input.communication_view_state == nullptr ? 0U : 1U;
+	const auto fill_communication = [&](std::size_t index) noexcept {
+		if (input.communication_view_state == nullptr) return true;
+		auto& atom = records[index];
+		atom.key.record_type = static_cast<std::uint16_t>(RecordType::CommViewState);
+		atom.key.identity.clear();
+		atom.cascade_owner = {};
+		atom.record_version = 1U;
+		std::array<std::uint8_t, CommViewStatePayloadSize> encoded{};
+		std::size_t written = 0U;
+		if (encode_comm_view_state_payload(*input.communication_view_state,
+				{encoded.data(), encoded.size()}, written) != ValidationError::None)
+			return false;
+		atom.value.assign(encoded.begin(), encoded.begin() + written);
+		return true;
+	};
+	if (records.size() != common_record_count + communication_count +
 			(projection.player_entity_id == 0U
 				? 0U
 				: 6U + projection.contact_count) ||
@@ -665,7 +689,7 @@ bool fill_cockpit_sensor_records(
 		!make_cockpit_session(input, projection, records[0]))
 		return false;
 	if (projection.player_entity_id == 0U)
-		return common_record_count == 2U;
+		return common_record_count == 2U && fill_communication(common_record_count);
 	if (common_record_count < 4U ||
 		!make_cargo(projection, records[3]))
 		return false;
@@ -679,9 +703,9 @@ bool fill_cockpit_sensor_records(
 		return false;
 	for (std::size_t index = 0U; index < projection.contact_count; ++index)
 		if (!make_contact(projection, projection.contacts[index],
-				records[start + 6U + index]))
+				 records[start + 6U + index]))
 			return false;
-	return true;
+	return fill_communication(start + 6U + projection.contact_count);
 }
 
 } // namespace detail

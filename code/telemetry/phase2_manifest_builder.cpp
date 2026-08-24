@@ -1,8 +1,11 @@
 #include "telemetry/phase2_manifest_builder.h"
 
+#include "telemetry/communication_bundle.h"
+
 #include "telemetry/protocol/packet_writer.h"
 #include "telemetry/protocol/telemetry_business_records.h"
 #include "telemetry/protocol/telemetry_records.h"
+#include "telemetry/protocol/telemetry_specialized_views.h"
 
 #include <algorithm>
 #include <cmath>
@@ -24,6 +27,72 @@ bool hash_string(Sha256& hash, const std::string& value) noexcept
 	const auto size = static_cast<std::uint32_t>(value.size());
 	return hash_scalar(hash, size) &&
 		hash.update(ByteView{reinterpret_cast<const std::uint8_t*>(value.data()), value.size()});
+}
+
+bool write_communication_entry(const detail::CommunicationAsset& asset,
+	MutableByteView output, std::size_t& written) noexcept
+{
+	written = 0U;
+	const auto length = protocol::CommAssetEntryPrefixSize + asset.logical_name.size() + asset.file_path.size() +
+		asset.frame_durations_us.size() * sizeof(std::uint32_t);
+	if (length > UINT16_MAX || output.size < length) return false;
+	PacketWriter writer(output);
+	if (!writer.write_u16(static_cast<std::uint16_t>(length)) || !writer.write_u64(asset.asset_id) ||
+		!writer.write_bytes({asset.content_hash.data(), asset.content_hash.size()}) ||
+		!writer.write_u8(static_cast<std::uint8_t>(asset.source_format)) ||
+		!writer.write_u8(static_cast<std::uint8_t>(asset.delivered_format)) ||
+		!writer.write_u8(static_cast<std::uint8_t>(asset.alpha_mode)) ||
+		!writer.write_u8(static_cast<std::uint8_t>(asset.timing_mode)) || !writer.write_u16(0U) ||
+		!writer.write_u16(asset.width) || !writer.write_u16(asset.height) ||
+		!writer.write_u32(asset.frame_count) || !writer.write_u64(asset.duration_us) ||
+		!writer.write_u16(static_cast<std::uint16_t>(asset.logical_name.size())) ||
+		!writer.write_u16(static_cast<std::uint16_t>(asset.file_path.size())) ||
+		!writer.write_u32(static_cast<std::uint32_t>(asset.frame_durations_us.size())) ||
+		!writer.write_bytes({reinterpret_cast<const std::uint8_t*>(asset.logical_name.data()), asset.logical_name.size()}) ||
+		!writer.write_bytes({reinterpret_cast<const std::uint8_t*>(asset.file_path.data()), asset.file_path.size()})) return false;
+	for (const auto duration : asset.frame_durations_us) if (!writer.write_u32(duration)) return false;
+	written = writer.size();
+	return written == length;
+}
+
+bool append_communication_manifest(const detail::CommunicationBundle& bundle,
+	MutableByteView arena, std::size_t& offset) noexcept
+{
+	std::size_t first = 0U;
+	while (first < bundle.assets.size()) {
+		std::array<std::uint8_t, protocol::MaximumCommAssetRecordPayloadSize> payload{};
+		PacketWriter writer({payload.data(), payload.size()});
+		const auto flags = static_cast<std::uint16_t>(
+			(bundle.frame_asset_id != 0U ? ManifestFlagFrameAsset : 0U) |
+			(bundle.placeholder_asset_id != 0U ? ManifestFlagPlaceholderAsset : 0U));
+		if (!writer.write_u16(protocol::CommBundleVersionV1) || !writer.write_u16(flags) ||
+			!writer.write_bytes({bundle.bundle_hash.data(), bundle.bundle_hash.size()}) ||
+			!writer.write_u8(static_cast<std::uint8_t>(bundle.converter_id.size())) ||
+			!writer.write_u8(static_cast<std::uint8_t>(bundle.converter_version.size())) ||
+			!writer.write_u64(bundle.frame_asset_id) || !writer.write_u64(bundle.placeholder_asset_id) ||
+			!writer.write_u32(static_cast<std::uint32_t>(bundle.assets.size())) ||
+			!writer.write_u32(static_cast<std::uint32_t>(first)) || !writer.write_u16(0U) ||
+			!writer.write_bytes({reinterpret_cast<const std::uint8_t*>(bundle.converter_id.data()), bundle.converter_id.size()}) ||
+			!writer.write_bytes({reinterpret_cast<const std::uint8_t*>(bundle.converter_version.data()), bundle.converter_version.size()})) return false;
+		std::size_t count = 0U;
+		for (; first + count < bundle.assets.size(); ++count) {
+			std::array<std::uint8_t, protocol::MaximumCommAssetRecordPayloadSize> entry{};
+			std::size_t entry_size = 0U;
+			if (!write_communication_entry(bundle.assets[first + count], {entry.data(), entry.size()}, entry_size)) return false;
+			if (entry_size > writer.remaining()) break;
+			if (!writer.write_bytes({entry.data(), entry_size})) return false;
+		}
+		if (count == 0U) return false;
+		payload[62] = static_cast<std::uint8_t>(count);
+		payload[63] = static_cast<std::uint8_t>(count >> 8U);
+		RecordEnvelopeView record{static_cast<std::uint16_t>(RecordType::CommAssetManifest), 1U, 0U, writer.written()};
+		std::size_t encoded = 0U;
+		if (offset > arena.size || encode_business_record(record, BusinessRecordContainer::Manifest,
+				{arena.data + offset, arena.size - offset}, encoded) != ValidationError::None) return false;
+		offset += encoded;
+		first += count;
+	}
+	return true;
 }
 
 bool auxiliary_entry_referenced(const Phase2ManifestSource& source,
@@ -356,6 +425,11 @@ Phase2ManifestError canonical_catalog_fingerprint(
 			(aux[i]->registry==AuxiliaryRegistry::Pattern
 				? hash_scalar(semantic_hash,aux[i]->engine_index)
 				: hash_string(semantic_hash,aux[i]->name));
+	const bool has_communication_bundle = source.communication_bundle != nullptr;
+	semantic_ok = semantic_ok && hash_scalar(semantic_hash, has_communication_bundle);
+	if (semantic_ok && has_communication_bundle)
+		semantic_ok = semantic_hash.update({source.communication_bundle->bundle_hash.data(),
+			source.communication_bundle->bundle_hash.size()});
 	if(!semantic_ok)return Phase2ManifestError::AllocationFailed;
 	if(!semantic_hash.finalize(catalog))
 		return Phase2ManifestError::InvalidSource;
@@ -822,6 +896,9 @@ Phase2ManifestError Phase2ManifestSlot::rebuild(const Phase2ManifestSource& sour
 		if(!write_weapon_record(arena,offset,new_id,i+1,src,dst))
 			return Phase2ManifestError::AllocationFailed;
 	}
+	if (source.communication_bundle != nullptr &&
+		!append_communication_manifest(*source.communication_bundle, arena, offset))
+		return Phase2ManifestError::AllocationFailed;
 	Sha256Digest topology=source.topology_fingerprint;
 	const auto has_supplied_topology=std::any_of(topology.begin(),topology.end(),
 		[](std::uint8_t value){return value!=0U;});

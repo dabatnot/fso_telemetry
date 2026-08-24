@@ -9,6 +9,8 @@
 #include "network/multi.h"
 #include "freespace.h"
 #include "telemetry/config.h"
+#include "telemetry/communication_bundle.h"
+#include "telemetry/communication_view.h"
 #include "telemetry/engine_adapter.h"
 #include "telemetry/logging.h"
 #include "telemetry/native_session_runtime.h"
@@ -200,6 +202,13 @@ class NativeRuntimeStartupServices final : public RuntimeStartupServices {
 	{
 		const auto loaded = load_telemetry_config();
 		m_effective_config = loaded.effective;
+		m_communication_bundle = {};
+		if (loaded.status == ConfigStatus::ValidEnabled &&
+			m_effective_config.communication_bundle_path[0] != '\0') {
+			auto bundle = load_communication_bundle(m_effective_config.communication_bundle_path.data());
+			if (bundle.available()) m_communication_bundle = std::move(bundle.bundle);
+		}
+		communication_view_bridge().set_enabled(!m_communication_bundle.assets.empty());
 		m_config_invalid_reason = map_config_log_reason(loaded.error);
 		switch (loaded.status) {
 		case ConfigStatus::Absent:
@@ -275,7 +284,8 @@ class NativeRuntimeStartupServices final : public RuntimeStartupServices {
 			&m_random,
 			&m_metrics,
 			&m_log,
-			current_cockpit_producer_eligibility()};
+			current_cockpit_producer_eligibility(),
+			m_communication_bundle.assets.empty() ? nullptr : &m_communication_bundle};
 		if (native->start(request) != NativeSessionStartStatus::Started) {
 			return RuntimeTransportStatus::Unavailable;
 		}
@@ -431,6 +441,7 @@ class NativeRuntimeStartupServices final : public RuntimeStartupServices {
 	}
 
 	TelemetryConfig m_effective_config;
+	CommunicationBundle m_communication_bundle;
 	NativeUdpSocketBackend m_backend;
 	NativeOutputCompletionForwarder m_output_completion;
 	OsRandomSource m_random;

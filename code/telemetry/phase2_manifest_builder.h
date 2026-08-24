@@ -16,6 +16,8 @@
 
 namespace telemetry {
 
+namespace detail { struct CommunicationBundle; }
+
 std::uint32_t radar_icon_id_for_ship_type(std::string_view name) noexcept;
 
 struct Phase2ManifestLimits {
@@ -117,6 +119,7 @@ struct Phase2ManifestSource {
 	Phase2ManifestMetadata metadata{};
 	std::uint32_t player_instance_signature=0, engine_index=0, manifest_generation=0;
 	protocol::Sha256Digest topology_fingerprint{};
+	const detail::CommunicationBundle* communication_bundle = nullptr;
 };
 
 struct Phase2OwnedName {

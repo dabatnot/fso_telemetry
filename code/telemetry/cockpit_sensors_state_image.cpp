@@ -2368,7 +2368,7 @@ bool CockpitSensorsStateImagePool::provision(
 	const auto common_records =
 		4U + 10U * maximum_subjects + maximum_subsystems;
 	const auto maximum_records =
-		common_records + 6U + MaximumPhase3Contacts;
+		common_records + 7U + MaximumPhase3Contacts;
 	try {
 		for (auto& slot : m_slots) {
 			slot.records =
@@ -2394,6 +2394,9 @@ bool CockpitSensorsStateImagePool::provision(
 				CockpitSensorsCargoPayloadCapacity);
 			detail::reserve_cockpit_sensor_payload_inventory(
 				*slot.records, common_records);
+			auto& comm = (*slot.records)[common_records + 6U + MaximumPhase3Contacts];
+			comm.key.record_type = static_cast<std::uint16_t>(protocol::RecordType::CommViewState);
+			comm.value.reserve(protocol::CommViewStatePayloadSize);
 		}
 		m_maximum_subjects = maximum_subjects;
 		m_maximum_subsystems = maximum_subsystems;
@@ -2500,8 +2503,9 @@ Phase3StateImageBuildStatus build_cockpit_sensors_state_image_preallocated(
 	const auto sensor_record_count = projection.player_entity_id == 0U
 		? 0U
 		: 6U + projection.contact_count;
+	const auto communication_record_count = input.communication_view_state == nullptr ? 0U : 1U;
 	const auto final_record_count =
-		common_record_count + sensor_record_count;
+		common_record_count + sensor_record_count + communication_record_count;
 	if (slot->records->size() + slot->spare_count < final_record_count)
 		return Phase3StateImageBuildStatus::CapacityExceeded;
 	while (slot->records->size() > final_record_count) {
@@ -2525,7 +2529,8 @@ Phase3StateImageBuildStatus build_cockpit_sensors_state_image_preallocated(
 			!detail::normalize_cockpit_sensor_payload_backings(
 				*slot->records, slot->spares,
 				slot->spare_count, common_record_count,
-				projection.contact_count)))
+				projection.contact_count,
+				input.communication_view_state != nullptr)))
 		return Phase3StateImageBuildStatus::CapacityExceeded;
 	if (const auto status = fill_cockpit_common_records(
 			prepared.input, resolved, *slot->records,

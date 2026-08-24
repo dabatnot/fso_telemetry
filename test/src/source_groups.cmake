@@ -17,6 +17,12 @@ add_file_folder("CFile"
     cfile/cfile.cpp
 )
 
+if (FSO_BUILD_TOOLS)
+	add_file_folder("Tools\\\\Communication bundle"
+		tools/test_comm_bundle_core.cpp
+	)
+endif()
+
 add_file_folder("Globalincs"
     globalincs/test_flagset.cpp
     globalincs/test_safe_strings.cpp
@@ -130,6 +136,7 @@ add_file_folder("Telemetry\\\\Producer"
 	telemetry/producer/phase2_gameplay_ab_test_support.h
 	telemetry/producer/test_telemetry_capture_scheduler_contract.cpp
 	telemetry/producer/test_telemetry_config_contract.cpp
+	telemetry/producer/test_telemetry_communication_view_producer.cpp
 	telemetry/producer/test_telemetry_datagram_scheduler_contract.cpp
 	telemetry/producer/test_telemetry_engine_adapter_contract.cpp
 	telemetry/producer/test_telemetry_entity_id_registry_contract.cpp

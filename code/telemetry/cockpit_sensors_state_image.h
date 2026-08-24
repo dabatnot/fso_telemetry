@@ -4,6 +4,7 @@
 #include "telemetry/phase2_observation.h"
 #include "telemetry/protocol/telemetry_protocol_constants.h"
 #include "telemetry/protocol/telemetry_replication.h"
+#include "telemetry/protocol/telemetry_specialized_views.h"
 
 #include <array>
 #include <cstddef>
@@ -78,6 +79,7 @@ struct CockpitSensorsStateImageInput {
 	protocol::DockingPhase docking_phase_override =
 		protocol::DockingPhase::None;
 	std::optional<protocol::RecordType> omit_record_for_test;
+	const protocol::CommViewStatePayload* communication_view_state = nullptr;
 
 	std::uint32_t cargo_authority_consume_count() const noexcept
 	{
@@ -384,7 +386,8 @@ bool normalize_cockpit_sensor_payload_backings(
 	std::vector<protocol::StateAtom>& spares,
 	std::size_t spare_count,
 	std::size_t start,
-	std::size_t contact_count) noexcept;
+	std::size_t contact_count,
+	bool include_communication_view) noexcept;
 bool fill_cockpit_sensor_records(
 	const CockpitSensorsStateImageInput& input,
 	const Phase3Projection& projection,

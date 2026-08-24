@@ -4,6 +4,9 @@
 #include "telemetry/protocol/telemetry_crc32.h"
 #include "telemetry/protocol/telemetry_datagram.h"
 #include "telemetry/protocol/telemetry_reliability_messages.h"
+#include "telemetry/protocol/telemetry_event_messages.h"
+#include "telemetry/protocol/telemetry_business_records.h"
+#include "telemetry/protocol/telemetry_specialized_views.h"
 #include "telemetry/cockpit_sensors_state_image.h"
 #include "telemetry/transport.h"
 
@@ -884,6 +887,68 @@ SessionIngressResult SessionController::ingest_hello(const protocol::EndpointKey
 	welcome.selected_major = protocol::VersionMajor;
 	welcome.selected_minor = protocol::VersionMinor;
 	welcome.selected_visibility_mode = protocol::VisibilityMode::Cockpit;
+	std::array<std::uint8_t, protocol::CommBundleSelectionSize> comm_selection_bytes{};
+	std::array<std::uint8_t, protocol::CapabilityExtensionHeaderSize + protocol::CommBundleSelectionSize>
+		welcome_extensions{};
+	bool communication_view_active = false;
+	if (m_config.communication_bundle != nullptr) {
+		welcome.producer_capabilities = protocol::CapabilityCommViewAuthoritativeSource |
+			protocol::CapabilityUpdate;
+	}
+	if ((hello.advertised_capabilities & protocol::CapabilityCommViewLocalAssets) != 0U) {
+		protocol::CommBundleSelection selection;
+		selection.result = m_config.communication_bundle == nullptr
+			? protocol::CommNegotiationResult::SourceUnavailable
+			: protocol::CommNegotiationResult::BundleAbsent;
+		protocol::CommBundleOffer offer;
+		bool have_offer = false;
+		protocol::CapabilityExtensionIterator iterator(hello.extensions, hello.extension_count);
+		for (;;) {
+			protocol::CapabilityExtensionView extension;
+			bool has_value = false;
+			if (iterator.next(extension, has_value) != protocol::ValidationError::None) {
+				return dropped(SessionIngressDropReason::PayloadInvalid);
+			}
+			if (!has_value) break;
+			if (extension.type == static_cast<std::uint16_t>(protocol::CapabilityExtensionType::CommViewNegotiation)) {
+				if (extension.version != 1U || protocol::decode_comm_bundle_offer(extension.payload, offer) != protocol::ValidationError::None)
+					return dropped(SessionIngressDropReason::PayloadInvalid);
+				have_offer = true;
+			}
+		}
+		if (m_config.communication_bundle != nullptr && have_offer) {
+			selection.bundle_version = protocol::CommBundleVersionV1;
+			selection.required_delivered_formats = m_config.communication_bundle->required_delivered_formats;
+			selection.required_bundle_hash = m_config.communication_bundle->bundle_hash;
+			if (offer.bundle_version != protocol::CommBundleVersionV1)
+				selection.result = protocol::CommNegotiationResult::BundleVersionMismatch;
+			else if (offer.bundle_hash != m_config.communication_bundle->bundle_hash)
+				selection.result = protocol::CommNegotiationResult::BundleHashMismatch;
+			else if ((offer.supported_delivered_formats & m_config.communication_bundle->required_delivered_formats) !=
+				m_config.communication_bundle->required_delivered_formats)
+				selection.result = protocol::CommNegotiationResult::NoCommonFormat;
+			else {
+				selection.result = protocol::CommNegotiationResult::Accepted;
+				communication_view_active = true;
+				welcome.active_capabilities |= protocol::CapabilityCommViewLocalAssets |
+					protocol::CapabilityCommViewAuthoritativeSource;
+			}
+		}
+		std::size_t selection_size = 0U;
+		if (protocol::encode_comm_bundle_selection(selection,
+				{comm_selection_bytes.data(), comm_selection_bytes.size()}, selection_size) != protocol::ValidationError::None)
+			return dropped(SessionIngressDropReason::PayloadInvalid);
+		protocol::CapabilityExtensionView extension;
+		extension.type = static_cast<std::uint16_t>(protocol::CapabilityExtensionType::CommViewNegotiation);
+		extension.version = 1U;
+		extension.payload = {comm_selection_bytes.data(), selection_size};
+		std::size_t extension_size = 0U;
+		if (protocol::encode_capability_extension(extension,
+				{welcome_extensions.data(), welcome_extensions.size()}, extension_size) != protocol::ValidationError::None)
+			return dropped(SessionIngressDropReason::PayloadInvalid);
+		welcome.extension_count = 1U;
+		welcome.extensions = {welcome_extensions.data(), extension_size};
+	}
 	// Prewarmed cockpit sessions retain this negotiated interval when the
 	// mission starts, so use the mission cadence from the outset.
 	welcome.heartbeat_interval_ms = m_config.mission_heartbeat_ms;
@@ -952,6 +1017,7 @@ SessionIngressResult SessionController::ingest_hello(const protocol::EndpointKey
 	}
 	auto& slot = m_slots[slot_index];
 	slot.progress = ProducerSessionProgress::AwaitWelcomeApplied;
+	slot.communication_view_active = communication_view_active;
 	slot.endpoint = endpoint;
 	slot.session_id = session_id;
 	slot.session_start_us = now_us;
@@ -1287,6 +1353,69 @@ void SessionController::request_all_keyframes() noexcept
 		(void)slot.phase2_runtime.request_snapshot(
 			Phase2RuntimeSnapshotCause::Periodic);
 	}
+}
+
+bool SessionController::queue_communication_event(std::size_t slot_index,
+	protocol::CommViewEventPayload event, std::uint64_t now_us) noexcept
+{
+	if (slot_index >= m_config.max_clients || m_has_output) return false;
+	auto& slot = m_slots[slot_index];
+	if (slot.progress != ProducerSessionProgress::ReadyForState || !slot.communication_view_active) return false;
+	event.event_id = slot.phase2_runtime.allocate_external_event_id();
+	if (event.event_id == 0U) return false;
+	std::array<std::uint8_t, protocol::CommViewEventPayloadSize> event_payload{};
+	std::size_t event_size = 0U;
+	if (protocol::encode_comm_view_event_payload(event, {event_payload.data(), event_payload.size()}, event_size) !=
+		protocol::ValidationError::None) return false;
+	std::array<std::uint8_t, protocol::CommViewEventPayloadSize + protocol::RecordEnvelopeHeaderSize> records{};
+	protocol::RecordEnvelopeView record{static_cast<std::uint16_t>(protocol::RecordType::CommViewEvent),
+		1U, protocol::RecordFlagCreate, {event_payload.data(), event_size}};
+	std::size_t record_size = 0U;
+	if (protocol::encode_business_record(record, protocol::BusinessRecordContainer::EventBatchReliable,
+			{records.data(), records.size()}, record_size) != protocol::ValidationError::None) return false;
+	protocol::EventBatchPayload batch;
+	batch.batch_id = slot.next_message_id;
+	batch.first_event_id = event.event_id;
+	batch.producer_sample_time_us = now_us;
+	batch.delivery_class = protocol::EventDeliveryClass::Reliable;
+	batch.record_count = 1U;
+	batch.records = {records.data(), record_size};
+	std::array<std::uint8_t, protocol::MaxDatagramSize - protocol::HeaderSizeV1> payload{};
+	std::size_t payload_size = 0U;
+	if (protocol::encode_event_batch_payload(batch, true, {payload.data(), payload.size()}, payload_size) !=
+		protocol::ValidationError::None) return false;
+	protocol::TelemetryDatagramHeader header;
+	header.version_minor = protocol::VersionMinor;
+	header.message_type = protocol::MessageType::EventBatch;
+	header.flags = protocol::MessageFlagAckRequired;
+	header.session_id = slot.session_id;
+	header.packet_sequence = slot.next_packet_sequence;
+	header.sent_time_us = now_us;
+	header.message_id = slot.next_message_id;
+	std::array<std::uint8_t, protocol::MaxDatagramSize> encoded{};
+	std::size_t encoded_size = 0U;
+	if (!encode_control_datagram(header, {payload.data(), payload_size}, encoded, encoded_size)) return false;
+	protocol::DatagramView view;
+	if (protocol::decode_and_validate_datagram({encoded.data(), encoded_size}, protocol::SupportedMinorRange, view) !=
+		protocol::ValidationError::None) return false;
+	protocol::ReliableMessageToRetain retained;
+	retained.session_id = slot.session_id;
+	retained.endpoint = slot.endpoint;
+	retained.message_type = protocol::MessageType::EventBatch;
+	retained.base_flags = protocol::MessageFlagAckRequired;
+	retained.message_id = view.header.message_id;
+	retained.fragment_count = view.header.fragment_count;
+	retained.message_crc32 = view.header.message_crc32;
+	retained.logical_payload = {payload.data(), payload_size};
+	retained.required_ack = protocol::RequiredAckLevel::Applied;
+	retained.message_class = protocol::ReliableMessageClass::ReliableEvent;
+	preempt_queued_delta();
+	if (m_reliable_windows[slot_index].retain(retained, now_us) != protocol::ReliableRetainResult::Retained ||
+		!queue_bytes(slot.endpoint, encoded.data(), encoded_size, slot_index)) return false;
+	++slot.next_packet_sequence;
+	++slot.next_message_id;
+	slot.reliable_items_in_use = m_reliable_windows[slot_index].entry_count();
+	return true;
 }
 
 SessionIngressResult SessionController::ingest_nack(const protocol::EndpointKey& endpoint,

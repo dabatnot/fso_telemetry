@@ -169,6 +169,11 @@ class Phase2RuntimeSlot final {
 		return block < m_active_block_samples.size()
 			? m_active_block_samples[block] : 0U;
 	}
+	std::uint64_t allocate_external_event_id() noexcept {
+		if (!m_configured || m_next_event_id == 0U ||
+			m_next_event_id == std::numeric_limits<std::uint64_t>::max()) return 0U;
+		return m_next_event_id++;
+	}
 
   private:
 	struct EntityEntry {

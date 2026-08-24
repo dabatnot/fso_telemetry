@@ -213,6 +213,7 @@ TelemetryPhase2LifecycleKind telemetry_lifecycle_kind(
 
 bool make_controller_config(const TelemetryConfig& source,
 	std::uint64_t producer_id,
+	const CommunicationBundle* communication_bundle,
 	SessionControllerConfig& output) noexcept
 {
 	if (!source.enabled || source.max_clients < 1U || source.max_clients > 4U ||
@@ -226,6 +227,7 @@ bool make_controller_config(const TelemetryConfig& source,
 	output.mission_heartbeat_ms = source.mission_heartbeat_ms;
 	output.idle_heartbeat_ms = source.idle_heartbeat_ms;
 	output.keyframe_seconds = source.keyframe_seconds;
+	output.communication_bundle = communication_bundle;
 	output.security.enabled = true;
 	output.security.port = source.bind_port;
 	output.security.discovery_enabled = source.discovery_enabled;
@@ -928,6 +930,8 @@ NativeSessionStartStatus NativeSessionRuntime::start(const NativeSessionStartReq
 		request.packet_sequences == nullptr) {
 		return NativeSessionStartStatus::InvalidConfiguration;
 	}
+	m_communication_view.configure(request.communication_bundle);
+	m_communication_bundle = request.communication_bundle;
 	const auto eligibility_error =
 		validate_cockpit_sensor_producer(request.cockpit_eligibility);
 	if (eligibility_error != CockpitProducerEligibilityError::None) {
@@ -953,7 +957,7 @@ NativeSessionStartStatus NativeSessionRuntime::start(const NativeSessionStartReq
 	}
 
 	SessionControllerConfig controller_config;
-	if (!make_controller_config(*request.config, request.producer_id, controller_config)) {
+	if (!make_controller_config(*request.config, request.producer_id, request.communication_bundle, controller_config)) {
 		return NativeSessionStartStatus::InvalidConfiguration;
 	}
 	if (m_fail_session_controller_provision) {
@@ -1182,6 +1186,32 @@ NativeSessionTickStatus NativeSessionRuntime::service_tick(const NativeSessionTi
 	const EngineReadView& engine_view,
 	const Phase2EngineReadView* phase2_view) noexcept
 {
+	m_communication_view.tick(context.now_us, context.mission_generation,
+		context.mission_paused, context.time_compression);
+	if (m_communication_event_cursor >= m_communication_event_targets.size()) {
+		m_communication_event_targets = {};
+		if (m_communication_view.peek_event(m_communication_event_fanout)) {
+			for (std::size_t index = 0U; index < m_controller.owned_capacity().client_slots; ++index) {
+				const auto& slot = m_controller.slot(index);
+				m_communication_event_targets[index] = slot.communication_view_active &&
+					slot.progress == ProducerSessionProgress::ReadyForState;
+			}
+			m_communication_event_cursor = 0U;
+		}
+	}
+	while (m_communication_event_cursor < m_communication_event_targets.size() &&
+		!m_communication_event_targets[m_communication_event_cursor]) ++m_communication_event_cursor;
+	if (m_communication_event_cursor < m_communication_event_targets.size()) {
+		auto event = m_communication_event_fanout.payload;
+		if (event.event_kind == protocol::CommEventKind::Start)
+			event.sender_entity_id = m_communication_sender_entity_ids[m_communication_event_cursor];
+		if (m_controller.queue_communication_event(m_communication_event_cursor, event, context.now_us))
+			++m_communication_event_cursor;
+	}
+	if (m_communication_event_cursor >= m_communication_event_targets.size() &&
+		m_communication_view.peek_event(m_communication_event_fanout)) {
+		m_communication_view.consume_event();
+	}
 	m_last_phase2_failure_diagnostic = {};
 	m_last_phase2_failure_diagnostic.tick_now_us = context.now_us;
 	if (phase2_view != nullptr &&
@@ -1774,6 +1804,8 @@ bool NativeSessionRuntime::refresh_phase3_manifest(
 		observation, bindings, binding_count, dependencies,
 		*m_phase3_manifest_selection_source))
 		return false;
+	m_phase3_manifest_selection_source->communication_bundle =
+		m_controller.slot(client_slot).communication_view_active ? m_communication_bundle : nullptr;
 	if (m_phase3_manifest_workspace_owner !=
 			m_phase3_manifest_states.size() &&
 		m_phase3_manifest_workspace_owner != client_slot)
@@ -1942,6 +1974,10 @@ void NativeSessionRuntime::purge_all(SessionCloseReason reason) noexcept
 
 void NativeSessionRuntime::end_mission_sessions() noexcept
 {
+	m_communication_view.mission_changed(m_tick_context.now_us);
+	m_communication_event_targets = {};
+	m_communication_sender_entity_ids = {};
+	m_communication_event_cursor = m_communication_event_targets.size();
 	if (m_controller_ready)
 		m_controller.purge_mission_sessions(
 			SessionCloseReason::MissionDiscontinuity,
@@ -2827,6 +2863,19 @@ NativeSessionTickStatus NativeSessionRuntime::apply_collected_player_capture(con
 				phase2.ships.size();
 			phase2_input.player_entity_id =
 				player_entity_id;
+			protocol::CommViewStatePayload communication_state;
+			if (slot.communication_view_active) {
+				std::uint64_t sender_entity_id = 0U;
+				const auto sender_signature = m_communication_view.sender_signature();
+				for (std::size_t subject = 0U; subject < phase2.ships.size(); ++subject)
+					if (phase2.ships[subject].capture_key.value == sender_signature) {
+						sender_entity_id = bindings[subject].entity_id;
+						break;
+					}
+				communication_state = m_communication_view.state(sender_entity_id);
+				m_communication_sender_entity_ids[index] = sender_entity_id;
+				phase2_input.communication_view_state = &communication_state;
+			}
 			phase2_input.episode_latches =
 				m_controller.phase2_support_latches(index);
 			phase2_input.cleanup_batch =

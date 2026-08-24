@@ -31,11 +31,13 @@
 #include "scripting/scripting.h"
 #include "ship/ship.h"
 #include "sound/audiostr.h"
+#include "telemetry/communication_view.h"
 #include "ui/ui.h"
 #include "weapon/weapon.h"
 
 #include <cstdarg>
 #include <cstdlib>
+#include <cstring>
 
 /* replaced with those static ints that follow
 #define LIST_X		46
@@ -1270,6 +1272,33 @@ void HudGaugeTalkingHead::render(float frametime, bool config)
 				gr_set_screen_scale(base_w, base_h);
 
 			generic_anim_bitmap_set(head_anim, frametime);
+			telemetry::CommunicationViewSample communication_sample;
+			strcpy_s(communication_sample.generic_anim_name.data(),
+				communication_sample.generic_anim_name.size(), head_anim->filename);
+			communication_sample.generic_anim_type = head_anim->type == BM_TYPE_ANI
+				? telemetry::protocol::SourceFormat::Ani
+				: head_anim->type == BM_TYPE_EFF ? telemetry::protocol::SourceFormat::Eff
+				: head_anim->type == BM_TYPE_PNG ? telemetry::protocol::SourceFormat::Apng
+				: telemetry::protocol::SourceFormat::Invalid;
+			communication_sample.engine_message_id = msg_id > 0 ? static_cast<std::uint32_t>(msg_id) : 0U;
+			if (cur_message != nullptr && cur_message->shipnum >= 0 && cur_message->shipnum < MAX_SHIPS &&
+				Ships[cur_message->shipnum].objnum >= 0 && Ships[cur_message->shipnum].objnum < MAX_OBJECTS &&
+				Objects[Ships[cur_message->shipnum].objnum].signature > 0) {
+				communication_sample.sender_object_signature =
+					static_cast<std::uint32_t>(Objects[Ships[cur_message->shipnum].objnum].signature);
+			}
+			communication_sample.animation_time_us = head_anim->anim_time <= 0.0F ? 0U :
+				static_cast<std::uint64_t>(head_anim->anim_time * 1'000'000.0F + 0.5F);
+			communication_sample.duration_us = head_anim->total_time <= 0.0F ? 0U :
+				static_cast<std::uint64_t>(head_anim->total_time * 1'000'000.0F + 0.5F);
+			communication_sample.playback_mode = (head_anim->direction & GENERIC_ANIM_DIRECTION_NOLOOP) != 0
+				? telemetry::protocol::CommPlaybackMode::Once : telemetry::protocol::CommPlaybackMode::Loop;
+			communication_sample.color_mode = head_anim->use_hud_color
+				? telemetry::protocol::CommColorMode::HudTint : telemetry::protocol::CommColorMode::FullColor;
+			const auto time_scale = f2fl(Game_time_compression);
+			communication_sample.playback_rate = (head_anim->direction & GENERIC_ANIM_DIRECTION_PAUSED) != 0
+				? 0.0F : (head_anim->direction & GENERIC_ANIM_DIRECTION_BACKWARDS) != 0 ? -time_scale : time_scale;
+			telemetry::communication_view_sampled(communication_sample);
 			bitmap_rect_list brl = bitmap_rect_list(hx, hy, Anim_size[0], Anim_size[1]);
 
 			if (head_anim->use_hud_color)
@@ -1282,6 +1311,9 @@ void HudGaugeTalkingHead::render(float frametime, bool config)
 			// draw title
 			renderString(position[0] + Header_offsets[0], position[1] + Header_offsets[1], XSTR("message", 217));
 		} else {
+			telemetry::communication_view_stopped(head_anim != nullptr && head_anim->done_playing
+				? telemetry::protocol::CommStopReason::Completed
+				: telemetry::protocol::CommStopReason::Interrupted);
 			if (cur_message == nullptr) {
 				for (int j = 0; j < Num_messages_playing; ++j) {
 					if (Playing_messages[j].id == msg_id) {
@@ -1310,6 +1342,35 @@ void HudGaugeTalkingHead::render(float frametime, bool config)
 			} else {
 				head_anim = nullptr;
 			}
+			if (head_anim != nullptr) {
+				telemetry::CommunicationViewSample communication_sample;
+				strcpy_s(communication_sample.generic_anim_name.data(),
+					communication_sample.generic_anim_name.size(), head_anim->filename);
+				communication_sample.generic_anim_type = head_anim->type == BM_TYPE_ANI
+					? telemetry::protocol::SourceFormat::Ani
+					: head_anim->type == BM_TYPE_EFF ? telemetry::protocol::SourceFormat::Eff
+					: head_anim->type == BM_TYPE_PNG ? telemetry::protocol::SourceFormat::Apng
+					: telemetry::protocol::SourceFormat::Invalid;
+				communication_sample.engine_message_id = msg_id > 0 ? static_cast<std::uint32_t>(msg_id) : 0U;
+				communication_sample.animation_time_us = head_anim->anim_time <= 0.0F ? 0U :
+					static_cast<std::uint64_t>(head_anim->anim_time * 1'000'000.0F + 0.5F);
+				communication_sample.duration_us = head_anim->total_time <= 0.0F ? 0U :
+					static_cast<std::uint64_t>(head_anim->total_time * 1'000'000.0F + 0.5F);
+				communication_sample.playback_mode = (head_anim->direction & GENERIC_ANIM_DIRECTION_NOLOOP) != 0
+					? telemetry::protocol::CommPlaybackMode::Once : telemetry::protocol::CommPlaybackMode::Loop;
+				communication_sample.color_mode = head_anim->use_hud_color
+					? telemetry::protocol::CommColorMode::HudTint : telemetry::protocol::CommColorMode::FullColor;
+				const auto time_scale = f2fl(Game_time_compression);
+				communication_sample.playback_rate = (head_anim->direction & GENERIC_ANIM_DIRECTION_PAUSED) != 0
+					? 0.0F : (head_anim->direction & GENERIC_ANIM_DIRECTION_BACKWARDS) != 0 ? -time_scale : time_scale;
+				if (Playing_messages[i].shipnum >= 0 && Playing_messages[i].shipnum < MAX_SHIPS &&
+					Ships[Playing_messages[i].shipnum].objnum >= 0 && Ships[Playing_messages[i].shipnum].objnum < MAX_OBJECTS &&
+					Objects[Ships[Playing_messages[i].shipnum].objnum].signature > 0) {
+					communication_sample.sender_object_signature = static_cast<std::uint32_t>(
+						Objects[Ships[Playing_messages[i].shipnum].objnum].signature);
+				}
+				telemetry::communication_view_started(communication_sample);
+			}
 
 			return;
 		}
@@ -1324,17 +1385,22 @@ void HudGaugeTalkingHead::pageIn()
 bool HudGaugeTalkingHead::canRender() const
 {
 	if (sexp_override) {
+		telemetry::communication_view_stopped(telemetry::protocol::CommStopReason::HudDisabled);
 		return false;
 	}
 
 	if (hud_disabled() && !hud_disabled_except_messages()) {
+		telemetry::communication_view_stopped(telemetry::protocol::CommStopReason::HudDisabled);
 		return false;
 	}
 
-	if(!active)
+	if(!active) {
+		telemetry::communication_view_stopped(telemetry::protocol::CommStopReason::HudDisabled);
 		return false;
+	}
 	
 	if ( !(Game_detail_flags & DETAIL_FLAG_HUD) ) {
+		telemetry::communication_view_stopped(telemetry::protocol::CommStopReason::HudDisabled);
 		return false;
 	}
 

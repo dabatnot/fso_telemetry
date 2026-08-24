@@ -3,6 +3,8 @@
 #include "telemetry/capture_scheduler.h"
 #include "telemetry/cockpit_producer_eligibility.h"
 #include "telemetry/config.h"
+#include "telemetry/communication_bundle.h"
+#include "telemetry/communication_view_producer.h"
 #include "telemetry/datagram_scheduler.h"
 #include "telemetry/metrics.h"
 #include "telemetry/phase2_observation.h"
@@ -64,6 +66,7 @@ struct NativeSessionStartRequest {
 	TelemetryMetrics* metrics = nullptr;
 	TelemetryStructuredLog* log = nullptr;
 	CockpitProducerEligibility cockpit_eligibility{};
+	const CommunicationBundle* communication_bundle = nullptr;
 };
 
 struct NativeSessionTickContext {
@@ -240,6 +243,8 @@ class NativeSessionRuntime final : private DatagramIoWork {
 	DedicatedUdpTransport m_transport;
 	NativeOutputCompletionPort& m_output_completion;
 	SessionController m_controller;
+	CommunicationViewProducer m_communication_view;
+	const CommunicationBundle* m_communication_bundle = nullptr;
 	DatagramTickScheduler m_scheduler;
 	Capture30Hz m_capture_cadence;
 	Capture30Hz m_systems_capture_cadence;
@@ -321,6 +326,10 @@ class NativeSessionRuntime final : private DatagramIoWork {
 	bool m_last_mission_paused = false;
 	bool m_applying_engine_capture = false;
 	bool m_phase2_event_pipeline_failed_closed = false;
+	PendingCommunicationEvent m_communication_event_fanout{};
+	std::array<bool, 4U> m_communication_event_targets{};
+	std::array<std::uint64_t, 4U> m_communication_sender_entity_ids{};
+	std::size_t m_communication_event_cursor = 4U;
 	bool m_performance_observation_active = false;
 	NativeRuntimePerformanceSample m_last_performance_sample{};
 	NativePhase2FailureDiagnostic m_last_phase2_failure_diagnostic{};
