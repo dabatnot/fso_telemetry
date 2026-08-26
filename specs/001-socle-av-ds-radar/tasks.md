@@ -28,7 +28,7 @@ observable increment.
 
 **Purpose**: Prepare the existing Qt project for the in-place AV DS transformation.
 
-- [ ] T001 Rename the CMake project and logical executable target to AV DS, set the Windows output to `av-ds` while preserving the non-Windows `FsoSimpitRadar` output, and keep the existing source list, install rule, C++20, Qt 6, and `fstl_protocol` dependencies buildable in `tools/radar/CMakeLists.txt`
+- [X] T001 Rename the CMake project and logical executable target to AV DS, set the Windows output to `av-ds` while preserving the non-Windows `FsoSimpitRadar` output, and keep the existing source list, install rule, C++20, Qt 6, and `fstl_protocol` dependencies buildable in `tools/radar/CMakeLists.txt`
 
 ---
 
