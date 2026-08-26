@@ -135,6 +135,14 @@ DerivedData/
 
 build/
 
+# Native C/C++ build outputs and local runtime configuration
+*.o
+*.a
+*.so
+*.exe
+*.dll
+.env*
+
 
 #####
 # Xcode private settings (window sizes, bookmarks, breakpoints, custom executables, smart groups)

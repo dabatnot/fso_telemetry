@@ -1,20 +1,25 @@
-# Phase 5 — Vue de communication et assets cockpit
+# Source de communication et assets locaux pour AV DS
+
+Ce document définit la source FS2Open, le transport FSTL et les bundles locaux
+nécessaires à la [page Communications d'AV DS](../../av-ds/02-page-communications.md).
+Il ne définit ni la navigation entre pages, ni les modes permanent et
+dynamique, qui relèvent de la spécification fonctionnelle d'AV DS.
 
 ## Résultat attendu
 
-La Phase 5 permet à AV CORE d'afficher la même animation `Talking Head` que le
-cockpit FS2Open, au même instant logique et au même rythme, à partir d'un bundle
-d'assets installé localement sur le Raspberry Pi.
+Cette évolution permet à AV DS d'afficher la même animation `Talking Head` que
+le cockpit FS2Open, au même instant logique et au même rythme, à partir d'un
+bundle d'assets installé localement.
 
 FS2Open transmet uniquement l'identité de l'asset et l'état autoritaire de la
 lecture. Les images, les fichiers d'animation et l'audio ne traversent jamais
 FSTL. Une vue absente ou incompatible ne perturbe ni la télémétrie cockpit, ni
-le Web, ni le bus CAN.
+les autres clients FSTL, ni le bus CAN.
 
-La Phase 5 réutilise strictement les contrats spécialisés déjà définis par
+L'évolution réutilise strictement les contrats spécialisés déjà définis par
 FSTL :
 
-- `COMM_VIEW_LOCAL_ASSETS` côté AV CORE ;
+- `COMM_VIEW_LOCAL_ASSETS` côté AV DS ;
 - `COMM_VIEW_AUTHORITATIVE_SOURCE` côté producteur ;
 - `COMM_ASSET_MANIFEST` ;
 - `COMM_VIEW_STATE` ;
@@ -31,10 +36,9 @@ omnisciente ne sont ajoutés.
 | Gauge `Talking Head` | asset final réellement chargé, offset, boucle, couleur et état visible |
 | Producteur FSTL | `playback_id`, événements `START/STOP`, état correctif et négociation du bundle |
 | Packager | résolution CFile, conversion reproductible, manifeste, hashes et archive de bundle |
-| AV CORE backend | validation du bundle local, client FSTL, projection temporelle et accès borné aux assets |
-| Interface Web | présentation de l'image projetée et des états de disponibilité |
+| AV DS | validation du bundle local, session FSTL partagée, projection temporelle et rendu de l'animation |
 
-Le producteur reste la seule autorité temporelle. AV CORE ne choisit jamais
+Le producteur reste la seule autorité temporelle. AV DS ne choisit jamais
 une variante d'animation, ne reconstruit pas un message moteur et ne déduit pas
 un démarrage ou un arrêt depuis un fichier local.
 
@@ -49,8 +53,8 @@ La première livraison couvre :
 - connexion tardive et resynchronisation en cours de lecture ;
 - changement de mission, arrêt de session et retrait de capability ;
 - bundle absent, incompatible ou partiellement corrompu ;
-- page Web dédiée dans AV CORE ;
-- création et installation hors ligne du bundle.
+- rendu plein écran adapté à un MFD ;
+- création et installation hors ligne du bundle avec AV DS.
 
 Sont exclus :
 
@@ -58,8 +62,9 @@ Sont exclus :
 - texte, sous-titres ou historique des messages ;
 - streaming de pixels, vidéo H.264 ou capture du HUD ;
 - téléchargement automatique du bundle depuis FS2Open pendant une session ;
-- contrôle de la communication depuis AV CORE ;
+- contrôle de la communication depuis le MFD ;
 - transmission de la vue aux firmwares ESP32 ;
+- transit de la vue par AV CORE, son API Web ou le bus CAN ;
 - reproduction exacte d'un layout HUD personnalisé.
 
 ## Flux produit
@@ -69,19 +74,23 @@ Pile de mods + missions
   -> packager CFile
   -> archive de bundle versionnée
        -> copie locale côté FS2Open
-       -> installation locale côté AV CORE
+       -> installation locale côté AV DS
 
 Gauge Talking Head
   -> hook main-thread borné
   -> état COMM_* dans la session FSTL
-  -> projection temporelle AV CORE
-  -> page Web Communications
+  -> session FSTL directe d'AV DS
+  -> projection temporelle et rendu sur zéro, un ou deux MFD
 ```
 
 Le packager s'exécute sur le poste qui possède la pile de mods. La même
-archive est installée côté producteur et côté AV CORE avant la session. Le hash
+archive est installée côté producteur et avec AV DS avant la session. Le hash
 canonique du manifeste garantit que les deux extrémités parlent du même
 contenu.
+
+AV CORE n'appartient pas à ce flux. Il conserve son rôle de calculateur des
+warnings/cautions et de passerelle CAN. AV DS ouvre sa propre session UDP FSTL
+vers FS2Open, issue du client radar autonome existant.
 
 ## Bundle local
 
@@ -90,17 +99,18 @@ contenu.
 Le packager accepte comme sources les formats utilisés par le moteur : ANI,
 EFF, APNG et image statique.
 
-Pour la première implémentation AV CORE, les formats livrés sont limités à :
+Pour la première implémentation MFD, les formats livrés sont limités à :
 
 - `APNG` pour chaque animation ;
 - `PNG` pour le cadre facultatif et le placeholder facultatif.
 
 Le packager convertit donc ANI et EFF en APNG reproductible et normalise les
-APNG source avec le même encodeur versionné. Ce choix conserve les timings variables sans inventer une extension au
-format EFF. Le frontend décode les frames APNG et les présente dans un canvas ;
-il ne dépend pas de la lecture automatique d'une balise image. Il peut ainsi
-effectuer un seek exact, rester en pause et lire en sens inverse. AV CORE
-annonce uniquement les bits de formats `APNG` et `PNG` dans sa première offre.
+APNG source avec le même encodeur versionné. Ce choix conserve les timings
+variables sans inventer une extension au format EFF. Le renderer natif décode
+les frames APNG sous le contrôle de sa propre horloge de présentation. Il peut
+ainsi effectuer un seek exact, rester en pause et lire en sens inverse. Le
+AV DS annonce uniquement les bits de formats `APNG` et `PNG` dans sa
+première offre.
 
 La conversion préserve l'ordre des frames, leurs durées, le canal alpha, les
 dimensions logiques et la durée totale. Elle suit les règles de timing, de
@@ -137,16 +147,12 @@ de bundle partiel présenté comme valide.
 
 ### Utilisation du packager
 
-Le binaire `comm_bundle_packager` est construit uniquement lorsque
+Le binaire Windows `comm_bundle_packager.exe` est construit uniquement lorsque
 `FSO_BUILD_TOOLS=ON`. Il reçoit la racine du jeu, la même pile de mods que le
 producteur et un périmètre de missions explicite :
 
 ```text
-comm_bundle_packager \
-  --fs2-root <racine-fs2> \
-  [--mod <mod-principal,mod-secondaire,...>] \
-  --mission <mission.fs2> [--mission <autre.fs2> ...] \
-  --output <répertoire>
+comm_bundle_packager.exe --fs2-root <racine-fs2> [--mod <mods>] --mission <mission.fs2> --output <répertoire>
 ```
 
 `--all-missions` remplace les options `--mission` lorsqu'il faut volontairement
@@ -165,27 +171,24 @@ ni Node.js.
 
 La sortie distribuable est une archive
 `communication-bundle-<hash>.tar.gz`. Elle n'est pas incluse dans la release
-générique d'AV CORE car elle dépend des mods et missions de l'utilisateur.
+générique d'AV DS car elle dépend des mods et missions de l'utilisateur.
 
-AV CORE fournit un installateur local :
-
-```text
-install-communication-bundle.sh <archive.tar.gz>
-```
-
-L'installation valide l'archive dans une zone temporaire, recalcule les
-hashes, puis installe le bundle sous :
+La livraison Windows d'AV DS fournit un installateur local :
 
 ```text
-/var/lib/fsotelemetry/communication-bundles/<bundle_hash>/
+av-ds.exe --install-communication-bundle <archive.tar.gz>
 ```
 
-Le lien `current` désigne l'unique bundle proposé lors de la prochaine session.
+L'installation valide l'archive dans une zone temporaire, recalcule les hashes,
+puis l'installe sous la racine de données Windows d'AV DS, dans
+`communication-bundles/<bundle_hash>/`. Cette racine appartient à AV DS et
+jamais à AV CORE. Le pointeur local `current` désigne
+l'unique bundle proposé lors de la prochaine session.
 Une installation invalide ne remplace jamais le bundle courant. Réinstaller la
 même archive est idempotent. Changer de bundle exige une nouvelle session FSTL.
 
 En développement, un chemin explicite peut remplacer cette racine par variable
-d'environnement sans modifier la configuration persistante du Raspberry.
+d'environnement sans modifier la configuration persistante du client.
 
 ## Intégration producteur FS2Open
 
@@ -232,15 +235,15 @@ Le producteur :
 Les layouts, enums, fréquences et règles de fiabilité restent ceux du contrat
 FSTL existant.
 
-## Intégration AV CORE
+## Intégration d'AV DS
 
 ### Négociation et cycle de vie
 
-AV CORE n'annonce `COMM_VIEW_LOCAL_ASSETS` que si le bundle courant est
+AV DS n'annonce `COMM_VIEW_LOCAL_ASSETS` que si le bundle courant est
 entièrement valide. Son `HELLO` porte la version, le hash et les formats
 APNG/PNG supportés.
 
-Le sous-état de communication exposé par AV CORE reprend les états normatifs :
+Son modèle de communication reprend les états normatifs :
 
 - `UNSUPPORTED` ;
 - `SOURCE_UNAVAILABLE` ;
@@ -254,56 +257,43 @@ de capability masque immédiatement l'ancienne animation. Une pause de mission
 conserve la lecture active avec un taux nul. Une connexion tardive utilise
 `COMM_VIEW_STATE` pour rejoindre l'offset courant.
 
-AV CORE réutilise les codecs et règles du client FSTL existant. Les u64
-transportés vers JavaScript sont sérialisés en chaînes décimales pour éviter
-toute perte de précision.
+AV DS réutilise les codecs, le réassemblage, la synchronisation d'horloge et les
+règles de cycle de vie hérités du radar autonome. Une seule session FSTL
+alimente les deux unités MFD ; chacune conserve néanmoins son propre état de
+page et de présentation. Aucune session, aucun état et aucun asset ne transitent
+par AV CORE.
 
-### API locale
+### Vue MFD Communications
 
-Le statut général ajoute un bloc `communication` contenant au minimum :
-
-- état de disponibilité ;
-- résultat de négociation ;
-- hash du bundle local et hash requis ;
-- lecture active, `playback_id`, `head_asset_id` et raison du dernier arrêt ;
-- mode, couleur, durée, offset projeté et vitesse ;
-- métadonnées d'affichage validées de l'asset ou du placeholder.
-
-L'API expose les fichiers uniquement par un identifiant présent dans le
-manifeste validé. Une route de type
-`GET /api/communication/assets/{asset_id}` ne résout jamais un chemin fourni par
-le client. Les assets sont servis depuis la racine canonique du bundle avec un
-type MIME fermé et une politique de cache liée au hash du bundle.
-
-Le flux SSE existant signale les changements de communication. Le frontend
-peut relire le statut courant après reconnexion ou retour d'un onglet masqué ;
-aucune nouvelle socket temps réel n'est ajoutée.
-
-### Page Communications
-
-Une cinquième page `Communications` est ajoutée à l'interface Web. Elle affiche :
+La vue native affiche :
 
 - l'animation ou le placeholder dans ses proportions logiques ;
 - le cadre local recommandé lorsqu'il existe ;
-- la teinte de l'interface AV CORE lorsque `HUD_TINT` est demandé ;
+- une teinte MFD locale lorsque `HUD_TINT` est demandé ;
 - l'état `PRÊT`, `ACTIVE`, `PLACEHOLDER` ou la cause d'indisponibilité ;
 - le hash court du bundle et un diagnostic concis pour l'installation.
 
-La page ne possède aucun bouton de lecture, de pause ou de seek. Elle reflète
-le cockpit en lecture seule. Elle ne présente ni texte de mission, ni chemin de
-fichier, ni identifiant moteur brut dans la vue opérateur normale.
+La vue ne possède aucun bouton de lecture, de pause ou de seek. Elle reflète
+le cockpit en lecture seule. Les OSB peuvent sélectionner la page et son mode
+local sans commander FS2Open. Elle ne présente ni texte de mission, ni chemin
+de fichier, ni identifiant moteur brut dans la vue opérateur normale.
 
-Le frontend sélectionne la frame depuis les durées du manifeste et l'offset
-projeté par AV CORE. Il utilise une horloge locale seulement pour avancer entre
-deux corrections ; le prochain état FSTL ou SSE reste autoritaire. Un retour de
-veille ou d'onglet masqué force une nouvelle projection au lieu de rattraper
+Le renderer sélectionne la frame depuis les durées du manifeste et l'offset
+projeté. Il utilise une horloge locale seulement pour avancer entre deux
+corrections ; le prochain état FSTL reste autoritaire. Un retour de veille ou
+une restauration de fenêtre force une nouvelle projection au lieu de rattraper
 toutes les frames intermédiaires.
+
+`COM` est une page du catalogue AV DS, sélectionnable indépendamment sur
+`MFD-L` et `MFD-R`. AV DS applique les modes permanent et dynamique définis par
+sa spécification fonctionnelle ; le modèle de communication partagé reste
+indépendant des états de page des deux unités.
 
 ## Priorités et erreurs
 
 | Situation | Comportement |
 |---|---|
-| Bundle AV CORE absent | capability non annoncée, vue `UNSUPPORTED` |
+| Bundle MFD absent | capability non annoncée, vue `UNSUPPORTED` |
 | Source producteur absente | `SOURCE_UNAVAILABLE`, autres données inchangées |
 | Version, hash ou formats incompatibles | `BUNDLE_MISMATCH`, aucun asset affiché |
 | Asset absent ou hash invalide dans un bundle accepté | `PLACEHOLDER` et diagnostic local |
@@ -312,10 +302,10 @@ toutes les frames intermédiaires.
 | Connexion tardive | seek depuis le dernier `COMM_VIEW_STATE` |
 | Télémétrie périmée | animation masquée immédiatement |
 | Changement de mission | ancienne lecture invalidée |
-| Route d'asset inconnue | réponse 404 sans accès au système de fichiers |
+| Asset ID inconnu | aucun chemin n'est ouvert, placeholder local |
 
-Une erreur visuelle ne dégrade jamais l'état canonique FSTL `LIVE` et ne coupe
-jamais les publications CAN.
+Une erreur visuelle ne dégrade jamais l'état canonique FSTL `LIVE`, les autres
+clients FSTL ou les publications CAN.
 
 ## Sécurité et ressources
 
@@ -328,9 +318,9 @@ jamais les publications CAN.
   limite locale plus basse si elle est annoncée par le packager et documentée.
 - Le producteur préalloue sa table de correspondance avant la mission et ne
   grandit pas pendant la lecture.
-- Le backend ne décode pas une animation à chaque requête Web ; les métadonnées
+- Le client ne redécode pas une animation à chaque frame ; les métadonnées
   validées et les petites structures de timing sont préparées au chargement du
-  bundle.
+  bundle, avec un cache graphique borné.
 - Les logs n'impriment ni pixels, ni contenu complet du manifeste, ni chemins
   absolus, ni message à chaque frame.
 
@@ -347,23 +337,27 @@ Les tests automatisés utiles couvrent :
 - `START`, `STOP`, remplacement, doublons, événements anciens et keyframes ;
 - pause, taux positif, nul et négatif, boucle et clamp ;
 - connexion tardive, changement de mission, `STALE` et reconnexion ;
-- protection des routes d'assets et représentation exacte des u64 ;
-- rendu frontend des états, du placeholder et de la frame attendue.
+- refus des chemins issus du réseau et représentation exacte des u64 ;
+- rendu MFD des états, du placeholder et de la frame attendue.
 
 La vérification manuelle en jeu couvre une communication normale, un
-remplacement, une pause/reprise, un changement de mission, une connexion AV CORE
+remplacement, une pause/reprise, un changement de mission, une connexion MFD
 en cours de message et un bundle volontairement absent. Une vérification courte
 suffit ; aucune campagne longue ou matrice exhaustive de mods n'est imposée.
 
 ## Décisions retenues
 
-- AV CORE est le client applicatif livré ; aucun second client graphique n'est
-  créé.
-- La page Web est dédiée à la communication et reste strictement en lecture
-  seule.
+- AV DS se connecte directement au producteur avec une session FSTL partagée
+  par ses deux unités MFD.
+- AV CORE, son interface Web et le bus CAN restent hors du chemin de la vue de
+  communication.
+- La politique de bascule entre `RADAR` et `COM` appartient à AV DS et ne
+  modifie pas le protocole.
 - Les formats livrés initiaux sont APNG et PNG.
-- La teinte HUD utilise le thème local AV CORE, pas une couleur transmise par le
+- La teinte HUD utilise le thème local du MFD, pas une couleur transmise par le
   producteur.
 - Le bundle est préparé et installé hors ligne sur les deux machines.
-- La release générique AV CORE ne contient aucun asset de mod ou de mission.
-- L'audio, le texte et la vidéo cible restent hors Phase 5.
+- La release générique d'AV DS ne contient aucun asset de mod ou de mission.
+- L'audio, le texte et les commandes vers FS2Open restent hors de cette
+  évolution.
+- La cible de livraison est Windows ; aucun travail de portabilité n'est inclus.

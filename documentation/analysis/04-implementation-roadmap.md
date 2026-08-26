@@ -128,11 +128,12 @@ séparés des firmwares couvrent la livraison logicielle. La validation du HAT,
 des deux ESP32 et des 32 pixels sur le bus physique reste différée jusqu'à
 disponibilité des composants.
 
-## 7. Phase 5 — Vue de communication et assets cockpit
+## 7. Évolution — Source de communication et assets locaux
 
-La [spécification détaillée de la Phase 5](specs/5-Vue-de-communication-et-assets-cockpit/README.md)
-et sa [roadmap de livraison](specs/5-Vue-de-communication-et-assets-cockpit/ROADMAP.md)
-fixent le périmètre produit et son découpage.
+La [spécification technique](specs/source-communication-et-assets-locaux/README.md)
+et sa [roadmap de livraison](specs/source-communication-et-assets-locaux/ROADMAP.md)
+fixent le contrat de la source et des bundles. Le comportement des deux MFD est
+défini séparément par la [page Communications d'AV DS](av-ds/02-page-communications.md).
 
 Le producteur ajoute la source autoritaire de la vue `Talking Head` :
 
@@ -147,7 +148,8 @@ Le producteur ajoute la source autoritaire de la vue `Talking Head` :
 - bundle local versionné contenant uniquement les assets effectivement résolus,
   avec manifeste, hashes par asset, hash global et métadonnées de bundle.
 
-AV CORE consomme ensuite cette vue sans modifier la sémantique reçue :
+AV DS consomme ensuite cette vue directement depuis FS2Open avec la session
+FSTL issue du radar autonome, sans modifier la sémantique reçue :
 
 - négociation de la capability et vérification du hash de bundle ;
 - résolution de `head_asset_id` dans les assets locaux ;
@@ -157,14 +159,18 @@ AV CORE consomme ensuite cette vue sans modifier la sémantique reçue :
 - placeholder non bloquant pour un asset manquant ou corrompu dans un bundle
   compatible ; refus de la seule capability de communication si le bundle est
   incompatible ;
-- fonctionnement inchangé de la télémétrie, du Web et du bus CAN lorsque la vue
-  de communication est indisponible.
+- fonctionnement inchangé de la télémétrie, des autres clients FSTL, d'AV CORE
+  et du bus CAN lorsque la vue de communication est indisponible.
 
-Critère de sortie : AV CORE rejoue depuis un bundle local la même animation de
-communication que le cockpit, au même offset et au même rythme, sans transmettre
-de pixels, d'audio ou de fichier d'asset sur FSTL.
+AV CORE, son API Web et le bus CAN ne participent pas à ce chemin d'affichage.
+Les modes permanent et dynamique, la sélection par OSB et l'indépendance de
+`MFD-L` et `MFD-R` relèvent d'AV DS et restent indépendants du protocole.
 
-## 8. Phase 6 — Événements exacts et optimisation
+Résultat observable : AV DS peut rejouer depuis un bundle local la même
+animation de communication que le cockpit, au même offset et au même rythme,
+sans transmettre de pixels, d'audio ou de fichier d'asset sur FSTL.
+
+## 8. Évolution — Événements exacts et optimisation
 
 Comparer les événements détectés par diff aux besoins réels. Ajouter un hook moteur explicite uniquement lorsqu'un événement peut être manqué entre deux captures :
 
@@ -173,8 +179,8 @@ Comparer les événements détectés par diff aux besoins réels. Ajouter un hoo
 - événement de script non représenté dans l'état final ;
 - transition apparaissant et disparaissant dans une seule frame.
 
-Le hook `Talking Head`, livré en Phase 5, sert de modèle pour ces hooks
-additionnels.
+Le hook `Talking Head` de la source Communications sert de modèle pour ces
+hooks additionnels.
 
 Chaque hook doit :
 
@@ -312,7 +318,8 @@ Les logs ne doivent pas imprimer les données complètes à chaque frame.
 7. AV CORE, bus CAN, firmwares `WARN CTRL` et `THREAT PROC`, puis livraison
    Raspberry ;
 8. hook producteur `Talking Head`, packager CFile, bundle et manifeste ;
-9. consommation et lecture locale de la vue de communication dans AV CORE ;
+9. consommation et lecture locale de la vue de communication dans un client
+   MFD natif direct, indépendant d'AV CORE ;
 10. événements exacts supplémentaires uniquement pour les besoins cockpit qui
     ne peuvent pas être observés par état ;
 11. optimisation uniquement après mesure ;

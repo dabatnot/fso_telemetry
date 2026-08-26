@@ -538,7 +538,7 @@ Catalogue statique des assets de communication :
 - asset de cadre du gauge, si le client reproduit l'habillage FS2Open ;
 - asset de remplacement à utiliser si l'animation est absente.
 
-Les formats animés reconnus sont listés dans [`code/bmpman/bmpman.cpp`](../../code/bmpman/bmpman.cpp#L64-L72). Le client peut lire ces formats directement ou recevoir une conversion hors ligne en APNG, WebM sans audio ou atlas d'images. Les fichiers eux-mêmes ne sont pas inclus dans les snapshots et deltas temps réel.
+Les formats animés reconnus sont listés dans [`code/bmpman/bmpman.cpp`](../../code/bmpman/bmpman.cpp#L64-L72). AV DS reçoit une conversion hors ligne en APNG/PNG et se connecte directement à FS2Open avec la session issue du radar autonome ; AV CORE ne relaie ni l'état ni les assets. Les fichiers eux-mêmes ne sont pas inclus dans les snapshots et deltas temps réel.
 
 Les événements indispensables sont :
 

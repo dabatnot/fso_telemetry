@@ -10,6 +10,8 @@
 - transport exclusivement UDP ;
 - client distant capable de rejoindre une session en cours et de converger vers l'état complet ;
 - vue de communication rejouée depuis des assets locaux, sans flux d'images continu ;
+- AV DS connecté directement au socket FSTL de FS2Open, indépendamment
+  d'AV CORE, à partir du client radar autonome ;
 - vue 3D de cible produite par un rendu hors écran haute résolution et un flux H.264 optionnel ;
 - protocole indépendant de la version et de l'ABI C++ de FS2Open.
 
@@ -258,7 +260,7 @@ flowchart LR
     State["CommunicationViewState"]
     UDP["Événement UDP"]
     Asset["Asset local vérifié par hash"]
-    Remote["Vue de communication distante"]
+    Remote["Page Communications d'AV DS"]
 
     Message --> Resolve --> Gauge --> Hook
     Hook --> State --> UDP --> Remote
@@ -266,6 +268,9 @@ flowchart LR
 ```
 
 Les pixels de l'animation ne traversent pas le réseau. Le client fait progresser son asset local à partir de `animation_time_us`, `producer_sample_time_us`, du `playback_rate` signé et du mode de boucle. L'horloge monotone du producteur est estimée par les échanges NTP-style `HELLO`/`WELCOME` puis `HEARTBEAT`. Les corrections périodiques, plafonnées à 10 Hz, et les keyframes bornent la dérive et permettent de rejoindre une animation déjà en cours.
+
+Ce client est une application MFD native et une terminaison FSTL autonome. AV
+CORE, son API Web et le bus CAN ne relaient ni cet état ni ses assets.
 
 ## 7. Modèle d'autorité
 

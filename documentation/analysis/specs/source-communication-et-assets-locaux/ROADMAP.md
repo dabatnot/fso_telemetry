@@ -1,4 +1,4 @@
-# Roadmap de livraison de la Phase 5
+# Roadmap — Source Communications et intégration AV DS
 
 Cette roadmap découpe la vue de communication en lots verticaux. Elle guide
 l'implémentation sans constituer un gate, une preuve ou une obligation d'ordre.
@@ -9,8 +9,8 @@ en jeu suffit.
 |---|---|---|
 | 1 | Bundle reproductible à partir d'une pile de mods | Deux exécutions produisent le même manifeste et le même hash |
 | 2 | Source `Talking Head` publiée par FS2Open | `START`, corrections et `STOP` apparaissent dans un client de référence |
-| 3 | AV CORE négocie et projette la communication | Une connexion tardive rejoint le bon offset |
-| 4 | Page Web Communications | Le portrait suit lecture, pause et remplacement |
+| 3 | AV DS négocie et projette la communication | Une connexion tardive rejoint le bon offset |
+| 4 | Page `COM` dans les deux unités AV DS | Le portrait et les bascules restent indépendants par MFD |
 | 5 | Installation et intégration complète | Bundle valide/invalide et redémarrages sont gérés proprement |
 
 ## Lot 1 — Packager et bundle local
@@ -32,13 +32,14 @@ Il livre :
 - sortie atomique et refus d'un bundle partiel.
 
 Le packager est un outil de développement/livraison. Il n'est jamais exécuté
-dans la frame du jeu ni sur le Raspberry pendant une session.
+dans la frame du jeu ni sur le MFD pendant une session.
 
 Les tests couvrent au minimum la priorité loose/VP, les variantes de même nom,
 les conversions, les timings non uniformes, les chemins portables, les
 collisions et la reproductibilité.
 
-L'interface initiale est l'exécutable C++ `comm_bundle_packager`, activé par
+L'interface initiale est l'exécutable C++ Windows
+`comm_bundle_packager.exe`, activé par
 `FSO_BUILD_TOOLS`. Il exige `--fs2-root`, `--output` et soit une ou plusieurs
 options `--mission`, soit `--all-missions`. Il accepte la pile `--mod`, les
 métadonnées diagnostiques et les assets statiques facultatifs de cadre et de
@@ -70,18 +71,19 @@ Le hook ne fait aucune I/O, aucun hash et aucun encodage. Les tests moteur
 couvrent les transitions visibles, les assets inconnus, la pause, la vitesse
 signée et les changements de mission.
 
-## Lot 3 — Bundle et client FSTL dans AV CORE
+## Lot 3 — Bundle et client FSTL d'AV DS
 
 Ajouter l'installation locale du bundle et son chargement sûr :
 
-- `install-communication-bundle.sh <archive.tar.gz>` ;
+- `av-ds.exe --install-communication-bundle <archive.tar.gz>` ;
 - validation dans une zone temporaire ;
-- installation versionnée sous `/var/lib/fsotelemetry` ;
-- lien `current` remplacé atomiquement ;
+- installation versionnée sous la racine de données Windows d'AV DS ;
+- pointeur `current` remplacé atomiquement ;
 - réinstallation idempotente ;
 - conservation du bundle précédent si l'archive est invalide.
 
-Étendre le client FSTL d'AV CORE pour :
+Étendre la session FSTL partagée d'AV DS, en réutilisant l'implémentation et les
+règles de session du radar autonome, pour :
 
 - annoncer `COMM_VIEW_LOCAL_ASSETS` avec APNG et PNG ;
 - encoder l'offre et décoder la sélection de bundle ;
@@ -94,22 +96,24 @@ Ajouter l'installation locale du bundle et son chargement sûr :
 
 Les tests couvrent les résultats de négociation, les manifestes fragmentés,
 les u64, les événements anciens/dupliqués, la projection en boucle et lecture
-inverse ainsi que l'indépendance du statut FSTL et du CAN.
+inverse ainsi que l'indépendance des autres clients FSTL.
 
-## Lot 4 — API et page Web Communications
+## Lot 4 — Renderer et page Communications d'AV DS
 
-Étendre le statut AV CORE avec le sous-état de communication et réutiliser le
-flux SSE existant pour les changements.
+Ajouter la page `COM`, qui consomme exclusivement le modèle partagé installé
+par le client FSTL d'AV DS. Elle ne dépend ni d'AV CORE, ni d'une API HTTP, ni
+de SSE.
 
-Ajouter une route d'asset bornée qui :
+Le chargeur d'asset :
 
 - accepte uniquement un `asset_id` du manifeste validé ;
 - résout le chemin sous la racine canonique du bundle ;
 - vérifie le type livré ;
-- renvoie un type MIME fermé et un cache lié au hash ;
-- retourne 404 sans fuite de chemin pour toute valeur inconnue.
+- ne construit jamais un chemin depuis une valeur réseau non validée ;
+- maintient un cache graphique borné et libère ses ressources au changement de
+  bundle ou de session.
 
-La nouvelle page `Communications` affiche :
+La vue `Communications` affiche :
 
 - la frame courante ou le placeholder ;
 - le cadre recommandé s'il existe ;
@@ -117,46 +121,51 @@ La nouvelle page `Communications` affiche :
 - l'état de la capability et le diagnostic du bundle ;
 - un hash court utile à l'installation.
 
-La page ne contient aucun contrôle de lecture. Elle recharge l'état courant
-après reconnexion SSE, réveil ou retour d'onglet et saute directement à la frame
-projetée.
+La vue ne contient aucun contrôle de lecture. Ses OSB sélectionnent uniquement
+les modes locaux permanent et dynamique. Après reconnexion, réveil ou
+restauration de fenêtre, elle saute directement à la frame projetée.
 
-Les tests frontend/backend couvrent les états disponibles, les transitions, le
-choix de frame, le placeholder, le retour d'onglet et la protection des routes.
+Les tests du modèle et du widget couvrent les états disponibles, les
+transitions, le choix de frame, le placeholder, le retour de veille, le refus
+des chemins non manifestés et l'indépendance des bascules de `MFD-L` et
+`MFD-R`.
 
 ## Lot 5 — Livraison et intégration complète
 
-Étendre le constructeur de release AV CORE avec l'installateur de bundle, sans
-inclure d'asset de jeu.
+Étendre le packaging Windows d'AV DS avec l'installateur de bundle, sans inclure
+d'asset de jeu.
 
 Documenter :
 
 - génération du bundle avec la pile de mods utilisée ;
 - copie et activation côté FS2Open ;
-- copie et installation sur le Raspberry ;
+- copie et installation sur la machine Windows d'AV DS ;
 - lecture des hashes requis et installés ;
 - remplacement et retour au bundle précédent ;
-- diagnostics producteur et AV CORE.
+- diagnostics producteur et AV DS.
 
 La vérification manuelle courte couvre :
 
-- démarrage d'AV CORE avant et après FS2Open ;
+- démarrage d'AV DS avant et après FS2Open ;
 - communication simple et remplacement rapide ;
 - pause, reprise et compression temporelle ;
 - connexion en cours de lecture ;
 - changement de mission et redémarrage du jeu ;
 - bundle absent, hash différent et asset local supprimé ;
-- continuité de la télémétrie et du bus CAN dans chaque cas d'erreur visuelle.
+- continuité des autres clients FSTL dans chaque cas d'erreur visuelle.
 
 ## Hypothèses retenues
 
 - Le contrat FSTL existant est suffisant et n'est pas étendu.
-- Le producteur et AV CORE utilisent exactement le même bundle hashé.
+- Le producteur et AV DS utilisent exactement le même bundle hashé.
 - APNG/PNG est l'unique représentation livrée requise dans la première version.
-- Un seul bundle est actif à la fois sur AV CORE.
+- Un seul bundle est actif à la fois dans AV DS.
 - L'installation du bundle se fait hors session et un changement prend effet à
   la session suivante.
-- Le Raspberry dispose de l'espace nécessaire aux assets du périmètre choisi ;
+- La machine Windows d'AV DS dispose de l'espace nécessaire aux assets du périmètre choisi ;
   aucune synchronisation réseau automatique n'est ajoutée.
-- Le rendu Web reste local au navigateur et ne produit aucune nouvelle trame
-  CAN.
+- AV CORE, son interface Web et le bus CAN restent hors du flux de
+  communication.
+- Les modes permanent et dynamique sont appliqués séparément par `MFD-L` et
+  `MFD-R`, conformément à la spécification fonctionnelle d'AV DS.
+- Aucune cible autre que Windows ni abstraction de portabilité n'est incluse.

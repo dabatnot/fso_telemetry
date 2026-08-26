@@ -7,7 +7,7 @@ Ce dossier contient les spécifications de phase actives :
 - [Phase 2 — vaisseau complet](2-Vaisseau-complet/README.md) ;
 - [Phase 3 — ciblage et capteurs](3-Ciblage-et-capteurs/README.md) ;
 - [Phase 4 — bus CAN et alertes du simpit](4-Bus-CAN-et-alertes-simpit/README.md) ;
-- [Phase 5 — vue de communication et assets cockpit](5-Vue-de-communication-et-assets-cockpit/README.md).
+- [Source de communication et assets locaux pour AV DS](source-communication-et-assets-locaux/README.md).
 
 ## Décision produit irréversible
 

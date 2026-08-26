@@ -78,6 +78,7 @@ Le contrat normatif correspondant se trouve dans [`specs/0-Contrat-de-protocole`
 
 ## Documents
 
+- [AV DS — Spécification fonctionnelle](av-ds/README.md)
 - [01 — Inventaire des données](01-telemetry-data-inventory.md)
 - [02 — Architecture du module](02-telemetry-architecture.md)
 - [03 — Protocole UDP](03-udp-protocol.md)

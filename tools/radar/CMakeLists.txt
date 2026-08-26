@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.22)
 
-project(FsoSimpitRadar VERSION 1.0.0 LANGUAGES CXX)
+project(AvDs VERSION 1.0.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -39,17 +39,21 @@ target_link_libraries(radar_core
     PUBLIC Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Network Qt6::Svg fstl_protocol)
 target_compile_definitions(radar_core PUBLIC QT_NO_CAST_FROM_ASCII QT_NO_CAST_TO_ASCII)
 
-add_executable(fso-simpit-radar WIN32
+add_executable(av-ds WIN32
     src/main.cpp
     src/main_window.h
     src/main_window.cpp
     src/settings_dialog.h
     src/settings_dialog.cpp
 )
-target_link_libraries(fso-simpit-radar PRIVATE radar_core)
-set_target_properties(fso-simpit-radar PROPERTIES
-    OUTPUT_NAME "FsoSimpitRadar"
+target_link_libraries(av-ds PRIVATE radar_core)
+set_target_properties(av-ds PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/bin")
+if(WIN32)
+    set_target_properties(av-ds PROPERTIES OUTPUT_NAME "av-ds")
+else()
+    set_target_properties(av-ds PROPERTIES OUTPUT_NAME "FsoSimpitRadar")
+endif()
 
 include(CTest)
 if(BUILD_TESTING)
@@ -77,5 +81,5 @@ if(BUILD_TESTING)
 
 endif()
 
-install(TARGETS fso-simpit-radar RUNTIME DESTINATION . BUNDLE DESTINATION .)
+install(TARGETS av-ds RUNTIME DESTINATION . BUNDLE DESTINATION .)
 install(FILES README.md ../../Copying.md ../../Unlicense.md DESTINATION licenses)
