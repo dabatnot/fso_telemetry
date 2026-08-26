@@ -41,7 +41,7 @@ stories without introducing application behavior.
 touch settings so they do not overwrite the developer's real Radar configuration. This
 is technical sequencing guidance, not a phase gate.
 
-- [ ] T002 Create helpers for temporary `QSettings` paths, application identity setup, and offscreen widget rendering in `tools/radar/tests/av_ds_test_support.h`
+- [X] T002 Create helpers for temporary `QSettings` paths, application identity setup, and offscreen widget rendering in `tools/radar/tests/av_ds_test_support.h`
 
 **Checkpoint**: AV DS tests can run against isolated settings and UI state.
 

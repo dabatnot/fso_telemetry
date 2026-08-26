@@ -1,4 +1,5 @@
 #include "radar_widget.h"
+#include "av_ds_test_support.h"
 #include "radar_icons.h"
 #include "settings_dialog.h"
 #include "svg_icon_cache.h"
