@@ -1,6 +1,6 @@
 # Third-party notices
 
-The redistributable builds of FSO SimPit Radar use dynamically linked Qt 6
+The redistributable builds of AV DS — AV Display System use dynamically linked Qt 6
 libraries and Qt platform/image-format plugins. Qt is Copyright © The Qt
 Company Ltd and other contributors. The open-source Qt libraries used here are
 distributed under the GNU Lesser General Public License version 3; commercial
@@ -15,10 +15,10 @@ The Microsoft Visual C++ runtime is redistributed under the Microsoft Visual
 Studio license terms. The Windows bundle copies the matching x64 VC143 CRT
 files from the installed Visual Studio 2022 redistributable directory.
 
-FSO SimPit Radar itself follows the repository notices in `Copying.md` and
+AV DS — AV Display System itself follows the repository notices in `Copying.md` and
 `Unlicense.md`.
 
-The radar executable embeds the legacy FreeSpace VFNT bitmap fixtures
+The AV DS executable embeds the legacy FreeSpace VFNT bitmap fixtures
 `font01.vf` and `font02.vf` already present in this source repository. They are
 used only for the in-world sensor-link overlays. Original FreeSpace material is
 Copyright Volition, Inc.; see the bundled repository notices.

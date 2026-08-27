@@ -145,10 +145,10 @@ and absent; compare HUD, commands, target/range state, and hidden-contact behavi
 **Purpose**: Align user-facing documentation, notices, packaging, and final validation
 across all three stories.
 
-- [ ] T026 [P] Replace standalone Radar product wording, usage paths, Windows build output, settings-compatibility notes, and Windows-only phase scope with AV DS terminology while documenting the preserved non-Windows legacy output in `tools/radar/README.md`
-- [ ] T027 [P] Update the product attribution from FSO SimPit Radar to AV DS without changing third-party license obligations in `tools/radar/THIRD_PARTY_NOTICES.md`
-- [ ] T028 Build and inspect the redistributable ZIP from `tools/radar/packaging/deploy-windows.ps1`, confirming it contains `av-ds.exe`, Qt SVG/runtime dependencies, and licenses but no `FsoSimpitRadar.exe`
-- [ ] T029 After checking that no other agent owns a build or test process, run the complete CTest suite serially from `tools/radar/CMakeLists.txt` and complete the manual in-game validation in `specs/001-socle-av-ds-radar/quickstart.md`
+- [X] T026 [P] Replace standalone Radar product wording, usage paths, Windows build output, settings-compatibility notes, and Windows-only phase scope with AV DS terminology while documenting the preserved non-Windows legacy output in `tools/radar/README.md`
+- [X] T027 [P] Update the product attribution from FSO SimPit Radar to AV DS without changing third-party license obligations in `tools/radar/THIRD_PARTY_NOTICES.md`
+- [X] T028 Build and inspect the redistributable ZIP from `tools/radar/packaging/deploy-windows.ps1`, confirming it contains `av-ds.exe`, Qt SVG/runtime dependencies, and licenses but no `FsoSimpitRadar.exe`
+- [X] T029 After checking that no other agent owns a build or test process, run the complete CTest suite serially from `tools/radar/CMakeLists.txt` and complete the manual in-game validation in `specs/001-socle-av-ds-radar/quickstart.md`
 
 ---
 
