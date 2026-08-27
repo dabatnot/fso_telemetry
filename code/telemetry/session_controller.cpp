@@ -1280,6 +1280,7 @@ bool SessionController::queue_session_begin(std::size_t slot_index,
 		protocol::SessionBeginFlagMissionActive;
 	begin.producer_session_start_us = slot.session_start_us;
 	begin.mission_instance_id = mission_generation;
+	begin.initial_snapshot_id = slot.next_snapshot_id;
 	std::array<std::uint8_t, protocol::SessionBeginPayloadSize> payload{};
 	std::size_t payload_size = 0U;
 	if (protocol::encode_session_begin_payload(begin,

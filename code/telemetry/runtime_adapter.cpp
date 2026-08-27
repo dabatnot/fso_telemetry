@@ -471,9 +471,6 @@ NativeRuntimeStartupServices& native_runtime_startup_services() noexcept
 RuntimeTickStatus RuntimeAdapterPlayerTestAccess::service_tick(NativeSessionRuntime* runtime,
 	const RuntimeTickContext& context) noexcept
 {
-	if (!context.mission_active) {
-		reset_cockpit_incoming_weapon_classes();
-	}
 	if (runtime == nullptr) {
 		return RuntimeTickStatus::Unavailable;
 	}
@@ -555,6 +552,11 @@ void RuntimeAdapterPlayerTestAccess::stop_collection(NativeSessionRuntime* runti
 
 void RuntimeAdapterPlayerTestAccess::invalidate_mission_state_and_entities(NativeSessionRuntime* runtime) noexcept
 {
+	// Mission replacement may move directly from GAME_PLAY into the next
+	// active generation without an intervening inactive service tick. Clear
+	// producer-side discovery state at the actual purge boundary so references
+	// learned in one cockpit can never enter the next mission's manifest.
+	reset_cockpit_incoming_weapon_classes();
 	if (runtime != nullptr) {
 		runtime->end_mission_sessions();
 	}

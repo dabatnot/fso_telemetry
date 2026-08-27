@@ -39,3 +39,22 @@ jobs:
       - name: Frontend build
         working-directory: tools/av-core/frontend
         run: npm run build
+
+  firmware:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install PlatformIO
+        run: python -m pip install platformio==6.1.18
+      - name: Firmware native tests
+        working-directory: tools/av-core/firmware
+        run: pio test -e native
+      - name: WARN CTRL firmware build
+        working-directory: tools/av-core/firmware
+        run: pio run -e warn_ctrl
+      - name: THREAT PROC firmware build
+        working-directory: tools/av-core/firmware
+        run: pio run -e threat_proc

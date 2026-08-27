@@ -8,6 +8,22 @@ using namespace simpit::radar;
 class ApplicationSettingsTests final : public QObject {
     Q_OBJECT
 private slots:
+    void emptyConfiguredHostRequiresConfiguration()
+    {
+        test::TemporarySettings temporary;
+        QSettings seeded = temporary.open();
+        seeded.setValue(QStringLiteral("connection/configured"), true);
+        seeded.setValue(QStringLiteral("connection/host"), QStringLiteral("   "));
+        seeded.setValue(QStringLiteral("connection/port"), 42042);
+        seeded.sync();
+
+        const ApplicationSettings settings(temporary.settingsPath());
+        const auto connection = settings.connection();
+        QVERIFY(!connection.configured);
+        QCOMPARE(connection.host, QStringLiteral("127.0.0.1"));
+        QCOMPARE(connection.port, quint16{42042});
+    }
+
     void readsAndWritesLegacyRadarNamespace()
     {
         test::TemporarySettings temporary;

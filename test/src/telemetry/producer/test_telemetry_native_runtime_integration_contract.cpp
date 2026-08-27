@@ -2503,7 +2503,10 @@ TEST(TelemetryPhase3Threat,
 	ASSERT_EQ(1U, discovered_weapon_count);
 	EXPECT_EQ(static_cast<int>(weapon_info_count),
 		discovered_weapon_indices[0]);
-	detail::reset_cockpit_incoming_weapon_classes();
+	// The runtime purge boundary, rather than an inactive tick, owns clearing
+	// discoveries. Restart Mission can publish the replacement generation as
+	// active on its very first service tick.
+	detail::RuntimeAdapterPlayerTestAccess::invalidate_mission_state_and_entities(nullptr);
 	ASSERT_EQ(detail::Phase2SourceReadStatus::Valid,
 		detail::collect_cockpit_incoming_weapon_classes(
 			discovered_weapon_indices, discovered_weapon_count).status);

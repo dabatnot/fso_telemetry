@@ -293,6 +293,11 @@ public:
         return receiveAnyMessage(socket, timeoutMs, captured);
     }
 
+    bool receiveFromClient(MessageType wanted, int timeoutMs, CapturedDatagram& captured)
+    {
+        return receiveMessage(socket, wanted, timeoutMs, captured);
+    }
+
     bool sendHeartbeatRequest()
     {
         HeartbeatPayload heartbeat;
@@ -334,6 +339,12 @@ public:
     {
         const auto records = snapshotRecords(observer, paused);
         return sendSnapshotPart(records, 0, 1, 4, nextSnapshotId++);
+    }
+
+    bool sendSnapshotWithId(std::uint64_t observer, bool paused, std::uint32_t snapshotId)
+    {
+        const auto records = snapshotRecords(observer, paused);
+        return sendSnapshotPart(records, 0, 1, 4, snapshotId);
     }
 
     bool sendInterruptedSnapshot(std::uint64_t observer)
@@ -883,6 +894,69 @@ private slots:
         QVERIFY(producer.sendSnapshot(3, false));
         QTRY_COMPARE_WITH_TIMEOUT(images.count(), 5, 2000);
         QCOMPARE(capturedImage(images, 4)->playerEntityId, std::uint64_t{3});
+
+        client.stop();
+        QTest::qWait(50);
+    }
+
+    void previousMissionSnapshotCannotReplaceTheNewBaseline()
+    {
+        ProducerHarness producer;
+        QVERIFY(producer.bind());
+        RadarClient client;
+        QSignalSpy images(&client, &RadarClient::imageReady);
+
+        QVERIFY(producer.accept(client));
+        QVERIFY(producer.beginSession(100));
+        QVERIFY(producer.sendManifest());
+        QVERIFY(producer.sendSnapshot(1, false));
+        QTRY_COMPARE_WITH_TIMEOUT(images.count(), 1, 2000);
+
+        QVERIFY(producer.beginSession(200));
+        QTRY_COMPARE_WITH_TIMEOUT(images.count(), 2, 2000);
+        QVERIFY(!capturedImage(images, 1));
+
+        // Snapshot 1 belongs to the previous mission; the new SESSION_BEGIN
+        // announced snapshot 2 as its only acceptable initial baseline.
+        QVERIFY(producer.sendSnapshotWithId(99, false, 1));
+        QTest::qWait(150);
+        QCOMPARE(images.count(), 2);
+
+        QVERIFY(producer.sendSnapshot(2, false));
+        QTRY_COMPARE_WITH_TIMEOUT(images.count(), 3, 2000);
+        QCOMPARE(capturedImage(images, 2)->playerEntityId, std::uint64_t{2});
+
+        client.stop();
+        QTest::qWait(50);
+    }
+
+    void resyncReplacesAnInterruptedSnapshotCandidate()
+    {
+        ProducerHarness producer;
+        QVERIFY(producer.bind());
+        RadarClient client;
+        QSignalSpy statuses(&client, &RadarClient::statusChanged);
+        QSignalSpy images(&client, &RadarClient::imageReady);
+
+        QVERIFY(producer.accept(client));
+        QVERIFY(producer.beginSession(100));
+        QVERIFY(producer.sendManifest());
+        QVERIFY(producer.sendSnapshot(1, false));
+        QTRY_COMPARE_WITH_TIMEOUT(images.count(), 1, 2000);
+
+        QVERIFY(producer.sendInterruptedSnapshot(2));
+        CapturedDatagram resync;
+        QVERIFY(producer.receiveFromClient(MessageType::ResyncRequest, 2000, resync));
+
+        // The producer intentionally answers with a new transaction rather
+        // than completing the abandoned one.
+        QVERIFY(producer.sendSnapshot(3, false));
+        QTRY_COMPARE_WITH_TIMEOUT(images.count(), 2, 2000);
+        QCOMPARE(capturedImage(images, 1)->playerEntityId, std::uint64_t{3});
+        QVERIFY(std::none_of(statuses.cbegin(), statuses.cend(),
+            [](const QList<QVariant>& emission) {
+                return emission.at(0).value<ClientStatus>() == ClientStatus::Error;
+            }));
 
         client.stop();
         QTest::qWait(50);

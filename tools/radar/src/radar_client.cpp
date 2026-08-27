@@ -248,6 +248,7 @@ private:
         m_messageId = 0;
         m_manifestId = 0;
         m_manifestCatalog.reset();
+        m_expectedSnapshotId = 0;
         m_baselineSnapshotId = 0;
         m_lastDeltaSequence = 0;
         m_hasBaseline = false;
@@ -527,6 +528,12 @@ private:
                           protocol::encode_resync_request_payload, payload) &&
             sendMessage(protocol::MessageType::ResyncRequest, payload,
                         protocol::MessageFlagAckRequired)) {
+			// The producer answers RESYNC with a fresh keyframe transaction. Do
+			// not let an interrupted candidate reserve the assembler until its
+			// five-second timeout and reject that recovery as CandidateBusy.
+			m_transactions.discard(protocol::MessageType::FullSnapshot);
+			m_reliableHeaders.clear();
+			m_expectedSnapshotId = 0;
             m_resyncPending = true;
             m_lastResyncUs = nowUs();
             m_resyncPayload = payload;
@@ -709,6 +716,7 @@ private:
         m_current = {};
         m_baselineSnapshotId = 0;
         m_lastDeltaSequence = 0;
+        m_expectedSnapshotId = begin.initial_snapshot_id;
         m_hasBaseline = false;
         m_missionPaused = false;
         m_resyncPending = false;
@@ -809,6 +817,18 @@ private:
             fail(tr("Invalid FULL_SNAPSHOT or missing manifest"));
             return;
         }
+		const bool expectedInitialSnapshot = !m_hasBaseline &&
+			m_expectedSnapshotId != 0 && payload.snapshot_id == m_expectedSnapshotId;
+		const bool newerReplacementSnapshot = m_hasBaseline &&
+			payload.snapshot_id > m_baselineSnapshotId;
+		const bool resynchronizationSnapshot = !m_hasBaseline &&
+			m_expectedSnapshotId == 0 && payload.snapshot_id > m_baselineSnapshotId;
+		if (!m_sessionBegun ||
+			(!expectedInitialSnapshot && !newerReplacementSnapshot && !resynchronizationSnapshot)) {
+			traceSession(QStringLiteral("SNAPSHOT ignored out of order snapshot=%1 expected=%2 baseline=%3")
+				.arg(payload.snapshot_id).arg(m_expectedSnapshotId).arg(m_baselineSnapshotId));
+			return;
+		}
         traceSession(QStringLiteral("SNAPSHOT part session=%1 messageId=%2 snapshot=%3 part=%4/%5 manifest=%6")
                          .arg(header.session_id).arg(header.message_id).arg(payload.snapshot_id)
                          .arg(payload.part_index).arg(payload.part_count).arg(payload.required_manifest_id));
@@ -835,6 +855,7 @@ private:
             m_baseline = candidate;
             m_current = candidate;
             m_baselineSnapshotId = completed.transaction_id;
+			m_expectedSnapshotId = 0;
             m_lastDeltaSequence = 0;
             m_hasBaseline = true;
             m_resyncPending = false;
@@ -1058,6 +1079,7 @@ private:
     std::uint32_t m_messageId = 0;
     std::uint32_t m_helloMessageId = 0;
     std::uint32_t m_manifestId = 0;
+    std::uint32_t m_expectedSnapshotId = 0;
     std::uint32_t m_baselineSnapshotId = 0;
     std::uint32_t m_lastDeltaSequence = 0;
     std::uint32_t m_resyncRequestId = 0;

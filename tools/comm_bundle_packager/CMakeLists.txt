@@ -12,7 +12,7 @@ target_include_directories(comm_bundle_core PUBLIC
 )
 target_link_libraries(comm_bundle_core PUBLIC fstl_protocol ${ZLIB_LIBS})
 
-add_executable(comm_bundle_packager EXCLUDE_FROM_ALL
+add_executable(comm_bundle_packager
     comm_bundle_packager.cpp
     # The engine static library expects lifecycle symbols supplied by the game
     # executable. These no-op shims are also used by the native test harness and

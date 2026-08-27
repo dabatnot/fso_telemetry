@@ -18,7 +18,12 @@ ConnectionSettings ApplicationSettings::connection() const
     ConnectionSettings result;
     result.configured = m_settings.value(QStringLiteral("connection/configured"), false).toBool();
     result.host = m_settings.value(QStringLiteral("connection/host"), result.host).toString().trimmed();
-    if (result.host.isEmpty()) result.host = QStringLiteral("127.0.0.1");
+    if (result.host.isEmpty()) {
+        // Keep localhost as the form default, but never turn a persisted empty
+        // destination into an apparently valid configured connection.
+        result.host = QStringLiteral("127.0.0.1");
+        result.configured = false;
+    }
     const uint configuredPort = m_settings.value(QStringLiteral("connection/port"), result.port).toUInt();
     if (configuredPort >= 1 && configuredPort <= 65535)
         result.port = static_cast<quint16>(configuredPort);

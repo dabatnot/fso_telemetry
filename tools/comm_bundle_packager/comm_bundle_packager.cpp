@@ -248,21 +248,31 @@ std::vector<std::pair<std::string, BM_TYPE>> resolve_variants(const HeadReferenc
 	return resolved;
 }
 
-comm_bundle::Frame bgra_to_frame(std::uint32_t width,
+comm_bundle::Frame decoded_to_frame(std::uint32_t width,
 	std::uint32_t height,
 	const std::uint8_t* source,
 	std::size_t bytes_per_pixel)
 {
-	if (bytes_per_pixel != 3 && bytes_per_pixel != 4) throw std::runtime_error("unsupported decoded pixel size");
+	if (bytes_per_pixel < 1 || bytes_per_pixel > 4) throw std::runtime_error("unsupported decoded pixel size");
 	comm_bundle::Frame frame;
 	frame.width = width;
 	frame.height = height;
 	frame.rgba.resize(static_cast<std::size_t>(width) * height * 4);
 	for (std::size_t pixel = 0; pixel < static_cast<std::size_t>(width) * height; ++pixel) {
-		frame.rgba[pixel * 4] = source[pixel * bytes_per_pixel + 2];
-		frame.rgba[pixel * 4 + 1] = source[pixel * bytes_per_pixel + 1];
-		frame.rgba[pixel * 4 + 2] = source[pixel * bytes_per_pixel];
-		frame.rgba[pixel * 4 + 3] = bytes_per_pixel == 4 ? source[pixel * 4 + 3] : 255;
+		const auto source_offset = pixel * bytes_per_pixel;
+		const auto destination_offset = pixel * 4;
+		if (bytes_per_pixel <= 2) {
+			const auto gray = source[source_offset];
+			frame.rgba[destination_offset] = gray;
+			frame.rgba[destination_offset + 1] = gray;
+			frame.rgba[destination_offset + 2] = gray;
+			frame.rgba[destination_offset + 3] = bytes_per_pixel == 2 ? source[source_offset + 1] : 255;
+		} else {
+			frame.rgba[destination_offset] = source[source_offset + 2];
+			frame.rgba[destination_offset + 1] = source[source_offset + 1];
+			frame.rgba[destination_offset + 2] = source[source_offset];
+			frame.rgba[destination_offset + 3] = bytes_per_pixel == 4 ? source[source_offset + 3] : 255;
+		}
 	}
 	return frame;
 }
@@ -284,11 +294,14 @@ comm_bundle::Frame read_image(const std::string& filename, BM_TYPE type)
 	if (type == BM_TYPE_PNG) {
 		if (png_read_header(filename.c_str(), nullptr, &width, &height, &bpp) != PNG_ERROR_NONE) throw std::runtime_error("invalid PNG header: " + filename);
 		validate_image_dimensions(width, height, filename);
-		const auto bytes = static_cast<std::size_t>(bpp) / 8;
-		decoded.resize(static_cast<std::size_t>(width) * height * bytes);
-		result = png_read_bitmap(filename.c_str(), decoded.data(), &bpp, static_cast<int>(bytes), CF_TYPE_ANY);
+		// png_read_bitmap applies PNG_TRANSFORM_EXPAND, so palette and packed
+		// grayscale inputs can produce more bytes than their header bit depth.
+		// Reserve the maximum decoded width before asking libpng for its actual
+		// output BPP.
+		decoded.resize(static_cast<std::size_t>(width) * height * 4);
+		result = png_read_bitmap(filename.c_str(), decoded.data(), &bpp, 4, CF_TYPE_ANY);
 		if (result != PNG_ERROR_NONE) throw std::runtime_error("cannot decode PNG: " + filename);
-		return bgra_to_frame(width, height, decoded.data(), static_cast<std::size_t>(bpp) / 8);
+		return decoded_to_frame(width, height, decoded.data(), static_cast<std::size_t>(bpp) / 8);
 	}
 	if (type == BM_TYPE_JPG) {
 		if (jpeg_read_header(filename.c_str(), nullptr, &width, &height, &bpp) != JPEG_ERROR_NONE) throw std::runtime_error("invalid JPEG header: " + filename);
@@ -296,7 +309,7 @@ comm_bundle::Frame read_image(const std::string& filename, BM_TYPE type)
 		decoded.resize(static_cast<std::size_t>(width) * height * 3);
 		result = jpeg_read_bitmap(filename.c_str(), decoded.data(), nullptr, 3, CF_TYPE_ANY);
 		if (result != JPEG_ERROR_NONE) throw std::runtime_error("cannot decode JPEG: " + filename);
-		return bgra_to_frame(width, height, decoded.data(), 3);
+		return decoded_to_frame(width, height, decoded.data(), 3);
 	}
 	if (type == BM_TYPE_TGA) {
 		if (targa_read_header(filename.c_str(), nullptr, &width, &height, &bpp) != TARGA_ERROR_NONE) throw std::runtime_error("invalid TGA header: " + filename);
@@ -305,7 +318,7 @@ comm_bundle::Frame read_image(const std::string& filename, BM_TYPE type)
 		decoded.resize(static_cast<std::size_t>(width) * height * bytes);
 		result = targa_read_bitmap(filename.c_str(), decoded.data(), nullptr, static_cast<int>(bytes), CF_TYPE_ANY);
 		if (result != TARGA_ERROR_NONE) throw std::runtime_error("cannot decode TGA: " + filename);
-		return bgra_to_frame(width, height, decoded.data(), bytes);
+		return decoded_to_frame(width, height, decoded.data(), bytes);
 	}
 	if (type == BM_TYPE_PCX) {
 		if (pcx_read_header(filename.c_str(), nullptr, &width, &height, &bpp) != PCX_ERROR_NONE) throw std::runtime_error("invalid PCX header: " + filename);
@@ -313,7 +326,7 @@ comm_bundle::Frame read_image(const std::string& filename, BM_TYPE type)
 		decoded.resize(static_cast<std::size_t>(width) * height * 4);
 		result = pcx_read_bitmap(filename.c_str(), decoded.data(), nullptr, 4, 0, false, CF_TYPE_ANY);
 		if (result != PCX_ERROR_NONE) throw std::runtime_error("cannot decode PCX: " + filename);
-		return bgra_to_frame(width, height, decoded.data(), 4);
+		return decoded_to_frame(width, height, decoded.data(), 4);
 	}
 	if (type == BM_TYPE_DDS) {
 		int compression = 0;
@@ -331,7 +344,7 @@ comm_bundle::Frame read_image(const std::string& filename, BM_TYPE type)
 		result = dds_read_bitmap(filename.c_str(), decoded.data(), &decoded_bpp, CF_TYPE_ANY);
 		if (result != DDS_ERROR_NONE) throw std::runtime_error("cannot decode DDS: " + filename);
 		const auto bytes = decoded_bpp == 24 ? 3U : 4U;
-		return bgra_to_frame(width, height, decoded.data(), bytes);
+		return decoded_to_frame(width, height, decoded.data(), bytes);
 	}
 	throw std::runtime_error("unsupported EFF/static frame type: " + filename);
 }
@@ -354,7 +367,7 @@ std::vector<comm_bundle::Frame> decode_ani(const std::string& filename)
 		for (int index = 0; index < animation->total_frames; ++index) {
 			auto* pixels = anim_get_next_raw_buffer(instance, 0, 0, 32);
 			if (pixels == nullptr) throw std::runtime_error("ANI frame decoding failed: " + filename);
-			auto frame = bgra_to_frame(animation->width, animation->height, pixels, 4);
+			auto frame = decoded_to_frame(animation->width, animation->height, pixels, 4);
 			frame.delay_num = 1;
 			frame.delay_den = static_cast<std::uint16_t>(animation->fps);
 			frames.push_back(std::move(frame));
@@ -402,7 +415,7 @@ std::vector<comm_bundle::Frame> decode_apng(const std::string& filename)
 	animation.goto_start();
 	for (std::uint32_t index = 0; index < animation.nframes; ++index) {
 		animation.next_frame();
-		auto frame = bgra_to_frame(animation.w, animation.h, animation.frame.data.data(), 4);
+		auto frame = decoded_to_frame(animation.w, animation.h, animation.frame.data.data(), 4);
 		frame.delay_num = animation.frame.delay_num;
 		frame.delay_den = animation.frame.delay_den;
 		frames.push_back(std::move(frame));

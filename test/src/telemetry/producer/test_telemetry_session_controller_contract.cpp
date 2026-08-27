@@ -1897,7 +1897,8 @@ TEST(TelemetryWp06HandshakeContract, WelcomeProofPrewarmsOutsideMissionAndActiva
 		EXPECT_EQ(7U, payload.mission_instance_id);
 		EXPECT_EQ(1'000U, payload.producer_session_start_us);
 		EXPECT_EQ(0U, payload.required_manifest_id);
-		EXPECT_EQ(0U, payload.initial_snapshot_id) << "WP08 owns the initial snapshot transaction.";
+		EXPECT_EQ(1U, payload.initial_snapshot_id)
+			<< "SESSION_BEGIN announces the exact initial snapshot transaction.";
 		EXPECT_NE(0U, payload.session_flags & protocol::SessionBeginFlagReadOnly);
 		EXPECT_NE(0U, payload.session_flags & protocol::SessionBeginFlagMissionActive);
 		EXPECT_EQ(detail::ProducerSessionProgress::ReadyForState, controller.slot(0U).progress);
