@@ -14,7 +14,7 @@ Widgets, Network, Svg et Test. LinguistTools n'est pas requis.
 
 ```sh
 cmake -S tools/radar -B build/radar -G Ninja -DCMAKE_BUILD_TYPE=Release
-cmake --build build/radar --target av-ds --parallel 1
+cmake --build build/radar --parallel 1
 ctest --test-dir build/radar --output-on-failure -j 1
 ```
 
