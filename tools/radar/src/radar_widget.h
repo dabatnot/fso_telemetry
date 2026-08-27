@@ -1,7 +1,7 @@
 #pragma once
 
-#include "radar_client.h"
 #include "radar_display_settings.h"
+#include "radar_image.h"
 #include "svg_icon_cache.h"
 #include "vfnt_font.h"
 
@@ -51,13 +51,6 @@ struct TargetDisplayState final {
     int horizontalChevron = 0;
 };
 
-struct SystemOverlayPresentation final {
-    QString title;
-    QString detail;
-    QColor color;
-    bool visible = false;
-};
-
 class RadarWidget final : public QWidget {
     Q_OBJECT
 public:
@@ -65,7 +58,6 @@ public:
 
     QRectF radarCircleRect() const noexcept;
     std::shared_ptr<const RadarImage> image() const noexcept { return m_image; }
-    ClientStatus status() const noexcept { return m_status; }
     static double contactIconSize(double radarDiameter, const RadarContact& contact) noexcept;
     static ContactAnimationState contactAnimation(
         double radarDiameter, const RadarContact& contact, qint64 milliseconds) noexcept;
@@ -73,7 +65,6 @@ public:
         const QPointF& anchor, double bracketExtent, const QSizeF& panelSize,
         double separatorOffset, const QRectF& bounds, bool panelRight,
         bool upward) noexcept;
-    static SystemOverlayPresentation systemOverlay(ClientStatus status);
     void setAnimationTimeForTesting(qint64 milliseconds);
     void setDisplaySettings(const RadarDisplaySettings& settings);
     RadarDisplaySettings displaySettings() const noexcept { return m_display; }
@@ -81,7 +72,6 @@ public:
 
 public slots:
     void setImage(std::shared_ptr<const RadarImage> image);
-    void setStatus(ClientStatus status, const QString& detail = {});
 
 protected:
     void paintEvent(QPaintEvent* event) override;
@@ -98,13 +88,9 @@ private:
 
     std::shared_ptr<const RadarImage> m_image;
     mutable SvgIconCache m_iconCache;
-    VfntFont m_overlayTitleFont{QStringLiteral(":/radar/fonts/font02.vf")};
-    VfntFont m_overlayDetailFont{QStringLiteral(":/radar/fonts/font01.vf")};
     QElapsedTimer m_animationClock;
     QTimer m_animationTimer;
     qint64 m_testAnimationMilliseconds = -1;
-    ClientStatus m_status = ClientStatus::Disconnected;
-    QString m_detail;
     RadarDisplaySettings m_display;
     TargetDisplayState m_targetDisplay;
     struct TrailSample { QPointF scopePosition; qint64 milliseconds = 0; };

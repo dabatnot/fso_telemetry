@@ -5,16 +5,21 @@
 #include "telemetry/protocol/telemetry_crc32.h"
 #include "telemetry/protocol/telemetry_datagram.h"
 #include "telemetry/protocol/telemetry_fragmenter.h"
+#include "telemetry/protocol/packet_writer.h"
 #include "telemetry/protocol/telemetry_reassembler.h"
 #include "telemetry/protocol/telemetry_reliability_messages.h"
 #include "telemetry/protocol/telemetry_replication.h"
+#include "telemetry/protocol/telemetry_sha256.h"
+#include "telemetry/protocol/telemetry_state_messages.h"
 
 #include <QTest>
 #include <QElapsedTimer>
 #include <QHostAddress>
 #include <QNetworkDatagram>
+#include <QSignalSpy>
 #include <QUdpSocket>
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <vector>
@@ -76,6 +81,310 @@ bool sendMessage(QUdpSocket& socket, const CapturedDatagram& destination,
                                 static_cast<qint64>(written), destination.sender,
                                 destination.senderPort) == static_cast<qint64>(written);
 }
+
+template <typename Payload, typename Encoder>
+QByteArray encodePayload(const Payload& payload, std::size_t capacity, Encoder encoder)
+{
+    QByteArray encoded(static_cast<qsizetype>(capacity), Qt::Uninitialized);
+    std::size_t written = 0;
+    if (encoder(payload,
+                {reinterpret_cast<std::uint8_t*>(encoded.data()), capacity}, written) !=
+        ValidationError::None) {
+        return {};
+    }
+    encoded.resize(static_cast<qsizetype>(written));
+    return encoded;
+}
+
+std::vector<std::uint8_t> encodeRecord(RecordType type, std::uint8_t version,
+                                       ByteView payload,
+                                       BusinessRecordContainer container =
+                                           BusinessRecordContainer::FullSnapshot)
+{
+    const RecordEnvelopeView envelope{
+        static_cast<std::uint16_t>(type), version, RecordFlagNone, payload};
+    std::vector<std::uint8_t> encoded(512);
+    std::size_t written = 0;
+    if (encode_business_record(envelope, container, VersionMinor,
+                               {encoded.data(), encoded.size()}, written) !=
+        ValidationError::None) {
+        return {};
+    }
+    encoded.resize(written);
+    return encoded;
+}
+
+void append(std::vector<std::uint8_t>& destination,
+            const std::vector<std::uint8_t>& source)
+{
+    destination.insert(destination.end(), source.begin(), source.end());
+}
+
+std::vector<std::uint8_t> classManifestRecord(std::uint32_t generation)
+{
+    std::array<std::uint8_t, 256> payload{};
+    PacketWriter writer({payload.data(), payload.size()});
+    writer.write_u32(generation);
+    writer.write_u32(1);
+    writer.write_u64(ClassManifestPresenceFlagNone);
+    writer.write_utf8("Test Ship", 255);
+    writer.write_u32(0);
+    writer.write_u32(1);
+    writer.write_f32(1.0F);
+    writer.write_f32(0.0F);
+    writer.write_f32(0.0F);
+    writer.write_f32(0.0F);
+    if (!writer.ok()) return {};
+    return encodeRecord(RecordType::ClassManifest, 1, writer.written(),
+                        BusinessRecordContainer::Manifest);
+}
+
+std::vector<std::uint8_t> sessionRecord(std::uint64_t observer)
+{
+    std::array<std::uint8_t, 128> payload{};
+    PacketWriter writer({payload.data(), payload.size()});
+    writer.write_u64(SessionStatePresenceFlagObservedPlayer);
+    writer.write_u64(1);
+    writer.write_u64(1234);
+    writer.write_u8(static_cast<std::uint8_t>(AuthorityMode::Solo));
+    writer.write_u8(static_cast<std::uint8_t>(VisibilityMode::Cockpit));
+    writer.write_u8(static_cast<std::uint8_t>(SessionPhase::Live));
+    writer.write_u8(0);
+    writer.write_u32(1);
+    writer.write_u64(0);
+    writer.write_u64(0x07cbULL);
+    writer.write_u64(0);
+    writer.write_u64(0);
+    writer.write_u64(observer);
+    if (!writer.ok()) return {};
+    return encodeRecord(RecordType::SessionState, 1, writer.written());
+}
+
+std::vector<std::uint8_t> missionRecord(bool paused)
+{
+    std::array<std::uint8_t, 64> payload{};
+    PacketWriter writer({payload.data(), payload.size()});
+    writer.write_u64(0);
+    writer.write_u32(1);
+    writer.write_u8(static_cast<std::uint8_t>(MissionPhase::Active));
+    writer.write_u8(paused ? 1 : 0);
+    writer.write_u16(0);
+    writer.write_f32(1.0F);
+    writer.write_u64(1234);
+    if (!writer.ok()) return {};
+    return encodeRecord(RecordType::MissionState, 1, writer.written());
+}
+
+std::vector<std::uint8_t> lifecycleRecord(std::uint64_t observer)
+{
+    std::array<std::uint8_t, 64> payload{};
+    PacketWriter writer({payload.data(), payload.size()});
+    writer.write_u64(observer);
+    writer.write_u64(0);
+    writer.write_u64(1234);
+    writer.write_u8(static_cast<std::uint8_t>(ObjectType::Ship));
+    writer.write_u8(static_cast<std::uint8_t>(LifecyclePhase::Active));
+    writer.write_u32(0);
+    if (!writer.ok()) return {};
+    return encodeRecord(RecordType::EntityLifecycle, 1, writer.written());
+}
+
+std::vector<std::uint8_t> flightRecord(std::uint64_t observer)
+{
+    std::array<std::uint8_t, 128> payload{};
+    PacketWriter writer({payload.data(), payload.size()});
+    writer.write_u64(observer);
+    writer.write_u64(0);
+    writer.write_u64(1234);
+    for (int index = 0; index < 3; ++index) writer.write_f32(0.0F);
+    writer.write_f32(1.0F);
+    for (int index = 0; index < 3; ++index) writer.write_f32(0.0F);
+    for (int index = 0; index < 3; ++index) writer.write_f32(0.0F);
+    for (int index = 0; index < 3; ++index) writer.write_f32(0.0F);
+    writer.write_f32(0.0F);
+    writer.write_u32(0);
+    if (!writer.ok()) return {};
+    return encodeRecord(RecordType::FlightState, 1, writer.written());
+}
+
+std::vector<std::uint8_t> snapshotRecords(std::uint64_t observer, bool paused)
+{
+    std::vector<std::uint8_t> records;
+    append(records, sessionRecord(observer));
+    append(records, missionRecord(paused));
+    append(records, lifecycleRecord(observer));
+    append(records, flightRecord(observer));
+    return records;
+}
+
+std::shared_ptr<const RadarImage> capturedImage(const QSignalSpy& spy, int index)
+{
+    return spy.at(index).at(0).value<std::shared_ptr<const RadarImage>>();
+}
+
+class ProducerHarness final {
+public:
+    bool bind()
+    {
+        return socket.bind(QHostAddress(QHostAddress::LocalHost), 0);
+    }
+
+    bool accept(RadarClient& client)
+    {
+        client.start(QStringLiteral("127.0.0.1"), socket.localPort());
+        if (!receiveMessage(socket, MessageType::Hello, 3000, clientEndpoint)) return false;
+        HelloPayload hello;
+        if (decode_hello_payload(
+                {reinterpret_cast<const std::uint8_t*>(clientEndpoint.payload.constData()),
+                 static_cast<std::size_t>(clientEndpoint.payload.size())}, hello) !=
+            ValidationError::None) {
+            return false;
+        }
+        WelcomePayload welcome;
+        welcome.client_nonce = hello.client_nonce;
+        welcome.client_send_t0_us = hello.client_send_t0_us;
+        welcome.producer_receive_t1_us = hello.client_send_t0_us + 1;
+        welcome.producer_send_t2_us = hello.client_send_t0_us + 2;
+        welcome.status = WelcomeStatus::Accepted;
+        welcome.selected_major = VersionMajor;
+        welcome.selected_minor = VersionMinor;
+        welcome.selected_visibility_mode = VisibilityMode::Cockpit;
+        welcome.heartbeat_interval_ms = 1000;
+        welcome.reliable_reassembly_timeout_ms = ReliableReassemblyTimeoutV1Ms;
+        welcome.producer_id = 7;
+        const QByteArray payload = encodePayload(
+            welcome, WelcomePayloadPrefixSize, encode_welcome_payload);
+        return !payload.isEmpty() && send(MessageType::Welcome, payload);
+    }
+
+    bool beginSession(std::uint64_t missionId)
+    {
+        SessionBeginPayload begin;
+        begin.session_flags = SessionBeginFlagReadOnly |
+            SessionBeginFlagMissionActive | SessionBeginFlagManifestRequired;
+        begin.producer_session_start_us = 1;
+        begin.mission_instance_id = missionId;
+        begin.initial_snapshot_id = nextSnapshotId;
+        begin.required_manifest_id = manifestId;
+        const QByteArray payload = encodePayload(
+            begin, SessionBeginPayloadSize, encode_session_begin_payload);
+        return !payload.isEmpty() && send(MessageType::SessionBegin, payload);
+    }
+
+    bool sendManifest()
+    {
+        const auto records = classManifestRecord(manifestId);
+        if (records.empty()) return false;
+        Sha256Digest digest{};
+        if (!sha256({records.data(), records.size()}, digest)) return false;
+        ManifestPartPayload manifest;
+        manifest.manifest_id = manifestId;
+        manifest.part_count = 1;
+        manifest.transaction_size = static_cast<std::uint32_t>(records.size());
+        manifest.transaction_sha256 = digest;
+        manifest.producer_sample_time_us = 1;
+        manifest.manifest_kind = ManifestKind::FullRequired;
+        manifest.record_count = 1;
+        manifest.records = {records.data(), records.size()};
+        const QByteArray payload = encodePayload(
+            manifest, ManifestPartPayloadPrefixSize + records.size(),
+            encode_manifest_part_payload);
+        return !payload.isEmpty() && send(MessageType::Manifest, payload);
+    }
+
+    bool sendSnapshot(std::uint64_t observer, bool paused)
+    {
+        const auto records = snapshotRecords(observer, paused);
+        return sendSnapshotPart(records, 0, 1, 4, nextSnapshotId++);
+    }
+
+    bool sendInterruptedSnapshot(std::uint64_t observer)
+    {
+        const auto first = sessionRecord(observer);
+        const auto mission = missionRecord(false);
+        const auto lifecycle = lifecycleRecord(observer);
+        const auto flight = flightRecord(observer);
+        std::vector<std::uint8_t> complete;
+        append(complete, first);
+        append(complete, mission);
+        append(complete, lifecycle);
+        append(complete, flight);
+        std::vector<std::uint8_t> firstPart;
+        append(firstPart, first);
+        append(firstPart, mission);
+        return sendSnapshotPart(firstPart, 0, 2, 2, nextSnapshotId++, &complete);
+    }
+
+    bool completeInterruptedSnapshot(std::uint64_t observer)
+    {
+        const auto session = sessionRecord(observer);
+        const auto mission = missionRecord(false);
+        const auto lifecycle = lifecycleRecord(observer);
+        const auto flight = flightRecord(observer);
+        std::vector<std::uint8_t> complete;
+        append(complete, session);
+        append(complete, mission);
+        append(complete, lifecycle);
+        append(complete, flight);
+        std::vector<std::uint8_t> secondPart;
+        append(secondPart, lifecycle);
+        append(secondPart, flight);
+        return sendSnapshotPart(
+            secondPart, 1, 2, 2, nextSnapshotId - 1, &complete);
+    }
+
+private:
+    bool sendSnapshotPart(const std::vector<std::uint8_t>& records,
+                          std::uint16_t partIndex, std::uint16_t partCount,
+                          std::uint16_t recordCount, std::uint32_t snapshotId,
+                          const std::vector<std::uint8_t>* complete = nullptr)
+    {
+        const auto& transaction = complete == nullptr ? records : *complete;
+        Sha256Digest digest{};
+        if (!sha256({transaction.data(), transaction.size()}, digest)) return false;
+        FullSnapshotPartPayload snapshot;
+        snapshot.snapshot_id = snapshotId;
+        snapshot.part_index = partIndex;
+        snapshot.part_count = partCount;
+        snapshot.transaction_size = static_cast<std::uint32_t>(transaction.size());
+        snapshot.transaction_sha256 = digest;
+        snapshot.producer_sample_time_us = 2;
+        snapshot.required_manifest_id = manifestId;
+        snapshot.snapshot_flags = SnapshotFlagInitial;
+        snapshot.record_count = recordCount;
+        snapshot.records = {records.data(), records.size()};
+        const QByteArray payload = encodePayload(
+            snapshot, FullSnapshotPartPayloadPrefixSize + records.size(),
+            encode_full_snapshot_part_payload);
+        currentFrameId = snapshotId;
+        return !payload.isEmpty() && send(MessageType::FullSnapshot, payload);
+    }
+
+    bool send(MessageType type, const QByteArray& payload)
+    {
+        TelemetryDatagramHeader header;
+        header.version_minor = VersionMinor;
+        header.message_type = type;
+        header.flags = MessageFlagAckRequired |
+            (type == MessageType::FullSnapshot ? MessageFlagKeyframe : MessageFlagNone);
+        header.session_id = sessionId;
+        header.packet_sequence = sequence++;
+        header.message_id = messageId++;
+        if (type == MessageType::FullSnapshot) header.frame_id = currentFrameId;
+        return sendMessage(socket, clientEndpoint, header,
+                           {reinterpret_cast<const std::uint8_t*>(payload.constData()),
+                            static_cast<std::size_t>(payload.size())});
+    }
+
+    QUdpSocket socket;
+    CapturedDatagram clientEndpoint;
+    std::uint64_t sessionId = 42;
+    std::uint32_t sequence = 1;
+    std::uint32_t messageId = 1;
+    std::uint32_t manifestId = 77;
+    std::uint32_t nextSnapshotId = 1;
+    std::uint32_t currentFrameId = 0;
+};
 
 } // namespace
 
@@ -434,6 +743,69 @@ private slots:
         QCOMPARE(statusForSilence(2'000, 2'000, true, false), ClientStatus::Synchronizing);
         QCOMPARE(statusForSilence(4'999, 4'999, true, false), ClientStatus::Synchronizing);
         QCOMPARE(statusForSilence(5'000, 5'000, true, false), ClientStatus::Reconnecting);
+    }
+
+    void continuityAcrossWaitingPauseRecoveryMissionAndObserverReplacement()
+    {
+        ProducerHarness producer;
+        QVERIFY(producer.bind());
+        RadarClient client;
+        QSignalSpy statuses(&client, &RadarClient::statusChanged);
+        QSignalSpy images(&client, &RadarClient::imageReady);
+
+        QVERIFY(producer.accept(client));
+        QTRY_VERIFY_WITH_TIMEOUT(!statuses.isEmpty(), 2000);
+        QTRY_VERIFY_WITH_TIMEOUT(std::any_of(statuses.cbegin(), statuses.cend(),
+            [](const QList<QVariant>& emission) {
+                return emission.at(0).value<ClientStatus>() == ClientStatus::Ready;
+            }), 2000);
+        QCOMPARE(images.count(), 0);
+
+        QVERIFY(producer.beginSession(100));
+        QVERIFY(producer.sendManifest());
+        QVERIFY(producer.sendInterruptedSnapshot(1));
+        QTest::qWait(150);
+        QCOMPARE(images.count(), 0);
+
+        QVERIFY(producer.completeInterruptedSnapshot(1));
+        QTRY_COMPARE_WITH_TIMEOUT(images.count(), 1, 2000);
+        QCOMPARE(capturedImage(images, 0)->playerEntityId, std::uint64_t{1});
+        QTRY_VERIFY_WITH_TIMEOUT(std::any_of(statuses.cbegin(), statuses.cend(),
+            [](const QList<QVariant>& emission) {
+                return emission.at(0).value<ClientStatus>() == ClientStatus::Live;
+            }), 2000);
+
+        QVERIFY(producer.sendSnapshot(1, true));
+        QTRY_COMPARE_WITH_TIMEOUT(images.count(), 2, 2000);
+        const auto paused = capturedImage(images, 1);
+        QVERIFY(paused->missionPaused);
+        QTRY_VERIFY_WITH_TIMEOUT(std::any_of(statuses.cbegin(), statuses.cend(),
+            [](const QList<QVariant>& emission) {
+                return emission.at(0).value<ClientStatus>() == ClientStatus::Paused;
+            }), 2000);
+        QTest::qWait(150);
+        QCOMPARE(images.count(), 2);
+        QCOMPARE(capturedImage(images, 1), paused);
+
+        QVERIFY(producer.sendInterruptedSnapshot(1));
+        QTest::qWait(150);
+        QCOMPARE(images.count(), 2);
+
+        QVERIFY(producer.beginSession(200));
+        QTRY_COMPARE_WITH_TIMEOUT(images.count(), 3, 2000);
+        QVERIFY(!capturedImage(images, 2));
+
+        QVERIFY(producer.sendSnapshot(2, false));
+        QTRY_COMPARE_WITH_TIMEOUT(images.count(), 4, 2000);
+        QCOMPARE(capturedImage(images, 3)->playerEntityId, std::uint64_t{2});
+        QVERIFY(!capturedImage(images, 3)->missionPaused);
+
+        QVERIFY(producer.sendSnapshot(3, false));
+        QTRY_COMPARE_WITH_TIMEOUT(images.count(), 5, 2000);
+        QCOMPARE(capturedImage(images, 4)->playerEntityId, std::uint64_t{3});
+
+        client.stop();
+        QTest::qWait(50);
     }
 
     void atomicDeltaDeletion()

@@ -1,5 +1,8 @@
 #include "radar_widget.h"
+#include "av_ds_message.h"
+#include "av_ds_message_overlay.h"
 #include "av_ds_test_support.h"
+#include "display_unit.h"
 #include "radar_icons.h"
 #include "settings_dialog.h"
 #include "svg_icon_cache.h"
@@ -89,7 +92,6 @@ private:
             image->contacts.push_back(contact);
         }
         widget.setImage(image);
-        widget.setStatus(ClientStatus::Live);
         QImage capture(widget.size(), QImage::Format_ARGB32_Premultiplied);
         capture.fill(Qt::transparent);
         widget.render(&capture);
@@ -97,6 +99,22 @@ private:
     }
 
 private slots:
+    void radarPageDoesNotOwnOrPaintGlobalMessages()
+    {
+        auto* radar = new RadarWidget;
+        radar->resize(320, 320);
+        DisplayUnit unit(DisplayUnitId::MfdLeft, radar);
+        unit.resize(320, 320);
+        radar->setImage(std::make_shared<RadarImage>());
+        const QImage before = test::renderOffscreen(*radar, radar->size());
+
+        unit.setMessage(messageForClientStatus(ClientStatus::Error));
+        const QImage after = test::renderOffscreen(*radar, radar->size());
+
+        QCOMPARE(after, before);
+        QVERIFY(radar->findChildren<AvDsMessageOverlay*>().isEmpty());
+    }
+
     void referenceRadarImagePreservesAuthorizedContactPresentation()
     {
         const auto image = referenceRadarImage();
@@ -123,7 +141,6 @@ private slots:
         widget.resize(720, 720);
         widget.setAnimationTimeForTesting(500);
         widget.setImage(referenceRadarImage());
-        widget.setStatus(ClientStatus::Live);
 
         auto empty = std::make_shared<RadarImage>();
         empty->sessionId = 43;
@@ -134,7 +151,6 @@ private slots:
         fresh.resize(widget.size());
         fresh.setAnimationTimeForTesting(500);
         fresh.setImage(empty);
-        fresh.setStatus(ClientStatus::Live);
         QCOMPARE(afterReplacement, test::renderOffscreen(fresh, fresh.size()));
     }
 
@@ -182,7 +198,6 @@ private slots:
         contact.elevationRadians = 0.2;
         image->contacts.push_back(contact);
         widget.setImage(image);
-        widget.setStatus(ClientStatus::Live);
         QImage capture(widget.size(), QImage::Format_ARGB32_Premultiplied);
         capture.fill(Qt::transparent);
         widget.render(&capture);
@@ -293,7 +308,6 @@ private slots:
         previous->contacts.front().scopePosition = QPointF(0.31, -0.28);
         widget.setImage(previous);
         widget.setImage(image);
-        widget.setStatus(ClientStatus::Live);
         QImage capture(widget.size(), QImage::Format_ARGB32_Premultiplied);
         capture.fill(Qt::transparent);
         widget.render(&capture);
@@ -430,7 +444,6 @@ private slots:
         playerContact.visual.base = RadarIconAsset::ShipFighter;
         image->contacts.push_back(playerContact);
         widget.setImage(image);
-        widget.setStatus(ClientStatus::Live);
         QImage capture(widget.size(), QImage::Format_ARGB32_Premultiplied);
         capture.fill(Qt::transparent);
         widget.render(&capture);
@@ -486,60 +499,6 @@ private slots:
         QVERIFY(sawTint);
     }
 
-    void systemOverlaysUseImmersiveCopyAndStateColors()
-    {
-        const auto connecting = RadarWidget::systemOverlay(ClientStatus::Connecting);
-        QVERIFY(connecting.visible);
-        QCOMPARE(connecting.title, QStringLiteral("ESTABLISHING SENSOR LINK"));
-        QCOMPARE(connecting.detail, QStringLiteral("STANDBY"));
-        QCOMPARE(connecting.color, QColor(QStringLiteral("#66D9E8")));
-
-        const auto synchronizing = RadarWidget::systemOverlay(ClientStatus::Synchronizing);
-        QCOMPARE(synchronizing.title, QStringLiteral("BUILDING TACTICAL PICTURE"));
-        const auto stale = RadarWidget::systemOverlay(ClientStatus::Stale);
-        QCOMPARE(stale.title, QStringLiteral("SENSOR FEED LOST"));
-        QCOMPARE(stale.detail, QStringLiteral("HOLDING LAST CONTACT PICTURE"));
-        QCOMPARE(stale.color, QColor(QStringLiteral("#FFB83D")));
-        const auto reconnecting = RadarWidget::systemOverlay(ClientStatus::Reconnecting);
-        QCOMPARE(reconnecting.title, QStringLiteral("REACQUIRING SENSOR LINK"));
-        const auto failure = RadarWidget::systemOverlay(ClientStatus::Error);
-        QCOMPARE(failure.title, QStringLiteral("SENSOR LINK FAILURE"));
-        QCOMPARE(failure.detail, QStringLiteral("CHECK TELEMETRY SOURCE"));
-        QCOMPARE(failure.color, QColor(QStringLiteral("#FF5C57")));
-        QVERIFY(!RadarWidget::systemOverlay(ClientStatus::Live).visible);
-    }
-
-    void technicalDetailsAreNotPaintedOnSystemOverlay()
-    {
-        RadarWidget widget;
-        widget.resize(720, 720);
-        widget.setAnimationTimeForTesting(500);
-        widget.setStatus(ClientStatus::Error, QStringLiteral("UDP CRC snapshot failure"));
-        QImage first(widget.size(), QImage::Format_ARGB32_Premultiplied);
-        first.fill(Qt::transparent);
-        widget.render(&first);
-
-        widget.setStatus(ClientStatus::Error, QStringLiteral("Different internal diagnostic"));
-        QImage second(widget.size(), QImage::Format_ARGB32_Premultiplied);
-        second.fill(Qt::transparent);
-        widget.render(&second);
-        QCOMPARE(first, second);
-
-        bool sawFailureColor = false;
-        for (int y = 0; y < first.height() && !sawFailureColor; ++y) {
-            for (int x = 0; x < first.width(); ++x) {
-                const QColor pixel = first.pixelColor(x, y);
-                if (pixel.alpha() > 0 && pixel.red() > 180 &&
-                    pixel.red() > pixel.green() * 2 &&
-                    pixel.red() > pixel.blue() * 2) {
-                    sawFailureColor = true;
-                    break;
-                }
-            }
-        }
-        QVERIFY(sawFailureColor);
-    }
-
     void leadAndTargetChevronsUseFixedColors()
     {
         RadarWidget widget;
@@ -567,7 +526,6 @@ private slots:
         ordinary.color = QColor(60, 255, 100);
         image->contacts.push_back(ordinary);
         widget.setImage(image);
-        widget.setStatus(ClientStatus::Live);
         QImage capture(widget.size(), QImage::Format_ARGB32_Premultiplied);
         capture.fill(Qt::transparent);
         widget.render(&capture);
@@ -647,7 +605,6 @@ private slots:
         target.visual.base = RadarIconAsset::ShipFighter;
         image->contacts.push_back(target);
         widget.setImage(image);
-        widget.setStatus(ClientStatus::Live);
 
         QImage capture(QSize(1440, 1440), QImage::Format_ARGB32_Premultiplied);
         capture.setDevicePixelRatio(2.0);

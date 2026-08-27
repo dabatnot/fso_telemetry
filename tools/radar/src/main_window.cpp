@@ -1,5 +1,6 @@
 #include "main_window.h"
 
+#include "av_ds_message.h"
 #include "radar_widget.h"
 #include "settings_dialog.h"
 
@@ -18,12 +19,16 @@ MainWindow::MainWindow(std::unique_ptr<ApplicationSettings> settings, QWidget* p
     : QMainWindow(parent), m_settings(std::move(settings)), m_radar(new RadarWidget),
       m_displayUnit(new DisplayUnit(DisplayUnitId::MfdLeft, m_radar, this))
 {
+    m_displayUnits = {m_displayUnit};
     setWindowTitle(tr("AV DS — AV Display System"));
     setCentralWidget(m_displayUnit);
     setMinimumSize(320, 320);
     restoreWindowGeometry();
     connect(&m_client, &RadarClient::imageReady, m_radar, &RadarWidget::setImage);
-    connect(&m_client, &RadarClient::statusChanged, m_radar, &RadarWidget::setStatus);
+    connect(&m_client, &RadarClient::statusChanged, this,
+            [this](ClientStatus status, const QString& detail) {
+                setClientStatus(status, detail);
+            });
 
     const ConnectionSettings connection = m_settings->connection();
     m_host = connection.host;
@@ -55,6 +60,12 @@ void MainWindow::connectConfiguredDestination()
     m_client.start(m_host, m_port);
 }
 
+void MainWindow::setClientStatus(ClientStatus status, const QString& detail)
+{
+    const AvDsMessage message = messageForClientStatus(status, detail);
+    for (DisplayUnit* unit : m_displayUnits) unit->setMessage(message);
+}
+
 void MainWindow::openSettings(bool firstRun)
 {
     SettingsDialog dialog(m_host.isEmpty() ? QStringLiteral("127.0.0.1") : m_host,
@@ -72,7 +83,8 @@ void MainWindow::openSettings(bool firstRun)
         if (firstRun || previousHost != m_host || previousPort != m_port)
             connectConfiguredDestination();
     } else if (firstRun) {
-        m_radar->setStatus(ClientStatus::Disconnected, tr("Press Escape or Ctrl+, to configure"));
+        setClientStatus(
+            ClientStatus::Disconnected, tr("Press Escape or Ctrl+, to configure"));
     }
 }
 

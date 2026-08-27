@@ -23,9 +23,6 @@ const QColor BackgroundColor(7, 22, 28, 194);
 const QColor LabelColor(213, 248, 241);
 const QColor LeadColor(255, 220, 64);
 const QColor ChevronColor(255, 255, 255);
-const QColor LinkColor(102, 217, 232);
-const QColor StaleColor(255, 184, 61);
-const QColor FailureColor(255, 92, 87);
 constexpr double CalloutDeadZone = 0.20;
 constexpr qint64 CalloutSwitchDelayMs = 600;
 constexpr double ChevronActivateRadians = 0.05;
@@ -184,37 +181,6 @@ void RadarWidget::updateTrails(const std::shared_ptr<const RadarImage>& next)
     }
 }
 
-void RadarWidget::setStatus(ClientStatus status, const QString& detail)
-{
-    m_status = status;
-    m_detail = detail;
-    updateAnimationTimer();
-    update();
-}
-
-SystemOverlayPresentation RadarWidget::systemOverlay(ClientStatus status)
-{
-    switch (status) {
-    case ClientStatus::Resolving:
-    case ClientStatus::Connecting:
-        return {tr("ESTABLISHING SENSOR LINK"), tr("STANDBY"), LinkColor, true};
-    case ClientStatus::Synchronizing:
-        return {tr("BUILDING TACTICAL PICTURE"), tr("STANDBY"), LinkColor, true};
-	case ClientStatus::Ready:
-		return {tr("SENSOR LINK READY"), tr("WAITING FOR MISSION"), LinkColor, true};
-	case ClientStatus::Paused:
-		return {tr("MISSION PAUSED"), tr("SENSOR LINK MAINTAINED"), LinkColor, true};
-    case ClientStatus::Stale:
-        return {tr("SENSOR FEED LOST"), tr("HOLDING LAST CONTACT PICTURE"), StaleColor, true};
-    case ClientStatus::Reconnecting:
-        return {tr("REACQUIRING SENSOR LINK"), tr("STANDBY"), LinkColor, true};
-    case ClientStatus::Error:
-        return {tr("SENSOR LINK FAILURE"), tr("CHECK TELEMETRY SOURCE"), FailureColor, true};
-    default:
-        return {};
-    }
-}
-
 double RadarWidget::contactIconSize(double radarDiameter, const RadarContact& contact) noexcept
 {
     const double scale = std::clamp(radarDiameter / 684.0, 0.80, 1.45);
@@ -324,7 +290,7 @@ qint64 RadarWidget::animationMilliseconds() const noexcept
 
 void RadarWidget::updateAnimationTimer()
 {
-    bool animated = systemOverlay(m_status).visible;
+    bool animated = false;
     if (m_image != nullptr) {
         animated = animated || std::any_of(m_image->contacts.begin(), m_image->contacts.end(),
             [](const RadarContact& contact) {
@@ -753,45 +719,6 @@ void RadarWidget::paintEvent(QPaintEvent*)
         drawEnhancedLayers(painter, circle, center, radius);
     }
 
-    const SystemOverlayPresentation overlay = systemOverlay(m_status);
-    if (overlay.visible) {
-        painter.fillRect(rect(), QColor(0, 0, 0, m_status == ClientStatus::Stale ? 105 : 145));
-        const QRectF safeBounds = QRectF(rect()).adjusted(20, 20, -20, -20);
-        int titleScale = std::clamp(qRound(width() / 360.0), 1, 3);
-        while (titleScale > 1 &&
-               m_overlayTitleFont.textSize(overlay.title, titleScale).width() > safeBounds.width()) {
-            --titleScale;
-        }
-        const int detailScale = titleScale;
-        const QSize titleSize = m_overlayTitleFont.textSize(overlay.title, titleScale);
-        const QSize detailSize = m_overlayDetailFont.textSize(overlay.detail, detailScale);
-        const double gap = 7.0 * titleScale;
-        const double blockHeight = titleSize.height() + gap + detailSize.height();
-        const double top = safeBounds.center().y() - blockHeight * 0.5;
-        const double pulse = 0.92 + 0.08 *
-            (0.5 + 0.5 * std::sin(animationMilliseconds() / 1000.0 * 2.0 * Pi * 0.65));
-        QColor titleColor = overlay.color;
-        titleColor.setAlphaF(titleColor.alphaF() * pulse);
-        QColor detailColor = overlay.color;
-        detailColor.setAlphaF(detailColor.alphaF() * 0.70);
-
-        const QRectF titleBounds(safeBounds.left(), top, safeBounds.width(), titleSize.height());
-        const QRectF detailBounds(safeBounds.left(), top + titleSize.height() + gap,
-                                  safeBounds.width(), detailSize.height());
-        const bool titleDrawn = m_overlayTitleFont.drawText(
-            painter, titleBounds, Qt::AlignCenter, overlay.title, titleColor, titleScale);
-        const bool detailDrawn = m_overlayDetailFont.drawText(
-            painter, detailBounds, Qt::AlignCenter, overlay.detail, detailColor, detailScale);
-        if (!titleDrawn || !detailDrawn) {
-            QFont fallback = labels;
-            fallback.setPixelSize(std::clamp(static_cast<int>(width() / 22), 16, 42));
-            fallback.setBold(true);
-            painter.setFont(fallback);
-            painter.setPen(titleColor);
-            painter.drawText(safeBounds, Qt::AlignCenter,
-                             overlay.title + QLatin1Char('\n') + overlay.detail);
-        }
-    }
 }
 
 } // namespace simpit::radar

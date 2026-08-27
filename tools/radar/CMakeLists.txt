@@ -16,6 +16,10 @@ add_subdirectory("${REPOSITORY_ROOT}/code/telemetry/protocol"
                  "${CMAKE_CURRENT_BINARY_DIR}/fstl_protocol")
 
 add_library(radar_core STATIC
+    src/av_ds_message.h
+    src/av_ds_message.cpp
+    src/av_ds_message_overlay.h
+    src/av_ds_message_overlay.cpp
     src/application_settings.h
     src/application_settings.cpp
     src/display_unit.h

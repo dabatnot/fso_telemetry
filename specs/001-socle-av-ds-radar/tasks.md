@@ -96,19 +96,19 @@ message and current contact picture at every transition.
 > Write these tests first and confirm that message ownership and transition assertions
 > fail before moving the overlays.
 
-- [ ] T012 [P] [US2] Add failing tests for `ClientStatus` to AV DS message text/color/visibility mapping and propagation to two test `DisplayUnit` instances with distinct page widgets, without registering `MFD-R` or another production page, in `tools/radar/tests/av_ds_shell_tests.cpp`
-- [ ] T013 [P] [US2] Add failing client tests for waiting, pause without invented movement, stale/reconnect thresholds, interrupted snapshots, first-valid-state recovery, mission replacement, and observer replacement in `tools/radar/tests/radar_client_tests.cpp`
-- [ ] T014 [P] [US2] Add a failing regression test proving `RadarWidget` renders Radar content without owning or painting system-link messages in `tools/radar/tests/radar_widget_tests.cpp`
+- [X] T012 [P] [US2] Add failing tests for `ClientStatus` to AV DS message text/color/visibility mapping and propagation to two test `DisplayUnit` instances with distinct page widgets, without registering `MFD-R` or another production page, in `tools/radar/tests/av_ds_shell_tests.cpp`
+- [X] T013 [P] [US2] Add failing client tests for waiting, pause without invented movement, stale/reconnect thresholds, interrupted snapshots, first-valid-state recovery, mission replacement, and observer replacement in `tools/radar/tests/radar_client_tests.cpp`
+- [X] T014 [P] [US2] Add a failing regression test proving `RadarWidget` renders Radar content without owning or painting system-link messages in `tools/radar/tests/radar_widget_tests.cpp`
 
 ### Implementation for User Story 2
 
-- [ ] T015 [US2] Implement the global `AvDsMessage` value and the existing `ClientStatus` text/color/visibility mapping and register the source in `tools/radar/src/av_ds_message.h`, `tools/radar/src/av_ds_message.cpp`, and `tools/radar/CMakeLists.txt`
-- [ ] T016 [US2] Implement the transparent global-message renderer using the existing VFNT title/detail resources and stale dimming behavior and register the source in `tools/radar/src/av_ds_message_overlay.h`, `tools/radar/src/av_ds_message_overlay.cpp`, and `tools/radar/CMakeLists.txt`
-- [ ] T017 [US2] Remove `ClientStatus`, message mapping, VFNT system overlay state, and system-message painting from the `RADAR` page while preserving Radar image effects in `tools/radar/src/radar_widget.h` and `tools/radar/src/radar_widget.cpp`
-- [ ] T018 [US2] Route each `RadarClient::statusChanged` event through the application-level message mapping and propagate it to every unit in the application-owned `DisplayUnit` collection without changing active pages, while the production collection contains only `MFD-L`, in `tools/radar/src/main_window.h` and `tools/radar/src/main_window.cpp`
-- [ ] T019 [US2] Present missing, rejected, or invalid connection configuration through the AV DS global-message path and keep settings reopening behavior on Escape and Ctrl+, in `tools/radar/src/main_window.cpp` and `tools/radar/src/settings_dialog.cpp`
-- [ ] T020 [US2] Ensure session renegotiation, mission changes, and observer changes cannot republish a prior image as `Live` before a new complete validated state in `tools/radar/src/radar_client.cpp`
-- [ ] T021 [US2] Run the US2 Qt tests registered in `tools/radar/CMakeLists.txt` and execute the wait, pause, telemetry-loss, reconnect, invalid-config, and mission-change scenarios in `specs/001-socle-av-ds-radar/quickstart.md`
+- [X] T015 [US2] Implement the global `AvDsMessage` value and the existing `ClientStatus` text/color/visibility mapping and register the source in `tools/radar/src/av_ds_message.h`, `tools/radar/src/av_ds_message.cpp`, and `tools/radar/CMakeLists.txt`
+- [X] T016 [US2] Implement the transparent global-message renderer using the existing VFNT title/detail resources and stale dimming behavior and register the source in `tools/radar/src/av_ds_message_overlay.h`, `tools/radar/src/av_ds_message_overlay.cpp`, and `tools/radar/CMakeLists.txt`
+- [X] T017 [US2] Remove `ClientStatus`, message mapping, VFNT system overlay state, and system-message painting from the `RADAR` page while preserving Radar image effects in `tools/radar/src/radar_widget.h` and `tools/radar/src/radar_widget.cpp`
+- [X] T018 [US2] Route each `RadarClient::statusChanged` event through the application-level message mapping and propagate it to every unit in the application-owned `DisplayUnit` collection without changing active pages, while the production collection contains only `MFD-L`, in `tools/radar/src/main_window.h` and `tools/radar/src/main_window.cpp`
+- [X] T019 [US2] Present missing, rejected, or invalid connection configuration through the AV DS global-message path and keep settings reopening behavior on Escape and Ctrl+, in `tools/radar/src/main_window.cpp` and `tools/radar/src/settings_dialog.cpp`
+- [X] T020 [US2] Ensure session renegotiation, mission changes, and observer changes cannot republish a prior image as `Live` before a new complete validated state in `tools/radar/src/radar_client.cpp`
+- [X] T021 [US2] Run the US2 Qt tests registered in `tools/radar/CMakeLists.txt` and execute the wait, pause, telemetry-loss, reconnect, invalid-config, and mission-change scenarios in `specs/001-socle-av-ds-radar/quickstart.md`
 
 **Checkpoint**: User Story 2 independently demonstrates continuity and correct global
 message ownership across ordinary game and network transitions.

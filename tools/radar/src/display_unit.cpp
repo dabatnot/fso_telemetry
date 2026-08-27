@@ -1,5 +1,8 @@
 #include "display_unit.h"
 
+#include "av_ds_message_overlay.h"
+
+#include <QResizeEvent>
 #include <QVBoxLayout>
 
 namespace simpit::radar {
@@ -11,6 +14,8 @@ DisplayUnit::DisplayUnit(DisplayUnitId id, QWidget* radarPage, QWidget* parent)
     auto* layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
     layout->addWidget(radarPage);
+    m_messageOverlay = new AvDsMessageOverlay(this);
+    m_messageOverlay->setGeometry(rect());
 }
 
 DisplayUnitId DisplayUnit::id() const noexcept
@@ -33,6 +38,23 @@ bool DisplayUnit::setActivePage(PageId page) noexcept
     if (page != PageId::Radar) return false;
     m_activePage = page;
     return true;
+}
+
+AvDsMessage DisplayUnit::message() const
+{
+    return m_messageOverlay->message();
+}
+
+void DisplayUnit::setMessage(const AvDsMessage& message)
+{
+    m_messageOverlay->setMessage(message);
+}
+
+void DisplayUnit::resizeEvent(QResizeEvent* event)
+{
+    QWidget::resizeEvent(event);
+    m_messageOverlay->setGeometry(rect());
+    m_messageOverlay->raise();
 }
 
 } // namespace simpit::radar

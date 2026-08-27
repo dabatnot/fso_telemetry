@@ -7,6 +7,7 @@
 
 #include <QMainWindow>
 
+#include <array>
 #include <memory>
 
 namespace simpit::radar {
@@ -32,10 +33,12 @@ private slots:
 private:
     void connectConfiguredDestination();
     void restoreWindowGeometry();
+    void setClientStatus(ClientStatus status, const QString& detail = {});
 
     std::unique_ptr<ApplicationSettings> m_settings;
     RadarWidget* m_radar = nullptr;
     DisplayUnit* m_displayUnit = nullptr;
+    std::array<DisplayUnit*, 1> m_displayUnits{};
     RadarClient m_client;
     QString m_host;
     quint16 m_port = 42042;

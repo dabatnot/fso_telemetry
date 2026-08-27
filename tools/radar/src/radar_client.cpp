@@ -682,6 +682,20 @@ private:
             fail(tr("Invalid SESSION_BEGIN"));
             return;
         }
+        // A SESSION_BEGIN can represent a new mission while the UDP session
+        // remains established. Do not present the previous mission as current
+        // while waiting for the first complete state of the new one.
+        if (m_hasBaseline) emit imageReady({});
+        m_reassembler.clear();
+        m_transactions.clear();
+        m_reliableHeaders.clear();
+        m_baseline = {};
+        m_current = {};
+        m_baselineSnapshotId = 0;
+        m_lastDeltaSequence = 0;
+        m_hasBaseline = false;
+        m_missionPaused = false;
+        m_resyncPending = false;
         m_sessionBegun = true;
         m_lastStateProgressUs = nowUs();
         traceSession(QStringLiteral("SESSION_BEGIN accepted session=%1 messageId=%2 mission=%3")
