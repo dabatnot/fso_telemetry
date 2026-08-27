@@ -41,6 +41,16 @@ constexpr qint64 RecoveryGraceMilliseconds = 1'000;
 constexpr qint64 ReconnectAfterMilliseconds =
     StaleAfterMilliseconds + RecoveryGraceMilliseconds;
 constexpr std::uint64_t HelloAttemptWindowUs = 5'000'000ULL;
+constexpr protocol::VisibilityMode RequiredVisibilityMode =
+    protocol::VisibilityMode::Cockpit;
+constexpr std::uint64_t ReadOnlyClientCapabilities = protocol::CapabilityNone;
+
+constexpr bool isAllowedClientMessage(protocol::MessageType type) noexcept
+{
+    return type == protocol::MessageType::Hello || type == protocol::MessageType::Ack ||
+        type == protocol::MessageType::Nack || type == protocol::MessageType::Heartbeat ||
+        type == protocol::MessageType::ResyncRequest;
+}
 
 ClientStatus statusForSilence(qint64 stateSilenceMilliseconds,
                               qint64 networkSilenceMilliseconds,
@@ -391,7 +401,8 @@ private:
                      std::uint64_t sessionOverride = std::numeric_limits<std::uint64_t>::max(),
                      std::uint32_t messageOverride = 0)
     {
-        if (m_socket == nullptr || m_peerAddress.isNull() || payload.size() >
+        if (!isAllowedClientMessage(type) || m_socket == nullptr ||
+            m_peerAddress.isNull() || payload.size() >
             static_cast<qsizetype>(protocol::MaxFragmentPayload)) return false;
         protocol::TelemetryDatagramHeader header;
         header.version_minor = protocol::VersionMinor;
@@ -426,7 +437,10 @@ private:
         hello.max_major = protocol::VersionMajor;
         hello.min_minor = protocol::VersionMinor;
         hello.max_minor = protocol::VersionMinor;
-        hello.requested_visibility_mode = protocol::VisibilityMode::Cockpit;
+        // AV DS is a direct, passive CockpitSensors consumer. It advertises no
+        // optional capability that could open a specialized or command path.
+        hello.requested_visibility_mode = RequiredVisibilityMode;
+        hello.advertised_capabilities = ReadOnlyClientCapabilities;
         hello.requested_heartbeat_ms = 1000;
         if (!encodePayload(hello, protocol::HelloPayloadPrefixSize,
                            protocol::encode_hello_payload, m_helloPayload)) {
@@ -658,7 +672,8 @@ private:
         }
         if (welcome.selected_major != protocol::VersionMajor ||
             welcome.selected_minor != protocol::VersionMinor ||
-            welcome.selected_visibility_mode != protocol::VisibilityMode::Cockpit ||
+            welcome.selected_visibility_mode != RequiredVisibilityMode ||
+            welcome.active_capabilities != ReadOnlyClientCapabilities ||
             header.session_id == 0) {
             fail(tr("Invalid FSTL 1.1 WELCOME"));
             return;
@@ -676,6 +691,7 @@ private:
     void processSessionBegin(const protocol::TelemetryDatagramHeader& header, protocol::ByteView data)
     {
         protocol::SessionBeginPayload begin;
+        // The FSTL decoder rejects SESSION_BEGIN unless ReadOnly is present.
         if (protocol::decode_session_begin_payload(data, begin) != protocol::ValidationError::None) {
             traceSession(QStringLiteral("SESSION_BEGIN decode failed session=%1 messageId=%2")
                              .arg(header.session_id).arg(header.message_id));

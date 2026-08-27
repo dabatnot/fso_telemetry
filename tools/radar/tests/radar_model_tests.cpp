@@ -47,7 +47,9 @@ private slots:
 
     void profileCoverageIsStrict()
     {
-        auto imageForCoverage = [](std::uint64_t coverage) {
+        auto imageForProfile = [](std::uint64_t coverage,
+                                  protocol::VisibilityMode visibility =
+                                      protocol::VisibilityMode::Cockpit) {
             auto putU32 = [](std::vector<std::uint8_t>& bytes,
                              std::size_t offset, std::uint32_t value) {
                 for (std::size_t index = 0; index < 4; ++index)
@@ -62,7 +64,7 @@ private slots:
             session.key.record_type = static_cast<std::uint16_t>(protocol::RecordType::SessionState);
             session.value.resize(64);
             session.value[24] = static_cast<std::uint8_t>(protocol::AuthorityMode::Solo);
-            session.value[25] = static_cast<std::uint8_t>(protocol::VisibilityMode::Cockpit);
+            session.value[25] = static_cast<std::uint8_t>(visibility);
             session.value[26] = static_cast<std::uint8_t>(protocol::SessionPhase::Live);
             putU32(session.value, 28, 1);
             putU64(session.value, 40, coverage);
@@ -81,10 +83,18 @@ private slots:
             return image;
         };
         QString error;
-        QVERIFY(makeRadarImage(imageForCoverage(0x07cbULL), &error) != nullptr);
-        QVERIFY(makeRadarImage(imageForCoverage(
+        constexpr std::uint64_t CockpitSensorsCoverage = 0x07cbULL;
+        QVERIFY(makeRadarImage(imageForProfile(CockpitSensorsCoverage), &error) != nullptr);
+        QVERIFY(makeRadarImage(imageForProfile(
                    protocol::StateDomainCoverageBitCoreShip), &error) == nullptr);
         QVERIFY(error.contains(QStringLiteral("0x07CB")));
+        QVERIFY(makeRadarImage(imageForProfile(
+                   CockpitSensorsCoverage | protocol::StateDomainCoverageBitPrediction),
+                   &error) == nullptr);
+        QVERIFY(makeRadarImage(imageForProfile(
+                   CockpitSensorsCoverage, static_cast<protocol::VisibilityMode>(1)),
+                   &error) == nullptr);
+        QVERIFY(error.contains(QStringLiteral("Cockpit")));
     }
 
     void projectionCentersUndefinedTransverseDirection()

@@ -36,8 +36,8 @@ struct CapturedDatagram {
     quint16 senderPort = 0;
 };
 
-bool receiveMessage(QUdpSocket& socket, MessageType wanted, int timeoutMs,
-                    CapturedDatagram& captured)
+bool receiveDecodedMessage(QUdpSocket& socket, MessageType wanted, bool acceptAny,
+                           int timeoutMs, CapturedDatagram& captured)
 {
     QElapsedTimer timer;
     timer.start();
@@ -53,7 +53,7 @@ bool receiveMessage(QUdpSocket& socket, MessageType wanted, int timeoutMs,
                              static_cast<std::size_t>(wire.size())};
         if (decode_and_validate_datagram(
                 bytes, SupportedMinorRange, decoded) != ValidationError::None ||
-            decoded.header.message_type != wanted) {
+            (!acceptAny && decoded.header.message_type != wanted)) {
             continue;
         }
         captured.header = decoded.header;
@@ -80,6 +80,17 @@ bool sendMessage(QUdpSocket& socket, const CapturedDatagram& destination,
     return socket.writeDatagram(reinterpret_cast<const char*>(wire.data()),
                                 static_cast<qint64>(written), destination.sender,
                                 destination.senderPort) == static_cast<qint64>(written);
+}
+
+bool receiveMessage(QUdpSocket& socket, MessageType wanted, int timeoutMs,
+                    CapturedDatagram& captured)
+{
+    return receiveDecodedMessage(socket, wanted, false, timeoutMs, captured);
+}
+
+bool receiveAnyMessage(QUdpSocket& socket, int timeoutMs, CapturedDatagram& captured)
+{
+    return receiveDecodedMessage(socket, MessageType::Invalid, true, timeoutMs, captured);
 }
 
 template <typename Payload, typename Encoder>
@@ -240,6 +251,7 @@ public:
             ValidationError::None) {
             return false;
         }
+        clientHello = hello;
         WelcomePayload welcome;
         welcome.client_nonce = hello.client_nonce;
         welcome.client_send_t0_us = hello.client_send_t0_us;
@@ -269,6 +281,32 @@ public:
         const QByteArray payload = encodePayload(
             begin, SessionBeginPayloadSize, encode_session_begin_payload);
         return !payload.isEmpty() && send(MessageType::SessionBegin, payload);
+    }
+
+    const HelloPayload& hello() const noexcept
+    {
+        return clientHello;
+    }
+
+    bool receiveFromClient(int timeoutMs, CapturedDatagram& captured)
+    {
+        return receiveAnyMessage(socket, timeoutMs, captured);
+    }
+
+    bool sendHeartbeatRequest()
+    {
+        HeartbeatPayload heartbeat;
+        heartbeat.probe_id = 1;
+        heartbeat.kind = HeartbeatKind::Request;
+        heartbeat.origin_t0_us = 1;
+        const QByteArray payload = encodePayload(
+            heartbeat, HeartbeatPayloadSize, encode_heartbeat_payload);
+        return !payload.isEmpty() && send(MessageType::Heartbeat, payload);
+    }
+
+    bool sendUnknownBaselineDelta()
+    {
+        return send(MessageType::Delta, {});
     }
 
     bool sendManifest()
@@ -365,8 +403,11 @@ private:
         TelemetryDatagramHeader header;
         header.version_minor = VersionMinor;
         header.message_type = type;
-        header.flags = MessageFlagAckRequired |
-            (type == MessageType::FullSnapshot ? MessageFlagKeyframe : MessageFlagNone);
+        const bool reliable = type == MessageType::Welcome ||
+            type == MessageType::SessionBegin || type == MessageType::Manifest ||
+            type == MessageType::FullSnapshot;
+        header.flags = reliable ? MessageFlagAckRequired : MessageFlagNone;
+        if (type == MessageType::FullSnapshot) header.flags |= MessageFlagKeyframe;
         header.session_id = sessionId;
         header.packet_sequence = sequence++;
         header.message_id = messageId++;
@@ -378,6 +419,7 @@ private:
 
     QUdpSocket socket;
     CapturedDatagram clientEndpoint;
+    HelloPayload clientHello;
     std::uint64_t sessionId = 42;
     std::uint32_t sequence = 1;
     std::uint32_t messageId = 1;
@@ -443,6 +485,44 @@ private slots:
         QCOMPARE(decoded.min_minor, VersionMinor);
         QCOMPARE(decoded.max_minor, VersionMinor);
         QCOMPARE(decoded.requested_visibility_mode, VisibilityMode::Cockpit);
+        QCOMPARE(decoded.advertised_capabilities, std::uint64_t{CapabilityNone});
+        QCOMPARE(decoded.extension_count, std::uint16_t{0});
+    }
+
+    void outboundTrafficIsTransportOnly()
+    {
+        ProducerHarness producer;
+        QVERIFY(producer.bind());
+        RadarClient client;
+        QVERIFY(producer.accept(client));
+
+        const HelloPayload& hello = producer.hello();
+        QCOMPARE(hello.min_major, VersionMajor);
+        QCOMPARE(hello.max_major, VersionMajor);
+        QCOMPARE(hello.min_minor, VersionMinor);
+        QCOMPARE(hello.max_minor, VersionMinor);
+        QCOMPARE(hello.requested_visibility_mode, VisibilityMode::Cockpit);
+        QCOMPARE(hello.advertised_capabilities, std::uint64_t{CapabilityNone});
+        QCOMPARE(hello.extension_count, std::uint16_t{0});
+
+        CapturedDatagram outbound;
+        QVERIFY(producer.receiveFromClient(2000, outbound));
+        QCOMPARE(outbound.header.message_type, MessageType::Ack);
+
+        QVERIFY(producer.beginSession(100));
+        QVERIFY(producer.receiveFromClient(2000, outbound));
+        QCOMPARE(outbound.header.message_type, MessageType::Ack);
+
+        QVERIFY(producer.sendHeartbeatRequest());
+        QVERIFY(producer.receiveFromClient(2000, outbound));
+        QCOMPARE(outbound.header.message_type, MessageType::Heartbeat);
+
+        QVERIFY(producer.sendUnknownBaselineDelta());
+        QVERIFY(producer.receiveFromClient(2000, outbound));
+        QCOMPARE(outbound.header.message_type, MessageType::ResyncRequest);
+
+        client.stop();
+        QTest::qWait(50);
     }
 
     void sessionEndRehandshakesOnSameEndpointAndKeepsHelloRetriesAlive()

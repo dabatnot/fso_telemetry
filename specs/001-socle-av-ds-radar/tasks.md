@@ -128,13 +128,13 @@ and absent; compare HUD, commands, target/range state, and hidden-contact behavi
 > Write these tests first and confirm the explicit read-only/profile assertions are
 > exercised before finalizing the transport constraints.
 
-- [ ] T022 [P] [US3] Extend coverage tests for strict `CockpitSensors` profile acceptance, rejection of insufficient or non-cockpit coverage, and unrevealed-class fallback behavior in `tools/radar/tests/radar_model_tests.cpp`
-- [ ] T023 [P] [US3] Add transport tests proving HELLO requests the cockpit profile and client outbound traffic is limited to handshake, acknowledgement, heartbeat/reliability, and resynchronization messages in `tools/radar/tests/radar_client_tests.cpp`
+- [X] T022 [P] [US3] Extend coverage tests for strict `CockpitSensors` profile acceptance, rejection of insufficient or non-cockpit coverage, and unrevealed-class fallback behavior in `tools/radar/tests/radar_model_tests.cpp`
+- [X] T023 [P] [US3] Add transport tests proving HELLO requests the cockpit profile and client outbound traffic is limited to handshake, acknowledgement, heartbeat/reliability, and resynchronization messages in `tools/radar/tests/radar_client_tests.cpp`
 
 ### Implementation for User Story 3
 
-- [ ] T024 [US3] Make the direct `CockpitSensors` profile request and read-only session capabilities explicit while keeping AV CORE and all business-command paths absent in `tools/radar/src/radar_client.cpp`
-- [ ] T025 [US3] Run the US3 model/client tests registered in `tools/radar/CMakeLists.txt` and perform the connected/disconnected/closed/absent gameplay and hidden-contact comparisons in `specs/001-socle-av-ds-radar/quickstart.md`
+- [X] T024 [US3] Make the direct `CockpitSensors` profile request and read-only session capabilities explicit while keeping AV CORE and all business-command paths absent in `tools/radar/src/radar_client.cpp`
+- [X] T025 [US3] Run the US3 model/client tests registered in `tools/radar/CMakeLists.txt` and perform the connected/disconnected/closed/absent gameplay and hidden-contact comparisons in `specs/001-socle-av-ds-radar/quickstart.md`
 
 **Checkpoint**: User Story 3 confirms AV DS is optional, passive, and cockpit-only.
 
