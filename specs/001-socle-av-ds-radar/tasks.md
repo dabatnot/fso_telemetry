@@ -63,18 +63,18 @@ active mission's authorized contacts, icons, and overlays with the reference cli
 > Write these tests first and confirm that each registered target fails by compilation
 > or assertion before implementing the corresponding AV DS shell behavior.
 
-- [ ] T003 [US1] Create and register failing tests for a one-entry `RADAR` catalog, unique `MFD-L`, initial active page, normal/maximizable window behavior, and AV DS visible title in `tools/radar/tests/av_ds_shell_tests.cpp` and `tools/radar/CMakeLists.txt`
-- [ ] T004 [US1] Create and register failing compatibility tests that seed `FS2Open/FsoSimpitRadar` connection, display, and geometry keys and verify AV DS reads them without prompting in `tools/radar/tests/application_settings_tests.cpp` and `tools/radar/CMakeLists.txt`
-- [ ] T005 [P] [US1] Define the deterministic `referenceRadarImage` fixture and verify contact IDs, resolved icons, IFF colors, overlay order, visual states, resizing, maximization-sized surfaces, hidden-contact exclusion, and a valid zero-contact image with no stale decoration in `tools/radar/tests/radar_widget_tests.cpp`
+- [X] T003 [US1] Create and register failing tests for a one-entry `RADAR` catalog, unique `MFD-L`, initial active page, normal/maximizable window behavior, and AV DS visible title in `tools/radar/tests/av_ds_shell_tests.cpp` and `tools/radar/CMakeLists.txt`
+- [X] T004 [US1] Create and register failing compatibility tests that seed `FS2Open/FsoSimpitRadar` connection, display, and geometry keys and verify AV DS reads them without prompting in `tools/radar/tests/application_settings_tests.cpp` and `tools/radar/CMakeLists.txt`
+- [X] T005 [P] [US1] Define the deterministic `referenceRadarImage` fixture and verify contact IDs, resolved icons, IFF colors, overlay order, visual states, resizing, maximization-sized surfaces, hidden-contact exclusion, and a valid zero-contact image with no stale decoration in `tools/radar/tests/radar_widget_tests.cpp`
 
 ### Implementation for User Story 1
 
-- [ ] T006 [US1] Implement explicit legacy-namespace reads and writes for connection, display, and window geometry settings and register the source in `tools/radar/src/application_settings.h`, `tools/radar/src/application_settings.cpp`, and `tools/radar/CMakeLists.txt`
-- [ ] T007 [US1] Implement `PageId`, the static one-page catalog, `DisplayUnitId::MfdLeft`, active-page validation, and the `MFD-L` page container and register the source in `tools/radar/src/display_unit.h`, `tools/radar/src/display_unit.cpp`, and `tools/radar/CMakeLists.txt`
-- [ ] T008 [US1] Replace the direct central `RadarWidget` composition with one `MFD-L` display unit hosting the `RADAR` page and using `ApplicationSettings` in `tools/radar/src/main_window.h` and `tools/radar/src/main_window.cpp`
-- [ ] T009 [US1] Set the visible application/display identity to `AV DS — AV Display System` while retaining the explicit legacy settings namespace in `tools/radar/src/main.cpp`
-- [ ] T010 [US1] Rename the Windows-deployed executable and ZIP inputs to `av-ds.exe`, remove the standalone Radar executable from the bundle, and keep Qt SVG/runtime/license deployment intact in `tools/radar/packaging/deploy-windows.ps1`
-- [ ] T011 [US1] Run the US1 Qt tests registered in `tools/radar/CMakeLists.txt` and perform the identity, legacy-settings, single-window, resize, deterministic-fixture, zero-contact, and Radar-reference checks in `specs/001-socle-av-ds-radar/quickstart.md`
+- [X] T006 [US1] Implement explicit legacy-namespace reads and writes for connection, display, and window geometry settings and register the source in `tools/radar/src/application_settings.h`, `tools/radar/src/application_settings.cpp`, and `tools/radar/CMakeLists.txt`
+- [X] T007 [US1] Implement `PageId`, the static one-page catalog, `DisplayUnitId::MfdLeft`, active-page validation, and the `MFD-L` page container and register the source in `tools/radar/src/display_unit.h`, `tools/radar/src/display_unit.cpp`, and `tools/radar/CMakeLists.txt`
+- [X] T008 [US1] Replace the direct central `RadarWidget` composition with one `MFD-L` display unit hosting the `RADAR` page and using `ApplicationSettings` in `tools/radar/src/main_window.h` and `tools/radar/src/main_window.cpp`
+- [X] T009 [US1] Set the visible application/display identity to `AV DS — AV Display System` while retaining the explicit legacy settings namespace in `tools/radar/src/main.cpp`
+- [X] T010 [US1] Rename the Windows-deployed executable and ZIP inputs to `av-ds.exe`, remove the standalone Radar executable from the bundle, and keep Qt SVG/runtime/license deployment intact in `tools/radar/packaging/deploy-windows.ps1`
+- [X] T011 [US1] Run the US1 Qt tests registered in `tools/radar/CMakeLists.txt` and perform the identity, legacy-settings, single-window, resize, deterministic-fixture, zero-contact, and Radar-reference checks in `specs/001-socle-av-ds-radar/quickstart.md`
 
 **Checkpoint**: User Story 1 is a usable Windows MVP: AV DS launches as one `MFD-L`
 window on `RADAR` using the previous Radar configuration.

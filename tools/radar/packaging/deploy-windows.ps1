@@ -8,13 +8,17 @@ $ErrorActionPreference = "Stop"
 $build = (Resolve-Path -LiteralPath $BuildDirectory).Path
 $output = [System.IO.Path]::GetFullPath($OutputDirectory)
 $repository = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..\..\..")).Path
-$executable = Join-Path $build "bin\FsoSimpitRadar.exe"
+$executable = Join-Path $build "bin\av-ds.exe"
 if (-not (Test-Path -LiteralPath $executable)) { throw "Executable not found: $executable" }
 
 New-Item -ItemType Directory -Force -Path $output | Out-Null
+$legacyExecutable = Join-Path $output "FsoSimpitRadar.exe"
+if (Test-Path -LiteralPath $legacyExecutable) {
+    Remove-Item -LiteralPath $legacyExecutable -Force
+}
 Copy-Item -LiteralPath $executable -Destination $output -Force
 $deploy = if ($QtRoot) { Join-Path $QtRoot "bin\windeployqt.exe" } else { "windeployqt.exe" }
-& $deploy --release --no-translations --compiler-runtime --dir $output (Join-Path $output "FsoSimpitRadar.exe")
+& $deploy --release --no-translations --compiler-runtime --dir $output (Join-Path $output "av-ds.exe")
 if ($LASTEXITCODE -ne 0) { throw "windeployqt failed" }
 if (-not (Test-Path -LiteralPath (Join-Path $output "Qt6Svg.dll"))) {
     throw "windeployqt did not deploy Qt6Svg.dll"

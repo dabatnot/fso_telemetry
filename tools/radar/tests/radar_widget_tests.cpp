@@ -27,6 +27,33 @@ namespace protocol = telemetry::protocol;
 class RadarWidgetTests final : public QObject {
     Q_OBJECT
 private:
+    static std::shared_ptr<RadarImage> referenceRadarImage()
+    {
+        auto image = std::make_shared<RadarImage>();
+        image->sessionId = 42;
+
+        RadarContact fighter;
+        fighter.id = 101;
+        fighter.scopePosition = QPointF(-0.25, 0.18);
+        fighter.color = QColor(80, 255, 120);
+        fighter.visibility = static_cast<std::uint8_t>(protocol::RadarVisibility::Visible);
+        fighter.visual.base = RadarIconAsset::ShipFighter;
+        image->contacts.push_back(fighter);
+
+        RadarContact threat;
+        threat.id = 202;
+        threat.scopePosition = QPointF(0.32, -0.16);
+        threat.color = QColor(255, 92, 72);
+        threat.visibility = static_cast<std::uint8_t>(protocol::RadarVisibility::Distorted);
+        threat.visual.base = RadarIconAsset::WeaponMissile;
+        threat.visual.overlays[0] = RadarIconAsset::OverlayHoming;
+        threat.visual.overlays[1] = RadarIconAsset::OverlayThreat;
+        threat.visual.overlays[2] = RadarIconAsset::OverlayDistorted;
+        threat.visual.overlayCount = 3;
+        image->contacts.push_back(threat);
+        return image;
+    }
+
     static qint64 firstPresentationTime(
         std::uint64_t contactId, DistortedContactPresentation presentation)
     {
@@ -70,6 +97,47 @@ private:
     }
 
 private slots:
+    void referenceRadarImagePreservesAuthorizedContactPresentation()
+    {
+        const auto image = referenceRadarImage();
+        QCOMPARE(image->contacts.size(), std::size_t{2});
+        QCOMPARE(image->contacts[0].id, std::uint64_t{101});
+        QCOMPARE(image->contacts[0].visual.base, RadarIconAsset::ShipFighter);
+        QCOMPARE(image->contacts[0].color, QColor(80, 255, 120));
+        QCOMPARE(image->contacts[0].visibility,
+                 static_cast<std::uint8_t>(protocol::RadarVisibility::Visible));
+        QCOMPARE(image->contacts[1].id, std::uint64_t{202});
+        QCOMPARE(image->contacts[1].visual.base, RadarIconAsset::WeaponMissile);
+        QCOMPARE(image->contacts[1].color, QColor(255, 92, 72));
+        QCOMPARE(image->contacts[1].visibility,
+                 static_cast<std::uint8_t>(protocol::RadarVisibility::Distorted));
+        QCOMPARE(image->contacts[1].visual.overlayCount, std::uint8_t{3});
+        QCOMPARE(image->contacts[1].visual.overlays[0], RadarIconAsset::OverlayHoming);
+        QCOMPARE(image->contacts[1].visual.overlays[1], RadarIconAsset::OverlayThreat);
+        QCOMPARE(image->contacts[1].visual.overlays[2], RadarIconAsset::OverlayDistorted);
+    }
+
+    void validZeroContactImageReplacesThePreviousPicture()
+    {
+        RadarWidget widget;
+        widget.resize(720, 720);
+        widget.setAnimationTimeForTesting(500);
+        widget.setImage(referenceRadarImage());
+        widget.setStatus(ClientStatus::Live);
+
+        auto empty = std::make_shared<RadarImage>();
+        empty->sessionId = 43;
+        widget.setImage(empty);
+        const QImage afterReplacement = test::renderOffscreen(widget, widget.size());
+
+        RadarWidget fresh;
+        fresh.resize(widget.size());
+        fresh.setAnimationTimeForTesting(500);
+        fresh.setImage(empty);
+        fresh.setStatus(ClientStatus::Live);
+        QCOMPARE(afterReplacement, test::renderOffscreen(fresh, fresh.size()));
+    }
+
     void squareIsCenteredAndNeverStretched_data()
     {
         QTest::addColumn<QSize>("size");

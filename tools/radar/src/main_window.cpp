@@ -5,36 +5,32 @@
 
 #include <QCloseEvent>
 #include <QKeyEvent>
-#include <QSettings>
 #include <QTimer>
 
 namespace simpit::radar {
 
 MainWindow::MainWindow(QWidget* parent)
-    : QMainWindow(parent), m_radar(new RadarWidget(this))
+    : MainWindow(std::make_unique<ApplicationSettings>(), parent)
 {
-    setWindowTitle(tr("SimPit Radar"));
-    setCentralWidget(m_radar);
+}
+
+MainWindow::MainWindow(std::unique_ptr<ApplicationSettings> settings, QWidget* parent)
+    : QMainWindow(parent), m_settings(std::move(settings)), m_radar(new RadarWidget),
+      m_displayUnit(new DisplayUnit(DisplayUnitId::MfdLeft, m_radar, this))
+{
+    setWindowTitle(tr("AV DS — AV Display System"));
+    setCentralWidget(m_displayUnit);
     setMinimumSize(320, 320);
     restoreWindowGeometry();
     connect(&m_client, &RadarClient::imageReady, m_radar, &RadarWidget::setImage);
     connect(&m_client, &RadarClient::statusChanged, m_radar, &RadarWidget::setStatus);
 
-    QSettings settings;
-    const bool configured = settings.value(QStringLiteral("connection/configured"), false).toBool();
-    m_host = settings.value(QStringLiteral("connection/host"), QStringLiteral("127.0.0.1")).toString();
-    m_port = static_cast<quint16>(settings.value(QStringLiteral("connection/port"), 42042).toUInt());
-    m_display.targetCallout = settings.value(QStringLiteral("display/targetCallout"), true).toBool();
-    m_display.targetStrength = settings.value(QStringLiteral("display/targetStrength"), true).toBool();
-    m_display.lead = settings.value(QStringLiteral("display/lead"), true).toBool();
-    m_display.lock = settings.value(QStringLiteral("display/lock"), true).toBool();
-    m_display.subsystems = settings.value(QStringLiteral("display/subsystems"), true).toBool();
-    m_display.edgeThreats = settings.value(QStringLiteral("display/edgeThreats"), true).toBool();
-    m_display.sensorEffects = settings.value(QStringLiteral("display/sensorEffects"), true).toBool();
-    m_display.motionVectors = settings.value(QStringLiteral("display/motionVectors"), false).toBool();
-    m_display.trails = settings.value(QStringLiteral("display/trails"), false).toBool();
+    const ConnectionSettings connection = m_settings->connection();
+    m_host = connection.host;
+    m_port = connection.port;
+    m_display = m_settings->displaySettings();
     m_radar->setDisplaySettings(m_display);
-    if (configured) {
+    if (connection.configured) {
         QTimer::singleShot(0, this, &MainWindow::connectConfiguredDestination);
     } else {
         QTimer::singleShot(0, this, [this] { openSettings(true); });
@@ -43,10 +39,14 @@ MainWindow::MainWindow(QWidget* parent)
 
 MainWindow::~MainWindow() = default;
 
+DisplayUnit* MainWindow::displayUnit() const noexcept
+{
+    return m_displayUnit;
+}
+
 void MainWindow::restoreWindowGeometry()
 {
-    QSettings settings;
-    const QByteArray geometry = settings.value(QStringLiteral("window/geometry")).toByteArray();
+    const QByteArray geometry = m_settings->windowGeometry();
     if (geometry.isEmpty() || !restoreGeometry(geometry)) resize(720, 720);
 }
 
@@ -66,19 +66,9 @@ void MainWindow::openSettings(bool firstRun)
         m_port = dialog.port();
         m_display = dialog.displaySettings();
         m_radar->setDisplaySettings(m_display);
-        QSettings settings;
-        settings.setValue(QStringLiteral("connection/configured"), true);
-        settings.setValue(QStringLiteral("connection/host"), m_host);
-        settings.setValue(QStringLiteral("connection/port"), m_port);
-        settings.setValue(QStringLiteral("display/targetCallout"), m_display.targetCallout);
-        settings.setValue(QStringLiteral("display/targetStrength"), m_display.targetStrength);
-        settings.setValue(QStringLiteral("display/lead"), m_display.lead);
-        settings.setValue(QStringLiteral("display/lock"), m_display.lock);
-        settings.setValue(QStringLiteral("display/subsystems"), m_display.subsystems);
-        settings.setValue(QStringLiteral("display/edgeThreats"), m_display.edgeThreats);
-        settings.setValue(QStringLiteral("display/sensorEffects"), m_display.sensorEffects);
-        settings.setValue(QStringLiteral("display/motionVectors"), m_display.motionVectors);
-        settings.setValue(QStringLiteral("display/trails"), m_display.trails);
+        m_settings->setConnection({true, m_host, m_port});
+        m_settings->setDisplaySettings(m_display);
+        m_settings->sync();
         if (firstRun || previousHost != m_host || previousPort != m_port)
             connectConfiguredDestination();
     } else if (firstRun) {
@@ -88,7 +78,8 @@ void MainWindow::openSettings(bool firstRun)
 
 void MainWindow::closeEvent(QCloseEvent* event)
 {
-    QSettings().setValue(QStringLiteral("window/geometry"), saveGeometry());
+    m_settings->setWindowGeometry(saveGeometry());
+    m_settings->sync();
     QMainWindow::closeEvent(event);
 }
 

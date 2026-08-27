@@ -16,6 +16,10 @@ add_subdirectory("${REPOSITORY_ROOT}/code/telemetry/protocol"
                  "${CMAKE_CURRENT_BINARY_DIR}/fstl_protocol")
 
 add_library(radar_core STATIC
+    src/application_settings.h
+    src/application_settings.cpp
+    src/display_unit.h
+    src/display_unit.cpp
     src/radar_display_settings.h
     src/radar_image.h
     src/radar_image.cpp
@@ -57,6 +61,20 @@ endif()
 
 include(CTest)
 if(BUILD_TESTING)
+    add_executable(av_ds_shell_tests
+        tests/av_ds_shell_tests.cpp
+        src/main_window.h
+        src/main_window.cpp
+        src/settings_dialog.h
+        src/settings_dialog.cpp)
+    target_link_libraries(av_ds_shell_tests PRIVATE radar_core Qt6::Test)
+    add_test(NAME av_ds_shell_tests COMMAND av_ds_shell_tests)
+    set_tests_properties(av_ds_shell_tests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+    add_executable(application_settings_tests tests/application_settings_tests.cpp)
+    target_link_libraries(application_settings_tests PRIVATE radar_core Qt6::Test)
+    add_test(NAME application_settings_tests COMMAND application_settings_tests)
+
     add_executable(radar_model_tests tests/radar_model_tests.cpp)
     target_link_libraries(radar_model_tests PRIVATE radar_core Qt6::Test)
     add_test(NAME radar_model_tests COMMAND radar_model_tests)
