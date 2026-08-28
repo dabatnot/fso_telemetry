@@ -37,11 +37,12 @@ jobs:
           QT_QPA_PLATFORM: offscreen
       - name: Bundle
         shell: pwsh
-        run: tools/radar/packaging/deploy-windows.ps1 -BuildDirectory build/radar -OutputDirectory dist/FsoSimpitRadar -QtRoot $env:QT_ROOT_DIR
+        run: tools/radar/packaging/deploy-windows.ps1 -BuildDirectory build/radar -OutputDirectory dist/av-ds -QtRoot $env:QT_ROOT_DIR
       - uses: actions/upload-artifact@v4
         with:
-          name: FsoSimpitRadar-Windows
-          path: dist/FsoSimpitRadar.zip
+          name: AV-DS-Windows
+          path: dist/av-ds.zip
+          if-no-files-found: error
 
   linux:
     runs-on: ubuntu-22.04

@@ -3509,6 +3509,7 @@ TEST(TelemetryRuntimeAdapterPlayerContract, StopCollectionDiffersFromMissionPurg
 	EXPECT_FALSE(ready->has_latest_player_sample);
 	EXPECT_EQ(1U, services.native->active_sessions());
 	EXPECT_EQ(1U, services.native->socket_count());
+	const auto next_message_id_before_purge = ready->next_message_id;
 
 	services.teardown.clear();
 	services.runtime_trace.clear();
@@ -3526,6 +3527,10 @@ TEST(TelemetryRuntimeAdapterPlayerContract, StopCollectionDiffersFromMissionPurg
 	EXPECT_EQ(1U, services.native->active_sessions())
 		<< "The ended mission remains only long enough to complete SESSION_END or be replaced by a new HELLO.";
 	EXPECT_EQ(1U, services.native->socket_count());
+	ready = NativePlayerAccess::slot(*services.native, 0U);
+	ASSERT_NE(nullptr, ready);
+	EXPECT_EQ(next_message_id_before_purge + 1U, ready->next_message_id)
+		<< "Mission purge must create exactly one SESSION_END transaction.";
 	runtime.on_game_enter_state(GS_STATE_BRIEFING, GS_STATE_GAME_PLAY);
 	drive(35'000U);
 	ASSERT_EQ(detail::RuntimeState::MissionActive, runtime.state());

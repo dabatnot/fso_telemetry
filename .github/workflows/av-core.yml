@@ -4,10 +4,12 @@ on:
   push:
     paths:
       - "tools/av-core/**"
+      - "test/telemetry/protocol/**"
       - ".github/workflows/av-core.yml"
   pull_request:
     paths:
       - "tools/av-core/**"
+      - "test/telemetry/protocol/**"
       - ".github/workflows/av-core.yml"
   workflow_dispatch:
 

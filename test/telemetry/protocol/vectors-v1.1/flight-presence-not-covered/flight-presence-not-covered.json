@@ -1,6 +1,6 @@
 {
-  "expectedValidationError": 37,
-  "expectedValidationErrorName": "InvalidAbsence",
+  "expectedValidationError": 44,
+  "expectedValidationErrorName": "InvalidStateTransition",
   "headerVersion": "1.1",
   "inputFiles": [
     "flight-presence-not-covered.bin"

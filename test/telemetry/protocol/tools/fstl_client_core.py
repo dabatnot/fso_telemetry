@@ -53,6 +53,13 @@ RETRANSMISSION = 0x10
 RECORD_FLAG_DELETE = 0x02
 COCKPIT_SENSORS_COVERAGE = 0x07CB
 COCKPIT_VISIBILITY_MODE = 0
+COCKPIT_PLAYER_RECORDS = frozenset({
+    "ENTITY_LIFECYCLE", "SHIP_IDENTITY", "FLIGHT_STATE", "DAMAGE_STATE",
+    "SHIELD_STATE", "ENERGY_STATE", "PROPULSION_STATE", "CONTROL_STATE",
+    "RADAR_STATE", "THREAT_STATE", "HUD_ALERT_STATE", "LOCK_STATE",
+    "TARGET_STATE", "WEAPON_STATE", "CARGO_SCAN_STATE", "DOCKING_STATE",
+    "SUPPORT_STATE", "NAVIGATION_STATE",
+})
 
 
 def now_us() -> int:
@@ -2022,14 +2029,44 @@ class ConsoleState:
             raise ValueError("CockpitSensors SESSION_STATE fields are invalid")
         try:
             coverage = int(fields.get("state_domain_coverage", -1))
+            authority = int(fields.get("authority_mode", -1))
             visibility = int(fields.get("visibility_mode", -1))
         except (TypeError, ValueError) as exc:
             raise ValueError("CockpitSensors SESSION_STATE fields are invalid") from exc
         if (
             coverage != self.required_state_domain_coverage
+            or authority != 0
             or visibility != COCKPIT_VISIBILITY_MODE
         ):
             raise ValueError("CockpitSensors 0x07CB required")
+        if (
+            not self.required_manifest_id
+            or self.manifest_id != self.required_manifest_id
+            or not self.manifest_applied
+        ):
+            raise ValueError("CockpitSensors snapshot requires an applied manifest")
+        missions = [
+            record for record in source.values()
+            if record.get("recordName") == "MISSION_STATE"
+        ]
+        if len(missions) != 1:
+            raise ValueError("CockpitSensors snapshot requires exactly one MISSION_STATE")
+        player = fields.get("observed_player_entity_id")
+        if player is None or str(player) == "0":
+            return
+        player_id = str(player)
+        present = {
+            str(record.get("recordName"))
+            for record in source.values()
+            if isinstance(record.get("fields"), dict)
+            and str(record["fields"].get("entity_id")) == player_id
+        }
+        missing = sorted(COCKPIT_PLAYER_RECORDS - present)
+        if missing:
+            raise ValueError(
+                "CockpitSensors snapshot missing required player records: "
+                + ", ".join(missing)
+            )
 
     def invalidate_clock_filter(self, reason: str) -> None:
         self.clock_samples.clear()
@@ -2207,6 +2244,19 @@ class ConsoleState:
                    for record in merged):
                 self.manifest_transactions.pop(manifest, None)
                 raise ValueError("invalid manifest record")
+            if (
+                not self.keyframe_applied
+                and self.required_manifest_id not in (0, manifest)
+            ):
+                self.manifest_transactions.pop(manifest, None)
+                raise ValueError("manifest does not satisfy SESSION_BEGIN")
+            advances_dependency = self.keyframe_applied and manifest != self.manifest_id
+            if advances_dependency:
+                # A committed later-generation manifest begins the next
+                # resynchronization dependency for its following snapshot.
+                self.required_manifest_id = manifest
+                self.keyframe_applied = False
+                self.status = "Synchronizing"
             self.manifest_records = {_record_identity(record): copy.deepcopy(record) for record in merged}
             self.manifest_id = manifest
             self.manifest_applied = self.required_manifest_id in (0, manifest)
@@ -2249,8 +2299,13 @@ class ConsoleState:
                 raise ValueError("snapshot candidate byte quota")
             if len(candidate["parts"]) != count:
                 return False, [header], []
-            if (candidate["required_manifest_id"] != 0 and
-                    candidate["required_manifest_id"] != self.manifest_id):
+            if (
+                candidate["required_manifest_id"] != self.required_manifest_id
+                or (
+                    candidate["required_manifest_id"] != 0
+                    and candidate["required_manifest_id"] != self.manifest_id
+                )
+            ):
                 self.transactions.pop(snapshot, None)
                 raise ValueError("snapshot references unapplied manifest")
             merged: list[dict[str, Any]] = []
@@ -2281,6 +2336,11 @@ class ConsoleState:
             self.transactions.clear()
             return True, [header], ack_headers
         if message_type == 7:
+            if not self.keyframe_applied:
+                # A manifest transition closes the delta gate until the
+                # snapshot declaring that exact dependency commits.
+                self.status = "Synchronizing"
+                return False, [], []
             if fields["baseline_snapshot_id"] != self.baseline or fields["delta_sequence"] <= self.delta_sequence:
                 # Phase 0: a bad baseline makes a live replica stale.  It only
                 # becomes Synchronizing after the reliable resync is accepted.

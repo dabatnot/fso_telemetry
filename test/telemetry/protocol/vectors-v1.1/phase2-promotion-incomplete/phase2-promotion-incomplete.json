@@ -1,6 +1,6 @@
 {
-  "expectedValidationError": 41,
-  "expectedValidationErrorName": "MissingManifest",
+  "expectedValidationError": 44,
+  "expectedValidationErrorName": "InvalidStateTransition",
   "headerVersion": "1.1",
   "inputFiles": [
     "phase2-promotion-incomplete.bin"

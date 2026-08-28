@@ -9492,10 +9492,10 @@
     "visibility_mode": "COCKPIT"
   },
   "producer_profiles": {
-    "phase1_minimal": {
+    "CockpitSensors": {
       "maximum_minor": 1,
       "minimum_minor": 1,
-      "required_state_domain_coverage": 1024
+      "required_state_domain_coverage": 1995
     }
   },
   "protocol": "FSTL",

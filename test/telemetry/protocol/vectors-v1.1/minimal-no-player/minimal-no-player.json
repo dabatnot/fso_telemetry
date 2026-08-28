@@ -1,7 +1,7 @@
 {
   "expectedCanonicalJson": "expected-v1.1/minimal-no-player.json",
-  "expectedValidationError": 0,
-  "expectedValidationErrorName": "None",
+  "expectedValidationError": 44,
+  "expectedValidationErrorName": "InvalidStateTransition",
   "headerVersion": "1.1",
   "inputFiles": [
     "minimal-no-player.bin"
@@ -11,6 +11,6 @@
   "name": "minimal-no-player",
   "notes": "FSTL 1.1 minimal-no-player",
   "schema": "FSTL-1.1",
-  "valid": true,
+  "valid": false,
   "versionMinor": 1
 }

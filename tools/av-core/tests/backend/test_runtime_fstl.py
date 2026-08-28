@@ -154,8 +154,9 @@ class FstlServiceRecoveryTest(unittest.TestCase):
     def negotiate(server: socket.socket, client_address, hello: bytes, session_id: int) -> None:
         for message_type, payload, sequence in (
             (3, contract.welcome_for(hello), 1),
-            (4, contract.session_begin_payload(), 2),
-            (6, contract.cockpit_snapshot_payload(), 3),
+            (4, contract.session_begin_payload(1), 2),
+            (5, contract.phase2_manifest_payload(1), 3),
+            (6, contract.cockpit_snapshot_payload(), 4),
         ):
             server.sendto(
                 contract.packet(
@@ -225,7 +226,10 @@ class FstlServiceRecoveryTest(unittest.TestCase):
                 hello, client_address = server.recvfrom(1200)
                 session = 0x1122334455667788
                 self.negotiate(server, client_address, hello, session)
-                self.assertTrue(self.wait_for(lambda: frames and frames[-1].state == "LIVE"))
+                self.assertTrue(
+                    self.wait_for(lambda: frames and frames[-1].state == "LIVE"),
+                    frames,
+                )
                 self.assertTrue(self.wait_for(lambda: frames and frames[-1].state == "STALE"))
 
                 while True:
@@ -233,7 +237,9 @@ class FstlServiceRecoveryTest(unittest.TestCase):
                     if contract.reference.read_header(packet)["message_type"] == 12:
                         self.assertEqual(client_address, address)
                         break
-                for part_index, payload in enumerate(contract.snapshot_parts(2)):
+                for part_index, payload in enumerate(
+                    contract.snapshot_parts(2, complete_profile=True)
+                ):
                     server.sendto(
                         contract.packet(
                             6,
@@ -250,7 +256,7 @@ class FstlServiceRecoveryTest(unittest.TestCase):
                     if frames and frames[-1].state == "LIVE" and frames[-1].session_id == str(session)
                     else None
                 )
-                self.assertIsNotNone(recovered)
+                self.assertIsNotNone(recovered, frames)
             finally:
                 service.stop()
 
@@ -350,7 +356,8 @@ class FstlServiceRecoveryTest(unittest.TestCase):
                 replacement_session = 0x8877665544332211
                 for message_type, payload, sequence in (
                     (3, contract.welcome_for(replacement_hello), 20),
-                    (4, contract.session_begin_payload(), 21),
+                    (4, contract.session_begin_payload(1), 21),
+                    (5, contract.phase2_manifest_payload(1), 22),
                 ):
                     server.sendto(
                         contract.packet(message_type, payload, session_id=replacement_session,
@@ -375,8 +382,8 @@ class FstlServiceRecoveryTest(unittest.TestCase):
                 server.sendto(
                     contract.packet(
                         6, contract.cockpit_snapshot_payload(),
-                        session_id=replacement_session, sequence=22,
-                        sent_us=2_000_022, flags=2,
+                        session_id=replacement_session, sequence=23,
+                        sent_us=2_000_023, flags=2,
                     ),
                     address,
                 )

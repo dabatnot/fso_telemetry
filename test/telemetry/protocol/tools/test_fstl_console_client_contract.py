@@ -29,6 +29,7 @@ CONSOLE = TOOLS / "fstl_console_client.py"
 SCENARIO = TOOLS / "fstl_phase2_scenario_client.py"
 REPO = TOOLS.parents[3]
 V11 = REPO / "test" / "telemetry" / "protocol" / "vectors-v1.1"
+VECTORS = REPO / "test" / "telemetry" / "protocol" / "vectors"
 
 sys.path.insert(0, str(TOOLS))
 import fstl_reference_decoder as reference
@@ -67,9 +68,17 @@ def v11_payload(name: str, suffix: str) -> bytes:
     return (V11 / name / f"{name}{suffix}").read_bytes()
 
 
-def cockpit_snapshot_payload(name: str = "minimal-with-player") -> bytes:
-    """Adapt a layout fixture to the sole client profile and reseal it."""
+def cockpit_snapshot_payload(name: str = "phase2-complete-ship") -> bytes:
+    """Compose a complete CockpitSensors client fixture and reseal it."""
     payload = bytearray(v11_payload(name, ".bin"))
+    additions: list[bytes] = []
+    if name == "phase2-complete-ship":
+        additions = [
+            (VECTORS / "valid" / "records" / record / f"{record}.bin").read_bytes()
+            for record in ("radar_state", "threat_state", "lock_state", "target_state", "navigation_state")
+        ]
+        additions.append(v11_payload("hud-alert-state", ".bin"))
+    payload.extend(b"".join(additions))
     region = payload[60:]
     offset = 0
     session_count = 0
@@ -83,22 +92,43 @@ def cockpit_snapshot_payload(name: str = "minimal-with-player") -> bytes:
         offset += 6 + record_length
     if offset != len(region) or session_count != 1:
         raise AssertionError("snapshot fixture must contain exactly one SESSION_STATE")
-    payload[12:44] = hashlib.sha256(payload[60:]).digest()
+    region = payload[60:]
+    records: list[bytes] = []
+    offset = 0
+    while offset < len(region):
+        record_length = int.from_bytes(region[offset + 4:offset + 6], "little")
+        end = offset + 6 + record_length
+        records.append(bytes(region[offset:end]))
+        offset = end
+    records.sort(key=lambda record: int.from_bytes(record[:2], "little"))
+    region = bytearray(b"".join(records))
+    payload[60:] = region
+    struct.pack_into("<I", payload, 8, len(region))
+    payload[12:44] = hashlib.sha256(region).digest()
+    struct.pack_into("<H", payload, 58, len(records))
     return bytes(payload)
 
 
-def snapshot_parts(snapshot_id: int = 1) -> tuple[bytes, bytes]:
-    """Split the Phase-1 snapshot's two record regions without console code."""
-    payload = cockpit_snapshot_payload()
+def snapshot_parts(snapshot_id: int = 1, complete_profile: bool = False) -> tuple[bytes, bytes]:
+    """Split a snapshot's first two record regions without console code."""
+    # Keep transport-focused live tests compact; profile validation uses the
+    # complete fixture returned by cockpit_snapshot_payload() directly.
+    payload = (
+        cockpit_snapshot_payload()
+        if complete_profile
+        else cockpit_snapshot_payload("minimal-with-player")
+    )
     region = payload[60:]
     first_length = 6 + int.from_bytes(region[4:6], "little")
     first_length += 6 + int.from_bytes(region[first_length + 4:first_length + 6], "little")
     regions = (region[:first_length], region[first_length:])
+    record_counts = (2, int.from_bytes(payload[58:60], "little") - 2)
     digest = hashlib.sha256(region).digest()
     result: list[bytes] = []
+    required_manifest_id = 1 if complete_profile else 0
     for index, records in enumerate(regions):
         prefix = struct.pack("<IHHI32sQIHH", snapshot_id, index, 2, len(region), digest,
-                             1_000_000, 0, 1, 2 if index == 0 else 2)
+                             1_000_000, required_manifest_id, 1, record_counts[index])
         result.append(prefix + records)
     return tuple(result)  # type: ignore[return-value]
 
@@ -112,9 +142,9 @@ def welcome_for(hello: bytes) -> bytes:
     return bytes(payload)
 
 
-def session_begin_payload() -> bytes:
+def session_begin_payload(required_manifest_id: int = 0) -> bytes:
     payload = bytearray((REPO / "test/telemetry/protocol/vectors/valid/messages/session_begin/session_begin.bin").read_bytes())
-    struct.pack_into("<I", payload, 24, 0)  # Phase-1 snapshot has no required manifest.
+    struct.pack_into("<I", payload, 24, required_manifest_id)
     return bytes(payload)
 
 
@@ -173,23 +203,35 @@ def receive_message_type(server: socket.socket, message_type: int) -> tuple[byte
 
 class FstlConsoleClientContractTest(unittest.TestCase):
     @staticmethod
-    def session_record(coverage: int, visibility: int = 0) -> dict[str, object]:
+    def session_record(
+        coverage: int, visibility: int = 0, authority: int = 0
+    ) -> dict[str, object]:
         return {
             "recordName": "SESSION_STATE",
             "recordFlags": 0,
             "fields": {
                 "state_domain_coverage": str(coverage),
+                "authority_mode": authority,
                 "visibility_mode": visibility,
             },
         }
 
+    @staticmethod
+    def cockpit_records() -> list[dict[str, object]]:
+        return reference.decode_message(6, 0, cockpit_snapshot_payload(), {})["fields"]["records"]
+
+    @staticmethod
+    def cockpit_state() -> console.ConsoleState:
+        return console.ConsoleState(
+            required_state_domain_coverage=console.COCKPIT_SENSORS_COVERAGE,
+            required_manifest_id=1,
+            manifest_id=1,
+            manifest_applied=True,
+        )
+
     def test_cockpit_client_accepts_only_the_cockpit_sensors_profile(self) -> None:
-        state = console.ConsoleState(
-            required_state_domain_coverage=console.COCKPIT_SENSORS_COVERAGE
-        )
-        state._apply_records(
-            [self.session_record(console.COCKPIT_SENSORS_COVERAGE)], True
-        )
+        state = self.cockpit_state()
+        state._apply_records(self.cockpit_records(), True)
         self.assertEqual(
             str(console.COCKPIT_SENSORS_COVERAGE),
             state.records["SESSION_STATE"]["state_domain_coverage"],
@@ -205,14 +247,21 @@ class FstlConsoleClientContractTest(unittest.TestCase):
                 [self.session_record(console.COCKPIT_SENSORS_COVERAGE, visibility=1)],
                 True,
             )
+        with self.assertRaisesRegex(ValueError, "CockpitSensors 0x07CB required"):
+            state._apply_records(
+                [self.session_record(console.COCKPIT_SENSORS_COVERAGE, authority=1)],
+                True,
+            )
 
-    def test_cockpit_client_rejects_profile_changes_in_cumulative_deltas(self) -> None:
-        state = console.ConsoleState(
+        missing_manifest = console.ConsoleState(
             required_state_domain_coverage=console.COCKPIT_SENSORS_COVERAGE
         )
-        state._apply_records(
-            [self.session_record(console.COCKPIT_SENSORS_COVERAGE)], True
-        )
+        with self.assertRaisesRegex(ValueError, "requires an applied manifest"):
+            missing_manifest._apply_records(self.cockpit_records(), True)
+
+    def test_cockpit_client_rejects_profile_changes_in_cumulative_deltas(self) -> None:
+        state = self.cockpit_state()
+        state._apply_records(self.cockpit_records(), True)
         state.baseline_record_instances = dict(state.record_instances)
 
         with self.assertRaisesRegex(ValueError, "CockpitSensors 0x07CB required"):
@@ -222,6 +271,14 @@ class FstlConsoleClientContractTest(unittest.TestCase):
             str(console.COCKPIT_SENSORS_COVERAGE),
             state.records["SESSION_STATE"]["state_domain_coverage"],
         )
+
+    def test_cockpit_client_rejects_incomplete_labeled_player_snapshot(self) -> None:
+        state = self.cockpit_state()
+        session = self.session_record(console.COCKPIT_SENSORS_COVERAGE)
+        session["fields"]["observed_player_entity_id"] = "1"  # type: ignore[index]
+        mission = {"recordName": "MISSION_STATE", "recordFlags": 0, "fields": {}}
+        with self.assertRaisesRegex(ValueError, "missing required player records"):
+            state._apply_records([session, mission], True)
 
     def test_reference_decoder_reads_single_u32_radar_icon_id(self) -> None:
         name = b"Ulysses"
@@ -724,6 +781,70 @@ class FstlConsoleClientContractTest(unittest.TestCase):
             [{"action": "drop-once", "message": "delta", "message_id": 3}],
             client.state.injections,
         )
+
+    def test_snapshot_manifest_id_must_match_session_begin_exactly(self) -> None:
+        client = console.ConsoleClient(None, 3_000_000)
+        client.state.welcomed = True
+        client.state.session_begun = True
+        client.state.session_id = 0x3400
+        client.state.required_manifest_id = 1
+        observed_at_utc = "2026-08-01T12:00:00.000000Z"
+        client.receive(
+            packet(
+                5, phase2_manifest_payload(1), session_id=client.state.session_id,
+                sequence=1, sent_us=1_000_001, flags=2,
+            ),
+            1_000_001,
+            observed_at_utc,
+        )
+        with self.assertRaisesRegex(ValueError, "snapshot references unapplied manifest"):
+            client.receive(
+                packet(
+                    6, phase2_snapshot_payload(1, 0),
+                    session_id=client.state.session_id, sequence=2,
+                    sent_us=1_000_002, flags=2,
+                ),
+                1_000_002,
+                observed_at_utc,
+            )
+
+    def test_new_manifest_closes_delta_gate_until_matching_snapshot(self) -> None:
+        client = console.ConsoleClient(None, 3_000_000)
+        client.state.welcomed = True
+        client.state.session_begun = True
+        client.state.session_id = 0x3500
+        client.state.required_manifest_id = 1
+        observed_at_utc = "2026-08-01T12:00:00.000000Z"
+
+        def receive(message_type: int, payload: bytes, sequence: int) -> bool:
+            return client.receive(
+                packet(
+                    message_type, payload, session_id=client.state.session_id,
+                    sequence=sequence, sent_us=1_000_000 + sequence,
+                    flags=2 if message_type in (5, 6) else 0,
+                ),
+                1_000_000 + sequence,
+                observed_at_utc,
+            )
+
+        receive(5, phase2_manifest_payload(1), 1)
+        receive(6, phase2_snapshot_payload(1, 1), 2)
+        self.assertTrue(client.state.keyframe_applied)
+        baseline_flight = dict(client.state.records["FLIGHT_STATE"])
+
+        receive(5, phase2_manifest_payload(2), 3)
+        self.assertFalse(client.state.keyframe_applied)
+        self.assertEqual("Synchronizing", client.state.status)
+        self.assertFalse(
+            receive(7, delta_payload("delta-player-kinematics-cumulative", 1), 4)
+        )
+        self.assertEqual(baseline_flight, client.state.records["FLIGHT_STATE"])
+        self.assertEqual("Synchronizing", client.state.status)
+
+        receive(6, phase2_snapshot_payload(2, 2), 5)
+        self.assertTrue(client.state.keyframe_applied)
+        self.assertEqual(2, client.state.baseline)
+        self.assertEqual("Live", client.state.status)
 
     def test_phase2_scenario_opens_two_independent_udp_sessions(self) -> None:
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as server:
@@ -1643,8 +1764,8 @@ class FstlConsoleClientContractTest(unittest.TestCase):
         self.assertIn("21 FSTL 1.1 corpus cases cross-decoded", result.stdout)
         self.assertIn("CRC and simulated cross-endian checks passed", result.stdout)
 
-    def test_current_independent_reader_decodes_cockpit_records(self) -> None:
-        payload = v11_payload("phase2-promotion", ".bin")
+    def test_current_independent_reader_rejects_incomplete_cockpit_records(self) -> None:
+        payload = cockpit_snapshot_payload("phase2-promotion")
         decoded = reference.decode_message(6, 0, payload, {})
         records = decoded["fields"]["records"]
         self.assertEqual(
@@ -1652,8 +1773,8 @@ class FstlConsoleClientContractTest(unittest.TestCase):
                 "SESSION_STATE",
                 "MISSION_STATE",
                 "ENTITY_LIFECYCLE",
-                "FLIGHT_STATE",
                 "SHIP_IDENTITY",
+                "FLIGHT_STATE",
                 "DAMAGE_STATE",
                 "SHIELD_STATE",
                 "SUBSYSTEM_STATE",
@@ -1663,6 +1784,10 @@ class FstlConsoleClientContractTest(unittest.TestCase):
             [record["recordName"] for record in records],
         )
         self.assertTrue(all(1 <= int(record["recordType"]) <= 24 for record in records))
+        self.assertEqual("InvalidAbsence", reference.fstl11_snapshot_result(decoded))
+
+    def test_current_independent_reader_accepts_complete_cockpit_records(self) -> None:
+        decoded = reference.decode_message(6, 0, cockpit_snapshot_payload(), {})
         self.assertEqual("None", reference.fstl11_snapshot_result(decoded))
 
     def test_replay_never_publishes_snapshot_before_handshake(self) -> None:

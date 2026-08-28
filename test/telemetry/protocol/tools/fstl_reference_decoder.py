@@ -2621,44 +2621,46 @@ def verify_cross_endian_and_crc() -> None:
 
 def fstl11_snapshot_result(decoded: dict[str, Any]) -> str:
     records = decoded["fields"]["records"]
-    names = [record["recordName"] for record in records]
-    if len(set(names)) != len(names):
-        return "DuplicateRecord"
+    identities: set[tuple[Any, ...]] = set()
+    for record in records:
+        fields = record["fields"]
+        identity = [record["recordName"]]
+        for name in ("manifest_generation", "class_id", "weapon_class_id",
+                     "entity_id", "contact_entity_id", "subsystem_id", "event_id"):
+            if name in fields:
+                identity.append((name, str(fields[name])))
+        key = tuple(identity)
+        if key in identities:
+            return "DuplicateRecord"
+        identities.add(key)
     by_name = {record["recordName"]: record["fields"] for record in records}
     session = by_name.get("SESSION_STATE")
     if session is None or "MISSION_STATE" not in by_name:
         return "InvalidAbsence"
     coverage = int(session["state_domain_coverage"])
-    if not coverage & 0x400:
-        return "INVALID_COVERAGE"
+    if coverage != 0x07CB:
+        return "InvalidStateTransition"
+    if session["authority_mode"] != 0:
+        return "InvalidStateTransition"
+    if session["visibility_mode"] != 0:
+        return "VisibilityViolation"
+    if not decoded["fields"]["required_manifest_id"]:
+        return "MissingManifest"
     player = session.get("observed_player_entity_id")
-    if coverage == 0x400:
-        if session["authority_mode"] != 0:
-            return "InvalidStateTransition"
-        if session["visibility_mode"] != 0:
-            return "VisibilityViolation"
-        expected = {"SESSION_STATE", "MISSION_STATE"}
-        if player is not None:
-            expected |= {"ENTITY_LIFECYCLE", "FLIGHT_STATE"}
-        if "SHIP_IDENTITY" in by_name:
-            return "InvalidAbsence"
-        if set(by_name) != expected:
-            return "InvalidAbsence"
-        if player is not None:
-            lifecycle = by_name["ENTITY_LIFECYCLE"]
-            flight = by_name["FLIGHT_STATE"]
-            if lifecycle["entity_id"] != player or flight["entity_id"] != player:
-                return "InvalidAbsence"
-            if lifecycle["presence"] != "0" or lifecycle["object_type"] != 1:
-                return "InvalidStateTransition"
-            if flight["presence"] != "0":
-                return "InvalidAbsence"
+    if player is None or str(player) == "0":
         return "None"
-    core = {"SESSION_STATE", "MISSION_STATE", "ENTITY_LIFECYCLE", "SHIP_IDENTITY", "FLIGHT_STATE",
-            "DAMAGE_STATE", "SHIELD_STATE", "SUBSYSTEM_STATE", "ENERGY_STATE", "PROPULSION_STATE"}
-    if coverage & 1:
-        return "None" if decoded["fields"]["required_manifest_id"] and core <= set(by_name) else "MissingManifest"
-    return "INVALID_COVERAGE"
+    player_names = {
+        record["recordName"] for record in records
+        if str(record["fields"].get("entity_id")) == str(player)
+    }
+    required_player_records = {
+        "ENTITY_LIFECYCLE", "SHIP_IDENTITY", "FLIGHT_STATE", "DAMAGE_STATE",
+        "SHIELD_STATE", "ENERGY_STATE", "PROPULSION_STATE", "CONTROL_STATE",
+        "RADAR_STATE", "THREAT_STATE", "HUD_ALERT_STATE", "LOCK_STATE",
+        "TARGET_STATE", "WEAPON_STATE", "CARGO_SCAN_STATE", "DOCKING_STATE",
+        "SUPPORT_STATE", "NAVIGATION_STATE",
+    }
+    return "None" if required_player_records <= player_names else "InvalidAbsence"
 
 
 def verify_fstl11_corpus(root: Path) -> int:
@@ -2671,6 +2673,12 @@ def verify_fstl11_corpus(root: Path) -> int:
                      if item.get("name") == "PLAYER_KINEMATICS"]
     require(player_values == [0x400], 44,
             "schema/fstl-v1.1.yaml PLAYER_KINEMATICS drift")
+    profiles = schema.get("producer_profiles", {})
+    require(profiles == {"CockpitSensors": {
+                "maximum_minor": 1,
+                "minimum_minor": 1,
+                "required_state_domain_coverage": 0x07CB,
+            }}, 44, "schema/fstl-v1.1.yaml current producer profile drift")
     provenance = schema.get("amendment_provenance", {})
     require(provenance.get("normative") is False, 44,
             "schema/fstl-v1.1.yaml provenance must be informative")

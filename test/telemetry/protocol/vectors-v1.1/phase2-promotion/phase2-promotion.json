@@ -1,7 +1,7 @@
 {
   "expectedCanonicalJson": "expected-v1.1/phase2-promotion.json",
-  "expectedValidationError": 0,
-  "expectedValidationErrorName": "None",
+  "expectedValidationError": 44,
+  "expectedValidationErrorName": "InvalidStateTransition",
   "headerVersion": "1.1",
   "inputFiles": [
     "phase2-promotion.bin"
@@ -11,6 +11,6 @@
   "name": "phase2-promotion",
   "notes": "FSTL 1.1 phase2-promotion",
   "schema": "FSTL-1.1",
-  "valid": true,
+  "valid": false,
   "versionMinor": 1
 }
